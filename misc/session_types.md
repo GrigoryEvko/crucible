@@ -47,7 +47,7 @@ Pre-existing mental model: familiar with CLAUDE.md's seventeen layers, familiar 
 
 | Document | Scope | Relationship to this one |
 |---|---|---|
-| `CLAUDE.md` | 17-layer runtime overview, the mental model | This document refines L4 Operations + L6 Graphs + L13 Distribution + L15 Meridian+Augur from the session-type angle |
+| `CLAUDE.md` | 17-layer runtime overview, the mental model | This document refines L4 Operations + L6 Graphs + L13 Distribution + L15 Meridian + RT from the session-type angle |
 | `CRUCIBLE.md` | Runtime reference: mock-tensor dispatch, Vessel, CNTP, Cipher, Canopy, lifecycle | Part IV of this document maps every communication channel in CRUCIBLE.md to its session type |
 | `THREADING.md` | Concurrency primitives, CSL permissions, MpmcRing, ChaseLevDeque, Beyond-Vyukov | This document's L9 layer (Permissioned session × CSL) builds on THREADING.md §5 and §17 |
 | `FORGE.md` | Vendor-agnostic compiler, IR001→IR002→IR003*, Phase A–L | The session types on collectives and ExecutionPlan submission constrain Forge's Phase J output |
@@ -66,7 +66,7 @@ Session types are not a decoration. They are the mechanism that makes Crucible's
 A Crucible training or inference run communicates across roughly fifty channels simultaneously. Exhaustive enumeration, grouped by scope and cadence:
 
 **Intra-process, hot path** (per-message budget set by what the underlying primitive can do; see bench suite for current measurements):
-TraceRing (Vessel → bg thread, SPSC). MetaLog (Vessel → bg thread, parallel SPSC for TensorMeta). bg-thread internal pipeline stages: drain → build TraceGraph → transform → compile. KernelCache publication (bg compile worker → any Keeper reader, SWMR via atomic pointer swap). MemoryPlan publication (bg planner → any execution consumer, SWMR snapshot). AtomicSnapshot broadcast (1 writer + N readers, seqlock; used for Augur metrics, Meridian calibration data). ExecutionPlan submission (CPU host → GPU doorbell via pre-composed pushbuffer; modeled cost decomposition in §14.7). PatchPoint writes (host → GPU pushbuffer WC mapping). ChainEdge semaphores (GPU → GPU via pinned sysmem). Vigil mode transitions (RECORD / REPLAY / SERVING / FLUSH, state-machine type). Transaction begin/commit/abort (task #101). MpmcRing producer / consumer (THREADING.md §17, Nikolaev SCQ — FAA-driven; contention behaviour bounded by FAA bandwidth rather than CAS retry).
+TraceRing (Vessel → bg thread, SPSC). MetaLog (Vessel → bg thread, parallel SPSC for TensorMeta). bg-thread internal pipeline stages: drain → build TraceGraph → transform → compile. KernelCache publication (bg compile worker → any Keeper reader, SWMR via atomic pointer swap). MemoryPlan publication (bg planner → any execution consumer, SWMR snapshot). AtomicSnapshot broadcast (1 writer + N readers, seqlock; used for runtime observation metrics, Meridian calibration data). ExecutionPlan submission (CPU host → GPU doorbell via pre-composed pushbuffer; modeled cost decomposition in §14.7). PatchPoint writes (host → GPU pushbuffer WC mapping). ChainEdge semaphores (GPU → GPU via pinned sysmem). Vigil mode transitions (RECORD / REPLAY / SERVING / FLUSH, state-machine type). Transaction begin/commit/abort (task #101). MpmcRing producer / consumer (THREADING.md §17, Nikolaev SCQ — FAA-driven; contention behaviour bounded by FAA bandwidth rather than CAS retry).
 
 **Inter-process, same host**:
 Cipher hot-tier reads (peer-memory RDMA read when entry is warm on another Keeper, ~1 μs). Cipher warm-tier writes (local NVMe via io_uring SQPOLL, ~20 μs acknowledged). DataNode CPU-worker → GPU-worker batch delivery (RDMA put into pre-planned device slot). Self-update binary distribution (Cipher cold-tier gossip + rolling replace).
@@ -88,7 +88,7 @@ InferenceSession prefill (token batch → batch logits, 50–500 ms). InferenceS
 Canopy member join (hardware probe → gossip discovery → Raft admission → Meridian probe → READY). Canopy member leave (announce → finish current step → handoff state → exit). Fleet reshard on membership change (Raft epoch bump → Phase K re-run → weight redistribution). FLR recovery (failure detection → FLR → GSP re-upload from cached firmware → replay from last checkpoint). Live binary rolling upgrade (Cipher cold-tier gossip of new hash → half-at-a-time shutdown + reload → Raft verifies → other half).
 
 **Control plane**:
-k8s operator watch (`CrucibleCluster` CRD → DaemonSet / ConfigMap reconciliation). SLURM environment discovery (`srun` + `SLURM_NODELIST` seed). Prometheus scrape endpoint (Augur metrics aggregation). Vessel FFI (frontend adapter → C ABI → runtime).
+k8s operator watch (`CrucibleCluster` CRD → DaemonSet / ConfigMap reconciliation). SLURM environment discovery (`srun` + `SLURM_NODELIST` seed). Prometheus scrape endpoint (runtime observation metrics aggregation). Vessel FFI (frontend adapter → C ABI → runtime).
 
 Fifty distinct patterns. Each with its own participants, ordering, crash model, fairness assumption, and liveness requirement. Each must be correct individually; all must compose.
 
@@ -2198,9 +2198,9 @@ G_kcache = μt . Writer → { Reader_i : broadcast(KernelEntry) | i ∈ 1..N } .
 
 **Composition**: receives from bg pipeline (§IV.3); composes with CNTP Layer 4 cross-Keeper publication (collectives carry compiled-kernel hashes in annotations; per §IV.18).
 
-**Cross-ref**: CLAUDE.md L2 Kernels; THREADING.md §11 AtomicSnapshot; task #281 (AtomicSnapshot for Augur; same pattern).
+**Cross-ref**: CLAUDE.md L2 Kernels; THREADING.md §11 AtomicSnapshot; task #281 (AtomicSnapshot for runtime observation; same pattern).
 
-## IV.5 AtomicSnapshot broadcast — MemoryPlan, Augur metrics
+## IV.5 AtomicSnapshot broadcast — MemoryPlan, runtime observation metrics
 
 **Scope**: intra-process (1 writer + N readers, per snapshot tag).
 
@@ -2210,7 +2210,7 @@ G_kcache = μt . Writer → { Reader_i : broadcast(KernelEntry) | i ∈ 1..N } .
 
 **Global type**: isomorphic to KernelCache (§IV.4) with different payload types:
 - For MemoryPlan: `MemoryPlan` struct with slot offsets, sizes, alignments.
-- For Augur: `MetricsSnapshot` struct with rolling-window residuals, Hessian spectrum samples, per-kernel counters.
+- For runtime observation: `MetricsSnapshot` struct with rolling-window residuals, Hessian spectrum samples, per-kernel counters.
 
 **Per-snapshot local types**: same as §IV.4.
 
@@ -2222,7 +2222,7 @@ G_kcache = μt . Writer → { Reader_i : broadcast(KernelEntry) | i ∈ 1..N } .
 
 **Composition**: parallel with KernelCache (§IV.4) and with user-visible debug tooling (`crucible top`).
 
-**Cross-ref**: THREADING.md §11; task #281 (SEPLOG-QUEUE-6 AtomicSnapshot for Augur metrics).
+**Cross-ref**: THREADING.md §11; task #281 (SEPLOG-QUEUE-6 AtomicSnapshot for runtime observation metrics).
 
 ## IV.6 ExecutionPlan submission — host → GPU
 
@@ -3384,7 +3384,7 @@ A single table covering all thirty-four channels from Part IV, with their chosen
 | IV.2 | TraceRing/MetaLog SPSC | intra-process | `safe ∧ live+` | {both} | yes |
 | IV.3 | bg pipeline (4-stage) | intra-process | `safe ∧ live+ ∧ associated(G_pipe)` | {all stages} | yes |
 | IV.4 | KernelCache SWMR | intra-process | `safe ∧ live` | {writer+readers} | yes |
-| IV.5 | AtomicSnapshot (Augur etc.) | intra-process | `safe ∧ live` | {all} | yes |
+| IV.5 | AtomicSnapshot (runtime observation etc.) | intra-process | `safe ∧ live` | {all} | yes |
 | IV.6 | ExecutionPlan submission | intra-process | `df ∧ live+ ∧ crash-safe` | {HostCPU} | yes |
 | IV.7 | ChainEdge semaphores | intra-process | `live+` | {both} | yes |
 | IV.8 | PatchPoint writes | intra-process | `safe` | {HostCPU} | degenerate |
@@ -3468,7 +3468,7 @@ Dependency-ordered delivery of the twelve-layer stack.
 
 **M11 — L10 Pattern library + L11 Diagnostics.**  ✅ SHIPPED.  SessionPatterns.h ships RequestResponse, FanOut/FanIn, Broadcast, ScatterGather, MpmcProducer/Consumer (proto-only, no runtime), TwoPhaseCommit_Coord/Follower, SwimProbe, Handshake, Transaction_Client/Server, PipelineSource/Sink/Stage.  SessionDiagnostic.h ships 18 manifest-bug tags + CRUCIBLE_SESSION_ASSERT_CLASSIFIED macro + 26 retrofit sites across 10 headers (#388).  Tasks #341, #342, #337 (all completed).  Current line counts: SessionPatterns.h **793**, SessionDiagnostic.h **633**.
 
-**M12 — Crucible channel adoption.**  🔌 NO CALLERS.  Zero production Crucible channels currently use SessionHandle.  The framework sits on a shelf.  Tasks #355-#358 (K-series) are pending; Task SEPLOG-INT-1..4 (sub-tasks #384-#387) added during this status pass.  PermissionedSpscChannel.h ships as the missing primitive — TraceRing, MetaLog, ChainEdge, Augur all need to be wired to use it (or analog wrappers).  This is **WHERE THE VALUE LANDS** and where the framework is currently weakest.
+**M12 — Crucible channel adoption.**  🔌 NO CALLERS.  Zero production Crucible channels currently use SessionHandle.  The framework sits on a shelf.  Tasks #355-#358 (K-series) are pending; Task SEPLOG-INT-1..4 (sub-tasks #384-#387) added during this status pass.  PermissionedSpscChannel.h ships as the missing primitive — TraceRing, MetaLog, ChainEdge, runtime observation all need to be wired to use it (or analog wrappers).  This is **WHERE THE VALUE LANDS** and where the framework is currently weakest.
 
 **Appendix-D combinators shipped (orthogonal to L-numbering)**:
 - ✅ SessionDelegate.h — Honda 1998 throw/catch (#337) — **835 lines**

@@ -351,7 +351,7 @@ static void test_gpu_opcode_table_construction() {
     // GAPS-187 audit follow-up: default-constructed table MUST report
     // infinite calibration staleness (τ=∞).  The semantically correct
     // signal for "never calibrated" is at_infinity, NOT fresh.  If
-    // this assertion fails, Augur's drift detector reads τ=0 on a
+    // this assertion fails, runtime observer's drift detector reads τ=0 on a
     // never-calibrated Cog and silently never triggers the
     // recalibration pass — pre-production data-loss risk.
     volatile bool default_is_infinite =

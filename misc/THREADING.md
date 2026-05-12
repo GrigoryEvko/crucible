@@ -209,7 +209,7 @@ The full Crucible threading model decomposes into five tiers, each composed of z
 ┌────────────────────────────────────────────────────────────────┐
 │ TIER 5  Domain Integration                                     │
 │         NumaMpmcThreadPool<Scheduler,Tag> · BackgroundThread   │
-│         KernelCompile pool · Augur metrics · Canopy peer RX    │
+│         KernelCompile pool · runtime observation metrics · Canopy peer RX    │
 ├────────────────────────────────────────────────────────────────┤
 │ TIER 4  Auto-Routed Queues + Scheduler Flavours                │
 │         Queue<T, Kind> : spsc | mpsc | mpmc (SCQ) | sharded |  │
@@ -615,7 +615,7 @@ The Crucible runtime workloads compose all four lower tiers with the pool + sche
 
 - **KernelCompile pool** (`Mimic/KernelCompile.h`): each pending kernel is a `Job{fn, ctx}`.  Submitted via `pool.fork_join(N, compile_body)`.  Pool's default scheduler is LocalityAware so compile workers share L3 cache of the source DAG.  When a compile completes, its result publishes through `AtomicSnapshot<CompiledKernel>` for lock-free reader access.
 
-- **Augur metrics broadcast** (`Augur/Metrics.h`): 1 writer (the Augur background thread) + N readers (monitoring surfaces).  Uses `PermissionedSnapshot<Metrics, AugurTag>` (`concurrent/PermissionedSnapshot.h`) — `SharedPermissionPool<Reader<AugurTag>>` over `AtomicSnapshot<Metrics>`.  Readers via `ReadView<Reader<AugurTag>>`; writer via `Permission<Writer<AugurTag>>`.  Mode transition via `with_exclusive_access(body)` for schema resets.
+- **runtime observation metrics broadcast** (`runtime observation/Metrics.h`): 1 writer (the runtime observation background thread) + N readers (monitoring surfaces).  Uses `PermissionedSnapshot<Metrics, runtime observationTag>` (`concurrent/PermissionedSnapshot.h`) — `SharedPermissionPool<Reader<runtime observationTag>>` over `AtomicSnapshot<Metrics>`.  Readers via `ReadView<Reader<runtime observationTag>>`; writer via `Permission<Writer<runtime observationTag>>`.  Mode transition via `with_exclusive_access(body)` for schema resets.
 
 - **Canopy peer RX** (`Canopy/PeerInbox.h`): per-peer `Queue<Msg, kind::mpsc<CAP>>`.  Many local producers (dispatch loop, retry loop, health check) push into one peer's inbox; the peer's dedicated RX thread is the single consumer.  `Permission<Producer<Peer_i>>` minted per local producer.
 

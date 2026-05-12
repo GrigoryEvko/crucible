@@ -734,7 +734,7 @@ The optimizer runs on three independent timescales:
 
 | Timescale | Frequency | Scope | Action |
 |---|---|---|---|
-| Per-step | ~ms | Within iteration | Augur measures, no recompile, route adjustment via existing kernels |
+| Per-step | ~ms | Within iteration | runtime observation measures, no recompile, route adjustment via existing kernels |
 | Per-K-step | ~10s (configurable) | Across iterations | Re-solve SM allocation, Mimic recompile changed kernels (KernelCache hit common), atomic swap at iteration boundary |
 | Per-event | ~minutes | Membership change, Cog quarantine, hardware swap, workload phase change | Topology re-discovery, full Forge re-run, full re-calibration of affected Cogs |
 
@@ -749,13 +749,13 @@ Per-step adjustments operate within the existing kernel set. No recompile, no Fo
 - Which DVFS level to apply (within operator policy bounds)
 - Whether to inject filler ops for power smoothing
 
-Augur ingests telemetry every step:
+runtime observation ingests telemetry every step:
 - Per-Cog: SM utilization, HBM bandwidth utilization, power draw, temperature, clock frequency
 - Per-NIC: TX/RX bytes, drop rate, queue depth, RDMA completion rate
 - Per-collective: completion time, bytes transferred, peer completion variance
 - Per-step: total step time, compute-bound vs comm-bound classification
 
-The per-step optimizer runs in O(microseconds) on the Augur worker thread, emits decisions as updates to the active routing tables.
+The per-step optimizer runs in O(microseconds) on the runtime observation worker thread, emits decisions as updates to the active routing tables.
 
 ## §5.4 The per-K-step loop
 
@@ -818,8 +818,8 @@ The §5 multi-timescale loop discussed here adjusts **distributed scheduling dec
 | Concern | Substrate | Fixy DSL |
 |---|---|---|
 | Telemetry harvesters | `cog/Telemetry.h`, `perf/Bpf.h` | (uses) |
-| Augur per-step measurement | `augur/Step.h` | (uses) |
-| Augur per-K-step trends | `augur/Trend.h` | (uses) |
+| runtime observation per-step measurement | `rt/Step.h` | (uses) |
+| runtime observation per-K-step trends | `rt/Trend.h` | (uses) |
 | Atomic kernel swap mechanism | `cog/AtomicSwap.h` (existing) | (uses) |
 | Discrete-search optimizer | `cog/Optimizer.h` | (uses) |
 | Composite MFU computation | (none) | `fixy::Mfu` policy |
@@ -4222,7 +4222,7 @@ namespace crucible::cog::nvml {
 
 **Status.** Planned (GAPS-170).
 
-**Substrate.** `crucible/cog/WearEstimate.h`. Updated periodically by Augur background thread.
+**Substrate.** `crucible/cog/WearEstimate.h`. Updated periodically by runtime observation background thread.
 
 **Fixy DSL.** `fixy::power::wear_aware<scheduling = fixy::power::WearAware::Conservative>`.
 
@@ -4254,7 +4254,7 @@ fixy::power::smoothing{
 
 **Status.** Planned (special case of 13.5).
 
-**Composition.** Composes 13.3 DVFS + per-step phase classification (Augur).
+**Composition.** Composes 13.3 DVFS + per-step phase classification (runtime observation).
 
 ### 13.7 Carbon-aware scheduling
 
@@ -6596,7 +6596,7 @@ cog/MrcCalibrate.h  Per-NIC fabric calibration: line rate, RTT distribution,
                     probes.  Output: calibrated fabric model fed to Forge.
                     ~500 LOC.
 
-augur/MrcDrift.h    Drift detection: P95 residual > 10% for 100+ samples
+rt/MrcDrift.h    Drift detection: P95 residual > 10% for 100+ samples
                     triggers FabricRecompile.  Per the §5 multi-timescale
                     loop; fabric drift is the per-K-step / per-event signal.
                     ~300 LOC.
@@ -6934,7 +6934,7 @@ Each MRC error site uses structured-diagnostic emission per FOUND-E01:
     peer_id.render(), packet_icrc, computed_icrc);
 ```
 
-This composes into Augur's drift-attribution machinery — a sustained spike in `MrcWire::ICrcMismatch` per peer is a per-link health signal that should trigger an EvMachine transition to ASSUMED_BAD without waiting for the retry counter.
+This composes into the runtime observer's drift-attribution machinery — a sustained spike in `MrcWire::ICrcMismatch` per peer is a per-link health signal that should trigger an EvMachine transition to ASSUMED_BAD without waiting for the retry counter.
 
 ## §38.12 Federation over MRC
 
@@ -7125,7 +7125,7 @@ The bench harness `bench/bench_mrc_session.cpp` (parallel to `bench/bench_permis
 - cntp/MrcCongestion.h CC policy template (~400 LOC)
 - mimic/{nv,am,broadcom,intel,mellanox}/network/MrcCodec.h (~800 LOC each, ~4000 total)
 - cog/MrcCalibrate.h fabric calibration (~500 LOC)
-- augur/MrcDrift.h drift detection (~300 LOC)
+- rt/MrcDrift.h drift detection (~300 LOC)
 - bench/bench_mrc_session.cpp head-to-head harness (~300 LOC, validates zero-cost overlay claim per §38.14)
 - test/cross_vendor_mrc/ pairwise CI harness (~600 LOC)
 - safety/diag/MrcCategories.h diagnostic taxonomy (~150 LOC, per §38.11)
@@ -7159,7 +7159,7 @@ New MRC-specific tasks (numbers proposed below — require allocation by maintai
 - **GAPS-226** mimic/intel/network/MrcCodec.h (E810 iWARP variant)
 - **GAPS-227** mimic/mellanox/network/MrcCodec.h (ConnectX RoCEv2 + SHARP)
 - **GAPS-228** cog/MrcCalibrate.h fabric calibration
-- **GAPS-229** augur/MrcDrift.h drift detection
+- **GAPS-229** rt/MrcDrift.h drift detection
 - **GAPS-230** test/cross_vendor_mrc/ pairwise CI harness
 
 ## §38.17 Phasing — minimum viable plain MRC integration
@@ -7174,7 +7174,7 @@ New MRC-specific tasks (numbers proposed below — require allocation by maintai
 
 **M4 (Months 8-10): Cross-vendor MRC interop CI.** GAPS-175 extended: every (Collective × Recipe × VendorBackend × PeerSet) cell verified pairwise against CPU oracle. Bit-equivalence under matching recipe at the recipe-tier guarantee level (≤1 ULP for BITEXACT_TC).
 
-**M5 (Months 10-12): Production wiring.** Compute-side IR ops (GAPS-167-169) lower comm operations to MrcRdmaQp. Forge Phase F generates MRC-targeted FabricConfigs. Augur drift triggers FabricRecompile at per-K-iteration cadence.
+**M5 (Months 10-12): Production wiring.** Compute-side IR ops (GAPS-167-169) lower comm operations to MrcRdmaQp. Forge Phase F generates MRC-targeted FabricConfigs. runtime observation drift triggers FabricRecompile at per-K-iteration cadence.
 
 12-month plan for plain MRC integration with one engineer-team unit. Self-contained — completes independently of ESFC/CFTP follow-on work.
 

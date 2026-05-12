@@ -48,7 +48,7 @@ A \textbf{Relay} is a compute node running a Crucible daemon.
 The \textbf{Keeper} is the per-Relay daemon for health monitoring, mesh participation, and executing optimization recommendations.
 The \textbf{Canopy} is the masterless Keeper mesh.
 \textbf{Longitude} is startup calibration (hardware measurement and configuration optimization).
-\textbf{Augur} is continuous monitoring (performance prediction, drift detection, bottleneck diagnosis).
+\textbf{runtime observation} is continuous monitoring (performance prediction, drift detection, bottleneck diagnosis).
 \textbf{F$\star$X} is the formal verification layer proving runtime invariants at build time.
 
 \textbf{Three execution phases} (Figure~\ref{fig:phases}).
@@ -116,7 +116,7 @@ The DAG simultaneously serves as versioning mechanism (Merkle hashes enable $O(\
 \S\ref{sec:recording} & Recording and Merkle DAG \\
 \S\ref{sec:compilation} & Compilation, memory planning, execution \\
 \S\ref{sec:verification} & Formal verification (FX) \\
-\S\ref{sec:hardware} & Hardware adaptation (Longitude, Augur) \\
+\S\ref{sec:hardware} & Hardware adaptation (Longitude, runtime observation) \\
 \S\ref{sec:distribution} & Distribution and persistence \\
 \S\ref{sec:optimization} & Model-aware optimization \\
 \S\ref{sec:implementation} & Implementation status \\

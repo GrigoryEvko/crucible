@@ -4,7 +4,7 @@
 // when StrongerTier > WeakerTier in the ResidencyHeatLattice.
 //
 // THE LOAD-BEARING REJECTION FOR THE KernelCache L1 working-set
-// DISCIPLINE (CRUCIBLE.md §L2 + §L15).  Without it, a value
+// DISCIPLINE (CRUCIBLE.md §L2 + runtime metrics).  Without it, a value
 // sourced from L3 (or DRAM) could be re-typed as L1-resident and
 // silently flow into a KernelCache fast-path lookup, defeating
 // the per-call shape budget — L3 cache miss ~hundreds of ns vs
@@ -16,7 +16,7 @@
 // form — would silently allow a Cold-tier value to claim Hot
 // residency.  The dispatcher's L1-only admission gate would then
 // admit cold-cache reads into the fast path, breaking the
-// working-set heat-tracking story Augur depends on.
+// working-set heat-tracking story runtime observation depends on.
 //
 // Lattice direction: Hot is at the TOP (fastest, ~ns L1 access);
 // Cold is at the BOTTOM (slowest, ~hundreds of ns L3/DRAM).

@@ -100,7 +100,7 @@ The cost is a jump table; there is no runtime polymorphism, no virtual dispatch,
 Each per-vendor backend factors into three loosely coupled subsystems sharing target-model data: an encoder--decoder pair, a simulator (three tiers), and a MAP-Elites synthesizer.
 The shared data is the calibrated \struct{TargetCaps} and the \struct{OpcodeLatencyTable} (Section~\ref{sec:mimic-target-model}); each subsystem is independently testable.
 
-The encoder--decoder pair is publicly callable: Forge's Phase~J (\textsc{emit}, Section~\ref{sec:forge-phase-j}) calls the encoder; Augur's recovery path (Chapter~\ref{sec:augur}) calls the decoder.
+The encoder--decoder pair is publicly callable: Forge's Phase~J (\textsc{emit}, Section~\ref{sec:forge-phase-j}) calls the encoder; the runtime observer's recovery path (Chapter~\ref{sec:rt}) calls the decoder.
 Round-trip correctness is asserted continuously: \code{decode(encode(program))} equals \code{program} for every valid \IRstar{3} program.
 
 The simulator is publicly callable through \code{mimic::predict}.
@@ -149,7 +149,7 @@ Event-driven warp-scheduler simulator with scoreboard tracking, explicit memory-
 Wall time is approximately ten to thirty milliseconds.
 Throughput is one hundred to three hundred candidates per second per CPU core.
 Absolute accuracy is five to eight percent; ranking accuracy exceeds ninety-five percent.
-Used for: MAP-Elites primary fitness evaluation, Forge's Phase~B.5 cost estimates, and Augur's prediction.
+Used for: MAP-Elites primary fitness evaluation, Forge's Phase~B.5 cost estimates, and the runtime observer's prediction.
 
 \textbf{Accurate tier.}
 Cycle-by-cycle simulation of every pipe, register read port, scoreboard slot, DRAM command, bank-conflict resolution, and commit-group-aware async tracking.
@@ -393,7 +393,7 @@ A backend that violates the declared cross-vendor tolerance fails the build.
 \begin{property}[Calibrated cost-model fidelity]
 \label{prop:mimic-calibrated}
 Each per-vendor simulator's medium-tier output satisfies a P95 absolute-error cap below five percent against measured hardware on the per-vendor regression set of approximately five hundred kernels.
-The accuracy target is preserved by Augur's continuous monitoring: drift triggers \code{mimic::recalibrate}, which re-runs the calibration harness during a cluster idle window.
+The accuracy target is preserved by the runtime observer's continuous monitoring: drift triggers \code{mimic::recalibrate}, which re-runs the calibration harness during a cluster idle window.
 \end{property}
 
 \begin{property}[Round-trip-correct encoder]

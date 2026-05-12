@@ -29,7 +29,7 @@
 # original bench-only stanza compiled exactly one program
 # (sense_hub.bpf.c) and bundled it into a bench-only static lib;
 # the promoted module compiles N programs into the production
-# crucible library so Vigil/Cipher/Augur can consume them.
+# crucible library so Vigil/Cipher/runtime observation can consume them.
 
 option(CRUCIBLE_HAVE_BPF
   "Compile + embed eBPF programs into the crucible static library" ON)

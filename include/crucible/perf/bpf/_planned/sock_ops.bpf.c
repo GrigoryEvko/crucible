@@ -7,7 +7,7 @@
  * ─── PROBLEM ──────────────────────────────────────────────────────────
  * SenseHub aggregates TCP retransmit count + min/max srtt.  Per-socket
  * telemetry — RTT samples, RTO firings, lost-packet attribution — is
- * the input Augur needs for per-peer congestion-control diagnosis.
+ * the input runtime observation needs for per-peer congestion-control diagnosis.
  *
  * ─── MECHANISM ────────────────────────────────────────────────────────
  * BPF program type: sock_ops (BPF_PROG_TYPE_SOCK_OPS)

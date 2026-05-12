@@ -19,7 +19,7 @@
 // matters because:
 //
 //   • The Keeper runs its own scheduler-management loop; the bench
-//     harness wants to OBSERVE without demoting; a future Augur drift
+//     harness wants to OBSERVE without demoting; a future runtime drift
 //     attribution wants to READ verdicts as a feedback signal.  All
 //     three callers want different actuation, but the same observation.
 //
@@ -144,7 +144,7 @@ enum class WatchdogVerdict : uint8_t {
     Downgrade        = 2,  // budget exceeded; recommend SchedClass demotion
 };
 
-// Stable string for diagnostic / Augur logging.  No allocation.
+// Stable string for diagnostic / runtime observation logging.  No allocation.
 [[nodiscard, gnu::const]] inline const char*
 watchdog_verdict_name(WatchdogVerdict v) noexcept {
     switch (v) {
@@ -291,15 +291,15 @@ public:
         latest_count_      = 0;
     }
 
-    // ── Diagnostics / Augur feedback ────────────────────────────────
+    // ── Diagnostics / runtime observer feedback ─────────────────────
     //
     // All zero on a freshly-constructed or just-reset watchdog.
-    // Augur reads these to attribute drift events to the SchedSwitch
-    // signal.
+    // Runtime observation code reads these to attribute drift events to
+    // the SchedSwitch signal.
 
     // CRUCIBLE_PURE = [[gnu::pure, nodiscard]] — these getters depend
     // only on member state; the optimizer can CSE redundant calls
-    // (e.g. an Augur loop that reads baseline_count + latest_count
+    // (e.g. a runtime observer loop that reads baseline_count + latest_count
     // back-to-back compiles to two MOV reads, no aliasing assumed).
     CRUCIBLE_PURE uint64_t baseline_count() const noexcept     { return baseline_count_; }
     CRUCIBLE_PURE uint64_t latest_count() const noexcept       { return latest_count_; }

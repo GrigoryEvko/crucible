@@ -30,16 +30,16 @@
 //   Regime:    1 (zero-cost EBO collapse — At<Tier>::element_type is
 //                 empty, sizeof(ResidencyHeat<Tier, T>) == sizeof(T))
 //
-//   Use cases (per 28_04 §4.3.8 + CRUCIBLE.md §L2 + §L15):
+//   Use cases (per 28_04 §4.3.8 + CRUCIBLE.md §L2 + runtime metrics):
 //     - KernelCache::publish_l1   → returns ResidencyHeat<Hot, T>
 //                                    for IR002 hottest working-set
 //     - KernelCache::publish_l2   → returns ResidencyHeat<Warm, T>
 //                                    for IR003* per-vendor-family
 //     - KernelCache::publish_l3   → returns ResidencyHeat<Cold, T>
 //                                    for compiled-bytes archive
-//     - Augur::sample_metric_hot   → ResidencyHeat<Hot, T>
+//     - rt::record_observation  → ResidencyHeat<Hot, T>
 //                                    for P95-window counters
-//     - Augur::sample_metric_cold  → ResidencyHeat<Cold, T>
+//     - rt::record_observation  → ResidencyHeat<Cold, T>
 //                                    for long-window aggregates
 //     - KernelCache::evict_to_warm → moves
 //                                    ResidencyHeat<Hot> →
@@ -58,7 +58,7 @@
 //     - CipherTier captures storage-residency tier (durability —
 //       RAM vs NVMe vs S3).
 //     - ResidencyHeat captures cache-residency tier (working-set
-//       heat — L1 vs L2 vs L3, Augur metric heat).
+//       heat — L1 vs L2 vs L3, runtime metric heat).
 //   All three are 3-tier chains with Hot-at-top, all three
 //   structurally identical, all three SEMANTICALLY DISTINCT.  A
 //   single value may be HotPath<Hot> AND CipherTier<Warm> AND
@@ -116,7 +116,7 @@
 //   but actually pays ~hundreds of ns L3 access).  No `tighten()`
 //   method exists; the only way to obtain a ResidencyHeat<Hot, T>
 //   is to construct one at a genuinely-L1-resident production
-//   site (e.g., KernelCache::publish_l1, Augur::sample_metric_hot).
+//   site (e.g., KernelCache::publish_l1, rt::record_observation).
 //
 // API:
 //
@@ -150,7 +150,7 @@
 // underlying substrate; 28_04_2026_effects.md §4.3.8 + §4.7 for
 // the production-call-site rationale and the canonical wrapper-
 // nesting story; CRUCIBLE.md §L2 (KernelCache three-level cache)
-// + §L15 (Augur metric heat) for the load-bearing consumers.
+// + runtime metric heat for the load-bearing consumers.
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/Graded.h>
@@ -629,7 +629,7 @@ static_assert(!is_warm_lookup_admissible<ColdInt>,
     "Cold-tier value MUST be REJECTED at the KernelCache warm-lookup "
     "admission gate — Cold is BELOW Warm in the chain; allowing a "
     "Cold-tier value into the warm path would defeat the working-set "
-    "discipline that Augur's heat tracking depends on.");
+    "discipline that the runtime observer's heat tracking depends on.");
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 inline void runtime_smoke_test() {

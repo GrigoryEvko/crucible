@@ -89,7 +89,7 @@ A pull request that ships an encoder change without the corresponding decoder ch
 The CSSA discipline is what makes the shared simulator framework, the MAP-Elites driver, and the insight extractor (Chapter~\ref{sec:mimic}) operate uniformly across backends.
 The address-space tagging is what makes the cross-vendor numerics CI matrix (Chapter~\ref{sec:cross-vendor-ci}) able to compile the same \IR{2} program through every backend and verify that each backend's recipe realization stays within the recipe's declared tolerance.
 The scheduling-slot annotation is what makes \IRstar{3} a faithful proxy for the binary's runtime behavior, and therefore what makes the simulator's medium and accurate tiers calibratable.
-The round-trip property is what allows the L2 KernelCache (Chapter~\ref{sec:cipher}) to load a cached binary back into a usable \IRstar{3} representation for Augur's prediction path.
+The round-trip property is what allows the L2 KernelCache (Chapter~\ref{sec:cipher}) to load a cached binary back into a usable \IRstar{3} representation for the runtime observer's prediction path.
 
 \subsection{Canonical SSA form}
 \label{sec:ir003-cssa}
@@ -275,7 +275,7 @@ The encoder is the principal hot path of Forge's Phase~J (Section~\ref{sec:forge
 The encoder is structured as a small set of primitives (the bitfield packer, the format-group dispatcher, the operand encoders, the control-field writer) plus larger components for the binary-format wrapping (cubin ELF emission, EIATTR catalog generation, DWARF line-table emission).
 The bit-level details are documented in misc/MIMIC.md \S15.
 
-The decoder's primary role is not loading kernels back into Crucible (Mimic's runtime library loads compiled kernels by content hash through a binary loader that does not need the IR back); it is enabling the simulator and Augur's prediction path to reason about cached or third-party-supplied binaries.
+The decoder's primary role is not loading kernels back into Crucible (Mimic's runtime library loads compiled kernels by content hash through a binary loader that does not need the IR back); it is enabling the simulator and the runtime observer's prediction path to reason about cached or third-party-supplied binaries.
 A binary loaded from the L3 KernelCache (Chapter~\ref{sec:cipher}) is decoded back to a simulator-facing form (\struct{DecodedProgram}) so the simulator can predict its performance under a new \struct{TargetCaps} during cross-chip migration.
 
 The round-trip property (Property~\ref{prop:ir003-roundtrip}) is asserted continuously by a per-vendor regression suite that generates random valid \IRstar{3} programs through a per-vendor seeded fuzzer, encodes and decodes each, and compares structurally.
@@ -364,7 +364,7 @@ The boundary is structural and explicit: \IRstar{3} commits the static, determin
 \end{itemize}
 
 These omissions are why the simulator's medium and accurate tiers exist: \IRstar{3} pins enough to compute deterministic-execution properties exactly (cycle counts of the dependency-graph critical path, register-pressure timeline, scoreboard-stall structure) and enough to bound runtime-contended properties (HBM bandwidth ceiling, L2 hit-rate envelope), but it does not pretend to predict exact runtime behavior.
-That is the simulator's job, calibrated against measurement, with drift attributed by Augur and corrected by Mimic's recalibration entry point.
+That is the simulator's job, calibrated against measurement, with drift attributed by runtime observation and corrected by Mimic's recalibration entry point.
 
 \subsection{Relationship to the rest of the IR stack}
 \label{sec:ir003-stack-summary}

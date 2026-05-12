@@ -357,7 +357,7 @@ public:
     // Park-strategy primitive instead).
     //
     // Why additive (not replacing): existing call sites of load()
-    // (Augur metrics broadcast, the snapshot consumer pattern in
+    // (runtime metrics broadcast, the snapshot consumer pattern in
     // the audit harness) consume bare T.  An additive overlay
     // preserves those sites while letting NEW production consumers
     // declare their wait-strategy constraint at the type level.
@@ -402,7 +402,7 @@ public:
     // refactor to make a bug go away) cannot reach a hot-path
     // consumer requiring Acquire — leq(Acquire, SeqCst) = false.
     //
-    // Why additive: existing load() callers (Augur metrics broadcast,
+    // Why additive: existing load() callers (runtime metrics broadcast,
     // SnapshotValue tests) consume bare T.  The pinned overlay is
     // for NEW production consumers that want the SeqCst-creep rejection
     // at the consumer fence.

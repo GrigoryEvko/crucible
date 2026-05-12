@@ -20,7 +20,7 @@
 // only `Row<Alloc>` (alloc-only).  The kernel runs anyway — but
 // the I/O calls happen inside an alloc-only-budgeted scope:
 //
-//   1. Augur's drift-attribution sees an I/O latency spike but the
+//   1. runtime observer's drift-attribution sees an I/O latency spike but the
 //      ExecCtx declared no I/O budget; mis-classifies as
 //      "unexpected blocking" and fires the wrong recommendation
 //      (e.g. parallelism downgrade) rather than the right one

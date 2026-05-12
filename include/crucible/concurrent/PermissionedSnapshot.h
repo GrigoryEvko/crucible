@@ -5,7 +5,7 @@
 //
 // Combines AtomicSnapshot<T> (Lamport seqlock for the data race)
 // with SharedPermissionPool<Reader> (atomic refcount + mode-transition
-// CAS for the type-system enforcement).  The result: Augur-style
+// CAS for the type-system enforcement).  The result: runtime observation-style
 // metrics broadcast pattern — one writer, many readers, race-free,
 // with type-system proof that "writer" and "reader" roles cannot be
 // confused at compile time.
@@ -42,9 +42,9 @@
 //   3. Mode-transition mechanism (with_drained_access for ops that
 //      need all readers out — schema reset, atomic reinitialization)
 //
-// ─── The Augur metrics use case ─────────────────────────────────────
+// ─── The runtime metrics use case ─────────────────────────────────────
 //
-// Augur (per CRUCIBLE.md) broadcasts a Metrics struct from one
+// Runtime metrics publication broadcasts a Metrics struct from one
 // background thread to many monitoring readers.  PermissionedSnapshot
 // gives:
 //

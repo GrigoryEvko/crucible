@@ -27,7 +27,7 @@
 // candidate originating from cold-tier S3 blob storage.  On Relay
 // failure the recovery latency silently shifts from μs to minutes —
 // the Cipher tiers documented in CRUCIBLE.md §L14 stop conveying
-// the SLA they exist to encode.  Augur's drift-attribution dispatch
+// the SLA they exist to encode.  runtime observer's drift-attribution dispatch
 // also breaks: a "cold-tier S3 latency" mis-classified as a hot-
 // path issue routes the wrong recommendation back to the Keeper.
 //
@@ -62,7 +62,7 @@
 //     target silently downgrades.
 //   * determinism (companion)     — fires on the determinism-budget
 //     axis (DetSafeTier, a 7-element chain).  Production
-//     consequence: bit-exact replay invariant breaks; Augur drift
+//     consequence: bit-exact replay invariant breaks; runtime drift
 //     attribution can't separate runs; cross_vendor_step_invariant
 //     CI test reddens.
 //

@@ -199,7 +199,7 @@ class SchedSwitch {
     // moved-from facade) rather than expected behaviour.
     //
     // Mirrors SenseHub::Snapshot's shape so consumers (DeadlineWatchdog,
-    // future WorkloadProfiler, Augur drift attribution) can use the
+    // future WorkloadProfiler, runtime drift attribution) can use the
     // same `pre = facade.snapshot(); ...; post = facade.snapshot();
     // delta = post - pre;` idiom across every GAPS-004 facade.
     //

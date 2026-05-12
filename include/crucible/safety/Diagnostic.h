@@ -304,7 +304,7 @@ struct DetSafeLeak : tag_base {
         "Either eliminate the non-deterministic source (replace "
         "wall-clock seed with Philox-derived seed; replace "
         "/dev/urandom read with seeded Philox), OR if the operation "
-        "is genuinely impure (e.g., Augur metric collection), "
+        "is genuinely impure (e.g., runtime metric collection), "
         "lift the caller out of DetSafe<Pure> into "
         "DetSafe<MonotonicClockRead> or higher tier.  Cipher::record_event "
         "refuses any tier above PhiloxRng; the replay log cannot be "
@@ -518,7 +518,7 @@ struct CipherTierViolation : tag_base {
 struct ResidencyHeatViolation : tag_base {
     static constexpr std::string_view name = "ResidencyHeatViolation";
     static constexpr std::string_view description =
-        "A storage-tier operation (KernelCache L1/L2/L3, Augur metrics "
+        "A storage-tier operation (KernelCache L1/L2/L3, runtime metrics "
         "ring, etc.) was invoked at the wrong heat class.  L1 is "
         "vendor-portable IR002 (federation-shareable across "
         "organizations); L2 is per-vendor-family IR003* (intra-vendor "

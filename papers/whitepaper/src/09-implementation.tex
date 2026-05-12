@@ -88,17 +88,17 @@ Correspondence between Lean specification and C++ implementation is maintained b
   \item \textbf{Shadow handles (Tier~2):} \code{ConductorTensorImpl} design complete. Not integrated with Vessel.
   \item \textbf{CUDA Graph replay (Tier~3):} Depends on Tier~2.
   \item \textbf{Longitude:} Calibration protocol designed. Depends on CUPTI/NVML integration.
-  \item \textbf{Augur:} Digital twin designed. Depends on Longitude.
+  \item \textbf{Runtime Observation:} Digital twin designed. Depends on Longitude.
   \item \textbf{Canopy:} Mesh protocol designed. Not implemented.
   \item \textbf{Cipher (full):} Serialization exists. Three-tier persistence and distributed replication not implemented.
-  \item \textbf{Model-aware optimizations:} Depend on Augur diagnostics.
+  \item \textbf{Model-aware optimizations:} Depend on runtime observation diagnostics.
 \end{itemize}
 
 \subsection{What Is Next}
 
 Phase~2: F$\star$X core (Z3 proof suites, consteval infrastructure, reflection checks).
 Phase~3: Longitude (calibration, topology optimization).
-Phase~4: Augur (digital twin, monitoring).
+Phase~4: runtime observation (digital twin, monitoring).
 Phase~5: Tiers~2--3 (shadow handles, CUDA Graph).
 Phase~6: Canopy, Keepers, full Cipher.
 Phase~7: model-aware optimizations.

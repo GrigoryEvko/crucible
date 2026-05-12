@@ -1,8 +1,8 @@
 # Perf — Crucible's Always-On Measurement Fabric
 
-*The subsystem that makes Augur's recommendations engine actually have data, makes `crucible plan show` actually have measurements, and makes Crucible's 17-layer adaptive design an empirical feedback loop instead of a spec document. In-process. Always on. Sub-millisecond. Every binary. Every Relay. Every node in the Canopy mesh. Every user module loaded via dlopen. Zero syscalls on hot path. Zero vendor tooling. Zero external dependencies.*
+*The subsystem that makes the runtime observer's recommendations engine actually have data, makes `crucible plan show` actually have measurements, and makes Crucible's 17-layer adaptive design an empirical feedback loop instead of a spec document. In-process. Always on. Sub-millisecond. Every binary. Every Relay. Every node in the Canopy mesh. Every user module loaded via dlopen. Zero syscalls on hot path. Zero vendor tooling. Zero external dependencies.*
 
-Perf is the measurement layer that every other Crucible subsystem reads from. Forge Phase L VALIDATE (FORGE.md §17) reads drift signals. Augur §13 produces recommendations. `crucible plan bisect` (CRUCIBLE.md §17.6.3) replays measured counters. Mimic's calibration harness (MIMIC.md §22) feeds live residuals back into its simulator. The 96-counter BPF sense hub and six stack-traced BPF programs already in `include/crucible/perf/bpf/` are the producers. This document specifies the **consumer side** — the C++ code that lives inside every Crucible binary and turns the raw streams into coherent attribution — and the **federation plane** that stitches per-node data into one cluster-wide view via Canopy gossip.
+Perf is the measurement layer that every other Crucible subsystem reads from. Forge Phase L VALIDATE (FORGE.md §17) reads drift signals. runtime observation §13 produces recommendations. `crucible plan bisect` (CRUCIBLE.md §17.6.3) replays measured counters. Mimic's calibration harness (MIMIC.md §22) feeds live residuals back into its simulator. The 96-counter BPF sense hub and six stack-traced BPF programs already in `include/crucible/perf/bpf/` are the producers. This document specifies the **consumer side** — the C++ code that lives inside every Crucible binary and turns the raw streams into coherent attribution — and the **federation plane** that stitches per-node data into one cluster-wide view via Canopy gossip.
 
 Written in the voice of CLAUDE.md and CRUCIBLE.md: direct, opinionated, dense. Read alongside all three other design docs — this one assumes their vocabulary.
 
@@ -22,7 +22,7 @@ Written in the voice of CLAUDE.md and CRUCIBLE.md: direct, opinionated, dense. R
 10. Symbol resolution — `symbols/` (Cipher-backed cache, embedded tables)
 11. Multi-level code view — source↔LLVM IR↔ASM
 12. Line profiler — `line/` (Sampler, IpHistogram, SymbiotTrace)
-13. Augur engine integration — `augur/`
+13. runtime observation engine integration — `rt/`
 14. Broker — `broker/` (Local UDS, HTTP server, federation)
 15. Cipher persistence — observability namespace
 16. CNTP gossip for cluster-wide aggregation
@@ -71,7 +71,7 @@ Scope boundaries:
 | Dependencies | libbpf, libelf, libdw (elfutils), libcapstone, libzstd, nlohmann::json (header-only, vendored), cpp-httplib (header-only, vendored) | Rust crates, external profiler tools, vendor SDKs |
 | Kernel | Linux ≥ 5.8 (BPF_F_MMAPABLE, BPF_MAP_TYPE_RINGBUF, bpf_map_lookup_batch, BTF/CO-RE); recommend ≥ 6.1 for MADV_COLLAPSE | Pre-5.8 kernels get a degraded /proc-only mode |
 
-Everything out of scope is either (a) handled by a neighbor subsystem (Mimic for vendor-specific counter probes; Cipher for persistence; CNTP for transport; Augur for recommendation generation), or (b) an explicit non-goal (external tool interop beyond optional exporters).
+Everything out of scope is either (a) handled by a neighbor subsystem (Mimic for vendor-specific counter probes; Cipher for persistence; CNTP for transport; runtime observation for recommendation generation), or (b) an explicit non-goal (external tool interop beyond optional exporters).
 
 ---
 
@@ -126,7 +126,7 @@ The standard Linux profiling tools (`perf stat`, `perf record`, `perf report`) a
 
 - **External process**: `perf`'s work happens in a separate address space. Every counter read requires syscall from the perf process to read the mmap ringbuf. Perf's own CPU usage is budgeted separately and competes with the profiled workload for L3 cache, DRAM bandwidth, and CPU scheduling slots. For Crucible running training at 99% CPU utilization, there's no CPU left over for perf.
 - **Tool overhead is 5–30%**: realistic workloads see measurable slowdown when `perf record` is attached. That's 50× over our 0.1% budget.
-- **Delayed analysis**: `perf report` runs offline on the captured data. No real-time view. No live dashboard. No Augur-driven recompile.
+- **Delayed analysis**: `perf report` runs offline on the captured data. No real-time view. No live dashboard. No runtime-observation-driven recompile.
 - **No cross-run deduplication**: every `perf record` generates its own `perf.data` file. There's no content-addressed symbol cache across runs. Every invocation re-parses DWARF from scratch.
 - **No cluster awareness**: `perf` is a single-node tool. For multi-node Crucible deployments, you'd need to correlate N `perf.data` files by hand. There's no equivalent of our Canopy gossip + federated view.
 - **No Crucible semantic annotations**: `perf` knows about instructions and addresses. It doesn't know about KernelIds, PlanHashes, RegionScopes, or MFU breakdowns. Every correlation with Crucible concepts has to be done externally.
@@ -153,7 +153,7 @@ Ten layers, top to bottom. Each layer has a strict cost budget; each uses only w
 ```
 Layer 9  User integration (C++ macros, Python bindings, Rust FFI, dlopen hook, Vessel bridge)
 Layer 8  Dashboard (HTTP server, JSON endpoints, SSE streams, flatbuffer gossip)
-Layer 7  Augur engine (residuals, drift, regression, MFU, recommendations, collective learning)
+Layer 7  runtime observation engine (residuals, drift, regression, MFU, recommendations, collective learning)
 Layer 6  Broker (per-Keeper aggregation, UDS listener, NodeBuckets ring, HTTP state cache)
 Layer 5  Line profiler (per-CPU IP samplers, BPF sample drain, IP histograms, SymbiotTrace output)
 Layer 4  Symbol resolution (libdw, Cipher-backed cache, embedded .symbiot_sym table, multi-level)
@@ -2086,9 +2086,9 @@ Same schema as symbiotic's `.symbiot` — portable across the two ecosystems.
 
 ---
 
-## 13. Augur engine integration — `include/crucible/augur/`
+## 13. runtime observation engine integration — `include/crucible/rt/`
 
-CRUCIBLE.md §13 specifies Augur's behavior. Perf provides the data; Augur is the consumer.
+CRUCIBLE.md §13 specifies the runtime observer's behavior. Perf provides the data; runtime observation is the consumer.
 
 ### 13.1 Residuals
 
@@ -2118,7 +2118,7 @@ Residuals feed into Cipher as time series (§15).
 
 ### 13.2 Drift detection
 
-Per §13.2: P95 residual > 10% for 100+ consecutive samples → trigger recalibration. Augur's drift logic watches the residual stream and emits events when thresholds are crossed:
+Per §13.2: P95 residual > 10% for 100+ consecutive samples → trigger recalibration. the runtime observer's drift logic watches the residual stream and emits events when thresholds are crossed:
 
 ```cpp
 class DriftDetector {
@@ -2145,11 +2145,11 @@ struct MfuBreakdown {
 };
 ```
 
-Each component is derived from a specific perf data source; aggregation happens in the Augur worker.
+Each component is derived from a specific perf data source; aggregation happens in the runtime observation worker.
 
 ### 13.4 Recommendations
 
-Augur generates recommendations; perf is a producer of the data backing them. Output:
+runtime observation generates recommendations; perf is a producer of the data backing them. Output:
 
 ```cpp
 struct Recommendation {
@@ -2282,7 +2282,7 @@ cipher://observability/
   traces/<node_uuid>/<run_id>.symbiot ← per-run .symbiot files
 ```
 
-This namespace is **separate from the replay state** (CRUCIBLE.md §10). Perf data never affects training state deterministically; perf-driven recommendations go through Augur's explicit queue.
+This namespace is **separate from the replay state** (CRUCIBLE.md §10). Perf data never affects training state deterministically; perf-driven recommendations go through the runtime observer's explicit queue.
 
 ### 15.1 Retention
 
@@ -2548,9 +2548,9 @@ POST /api/v1/plans/bisect
 POST /api/v1/recipes/materialize
 GET  /api/v1/forge/phases?kernel=<hash>
 GET  /api/v1/mimic/archive?kernel=<hash>
-GET  /api/v1/augur/recommendations
-GET  /api/v1/augur/mfu
-GET  /api/v1/augur/drift
+GET  /api/v1/rt/recommendations
+GET  /api/v1/rt/mfu
+GET  /api/v1/rt/drift
 GET  /api/v1/cntp/topology
 GET  /api/v1/cipher/tiers
 ```
@@ -2609,7 +2609,7 @@ For each kernel compiled: archive of explored configurations (tile × register p
 
 ### 20.7 Kernel drift heatmap
 
-2D grid of (kernel × chip) with color = P95 residual from prediction. Hot cells trigger Augur recalibration; dashboard shows live which cells are drifting and by how much.
+2D grid of (kernel × chip) with color = P95 residual from prediction. Hot cells trigger runtime observation recalibration; dashboard shows live which cells are drifting and by how much.
 
 ### 20.8 Per-SM / per-CU timeline
 
@@ -2805,7 +2805,7 @@ Sampling RNG is seeded from `(Keeper UUID, step_number, scope_id)` — not wall-
 
 ### 23.2 Recommendation queue is deterministic
 
-Augur's drift detection thresholds, residual computations, and recommendation scores are all deterministic functions of measured data. Replays produce the same recommendations.
+the runtime observer's drift detection thresholds, residual computations, and recommendation scores are all deterministic functions of measured data. Replays produce the same recommendations.
 
 ### 23.3 Recommendation consumption is explicit
 
@@ -2945,7 +2945,7 @@ Required dependencies (find_package or vendored):
 - `test/perf_reconstruct_test.cpp` — tree build from synthetic events
 - `test/perf_symbiot_trace_test.cpp` — round-trip serialization
 - `test/perf_bpf_consumer_test.cpp` — mock BPF program, verify ringbuf drain
-- `test/perf_augur_test.cpp` — drift detection threshold crossings
+- `test/perf_rt_test.cpp` — drift detection threshold crossings
 - `test/perf_gossip_test.cpp` — flatbuffer encode/decode
 - `test/perf_http_test.cpp` — endpoint JSON schema conformance
 
@@ -3041,12 +3041,12 @@ Twelve weeks to full system. Each milestone independently useful.
 - Post-link tool `crucible-embed-symtab` for `.symbiot_sym` generation
 - **Payoff**: per-line attribution for any function, `.symbiot` trace per bench
 
-### M6: Augur engine (Week 7)
+### M6: runtime observation engine (Week 7)
 
-- `augur/Residual.h`, `augur/Drift.h`, `augur/Regression.h`
-- `augur/MFU.h`, `augur/Collective.h`, `augur/Recommend.h`
+- `rt/Residual.h`, `rt/Drift.h`, `rt/Regression.h`
+- `rt/MFU.h`, `rt/Collective.h`, `rt/Recommend.h`
 - Forge Phase L VALIDATE integration
-- **Payoff**: CRUCIBLE.md §13 Augur becomes runnable; drift-triggered recompile works
+- **Payoff**: CRUCIBLE.md §13 runtime observation becomes runnable; drift-triggered recompile works
 
 ### M7: Broker + HTTP server (Week 8)
 
@@ -3190,7 +3190,7 @@ Closed-source user binaries without debug info show as raw IPs. User decides whe
 
 ## 33. Glossary
 
-- **Augur**: Crucible's continuous monitoring and drift detection subsystem (CRUCIBLE.md §13). Perf is its data-production engine.
+- **RT**: Crucible's continuous monitoring and drift detection subsystem (CRUCIBLE.md §13). Perf is its data-production engine.
 - **BPF_F_MMAPABLE**: flag for BPF array maps enabling userspace mmap access. Load-bearing for zero-syscall reads.
 - **BPF ringbuf**: `BPF_MAP_TYPE_RINGBUF`, a shared-memory ring between kernel and userspace (Linux 5.8+).
 - **Broker**: the per-Keeper aggregator thread — serves HTTP, listens on UDS, runs gossip.
@@ -3228,10 +3228,10 @@ Closed-source user binaries without debug info show as raw IPs. User decides whe
 
 ## Summary
 
-Perf is Crucible's measurement fabric — the subsystem that makes Augur, Forge Phase L, and Plan introspection go from spec to runtime. It runs in every Crucible binary with sub-0.1% overhead, federates across every Canopy node via existing CNTP gossip, consumes every BPF event and PMU counter without a single hot-path syscall, resolves IPs through Cipher's content-addressed cache, and exposes data through a clean JSON surface the user's Dioxus dashboard consumes. User modules loaded via dlopen or linked via Vessel get identical treatment automatically. The result is a dataset with no industry analog: instruction-level ML workload performance, content-addressed across runs and nodes, real-time federated, always-on.
+Perf is Crucible's measurement fabric — the subsystem that makes runtime observation, Forge Phase L, and Plan introspection go from spec to runtime. It runs in every Crucible binary with sub-0.1% overhead, federates across every Canopy node via existing CNTP gossip, consumes every BPF event and PMU counter without a single hot-path syscall, resolves IPs through Cipher's content-addressed cache, and exposes data through a clean JSON surface the user's Dioxus dashboard consumes. User modules loaded via dlopen or linked via Vessel get identical treatment automatically. The result is a dataset with no industry analog: instruction-level ML workload performance, content-addressed across runs and nodes, real-time federated, always-on.
 
 The dominant design principle throughout: **everything Linux provides synchronously is abysmally slow; we replace every syscall with direct CPU instructions, mmap'd volatile loads, and BPF kernel-side aggregation with zero-syscall drain.** Scope enter/exit costs 5–23 ns. Counter reads cost 8 ns via rdpmc. Sense-hub snapshot costs 5 ns via AVX2 gather. BPF event drain costs 20 ns per event via mmap'd ringbuf. HTTP responses cost 1 µs via atomic shared_ptr cache. Gossip costs 50 KB/s at 100-node scale.
 
 Twelve-week build plan with value-visible milestones every week. Every milestone is self-contained — M1 alone makes every bench Report richer; subsequent milestones add layers that compose cleanly on top. The final system is the measurement substrate that turns Crucible's adaptive-runtime design from paper into empirical feedback loop.
 
-See CRUCIBLE.md §13 (Augur), §14 (Keeper), §17 (Observability), §18 (Security) for the consumer side. See FORGE.md §17 (Phase L VALIDATE) for compile-feedback integration. See MIMIC.md §23 (per-vendor counter access) for the GPU-side boundary.
+See CRUCIBLE.md §13 (runtime observation), §14 (Keeper), §17 (Observability), §18 (Security) for the consumer side. See FORGE.md §17 (Phase L VALIDATE) for compile-feedback integration. See MIMIC.md §23 (per-vendor counter access) for the GPU-side boundary.

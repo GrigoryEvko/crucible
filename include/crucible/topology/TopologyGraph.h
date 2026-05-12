@@ -18,7 +18,7 @@
 // (GAPS-112) owns.  Splitting the two layers — immutable structural
 // graph vs. mutable live measurements — buys us:
 //
-//   * Cheap shared reads.  Mimic / Augur / Canopy each hold a `const
+//   * Cheap shared reads.  Mimic / runtime observation / Canopy each hold a `const
 //     TopologyGraph&` and walk it without any synchronisation cost.
 //   * Concentrated mutability.  All telemetry races land in one SwmrSession
 //     surface (GAPS-112) instead of being scattered across edge fields.
@@ -321,7 +321,7 @@ concept CtxFitsTopologyGraph =
 // Holds non-owning spans into arena-backed (nodes, edges) buffers.
 // Pinned (copy + move = delete) because the graph IS the canonical
 // fleet topology — copies would mask staleness, moves would dangle
-// any cached const-ref handles already passed to Mimic / Augur /
+// any cached const-ref handles already passed to Mimic / runtime observation /
 // Canopy.
 
 class TopologyGraph {

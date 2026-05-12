@@ -17,7 +17,7 @@
 //
 // The persistent mode cell is also exposed as a single-party session via
 // mint_vigil_mode_bridge(vigil).  That bridge is for cold observers
-// (Augur/Keeper/test harnesses); the foreground dispatch path still reads
+// (runtime observation/Keeper/test harnesses); the foreground dispatch path still reads
 // the status flag directly.
 //
 // The Vessel adapter (PyTorch CrucibleFallback) becomes ~200 lines:
@@ -672,7 +672,7 @@ class Vigil {
     // `Config::enable_deadline_watchdog = true` AND Senses::load_subset
     // attached the SchedSwitch subprogram successfully.  False in all
     // other cases (disabled by Config, libbpf missing, SchedSwitch
-    // failed to attach).  Use this to gate diagnostic output / Augur
+    // failed to attach).  Use this to gate diagnostic output / runtime observation
     // attribution paths.
     //
     // Note: a true return does NOT guarantee that observe() has
@@ -696,7 +696,7 @@ class Vigil {
     // Cumulative verdict counters.  Each region transition increments
     // exactly one of these (when the watchdog is enabled).  Acquire
     // load — pairs with release fetch_add on the bg thread.  Useful
-    // for Augur attribution ("how many Healthy ticks since last
+    // for runtime observation attribution ("how many Healthy ticks since last
     // Downgrade?") and for tests that assert observe() ran.
     [[nodiscard]] uint32_t watchdog_healthy_count() const noexcept {
         return wd_healthy_count_.load(std::memory_order_acquire);
@@ -714,7 +714,7 @@ class Vigil {
     // and the bg thread mutates them inside observe().  A main-thread
     // read via a leaked pointer would be a data race per the C++
     // memory model (TSan would flag).  The atomic verdict + 3
-    // cumulative counters above are the diagnostic surface; if Augur
+    // cumulative counters above are the diagnostic surface; if runtime observation
     // needs more state (e.g. baseline_count for window-start
     // attribution), publish it from on_region_ready as another atomic.
 
@@ -761,7 +761,7 @@ class Vigil {
         // GAPS-004h follow-up: poll the deadline watchdog at the
         // iteration boundary (bg-thread cold path).  observe() reads
         // SchedSwitch::context_switches() and emits a verdict; we
-        // publish it via atomic counters for fg-thread / Augur /
+        // publish it via atomic counters for fg-thread / runtime observation /
         // Keeper consumers.  ~1 µs per call (single bpf_map_lookup +
         // one steady_clock::now()), invoked at most once per region
         // transition (~10-100ms steady-state) — total overhead well

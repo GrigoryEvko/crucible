@@ -44,7 +44,7 @@
 //                            independent staleness measurements.
 //                            "Across these N replicas, the worst
 //                            staleness observed is τ_max."  Used by
-//                            Augur's drift detector.
+//                            runtime observer's drift detector.
 //
 //   - SEMIRING multiplication (= saturating add): staleness PROPAGATES
 //                            through dependency chains.  "Stage A

@@ -91,5 +91,5 @@ public:
 ## Sibling refs
 
 - `PmuCounters` — same `perf_event_open` infrastructure
-- Augur's per-region "is this compute-bound or memory-bound?" question
+- runtime observer's per-region "is this compute-bound or memory-bound?" question
   answers from this single facade

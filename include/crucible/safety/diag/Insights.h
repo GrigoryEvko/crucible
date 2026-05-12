@@ -457,7 +457,7 @@ struct insight_provider<DetSafeLeak> {
         "Surfaces when adding 'just one little timestamp' to a Cipher "
         "event-recording site for debugging.  Or when a refactor "
         "replaces seeded Philox with std::random_device for 'better "
-        "randomness'.  Or when the Augur metric collector's wall-clock "
+        "randomness'.  Or when the runtime metric collector's wall-clock "
         "sample accidentally crosses into a record_event path.  All "
         "three are real production patterns the framework now catches.";
     static constexpr std::string_view correct_example =
@@ -865,7 +865,7 @@ struct insight_provider<ResidencyHeatViolation> {
     static constexpr std::string_view why_this_matters =
         "ResidencyHeat<Tier, T> (28_04 §4.3.8) is the storage-heat "
         "lattice for any subsystem with hot/warm/cold residency: "
-        "KernelCache L1/L2/L3, Augur metrics, MAP-Elites archives.  "
+        "KernelCache L1/L2/L3, runtime metrics, MAP-Elites archives.  "
         "Distinct from CipherTier (which is Cipher-specific); "
         "ResidencyHeat is the generic heat axis.  A Hot value "
         "demoted to Cold loses LRU residency guarantees and slows "
@@ -877,7 +877,7 @@ struct insight_provider<ResidencyHeatViolation> {
     static constexpr std::string_view symptom_pattern =
         "Surfaces when a KernelCache::lookup at L1 is fed a "
         "ResidencyHeat<Cold>-tagged key (the cache will never find "
-        "it because L1 only holds Hot entries).  Or when Augur's "
+        "it because L1 only holds Hot entries).  Or when runtime observer's "
         "drift attribution misclassifies a Cold-tier metric drift "
         "as a Hot-path regression.  Diagnostic names the value's "
         "current residency and the operation's required residency.";

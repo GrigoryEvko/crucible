@@ -97,7 +97,7 @@
 // A typed bit-field is a STRUCTURAL constraint (the carrier is an
 // integer with a phantom enum tag) — not a graded modal value.  A
 // SetUnionLattice over EnumType could be defined, but the dispatcher
-// (FOUND-D), KernelCache row keying, and Augur per-axis drift do NOT
+// (FOUND-D), KernelCache row keying, and runtime observation per-axis drift do NOT
 // consume bit-flag-set lattices.  Bits<E> joins ConstantTime, Pinned,
 // Machine, Checked, NotInherited, ScopedView, OwnedRegion as a
 // deliberately-not-graded structural wrapper.  Per CLAUDE.md §XVI's

@@ -11,13 +11,13 @@
 // `CipherTier::satisfies<Warm>` — i.e., a freshly-published
 // value that has been written to NVMe in the current epoch.
 //
-// The Augur-drift-attribution machinery and the per-iteration
+// The runtime observation-drift-attribution machinery and the per-iteration
 // memory-plan invalidation logic both assume "if I see a
 // CipherTier<Warm>-or-better value, the bytes correspond to
 // THIS run's most recent publication."  A Cold-tier value
 // (loaded from a 30-day-old archive) silently passing the gate
 // would attribute current-epoch drift to historical baselines —
-// a recommendations-engine integrity violation.
+// a runtime policy integrity violation.
 //
 // Lattice direction (CipherTierLattice.h):
 //     Cold(weakest) ⊑ Warm ⊑ Hot(strongest)
@@ -37,7 +37,7 @@ using namespace crucible::safety;
 
 // Production-like consumer: Cipher freshness gate that demands
 // Warm-or-better tier.  Models the Cipher::publish_warm ⇄
-// Augur::attribute_drift / KernelCache::evict-source pattern.
+// rt::attribute_drift / KernelCache::evict-source pattern.
 template <typename W>
     requires (W::template satisfies<CipherTierTag_v::Warm>)
 static int warm_publish_consumer(W wrapped) noexcept {
@@ -52,7 +52,7 @@ int main() {
     // cold_archive carries Cold, which is STRICTLY WEAKER than Warm.
     // Without this rejection, historical archives would silently
     // attribute against current-epoch drift signatures, breaking
-    // Augur's recommendations-engine integrity contract.
+    // runtime policy engine integrity contract.
     int result = warm_publish_consumer(std::move(cold_archive));
     return result;
 }

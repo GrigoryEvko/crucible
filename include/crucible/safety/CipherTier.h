@@ -31,7 +31,7 @@
 //     - Cipher::publish_hot    → returns CipherTier<Hot, T>
 //     - Cipher::publish_warm   → returns CipherTier<Warm, T>
 //     - Cipher::flush_cold     → returns CipherTier<Cold, T>
-//     - Augur::attribute_drift  → reads tier to distinguish "S3 latency"
+//     - rt::attribute_drift  → reads tier to distinguish "S3 latency"
 //                                  from "hot-tier issue"
 //     - Keeper::reincarnate    → requires CipherTier<Warm-or-better>
 //                                  for partial recovery (Hot tier
@@ -634,7 +634,7 @@ static_assert(!is_warm_publish_admissible<ColdInt>,
     "Cold-tier value MUST be REJECTED at the Cipher::publish_warm "
     "admission gate — Cold is BELOW Warm in the chain; allowing "
     "publication of a Cold-tier value as Warm would defeat the "
-    "freshness guarantee that downstream Augur drift-attribution "
+    "freshness guarantee that downstream runtime drift-attribution "
     "depends on.");
 
 // ── Runtime smoke test ─────────────────────────────────────────────

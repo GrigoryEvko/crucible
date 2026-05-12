@@ -11,13 +11,13 @@ Python describes. Crucible executes. The 492,000 lines of framework overhead bet
 |------|------|-------------|
 | **Safety** | Foundation | The structural guarantee layer: 8 axioms (Init/Type/Null/Mem/Borrow/Thread/Leak/DetSafe), contracts (P2900), reflection (P2996), `safety/*.h` wrappers (Linear, Refined, Tagged, Secret, Permission, Session, ScopedView, Machine, Monotonic, AppendOnly, ConstantTime, WriteOnceNonNull, FinalBy/NotInherited), session-type stack, CSL permissions. Every higher layer inherits correctness from these primitives. |
 | **Relay** | Body | Compute node inhabited by a Crucible daemon. Mortal. Replaceable. |
-| **Keeper** | Spirit | Per-Relay daemon — self-healing, self-updating, autonomous. `crucible-keeper.service` starts at boot, discovers peers, joins mesh. Executes Augur's advice. |
+| **Keeper** | Spirit | Per-Relay daemon — self-healing, self-updating, autonomous. `crucible-keeper.service` starts at boot, discovers peers, joins mesh. Executes the runtime observer's advice. |
 | **Vigil** | Intellect | The model: DAG, weights, learned knowledge. Named for the Prothean AI. Never sleeps. |
 | **Cipher** | Soul | Persistent state — DAG chain, weight snapshots, KernelCache (three-level: L1 IR002 vendor-neutral / L2 IR003\* per-vendor-family / L3 compiled bytes per-chip), RNG state, MAP-Elites archives, calibration data, recipe registry snapshots. Event-sourced. Survives death, reincarnates on new hardware. |
 | **Canopy** | Collective | Mesh of Keepers — distributed awareness, gossip, consensus, self-healing. No master node. |
 | **Vessel** | Interface | PyTorch — the 2,000+ ATen operators Crucible intercepts via the Dispatcher. |
-| **Meridian** | Map | Startup calibration. Measured hardware truth. Discrete-search joint 5D partition optimization (topology, parallelism, communication, placement) over calibrated `CollectiveBenchmarks` + `TopologyMatrix`, driven by `mimic::fast_cost`. Re-solves on topology change or under Augur-detected congestion drift. No external SMT dependency — Crucible ships no Z3, no CVC, no proprietary solver; the partition optimizer is a bounded-depth branch-and-bound over the cost-model surface. |
-| **Augur** | Sight | Continuous prediction, monitoring, model intelligence. Digital twin. Loss landscape analysis. Convergence bounds. Scaling laws. Bottleneck diagnosis. Recommendations engine. |
+| **Meridian** | Map | Startup calibration. Measured hardware truth. Discrete-search joint 5D partition optimization (topology, parallelism, communication, placement) over calibrated `CollectiveBenchmarks` + `TopologyMatrix`, driven by `mimic::fast_cost`. Re-solves on topology change or under runtime-detected congestion drift. No external SMT dependency — Crucible ships no Z3, no CVC, no proprietary solver; the partition optimizer is a bounded-depth branch-and-bound over the cost-model surface. |
+| **RT** | Runtime | Continuous prediction, monitoring, model intelligence. Digital twin. Loss landscape analysis. Convergence bounds. Scaling laws. Bottleneck diagnosis. Recommendations engine. |
 | **Crucible** | Whole | The organism. Everything together. |
 
 ---
@@ -433,11 +433,11 @@ Event-sourced: DAG chain (few KB/step) persisted every step, weight snapshots pe
 
 ---
 
-## L15 — Meridian+Augur
+## L15 — Meridian + RT
 
 **Operational intelligence. Two time scales in one layer.**
 
-Meridian = startup calibration (5-15s). Augur = continuous per-iteration monitoring.
+Meridian = startup calibration (5-15s). RT = continuous per-iteration monitoring.
 
 **Meridian (startup):**
 - GPU profiling: GEMM→actual TFLOPS, streaming copy→HBM/PCIe BW, NVML→power/temp/ECC/memory
@@ -446,7 +446,7 @@ Meridian = startup calibration (5-15s). Augur = continuous per-iteration monitor
 - Discrete-search joint 5D partition optimization (FORGE.md §25.6): TP×DP×PP×EP×CP factorization + schedule + bucket size + per-link weight assignment, minimizing predicted step time from `CollectiveBenchmarks` + `mimic::fast_cost` + per-link congestion telemetry. Bounded branch-and-bound over the calibrated cost surface; no external SMT solver.
 - Output: complete device-specific kernel set + MeridianConfig. Re-probes on topology change.
 
-**Augur (continuous):**
+**RT (continuous):**
 - Digital twin: DAG + Mimic kernel predictions + Meridian corrections → iteration prediction (±5-10%)
 - Per-kernel bottleneck classification: COMPUTE/MEMORY_BW/COMMUNICATION/BUBBLE/IMBALANCE
 - Predicted vs actual monitoring. >10% drift → diagnose → trigger Meridian recalibration
@@ -501,13 +501,13 @@ Goal: vendor-agnostic optimizer + per-vendor backend framework per FORGE.md / MI
 - **Mimic NVIDIA backend** (M2-M9 of MIMIC.md build plan): IR003NV + SASS emitter + three-tier simulator + MAP-Elites + CUPTI calibration harness + runtime library (direct `/dev/nvidia*` ioctls, no libcuda) + collective library (CNTP, no NCCL).
 - **Mimic AMD / TPU / Trainium backends** follow the same template (one self-contained subsystem per vendor).
 
-**Phase 3: Meridian+Augur**
+**Phase 3: Meridian + RT**
 
 Goal: hardware calibration + continuous monitoring as one operational intelligence layer.
 
 - GPU profiling + network probing at startup. Discrete-search joint 5D partition optimization (FORGE.md §25.6) picks topology from calibrated `CollectiveBenchmarks` + `mimic::fast_cost`. Per-link congestion telemetry (TX/RX bytes, drop rate, queue depth, sysctl-derived effective capacity) feeds into the cost surface so decisions adapt to heterogeneous-NIC fleets and live load.
 - Digital twin: DAG + Mimic kernel predictions + calibration corrections → iteration prediction (±5-10%).
-- Continuous monitoring, bottleneck diagnosis, recommendations engine. Augur drift detection triggers per-vendor Mimic recalibration when P95 residual > 10% for 100+ samples.
+- Continuous monitoring, bottleneck diagnosis, recommendations engine. runtime observation drift detection triggers per-vendor Mimic recalibration when P95 residual > 10% for 100+ samples.
 - Model intelligence: Hessian spectrum, gradient health, effective rank, CKA, scaling laws.
 
 **Phase 4: Compiled Tier 2-3**
@@ -523,25 +523,25 @@ recording into a model where the user-visible work per op is just metadata.
 
 Goal: distributed, self-healing, persistent, cross-run-shareable.
 
-- Keeper daemon: systemd service, health monitoring, self-updating. Executes Augur's advice.
+- Keeper daemon: systemd service, health monitoring, self-updating. Executes the runtime observer's advice.
 - Canopy mesh: SWIM gossip + Raft-scoped consensus, peer discovery. No master.
 - Cipher: hot tier (RAID redundancy), warm tier (NVMe), cold tier (S3/GCS). Event-sourced. Three-level KernelCache: L1 IR002 snapshot federation-shareable cross-vendor; L2 IR003\* snapshot cross-chip within vendor family; L3 compiled bytes per-chip.
 - TrainingCheckpoints (weights, optimizer, data cursor, seed, step_idx, fleet UUIDs at checkpoint) survive reincarnation. Hardware-specific kernels recompiled by Mimic on new hardware using the warm-started Cipher archive.
 
 **Phase 6: L8-L12 Intelligence**
 
-Goal: model-aware optimizations, guided by Augur, validated by cross-vendor CI.
+Goal: model-aware optimizations, guided by runtime observation, validated by cross-vendor CI.
 
 - L8: Token merging, early exit, adaptive patching.
 - L9: Attention head classification, local losses, per-layer gradient strategy.
 - L10: Layer growing/pruning, width mutation, architecture evolution.
 - L11: Meta-gradients, per-layer LR from curvature, optimizer evolution.
 - L12: Curriculum learning, manifold mixup, pipeline absorption.
-- All optimizations are DAG branches (L7). Forge Phase L + Augur measure improvement; the Keeper activates via atomic swap only if (a) the branch compiles cleanly through Forge + Mimic, (b) cross-vendor CI tolerance holds for the branch's recipe tier, and (c) Augur's predicted improvement > threshold.
+- All optimizations are DAG branches (L7). Forge Phase L + runtime observation measure improvement; the Keeper activates via atomic swap only if (a) the branch compiles cleanly through Forge + Mimic, (b) cross-vendor CI tolerance holds for the branch's recipe tier, and (c) the runtime observer's predicted improvement > threshold.
 
 ---
 
-Contracts discipline the code. Safety wrappers carry invariants in the type system. Measurement — MAP-Elites + calibrated simulators + cross-vendor CI — replaces proof as the correctness-witnessing mechanism. Meridian maps hardware. Augur monitors reality. The Keeper acts on calibrated-optimal decisions. The Vigil thinks within typed-safe infrastructure. The Cipher remembers — the compiled kernels, the MAP-Elites archives, the calibration data, the TrainingCheckpoints. When the last Relay dies, the Cipher carries the model and everything needed to re-materialize it on whatever silicon comes next.
+Contracts discipline the code. Safety wrappers carry invariants in the type system. Measurement — MAP-Elites + calibrated simulators + cross-vendor CI — replaces proof as the correctness-witnessing mechanism. Meridian maps hardware. RT observes runtime reality. The Keeper acts on calibrated-optimal decisions. The Vigil thinks within typed-safe infrastructure. The Cipher remembers — the compiled kernels, the MAP-Elites archives, the calibration data, the TrainingCheckpoints. When the last Relay dies, the Cipher carries the model and everything needed to re-materialize it on whatever silicon comes next.
 
 ---
 
@@ -549,7 +549,7 @@ Contracts discipline the code. Safety wrappers carry invariants in the type syst
 
 ```
 L16  Ecosystem        computation genome, federated learning, hardware co-design
-L15  Meridian+Augur   calibration, digital twin, monitoring, recommendations
+L15  Meridian + RT     calibration, runtime observation, policy recommendations
 ─────────────────────────────────────────────────────────────────────────────
 L14  Lifecycle        Cipher persistence, reincarnation, deterministic replay
 L13  Distribution     Canopy, Relays, no master, RAID, DiLoCo, 5D parallelism
@@ -570,7 +570,7 @@ L1   Hardware         Relays, hardware profiling, multi-vendor, health → Keepe
 L0   Safety           8 axioms + contracts + CSL permissions + session types + safety/*.h wrappers
 ```
 
-Safety disciplines the code. Meridian maps. Augur sees. Vessel intercepts. Keeper serves. Vigil thinks. Cipher remembers. Canopy protects. Relay executes.
+Safety disciplines the code. Meridian maps. runtime observation sees. Vessel intercepts. Keeper serves. Vigil thinks. Cipher remembers. Canopy protects. Relay executes.
 
 
 
@@ -2468,7 +2468,7 @@ Test names (fuzzer property checks, gtest-style names) obey the same rule: `prop
 
 Five categories of short names are exempt because they ARE the standard vocabulary in their domain — renaming them would make the code less recognizable, not more:
 
-- **Crucible ontology primitives**: `Vigil`, `Keeper`, `Relay`, `Cipher`, `Canopy`, `Meridian`, `Augur`, `Vessel` are full words and fine at any length. Their short aliases in hot paths are not — use the full name.
+- **Crucible ontology primitives**: `Vigil`, `Keeper`, `Relay`, `Cipher`, `Canopy`, `Meridian`, `RT`, `Vessel` are full words and fine at any length. Their short aliases in hot paths are not — use the full name.
 - **Hot-path idiomatic short names** canonical in Crucible: `op` (Op), `args` (const Expr* const*), `nargs` (uint8_t), `ndim` (uint8_t), `dtype` (ScalarType), `arena` (`effects::Alloc` cap-tag — the canonical short name for the alloc-capability parameter on every Arena/ExprPool/MerkleDag/Graph allocator function), `ctx` (CrucibleContext), `bg` (`effects::Bg` context — local-variable name for the background-thread context that aggregates Alloc + IO + Block caps), `fg` (foreground sentinel; no `effects::*` analogue because hot-path code holds no capability), `ms` (MetaIndex strong ID), `ring` (TraceRing&). Established in TraceRing.h / ExprPool.h / MerkleDag.h; rename would be churn.
 - **Binary-operation sides** (the FX/parser convention, preserved): `lhs` / `rhs` inside `add(lhs, rhs)`, `mul(lhs, rhs)`, `compare(lhs, rhs)`. Fine in accessors (`binop_lhs()`, `binop_rhs()`) because they project fields whose semantics are exactly "left side" / "right side".
 - **Loop induction variables** over a compile-time small range: `i`, `j`, `d` (dimension), `k` inside `for (uint8_t d = 0; d < ndim; ++d)`. `d` for dimension is idiomatic because `ndim` is the canonical spelling of the upper bound.

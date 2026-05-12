@@ -625,7 +625,7 @@ struct RegionNode : TraceNode {
 
   // measured_ms is a wall-clock duration (kernel execution time from
   // the profiler).  Semantic invariant: non-negative and finite.
-  // NaN / Inf / negative values would flow into Augur's convergence
+  // NaN / Inf / negative values would flow into runtime observer's convergence
   // prediction / scheduler cost model, producing wild extrapolations
   // or infinite loops.  The field type stays float (layout: RegionNode
   // == 80B locked; Serialize reads/writes raw float bits), but

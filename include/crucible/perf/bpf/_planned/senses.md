@@ -33,7 +33,7 @@ public:
 
     // Per-sub-program accessors return raw pointers (or nullopt) into
     // the loaded set.  Each is a `const SubProgram*` so callers can
-    // pass to bench harness / Augur consumers without duplicating
+    // pass to bench harness / runtime observation consumers without duplicating
     // ownership.
     [[nodiscard]] const SenseHub*       sense_hub()       const noexcept;
     [[nodiscard]] const SchedSwitch*    sched_switch()    const noexcept;
@@ -73,7 +73,7 @@ struct SensesMask {
 2. **Bench-harness simplification**: `bench_harness.h` consumes
    `crucible::perf::Senses` directly instead of hand-loading every
    facade at the call site.
-3. **Augur integration point**: Augur consumes telemetry across
+3. **runtime observation integration point**: runtime observation consumes telemetry across
    many programs.  A single `Senses` handle is a cleaner API than
    threading 30 sub-program pointers everywhere.
 4. **Lifetime + dependency ordering**: PmuCounters must load BEFORE

@@ -53,7 +53,7 @@
 using namespace crucible::safety;
 
 // Production-like consumer: hot-path Acquire-fence admission gate.
-// Models the seqlock-reader / Augur-snapshot-consumer pattern that
+// Models the seqlock-reader / runtime observation-snapshot-consumer pattern that
 // FOUND-G32 production sites flow into.
 template <typename W>
     requires (W::template satisfies<MemOrderTag_v::Acquire>)

@@ -357,7 +357,7 @@ class CRUCIBLE_OWNER Cipher {
     //     time.  Captures the Keeper hot-tier reincarnation gate
     //     (zero-loss reshard requires RAM-replicated state, NEVER
     //     NVMe/S3).
-    //   - Augur drift attribution can read the static `tier` to
+    //   - runtime drift attribution can read the static `tier` to
     //     distinguish "S3 latency spike" from "Hot-tier issue"
     //     without a runtime tier-tagged enum field.
     //   - replay_engine accepts CipherTier<Cold> historical archives

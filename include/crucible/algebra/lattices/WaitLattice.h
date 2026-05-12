@@ -268,7 +268,7 @@ static_assert(wait_strategy_count == 6,
 static_assert(every_wait_strategy_has_name(),
     "wait_strategy_name() switch missing arm for at least one tier — "
     "add the arm or the new tier leaks the '<unknown WaitStrategy>' "
-    "sentinel into Augur's debug output.");
+    "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<T> sub-lattice.
 static_assert(Lattice<WaitLattice>);

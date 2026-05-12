@@ -2,7 +2,7 @@
 
 \section{Hardware Adaptation}\label{sec:hardware}
 
-Longitude and Augur are designs; the hardware profiling interfaces they depend on (CUPTI, NVML, rocprofiler) are standard vendor APIs.
+Longitude and runtime observation are designs; the hardware profiling interfaces they depend on (CUPTI, NVML, rocprofiler) are standard vendor APIs.
 \code{CostModel.h} implements the hardware specification and cost model structures.
 
 \subsection{Hardware Profiling}
@@ -13,7 +13,7 @@ Crucible abstracts these behind a vendor-agnostic profiling interface.
 
 \subsection{Longitude: Startup Calibration}
 
-Longitude runs at startup and on topology change (Relay failure, new Relay, sustained drift detected by Augur).
+Longitude runs at startup and on topology change (Relay failure, new Relay, sustained drift detected by runtime observation).
 It populates the \code{HardwareProfile} struct (\code{CostModel.h}) with measured values, replacing the nominal presets (B200, H100, MI300X, A100).
 
 \textbf{Phase 1: GPU profiling.}
@@ -39,12 +39,12 @@ Constraints: memory limits, communication feasibility, hardware capabilities.
 Objective: minimize predicted iteration time.
 Result: complete configuration optimal within the encoded model.
 
-\subsection{Augur: Continuous Monitoring}
+\subsection{Runtime Observation: Continuous Monitoring}
 
-Augur runs every iteration, comparing predictions against measurements.
+runtime observation runs every iteration, comparing predictions against measurements.
 
 \textbf{Digital twin.}
-From the Merkle DAG, kernel cost predictions (roofline model with correction factors), and the memory plan, Augur predicts each iteration.
+From the Merkle DAG, kernel cost predictions (roofline model with correction factors), and the memory plan, runtime observation predicts each iteration.
 Per-kernel: execution time, utilization, bottleneck classification (\code{COMPUTE}, \code{MEMORY\_BW}, \code{COMMUNICATION}, \code{BUBBLE}, \code{IMBALANCE}).
 Per-iteration: critical path through the DAG, forward/backward/optimizer/communication breakdown.
 
@@ -60,7 +60,7 @@ This drives Keeper recommendations.
 
 \subsection{Model Intelligence}
 
-Periodically, Augur computes diagnostics of the Vigil's training dynamics from actual tensor data:
+Periodically, runtime observation computes diagnostics of the Vigil's training dynamics from actual tensor data:
 
 \begin{itemize}
   \item \textbf{Hessian spectrum.} Top eigenvalues via Lanczos iteration (Hessian-vector products, $O(N)$ cost each). Yields smoothness, condition number, convergence rate bounds [Nesterov 1983].

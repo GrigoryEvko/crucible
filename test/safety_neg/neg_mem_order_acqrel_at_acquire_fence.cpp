@@ -16,7 +16,7 @@
 // SEMANTICALLY MORE EXPENSIVE (full both-direction barrier) than the
 // previous Acquire-only load.  Hot-path readers that only needed
 // Acquire-tier guarantees pay for the unnecessary store-side ordering
-// — death by a thousand cuts on a high-fanout broadcast (Augur metrics
+// — death by a thousand cuts on a high-fanout broadcast (runtime metrics
 // snapshot pattern).  The wrapper catches the upgrade at the
 // consumer-fence boundary.
 //

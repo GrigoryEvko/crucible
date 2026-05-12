@@ -11,7 +11,7 @@
 //   safety::proto::PermSet<…>  type-only set of TYPE tags  consteval
 //
 // EffectMask is the dedicated runtime dual of `Row<Es...>`.  Used by
-// Augur telemetry (FOUND-K01..K05), Cipher row-keying for federation,
+// runtime observation telemetry (FOUND-K01..K05), Cipher row-keying for federation,
 // and any cross-process row announcement.
 //
 // ── Why a dedicated EffectMask, not safety::Bits<Effect> ────────────
@@ -67,7 +67,7 @@
 //   effects/EffectRow.h       — Row<Es...> source
 //   effects/Capabilities.h    — Effect enum (position-encoded)
 //   safety/Bits.h             — sister wrapper (mask-encoded enums)
-//   misc/28_04_2026_effects.md §1.2 superpower 5 (Augur drift)
+//   misc/28_04_2026_effects.md §1.2 superpower 5 (runtime drift)
 
 #include <crucible/Platform.h>
 #include <crucible/effects/Capabilities.h>
@@ -196,7 +196,7 @@ template <IsEffectRow R>
 //
 // row_subsumes_bits<R>(sample):
 //   "does R cover every bit set in sample?"  i.e., is sample ⊆ row?
-//   Augur drift detection — sample contains an effect not declared
+//   runtime drift detection — sample contains an effect not declared
 //   in row R = drift = false.
 //
 // bits_subsumes_row<R>(sample):

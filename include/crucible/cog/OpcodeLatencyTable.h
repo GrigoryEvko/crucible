@@ -21,7 +21,7 @@
 // insufficient: manufacturing variation, firmware revision, and
 // thermal headroom produce per-Cog divergence of 5-20% on identical
 // workloads.  Calibration runs at startup (GAPS-196 cog/Calibrate.h)
-// AND on Augur-detected drift (#1212 audit / Augur recommendations);
+// AND on runtime-detected drift (#1212 audit / runtime policy recommendations);
 // Stale<> staleness grades drive the recalibration trigger.
 //
 // ── Composition (mirrors cog/TargetCaps.h §I structure) ─────────────
@@ -48,7 +48,7 @@
 //     snapshot -> Cipher cold tier.
 //   * Calibration age — safety::Stale<double>.  The double payload
 //     records seconds-since-calibration (a wall-clock metric); the
-//     staleness grade τ is a per-cycle counter advanced by Augur's
+//     staleness grade τ is a per-cycle counter advanced by runtime observer's
 //     drift detector.  Recalibration trigger: τ exceeds policy
 //     threshold (e.g., 100 update cycles without re-measurement).
 //
@@ -566,7 +566,7 @@ struct OpcodeLatencyEntry {
 //     interpret as "fall back to vendor-spec defaults").
 //   * `calibration_age_seconds` is a Stale<double> — payload records
 //     wall-clock seconds since the calibration measurement; staleness
-//     grade τ tracks update-cycle staleness.  Augur's drift detector
+//     grade τ tracks update-cycle staleness.  runtime observer's drift detector
 //     bumps τ via Stale::advance_by; recalibration is triggered when
 //     τ exceeds the policy threshold OR when τ is infinite.
 //
@@ -575,7 +575,7 @@ struct OpcodeLatencyEntry {
 // correct staleness for "never measured" is τ=∞ (genuinely unbounded
 // lag — unknown when, if ever, this Cog was calibrated), NOT τ=0
 // (which would mean "calibrated 0 update cycles ago = freshly
-// measured").  Mis-defaulting to τ=0 would silently fool Augur's
+// measured").  Mis-defaulting to τ=0 would silently fool runtime observer's
 // drift detector into believing the table is fresh and never
 // triggering the recalibration pass — a pre-production data-loss
 // risk caught during the GAPS-187 audit follow-up.  The default

@@ -35,7 +35,7 @@ preserved, the mechanism is replaced.
   ────────────────────────────────────────
   Name: Keeper
   Role: Spirit
-  Description: Daemon on each Relay — self-healing, self-updating, autonomous. Executes Augur's advice.
+  Description: Daemon on each Relay — self-healing, self-updating, autonomous. Executes the runtime observer's advice.
   ────────────────────────────────────────
   Name: Vigil
   Role: Intellect
@@ -61,7 +61,7 @@ preserved, the mechanism is replaced.
   Role: Map
   Description: Startup calibration. Measured hardware truth. Z3-optimal topology, parallelism, communication, placement. Re-solves on topology change. Inherits Axiom's universal proofs as axioms.
   ────────────────────────────────────────
-  Name: Augur
+  Name: runtime observation
   Role: Sight
   Description: Continuous prediction, monitoring, model intelligence. Digital twin. Loss landscape analysis. Convergence bounds. Scaling laws. Bottleneck diagnosis. Recommendations engine. Proved bounds where possible, calibrated models elsewhere.
   ────────────────────────────────────────
@@ -346,7 +346,7 @@ preserved, the mechanism is replaced.
   Axiom proves what it can without hardware. Meridian measures the hardware and proves the rest. Axiom's universal proofs (hash properties, protocol safety, arithmetic correctness) are inherited as axioms — Meridian doesn't re-prove them. Meridian
   adds hardware-specific proofs: this topology with these measured bandwidths, this GPU with this measured throughput.
 
-  Runs once at startup (5-15 seconds). Again when topology changes (GPU death, new node joins, network degradation, Augur detects sustained drift).
+  Runs once at startup (5-15 seconds). Again when topology changes (GPU death, new node joins, network degradation, runtime observation detects sustained drift).
 
   The Calibration Protocol
 
@@ -395,29 +395,29 @@ preserved, the mechanism is replaced.
   Activation checkpointing. Per-layer, per-tensor: store (uses memory, saves recompute) vs recompute (saves memory, costs FLOPS). Axiom knows exact memory per tensor (from the plan). Meridian knows exact recompute cost (from calibrated kernel
   predictions). Z3 minimizes total iteration time subject to fitting in measured usable memory. Per-tensor granularity — not the uniform checkpoint_every_N_layers that frameworks use.
 
-  Mixed precision. Per-layer, per-op. FP32, TF32, BF16, FP16, FP8 (E4M3, E5M2). Z3 evaluates throughput gain (from Axiom's kernel models, calibrated by Meridian) against numerical stability (from Augur's Hessian analysis when available, or
+  Mixed precision. Per-layer, per-op. FP32, TF32, BF16, FP16, FP8 (E4M3, E5M2). Z3 evaluates throughput gain (from Axiom's kernel models, calibrated by Meridian) against numerical stability (from the runtime observer's Hessian analysis when available, or
   conservative defaults). Subject to: forward-backward numerical equivalence within tolerance ε. Z3 finds the per-op precision assignment that minimizes iteration time while maintaining numerical stability.
 
-  Batch size. The maximum that fits. Z3 verifies: with optimal parallelism + checkpointing + precision + memory plan, total_memory ≤ measured_usable. Then Axiom computes the memory plan for that batch size. If Augur later detects memory pressure
+  Batch size. The maximum that fits. Z3 verifies: with optimal parallelism + checkpointing + precision + memory plan, total_memory ≤ measured_usable. Then Axiom computes the memory plan for that batch size. If runtime observation later detects memory pressure
   (fragmentation from dynamic shapes), Meridian reduces batch size pre-emptively.
 
   Output. A complete MeridianConfig: parallelism degrees, GPU placement, communication algorithms, bucket sizes, checkpointing decisions, precision assignment, batch size — all proven optimal for the measured hardware. The Keeper applies it. If
   topology changes (Relay death, new Relay, network degradation), Meridian re-probes in 5-15 seconds, re-solves, and the Keeper applies the new config. No manual tuning. No YAML. No guessing.
 
-  Meridian as Z3 oracle for Augur. Meridian's calibration data (actual GPU throughput, actual link bandwidth, correction factors) feeds into Augur's digital twin. Augur doesn't re-measure — it uses Meridian's numbers. Meridian measures once; Augur
+  Meridian as Z3 oracle for runtime observation. Meridian's calibration data (actual GPU throughput, actual link bandwidth, correction factors) feeds into the runtime observer's digital twin. runtime observation doesn't re-measure — it uses Meridian's numbers. Meridian measures once; runtime observation
   predicts forever.
 
   ---
-  L17 — Augur
+  L17 — runtime observation
 
   The sight. Predicts everything. Monitors reality. Reads the model's soul.
 
-  Axiom proves correctness at build time. Meridian optimizes topology at startup. Augur runs continuously — every iteration — predicting, monitoring, advising, analyzing. Three time scales: Axiom is geological (build-time, universal), Meridian is
-  seasonal (startup, hardware-dependent), Augur is moment-to-moment (every iteration, continuous adaptation).
+  Axiom proves correctness at build time. Meridian optimizes topology at startup. runtime observation runs continuously — every iteration — predicting, monitoring, advising, analyzing. Three time scales: Axiom is geological (build-time, universal), Meridian is
+  seasonal (startup, hardware-dependent), runtime observation is moment-to-moment (every iteration, continuous adaptation).
 
   The Digital Twin
 
-  Given Axiom's kernel predictions, Meridian's correction factors, the Merkle DAG, and the memory plan, Augur constructs a complete predictive model of the entire training run. No GPU needed for the prediction itself — only for the calibration that
+  Given Axiom's kernel predictions, Meridian's correction factors, the Merkle DAG, and the memory plan, runtime observation constructs a complete predictive model of the entire training run. No GPU needed for the prediction itself — only for the calibration that
   already happened in Meridian.
 
   Per-kernel prediction. For each CKernel in the DAG:
@@ -436,7 +436,7 @@ preserved, the mechanism is replaced.
   - Total: max(critical_path_compute, exposed_communication) + bubble.
   - Accuracy: ±5-10% after Meridian calibration.
 
-  Memory timeline — EXACT. The memory plan IS the allocation. Axiom computed it. Meridian verified it fits. Augur plots it: for each op in the DAG, the live memory at that point is EXACTLY the sum of allocated tensor slots minus freed tensor slots.
+  Memory timeline — EXACT. The memory plan IS the allocation. Axiom computed it. Meridian verified it fits. runtime observation plots it: for each op in the DAG, the live memory at that point is EXACTLY the sum of allocated tensor slots minus freed tensor slots.
   Peak is EXACT. Activation memory is EXACT. Gradient memory is EXACT. Optimizer state is EXACT. Fragmentation is ZERO (Axiom-optimal plan). These aren't estimates. They're consequences of the plan being the allocation.
 
   Per-run projection. From per-iteration prediction:
@@ -449,7 +449,7 @@ preserved, the mechanism is replaced.
 
   The "what-if" machine. Change any parameter → instant re-prediction:
 
-  - "What if I double the batch size?" → recompute memory plan (Axiom), check fit (Meridian), predict throughput (Augur). Answer: "doesn't fit" or "fits, 15% faster, here's the new cost."
+  - "What if I double the batch size?" → recompute memory plan (Axiom), check fit (Meridian), predict throughput (runtime observation). Answer: "doesn't fit" or "fits, 15% faster, here's the new cost."
   - "What if I switch to TP=4?" → recompute communication cost, overlap, memory. Answer: "NVLink has headroom, net +12%" or "PCIe bottlenecks, net -8%."
   - "What if I use H200 instead of H100?" → substitute GPU profile (141GB HBM3e, 4.8 TB/s vs 3.35 TB/s), recompute everything. Answer: "batch 48 fits, 38% faster, saves $9,600."
   - "What if I train a 3B model instead of 7B?" → substitute model profile, recompute from scratch. Answer: "same final loss (scaling law says so), 2.3× faster, 60% cheaper."
@@ -461,7 +461,7 @@ preserved, the mechanism is replaced.
 
   Continuous Monitoring
 
-  Every iteration: predicted vs actual. The Augur watches for drift.
+  Every iteration: predicted vs actual. The runtime observation watches for drift.
 
   - Error < 5% → model is accurate, continue.
   - Error 5-10% sustained for 100 iterations → mild drift. Update correction factors. Log the change.
@@ -481,7 +481,7 @@ preserved, the mechanism is replaced.
   - BUBBLE: Pipeline parallelism idle time. Need: more micro-batches, interleaved schedule (1F1B → interleaved 1F1B), or reduce PP degree.
   - IMBALANCE: One GPU consistently slower. Need: identify the straggler (NVML), rebalance micro-batches, or replace.
 
-  The bottleneck determines which recommendation has the highest impact. The Augur doesn't just say "you're at 52% MFU." It says "you're at 52% because attention QKV projection saturates HBM bandwidth. Switching to FP8 attention would give +12%.
+  The bottleneck determines which recommendation has the highest impact. The runtime observation doesn't just say "you're at 52% MFU." It says "you're at 52% because attention QKV projection saturates HBM bandwidth. Switching to FP8 attention would give +12%.
   Switching to TP=4 would give +18%. Doing both: +26%, bringing MFU to 66%."
 
   Recommendations engine. Ranked by expected_speedup × confidence. Each recommendation:
@@ -493,7 +493,7 @@ preserved, the mechanism is replaced.
 
   Model Intelligence
 
-  The Augur doesn't just monitor the hardware. It reads the model itself. During recording (L3), actual tensor data flows through the system. The Augur computes:
+  The runtime observation doesn't just monitor the hardware. It reads the model itself. During recording (L3), actual tensor data flows through the system. The runtime observation computes:
 
   Hessian spectrum. Top eigenvalues via Lanczos iteration. Each Hessian-vector product (Hv) costs one backward pass. 10 Hv products → top-10 eigenvalues via Lanczos. Periodic, not per-step (e.g., every 500 steps).
 
@@ -549,9 +549,9 @@ preserved, the mechanism is replaced.
   - What's leaving quality on the table: "23% of neurons are dead. Layers 0-3 have vanishing gradients. Two adjacent layer pairs are redundant."
   - What to do about it: recommendations ranked by impact, with predicted speedup and quality impact.
 
-  The Complete Augur Report
+  The Complete runtime observation Report
 
-  Augur Report — Iteration 500 (calibration complete)
+  runtime observation Report — Iteration 500 (calibration complete)
   ══════════════════════════════════════════════════════════════
 
   PERFORMANCE
@@ -617,7 +617,7 @@ preserved, the mechanism is replaced.
   ---
   Updated Layer Summary
 
-  L17  Augur            prediction, monitoring, model intelligence, recommendations
+  L17  runtime observation            prediction, monitoring, model intelligence, recommendations
   L16  Meridian         calibration, topology optimization, configuration
   L15  Axiom            Z3 proofs, consteval, reflection, effects, proof certificates
   ────────────────────────────────────────────────────────────────────────────────
@@ -689,10 +689,10 @@ preserved, the mechanism is replaced.
   - Kernel calibration: top-20 kernels × 5 shapes → correction factors. 5s.
   - Z3 topology solver: optimal TP×DP×PP factorization, GPU placement, communication algorithms, gradient bucketing, activation checkpointing, mixed precision, batch size — all jointly.
   - Keeper integration: Meridian produces config, Keeper applies it.
-  - Re-probe on topology change: Relay death, new Relay, Augur drift detection.
-  - Calibration data → Augur: measured profiles feed the digital twin.
+  - Re-probe on topology change: Relay death, new Relay, runtime observation drift detection.
+  - Calibration data → runtime observation: measured profiles feed the digital twin.
 
-  Phase 4: Augur
+  Phase 4: runtime observation
 
   Goal: Digital twin + continuous monitoring + model intelligence.
 
@@ -703,7 +703,7 @@ preserved, the mechanism is replaced.
   - Recommendations engine: ranked by impact, auto-applicable flag, side-effect analysis.
   - Model intelligence: Hessian spectrum (Lanczos), gradient health (Jacobian SVs), effective rank (randomized SVD), layer redundancy (CKA), dead neurons, convergence prediction (exponential fit), scaling law analysis (Chinchilla fit + Z3
   optimization).
-  - Integration: Augur advises → Keeper acts → Meridian re-solves if needed → Axiom re-proves if needed.
+  - Integration: runtime observation advises → Keeper acts → Meridian re-solves if needed → Axiom re-proves if needed.
 
   Phase 5: Compiled Tier 2-3
 
@@ -719,7 +719,7 @@ preserved, the mechanism is replaced.
 
   Goal: Distributed, self-healing, persistent, proof-carrying.
 
-  - Keeper daemon: systemd service, health monitoring, self-updating. Executes Augur's recommendations.
+  - Keeper daemon: systemd service, health monitoring, self-updating. Executes the runtime observer's recommendations.
   - Canopy mesh: gossip protocol, Raft consensus, peer discovery. No master.
   - Cipher: hot tier (other Relays' RAM from RAID redundancy), warm tier (NVMe per Relay), cold tier (S3/GCS). Event-sourced: DAG chain + periodic snapshots → deterministic recovery.
   - Proof certificates in Cipher: universal proofs (hash, protocol, arithmetic) survive reincarnation. Hardware-specific proofs (kernel configs, topology) re-proved by Meridian on new hardware.
@@ -727,16 +727,16 @@ preserved, the mechanism is replaced.
 
   Phase 7: L7-L11 Intelligence
 
-  Goal: Model-aware optimizations, guided by Augur, verified by Axiom.
+  Goal: Model-aware optimizations, guided by runtime observation, verified by Axiom.
 
-  - L7: Token merging (adaptive per-input per-layer from Augur's representation analysis), early exit (per-token convergence from measured layer-to-layer difference), adaptive patching (quadtree by information content).
-  - L8: Attention head classification (from Augur's measured attention patterns), local losses (per-layer learning signal), per-layer gradient strategy (from Augur's gradient health + Hessian spectrum).
-  - L9: Layer growing/pruning (from Augur's capacity analysis + CKA), width mutation (from Augur's effective rank), architecture evolution.
-  - L10: Meta-gradients (∂val_loss/∂lr), per-layer LR from curvature (Augur's Hessian), optimizer evolution.
-  - L11: Curriculum learning (from per-sample loss), manifold mixup (at Augur-selected optimal layer).
-  - All optimizations are DAG branches (L6). Axiom Z3-verifies new branches before activation. Augur predicts expected improvement before activation. The Keeper activates via atomic swap only if both Axiom approves (proved safe) and Augur approves
+  - L7: Token merging (adaptive per-input per-layer from the runtime observer's representation analysis), early exit (per-token convergence from measured layer-to-layer difference), adaptive patching (quadtree by information content).
+  - L8: Attention head classification (from the runtime observer's measured attention patterns), local losses (per-layer learning signal), per-layer gradient strategy (from the runtime observer's gradient health + Hessian spectrum).
+  - L9: Layer growing/pruning (from the runtime observer's capacity analysis + CKA), width mutation (from the runtime observer's effective rank), architecture evolution.
+  - L10: Meta-gradients (∂val_loss/∂lr), per-layer LR from curvature (the runtime observer's Hessian), optimizer evolution.
+  - L11: Curriculum learning (from per-sample loss), manifold mixup (at runtime observation-selected optimal layer).
+  - All optimizations are DAG branches (L6). Axiom Z3-verifies new branches before activation. runtime observation predicts expected improvement before activation. The Keeper activates via atomic swap only if both Axiom approves (proved safe) and runtime observation approves
   (predicted improvement > threshold).
 
   ---
-  The Axiom speaks the law — proved, optimal, certified. The Meridian maps the territory — measured, calibrated, solved. The Augur sees everything — predicted, monitored, understood. The Keeper acts on mathematical truth. The Vigil thinks within
+  The Axiom speaks the law — proved, optimal, certified. The Meridian maps the territory — measured, calibrated, solved. The runtime observation sees everything — predicted, monitored, understood. The Keeper acts on mathematical truth. The Vigil thinks within
   proved-safe infrastructure. The Cipher remembers everything, including the proofs. And when the last Relay dies, the Cipher carries not just the model, but the certificates — ready to prove itself correct on whatever hardware comes next

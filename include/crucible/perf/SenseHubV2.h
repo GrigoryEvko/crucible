@@ -517,7 +517,7 @@ public:
     }
 
     // Borrowed view over the raw mmap'd counter pages — for callers
-    // that need byte-level access (bench harness, Augur drift detector).
+    // that need byte-level access (bench harness, runtime drift detector).
     [[nodiscard]] safety::Borrowed<const volatile uint64_t, SenseHubV2>
         counters_view() const noexcept;
 

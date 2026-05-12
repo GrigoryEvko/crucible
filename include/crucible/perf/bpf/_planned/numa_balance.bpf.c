@@ -8,7 +8,7 @@
  * SenseHub aggregates `MM_NUMA_PAGE_MIGRATE_*` counts.  We don't see
  * WHICH page migrations happened, WHY (private/shared fault, scan-pte),
  * or which task was the migration target.  Per-decision attribution
- * lets Augur diagnose "this task is bouncing between sockets — pin it"
+ * lets runtime observation diagnose "this task is bouncing between sockets — pin it"
  * vs "this is healthy lazy migration".
  *
  * ─── MECHANISM ────────────────────────────────────────────────────────
@@ -40,7 +40,7 @@
  * ─── SIBLING REFS ─────────────────────────────────────────────────────
  * Aggregates with: SenseHub `MM_NUMA_*` (counters), iter_task.bpf.c
  *   (per-thread RSS / cgroup attribution at snapshot time).
- * Inputs to: Augur task-pinning recommendations.
+ * Inputs to: runtime observation task-pinning recommendations.
  */
 
 #include "../common.h"

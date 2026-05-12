@@ -477,7 +477,7 @@ extra book-keeping (future allocation, atomic flag handshake) loses.
 
 **Crucible candidates**: kernel-compile pipeline (lower IR for region
 N+1 while region N executes), Cipher cold-tier flush (caller continues
-while page writes drain), Augur metrics roll-up (caller continues iter
+while page writes drain), runtime observation metrics roll-up (caller continues iter
 while previous iter's metrics aggregate).
 
 ### Pattern B — pipeline staging via streaming yield
@@ -508,7 +508,7 @@ cost (~10–30 µs).
 
 **Win condition**: caller has no data dependency on result.
 
-**Crucible candidates**: Augur metric publish, BPF event drain, Cipher
+**Crucible candidates**: runtime observation metric publish, BPF event drain, Cipher
 warm-tier sync (best effort), trace-record callback.  Should NOT be
 used for anything that affects correctness.
 
@@ -551,7 +551,7 @@ Each subsystem has its own dispatch cadence and cost shape:
 | BgThread drain (TraceRing → DAG) | 100 µs | 10/sec | full cost model, async OK |
 | Forge phases (kernel compile) | 10 ms | few/sec | async pipeline, dedicated cores |
 | Cipher persistence | 1 ms | 100/sec | async fire-forget for warm tier |
-| Augur metrics roll-up | 100 ns | 10⁴/sec | tier-0 only, fire-forget OK |
+| runtime observation metrics roll-up | 100 ns | 10⁴/sec | tier-0 only, fire-forget OK |
 | Canopy gossip | 1 ms | per-second | dedicated low-prio worker |
 
 Each domain has a **specialized router** that knows its shape; they
@@ -574,7 +574,7 @@ struct GlobalLoadCoordinator {
 };
 ```
 
-**Vessel hot-path always wins; Augur background always defers.**  The
+**Vessel hot-path always wins; runtime observation background always defers.**  The
 router becomes a participant in a tiny committee, not a god.
 
 ---

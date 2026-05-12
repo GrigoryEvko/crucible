@@ -243,7 +243,7 @@ static_assert(hot_path_tier_count == 3,
 static_assert(every_hot_path_tier_has_name(),
     "hot_path_tier_name() switch missing arm for at least one tier — "
     "add the arm or the new tier leaks the '<unknown HotPathTier>' "
-    "sentinel into Augur's debug output.");
+    "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<T> sub-lattice.
 static_assert(Lattice<HotPathLattice>);

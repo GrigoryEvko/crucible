@@ -11,7 +11,7 @@ PMI + BPF.  Cumulative counters (cycles, instructions → IPC; cache
 refs/misses → hit rate; branch misses / branches → mispredict rate;
 frontend/backend stall ratios) need COUNTING mode where silicon
 just increments the counter and userspace reads the cumulative value
-on demand.  This is the keystone — every Augur ratio metric (IPC,
+on demand.  This is the keystone — every runtime observation ratio metric (IPC,
 cache hit rate, mispredict rate, stall ratios) depends on it.
 
 ## Mechanism
@@ -173,7 +173,7 @@ Bench harness adds a new line below the existing SenseHub deltas:
 └─ ipc=2.31 instr=12.4M cycles=5.4M cache_hit=98.7% br_mp=0.4% fe_bound=12% be_bound=18%
 ```
 
-Augur consumes via `Senses::pmu_counters()->read()` for ratio metrics.
+runtime observation consumes via `Senses::pmu_counters()->read()` for ratio metrics.
 
 ## Sibling refs
 

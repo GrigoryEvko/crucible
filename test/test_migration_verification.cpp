@@ -208,7 +208,7 @@ static_assert(sizeof(CipherTier<CipherTierTag_v::Cold, long long>)
 // Cache-residency / working-set heat dimension distinct from
 // CipherTier's storage-persistence axis AND from HotPath's
 // execution-budget axis.  Type-fences CRUCIBLE.md §L2 KernelCache
-// L1/L2/L3 + §L15 Augur metric-heat tracking at every cache
+// L1/L2/L3 +  runtime metric-heat tracking at every cache
 // publish/lookup boundary.
 static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Hot,  int>)    == sizeof(int));
 static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Warm, double>) == sizeof(double));

@@ -22,7 +22,7 @@ Written in the voice of CLAUDE.md: direct, opinionated, dense. Read alongside FO
 10. Replay determinism — the load-bearing invariant
 11. Data loading, inference sessions, dynamic shapes
 12. Distribution at runtime — 5D parallelism, live reshard, pipeline scheduling, collective failure
-13. Augur — continuous monitoring and drift
+13. runtime observation — continuous monitoring and drift
 14. Keeper daemon lifecycle
 15. Hardware heterogeneity handling
 16. Realtime performance — bounded latency under production load
@@ -1024,7 +1024,7 @@ autoscale:
   cooldown_seconds: 300
 ```
 
-Controller watches metrics from Augur (via a Prometheus scrape endpoint on each Keeper). Below-target throughput × stable for cooldown → scale up. Above-target + idle time → scale down.
+Controller watches metrics from runtime observation (via a Prometheus scrape endpoint on each Keeper). Below-target throughput × stable for cooldown → scale up. Above-target + idle time → scale down.
 
 ### 8.5 SLURM integration
 
@@ -1137,7 +1137,7 @@ Cipher stores:
 - **TrainingCheckpoint** — `(weights, optimizer_state, data_cursor, seed, step_idx, epoch)`
 - **CalibrationData** — per-chip TOML/JSON calibration TargetCaps extensions
 - **RecipeRegistry snapshot** — point-in-time view of the global recipe catalog
-- **Residuals** — Augur's measurement-vs-prediction dataset
+- **Residuals** — the runtime observer's measurement-vs-prediction dataset
 - **Merkle DAG snapshots** — versioned computation graph for bisect/blame
 
 ### 9.4 TrainingCheckpoint format
@@ -1579,7 +1579,7 @@ Per-op overhead: ~1-3% from shape-dependent arithmetic and bounds checks in the 
 
 99% of production workloads hit case 1 or case 2. The parametric fallback eliminates Inductor-style graph breaks; there is no "recompile stall" in the hot path.
 
-**Online bucket learning.** Augur tracks per-bucket hit counts plus the distribution of actual shape values within each bucket. If an existing bucket (e.g., `[8193, 32768]`, tuned for ~16K) consistently sees traffic in a narrow sub-range (e.g., always 8200-8400), Augur triggers sub-specialization: compile a new bucket `[8193, 8400]` in the background, insert into the dispatch table, measure hit rate. Over hours, the bucket set evolves to match the workload's actual shape distribution. Sub-specialization is write-once — the parent bucket stays, the sub-bucket simply preempts it when its range matches.
+**Online bucket learning.** runtime observation tracks per-bucket hit counts plus the distribution of actual shape values within each bucket. If an existing bucket (e.g., `[8193, 32768]`, tuned for ~16K) consistently sees traffic in a narrow sub-range (e.g., always 8200-8400), runtime observation triggers sub-specialization: compile a new bucket `[8193, 8400]` in the background, insert into the dispatch table, measure hit rate. Over hours, the bucket set evolves to match the workload's actual shape distribution. Sub-specialization is write-once — the parent bucket stays, the sub-bucket simply preempts it when its range matches.
 
 **Memory planning with bounds.** Phase G uses `hi` of each symbolic dim's range as the slot size upper bound. Wastes memory proportional to `hi / actual`, but eliminates Inductor's "couldn't plan because couldn't bound" failure mode. For fully-dynamic slots with no declared bounds, the user must supply `cr.Session.max_batch_size`, `max_seq_len`, `max_context_length` at session construction; omission is a compile-time error.
 
@@ -1841,7 +1841,7 @@ Training begins, step 0 starts
 Step executes; gradient collectives per partition
         │
         ▼
-Every M steps, Augur reviews topology measurements
+Every M steps, runtime observation reviews topology measurements
         │
         ▼
 If measurements changed significantly → recompute partition
@@ -1912,7 +1912,7 @@ So 350ms of downtime for a large live reshard of a 70B model. Negligible against
 
 - **Model architecture change mid-run** — that's a recompile, not a reshard. Forge re-runs Phase A-L on the new graph; may invalidate L2/L3 cache.
 - **Precision change mid-run** — recipe change requires recompile.
-- **Cross-vendor recipe intersection empty** — fleet can't form a consistent partition; Keeper escalates with a `policy_violation` event to Augur; user decides (STRICT refuses, ADAPT degrades).
+- **Cross-vendor recipe intersection empty** — fleet can't form a consistent partition; Keeper escalates with a `policy_violation` event to runtime observation; user decides (STRICT refuses, ADAPT degrades).
 
 ### 12.6 Pipeline scheduling — 1F1B, interleaved, zero-bubble
 
@@ -1946,7 +1946,7 @@ Backward layer N-1: [compute gradients] ──┐       ├─ all_reduce(K) fir
                                           Bucket K completes, written back
 ```
 
-Typical hidden fraction: 70-90% of all-reduce latency on well-sized buckets. Bucket size is a recipe parameter (default 25MB), auto-tuned by Augur per model: smaller for latency-bound small-message collectives, larger for bandwidth-bound.
+Typical hidden fraction: 70-90% of all-reduce latency on well-sized buckets. Bucket size is a recipe parameter (default 25MB), auto-tuned by runtime observation per model: smaller for latency-bound small-message collectives, larger for bandwidth-bound.
 
 **Bucket-level content addressing.** Each bucket's `CollectiveAttrs` is content-hashed by `(bucket_size, reduce_op, dtype, member_set, recipe.determinism)`. Two models with identical bucket schedules share compiled collective kernels via L2.
 
@@ -1969,7 +1969,7 @@ MoE layers route each token to K experts. With N experts distributed across G GP
 **Hot-expert handling.** Per-expert token count is imbalanced; some experts get 2-5× more tokens than others. Two mitigations:
 
 - **Capacity factor.** A `capacity_factor` (default 1.25) bounds per-expert tokens per batch. Tokens exceeding capacity are dropped with zero gradient; the gate is penalized via an auxiliary loss. Declared in the routing recipe.
-- **Expert migration.** Augur tracks per-expert assignment rates over 1000-step windows. If expert hotness diverges >2× from uniform, Canopy proposes a remap (rotate hot experts to GPUs with surplus capacity) at the next epoch boundary. Raft commits; permutation tables update.
+- **Expert migration.** runtime observation tracks per-expert assignment rates over 1000-step windows. If expert hotness diverges >2× from uniform, Canopy proposes a remap (rotate hot experts to GPUs with surplus capacity) at the next epoch boundary. Raft commits; permutation tables update.
 
 **Grouped GEMM realization.** Per-vendor backends realize the grouped GEMM as their native equivalent: NV uses Marlin-style grouped launch (one kernel launch, N tile dispatches, per-expert weight pointers), AM uses MFMA grouped dispatch, TPU uses batched MXU, Trainium uses per-expert NeuronCore assignment.
 
@@ -2055,13 +2055,13 @@ Cross-fleet EMA averaging (some papers' federated-average pattern): triggered vi
 
 ---
 
-## 13. Augur — continuous monitoring and drift
+## 13. runtime observation — continuous monitoring and drift
 
-Augur is the observer subsystem. Runs continuously in the background. Its two responsibilities: **measure** (what's happening on the hardware) and **decide** (when to trigger recompile / recalibration / reshard).
+runtime observation is the observer subsystem. Runs continuously in the background. Its two responsibilities: **measure** (what's happening on the hardware) and **decide** (when to trigger recompile / recalibration / reshard).
 
 ### 13.1 Sampling
 
-Every ~1% of kernel launches, Augur attaches a `mimic::probe_counters` call. The sampled kernel executes; on completion, Augur:
+Every ~1% of kernel launches, runtime observation attaches a `mimic::probe_counters` call. The sampled kernel executes; on completion, runtime observation:
 
 1. Reads the hardware counters (cycles, stalls, memory traffic, occupancy, per-pipe utilization)
 2. Loads the prediction stored in the kernel's `CompiledKernel.predicted_cycles`
@@ -2072,7 +2072,7 @@ Overhead: ~10ms per sampled launch (counter read + residual compute). At 1% samp
 
 ### 13.2 Drift detection
 
-For each kernel × chip, Augur maintains a running P95 of residuals per signal. Drift triggers when:
+For each kernel × chip, runtime observation maintains a running P95 of residuals per signal. Drift triggers when:
 
 - P95 cycle residual > 10% for 100+ consecutive samples → recalibrate Mimic's timing model for this chip
 - P95 memory-BW residual > 15% → recalibrate memory subsystem parameters
@@ -2082,18 +2082,18 @@ Recalibration runs during cluster-idle periods. Updates per-chip TargetCaps JSON
 
 ### 13.3 Regression detection
 
-Beyond drift-from-prediction, Augur watches for drift-from-past. Same kernel + same shape + same chip → cycles should be stable within tolerance. If the same kernel suddenly runs 20% slower than its 7-day rolling median:
+Beyond drift-from-prediction, runtime observation watches for drift-from-past. Same kernel + same shape + same chip → cycles should be stable within tolerance. If the same kernel suddenly runs 20% slower than its 7-day rolling median:
 
 - Thermal throttling (compare to `nvml` / vendor-equivalent thermal counter)
 - Clock-domain degradation (frequency counter dropped)
 - Memory health (ECC correctable-error rate increased)
 - Firmware change (check vendor driver version)
 
-Each regression has a known cause taxonomy. Augur logs, tags, and emits an event via Canopy gossip. If the event correlates with a Keeper's health signals being poor, Canopy may mark the Keeper degraded; Raft may decide to reshard.
+Each regression has a known cause taxonomy. runtime observation logs, tags, and emits an event via Canopy gossip. If the event correlates with a Keeper's health signals being poor, Canopy may mark the Keeper degraded; Raft may decide to reshard.
 
 ### 13.4 Model intelligence (L9-L11 integration)
 
-Beyond kernel-level monitoring, Augur also tracks training-level signals per Crucible CLAUDE.md's L9-L11:
+Beyond kernel-level monitoring, runtime observation also tracks training-level signals per Crucible CLAUDE.md's L9-L11:
 
 - **Hessian spectrum** (Lanczos every N steps) — identifies saddle points, sharpness transitions
 - **Per-layer gradient SNR** — drives automatic per-layer LR adaptation
@@ -2104,7 +2104,7 @@ These are expensive (~seconds per sampling), so cadence is coarser — every 100
 
 ### 13.5 Recommendations engine
 
-Augur doesn't decide unilaterally. It generates **recommendations** ranked by `expected_speedup × confidence`. Each tagged:
+runtime observation doesn't decide unilaterally. It generates **recommendations** ranked by `expected_speedup × confidence`. Each tagged:
 
 - `auto-hot`: safe, apply without user review (e.g., invalidate stale L3 cache entry)
 - `auto-cold`: apply during idle/maintenance window (e.g., recalibrate Mimic timing)
@@ -2114,7 +2114,7 @@ Recommendations persist in Cipher; user can review via `crucible recommendations
 
 ### 13.6 Online collective-algorithm learning
 
-Beyond kernel-level drift, Augur samples per-collective timings and maintains a benchmark table indexed by `(op, algorithm, peer_set, msg_size)`. Every ~100 steps, Augur compares observed vs predicted collective time per bucket:
+Beyond kernel-level drift, runtime observation samples per-collective timings and maintains a benchmark table indexed by `(op, algorithm, peer_set, msg_size)`. Every ~100 steps, runtime observation compares observed vs predicted collective time per bucket:
 
 ```
 record (op=ALLREDUCE, algorithm=RING, peers=8, msg_size=1MB,
@@ -2131,7 +2131,7 @@ This closes the topology-adaptation loop (§12.7, FORGE.md §25.6): the partitio
 
 ### 13.7 MFU tracking
 
-Augur reports cluster MFU (`achieved_TFLOPs / peak_TFLOPs`) per iteration, broken down by loss source:
+runtime observation reports cluster MFU (`achieved_TFLOPs / peak_TFLOPs`) per iteration, broken down by loss source:
 
 ```
 Baseline target (peak): 989 TFLOPs BF16 per H100
@@ -2183,7 +2183,7 @@ When no work is queued:
 - CPU consumption: <1% of one core (polling a few atomic counters)
 - GPU is idle (no kernel launched)
 - Cipher tier: LRU eviction continues in background thread
-- Augur: samples counters on any rare stray work
+- runtime observation: samples counters on any rare stray work
 
 ### 14.3 Working state
 
@@ -2195,7 +2195,7 @@ Compute Keeper running training:
 - Background thread 3: execute compiled kernels via Mimic runtime
 - Background thread 4: CNTP completion poller (spins on RDMA CQs + AF_XDP rings)
 - Background thread 5: Cipher tier manager (promote / evict)
-- Background thread 6: Augur sampler
+- Background thread 6: runtime observation sampler
 
 All threads are shared-nothing except via SPSC rings and acquire/release atomics. Zero locks.
 
@@ -2232,13 +2232,13 @@ Keeper health signals emitted to Canopy:
 - GPU utilization, HBM occupancy, ECC errors
 - NIC link quality, RDMA completion rates
 - Cipher tier sizes, eviction rates
-- Per-op stall counts (from Augur)
+- Per-op stall counts (from runtime observation)
 
 Aggregated by Canopy; available via Prometheus scrape endpoint (`:9090/metrics`). Watched by the k8s-operator for autoscaling decisions.
 
 ### 14.7 Per-Keeper latency expectations
 
-The numbers in this section are **modeled cost decompositions** for a warm Keeper on a Hopper SXM5 host (Sapphire Rapids or Grace + PCIe Gen5 x16 + InfiniBand NDR 400) — i.e. step-by-step accounting of where time should go based on the underlying hardware and protocol costs. They are NOT promises Crucible delivers a particular nanosecond figure on your hardware. The bench suite reports actual measurements; values marked with ✽ are design targets that require CI-validation against real silicon before being declared achieved. Augur drift detection (§13.3) uses the modeled values as a baseline against which actual measurements are compared, not as a contract on delivery.
+The numbers in this section are **modeled cost decompositions** for a warm Keeper on a Hopper SXM5 host (Sapphire Rapids or Grace + PCIe Gen5 x16 + InfiniBand NDR 400) — i.e. step-by-step accounting of where time should go based on the underlying hardware and protocol costs. They are NOT promises Crucible delivers a particular nanosecond figure on your hardware. The bench suite reports actual measurements; values marked with ✽ are design targets that require CI-validation against real silicon before being declared achieved. runtime observation drift detection (§13.3) uses the modeled values as a baseline against which actual measurements are compared, not as a contract on delivery.
 
 #### 14.7.1 Host-side dispatch
 
@@ -2342,10 +2342,10 @@ On a running training Keeper:
 | Dispatch loop (spin on ack semaphore) | ~1-5% of one core |
 | Gossip + Raft fast path (XDP) | <0.5% of one core |
 | Cipher tier management | <0.5% of one core |
-| Augur sampling at 1% rate | <1% of one core |
+| runtime observation sampling at 1% rate | <1% of one core |
 | **Total Keeper overhead per node** | **~3-7% of one core** ✽ |
 
-These numbers are the numerical contract. Augur runtime monitoring (§13.3) validates against measurements; sustained drift >10% triggers recalibration or Plan invalidation. The ✽-marked targets require CI-validation against real silicon (Phase 1 of the build plan, §19) before being declared achieved.
+These numbers are the numerical contract. runtime observation runtime monitoring (§13.3) validates against measurements; sustained drift >10% triggers recalibration or Plan invalidation. The ✽-marked targets require CI-validation against real silicon (Phase 1 of the build plan, §19) before being declared achieved.
 
 ### 14.8 NV-specific Keeper init sequence
 
@@ -2423,7 +2423,7 @@ Auto-configured by Forge Phase K, user-overridable:
 | DP-heavy with bucketed all-reduce | 120/132 | 6 | 6 | 0 |
 | Context-parallel (ring attention) | 100/132 | 16 | 16 | 0 |
 
-Measured on H100 (132 SM). Tuned online by Augur (§13.7) via MFU feedback: if collective utilization < compute utilization, shift SMs from compute to comm; vice versa reversed. Bounds: compute ≥ 50%; comm ≥ 5%.
+Measured on H100 (132 SM). Tuned online by runtime observation (§13.7) via MFU feedback: if collective utilization < compute utilization, shift SMs from compute to comm; vice versa reversed. Bounds: compute ≥ 50%; comm ≥ 5%.
 
 #### 14.9.5 Combined with warp specialization + setmaxnreg
 
@@ -2452,7 +2452,7 @@ See MIMIC.md §15.5 for setmaxnreg PTX emission detail.
 
 Green contexts are created at Keeper init, persisted across plan submissions, destroyed at Keeper shutdown. Each has its own GPFIFO channel + USERMODE doorbell. Plan submissions target specific channels via per-role stream IDs.
 
-If workload characteristics change materially (MoE count changes, DP/TP ratio shifts), Augur may recommend re-provisioning; Keeper tears down and recreates green contexts at next iteration boundary (~10-20 ms, one-time per re-provisioning event).
+If workload characteristics change materially (MoE count changes, DP/TP ratio shifts), runtime observation may recommend re-provisioning; Keeper tears down and recreates green contexts at next iteration boundary (~10-20 ms, one-time per re-provisioning event).
 
 #### 14.9.7 Cross-vendor support
 
@@ -2521,7 +2521,7 @@ Every Crucible thread belongs to exactly one class. The class dictates scheduler
 - All touched pages `mlock2(MLOCK_ONFAULT)`. Never swapped out.
 - NUMA-local to the GPU it serves (`/sys/class/drm/cardN/device/numa_node`).
 - SMT sibling optionally offlined (or `PR_SCHED_CORE` to ensure only trusted code runs on the sibling).
-- Watchdog: a COLD thread monitors Augur's deadline-miss counter; after N breaches in M seconds, the HOT thread is downgraded to SCHED_FIFO, then SCHED_OTHER, with a diagnostic at each step.
+- Watchdog: a COLD thread monitors the runtime observer's deadline-miss counter; after N breaches in M seconds, the HOT thread is downgraded to SCHED_FIFO, then SCHED_OTHER, with a diagnostic at each step.
 
 **WARM** — one or more threads per Keeper: background compile (Forge Phase D/E), TraceGraph build, memory planner, Meridian recalibration, TraceRing drainer. Policy:
 
@@ -2531,7 +2531,7 @@ Every Crucible thread belongs to exactly one class. The class dictates scheduler
 - Free to syscall. Block on compile jobs fine.
 - Runs the atomic pointer swap that brings newly-compiled code into service at the next iteration boundary (§7.x, §10).
 
-**COLD** — Canopy gossip, Cipher persistence writer, Augur sampler, health monitor, self-update orchestration. Policy:
+**COLD** — Canopy gossip, Cipher persistence writer, runtime observation sampler, health monitor, self-update orchestration. Policy:
 
 - `SCHED_OTHER`, nice +10.
 - Affinity to any core, preferring a different NUMA node from HOT (stay out of the way).
@@ -2594,7 +2594,7 @@ The 17-layer model maps onto specific realtime mechanisms. This table is the "ho
 | L8–L12 Intelligence | All analyses on WARM; modifications published via atomic swap at iteration boundary | existing; no new realtime code |
 | L13 Distribution | NIC-local NUMA for comm thread; GPUDirect RDMA for bulk; UCX not ibverbs-direct | `src/rt/CommThread.cpp` (new), §5 CNTP |
 | L14 Lifecycle | Cipher hot-tier via io_uring with SQPOLL + registered buffers; fire-and-forget from HOT | `src/cipher/HotWriter.cpp`, §9 |
-| L15 Meridian+Augur | Meridian prefaults + registers all hot regions; Augur monitors from COLD thread at 1 Hz | `src/meridian/Prefault.cpp`, `src/augur/Monitor.cpp` |
+| L15 Meridian + RT | Meridian prefaults + registers all hot regions; runtime observation monitors from COLD thread at 1 Hz | `src/meridian/Prefault.cpp`, `src/rt/Monitor.cpp` |
 | L16 Ecosystem | Cross-run persistence of Policy profile in Cipher; reload at next startup | existing Cipher path |
 
 The file layout is illustrative — finalise during build-plan milestone §20.
@@ -2671,7 +2671,7 @@ The runtime needs specific Linux capabilities to enable each mechanism. Keeper i
 | Write `cpuidle/stateN/disable` | `CAP_SYS_ADMIN` OR udev rule | C-states stay active |
 | Write `/proc/irq/*/smp_affinity` | `CAP_SYS_ADMIN` | operator configuration step |
 | `PR_SCHED_CORE` | (user on self, kernel ≥ 5.14) | no core-scheduling |
-| `perf_event_open` (HW counters) | `CAP_PERFMON` OR `kernel.perf_event_paranoid ≤ 2` | HW counters unavailable in Augur |
+| `perf_event_open` (HW counters) | `CAP_PERFMON` OR `kernel.perf_event_paranoid ≤ 2` | HW counters unavailable in runtime observation |
 | BPF tracepoint attach | `CAP_BPF + CAP_PERFMON + CAP_DAC_READ_SEARCH` | sense hub unavailable (still run) |
 
 Every mechanism degrades to a logged warning, not a hard failure. The deploy-health report (§16.8) summarizes which mechanisms are active, which fell back, and the expected latency impact of each fallback.
@@ -2718,7 +2718,7 @@ DEPLOY STATUS: DEGRADED
   IRQ 196 (NVMe) -> CPU 4 — HOT cpu is taking device IRQs; expect occasional 10µs-class stalls
 ```
 
-The operator (and Augur, programmatically) uses this report to drive remediation. The report is written to Cipher at every Keeper startup — historical deploy-quality is queryable across checkpoints.
+The operator (and runtime observation, programmatically) uses this report to drive remediation. The report is written to Cipher at every Keeper startup — historical deploy-quality is queryable across checkpoints.
 
 ### 16.9 Validation — bench harness as production probe
 
@@ -3240,7 +3240,7 @@ Clean ownership cut, codified for future contributors:
 - CNTP (transport + collectives protocol + NetworkOffload plane + eBPF fast path)
 - Elastic membership + live reshard
 - Data loading (DataNode IR001 op, CPU Relay worker pool)
-- Augur (sampling, drift detection, regression detection, recommendations)
+- runtime observation (sampling, drift detection, regression detection, recommendations)
 - Time-travel debugging + profiling + `crucible top`
 - k8s operator (`CrucibleCluster` CRD) + SLURM launcher + systemd unit
 - Native Python / C++ / Rust frontends
@@ -3602,4 +3602,3 @@ Crucible is a different category of tool from the ML frameworks it replaces. Thi
 ---
 
 *End of Crucible runtime design document. Companion to FORGE.md (vendor-agnostic compiler) and MIMIC.md (per-vendor backend framework). Upstream overview in CLAUDE.md.*
-

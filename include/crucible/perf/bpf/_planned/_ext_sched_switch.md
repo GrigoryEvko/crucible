@@ -59,7 +59,7 @@ compute `effective_freq = off_cpu_cycles / off_cpu_ns` per event
 
 Aggregate metric: `Σ off_cpu_cycles / Σ off_cpu_ns` across the
 bench window = "average GHz that the CPU was running OUR off-CPU
-periods at".  Augur uses this to detect frequency-scaling drift
+periods at".  runtime observation uses this to detect frequency-scaling drift
 and noisy-neighbor interference distinctly from preemption.
 
 ## Cost

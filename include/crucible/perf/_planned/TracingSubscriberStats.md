@@ -15,7 +15,7 @@ detects when this happens.
 
 Manifestation: bench reports "the syscall_latency facade saw 50K events
 this iteration".  In reality, 75K events fired and 25K were dropped.
-Augur draws conclusions from a truncated stream.
+runtime observation draws conclusions from a truncated stream.
 
 ## Mechanism
 

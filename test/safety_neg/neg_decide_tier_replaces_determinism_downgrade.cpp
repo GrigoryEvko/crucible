@@ -36,10 +36,10 @@
 //   2. cross_vendor_step_invariant CI fails — different vendors
 //      reach different /dev/urandom values, breaking the cross-
 //      vendor numerics CI claim from MIMIC.md §41.
-//   3. Augur's drift-attribution loses its ground truth — every
+//   3. runtime observer's drift-attribution loses its ground truth — every
 //      replay-comparison shows "drift" even when no real drift
 //      exists, masking actual hardware/kernel-version drifts that
-//      Augur is supposed to surface.
+//      runtime observation is supposed to surface.
 //   4. Federation breaks — a deterministic kernel published to a
 //      peer org's KernelCache produces different bytes than the
 //      publisher; Cipher's cross-org replay no longer agrees.
@@ -79,7 +79,7 @@
 //     consequence: SLA recovery target silently downgrades.
 //   * determinism (this fixture)  — fires on the determinism-budget
 //     axis (DetSafeTier, 7-element chain).  Production
-//     consequence: bit-exact replay invariant breaks; Augur drift
+//     consequence: bit-exact replay invariant breaks; runtime drift
 //     attribution can't separate runs.
 //
 // Both fixtures pin the SAME structural rule (correct comparator

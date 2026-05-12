@@ -47,7 +47,7 @@ Today, the three substrates compose only in three places:
 
 - `include/crucible/concurrent/Queue.h`'s `PermissionedProducerHandle<UserTag>` and `PermissionedConsumerHandle<UserTag>` carry a `[[no_unique_address]] Permission<queue_tag::Producer<UserTag>>` field, demonstrating that permission-typed handles compile down to bare pointers via EBO. This is the proof of concept; it is wired into one queue facade and zero production callers.
 
-- `include/crucible/concurrent/PermissionedSnapshot.h` wraps `AtomicSnapshot<T>` with a `SharedPermissionPool<ReaderTag>` and exposes `lend()` for fractional read access plus `try_upgrade()` for exclusive write. SWMR pattern; one production caller (planned: Augur metrics, task #281), zero today.
+- `include/crucible/concurrent/PermissionedSnapshot.h` wraps `AtomicSnapshot<T>` with a `SharedPermissionPool<ReaderTag>` and exposes `lend()` for fractional read access plus `try_upgrade()` for exclusive write. SWMR pattern; one production caller (planned: runtime observation metrics, task #281), zero today.
 
 - `include/crucible/concurrent/PermissionedSpscChannel.h` (recently shipped via task #304's revival) backs an `SpscRing<T, N>` with two `Permission<spsc_tag::*<UserTag>>` tokens, one per endpoint. SPSC pattern; zero production callers today.
 
@@ -564,7 +564,7 @@ A typestate machine should be expressed via single-party `Session<Proto, Resourc
 - the machine participates in a global type G with other participants
 - the per-transition discipline is "the protocol's L7 φ-property must hold"
 
-Vigil mode is borderline: it is internal (favoring Machine) but participates in a global protocol with the Vessel adapter and the bg pipeline (favoring Session). Resolution: `Vigil` carries a `Machine<VigilMode>` for its imperative state plus a `SessionHandle<G_Vigil_Local, ...>` projection of its participation in the cross-component dispatch protocol. The two coexist; Machine is consulted by intra-Vigil code, Session is observed by external test harnesses and the Augur metrics broadcast.
+Vigil mode is borderline: it is internal (favoring Machine) but participates in a global protocol with the Vessel adapter and the bg pipeline (favoring Session). Resolution: `Vigil` carries a `Machine<VigilMode>` for its imperative state plus a `SessionHandle<G_Vigil_Local, ...>` projection of its participation in the cross-component dispatch protocol. The two coexist; Machine is consulted by intra-Vigil code, Session is observed by external test harnesses and the runtime observation metrics broadcast.
 
 ### 10.2 The interop primitives
 
@@ -765,7 +765,7 @@ Approximately two hundred lines. Foundational for the replay-determinism CI test
 
 ## 16. ScopedView × non-consuming protocol introspection
 
-Sometimes external code needs to *inspect* a session handle's state without consuming it: the Augur metrics broadcast wants to enumerate active sessions and report each one's protocol position; the Crucible test harness wants to assert "this handle is at a Send state" without advancing the protocol; a debugger wants to render the protocol's name and the bound resource. Today the only options are `protocol_name()` (a `std::string_view`) or destructive consumption.
+Sometimes external code needs to *inspect* a session handle's state without consuming it: the runtime observation metrics broadcast wants to enumerate active sessions and report each one's protocol position; the Crucible test harness wants to assert "this handle is at a Send state" without advancing the protocol; a debugger wants to render the protocol's name and the bound resource. Today the only options are `protocol_name()` (a `std::string_view`) or destructive consumption.
 
 `ScopedView<Carrier, Tag>` from `safety/ScopedView.h` is the right primitive: a non-owning typed reference proving the carrier is in the state denoted by the tag.
 
@@ -785,7 +785,7 @@ template <typename Tag, typename Handle>
     requires HandleIsAt<Handle, Tag>;
 ```
 
-Augur uses `mint_session_view<AtRecvPosition<...>>(handle)` to get a non-consuming proof that the handle is awaiting a recv; reports it in the metrics snapshot; the view's lifetime scopes the report. The handle is unaffected. Type system forbids minting a view of the wrong tag (compile error via `HandleIsAt` concept).
+runtime observation uses `mint_session_view<AtRecvPosition<...>>(handle)` to get a non-consuming proof that the handle is awaiting a recv; reports it in the metrics snapshot; the view's lifetime scopes the report. The handle is unaffected. Type system forbids minting a view of the wrong tag (compile error via `HandleIsAt` concept).
 
 Approximately a hundred lines for the tags + the mint factories. Resolves the long-standing question "how do we observe a session without consuming it?" without introducing a new primitive type.
 
@@ -812,7 +812,7 @@ Catches the entire class of "moved my channel" bugs at compile time. Twenty line
 
 ## 18. ReadView × SharedPermission for SWMR sessions
 
-Many Crucible channels are single-writer-many-reader: KernelCache (one bg compile worker writes; many dispatch threads read), AtomicSnapshot patterns (Augur metrics, Meridian calibration, MemoryPlan publication), DataNode prefetch-buffer reads, PagedKVCache prefix lookups. Each currently uses a hand-rolled atomic + acquire/release; the session-type expression is `SwmrProto = Loop<Send<T, Continue>>` for the writer and `Loop<Recv<T, Continue>>` for each reader.
+Many Crucible channels are single-writer-many-reader: KernelCache (one bg compile worker writes; many dispatch threads read), AtomicSnapshot patterns (runtime observation metrics, Meridian calibration, MemoryPlan publication), DataNode prefetch-buffer reads, PagedKVCache prefix lookups. Each currently uses a hand-rolled atomic + acquire/release; the session-type expression is `SwmrProto = Loop<Send<T, Continue>>` for the writer and `Loop<Recv<T, Continue>>` for each reader.
 
 The integration glues `SharedPermissionPool<ReaderTag>` to the reader's session establishment:
 
@@ -844,7 +844,7 @@ public:
 
 Replaces `PermissionedSnapshot<T, Tag>` (the existing primitive) with a session-typed variant whose protocol is explicit. Each reader's handle is a real session handle that respects abandonment-check semantics, propagates protocol_name for diagnostics, and composes with all the rest of the integration machinery.
 
-Approximately two hundred lines, builds on the existing `PermissionedSnapshot` and adds the session-typed wrapper. Resolves QUEUE-6 (#281 AtomicSnapshot for Augur metrics broadcast) and QUEUE-10 (#285 property fuzzer for AtomicSnapshot torn-read prevention) with one shot.
+Approximately two hundred lines, builds on the existing `PermissionedSnapshot` and adds the session-typed wrapper. Resolves QUEUE-6 (#281 AtomicSnapshot for runtime observation metrics broadcast) and QUEUE-10 (#285 property fuzzer for AtomicSnapshot torn-read prevention) with one shot.
 
 ---
 
@@ -1055,7 +1055,7 @@ This part enumerates production code paths that should adopt the integrations ab
 
 The refactor:
 - Replace `enum class VigilMode { Recording, Replaying, Serving, Flushing }` with `safety::Machine<VigilMode_State>` where `VigilMode_State` is a discriminated union of per-mode payload structs.
-- Wrap the Machine in `SessionFromMachine` for external observers (Augur metrics broadcast, test harnesses, debug renderers).
+- Wrap the Machine in `SessionFromMachine` for external observers (runtime observation metrics broadcast, test harnesses, debug renderers).
 - Mode transitions become typed function calls (`transition_to<RecordingMode>(...)`); each transition consumes the old Machine and returns a new one.
 
 About three hundred lines of refactor; closes tasks #33, #34, #41, #46, #78, #87, #88, #89, #108, #165. The largest single payoff among the production refactors.
@@ -1097,7 +1097,7 @@ The refactor:
 - Reader sessions get `ReadView<KernelCacheReaderTag>` proofs; cache lookup is bounded by the ReadView's lifetime.
 - Mode-transition for cache invalidation (architecture mutation, kernel re-extraction) uses `with_drained_access`.
 
-About five hundred lines; resolves #356 (SEPLOG-K2 KernelCache SWMR publication as typed session), #281 (QUEUE-6 AtomicSnapshot for Augur metrics broadcast — same pattern), and the long-pending content-addressed-dedup cleanup.
+About five hundred lines; resolves #356 (SEPLOG-K2 KernelCache SWMR publication as typed session), #281 (QUEUE-6 AtomicSnapshot for runtime observation metrics broadcast — same pattern), and the long-pending content-addressed-dedup cleanup.
 
 ## 33. Cipher tier promotion → Delegate + Tagged
 

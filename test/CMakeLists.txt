@@ -3528,7 +3528,7 @@ crucible_neg_compile_test(neg_cipher_tier_warm_at_hot_fence
 
 # FOUND-G47-AUDIT — matrix-fill: Cold rejected at Warm fence (freshness-
 # guarantee violation — replay-engine S3 archive misused at a per-
-# iteration publish path, breaking Augur recommendations-engine
+# iteration publish path, breaking runtime policy engine
 # integrity).
 crucible_neg_compile_test(neg_cipher_tier_cold_at_warm_fence
   "constraints not satisfied|no matching function|associated constraints")
@@ -4301,7 +4301,7 @@ crucible_neg_compile_test(neg_cipher_tier_restore_wrong_value_type
 # path that would otherwise let a Cold-tier (L3-resident) value
 # silently flow into the KernelCache L1 fast-path admission gate,
 # breaking the per-call shape budget (~10× cache-miss penalty).
-# Type-fences CRUCIBLE.md §L2 KernelCache L1/L2/L3 + §L15 Augur
+# Type-fences CRUCIBLE.md §L2 KernelCache L1/L2/L3 + runtime observation
 # metric-heat tracking at every cache publish/lookup boundary.
 #
 # Cross-lattice fixture is LOAD-BEARING for the 28_04 §4.7
@@ -5956,7 +5956,7 @@ crucible_neg_compile_test(neg_decide_intervals_cover_unit_overshoot
 #     weaker determinism-budget provider replacing a Pure
 #     requirement.  Production consequence: bit_exact_replay_
 #     invariant CI test reddens; cross_vendor_step_invariant CI
-#     fails; Augur drift-attribution loses its ground truth.
+#     fails; runtime drift-attribution loses its ground truth.
 #
 # A regression in tier_replaces (sign reversed; identity-only;
 # strict-instead-of-non-strict) breaks BOTH fixtures.  A reviewer
@@ -5980,7 +5980,7 @@ crucible_neg_compile_test(neg_decide_tier_replaces_determinism_downgrade
 #     `(Row<Alloc, IO>, Row<Alloc>)`.  |Payload| > |Ctx|, atoms
 #     partially overlap.  Production consequence: a kernel
 #     declaring it may emit IO is admitted into an alloc-only
-#     ExecCtx; Augur drift-attribution mis-classifies the I/O
+#     ExecCtx; runtime drift-attribution mis-classifies the I/O
 #     latency spike.  Catches the "direction-reversed" and
 #     "structural-equality" bug classes.
 #   * neg_decide_row_subset_disjoint_axis — fires on

@@ -19,7 +19,7 @@
 // is production-grade — full ERR_PTR-aware libbpf binding, autoload
 // disable for unavailable tracepoints, partial-coverage diagnostics,
 // PIMPL'd state, RAII destructor — and conceptually belongs to
-// Augur (the L15 prediction/monitoring layer) rather than to bench.
+// the runtime observation surface rather than to bench.
 // Bench and production code use the canonical `crucible::perf::*` API.
 //
 // ─── Two-tier observability design ─────────────────────────────────

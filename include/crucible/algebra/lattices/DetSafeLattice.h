@@ -277,7 +277,7 @@ static_assert(det_safe_tier_count == 7,
 static_assert(every_det_safe_tier_has_name(),
     "det_safe_tier_name() switch missing arm for at least one tier — "
     "add the arm or the new tier leaks the '<unknown DetSafeTier>' "
-    "sentinel into Augur's debug output.");
+    "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<T> sub-lattice.
 static_assert(Lattice<DetSafeLattice>);

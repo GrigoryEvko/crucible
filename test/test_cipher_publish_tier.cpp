@@ -318,14 +318,14 @@ static void test_phase5_stub_semantics(const char* dir) {
     assert(!static_cast<bool>(h_cold));
 }
 
-// ── T14 — Augur tier-reader diagnostic simulation ───────────────
+// ── T14 — runtime observation tier-reader diagnostic simulation ───────────────
 //
-// Augur's drift-attribution logic reads the static `tier` accessor
+// runtime observer's drift-attribution logic reads the static `tier` accessor
 // to distinguish "Hot-tier issue" vs "S3 latency spike" without a
 // runtime tier-tagged enum field.  This test exercises that pattern
 // — a generic function that switches on the tier at COMPILE time
 // and emits different diagnostic categories.  Per CipherTier.h
-// docblock: "Augur drift attribution can read the static `tier`".
+// docblock: "runtime drift attribution can read the static `tier`".
 template <typename W>
 [[nodiscard]] static constexpr int classify_tier_for_drift_attribution() noexcept {
     if constexpr (W::tier == CipherTierTag_v::Hot)  return 1;
@@ -342,7 +342,7 @@ static void test_runtime_tier_reader_pattern(const char* dir) {
     auto payload = Cipher::content_addressed(region);
 
     // The static `tier` accessor permits zero-runtime-cost dispatch
-    // on the publication tier.  Augur uses this to label drift
+    // on the publication tier.  runtime observation uses this to label drift
     // residuals against the appropriate baseline (Hot-tier
     // residuals attribute to single-node-failure recovery latency;
     // Cold-tier residuals attribute to S3 GET P99).

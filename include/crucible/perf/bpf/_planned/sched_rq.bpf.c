@@ -8,7 +8,7 @@
  * "How busy is this CPU?" answered as run-queue length over time.
  * Per-CPU depth distribution → tells you which CPU is oversubscribed
  * (depth ≫ 1 means our task waits behind others) vs well-balanced
- * (depth ≈ 1 means we mostly own the CPU).  Augur's input for
+ * (depth ≈ 1 means we mostly own the CPU).  runtime observer's input for
  * cpu-sticky placement decisions.
  *
  * ─── MECHANISM ────────────────────────────────────────────────────────

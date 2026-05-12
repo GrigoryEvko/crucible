@@ -18,7 +18,7 @@
 //
 // Several long-pending Crucible components are borderline: their
 // internal logic wants Machine's ergonomics, but external observers
-// (Augur metrics broadcast, replay-deterministic bisimulation,
+// (runtime metrics broadcast, replay-deterministic bisimulation,
 // debug-time protocol introspection) want Session's structural view.
 // Examples: Vigil mode (#34, #78); Transaction (#101); Keeper startup;
 // FLR recovery (#164); pending_region/pending_activation (#33).

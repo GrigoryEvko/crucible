@@ -218,7 +218,7 @@ int run_view_protocol_name() {
 //
 // A function that takes a position-tagged view as proof — only
 // callable when the handle is at the matching position.  This is the
-// pattern Augur and similar metrics-broadcast paths follow per §16.
+// pattern runtime observation and similar metrics-broadcast paths follow per §16.
 
 template <typename Handle>
     requires HandleIsAt<Handle, AtRecv>

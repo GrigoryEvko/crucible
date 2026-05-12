@@ -1192,7 +1192,7 @@ constexpr bool intervals_cover_unit(
 // Cipher::publish_hot vs publish_warm vs flush_cold tier transitions;
 // Forge Phase E.RecipeSelect's NumericalRecipe admission against the
 // kernel's declared recipe tier; BackgroundThread phase promotion
-// gates (CONTRACT-117); Augur's drift-attribution dispatch
+// gates (CONTRACT-117); runtime observer's drift-attribution dispatch
 // distinguishing "Cold-tier S3 latency" from "Hot-path issue".  All
 // of these can spell their VC as `tier_replaces(candidate, required)`
 // and unify on this procedure.
@@ -1226,7 +1226,7 @@ constexpr bool intervals_cover_unit(
 //     mint_demote / mint_restore + 8 lattice-direction static_asserts
 //     (CONTRACT-117 Cipher tier-transition cite, landed first).
 //   * Pending: Forge Phase E RecipeSelect admission, KernelCache
-//     hot↔warm↔cold gates, Augur drift attribution dispatch.
+//     hot↔warm↔cold gates, runtime drift attribution dispatch.
 //   * Closed-with-rationale (no runtime cite): BackgroundThread phase
 //     promotion gates.  Originally proposed as a `tier_replaces` cite
 //     (Drain → Detect → BuildTrace → MakeRegion).  Post-GAPS-099 the

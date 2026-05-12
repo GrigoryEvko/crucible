@@ -17,7 +17,7 @@
  *   - Get sub-aggregation-window callback (faster than userspace polling)
  *   - Filter regions in BPF (only emit "hot" regions, drop cold)
  *   - Cross-correlate with other tracepoints in real time
- *   - Drive Augur scheme-application decisions in-kernel
+ *   - Drive runtime observation scheme-application decisions in-kernel
  *
  * ─── MECHANISM ────────────────────────────────────────────────────────
  * BPF program type: tracepoint

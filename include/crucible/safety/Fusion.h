@@ -60,12 +60,12 @@
 //     structural, not semantic.
 //
 // (b) Cost / register pressure.  V1 only answers "is fusion legal?",
-//     not "is fusion profitable?".  The latter is the Augur layer's
-//     job (cost model + Mimic kernel selection per CLAUDE.md L15).
+//     not "is fusion profitable?".  The latter belongs to the runtime
+//     cost model plus Mimic kernel selection.
 //
 // (c) Reordering of cross-iteration dependencies.  V1 fuses one
 //     pair `(Fn1, Fn2)`; loop-level fusion that reorders dependencies
-//     is the F08 / Augur problem, not this predicate.
+//     is an F08 runtime-planning problem, not this predicate.
 //
 // ── Public surface ────────────────────────────────────────────────
 //

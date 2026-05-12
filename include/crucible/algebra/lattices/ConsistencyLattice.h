@@ -219,7 +219,7 @@ static_assert(consistency_count == 5,
 static_assert(every_consistency_has_name(),
     "consistency_name() switch missing arm for at least one tier — "
     "add the arm or the new tier leaks the '<unknown Consistency>' "
-    "sentinel into Augur's debug output.");
+    "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<C> sub-lattice.
 static_assert(Lattice<ConsistencyLattice>);

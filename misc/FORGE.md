@@ -89,7 +89,7 @@ Forge does not exist in a vacuum. It is one layer in Crucible's 17-layer archite
 - **Effects system (fx::Alloc, fx::IO, fx::Block, fx::Bg, fx::Init, fx::Test)** — capability tokens enforced at compile time. Forge's phases run on the Crucible background thread, so every phase function signature takes `fx::Bg` and can freely alloc, IO, and block. Forge never runs on the foreground hot path; that is strictly the compiled shadow-handle dispatch.
 - **L14 Cipher** — event-sourced persistent state. Forge's MAP-Elites archive, per-region CompiledKernel artifacts, calibration samples, and drift-detection residuals all persist in the Cipher and survive Relay reincarnation.
 - **L15 Meridian** — hardware calibration at startup. Forge consumes `TargetCaps` populated by Meridian's microbenchmark suite (GEMM FLOPS, memory bandwidth, launch overhead, per-opcode latencies derived by Mimic's calibration harness).
-- **L15 Augur** — continuous runtime monitoring. Augur calls `mimic::predict()` to compare predicted vs actual per-kernel runtime. Drift > 10% triggers Forge to invalidate and recompile affected cache entries.
+- **L15 runtime observation** — continuous runtime monitoring. runtime observation calls `mimic::predict()` to compare predicted vs actual per-kernel runtime. Drift > 10% triggers Forge to invalidate and recompile affected cache entries.
 
 **What Forge adds, that Crucible did not have:**
 
@@ -173,7 +173,7 @@ Crucible L4 ExecutionPlan + per-vendor launch (CUDA graph / HIP graph / TPU plan
 Accelerator execution (via our runtime library, not vendor SDK)
         │
         ▼  ~1% sampling via mimic::probe_counters
-Crucible L15 Augur — predicted vs measured
+Crucible L15 runtime observation — predicted vs measured
         │
         ▼  drift > 10% → invalidate L3 cache → Phase H recompile
 ```
@@ -198,7 +198,7 @@ Three metalworking verbs, three sharp roles: the Crucible melts the raw models i
 Other roles from Crucible's existing ontology that interact with Forge:
 
 - **Keeper** (per-Relay daemon) — calls into Forge when KernelCache misses during a compile window; runs Forge on the background thread.
-- **Augur** (continuous monitoring) — calls `mimic::predict()` and compares to measured; triggers Forge recompile when drift exceeds threshold.
+- **RT** (continuous monitoring) — calls `mimic::predict()` and compares to measured; triggers Forge recompile when drift exceeds threshold.
 - **Cipher** (persistent state) — stores Forge's outputs (cubin bytes, MAP-Elites archives, calibration residuals) and replays them on reincarnation.
 - **Meridian** (startup calibration) — populates `TargetCaps` that Forge and Mimic consume.
 - **Vigil** (the model) — is the DAG Forge compiles.
@@ -754,7 +754,7 @@ Used for:
 - Shapes the user annotated as "truly dynamic" (streaming inference with arbitrary prompt lengths)
 - Fallback during background compile of a novel bucket
 
-**Online bucket sub-specialization.** Per CRUCIBLE.md §11.7, Augur tracks per-bucket hit counts and the in-bucket distribution of actual shape values. If an existing bucket sees traffic concentrated in a narrow sub-range, Phase F can be re-invoked in the background for the sub-range, compiling a new specialized kernel and inserting it into the dispatch table before the parent bucket's entry. Sub-specialization is write-once: both entries coexist; the sub-bucket preempts when its range matches.
+**Online bucket sub-specialization.** Per CRUCIBLE.md §11.7, runtime observation tracks per-bucket hit counts and the in-bucket distribution of actual shape values. If an existing bucket sees traffic concentrated in a narrow sub-range, Phase F can be re-invoked in the background for the sub-range, compiling a new specialized kernel and inserting it into the dispatch table before the parent bucket's entry. Sub-specialization is write-once: both entries coexist; the sub-bucket preempts when its range matches.
 
 ### F.5 CommitTilePareto
 
@@ -871,7 +871,7 @@ All of this is opaque to Forge. Forge's Phase H just calls `compile_kernel` per 
 
 Collect the `CompiledKernel` from Mimic per kernel. Link each into the emerging `ExecutionPlan` (Phase J will serialize). Record the kernel's `(content_hash_ir002, vendor_caps_sig)` in the region-to-kernel mapping for L2 cache hits on subsequent compiles.
 
-The insights array Mimic returns (up to 512 structured diagnostics per kernel) is written to the Cipher alongside the binary — not consumed by Forge directly, but available to Augur for drift-attribution analysis later.
+The insights array Mimic returns (up to 512 structured diagnostics per kernel) is written to the Cipher alongside the binary — not consumed by Forge directly, but available to runtime observation for drift-attribution analysis later.
 
 **Parallelism**: Phase H is the primary parallelizable phase. Multiple KernelNodes compile concurrently on a thread pool sized by `std::thread::hardware_concurrency()`. No shared mutable state except the KernelCache (three-level, lock-free). Speedup is near-linear up to core count. A graph of 30 KernelNodes on a 32-core machine compiles in ~1 kernel's worth of wall time.
 
@@ -1240,7 +1240,7 @@ Running P95 of residuals per signal per chip. Trigger recalibration when P95 > 1
 
 ### L.4 RegressionDetect
 
-Cross-iteration consistency: same kernel on same hardware should produce same timing within tolerance. Deviations indicate thermal throttling, ECC errors, clock-domain changes, or firmware drift. Log to Augur; let Canopy decide whether to reshard away from the unhealthy node.
+Cross-iteration consistency: same kernel on same hardware should produce same timing within tolerance. Deviations indicate thermal throttling, ECC errors, clock-domain changes, or firmware drift. Log to runtime observation; let Canopy decide whether to reshard away from the unhealthy node.
 
 ### L.5 CacheInvalidate
 
@@ -2259,7 +2259,7 @@ Used during Phase H. Tens to hundreds of ms per kernel (MAP-Elites inside Mimic)
     SimTier tier = SimTier::MEDIUM);
 ```
 
-Used during Phase L.2 by Augur for drift detection. Takes an already-compiled CompiledKernel (not a KernelNode) and returns fresh predictions without recompiling. Per-vendor backend runs its medium-tier simulator.
+Used during Phase L.2 by runtime observation for drift detection. Takes an already-compiled CompiledKernel (not a KernelNode) and returns fresh predictions without recompiling. Per-vendor backend runs its medium-tier simulator.
 
 ### 22.5 `mimic::probe_counters`
 
@@ -2642,7 +2642,7 @@ Phase K.PartitionGraph's objective function (§25.2) is non-trivial; a naïve IL
 
 **Cost model inputs.** The solver consumes two tables populated at Keeper init:
 
-- **Topology table** (`TopologyMatrix`): N×N matrix of `(latency_ns, bandwidth_gbps, algorithm_map)` entries per peer-pair, measured by Meridian via CNTP's transport probes. Refreshed on membership change or Augur drift.
+- **Topology table** (`TopologyMatrix`): N×N matrix of `(latency_ns, bandwidth_gbps, algorithm_map)` entries per peer-pair, measured by Meridian via CNTP's transport probes. Refreshed on membership change or runtime observation drift.
 - **Collective benchmark table** (`CollectiveBenchmarks`): per `(op, algorithm, sub_topology, msg_size)` measured latency and bandwidth, produced by Meridian running each collective primitive on representative subsets at init. Cached in Cipher with content-addressed key; rebuilt on topology change.
 
 **Predicted step time:**
@@ -2659,7 +2659,7 @@ Z3's OPT module minimizes this subject to the constraints. Solutions are proven-
 
 **Measured-validation phase.** If Z3 proposes a configuration novel to the fleet, Phase K runs 10-50 training steps to measure actual MFU and compare to predicted. Within 5% → commit; outside 5% → fall back to second-best. Cost: one-time ~5 minutes at the start of training. Re-triggered only when topology changes significantly.
 
-**Online learning from Augur.** Per §13.6 of CRUCIBLE.md, Augur samples per-collective timings at runtime and updates `CollectiveBenchmarks`. Systematic deviation >10% for 100+ samples → flag partition for re-solve; Z3 re-runs with updated table; if proposed config differs, reshard at next iteration boundary (typically ≤1s cost at modern weight sizes).
+**Online learning from runtime observation.** Per §13.6 of CRUCIBLE.md, runtime observation samples per-collective timings at runtime and updates `CollectiveBenchmarks`. Systematic deviation >10% for 100+ samples → flag partition for re-solve; Z3 re-runs with updated table; if proposed config differs, reshard at next iteration boundary (typically ≤1s cost at modern weight sizes).
 
 **Example solver input/output** (8×H100 NVLink node + 4×MI300X RoCE node, 70B Llama):
 
@@ -2684,7 +2684,7 @@ Z3 output:
 
 ### 25.7 Scheduling cost model — the MFU gap decomposition
 
-Forge's Phase K output carries a cost-model report that Augur uses for continuous MFU tracking (CRUCIBLE.md §13.7). The model decomposes loss into attributable categories:
+Forge's Phase K output carries a cost-model report that runtime observation uses for continuous MFU tracking (CRUCIBLE.md §13.7). The model decomposes loss into attributable categories:
 
 ```
 Peak_TFLOPs (from TargetCaps):             989 TFLOPs BF16 per H100
@@ -2700,7 +2700,7 @@ Attribution of the 36.8% gap:
   Lost to suboptimal partition:               2%  → Z3 re-solve with online data
 ```
 
-Each attribution corresponds to a specific lever Phase K or a downstream pass can pull; Augur emits a ranked recommendation list (§13.5) pointing at the highest-expected-return lever.
+Each attribution corresponds to a specific lever Phase K or a downstream pass can pull; runtime observation emits a ranked recommendation list (§13.5) pointing at the highest-expected-return lever.
 
 ### 25.8 Asymmetric-fleet Z3 partitioning
 
@@ -2800,7 +2800,7 @@ The numbers below are **modeled cost decompositions** — what each step should 
 
 - **Architecture sanity check** — does the cost decomposition close out to a plausible total, given the lower-level costs Crucible sits on top of?
 - **CI baseline** — values marked ✽ have an associated bench in Phase L (MIMIC.md §30). The bench reports the actual measurement; CI fails on regression vs the previously-recorded baseline, not vs the modeled number.
-- **Augur drift signal** — when actual measurements diverge from the modeled baseline by a large margin, that's a signal worth investigating (CRUCIBLE.md §13.3); it's a diagnostic, not a contract.
+- **runtime observation drift signal** — when actual measurements diverge from the modeled baseline by a large margin, that's a signal worth investigating (CRUCIBLE.md §13.3); it's a diagnostic, not a contract.
 
 Numbers marked ✽ require real-silicon CI validation; treat unmarked numbers as architecture-time estimates.
 
@@ -2907,7 +2907,7 @@ Contributions per lever (rough attribution, non-linear compounding):
 | Plan storage per training step | ~60 KB |
 | 500K-step training run plan storage | ~30 GB raw → ~50-500 MB unique after dedup |
 
-All numbers are **design commitments**. Actual measurements from Phase L feed Augur's drift detection; sustained deviations >10% trigger recalibration. Achievement claims for ✽-marked targets require CI validation with linked measurement tickets.
+All numbers are **design commitments**. Actual measurements from Phase L feed the runtime observer's drift detection; sustained deviations >10% trigger recalibration. Achievement claims for ✽-marked targets require CI validation with linked measurement tickets.
 
 ---
 
@@ -2936,7 +2936,7 @@ while (system_running):
         trigger_recompile(kernel)
 ```
 
-Runs in Augur (L15) continuously. Not on the foreground hot path; sampling is infrequent and amortized.
+Runs in runtime observation (L15) continuously. Not on the foreground hot path; sampling is infrequent and amortized.
 
 ### 26.2 Calibration triggers (vendor-agnostic)
 
@@ -3312,7 +3312,7 @@ Additional milestones covering post-original-thesis commitments (from conversati
 - **M7**: Hybrid search mode (§22.8) with real-hardware validation of top-K candidates. HYBRID runs in cross-vendor CI by default.
 - **M8**: Z3 joint partition search (§25.6) with topology benchmarking. CNTP collective-benchmark table populated and online-updated.
 - **M8**: Asymmetric-fleet Z3 policies (§25.8). STRICT_UNIFORM / CAPACITY_WEIGHTED / TIERED. Mixed Blackwell CI test (PRO 6000 + 5090).
-- **M9**: Scheduling cost model (§25.7) with MFU gap decomposition. Augur-driven MFU attribution.
+- **M9**: Scheduling cost model (§25.7) with MFU gap decomposition. runtime-observation-driven MFU attribution.
 - **M10**: MFU CI gate — validate 55-65% target on Llama-70B 8×H100 (§25.9.6).
 - **M11+**: Event Tensor (ETC) cross-validation. Reproduce published 1.4× / 1.48× speedups as lower bound.
 
@@ -3405,7 +3405,7 @@ Questions not resolved in this document that need resolution before or during im
 
 **Canopy** — Crucible's mesh of Keepers. No master; Raft for critical consensus, SWIM for gossip. Fleet membership changes drive recipe intersection recomputation.
 
-**Augur** — Crucible's continuous monitoring. Calls `mimic::predict` + `mimic::probe_counters` to measure drift; triggers cache invalidation + recompile.
+**RT** — Crucible's continuous monitoring. Calls `mimic::predict` + `mimic::probe_counters` to measure drift; triggers cache invalidation + recompile.
 
 **Meridian** — Crucible's startup calibration. Runs per-vendor microbenchmarks; populates abstract + vendor-specific TargetCaps.
 
@@ -3451,9 +3451,9 @@ Twelve design commitments beyond the original thesis, each documented in the sec
 
 1. **Structure and content are orthogonal IR axes** (§18.7). Extension-point `ComputeBody*` fields on every templated KernelKind let user-supplied arithmetic inline at IR002→IR003* lowering without sacrificing structural-kernel perf. FlashAttention-class speed for arbitrary attention, norm, optimizer, scan variants; research code compiles, not graph-breaks.
 2. **Four-tier determinism** (§19). `UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT` covers the full spectrum from fastest to byte-identical cross-vendor. `BITEXACT_TC` with K≤8 tensor-core shapes is the pragmatic sweet spot for cross-vendor mixed-precision training at ~5-8% perf tax.
-3. **Z3 joint partition search** (§25.6). Proven-optimal 5D partitioning with topology benchmarking, collective benchmark table, and online learning from Augur's per-collective timings. Scales to 1024+ nodes.
+3. **Z3 joint partition search** (§25.6). Proven-optimal 5D partitioning with topology benchmarking, collective benchmark table, and online learning from the runtime observer's per-collective timings. Scales to 1024+ nodes.
 4. **Bucketed specialization + parametric fallback** (§F.4, §24.6). Dynamic shapes compile with ≤3% perf tax, never graph-break. Online bucket sub-specialization adapts to observed shape distributions.
-5. **Scheduling cost model** (§25.7). Every partition decision carries an attribution of loss sources; Augur's MFU breakdown maps each loss category to a concrete lever Phase K or downstream passes can pull.
+5. **Scheduling cost model** (§25.7). Every partition decision carries an attribution of loss sources; the runtime observer's MFU breakdown maps each loss category to a concrete lever Phase K or downstream passes can pull.
 6. **OPTIMIZER as a first-class KernelKind** (§18.1). Adam, AdamW, Lion, Muon, Shampoo, SOAP, and user-defined optimizers share the same structural kernel with the update rule as extension-point body. Meta-gradients operate on hyperparameters via the standard backward-body mechanism.
 7. **Federation-shareable L1 cache** including extension-point bodies (§18.6). Researchers who write identical bodies share compiled artifacts; the computation genome accumulates research variants across the ecosystem.
 8. **PatchPoint taxonomy** (§18.8). Eight typed kinds (SCALAR / SLOT_PTR / SHAPE_DIM / RNG_COUNTER / CONDITIONAL / COUNTER_BUMP / SEMAPHORE_VALUE / EVENT_TENSOR) let every runtime-mutable Plan value become an O(1) MMIO write. No CUDA-Graph-style recapture; patch values change plan hash predictably; cache hits amortize training-loop costs.

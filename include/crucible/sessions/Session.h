@@ -1247,7 +1247,7 @@ struct tag_base {};
 // Loop<X...Continue> protocols without a close branch — termination
 // is implicit via the transport layer closing the channel below
 // the session-type abstraction (TraceRing flush, MetaLog drain end,
-// Augur metrics broadcast shutdown, SWIM gossip cluster shutdown,
+// runtime metrics broadcast shutdown, SWIM gossip cluster shutdown,
 // infinite serving loops at process exit).
 struct InfiniteLoopProtocol : tag_base {};
 

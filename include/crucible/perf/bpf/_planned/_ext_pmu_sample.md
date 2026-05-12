@@ -127,5 +127,5 @@ All three are "extra cost on rare events" — sample period unchanged.
 ## Sibling refs
 
 Consumes: PmuCounters group_fd (for cycles delta per sample).
-Aggregated by: future `Augur::loadHotIPs()` for per-function
+Aggregated by: future `rt::loadHotIPs()` for per-function
 attribution.

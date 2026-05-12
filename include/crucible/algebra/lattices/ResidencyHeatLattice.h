@@ -6,7 +6,7 @@
 // (cache-tier) spectrum.  The grading axis underlying the
 // ResidencyHeat wrapper from 28_04_2026_effects.md §4.3.8.
 //
-// THE LOAD-BEARING USE CASE: KernelCache L1/L2/L3 + Augur metric
+// THE LOAD-BEARING USE CASE: KernelCache L1/L2/L3 + runtime metric
 // heat-tier classification.  Distinct from CipherTier's storage-
 // PERSISTENCE axis: ResidencyHeat captures HOW HOT the access
 // pattern is (working-set residency / cache-tier), CipherTier
@@ -24,23 +24,23 @@
 // ── The classification ──────────────────────────────────────────────
 //
 //     Hot   — Working-set hot.  Lives in L1 (KernelCache IR002 most-
-//              accessed slots).  Augur metric: P95 access in last
+//              accessed slots).  runtime metric: P95 access in last
 //              window.  ~ns access latency.  The strongest
 //              residency-heat claim — closest to the consumer.
 //              Production: hottest 32 KB of KernelCache L1 IR002,
-//              hot-watch Augur per-axis drift counters, hottest
+//              hot-watch runtime observation per-axis drift counters, hottest
 //              ~ms of TraceRing tail.
 //     Warm  — Working-set warm.  Lives in L2 (KernelCache IR003* per-
-//              vendor-family slabs).  Augur metric: accessed within
+//              vendor-family slabs).  runtime metric: accessed within
 //              last few iterations.  ~tens of ns access latency.
-//              Production: KernelCache IR003* warm slabs, Augur
+//              Production: KernelCache IR003* warm slabs, runtime observation
 //              broader-window aggregates, MetaLog drain region.
 //     Cold  — Working-set cold.  Lives in L3 (KernelCache compiled
-//              bytecode large slabs) or DRAM.  Augur metric:
+//              bytecode large slabs) or DRAM.  runtime metric:
 //              eviction-candidate.  ~hundreds of ns access latency.
 //              The weakest residency-heat claim — farthest from the
 //              consumer.  Production: KernelCache L3 compiled bytes
-//              archive, Augur cold metric long-window aggregates.
+//              archive, runtime observation cold metric long-window aggregates.
 //
 // ── Algebraic shape ─────────────────────────────────────────────────
 //
@@ -68,7 +68,7 @@
 // implementation INVERTS to Cold=0 ... Hot=2 to keep the chain
 // direction uniform with the seven sister chain lattices.  The
 // SEMANTIC contract from the spec ("KernelCache L1 hottest, L3
-// coldest; Augur per-axis heat tracking") is preserved exactly:
+// coldest; runtime observation per-axis heat tracking") is preserved exactly:
 //
 //   ResidencyHeat<Hot>::satisfies<Warm>  = leq(Warm, Hot)  = true ✓
 //   ResidencyHeat<Cold>::satisfies<Hot>  = leq(Hot, Cold)  = false ✓
@@ -99,7 +99,7 @@
 // (safety/ResidencyHeat.h) for the type-pinned wrapper;
 // 28_04_2026_effects.md §4.3.8 for the production-call-site
 // rationale; CRUCIBLE.md §L2 (KernelCache three-level cache) +
-// §L15 (Augur metric heat) for the load-bearing consumers.
+// runtime metric heat for the load-bearing consumers.
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
@@ -198,7 +198,7 @@ namespace detail::residency_heat_lattice_self_test {
 static_assert(residency_heat_tag_count == 3,
     "ResidencyHeatTag catalog diverged from {Cold, Warm, Hot}; "
     "confirm intent and update the dispatcher's heat-tier admission "
-    "gates + Augur per-axis heat-tracking plumbing.");
+    "gates + runtime observation per-axis heat-tracking plumbing.");
 
 [[nodiscard]] consteval bool every_residency_heat_tag_has_name() noexcept {
     static constexpr auto enumerators =

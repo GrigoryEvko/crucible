@@ -8,7 +8,7 @@
 //
 // — TopologyGraph is built ONCE at startup by Discovery (GAPS-111).
 // Once minted, it is the canonical fleet topology referenced by
-// Mimic / Augur / Canopy as `const TopologyGraph&`.  A non-Init
+// Mimic / runtime observation / Canopy as `const TopologyGraph&`.  A non-Init
 // context attempting to mint either:
 //
 //   (a) means a foreground or test-only thread is racing Discovery

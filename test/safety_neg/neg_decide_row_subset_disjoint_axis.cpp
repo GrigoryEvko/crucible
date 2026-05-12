@@ -24,7 +24,7 @@
 // blocking budget).  The kernel runs anyway:
 //
 //   1. The blocking call stalls the hot path; downstream Stages
-//      starve their consumers; queue depth spikes.  Augur sees the
+//      starve their consumers; queue depth spikes.  runtime observation sees the
 //      throughput collapse but the row metadata says "all alloc";
 //      drift-attribution has no signal to point at the blocking
 //      call as root cause.

@@ -24,7 +24,7 @@
  * to why (the P-state dropped from boost to base under low utilization).
  *
  * Crucible bench harness already pins CPU and disables governor for
- * variance discipline (CLAUDE.md §VIII), but production / Augur
+ * variance discipline (CLAUDE.md §VIII), but production / runtime observation
  * deployments don't have that luxury — knowing WHEN P-state shifted
  * is necessary to interpret latency variance.
  *

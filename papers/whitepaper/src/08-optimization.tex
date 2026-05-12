@@ -28,7 +28,7 @@ Separate kernels per precision group, dispatched from measured information conte
 
 \subsection{Layer-Level Analysis}
 
-Operations grouped by \code{ScopeHash}; each layer analyzed independently via Augur diagnostics (Section~6.4).
+Operations grouped by \code{ScopeHash}; each layer analyzed independently via runtime observation diagnostics (Section~6.4).
 
 \textbf{Attention head classification.}
 From recorded attention matrices: positional heads (diagonal band) $\to$ depthwise convolution $O(n \cdot k)$ vs $O(n^2)$; global heads (fixed landmarks) $\to$ gather + broadcast $O(n)$; averaging heads (uniform) $\to$ mean pooling $O(n)$; dead heads (near-zero output) $\to$ removed.
@@ -143,7 +143,7 @@ Figure~\ref{fig:optloop} illustrates the uniform protocol.
   lbl/.style={font=\sffamily\tiny, text=black!40},
 ]
   %% Steps
-  \node[stp, fill=blue!5] (diag) {\textbf{Augur}\\diagnose + predict};
+  \node[stp, fill=blue!5] (diag) {\textbf{runtime observation}\\diagnose + predict};
   \node[stp, fill=green!5, right=2em of diag] (branch)
     {\textbf{DAG}\\create BranchNode};
   \node[stp, fill=orange!5, right=2em of branch] (verify)
@@ -169,7 +169,7 @@ Figure~\ref{fig:optloop} illustrates the uniform protocol.
 \end{tikzpicture}
 \caption{Optimization activation protocol.
   Every optimization follows the same path:
-  Augur diagnoses, a BranchNode encodes the change,
+  runtime observation diagnoses, a BranchNode encodes the change,
   F$\star$X verifies safety, evaluation compares arms on validation data,
   and the Keeper activates or discards via atomic swap.
   No optimization is irreversible.}
@@ -179,7 +179,7 @@ Figure~\ref{fig:optloop} illustrates the uniform protocol.
 Uniform protocol for all optimizations:
 
 \begin{enumerate}
-  \item Augur diagnoses and predicts expected improvement.
+  \item runtime observation diagnoses and predicts expected improvement.
   \item Optimization implemented as BranchNode or DAG modification.
   \item F$\star$X verifies safety (memory bounds, kernel access).
   \item New branch evaluated on validation data alongside current branch.

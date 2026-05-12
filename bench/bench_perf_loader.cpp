@@ -19,7 +19,7 @@
 //       on the read path vs hand-holding 7 std::optional<Facade>.
 //
 //   (C) Coverage diagnostics: `s.coverage()` plus `attached_count()`.  Used
-//       by Augur for drift attribution ("can't read CPU stalls — PmuSample
+//       by runtime observation for drift attribution ("can't read CPU stalls — PmuSample
 //       is missing") and by bench banners.  Both sub-ns; we bench them
 //       separately because attached_count() does 7 conditional adds and
 //       could in principle be slower than the bare struct read.
@@ -32,7 +32,7 @@
 //       once, see bench/CMakeLists.txt).
 //
 //   (E) Snapshot diff: `Snapshot::operator-()` runs 96 sub_sat — exercised
-//       at every Augur sample (paired snapshot before/after a workload).
+//       at every runtime observation sample (paired snapshot before/after a workload).
 //       Target ~100 ns; a reasonable upper bound on the steady-state cost
 //       of windowed counter deltas.
 //
@@ -220,7 +220,7 @@ int main() {
                 bench::do_not_optimize(p);
             });
         }(),
-        // (C) Coverage diagnostic — 7 bools by value (≤ 4 B).  Augur reads
+        // (C) Coverage diagnostic — 7 bools by value (≤ 4 B).  runtime observation reads
         // this once per drift-detection sample.
         [&]{
             return bench::run("senses.coverage()", [&]{
@@ -248,7 +248,7 @@ int main() {
             });
         }(),
         // (E) Snapshot diff — 96 × sub_sat over a 768 B baseline.  Two
-        // snapshots are diffed at every Augur sample to get windowed
+        // snapshots are diffed at every runtime observation sample to get windowed
         // counters; this report is the steady-state cost of that diff.
         [&]{
             return bench::run("snapshot - snapshot [96 sub_sat]", [&]{
@@ -632,7 +632,7 @@ int main() {
     // Bench is the single consumer of the perf facades for now; this
     // section demonstrates the canonical pre/work/post/delta read
     // pattern that production consumers (Keeper, WorkloadProfiler,
-    // Augur, DeadlineWatchdog) will eventually use.
+    // runtime observation, DeadlineWatchdog) will eventually use.
     //
     // Snapshots all 7 facades, runs a workload that should nudge every
     // metric (CPU spin → ctx_switches via timer interrupts; getpid loop

@@ -405,16 +405,16 @@ static void test_cross_lattice_non_mixing() {
     static_assert(!std::is_constructible_v<CtHot, RhHot>);
 }
 
-// ── T19 — Augur diagnostic tier-reader pattern ──────────────────
+// ── T19 — runtime observation diagnostic tier-reader pattern ──────────────────
 //
 // Audit-pass test: the static `tier` accessor permits zero-runtime-
-// cost dispatch on the cache-residency tier.  Augur's drift-
+// cost dispatch on the cache-residency tier.  The runtime observer's drift-
 // attribution logic uses this to label residuals against the
 // appropriate baseline ("L1 lookup miss rate" vs "L3 access
 // latency" — distinct metrics that share the same RowHash but
-// belong to different tier dashboards).  Today Augur isn't wired,
+// belong to different tier dashboards).  Today the runtime observer is not wired,
 // but the static-tier API is the load-bearing primitive that
-// Phase 3 Augur builds on; this test pins the API at the
+// Runtime observation builds on this; the test pins the API at the
 // production call site, not just at the wrapper definition.
 template <typename W>
 [[nodiscard]] static constexpr int classify_cache_tier_for_runtime() noexcept {

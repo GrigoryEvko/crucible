@@ -210,7 +210,7 @@ static_assert(lifetime_count == 3,
 static_assert(every_lifetime_has_name(),
     "lifetime_name() switch missing arm for at least one Lifetime — "
     "add the arm or the new scope leaks the '<unknown Lifetime>' "
-    "sentinel into Augur's debug output.");
+    "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<L> sub-lattice.
 static_assert(Lattice<LifetimeLattice>);

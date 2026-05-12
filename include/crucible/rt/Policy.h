@@ -39,7 +39,7 @@ enum class SchedClass : uint8_t {
 enum class ThreadClass : uint8_t {
     Hot,   // dispatch / compiled replay — one per compute chip
     Warm,  // background compile, graph build, memory planner, trace drain
-    Cold,  // gossip, Cipher writer, Augur, health, self-update
+    Cold,  // gossip, Cipher writer, runtime observation, health, self-update
 };
 
 // What happens when a privileged knob can't be set (missing capability,
@@ -74,7 +74,7 @@ struct Policy {
     // graph build, memory planner, trace drain). 0 = default.
     int           warm_nice            = 0;
     // setpriority() nice value for COLD threads (gossip, Cipher
-    // writer, Augur, health, self-update). Higher = less CPU share.
+    // writer, runtime observation, health, self-update). Higher = less CPU share.
     int           cold_nice            = 10;
 
     // ── Memory ─────────────────────────────────────────────────────

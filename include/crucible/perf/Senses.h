@@ -125,7 +125,7 @@ struct SensesMask {
 // ─── CoverageReport ──────────────────────────────────────────────────
 //
 // Per-program load status, returned by Senses::coverage().  Used by
-// bench harness banner ("loaded: SenseHub PmuSample") and Augur for
+// bench harness banner ("loaded: SenseHub PmuSample") and runtime observation for
 // drift attribution ("can't read CPU stalls — PmuSample is missing").
 
 struct CoverageReport {
@@ -185,7 +185,7 @@ public:
     [[nodiscard]] const SyscallTpBtf*   syscall_tp_btf()  const noexcept;
 
     // Coverage report — which subprograms attached, used by
-    // bench harness banner and Augur drift-attribution.
+    // bench harness banner and runtime drift-attribution.
     [[nodiscard]] CoverageReport coverage() const noexcept;
 
     // Move-only — owns 7 std::optional<facade>, each with a BPF object

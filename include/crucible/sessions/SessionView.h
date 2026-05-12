@@ -6,7 +6,7 @@
 //                            misc/24_04_2026_safety_integration.md §16)
 //
 // External code sometimes needs to *inspect* a SessionHandle without
-// consuming or advancing it: an Augur metrics broadcast enumerates
+// consuming or advancing it: a runtime metrics broadcast enumerates
 // every active session and reports each one's protocol position; a
 // debug renderer wants to print "this handle is at a Send to peer X"
 // before any state change; the test harness wants to assert "this
@@ -55,7 +55,7 @@
 // combinator; AtTerminal exists for callers who only care that the
 // handle has reached a destruction-safe state.
 //
-// ─── Example: typed Augur metrics callback ─────────────────────────
+// ─── Example: typed runtime metrics callback ─────────────────────────
 //
 //     // Metrics collector — only callable when handle is at Recv.
 //     // Compile-time enforced via the view's tag.

@@ -234,7 +234,7 @@ static_assert(tolerance_count == 7,
 static_assert(every_tolerance_has_name(),
     "tolerance_name() switch missing arm for at least one tier — "
     "add the arm or the new tier leaks the '<unknown Tolerance>' "
-    "sentinel into Augur's debug output.");
+    "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<T> sub-lattice.
 static_assert(Lattice<ToleranceLattice>);

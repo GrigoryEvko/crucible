@@ -409,7 +409,7 @@ Each per-vendor backend wraps its native profiling interface and returns a unifo
 L.2 \textsc{CompareToModel} reads Mimic's prediction stored at compile time inside the \struct{CompiledKernel} and computes per-signal residuals.
 L.3 \textsc{DriftDetect} maintains a running 95th-percentile of residuals per signal per chip; sustained drift above ten percent triggers \code{mimic::recalibrate}, which re-runs the per-vendor microbenchmark suite and updates the calibrated \struct{TargetCaps}.
 L.4 \textsc{RegressionDetect} monitors cross-iteration consistency: when the same kernel on the same hardware suddenly runs slower, the cause is one of thermal throttling, error-correction overhead from increasing memory faults, clock-domain degradation, or firmware drift.
-The detection contributes to Augur's per-Keeper health signals (Chapter~\ref{sec:augur}).
+The detection contributes to the runtime observer's per-Keeper health signals (Chapter~\ref{sec:rt}).
 L.5 \textsc{CacheInvalidate} marks affected L3 cache entries for recompilation.
 L2 entries (per-vendor \IRstar{3} snapshots) typically survive recalibration; L1 entries (vendor-neutral \IR{2}) always survive.
 

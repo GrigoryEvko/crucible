@@ -64,7 +64,7 @@ Written in the voice of Crucible's CLAUDE.md: direct, opinionated, dense, withou
 27. Effect tokens and Crucible discipline
 28. The public API
 29. Integration surface with Forge
-30. Integration surface with Augur
+30. Integration surface with runtime observation
 31. Directory structure
 32. LoC budget
 33. Build plan
@@ -101,10 +101,10 @@ Scope boundaries:
 | Workload class | Forge-emitted IR002 (affine, tiled, recipe-pinned, ML-structured) | Arbitrary hand-written kernels, CUDA C++ source, third-party binaries |
 | Prediction surface (per vendor) | Cycles, IPC, stalls, memory traffic, cache hit rates, per-pipe utilization, occupancy, 12 vendor-agnostic signals | Power, thermal, DVFS transitions, cross-kernel effects |
 | Simulation scope | Single kernel, single device, launch-to-completion | Multi-kernel interactions, cross-accelerator collectives (that's CNTP), host-device transfers scheduling |
-| Calibration | Per-vendor microbench suite; driver-source-informed models where driver is available | Runtime adaptation (Augur handles); workload-specific tuning beyond recipe pinning |
+| Calibration | Per-vendor microbench suite; driver-source-informed models where driver is available | Runtime adaptation (runtime observation handles); workload-specific tuning beyond recipe pinning |
 | Vendor libraries | None. Kernel driver ioctls only. | Any vendor SDK runtime library, vendor BLAS/DNN/collective library, vendor compiler as library |
 
-Everything out of scope is either handled by a neighboring Crucible subsystem (Augur for thermal drift, CNTP for collectives, Forge for optimization), or an explicit non-goal (no vendor SDK dependency).
+Everything out of scope is either handled by a neighboring Crucible subsystem (runtime observation for thermal drift, CNTP for collectives, Forge for optimization), or an explicit non-goal (no vendor SDK dependency).
 
 ---
 
@@ -120,7 +120,7 @@ Every Mimic backend (nv / am / tpu / trn / cer / cpu) implements a common protoc
 
 3. **IR003\* → binary-format emitter.** Per-vendor ISA encoder + binary-format writer. Produces cubin on NV, HSACO on AMD, NEFF on Trainium, TPU executable on Google, CSL on Cerebras, native ELF on CPU. ~12-15K LoC per vendor.
 
-4. **Decoder + round-trip correctness.** `decode(encode(prog)) == prog` for every valid IR003* program. Used for validation, debugging, and loading cached binaries back for Augur's `predict` path.
+4. **Decoder + round-trip correctness.** `decode(encode(prog)) == prog` for every valid IR003* program. Used for validation, debugging, and loading cached binaries back for the runtime observer's `predict` path.
 
 5. **Three-tier simulator.** Fast (~1-5 ms), medium (~10-30 ms), accurate (~100-500 ms). Each tier calibrated against real silicon. ~15-25K LoC per vendor, reusing the shared simulator framework from `mimic/core/`.
 
@@ -244,13 +244,13 @@ The reason is economic: MAP-Elites cares about picking the best cell, not the ex
 
 ### Not predicted (explicit non-goals)
 
-- **Thermal throttling** — depends on recent workload, ambient conditions, chassis airflow. Augur observes it.
+- **Thermal throttling** — depends on recent workload, ambient conditions, chassis airflow. runtime observation observes it.
 - **DVFS transitions** — millisecond-scale clock shifts at power-state boundaries.
 - **L2 eviction from other kernels** — multi-tenancy. Simulate as-if single-tenant.
 - **PCIe host-device transfer overhead** — modeled as a TargetCaps `launch_overhead_cycles` constant, not in-kernel.
 - **Driver launch queue pressure** — similarly, a fixed overhead term.
-- **Power consumption** — Augur/NVML observe separately.
-- **Single-kernel thermal-induced frequency steps** — rare under good cooling; Augur re-calibrates when they happen.
+- **Power consumption** — runtime observation/NVML observe separately.
+- **Single-kernel thermal-induced frequency steps** — rare under good cooling; runtime observation re-calibrates when they happen.
 - **Voltage droop under big transients** — transistor-level effects invisible to software.
 - **ECC memory scrub overhead** — stochastic; budget as a +5% BW penalty in TargetCaps.
 
@@ -275,7 +275,7 @@ Mimic is architecturally three things bundled for shared-data efficiency:
     public API:             internal:              public API:
     standalone              called by               compile_kernel()
     callable for            synthesizer,
-    Forge backend           by Augur's predict()
+    Forge backend           by the runtime observer's predict()
 ```
 
 The three subsystems share:
@@ -289,15 +289,15 @@ They do not share implementation code. The encoder doesn't know about simulation
 
 ### Seam 1: Encoder / Decoder
 
-Forge's Phase J calls `encoder::emit_cubin(Ir003NvProgram, TargetCaps) → cubin_bytes`. This path does not invoke the simulator; it's a pure transformation. Augur's recovery path calls `decoder::decode_cubin(cubin_bytes, TargetCaps) → DecodedProgram`, also without invoking simulation.
+Forge's Phase J calls `encoder::emit_cubin(Ir003NvProgram, TargetCaps) → cubin_bytes`. This path does not invoke the simulator; it's a pure transformation. the runtime observer's recovery path calls `decoder::decode_cubin(cubin_bytes, TargetCaps) → DecodedProgram`, also without invoking simulation.
 
 The encoder/decoder pair is testable as a round-trip: `decode(encode(x)) == x` for valid IR003NV programs. This is the continuous correctness test that keeps the bit-format tables honest.
 
 ### Seam 2: Simulator standalone (`predict`)
 
-Augur's digital twin calls `mimic::predict(DecodedProgram, TargetCaps, Tier) → SimResult`. It does not use the encoder (already have bytes), does not use the synthesizer (already have a chosen kernel).
+the runtime observer's digital twin calls `mimic::predict(DecodedProgram, TargetCaps, Tier) → SimResult`. It does not use the encoder (already have bytes), does not use the synthesizer (already have a chosen kernel).
 
-Seam 2 is the fast path for monitoring: Augur samples 1% of kernel executions, calls `predict` to get the model's expected cycles, compares to measured, computes residual, stores in the regression dataset.
+Seam 2 is the fast path for monitoring: runtime observation samples 1% of kernel executions, calls `predict` to get the model's expected cycles, compares to measured, computes residual, stores in the regression dataset.
 
 ### Seam 3: Full synthesis (`compile_kernel`)
 
@@ -326,7 +326,7 @@ Accuracy and speed trade. One simulator cannot serve both MAP-Elites throughput 
 - **Throughput**: 100-300 candidates/sec per CPU core; 3000-9000/sec on a 32-core machine
 - **Accuracy**: 5-8% absolute; **ranking accuracy 95%+**
 - **Algorithm**: event-driven warp-scheduler simulator with scoreboard tracking, explicit memory subsystem (L1/L2/DRAM request queues), FU token pool, operand collector, per-warp state machines
-- **Used for**: MAP-Elites primary fitness evaluation, Forge Phase B.5 cost estimates, Augur prediction
+- **Used for**: MAP-Elites primary fitness evaluation, Forge Phase B.5 cost estimates, runtime observation prediction
 
 ### Tier 3: ACCURATE (cycle-accurate)
 
@@ -776,17 +776,17 @@ void Simulator::dispatch_(const Event& ev) {
 void Simulator::on_issue_slot_(const Event& ev) {
     SmId sm = ev.p1 >> 8;
     PartitionId part = ev.p1 & 0xFF;
-    
+
     uint16_t warp = pick_warp_(sm, part);       // GTO + boost
     if (warp == UINT16_MAX) {
         // No ready warp; try again next cycle
         schedule_(current_cycle_ + 1, ISSUE_SLOT, sm, part);
         return;
     }
-    
+
     DecodedInst inst = warps_.current_inst(warp);
     Pipe pipe = static_cast<Pipe>(inst.pipe);
-    
+
     // Check pipe token availability
     if (sms_[sm].fu_tokens[pipe] == 0) {
         warps_.set_state(warp, WarpState::WAITING_FU);
@@ -795,7 +795,7 @@ void Simulator::on_issue_slot_(const Event& ev) {
         schedule_(current_cycle_ + 1, ISSUE_SLOT, sm, part);
         return;
     }
-    
+
     // Check scoreboard dependencies
     uint64_t required = inst.wait_sb_mask;
     uint64_t inflight = warps_.sb_inflight(warp);
@@ -805,44 +805,44 @@ void Simulator::on_issue_slot_(const Event& ev) {
         schedule_(current_cycle_ + 1, ISSUE_SLOT, sm, part);
         return;
     }
-    
+
     // Check register bank conflicts
     uint32_t bank_stall = compute_bank_stall_(inst);
-    
+
     // Consume pipe token
     sms_[sm].fu_tokens[pipe]--;
     schedule_(current_cycle_ + inst.occupancy, FU_FREE, sm, pipe);
-    
+
     // Effective issue time
     Cycle issue_time = current_cycle_ + inst.stall_count + bank_stall;
-    
+
     // Schedule completion
     schedule_(issue_time + inst.latency, INST_COMPLETE, warp, inst.pc);
-    
+
     // Dispatch memory instructions to memory subsystem
     if (is_memory(inst.op)) {
         dispatch_memory_(sm, warp, inst, issue_time);
     }
-    
+
     // Register async ops
     if (is_async_tensor(inst.op)) {
         register_async_op_(sm, warp, inst, issue_time + inst.latency);
     }
-    
+
     // Mark scoreboards in-flight
     if (inst.write_sb < 7) {
         warps_.set_sb_inflight(warp, inst.write_sb);
     }
-    
+
     // Advance warp PC
     warps_.advance(warp);
     if (warps_.has_next_inst(warp) && !sb_would_block_(warp)) {
         schedule_(issue_time + 1, WARP_READY, warp, 0);
     }
-    
+
     // Update insights
     extract_insight_hooks_(sm, warp, inst, issue_time);
-    
+
     // Re-arm issue slot for next cycle
     schedule_(current_cycle_ + 1, ISSUE_SLOT, sm, part);
 }
@@ -865,7 +865,7 @@ Hot path is ISSUE_SLOT (called every cycle per partition). Inlining the scoreboa
 ```cpp
 SimResult Simulator::run_fast(fx::Bg, DecodedProgram prog) {
     SimResult result{};
-    
+
     // Walk basic blocks, compute per-block cost, aggregate
     for (const BasicBlock& bb : prog.blocks) {
         // Pipe utilization within block
@@ -873,44 +873,44 @@ SimResult Simulator::run_fast(fx::Bg, DecodedProgram prog) {
         uint32_t mem_traffic_bytes = 0;
         uint32_t critical_path_latency = 0;
         uint32_t inst_count = bb.end - bb.start;
-        
+
         for (uint32_t i = bb.start; i < bb.end; i++) {
             const DecodedInst& inst = prog.insts[i];
             pipe_cycles[inst.pipe] += inst.occupancy;
-            
+
             // Critical path contribution (dependency chain)
             critical_path_latency = std::max(
                 critical_path_latency,
                 dep_earliest_cycle_[i] + inst.latency
             );
-            
+
             if (is_memory(inst.op)) {
                 mem_traffic_bytes += estimate_bytes_moved(inst);
             }
         }
-        
+
         // Block time = max of (pipe-constrained, mem-constrained, critical-path-constrained)
         uint32_t block_cycles = std::max({
             *std::max_element(pipe_cycles, pipe_cycles + PIPE_COUNT),
             mem_traffic_bytes * target.mem_bw_inv,
             critical_path_latency,
         });
-        
+
         // Multiply by trip count
         uint32_t trip_count = prog.loop_trip_count(bb.loop_id);
         result.total_cycles += block_cycles * trip_count;
     }
-    
+
     // Account for concurrent CTAs per SM and total grid
     uint32_t per_sm_cycles = result.total_cycles;
     uint32_t grid_cycles = per_sm_cycles * ceil_div(
         prog.grid.total_ctas,
         target.sm_count * estimate_occupancy(prog)
     );
-    
+
     result.total_cycles = grid_cycles;
     result.efficiency_ratio = theoretical_min(prog, target) / grid_cycles;
-    
+
     return result;
 }
 ```
@@ -935,22 +935,22 @@ __global__ void fast_sim_batch_kernel(
 ) {
     uint32_t candidate = blockIdx.x;
     if (candidate >= num_candidates) return;
-    
+
     // Each thread block evaluates one candidate
     // Cooperative threads within the block parallelize across basic blocks
-    
+
     const DecodedInst* program = all_programs + program_offsets[candidate];
     const BasicBlock* blocks = all_blocks + block_offsets[candidate];
     uint32_t num_blocks = block_offsets[candidate + 1] - block_offsets[candidate];
-    
+
     __shared__ uint32_t partial_cycles[MAX_BLOCKS_PER_CANDIDATE];
-    
+
     // Each thread handles a range of basic blocks
     for (uint32_t b = threadIdx.x; b < num_blocks; b += blockDim.x) {
         partial_cycles[b] = compute_block_cycles(&blocks[b], program, caps);
     }
     __syncthreads();
-    
+
     // Reduce to total cycles
     if (threadIdx.x == 0) {
         uint32_t total = 0;
@@ -1075,23 +1075,23 @@ Medium tier doesn't simulate every DRAM command or every cache eviction. It mode
 
 ```cpp
 Cycle Simulator::mem_request_latency_(
-    SmId sm, 
-    uint64_t addr, 
-    uint32_t bytes, 
+    SmId sm,
+    uint64_t addr,
+    uint32_t bytes,
     bool is_write
 ) {
     // L1 lookup
     auto l1 = sms_[sm].l1.probe(addr, bytes);
     if (l1.hit) return Cycle{caps_.l1_latency_cycles};
-    
+
     // L1 miss: route to L2 slice
     uint32_t l2_slice = l2_slice_hash_(addr);
     Cycle base_l2_latency = caps_.l2_hit_latency;
-    
+
     // Queue-aware adjustment
     uint32_t queue_depth = mem_.l2_queue_depth[l2_slice];
     Cycle l2_latency = base_l2_latency + queue_depth * caps_.opcode_table->k_queue;
-    
+
     // L2 lookup
     auto l2 = mem_.l2.probe(addr, bytes);
     if (l2.hit) {
@@ -1099,11 +1099,11 @@ Cycle Simulator::mem_request_latency_(
         schedule_(current_cycle_ + l2_latency, MEM_L2_RESP, sm, addr);
         return l2_latency;
     }
-    
+
     // L2 miss: route to HBM channel
     uint32_t hbm_channel = hbm_channel_hash_(addr);
     uint32_t row = addr >> ROW_BITS;
-    
+
     Cycle hbm_latency;
     if (mem_.row_buffers[hbm_channel].open_row == row) {
         hbm_latency = caps_.hbm_row_hit_latency;
@@ -1112,19 +1112,19 @@ Cycle Simulator::mem_request_latency_(
         mem_.row_buffers[hbm_channel].open_row = row;
     }
     mem_.row_buffers[hbm_channel].last_access = current_cycle_;
-    
+
     // Read-write turnaround
     if (mem_.last_direction[hbm_channel] != is_write) {
         hbm_latency = hbm_latency + caps_.hbm_rw_turnaround;
         mem_.last_direction[hbm_channel] = is_write;
     }
-    
+
     // Queue-depth contribution
     uint32_t hbm_queue_depth = mem_.hbm_queue_depth[hbm_channel];
     hbm_latency = hbm_latency + hbm_queue_depth * caps_.opcode_table->k_queue;
-    
+
     mem_.hbm_queue_depth[hbm_channel]++;
-    
+
     schedule_(current_cycle_ + l2_latency + hbm_latency, MEM_HBM_RESP, sm, addr);
     return l2_latency + hbm_latency;
 }
@@ -1158,14 +1158,14 @@ uint32_t Simulator::smem_access_stall_(const DecodedInst& inst, uint32_t lane_ad
     for (uint32_t l = 0; l < 32; l++) {
         banks_accessed[l] = (lane_addrs[l] >> 2) & 31;
     }
-    
+
     // Count unique banks (popcount of seen bitmask)
     uint32_t seen_mask = 0;
     for (uint32_t l = 0; l < 32; l++) {
         seen_mask |= (1 << banks_accessed[l]);
     }
     uint32_t unique_banks = std::popcount(seen_mask);
-    
+
     // If all 32 lanes hit 32 distinct banks (no conflict): 0 stall
     // If 32 lanes hit fewer banks: serialize into N replays where N = 32 / unique_banks
     uint32_t replays = 32 / unique_banks;
@@ -1188,7 +1188,7 @@ These cost ~2-5% accuracy in exchange for ~20× faster simulation. Accurate tier
 
 Some residual effects that even driver-source-informed models will miss:
 
-1. **Temperature-dependent DRAM timing** — tRCD/tRP shift slightly with junction temperature. Augur observes; Mimic doesn't.
+1. **Temperature-dependent DRAM timing** — tRCD/tRP shift slightly with junction temperature. runtime observation observes; Mimic doesn't.
 2. **Cross-kernel L2 retention** — if a kernel inherits a warm L2 from a previous kernel, hit rate is higher than Mimic predicts. Assume cold L2 at kernel start.
 3. **Compression hit rate** — NVIDIA L2 has hardware compression; actual effective capacity is workload-dependent. Model as an effective capacity multiplier (calibrated).
 4. **NoC arbitration details** — HSHUB crossbar has specific arbitration that can matter under extreme contention. Not typical in ML workloads.
@@ -1206,7 +1206,7 @@ NVIDIA's warp scheduler is GTO (Greedy-Then-Oldest) with age-based boosting. Det
 ```cpp
 uint16_t Simulator::pick_warp_(SmId sm, PartitionId p) {
     const auto& part = sms_[sm].partitions[p];
-    
+
     // Collect ready warps
     uint16_t ready_mask = 0;
     for (uint8_t w = 0; w < WARPS_PER_PARTITION; w++) {
@@ -1215,17 +1215,17 @@ uint16_t Simulator::pick_warp_(SmId sm, PartitionId p) {
             ready_mask |= (1 << w);
         }
     }
-    
+
     if (ready_mask == 0) return UINT16_MAX;
-    
+
     // GTO greedy: prefer last-picked warp if still ready
     uint16_t last_picked = part.last_picked_warp;
-    if (last_picked < WARPS_PER_PARTITION && 
+    if (last_picked < WARPS_PER_PARTITION &&
         (ready_mask & (1 << last_picked)) != 0 &&
         warps_.stalls_this_burst(warp_idx(sm, p, last_picked)) < caps_.gto_burst_limit) {
         return last_picked;
     }
-    
+
     // GTO oldest: the ready warp with smallest cycle-last-issued
     uint16_t oldest = 0;
     Cycle oldest_last_issue = Cycle::max();
@@ -1237,16 +1237,16 @@ uint16_t Simulator::pick_warp_(SmId sm, PartitionId p) {
             oldest = w;
         }
     }
-    
+
     // Boost: if any warp has been stuck > threshold, prefer it
     for (uint8_t w = 0; w < WARPS_PER_PARTITION; w++) {
         if ((ready_mask & (1 << w)) == 0) continue;
-        if (current_cycle_.v - warps_.last_issue_cycle(warp_idx(sm, p, w)).v 
+        if (current_cycle_.v - warps_.last_issue_cycle(warp_idx(sm, p, w)).v
             > caps_.gto_boost_threshold) {
             return w;
         }
     }
-    
+
     return oldest;
 }
 ```
@@ -1304,13 +1304,13 @@ On `wgmma.mma_async` issue:
 ```cpp
 void Simulator::issue_wgmma_(SmId sm, WarpId warp, const DecodedInst& inst) {
     const auto& attrs = *prog_.attrs_pool[inst.attrs_idx];
-    const WgmmaShapeSpec* spec = find_wgmma_spec(attrs.m, attrs.n, attrs.k, 
+    const WgmmaShapeSpec* spec = find_wgmma_spec(attrs.m, attrs.n, attrs.k,
                                                   attrs.a_dtype, attrs.b_dtype);
-    
+
     // MMA pipe consumed for occupancy cycles
     sms_[sm].fu_tokens[Pipe::MMA]--;
     schedule_(current_cycle_ + spec->occupancy, FU_FREE, sm, Pipe::MMA);
-    
+
     // Allocate async slot
     WgmmaOp op{
         current_cycle_,
@@ -1321,10 +1321,10 @@ void Simulator::issue_wgmma_(SmId sm, WarpId warp, const DecodedInst& inst) {
         sms_[sm].wgmma_latest_commit,
     };
     sms_[sm].wgmma_ops[sms_[sm].wgmma_op_count++] = op;
-    
+
     // Schedule completion
     schedule_(op.deadline, WGMMA_COMPLETE, sm, sms_[sm].wgmma_op_count - 1);
-    
+
     // Warp can continue issuing (async)
     advance_warp_(warp);
 }
@@ -1344,13 +1344,13 @@ On `wgmma.wait_group(N)`:
 void Simulator::issue_wgmma_wait_group_(SmId sm, WarpId warp, uint8_t n) {
     uint8_t oldest_commit = compute_oldest_in_flight_commit_(sm);
     uint8_t target_commit = sms_[sm].wgmma_latest_commit - n;
-    
+
     if (oldest_commit > target_commit) {
         // All groups we need have completed
         advance_warp_(warp);
         return;
     }
-    
+
     // Otherwise stall until oldest commit group completes
     Cycle wait_until = find_deadline_for_commit_(sm, target_commit);
     warps_.set_state(warp, WarpState::WAITING_WGMMA);
@@ -1384,13 +1384,13 @@ void Simulator::issue_tma_(SmId sm, WarpId warp, const DecodedInst& inst) {
     // TMA pipe consumed for ~20 cycles (issue, not full latency)
     sms_[sm].fu_tokens[Pipe::TMA]--;
     schedule_(current_cycle_ + 20, FU_FREE, sm, Pipe::TMA);
-    
+
     // Compute transfer latency based on bytes and current memory pressure
     uint32_t bytes = estimate_tma_bytes(inst);
     uint32_t mem_pressure = mem_.hbm_total_queue_depth();
     Cycle base_latency = bytes / caps_.hbm_bw_bytes_per_cycle;
     Cycle loaded_latency = base_latency * (1 + 0.05 * mem_pressure);
-    
+
     // Allocate async slot
     TmaOp op{
         current_cycle_,
@@ -1400,13 +1400,13 @@ void Simulator::issue_tma_(SmId sm, WarpId warp, const DecodedInst& inst) {
         extract_mbarrier_id(inst),
     };
     sms_[sm].tma_ops[sms_[sm].tma_op_count++] = op;
-    
+
     // TMA increments mbarrier expected-tx
     mbarriers_[op.mbarrier_id].expected_tx += bytes;
-    
+
     // Schedule completion
     schedule_(op.deadline, MEM_ARRIVE, sm, sms_[sm].tma_op_count - 1);
-    
+
     // Warp can continue
     advance_warp_(warp);
 }
@@ -1432,7 +1432,7 @@ struct Utcmma Op {
 struct SmState {
     UtcmmaOp utcmma_ops[16];
     uint8_t utcmma_op_count;
-    
+
     TmemState tmem;               // tracks allocated columns
 };
 ```
@@ -1444,7 +1444,7 @@ The key difference from WGMMA: `tcgen05.alloc` reserves columns of TMEM before t
 ### Commit groups in all three
 
 All three async subsystems use commit-group-based ordering:
-- `wgmma.commit_group` / `wgmma.wait_group(N)` 
+- `wgmma.commit_group` / `wgmma.wait_group(N)`
 - (TMA is synced via mbarrier, not commit groups)
 - `tcgen05.commit` / `tcgen05.wait`
 
@@ -1579,10 +1579,10 @@ Insights are produced by hooks at key event handlers, not a post-hoc pass. Each 
 void Simulator::on_inst_complete_(const Event& ev) {
     WarpId warp = extract_warp_id(ev);
     InstId inst = extract_inst_id(ev);
-    
+
     // Release scoreboard
     sb_release(warp, inst);
-    
+
     // Insight hooks
     Cycle wait_duration = ev.cycle - warps_.last_issue_cycle(warp);
     if (wait_duration > 10 * caps_.opcode_table->specs[prog_.insts[inst].op].latency) {
@@ -1595,7 +1595,7 @@ void Simulator::on_inst_complete_(const Event& ev) {
             metric: wait_duration.v
         );
     }
-    
+
     // ... more hooks
 }
 ```
@@ -1652,11 +1652,11 @@ constexpr void insert_bits(uint32_t word[4], unsigned offset, unsigned width, ui
     unsigned start_word = offset / 32;
     unsigned start_bit = offset % 32;
     unsigned bits_in_first = std::min(width, 32 - start_bit);
-    
+
     uint32_t mask_first = ((1u << bits_in_first) - 1) << start_bit;
-    word[start_word] = (word[start_word] & ~mask_first) | 
+    word[start_word] = (word[start_word] & ~mask_first) |
                        ((static_cast<uint32_t>(val) << start_bit) & mask_first);
-    
+
     if (bits_in_first < width) {
         // Spills into next word
         unsigned remaining = width - bits_in_first;
@@ -1977,7 +1977,7 @@ The per-vendor composer is the smallest of the per-vendor subsystems — less th
 
 ## 16. The SASS decoder
 
-Inverse of the encoder. Used by Mimic's calibration harness (to parse CUPTI-profiled cubins) and by Augur's digital twin (to decode already-compiled kernels for prediction).
+Inverse of the encoder. Used by Mimic's calibration harness (to parse CUPTI-profiled cubins) and by the runtime observer's digital twin (to decode already-compiled kernels for prediction).
 
 ### Structure
 
@@ -1998,15 +1998,15 @@ constexpr uint64_t extract_bits(const uint32_t word[4], unsigned offset, unsigne
     unsigned start_word = offset / 32;
     unsigned start_bit = offset % 32;
     unsigned bits_in_first = std::min(width, 32 - start_bit);
-    
+
     uint64_t low = (word[start_word] >> start_bit) & ((1u << bits_in_first) - 1);
-    
+
     if (bits_in_first < width) {
         unsigned remaining = width - bits_in_first;
         uint64_t high = (word[start_word + 1] & ((1u << remaining) - 1)) << bits_in_first;
         return low | high;
     }
-    
+
     return low;
 }
 ```
@@ -2031,7 +2031,7 @@ uint16_t decode_opcode(const uint32_t word[4]) {
     uint8_t major = extract_bits(word, MAJOR_OPCODE_OFFSET, 9);
     uint8_t minor = extract_bits(word, MINOR_OPCODE_OFFSET, 8);
     uint8_t subop = extract_bits(word, SUBOP_OFFSET, 7);
-    
+
     // Hash-lookup in opcode table
     return OPCODE_LOOKUP_TABLE[pack(major, minor, subop)];
 }
@@ -2044,10 +2044,10 @@ Static compile-time lookup table built from `OPCODE_TABLE`.
 ```cpp
 DecodedInst decode_inst(const uint32_t word[4], const TargetCaps* caps) {
     DecodedInst inst{};
-    
+
     inst.op = decode_opcode(word);
     FormatDescriptor fmt = identify_format(word);
-    
+
     // Extract operands per slot
     for (unsigned slot = 0; slot < 3 /* max sources */; slot++) {
         uint8_t slot_size = fmt.slot_sizes[slot];
@@ -2055,7 +2055,7 @@ DecodedInst decode_inst(const uint32_t word[4], const TargetCaps* caps) {
         uint64_t raw = extract_bits(word, fmt.operand_offset + slot * fmt.slot_stride * 8, slot_size);
         inst.src_regs[slot] = decode_operand(raw, slot_type);
     }
-    
+
     // Control field
     inst.stall_count = extract_bits(word, CTRL_STALL_OFFSET, 4);
     inst.wait_sb_mask = extract_bits(word, CTRL_WAIT_MASK_OFFSET, 6);
@@ -2063,13 +2063,13 @@ DecodedInst decode_inst(const uint32_t word[4], const TargetCaps* caps) {
     inst.write_sb = extract_bits(word, CTRL_WRITE_SB_OFFSET, 3);
     inst.flags = (extract_bits(word, CTRL_YIELD_OFFSET, 1) << YIELD_FLAG_BIT) |
                  (extract_bits(word, CTRL_REUSE_OFFSET, 4) << REUSE_FLAG_BIT);
-    
+
     // Latency/occupancy from OpcodeLatencyTable
     auto spec = caps->opcode_table->specs[inst.op];
     inst.latency = spec.latency;
     inst.occupancy = spec.occupancy;
     inst.pipe = spec.pipe;
-    
+
     return inst;
 }
 ```
@@ -2319,7 +2319,7 @@ Sharded by `hash(behavior) % 64` for concurrent access. Each shard is lock-free 
 ```cpp
 ArchiveCell sample_parent(MapElitesArchive& archive, RNG& rng) {
     float r = rng.uniform();
-    
+
     if (r < 0.3) {
         // Curiosity: prefer sparse regions
         return sample_from_sparse_shards(archive, rng);
@@ -2347,16 +2347,16 @@ CompiledKernel compile_kernel(
 ) {
     // Warm-start from Cipher if archive exists
     MapElitesArchive archive = load_or_create_archive(region.hash, caps, bg);
-    
+
     // Initial seed: translate region to an initial IR003NV candidate
     Ir003NvProgram seed = translate_initial(region, caps);
-    
+
     // Thread pool for parallel evaluation
     WorkerPool pool(cfg.worker_count);
-    
+
     auto deadline = now() + cfg.max_wall_time_ms;
     uint32_t iteration = 0;
-    
+
     while (now() < deadline && archive.best_fitness() < 0.95 && iteration < cfg.max_iterations) {
         // Batch of candidates per generation
         std::vector<Ir003NvProgram> batch;
@@ -2367,23 +2367,23 @@ CompiledKernel compile_kernel(
             auto child = mutator.mutate(parent.program, parent.result.insights);
             batch.push_back(child);
         }
-        
+
         // Evaluate batch in parallel
         std::vector<SimResult> results = pool.evaluate(batch, caps, Tier::MEDIUM);
-        
+
         // Submit to archive
         for (size_t i = 0; i < batch.size(); i++) {
             FeatureVec behavior = compute_behavior(batch[i], results[i]);
             float fit = fitness(results[i], batch[i], caps);
             archive.try_submit(behavior, fit, batch[i], results[i]);
         }
-        
+
         iteration++;
     }
-    
+
     // Persist archive to Cipher
     persist_archive(archive, region.hash, caps, bg);
-    
+
     // Return best
     auto best = archive.best_cell();
     return CompiledKernel{
@@ -2555,7 +2555,7 @@ MutationOp select_mutation(const Ir003NvProgram& parent, const SimResult& result
         auto hints = HintCatalog::hints_for(insight.kind);
         return hints[rng.uniform_int(hints.size())];
     }
-    
+
     // Fallback: random mutation weighted by scale
     float r = rng.uniform();
     if (r < 0.1) return random_macro_mutation(rng);
@@ -2591,7 +2591,7 @@ struct ArchiveSerialized {
     uint32_t cell_count;
     uint64_t total_mutations;
     uint64_t best_fitness_fixed_point;   // float encoded as uint64 (* 10^9)
-    
+
     std::span<const CellSerialized> cells;
 };
 
@@ -2616,7 +2616,7 @@ At the start of `compile_kernel`:
 std::optional<MapElitesArchive> load_archive(ContentHash family, TargetCaps caps) {
     auto entry = cipher::lookup(archive_key(family, caps));
     if (!entry) return std::nullopt;
-    
+
     auto serialized = deserialize<ArchiveSerialized>(entry);
     return reconstruct_archive(serialized);
 }
@@ -2693,15 +2693,15 @@ crucible/mimic/bench/
 int main(int argc, char** argv) {
     auto target = parse_target(argv);      // e.g. "h100_sxm5"
     CudaContext ctx = init_cuda();
-    
+
     CalibrationResults results;
-    
+
     // Stage 1: isolation
     for (auto& bench : isolation_benchmarks) {
         auto result = bench.run(ctx);
         results.add(result);
     }
-    
+
     // Stage 2-7: progressively
     run_fu_contention(ctx, results);
     run_memory_isolation(ctx, results);
@@ -2709,17 +2709,17 @@ int main(int argc, char** argv) {
     run_scheduler(ctx, results);
     run_integration(ctx, results);
     run_regression(ctx, results);
-    
+
     // Fit parameters
     TargetCaps caps = fit_target_caps(results);
     OpcodeLatencyTable latency = fit_opcode_latencies(results);
-    
+
     // Emit .json
     write_json(caps, latency, target);
-    
+
     // Report residuals
     report_residuals(results);
-    
+
     return 0;
 }
 ```
@@ -2804,10 +2804,10 @@ class ProfileSession {
 public:
     explicit ProfileSession(fx::Init, const std::vector<EventKind>& events);
     ~ProfileSession();
-    
+
     // Begin profiling; subsequent kernel launches are measured
     void begin();
-    
+
     // End and collect results
     CuptiMeasurement end();
 };
@@ -2836,46 +2836,46 @@ for (auto& bench : benchmarks) {
         EVENT_L2_HITS,
         // ...
     }};
-    
+
     session.begin();
     bench.launch_on_gpu();
     auto measured = session.end();
-    
+
     // Compare to Mimic's prediction
     DecodedProgram prog = decode_cubin(bench.cubin);
     SimResult predicted = mimic::predict(fx::Bg{}, arena, prog, caps, Tier::ACCURATE);
-    
+
     // Compute residual
-    float cycle_residual = abs(measured.cycles - predicted.total_cycles) 
+    float cycle_residual = abs(measured.cycles - predicted.total_cycles)
                            / static_cast<float>(measured.cycles);
     results.add_residual(bench.name, cycle_residual);
 }
 ```
 
-### Usage in Augur
+### Usage in runtime observation
 
 At runtime, 1% of kernel executions are sampled:
 
 ```cpp
-// In Augur's monitoring loop
-void augur_sample_kernel(KernelInvocation inv) {
+// In the runtime observer's monitoring loop
+void rt_sample_kernel(KernelInvocation inv) {
     if (sampling_rng.uniform() > 0.01) return;  // 1% sampling
-    
+
     cupti::ProfileSession session{..., {/* counters */}};
     session.begin();
     inv.launch();
     auto measured = session.end();
-    
+
     // Mimic's stored prediction for this kernel
     SimResult predicted = inv.plan->region_predictions[inv.region_id];
-    
+
     // Compute residual, append to regression dataset
     residuals.append({
         .region_id = inv.region_id,
         .cycles_residual = compute_residual(measured.cycles, predicted.total_cycles),
         // ... other signals
     });
-    
+
     // Trigger drift detection if P95 exceeds threshold
     if (residuals.p95_over(last_1000) > 0.10) {
         drift_detected();
@@ -3000,7 +3000,7 @@ Non-negotiable. Same inputs → same outputs, bit-exact. Mimic's determinism is 
 TEST(Determinism, SameInputsSameOutput) {
     auto region = make_test_region();
     auto caps = target::h100_sxm5();
-    
+
     for (int i = 0; i < 100; i++) {
         auto result = mimic::compile_kernel(fx::Test{}, arena, region, caps, {.seed = 42});
         if (i > 0) {
@@ -3071,15 +3071,15 @@ bool try_submit(MapElitesArchive& arch, FeatureVec behavior, float fitness, ...)
     uint64_t hash = feature_vec_hash(behavior);
     ArchiveShard& shard = arch.shards[hash % 64];
     uint32_t cell_idx = find_cell(shard, behavior);
-    
+
     // CAS: only update if our fitness is better
     for (;;) {
         uint64_t epoch = shard.write_epoch.load(std::memory_order_acquire);
         const ArchiveCell& current = shard.cells[cell_idx];
         if (current.populated && current.fitness >= fitness) return false;
-        
+
         ArchiveCell new_cell = { ... populated with new data ... };
-        
+
         if (shard.write_epoch.compare_exchange_weak(
                 epoch, epoch + 1, std::memory_order_acq_rel)) {
             shard.cells[cell_idx] = new_cell;
@@ -3098,7 +3098,7 @@ struct WorkerPool {
     std::vector<std::thread> workers;
     SpscRing<CandidateRequest> request_queue;
     SpscRing<EvaluationResult> result_queue;
-    
+
     void enqueue(CandidateRequest req);
     EvaluationResult dequeue_result(bool blocking);
 };
@@ -3243,7 +3243,7 @@ struct SimResult {
 };
 ```
 
-Entry for Augur's digital twin and Forge's Phase B.5 cost estimates. Deterministic prediction for an already-compiled kernel.
+Entry for the runtime observer's digital twin and Forge's Phase B.5 cost estimates. Deterministic prediction for an already-compiled kernel.
 
 ### `mimic::search_kernel`
 
@@ -3306,10 +3306,10 @@ CompiledKernel ck = mimic::compile_kernel(
 ### 3. Phase L.2 CompareToModel
 
 ```cpp
-// Augur's drift detection
+// the runtime observer's drift detection
 SimResult predicted = mimic::predict(
     fx::Bg{},
-    *augur_arena,
+    *rt_arena,
     decoded_program,
     target_caps,
     Tier::MEDIUM
@@ -3337,34 +3337,34 @@ Alternative: Mimic gets its own arena per call. Simpler lifetime but requires co
 
 ---
 
-## 30. Integration surface with Augur
+## 30. Integration surface with runtime observation
 
-Augur is Crucible L15's continuous monitoring layer. It observes running kernels, compares measurements to Mimic's predictions, and triggers calibration when drift exceeds threshold.
+runtime observation is Crucible L15's continuous monitoring layer. It observes running kernels, compares measurements to Mimic's predictions, and triggers calibration when drift exceeds threshold.
 
 ### Call pattern
 
 ```cpp
-// In Augur's sampling loop
-void augur_sample(KernelInvocation& inv) {
+// In the runtime observer's sampling loop
+void rt_sample(KernelInvocation& inv) {
     if (sampling_rng.uniform() > sampling_rate) return;
-    
+
     cupti::ProfileSession session{fx::Init{}, monitored_events};
     session.begin();
     inv.launch();
     auto measured = session.end();
-    
+
     // Use the prediction stored at compile time
     SimResult predicted = inv.plan.region_predictions[inv.region_id];
-    
+
     // Or refresh if needed
-    // SimResult predicted = mimic::predict(fx::Bg{}, augur_arena, 
+    // SimResult predicted = mimic::predict(fx::Bg{}, rt_arena,
     //                                      inv.plan.decoded_programs[inv.region_id],
     //                                      caps, Tier::MEDIUM);
-    
+
     auto residual = compute_residual(measured, predicted);
-    augur_regression_dataset.append(residual);
-    
-    if (augur_regression_dataset.p95_over(last_1000) > 0.10) {
+    rt_regression_dataset.append(residual);
+
+    if (rt_regression_dataset.p95_over(last_1000) > 0.10) {
         drift_detected();
     }
 }
@@ -3386,7 +3386,7 @@ For mixed training workloads with variable shapes, higher sampling (5-10%) may b
 
 ### Drift attribution
 
-When drift fires, Augur identifies which counter is the primary driver:
+When drift fires, runtime observation identifies which counter is the primary driver:
 
 ```cpp
 struct DriftAttribution {
@@ -4877,7 +4877,7 @@ For each (KernelKind, NumericalRecipe) pair:
     targets = {t : recipe.native_on includes t}
     For each (t1, t2) in targets × targets with t1 < t2:
         diff = compare_outputs(result[t1], result[t2])
-        
+
         switch recipe.determinism:
             case BITEXACT_STRICT:
                 require diff == 0 bytes
@@ -4895,7 +4895,7 @@ For each (KernelKind, NumericalRecipe) pair:
                 require diff.max_ulp <= recipe.tolerance_ulp_cross_vendor
             case UNORDERED:
                 no check (user opted in)
-        
+
         Also record diff.max_ulp and diff.mean_ulp in the CI report
 ```
 

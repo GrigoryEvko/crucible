@@ -13,7 +13,7 @@ This note documents the relationship between Crucible's three typed-set primitiv
 | `safety::proto::PermSet<Tags...>` | type-only | `1` (EBO-collapsible) | consteval set ops | track CSL permission tag set as a session evolves |
 | `effects::EffectMask` | runtime value | `sizeof(uint8_t)` | bitwise (position-encoded enums) | runtime dual of `Row<Es...>` for telemetry |
 
-The first three were built independently. The fourth (EffectMask) is the bridge dual that emerged when we tried to project `Row<Es...>` to a runtime form for Augur drift detection — see §3.
+The first three were built independently. The fourth (EffectMask) is the bridge dual that emerged when we tried to project `Row<Es...>` to a runtime form for runtime observation drift detection — see §3.
 
 Headers:
 - `include/crucible/safety/Bits.h` — `Bits<EnumType>` newtype.
@@ -48,7 +48,7 @@ compile-time      effects::Row<Es...>          safety::proto::PermSet<Tags...>
 
 **Implemented**: `effects::bits_from_row<R>() -> EffectMask` projects a type-level row to a runtime `EffectMask` value. See `effects/EffectRowProjection.h`.
 
-**Why this matters**: Augur per-axis drift attribution (FOUND-K01..K05), Cipher row-keying for federation, and any cross-process row announcement need a runtime-recordable form of what the function signature declared as a type-level row. The bridge is the load-bearing piece.
+**Why this matters**: runtime observation per-axis drift attribution (FOUND-K01..K05), Cipher row-keying for federation, and any cross-process row announcement need a runtime-recordable form of what the function signature declared as a type-level row. The bridge is the load-bearing piece.
 
 **Why EffectMask, not `Bits<Effect>`**: `Effect` is a position-encoded enum (`Alloc=0, IO=1, ... Test=5`); `Bits<E>::set(e)` treats `e` as a pre-shifted mask and does `bits_ |= e` directly. Naive `Bits<Effect>::set(Effect::Bg)` would do `bits |= 3` (binary `0b11`), setting Alloc and IO instead of Bg. EffectMask does the position → mask shift internally (`1u << position`), maintaining the same mental model as Bits but purpose-built for position-encoded enums.
 

@@ -14,7 +14,7 @@
 // `flush_cold` returns CipherTier<Cold, T>.  A function declared
 // `requires CipherTier::satisfies<Warm>` rejects callees carrying
 // `CipherTierTag_v::Cold` at compile time — replacing today's
-// review-only enforcement.  Augur's drift-attribution reads the
+// review-only enforcement.  runtime observer's drift-attribution reads the
 // tier to distinguish "cold-tier S3 latency" from "hot-path issue".
 //
 // Composes orthogonally with the six sister chain wrappers (DetSafe
@@ -69,7 +69,7 @@
 // Spec puts Hot=0 ... Cold=2 (cheaper-to-recover ordinal).  This
 // implementation INVERTS to Cold=0 ... Hot=2 to keep the chain
 // direction uniform with the six sister chain lattices.  The
-// SEMANTIC contract from the spec ("Augur reads tier for drift
+// SEMANTIC contract from the spec ("runtime observation reads tier for drift
 // attribution") is preserved exactly:
 //
 //   CipherTier<Hot>::satisfies<Warm>  = leq(Warm, Hot)  = true ✓
@@ -196,7 +196,7 @@ namespace detail::cipher_tier_lattice_self_test {
 static_assert(cipher_tier_tag_count == 3,
     "CipherTierTag catalog diverged from {Cold, Warm, Hot}; confirm "
     "intent and update the dispatcher's persistence-tier admission "
-    "gates + Augur drift-attribution plumbing.");
+    "gates + runtime drift-attribution plumbing.");
 
 [[nodiscard]] consteval bool every_cipher_tier_tag_has_name() noexcept {
     static constexpr auto enumerators =

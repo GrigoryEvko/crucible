@@ -37,7 +37,7 @@
  *
  * ─── KNOWN LIMITS ─────────────────────────────────────────────────────
  * - No transactional snapshot; tasks can fork/exit during walk.
- *   Document this — Augur uses it as approximation, not census.
+ *   Document this — runtime observation uses it as approximation, not census.
  * - bpf_iter requires kernel 5.8+; falls back to /proc walk on older
  *   kernels (much slower, but available everywhere).
  *
