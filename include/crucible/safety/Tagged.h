@@ -223,6 +223,10 @@ namespace source {
     // through cntp/OverlayMulticast.h. Raw CogIdentity values and unbounded
     // stripe/tree plans cannot directly drive cross-peer fanout.
     struct OverlayMulticast {};
+    // SdcVerified: observe/SdcDetect.h result value that survived redundant
+    // execution comparison. Raw operation results and externally-tagged
+    // values cannot substitute for the post-comparison evidence.
+    struct SdcVerified {};
 }
 
 namespace trust {

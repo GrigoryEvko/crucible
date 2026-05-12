@@ -604,6 +604,7 @@ crucible_test(test_mpmc_channel_session)
 crucible_test(test_swmr_session)
 crucible_test(test_observe_metrics_swmr)
 crucible_test(test_observe_health)
+crucible_test(test_observe_sdc_detect)
 
 # L2 typing context Γ (SEPLOG-I1, task #343) — Entry, Context,
 # compose_context_t, lookup_context_t, contains_key_v, domain_of_t,
@@ -2553,6 +2554,27 @@ crucible_neg_compile_test(neg_synthetic_probe_record_fg_ctx
   "constraint|constraints not satisfied|CtxFitsSyntheticProbeRecord|record_gate|GAPS-141")
 crucible_neg_compile_test(neg_synthetic_probe_raw_kind_mask
   "cannot convert|no matching function|could not convert|Bits|TransportProbeKind|GAPS-141")
+
+# GAPS-180 — observe/SdcDetect.h keeps redundant-compute evidence typed:
+#   * neg_sdc_detect_mint_bg_ctx — only Init-row contexts mint detectors.
+#   * neg_sdc_detect_run_hot_ctx — hot foreground contexts cannot mutate
+#     bounded SDC event state.
+#   * neg_sdc_detect_raw_result_as_verified — raw results cannot stand in
+#     for source::SdcVerified values.
+#   * neg_sdc_detect_cross_tag_result — external provenance cannot stand
+#     in for source::SdcVerified values.
+#   * neg_sdc_detect_sampling_rate_above_max — ppm rates above 100% cannot
+#     cross the SdcConfig boundary.
+crucible_neg_compile_effects_test(neg_sdc_detect_mint_bg_ctx
+  "constraint|constraints not satisfied|CtxFitsSdcMint|Init|Bg")
+crucible_neg_compile_effects_test(neg_sdc_detect_run_hot_ctx
+  "constraint|constraints not satisfied|CtxFitsSdcRun|HotFgCtx|Bg")
+crucible_neg_compile_test(neg_sdc_detect_raw_result_as_verified
+  "cannot convert|no matching function|could not convert|Tagged|SdcVerified")
+crucible_neg_compile_test(neg_sdc_detect_cross_tag_result
+  "cannot convert|no matching function|could not convert|Tagged|External|SdcVerified")
+crucible_neg_compile_test(neg_sdc_detect_sampling_rate_above_max
+  "contract|violation|in_range|Refined|SdcSamplingRatePpm")
 
 # GAPS-138 — canopy/Hlc.h Hybrid Logical Clock primitive.
 #   * neg_hlc_raw_timestamp_to_tagged: raw HlcTimestamp cannot enter
