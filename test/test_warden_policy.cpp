@@ -27,7 +27,7 @@
 #include <crucible/warden/Hardening.h>
 #include <crucible/warden/Policy.h>
 #include <crucible/warden/Registry.h>
-#include <crucible/warden/Topology.h>
+#include <crucible/warden/CpuTopology.h>
 
 namespace {
 

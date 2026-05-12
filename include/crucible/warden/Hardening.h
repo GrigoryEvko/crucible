@@ -23,7 +23,7 @@
 
 #include "Policy.h"
 #include "Registry.h"
-#include "Topology.h"
+#include "CpuTopology.h"
 
 #include <bit>
 #include <cerrno>

@@ -19,7 +19,7 @@
 // something unusual build a Policy by copying a profile and overriding
 // specific fields.
 
-#include "Topology.h"
+#include "CpuTopology.h"
 
 #include <cstdint>
 

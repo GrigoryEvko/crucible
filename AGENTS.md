@@ -434,11 +434,13 @@ Event-sourced: DAG chain (few KB/step) persisted every step, weight snapshots pe
 
 ---
 
-## L15 — Meridian + RT
+## L15 — Meridian + Observe / Warden
 
-**Operational intelligence. Two time scales in one layer.**
+**Operational intelligence. Calibration, observation, and enforcement.**
 
-Meridian = startup calibration (5-15s). RT = continuous per-iteration monitoring.
+Meridian = startup calibration (5-15s). Observe = continuous per-iteration
+measurement. Warden = bounds-keeping enforcement around scheduling, hot-region
+residency, quarantine, and hardening policy.
 
 **Meridian (startup):**
 - GPU profiling: GEMM→actual TFLOPS, streaming copy→HBM/PCIe BW, NVML→power/temp/ECC/memory
@@ -447,12 +449,18 @@ Meridian = startup calibration (5-15s). RT = continuous per-iteration monitoring
 - Discrete-search joint 5D partition optimization (FORGE.md §25.6): TP×DP×PP×EP×CP factorization + schedule + bucket size + per-link weight assignment, minimizing predicted step time from `CollectiveBenchmarks` + `mimic::fast_cost` + per-link congestion telemetry. Bounded branch-and-bound over the calibrated cost surface; no external SMT solver.
 - Output: complete device-specific kernel set + MeridianConfig. Re-probes on topology change.
 
-**RT (continuous):**
+**Observe (continuous):**
 - Digital twin: DAG + Mimic kernel predictions + Meridian corrections → iteration prediction (±5-10%)
 - Per-kernel bottleneck classification: COMPUTE/MEMORY_BW/COMMUNICATION/BUBBLE/IMBALANCE
 - Predicted vs actual monitoring. >10% drift → diagnose → trigger Meridian recalibration
 - Recommendations ranked by expected_speedup × confidence, tagged auto-hot/auto-cold/manual
 - Model intelligence (periodic): Hessian spectrum (Lanczos), gradient health, effective rank (randomized SVD), CKA layer redundancy, convergence prediction, Chinchilla scaling laws
+
+**Warden (enforcement):**
+- Deadline and scheduler policy for hot/warm/cold Crucible threads.
+- Hot memory region registration and hardening posture applied by Keeper or bench harnesses.
+- Quarantine and lifecycle bounds for degraded Relays / Cogs.
+- Warden does not own transport congestion control or observation metrics; those live in `cntp/`, `topology/`, and `observe/`.
 
 ---
 
@@ -502,13 +510,14 @@ Goal: vendor-agnostic optimizer + per-vendor backend framework per FORGE.md / MI
 - **Mimic NVIDIA backend** (M2-M9 of MIMIC.md build plan): IR003NV + SASS emitter + three-tier simulator + MAP-Elites + CUPTI calibration harness + runtime library (direct `/dev/nvidia*` ioctls, no libcuda) + collective library (CNTP, no NCCL).
 - **Mimic AMD / TPU / Trainium backends** follow the same template (one self-contained subsystem per vendor).
 
-**Phase 3: Meridian + RT**
+**Phase 3: Meridian + Observe / Warden**
 
-Goal: hardware calibration + continuous monitoring as one operational intelligence layer.
+Goal: hardware calibration, continuous observation, and enforcement as separate
+cooperating surfaces.
 
 - GPU profiling + network probing at startup. Discrete-search joint 5D partition optimization (FORGE.md §25.6) picks topology from calibrated `CollectiveBenchmarks` + `mimic::fast_cost`. Per-link congestion telemetry (TX/RX bytes, drop rate, queue depth, sysctl-derived effective capacity) feeds into the cost surface so decisions adapt to heterogeneous-NIC fleets and live load.
 - Digital twin: DAG + Mimic kernel predictions + calibration corrections → iteration prediction (±5-10%).
-- Continuous monitoring, bottleneck diagnosis, recommendations engine. runtime observation drift detection triggers per-vendor Mimic recalibration when P95 residual > 10% for 100+ samples.
+- Continuous monitoring, bottleneck diagnosis, recommendations engine. Observe drift detection triggers per-vendor Mimic recalibration when P95 residual > 10% for 100+ samples. Warden applies the bounded scheduling, residency, and quarantine posture the Keeper chooses.
 - Model intelligence: Hessian spectrum, gradient health, effective rank, CKA, scaling laws.
 
 **Phase 4: Compiled Tier 2-3**
@@ -542,7 +551,7 @@ Goal: model-aware optimizations, guided by runtime observation, validated by cro
 
 ---
 
-Contracts discipline the code. Safety wrappers carry invariants in the type system. Measurement — MAP-Elites + calibrated simulators + cross-vendor CI — replaces proof as the correctness-witnessing mechanism. Meridian maps hardware. RT observes runtime reality. The Keeper acts on calibrated-optimal decisions. The Vigil thinks within typed-safe infrastructure. The Cipher remembers — the compiled kernels, the MAP-Elites archives, the calibration data, the TrainingCheckpoints. When the last Relay dies, the Cipher carries the model and everything needed to re-materialize it on whatever silicon comes next.
+Contracts discipline the code. Safety wrappers carry invariants in the type system. Measurement — MAP-Elites + calibrated simulators + cross-vendor CI — replaces proof as the correctness-witnessing mechanism. Meridian maps hardware. Observe measures runtime reality. Warden enforces bounded operating posture. The Keeper acts on calibrated-optimal decisions. The Vigil thinks within typed-safe infrastructure. The Cipher remembers — the compiled kernels, the MAP-Elites archives, the calibration data, the TrainingCheckpoints. When the last Relay dies, the Cipher carries the model and everything needed to re-materialize it on whatever silicon comes next.
 
 ---
 
@@ -2414,7 +2423,7 @@ Test names (fuzzer property checks, gtest-style names) obey the same rule: `prop
 
 Five categories of short names are exempt because they ARE the standard vocabulary in their domain — renaming them would make the code less recognizable, not more:
 
-- **Crucible ontology primitives**: `Vigil`, `Keeper`, `Relay`, `Cipher`, `Canopy`, `Meridian`, `RT`, `Vessel` are full words and fine at any length. Their short aliases in hot paths are not — use the full name.
+- **Crucible ontology primitives**: `Vigil`, `Keeper`, `Relay`, `Cipher`, `Canopy`, `Meridian`, `Observe`, `Warden`, `Vessel` are full words and fine at any length. Their short aliases in hot paths are not — use the full name.
 - **Hot-path idiomatic short names** canonical in Crucible: `op` (Op), `args` (const Expr* const*), `nargs` (uint8_t), `ndim` (uint8_t), `dtype` (ScalarType), `arena` (`effects::Alloc` cap-tag — the canonical short name for the alloc-capability parameter on every Arena/ExprPool/MerkleDag/Graph allocator function), `ctx` (CrucibleContext), `bg` (`effects::Bg` context — local-variable name for the background-thread context that aggregates Alloc + IO + Block caps), `fg` (foreground sentinel; no `effects::*` analogue because hot-path code holds no capability), `ms` (MetaIndex strong ID), `ring` (TraceRing&). Established in TraceRing.h / ExprPool.h / MerkleDag.h; rename would be churn.
 - **Binary-operation sides** (the FX/parser convention, preserved): `lhs` / `rhs` inside `add(lhs, rhs)`, `mul(lhs, rhs)`, `compare(lhs, rhs)`. Fine in accessors (`binop_lhs()`, `binop_rhs()`) because they project fields whose semantics are exactly "left side" / "right side".
 - **Loop induction variables** over a compile-time small range: `i`, `j`, `d` (dimension), `k` inside `for (uint8_t d = 0; d < ndim; ++d)`. `d` for dimension is idiomatic because `ndim` is the canonical spelling of the upper bound.

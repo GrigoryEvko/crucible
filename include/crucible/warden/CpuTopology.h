@@ -1,6 +1,6 @@
 #pragma once
 
-// CPU / NUMA topology discovery for the Crucible realtime runtime.
+// CPU / NUMA placement discovery for Warden scheduling policy.
 //
 // Sysfs-only. No hwloc dep. ~150 lines of parsing to replicate the
 // subset hwloc has that Crucible actually needs: cpuset membership,
