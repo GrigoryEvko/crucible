@@ -183,6 +183,10 @@ namespace source {
     // TCP_CC_INFO or an explicitly tagged synthetic test source.
     // Raw counters cannot directly drive topology congestion policy.
     struct TcpInfo {};
+    // AfXdp: CNT-P AF_XDP socket / UMEM configuration admitted through
+    // cntp/AfXdp.h. Raw ring sizes, frame sizes, queue IDs, and interface
+    // names cannot directly mint a zero-copy transport surface.
+    struct AfXdp {};
 }
 
 namespace trust {

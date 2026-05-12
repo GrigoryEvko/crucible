@@ -228,6 +228,7 @@ crucible_test(test_crdt)
 crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_backpressure)
+crucible_test(test_cntp_af_xdp)
 crucible_test(test_cntp_connection_pool)
 crucible_test(test_cntp_congestion_control)
 crucible_test(test_cntp_incast_control)
@@ -2650,6 +2651,17 @@ crucible_neg_compile_test(neg_backpressure_invalid_resource_kind
   "constraints not satisfied|IsResourceKind|ResourceKind")
 crucible_neg_compile_test(neg_backpressure_hot_ctx_credit
   "constraints not satisfied|CtxFitsBackpressureRuntime|HotFgCtx")
+
+# GAPS-131 — cntp/AfXdp.h typed AF_XDP substrate.
+#   * neg_af_xdp_raw_config: socket minting requires source::AfXdp config.
+#   * neg_af_xdp_non_power_of_two_frame: static shape rejects invalid frame size.
+#   * neg_af_xdp_cross_source_packet: TX enqueue accepts socket-borrowed packets.
+crucible_neg_compile_test(neg_af_xdp_raw_config
+  "could not convert|no matching function|DeclaredAfXdpConfig|Tagged")
+crucible_neg_compile_test(neg_af_xdp_non_power_of_two_frame
+  "constraints not satisfied|AfXdpStaticShape|1500")
+crucible_neg_compile_test(neg_af_xdp_cross_source_packet
+  "cannot convert|no matching function|Borrowed|OtherOwner|AfXdpSocket")
 
 # GAPS-136 — cntp/ConnectionPool.h + rt/ConnectionPool.h substrate.
 #   * neg_connection_pool_raw_event: pool events must carry source::ConnectionPool.
