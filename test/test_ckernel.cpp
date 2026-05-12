@@ -4,6 +4,7 @@
 #include "test_assert.h"
 #include <cstdio>
 #include <cstring>
+#include <type_traits>
 
 // Fake schema hashes — real values come from the Vessel's hash function.
 // We use arbitrary values to test the table mechanics.
@@ -181,7 +182,9 @@ int main() {
 
     // Restore global table to a clean Mutable state so downstream tests
     // running in the same process start from a known baseline.
-    global_ckernel_table().clear();
+    static_assert(std::is_same_v<
+        decltype(global_ckernel_table()), CKernelTableSingleton>);
+    global_ckernel_table().value()->clear();
 
     std::printf("test_ckernel: all tests passed\n");
     return 0;

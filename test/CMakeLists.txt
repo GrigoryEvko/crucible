@@ -1907,6 +1907,14 @@ crucible_neg_compile_test(neg_ckernel_table_size_above_cap
 crucible_neg_compile_test(neg_ckernel_table_size_uint32_max
   "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
 
+# WRAP-CKernel-5 (#893) — global CKernelTable access carries
+# source::Singleton provenance. Raw pointers and differently tagged
+# pointers cannot satisfy singleton-only consumers.
+crucible_neg_compile_test(neg_ckernel_singleton_raw_pointer
+  "could not convert|cannot convert|no matching function")
+crucible_neg_compile_test(neg_ckernel_singleton_cross_tag
+  "could not convert|cannot convert|no matching function")
+
 # WRAP-SchemaTab-1 (#1003) — SchemaTable::SizeCounter =
 # BoundedMonotonic<uint32_t, SCHEMA_TABLE_CAP=512>; constructing it
 # with an out-of-range initial value fires the BoundedMonotonic ctor's

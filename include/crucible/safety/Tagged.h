@@ -78,6 +78,7 @@ namespace source {
     struct Loaded       {};  // loaded from validated serialized state
     struct Interned     {};  // canonicalized by an interning owner
     struct Arena        {};  // arena-owned object pointer/reference
+    struct Singleton    {};  // process-global singleton accessor result
     struct Recorded     {};  // produced from live RECORD-mode tracing
     struct Replayed     {};  // reconstructed from replay/Cipher state
     // Durable: loaded from on-disk state (Cipher, config, snapshots).

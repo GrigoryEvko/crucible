@@ -683,7 +683,7 @@ struct BackgroundThread {
              int32_t rank_ = -1, int32_t world_size_ = 0,
              uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY {
     global_schema_table().seal();
-    global_ckernel_table().seal();
+    global_ckernel_table().value()->seal();
     // Wrap raw pointers in NonNull at the set-once boundary.  Refined's
     // ctor contract fires if either is null — the only way into the
     // bg worker's ring.get().value() / meta_log.get().value() reads.

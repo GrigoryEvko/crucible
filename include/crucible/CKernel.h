@@ -584,10 +584,14 @@ struct CKernelTable {
 // Tier 2 opt-in: nothing inside CKernelTable may be a ScopedView.
 static_assert(crucible::safety::no_scoped_view_field_check<CKernelTable>());
 
+using CKernelTableSingleton = crucible::safety::Tagged<
+    CKernelTable*, crucible::safety::source::Singleton>;
+static_assert(sizeof(CKernelTableSingleton) == sizeof(CKernelTable*));
+
 // Global singleton — sealed automatically by BackgroundThread::start().
-[[nodiscard]] inline CKernelTable& global_ckernel_table() {
+[[nodiscard]] inline CKernelTableSingleton global_ckernel_table() {
     static CKernelTable table;
-    return table;
+    return CKernelTableSingleton{&table};
 }
 
 // Called by Vessel at startup, before BackgroundThread::start().
@@ -609,12 +613,12 @@ inline void register_schema_hash(
                              crucible::safety::source::External> schema_hash,
     CKernelId id)
 {
-    CKernelTable& table = global_ckernel_table();
-    table.register_op(table.mint_mutable_view(), schema_hash.value(), id);
+    CKernelTable* table = global_ckernel_table().value();
+    table->register_op(table->mint_mutable_view(), schema_hash.value(), id);
 }
 
 [[nodiscard, gnu::pure]] inline CKernelId classify_kernel(SchemaHash schema_hash) noexcept {
-    return global_ckernel_table().classify(schema_hash);
+    return global_ckernel_table().value()->classify(schema_hash);
 }
 
 [[nodiscard]] constexpr const char* ckernel_name(CKernelId id) {
