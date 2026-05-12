@@ -1440,12 +1440,16 @@ crucible_neg_compile_topology_test(neg_topology_health_raw_score
 #   * neg_topology_telemetry_raw_netdev_text — parser ingress consumes
 #     Tagged<source::External>, not raw strings.
 #   * neg_topology_telemetry_record_fg_ctx — sample publication is Bg-only.
+#   * neg_topology_telemetry_window_overflow — bounded history indices cannot
+#     silently wrap their uint16_t carrier.
 crucible_neg_compile_topology_test(neg_topology_telemetry_mint_bg_ctx
     "constraint|constraints not satisfied|CtxFitsNicTelemetryMint|Init|Bg|GAPS-112")
 crucible_neg_compile_topology_test(neg_topology_telemetry_raw_netdev_text
     "could not convert|no matching function|Tagged|External|GAPS-112")
 crucible_neg_compile_topology_test(neg_topology_telemetry_record_fg_ctx
     "constraint|constraints not satisfied|CtxFitsNicTelemetryRecord|Bg|GAPS-112")
+crucible_neg_compile_topology_test(neg_topology_telemetry_window_overflow
+    "static assertion failed|uint16_t|bounded history|GAPS-112")
 
 # ─── HS14 fixtures for topology::AsymmetricFailure (GAPS-127 #1220) ──
 #

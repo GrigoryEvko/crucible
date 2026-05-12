@@ -272,6 +272,8 @@ mint_nic_telemetry_snapshot(cog::CogIdentity const& nic,
 template <std::size_t Window>
 class NicTelemetryHistory {
     static_assert(Window > 0, "NicTelemetryHistory requires at least one slot");
+    static_assert(Window <= UINT16_MAX,
+                  "NicTelemetryHistory stores bounded history indices in uint16_t");
 
     std::array<NicTelemetrySnapshot, Window> snapshots_{};
     std::uint16_t count_ = 0;
