@@ -22,6 +22,10 @@ enum class ObservationKind : std::uint8_t {
     PowerMw = 3,
     WallClockNs = 4,
     BitsTransferred = 5,
+    HealthScore = 6,
+    PhiMilli = 7,
+    DropRatePpm = 8,
+    WearUsedPpm = 9,
 };
 
 enum class ObservationSource : std::uint8_t {
