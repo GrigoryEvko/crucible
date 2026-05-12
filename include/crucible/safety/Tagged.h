@@ -146,6 +146,10 @@ namespace source {
     // cntp/PathSwap.h. Raw path IDs cannot directly drive a live
     // SessionHandle resource transition.
     struct PathSwap {};
+    // TcpInfo: congestion telemetry admitted from Linux TCP_INFO /
+    // TCP_CC_INFO or an explicitly tagged synthetic test source.
+    // Raw counters cannot directly drive topology congestion policy.
+    struct TcpInfo {};
 }
 
 namespace trust {

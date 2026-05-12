@@ -338,6 +338,7 @@ crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
 crucible_test(test_topology_graph)
 crucible_test(test_topology_health)
+crucible_test(test_congestion_telemetry)
 crucible_test(test_asymmetric_failure)
 crucible_test(test_concurrent_compile)
 crucible_test(test_auto_split)
@@ -2531,6 +2532,20 @@ crucible_neg_compile_effects_test(neg_path_swap_commit_fg_ctx
   "constraints not satisfied|CtxFitsPathSwapTransition|Bg")
 crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
   "constraints not satisfied|SessionResource|PathSwapSessionResource")
+
+# GAPS-123 — topology/CongestionTelemetry.h TCP_INFO feedback loop.
+#   * neg_congestion_telemetry_raw_fd_harvest: live harvest requires
+#     an admitted SocketFd, not a raw int.
+#   * neg_congestion_telemetry_raw_state_aggregate: per-link aggregation
+#     accepts tagged TcpInfoSnapshot values, not raw CongestionState.
+#   * neg_congestion_telemetry_worker_fg_record: rt-owned telemetry updates
+#     are Bg-row work and cannot run in the foreground hot path.
+crucible_neg_compile_test(neg_congestion_telemetry_raw_fd_harvest
+  "could not convert|no matching function|SocketFd|Refined")
+crucible_neg_compile_test(neg_congestion_telemetry_raw_state_aggregate
+  "could not convert|no matching function|TcpInfoSnapshot|Tagged")
+crucible_neg_compile_effects_test(neg_congestion_telemetry_worker_fg_record
+  "constraints not satisfied|CtxFitsCongestionTelemetryHarvest|Bg")
 
 # GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the

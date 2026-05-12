@@ -53,6 +53,7 @@ add_library(crucible STATIC
   src/observe/SyntheticProbe.cpp
   src/rt/Quarantine.cpp
   src/topology/AsymmetricFailure.cpp
+  src/topology/CongestionTelemetry.cpp
   src/topology/Health.cpp
 )
 target_include_directories(crucible PUBLIC include/)
