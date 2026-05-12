@@ -39,6 +39,7 @@
 // "[batch-avg]" in the output.
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <climits>
 #include <cmath>
@@ -50,6 +51,7 @@
 #include <random>
 #include <span>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -585,10 +587,44 @@ struct Report {
     // alignment. µs is 2-byte UTF-8 so alignment is slightly off on
     // µs/ms/s columns — 9 bytes fits up to "9999.99ns" and "999.99µs".
     static void fmt_ns_(char* buf, size_t len, double ns) noexcept {
-        if      (ns >= 1e9) std::snprintf(buf, len, "%.2fs",  ns / 1e9);
-        else if (ns >= 1e6) std::snprintf(buf, len, "%.2fms", ns / 1e6);
-        else if (ns >= 1e3) std::snprintf(buf, len, "%.2fµs", ns / 1e3);
-        else                std::snprintf(buf, len, "%.2fns", ns);
+        const char* suffix = "ns";
+        double scaled = ns;
+        if (ns >= 1e9) {
+            suffix = "s";
+            scaled = ns / 1e9;
+        } else if (ns >= 1e6) {
+            suffix = "ms";
+            scaled = ns / 1e6;
+        } else if (ns >= 1e3) {
+            suffix = "µs";
+            scaled = ns / 1e3;
+        }
+
+        char value[32];
+        auto [ptr, ec] = std::to_chars(
+            value, value + sizeof(value), scaled, std::chars_format::fixed, 2);
+        if (ec != std::errc{}) {
+            const char fallback[] = "nan";
+            const size_t fallback_len = sizeof(fallback) - 1;
+            const size_t suffix_len = std::strlen(suffix);
+            const size_t max_out = (len == 0) ? 0 : len - 1;
+            const size_t first = std::min(fallback_len, max_out);
+            std::memcpy(buf, fallback, first);
+            const size_t second =
+                std::min(suffix_len, max_out > first ? max_out - first : 0);
+            std::memcpy(buf + first, suffix, second);
+            if (len != 0) buf[first + second] = '\0';
+            return;
+        }
+        const size_t value_len = static_cast<size_t>(ptr - value);
+        const size_t suffix_len = std::strlen(suffix);
+        const size_t max_out = (len == 0) ? 0 : len - 1;
+        const size_t first = std::min(value_len, max_out);
+        std::memcpy(buf, value, first);
+        const size_t second =
+            std::min(suffix_len, max_out > first ? max_out - first : 0);
+        std::memcpy(buf + first, suffix, second);
+        if (len != 0) buf[first + second] = '\0';
     }
 
     // Writes a single summary line (optionally followed by the BPF
@@ -641,7 +677,8 @@ struct Report {
     // emission to produce valid JSON unconditionally.
     static void fprint_json_string(FILE* out, std::string_view s) noexcept {
         std::fputc('"', out);
-        for (unsigned char c : s) {
+        for (char ch : s) {
+            const auto c = static_cast<unsigned char>(ch);
             switch (c) {
                 case '"':  std::fputs("\\\"", out); break;
                 case '\\': std::fputs("\\\\", out); break;
@@ -809,6 +846,9 @@ struct Report {
             else if (v >= (1ULL << 10)) std::fprintf(out, "%.1fKB", static_cast<double>(v) / 1024.0);
             else                        std::fprintf(out, "%luB",   v);
             break;
+        default:
+            std::fprintf(out, "%lu", v);
+            break;
         }
     }
 
@@ -926,7 +966,11 @@ struct Compare {
     size_t i = 0;
     while (i < all.size()) {
         size_t j = i;
-        while (j + 1 < all.size() && all[j + 1].v == all[i].v) ++j;
+        while (j + 1 < all.size() &&
+               !(all[j + 1].v < all[i].v) &&
+               !(all[i].v < all[j + 1].v)) {
+            ++j;
+        }
         const double avg_rank = (static_cast<double>(i + j) + 2.0) / 2.0;
         const long double t = static_cast<long double>(j - i + 1);
         tie_sum += t * t * t - t;  // 0 for tie groups of size 1
@@ -936,10 +980,12 @@ struct Compare {
         i = j + 1;
     }
 
-    const double    u1    = static_cast<double>(r1) - static_cast<double>(n1) * (n1 + 1) / 2.0;
-    const double    u2    = static_cast<double>(n1) * n2 - u1;
+    const double    dn1   = static_cast<double>(n1);
+    const double    dn2   = static_cast<double>(n2);
+    const double    u1    = static_cast<double>(r1) - dn1 * (dn1 + 1.0) / 2.0;
+    const double    u2    = dn1 * dn2 - u1;
     const double    u_min = std::min(u1, u2);
-    const double    mu    = static_cast<double>(n1) * n2 / 2.0;
+    const double    mu    = dn1 * dn2 / 2.0;
 
     // Tie-corrected variance (Mann & Whitney 1947 §5; Siegel 1956):
     //   sigma² = (n1·n2 / 12) · (N + 1 − T / (N·(N − 1)))
@@ -1071,9 +1117,12 @@ class Run {
             // Budget check every 64 iterations — steady_clock::now() is
             // ~20 ns, amortizing it keeps overhead under 1% for ≥2 µs
             // bodies and invisible for anything heavier.
-            if (wall_cap_ms > 0 && (i & 63) == 63 &&
-                std::chrono::steady_clock::now() - start_all > warmup_budget) {
-                break;
+            if (wall_cap_ms > 0 && (i & 63) == 63) {
+                const auto elapsed =
+                    std::chrono::steady_clock::now() - start_all;
+                if (elapsed.count() > warmup_budget.count()) {
+                    break;
+                }
             }
         }
 
@@ -1122,9 +1171,12 @@ class Run {
             // clock overhead negligible on fast bodies; heavy bodies
             // hit the check often enough because each iteration is
             // already long relative to steady_clock::now() (~20 ns).
-            if (wall_cap_ms > 0 && (i & 63) == 63 &&
-                std::chrono::steady_clock::now() - start_all > wall_budget) {
-                break;
+            if (wall_cap_ms > 0 && (i & 63) == 63) {
+                const auto elapsed =
+                    std::chrono::steady_clock::now() - start_all;
+                if (elapsed.count() > wall_budget.count()) {
+                    break;
+                }
             }
         }
         ns_samples.resize(filled);
@@ -1372,7 +1424,7 @@ class Run {
 
         cpu_set_t set;
         CPU_ZERO(&set);
-        CPU_SET(target, &set);
+        CPU_SET(static_cast<size_t>(target), &set);
         if (sched_setaffinity(0, sizeof(set), &set) != 0) {
             return CpuId::none();  // fail loudly, not silently
         }
@@ -1471,9 +1523,9 @@ inline void print_system_info(FILE* out = stdout) {
     const double ghz  = (nspc > 0) ? 1.0 / nspc : 0.0;
     std::fprintf(out, "  TSC:       %.4f ns/cycle (≈ %.3f GHz)\n", nspc, ghz);
     std::fprintf(out, "  RDTSC oh:  %lu cycles (≈ %.2f ns)\n",
-                 static_cast<unsigned long>(Timer::overhead_cycles()),
+                 Timer::overhead_cycles(),
                  Timer::overhead_ns());
-    if (nspc == 0.0) {
+    if (nspc <= 0.0) {
         std::fprintf(stderr,
             "WARN bench: TSC calibration failed (ns_per_cycle == 0); "
             "cycles/op will read 0.\n");

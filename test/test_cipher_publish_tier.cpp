@@ -334,7 +334,7 @@ template <typename W>
     return 0;
 }
 
-static void test_augur_tier_reader_pattern(const char* dir) {
+static void test_runtime_tier_reader_pattern(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 14);
     auto cipher = Cipher::open(dir);
@@ -519,7 +519,7 @@ int main() {
     test_e2e_hot_fence_consumer(dir);
     test_e2e_warm_fence_admits_hot_and_warm(dir);
     test_phase5_stub_semantics(dir);
-    test_augur_tier_reader_pattern(dir);
+    test_runtime_tier_reader_pattern(dir);
     test_replay_engine_admits_all_tiers(dir);
     test_sequential_three_tier_publish(dir);
     test_cannot_tighten_to_stronger_tier();

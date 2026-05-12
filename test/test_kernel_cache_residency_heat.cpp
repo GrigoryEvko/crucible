@@ -417,14 +417,14 @@ static void test_cross_lattice_non_mixing() {
 // Phase 3 Augur builds on; this test pins the API at the
 // production call site, not just at the wrapper definition.
 template <typename W>
-[[nodiscard]] static constexpr int classify_cache_tier_for_augur() noexcept {
+[[nodiscard]] static constexpr int classify_cache_tier_for_runtime() noexcept {
     if constexpr (W::tier == ResidencyHeatTag_v::Hot)  return 1;
     if constexpr (W::tier == ResidencyHeatTag_v::Warm) return 2;
     if constexpr (W::tier == ResidencyHeatTag_v::Cold) return 3;
     return 0;
 }
 
-static void test_augur_cache_tier_classifier() {
+static void test_runtime_cache_tier_classifier() {
     KernelCache cache;
     FakeKernel fk{1};
     auto p = cache.publish_l1(ContentHash{0x9999}, RowHash{0}, fk_ptr(&fk));
@@ -434,9 +434,9 @@ static void test_augur_cache_tier_classifier() {
     auto l2 = cache.lookup_l2(ContentHash{0x9999}, RowHash{0});
     auto l3 = cache.lookup_l3(ContentHash{0x9999}, RowHash{0});
 
-    static_assert(classify_cache_tier_for_augur<decltype(l1)>() == 1);
-    static_assert(classify_cache_tier_for_augur<decltype(l2)>() == 2);
-    static_assert(classify_cache_tier_for_augur<decltype(l3)>() == 3);
+    static_assert(classify_cache_tier_for_runtime<decltype(l1)>() == 1);
+    static_assert(classify_cache_tier_for_runtime<decltype(l2)>() == 2);
+    static_assert(classify_cache_tier_for_runtime<decltype(l3)>() == 3);
 
     (void)std::move(l1).consume();
     (void)std::move(l2).consume();
@@ -1049,7 +1049,7 @@ int main() {
     test_publish_l1_variant_update();
     test_publish_l1_row_discrimination();
     test_cross_lattice_non_mixing();
-    test_augur_cache_tier_classifier();
+    test_runtime_cache_tier_classifier();
     test_cannot_tighten_to_stronger_tier();
     test_l2_row_hash_plumbing_FOUND_I06();
     test_l3_row_hash_plumbing_FOUND_I07();

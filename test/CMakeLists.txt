@@ -573,7 +573,7 @@ crucible_test(test_mpmc_channel_session)
 # multi-reader lifetime accounting, late-reader visibility, matching
 # SharedPermission proof minting, and PSH send/recv wrapper execution.
 crucible_test(test_swmr_session)
-crucible_test(test_augur_metrics_swmr)
+crucible_test(test_rt_metrics_swmr)
 
 # L2 typing context Γ (SEPLOG-I1, task #343) — Entry, Context,
 # compose_context_t, lookup_context_t, contains_key_v, domain_of_t,

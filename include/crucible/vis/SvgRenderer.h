@@ -9,10 +9,12 @@
 // Not hot path — std::string is appropriate.
 
 #include <bit>
+#include <charconv>
 #include <cstdint>
 #include <cstdio>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace crucible::vis {
 
@@ -446,13 +448,13 @@ class SvgRenderer {
   std::string buf_;
 
   [[nodiscard]] static std::string ftoa(float v) {
-    // 64 bytes covers every finite double "%.1f" output (DBL_MAX writes
-    // ~312 chars in the worst case, but float values formatted via "%.1f"
-    // bound the integer part by float's max magnitude ~3.4e38 → ≤ 40 chars).
-    // Using 64 silences -Wformat-truncation without adding any runtime work.
     char buf[64];
-    std::snprintf(buf, sizeof(buf), "%.1f", static_cast<double>(v));
-    return buf;
+    auto [ptr, ec] =
+        std::to_chars(buf, buf + sizeof(buf), v, std::chars_format::fixed, 1);
+    if (ec != std::errc{}) {
+      return "0.0";
+    }
+    return {buf, ptr};
   }
 
   void xml_escape(std::string_view s) {

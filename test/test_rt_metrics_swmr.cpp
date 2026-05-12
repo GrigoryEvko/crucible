@@ -1,4 +1,5 @@
-#include <crucible/augur/Metrics.h>
+#include <crucible/rt/Metrics.h>
+#include <crucible/rt/Observation.h>
 #include <crucible/permissions/Permission.h>
 
 #include <cstdio>
@@ -9,7 +10,7 @@
 
 namespace {
 
-namespace augur = ::crucible::augur;
+namespace rt = ::crucible::rt;
 namespace safety = ::crucible::safety;
 
 int total_passed = 0;
@@ -38,8 +39,8 @@ void run_test(char const* name, Body body) {
     }
 }
 
-augur::AugurMetrics make_metrics(double base) noexcept {
-    augur::AugurMetrics m{};
+rt::RuntimeMetrics make_metrics(double base) noexcept {
+    rt::RuntimeMetrics m{};
     m.meb_lambda_max = base + 1.0;
     m.meb_threshold = base + 2.0;
     m.wasserstein_ratio = base + 3.0;
@@ -60,28 +61,28 @@ bool near(double a, double b) noexcept {
 }
 
 void test_metric_payload_is_snapshot_safe() {
-    static_assert(std::is_trivially_copyable_v<augur::AugurMetrics>);
-    static_assert(std::is_trivially_destructible_v<augur::AugurMetrics>);
+    static_assert(std::is_trivially_copyable_v<rt::RuntimeMetrics>);
+    static_assert(std::is_trivially_destructible_v<rt::RuntimeMetrics>);
     static_assert(::crucible::concurrent::SnapshotValue<
-                  augur::AugurMetricsSample>);
-    static_assert(sizeof(augur::AugurMetricsSample) <= 256);
+                  rt::RuntimeMetricsSample>);
+    static_assert(sizeof(rt::RuntimeMetricsSample) <= 256);
     CRUCIBLE_REQUIRE(true);
 }
 
 void test_writer_publish_keeper_and_canopy_readers() {
-    auto initial = augur::fresh_metrics_sample(make_metrics(0.0));
-    augur::AugurMetricsChannel channel{initial};
+    auto initial = rt::fresh_metrics_sample(make_metrics(0.0));
+    rt::RuntimeMetricsChannel channel{initial};
 
-    auto writer_perm = safety::mint_permission_root<augur::AugurWriterTag>();
-    auto writer = augur::mint_augur_metrics_writer(
+    auto writer_perm = safety::mint_permission_root<rt::RuntimeMetricsWriterTag>();
+    auto writer = rt::mint_rt_metrics_writer(
         channel, std::move(writer_perm));
 
-    auto keeper = augur::mint_keeper_metrics_reader(channel);
-    auto canopy = augur::mint_canopy_metrics_reader(channel);
+    auto keeper = rt::mint_keeper_metrics_reader(channel);
+    auto canopy = rt::mint_canopy_metrics_reader(channel);
     CRUCIBLE_REQUIRE(keeper.has_value());
     CRUCIBLE_REQUIRE(canopy.has_value());
 
-    auto sample = augur::metrics_sample_at(make_metrics(100.0), 7);
+    auto sample = rt::metrics_sample_at(make_metrics(100.0), 7);
     writer.publish(sample);
 
     auto keeper_sample = keeper->load();
@@ -96,10 +97,10 @@ void test_writer_publish_keeper_and_canopy_readers() {
 }
 
 void test_exclusive_drain_waits_for_readers() {
-    augur::AugurMetricsChannel channel{
-        augur::fresh_metrics_sample(make_metrics(0.0))};
+    rt::RuntimeMetricsChannel channel{
+        rt::fresh_metrics_sample(make_metrics(0.0))};
 
-    auto reader = augur::mint_keeper_metrics_reader(channel);
+    auto reader = rt::mint_keeper_metrics_reader(channel);
     CRUCIBLE_REQUIRE(reader.has_value());
 
     bool drained = false;
@@ -111,16 +112,34 @@ void test_exclusive_drain_waits_for_readers() {
     CRUCIBLE_REQUIRE(drained);
 }
 
+void test_runtime_observation_snapshot() {
+    rt::ObservationSnapshot sink{
+        rt::latency_ns(11, 250, 1, rt::ObservationSource::Bpf)};
+
+    rt::record_observation(
+        sink,
+        rt::bits_transferred(12, 4096, 2, rt::ObservationSource::Runtime));
+
+    const rt::Observation latest = rt::latest_observation(sink);
+    CRUCIBLE_REQUIRE(latest.kind == rt::ObservationKind::BitsTransferred);
+    CRUCIBLE_REQUIRE(latest.source == rt::ObservationSource::Runtime);
+    CRUCIBLE_REQUIRE(latest.metric_id == 12);
+    CRUCIBLE_REQUIRE(latest.value == 4096);
+    CRUCIBLE_REQUIRE(latest.sequence == 2);
+}
+
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "[test_augur_metrics_swmr]\n");
+    std::fprintf(stderr, "[test_rt_metrics_swmr]\n");
     run_test("metric_payload_is_snapshot_safe",
              test_metric_payload_is_snapshot_safe);
     run_test("writer_publish_keeper_and_canopy_readers",
              test_writer_publish_keeper_and_canopy_readers);
     run_test("exclusive_drain_waits_for_readers",
              test_exclusive_drain_waits_for_readers);
+    run_test("runtime_observation_snapshot",
+             test_runtime_observation_snapshot);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);

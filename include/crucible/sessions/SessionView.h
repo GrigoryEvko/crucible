@@ -62,7 +62,7 @@
 //     template <typename Handle>
 //         requires HandleIsAt<Handle, AtRecv>
 //     void report_pending_recv(ScopedView<Handle, AtRecv> view) {
-//         augur::record_pending_recv(view->protocol_name());
+//         rt::record_observation(...);
 //     }
 //
 //     // Caller mints the view; compile error if handle is at Send.
