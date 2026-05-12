@@ -330,6 +330,7 @@ crucible_test(test_target_caps)
 crucible_test(test_opcode_latency_table)
 crucible_test(test_numa_nic)
 crucible_test(test_nic_offload_audit)
+crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
 crucible_test(test_topology_graph)
@@ -899,6 +900,20 @@ function(crucible_neg_compile_cog_test name expected_diag)
     PASS_REGULAR_EXPRESSION "${expected_diag}")
 endfunction()
 
+# Sister harness for rt_neg/. Runtime-policy negative tests live here
+# when they are not primarily probing the generic effects substrate.
+function(crucible_neg_compile_rt_test name expected_diag)
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/rt_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+            --target ${name} --config $<CONFIG>)
+  set_tests_properties(${name} PROPERTIES
+    LABELS "rt_neg"
+    PASS_REGULAR_EXPRESSION "${expected_diag}")
+endfunction()
+
 # Sister harness for topology_neg/.  Mirrors cog_neg / safety_neg /
 # sessions_neg / effects_neg.  Topology-side neg-compile tests live in
 # test/topology_neg/ so the per-graph soundness gates
@@ -1268,6 +1283,24 @@ crucible_neg_compile_cog_test(neg_numa_nic_rejects_gpu
     "constraint|constraints not satisfied|NumaNicAuditableCog|audit_gate|GAPS-194")
 crucible_neg_compile_cog_test(neg_numa_nic_raw_node
     "cannot convert|could not convert|NumaNodeId|GAPS-194")
+
+# ─── HS14 fixtures for rt::Quarantine (GAPS-118 #1236) ────────────
+#
+#   * neg_quarantine_mint_bg_ctx — only Init-row contexts mint the
+#     bounded policy carrier.
+#   * neg_quarantine_record_fg_ctx — hot foreground contexts cannot
+#     mutate quarantine state from health/probe facts.
+#   * neg_quarantine_override_missing_permission — operator override
+#     requires the explicit OperatorOverride Permission token.
+#   * neg_quarantine_zero_slots — policy state must have bounded slots.
+crucible_neg_compile_rt_test(neg_quarantine_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsQuarantineMint|Init|Bg")
+crucible_neg_compile_rt_test(neg_quarantine_record_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsQuarantineRecord|Bg|HotFgCtx")
+crucible_neg_compile_rt_test(neg_quarantine_override_missing_permission
+    "no matching function|candidate|operator_override|Permission")
+crucible_neg_compile_rt_test(neg_quarantine_zero_slots
+    "static assertion failed|QuarantinePolicy requires Cog slots|MaxCogs > 0")
 
 # ─── HS14 fixtures #1 + #2 for mimic::CogMimic (GAPS-188 #1213) ──
 #

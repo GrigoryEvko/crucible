@@ -541,7 +541,7 @@ Cog queries return `std::span<const CogIdentity>` and are zero-cost — the topo
 | Topology graph storage | `topology/CogGraph.h` | composition queries |
 | Cog discovery | `cog/Discovery.h` (LLDP, PCIe, lspci) | composition into init flow |
 | Cog calibration | `cog/Calibrate.h` (microbenchmarks) | scheduling on calibration trigger |
-| Cog quarantine | `cog/Quarantine.h` (state machine) | per-deployment quarantine policy |
+| Cog quarantine | `rt/Quarantine.h` (state machine over Cog identity) | per-deployment quarantine policy |
 | Per-Cog Mimic instance | `mimic/CogMimic.h` (per-Cog compiler) | strategy-driven kernel selection |
 | Cog query DSL | (none) | `fixy::cog_query<>` |
 
@@ -4584,7 +4584,7 @@ fixy::ops::chaos{
 
 **Status.** Planned (GAPS-118).
 
-**Substrate.** `crucible/cog/Quarantine.h`. Composes φ-accrual + thermal + ECC + wear + operator inputs.
+**Substrate.** `crucible/rt/Quarantine.h`. Composes φ-accrual + thermal + ECC + wear + operator inputs over Cog identity.
 
 **Fixy DSL.** `fixy::ops::quarantine_policy{...}`.
 
@@ -4635,7 +4635,7 @@ The optimizer respects all operational policies: it doesn't schedule heavy work 
 | Lame-duck state | `runtime/LameDuck.h` | (uses) |
 | Canary state machine | `runtime/Canary.h` | (uses) |
 | Chaos fault injection | `runtime/Chaos.h` | (uses) |
-| Quarantine state machine | `cog/Quarantine.h` | (uses) |
+| Quarantine state machine | `rt/Quarantine.h` | (uses) |
 | Operational policy | (none) | `fixy::ops::*` |
 
 ═══════════════════════════════════════════════════════════════════════
@@ -4820,7 +4820,7 @@ Full catalog of new tasks for the networking + Cog + comm-through-IR effort. Eac
 | 115 | Scuttlebutt.h — anti-entropy CRDT | `canopy/Scuttlebutt.h` | 114 | 118, 162 | 400 | 3d |
 | 116 | Integrity.h — E2E xxHash64 | `cntp/Integrity.h` | — | 117 | 150 | 1d |
 | 117 | ReedSolomon.h — k+m FEC, AVX2 | `cntp/Fec.h` | 116 | 119 | 600 | 5d |
-| 118 | Quarantine.h — auto-evict + recovery | `cog/Quarantine.h` | 113-115 | 142, 143 | 300 | 3d |
+| 118 | Quarantine.h — auto-evict + recovery | `rt/Quarantine.h` | 113-115 | 142, 143 | 300 | 3d |
 | 119 | Fountain.h — LT/Raptor codes for multicast | `cntp/Fountain.h` | 117 | — | 400 | 4d |
 | 120 | CongestionControl.h — BBRv3, CUBIC, DCTCP | `cntp/CongestionControl.h` | — | 121, 123 | 150 | 1d |
 | 121 | Pacing.h — fq verification + auto-config | `cntp/Pacing.h` | 120 | — | 200 | 2d |
