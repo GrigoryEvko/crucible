@@ -239,6 +239,7 @@ crucible_test(test_cntp_ktls_offload)
 crucible_test(test_cntp_mtls_transport)
 crucible_test(test_cntp_path_swap)
 crucible_test(test_cntp_pacing)
+crucible_test(test_cntp_quic_transport)
 crucible_test(test_cntp_roce_config)
 crucible_test(test_cntp_integrity)
 crucible_test(test_cntp_fec)
@@ -2747,6 +2748,20 @@ crucible_neg_compile_test(neg_mtls_legacy_cipher_config
   "constraints not satisfied|ApprovedMtlsCipherSuite|LegacyRsa3desSha")
 crucible_neg_compile_test(neg_mtls_raw_config_connect
   "invalid initialization of reference|no matching function|DeclaredMtlsConfig|Tagged")
+
+# GAPS-128 — cntp/QuicTransport.h QUIC + TLS 1.3 substrate.
+#   * neg_quic_raw_config_connect: runtime connect requires tagged QUIC policy.
+#   * neg_quic_raw_cc_config: QUIC config minting requires tagged CC policy.
+#   * neg_quic_open_stream_fg_ctx: foreground contexts cannot mutate streams.
+#   * neg_quic_raw_migration_plan: migration requires a tagged path-swap plan.
+crucible_neg_compile_test(neg_quic_raw_config_connect
+  "could not convert|no matching function|DeclaredQuicConfig|Tagged")
+crucible_neg_compile_test(neg_quic_raw_cc_config
+  "could not convert|no matching function|DeclaredCcChoice|Tagged")
+crucible_neg_compile_effects_test(neg_quic_open_stream_fg_ctx
+  "constraints not satisfied|CtxFitsQuicRuntime|Bg")
+crucible_neg_compile_test(neg_quic_raw_migration_plan
+  "could not convert|no matching function|DeclaredPathSwapPlan|Tagged")
 
 # GAPS-146 — cntp/KtlsOffload.h kernel-TLS offload substrate.
 #   * neg_ktls_tls12_crypto: TLS 1.2 record secrets cannot be admitted.

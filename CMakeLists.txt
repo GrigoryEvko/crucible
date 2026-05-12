@@ -60,6 +60,7 @@ add_library(crucible STATIC
   src/cntp/OverlayMulticast.cpp
   src/cntp/PathSwap.cpp
   src/cntp/Pacing.cpp
+  src/cntp/QuicTransport.cpp
   src/cntp/RoceConfig.cpp
   src/observe/HdrHistogram.cpp
   src/observe/SyntheticProbe.cpp

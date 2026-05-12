@@ -167,6 +167,11 @@ namespace source {
     // cntp/KtlsOffload.h. Raw sockets and raw TLS traffic keys cannot
     // directly program NIC/kernel TLS state.
     struct KtlsOffloaded {};
+    // Quic: CNT-P QUIC connection, stream, migration, datagram, and
+    // 0-RTT plans admitted through cntp/QuicTransport.h. Raw stream
+    // limits, resumption tokens, and path-swap plans cannot directly
+    // drive encrypted federation transport behavior.
+    struct Quic {};
     // AdmissionDecision: CNT-P backpressure/admission-control decisions
     // minted by rt/Backpressure.h. Raw accept/reject structs cannot
     // cross runtime boundaries as operator-visible admission outcomes.
