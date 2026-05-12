@@ -345,6 +345,7 @@ crucible_test(test_cog_identity)
 crucible_test(test_target_caps)
 crucible_test(test_opcode_latency_table)
 crucible_test(test_numa_nic)
+crucible_test(test_nic_config)
 crucible_test(test_nic_offload_audit)
 crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
@@ -2714,6 +2715,18 @@ crucible_neg_compile_test(neg_congestion_control_dctcp_cross_dc
   "constraints not satisfied|CcCompatible|LosslessDatacenterFabric")
 crucible_neg_compile_test(neg_congestion_control_custom_missing_name
   "constraints not satisfied|CustomCcModule|congestion_control_name")
+
+# GAPS-192 — cog/NicConfig.h ethtool/sysctl/tc-qdisc config substrate.
+#   * neg_nic_config_raw_apply: privileged apply requires tagged config.
+#   * neg_nic_config_ring_not_power_of_two: ring sizes are power-of-two
+#     values in [256, 8192].
+#   * neg_nic_config_mint_bg_ctx: config minting is Init-row work.
+crucible_neg_compile_cog_test(neg_nic_config_raw_apply
+  "could not convert|no matching function|DeclaredNicConfig|Tagged")
+crucible_neg_compile_cog_test(neg_nic_config_ring_not_power_of_two
+  "contract|precondition|power_of_two|Refined|NicRingSize")
+crucible_neg_compile_effects_test(neg_nic_config_mint_bg_ctx
+  "constraints not satisfied|CtxFitsNicConfigMint|Init")
 
 # GAPS-121 — cntp/Pacing.h fq/qdisc verification + SO_MAX_PACING_RATE.
 #   * neg_pacing_bbr_pfifo_config: BBR pacing config admits only fq/fq_codel.

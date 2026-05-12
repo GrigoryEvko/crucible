@@ -227,6 +227,11 @@ namespace source {
     // execution comparison. Raw operation results and externally-tagged
     // values cannot substitute for the post-comparison evidence.
     struct SdcVerified {};
+    // NicConfig: cog/NicConfig.h ethtool/sysctl/qdisc configuration intent
+    // admitted at the hardware-Cog boundary. Raw ring sizes, queue counts,
+    // qdisc kinds, sysctl byte counts, and TCP congestion strings cannot
+    // directly drive privileged NIC mutation.
+    struct NicConfig {};
 }
 
 namespace trust {

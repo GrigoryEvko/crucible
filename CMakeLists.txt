@@ -48,6 +48,7 @@ add_library(crucible STATIC
   src/canopy/Lifeguard.cpp
   src/canopy/Plumtree.cpp
   src/cog/NumaNic.cpp
+  src/cog/NicConfig.cpp
   src/cog/NicOffloadAudit.cpp
   src/cntp/Backpressure.cpp
   src/cntp/AfXdp.cpp
