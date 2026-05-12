@@ -229,6 +229,7 @@ crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_congestion_control)
 crucible_test(test_cntp_incast_control)
+crucible_test(test_cntp_ktls_offload)
 crucible_test(test_cntp_mtls_transport)
 crucible_test(test_cntp_path_swap)
 crucible_test(test_cntp_pacing)
@@ -2582,6 +2583,17 @@ crucible_neg_compile_test(neg_mtls_legacy_cipher_config
   "constraints not satisfied|ApprovedMtlsCipherSuite|LegacyRsa3desSha")
 crucible_neg_compile_test(neg_mtls_raw_config_connect
   "invalid initialization of reference|no matching function|DeclaredMtlsConfig|Tagged")
+
+# GAPS-146 — cntp/KtlsOffload.h kernel-TLS offload substrate.
+#   * neg_ktls_tls12_crypto: TLS 1.2 record secrets cannot be admitted.
+#   * neg_ktls_chacha_crypto: software ChaCha20 TLS suites are not kTLS AES-GCM.
+#   * neg_ktls_raw_crypto_offload: offload requests require tagged crypto info.
+crucible_neg_compile_test(neg_ktls_tls12_crypto
+  "constraints not satisfied|SupportedKtlsVersion|TlsVersion::V12")
+crucible_neg_compile_test(neg_ktls_chacha_crypto
+  "constraints not satisfied|KtlsAesGcmCipherSuite|TlsChacha20Poly1305Sha256")
+crucible_neg_compile_test(neg_ktls_raw_crypto_offload
+  "could not convert|no matching function|DeclaredTlsCryptoInfo|Tagged")
 
 # GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the

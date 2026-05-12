@@ -48,6 +48,7 @@ add_library(crucible STATIC
   src/cog/NicOffloadAudit.cpp
   src/cntp/CongestionControl.cpp
   src/cntp/IncastControl.cpp
+  src/cntp/KtlsOffload.cpp
   src/cntp/MtlsTransport.cpp
   src/cntp/PathSwap.cpp
   src/cntp/Pacing.cpp
