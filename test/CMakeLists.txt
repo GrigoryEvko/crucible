@@ -327,6 +327,7 @@ crucible_test(test_concurrent)
 crucible_test(test_cog_identity)
 crucible_test(test_target_caps)
 crucible_test(test_opcode_latency_table)
+crucible_test(test_numa_nic)
 crucible_test(test_nic_offload_audit)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
@@ -1251,6 +1252,18 @@ crucible_neg_compile_cog_test(neg_nic_offload_audit_rejects_gpu
     "constraint|constraints not satisfied|NicOffloadAuditableCog|audit_gate|GAPS-140")
 crucible_neg_compile_cog_test(neg_nic_offload_audit_raw_required_offloads
     "cannot convert|could not convert|Bits|NicFeature|GAPS-140")
+
+# ─── GAPS-194 cog/NumaNic.h soundness gates (HS14) ─────────────────
+#
+# Two fixtures, two distinct mismatch classes:
+# * neg_numa_nic_rejects_gpu — SUBSTRATE-KIND gate.
+#   NumaNicAuditableCog<K> only admits CogKind::NicPort.
+# * neg_numa_nic_raw_node — TYPE gate.
+#   NUMA nodes are NumaNodeId, not raw integers.
+crucible_neg_compile_cog_test(neg_numa_nic_rejects_gpu
+    "constraint|constraints not satisfied|NumaNicAuditableCog|audit_gate|GAPS-194")
+crucible_neg_compile_cog_test(neg_numa_nic_raw_node
+    "cannot convert|could not convert|NumaNodeId|GAPS-194")
 
 # ─── HS14 fixtures #1 + #2 for mimic::CogMimic (GAPS-188 #1213) ──
 #
