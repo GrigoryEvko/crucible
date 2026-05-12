@@ -137,6 +137,38 @@ static void test_ethtool_features_and_lldp() {
     std::printf("  test_ethtool_features_and_lldp:       PASSED\n");
 }
 
+static void test_lldp_record_state_reset() {
+    InitCtx ctx{};
+    auto snapshot = topology::DefaultDiscoverySnapshot{};
+    auto local_idx = snapshot.add_node(topology::DiscoveryNodeFact{
+        .kind = cog::CogKind::NicPort,
+        .vendor = topology::tag_vendor_discovery_string("Mellanox"),
+        .model = topology::tag_vendor_discovery_string("ConnectX-6"),
+        .bus_info = topology::tag_vendor_discovery_string("0000:65:00.0"),
+    });
+    assert(local_idx.has_value());
+
+    constexpr std::string_view lldp =
+        "Interface: eth0\n"
+        "LineRate: 100G\n"
+        "SysName: tor-a\n"
+        "PortID: swp17\n"
+        "\n"
+        "Interface: eth0\n"
+        "SysName: tor-b\n"
+        "PortID: swp18\n";
+    auto status = topology::parse_lldp_neighbors(
+        topology::tag_external_discovery_text(lldp), snapshot);
+    assert(status.has_value());
+    assert(status->records_admitted == 2);
+    assert(snapshot.edge_count() == 2);
+
+    auto graph = snapshot.graph(ctx);
+    assert(graph.edges()[0].bandwidth_bytes_per_sec.value() == 12'500'000'000ull);
+    assert(graph.edges()[1].bandwidth_bytes_per_sec.value() == 0);
+    std::printf("  test_lldp_record_state_reset:         PASSED\n");
+}
+
 static void test_graceful_empty_live_discovery() {
     InitCtx ctx{};
     auto snapshot = topology::mint_discovery_snapshot<4, 4>(ctx);
@@ -170,6 +202,7 @@ int main() {
     test_name_coverage();
     test_lspci_and_graph_materialization();
     test_ethtool_features_and_lldp();
+    test_lldp_record_state_reset();
     test_graceful_empty_live_discovery();
     test_static_gates();
     std::printf("test_topology_discovery: all PASSED\n");
