@@ -14,10 +14,11 @@
 #include <initializer_list>
 
 using crucible::detail::kEmpty;
-using crucible::detail::kGroupWidth;
 using crucible::detail::h2_tag;
 using crucible::detail::BitMask;
 using crucible::detail::CtrlGroup;
+
+static constexpr size_t kGroupWidth = crucible::detail::group_width();
 
 static void test_h2_tag_range() {
     // Top 7 bits = 0..127, always non-negative as int8_t.

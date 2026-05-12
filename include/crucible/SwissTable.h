@@ -50,13 +50,23 @@ namespace detail {
 
 static constexpr int8_t kEmpty = static_cast<int8_t>(0x80);
 
+using GroupWidth = ::crucible::safety::PowerOfTwo<std::size_t>;
+
 #if defined(__AVX512BW__)
-static constexpr size_t kGroupWidth = 64;
+static constexpr GroupWidth kGroupWidth{std::size_t{64}};
 #elif defined(__AVX2__)
-static constexpr size_t kGroupWidth = 32;
+static constexpr GroupWidth kGroupWidth{std::size_t{32}};
 #else
-static constexpr size_t kGroupWidth = 16;
+static constexpr GroupWidth kGroupWidth{std::size_t{16}};
 #endif
+
+static_assert(sizeof(GroupWidth) == sizeof(std::size_t));
+static_assert(std::is_trivially_copyable_v<GroupWidth>);
+static_assert(std::is_standard_layout_v<GroupWidth>);
+
+[[nodiscard]] consteval std::size_t group_width() noexcept {
+  return kGroupWidth.value();
+}
 
 // CONTRACT-109: kGroupWidth is structurally a power of two — the SIMD
 // path selection above hardcodes 16/32/64.  The static_assert pins the
@@ -80,7 +90,7 @@ static constexpr size_t kGroupWidth = 16;
 // translation-unit load time, so a plain static_assert binds the same
 // VC obligation at compile time without runtime cost.
 static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(
-                  kGroupWidth, std::size_t{64}),
+                  group_width(), std::size_t{64}),
               "kGroupWidth must be a power of two ≤ 64 (AVX-512 width)");
 
 [[nodiscard]] consteval uint64_t group_mask_ceiling(std::size_t width) noexcept {
@@ -88,7 +98,7 @@ static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(
                      : ((uint64_t{1} << width) - uint64_t{1});
 }
 
-static constexpr uint64_t kGroupMaskCeiling = group_mask_ceiling(kGroupWidth);
+static constexpr uint64_t kGroupMaskCeiling = group_mask_ceiling(group_width());
 
 // H2 tag: top 7 bits of hash -> [0, 127].
 // Always non-negative as int8_t (bit 7 cleared).
@@ -381,7 +391,7 @@ struct CtrlGroup {
 // would break the load/match bitmask width accounting — catch here.
 // NEON aarch64 keeps kGroupWidth = 16 (SSE2 fallthrough in the kGroupWidth
 // chain), matching int8x16_t's size.
-static_assert(sizeof(CtrlGroup) == kGroupWidth,
+static_assert(sizeof(CtrlGroup) == group_width(),
               "CtrlGroup size must match SIMD group width");
 
 } // namespace detail

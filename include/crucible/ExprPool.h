@@ -349,7 +349,7 @@ class CRUCIBLE_OWNER ExprPool {
   explicit ExprPool(effects::Alloc a,
                     size_t initial_capacity = kDefaultInitialCapacity) : arena_() {
     // Round up to power of 2, minimum one full SIMD group
-    capacity_ = detail::kGroupWidth;
+    capacity_ = detail::group_width();
     while (capacity_ < initial_capacity)
       capacity_ <<= 1;
 
@@ -388,7 +388,7 @@ class CRUCIBLE_OWNER ExprPool {
     // Need capacity such that n_entries * 8 <= capacity * 7 (87.5% LF).
     // Solve: capacity >= ceil(n_entries * 8 / 7).
     const size_t needed = (n_entries * 8 + 6) / 7;
-    size_t target = detail::kGroupWidth;
+    size_t target = detail::group_width();
     while (target < needed) target <<= 1;
     if (target > capacity_) grow_to_(target);
   }
@@ -1486,7 +1486,7 @@ class CRUCIBLE_OWNER ExprPool {
     // group indices.  Eliminates the g*kGroupWidth multiply on every
     // probe iteration.
     size_t slot_mask = capacity_ - 1;
-    size_t probe_base_slot = (expr_full_hash * detail::kGroupWidth) & slot_mask;
+    size_t probe_base_slot = (expr_full_hash * detail::group_width()) & slot_mask;
     size_t probe_iteration = 0;
 
     while (true) {
@@ -1583,7 +1583,7 @@ class CRUCIBLE_OWNER ExprPool {
       // Sequence: probe_base_slot, +G, +3G, +6G, ...
       ++probe_iteration;
       probe_base_slot =
-          (probe_base_slot + probe_iteration * detail::kGroupWidth) & slot_mask;
+          (probe_base_slot + probe_iteration * detail::group_width()) & slot_mask;
 
       // PERF-3: prefetch the NEXT probe's control group.  Issued
       // ONLY here — after we've decided to iterate (current group
@@ -1645,7 +1645,7 @@ class CRUCIBLE_OWNER ExprPool {
   void grow_to_(size_t new_capacity)
       pre (::crucible::decide::is_power_of_two_le<std::size_t>(
               new_capacity, std::size_t{1} << 30))
-      pre (new_capacity >= detail::kGroupWidth)
+      pre (new_capacity >= detail::group_width())
   {
     size_t old_capacity = capacity_;
     // #915 WRAP-ExprPool-1: move the old SwissTableBuffer into a local;
@@ -1668,7 +1668,7 @@ class CRUCIBLE_OWNER ExprPool {
       const Expr* existing_expr = old_slots[i];
       int8_t slot_match_tag = detail::h2_tag(existing_expr->hash);
       size_t probe_base_slot =
-          (existing_expr->hash * detail::kGroupWidth) & slot_mask;
+          (existing_expr->hash * detail::group_width()) & slot_mask;
       size_t probe_iteration = 0;
 
       while (true) {
@@ -1683,7 +1683,7 @@ class CRUCIBLE_OWNER ExprPool {
         }
         ++probe_iteration;
         probe_base_slot =
-            (probe_base_slot + probe_iteration * detail::kGroupWidth) & slot_mask;
+            (probe_base_slot + probe_iteration * detail::group_width()) & slot_mask;
       }
     }
     // old_backing.~SwissTableBuffer() frees old alloc via RAII.

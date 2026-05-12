@@ -27,7 +27,8 @@ using crucible::detail::CtrlGroup;
 using crucible::detail::fmix64;
 using crucible::detail::h2_tag;
 using crucible::detail::kEmpty;
-using crucible::detail::kGroupWidth;
+
+static constexpr size_t kGroupWidth = crucible::detail::group_width();
 
 namespace {
 

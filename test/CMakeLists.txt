@@ -3248,6 +3248,14 @@ crucible_neg_compile_test(neg_swiss_bitmask_one_past_group_mask
 crucible_neg_compile_test(neg_swiss_bitmask_wide_miss
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# WRAP-SwissTab-6 (#1028) — kGroupWidth is a
+# safety::PowerOfTwo<size_t> rather than a raw size_t.  The fixtures
+# cover both structural mismatch classes for the predicate.
+crucible_neg_compile_test(neg_swiss_group_width_zero
+  "contract|Refined|power_of_two|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_swiss_group_width_not_power_of_two
+  "contract|Refined|power_of_two|not a constant|non-constant|constexpr")
+
 # WRAP-ExprPool-4 (#918) — int_cache_ access is routed through
 # IntCacheLiteral = Refined<in_range<-128, 127>, int64_t>.  Two HS14
 # fixtures pin both ends of the closed interval:
