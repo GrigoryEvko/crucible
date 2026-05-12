@@ -228,6 +228,7 @@ crucible_test(test_crdt)
 crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_congestion_control)
+crucible_test(test_cntp_path_swap)
 crucible_test(test_cntp_pacing)
 crucible_test(test_cntp_integrity)
 crucible_test(test_cntp_fec)
@@ -2518,6 +2519,18 @@ crucible_neg_compile_test(neg_pacing_raw_rate
   "could not convert|no matching function|PositivePacingRate|Refined")
 crucible_neg_compile_test(neg_pacing_raw_config_ensure
   "could not convert|no matching function|DeclaredQdiscConfig|Tagged")
+
+# GAPS-122 — cntp/PathSwap.h application-level resource transition.
+#   * neg_path_swap_raw_plan_begin: state-machine entry requires a tagged plan.
+#   * neg_path_swap_commit_fg_ctx: commit is a Bg-row runtime transition.
+#   * neg_path_swap_commit_non_session_resource: new path resource must satisfy
+#     SessionResource pin discipline.
+crucible_neg_compile_test(neg_path_swap_raw_plan_begin
+  "could not convert|no matching function|DeclaredPathSwapPlan|Tagged")
+crucible_neg_compile_effects_test(neg_path_swap_commit_fg_ctx
+  "constraints not satisfied|CtxFitsPathSwapTransition|Bg")
+crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
+  "constraints not satisfied|SessionResource|PathSwapSessionResource")
 
 # GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the

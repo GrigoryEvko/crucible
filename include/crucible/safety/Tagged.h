@@ -142,6 +142,10 @@ namespace source {
     // admitted through cntp/Pacing.h. Raw interface strings / qdisc
     // names cannot directly drive pacing policy.
     struct QdiscConfig {};
+    // PathSwap: CNT-P application-level path-swap plan admitted through
+    // cntp/PathSwap.h. Raw path IDs cannot directly drive a live
+    // SessionHandle resource transition.
+    struct PathSwap {};
 }
 
 namespace trust {
