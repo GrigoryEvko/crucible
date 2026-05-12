@@ -6,10 +6,46 @@
 #include <cstddef>
 #include <cstdio>
 #include <string_view>
+#include <sys/socket.h>
+#include <unistd.h>
 
 namespace cog = crucible::cog;
 namespace effects = crucible::effects;
 namespace topology = crucible::topology;
+
+namespace {
+
+class TestSocket {
+public:
+    explicit TestSocket(int fd) noexcept : fd_{fd} {}
+    TestSocket(TestSocket const&) = delete;
+    TestSocket& operator=(TestSocket const&) = delete;
+    TestSocket(TestSocket&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
+    TestSocket& operator=(TestSocket&& other) noexcept {
+        if (this != &other) {
+            close();
+            fd_ = other.fd_;
+            other.fd_ = -1;
+        }
+        return *this;
+    }
+    ~TestSocket() noexcept { close(); }
+
+    [[nodiscard]] int raw() const noexcept { return fd_; }
+    [[nodiscard]] bool valid() const noexcept { return fd_ >= 0; }
+
+private:
+    int fd_ = -1;
+
+    void close() noexcept {
+        if (fd_ >= 0) {
+            ::close(fd_);
+            fd_ = -1;
+        }
+    }
+};
+
+}  // namespace
 
 static cog::CogIdentity nic(std::uint64_t lo) {
     cog::CogIdentity id{};
@@ -40,6 +76,11 @@ static void test_fd_and_nic_admission() {
     auto gpu = nic(2);
     gpu.kind = cog::CogKind::Gpu;
     assert(!topology::ptp_capable_cog(gpu));
+
+    auto index = topology::admit_ptp_device_index(12);
+    assert(index.has_value());
+    auto path = topology::ptp_device_path(*index);
+    assert(path.view() == std::string_view{"/dev/ptp12"});
     std::printf("  test_fd_and_nic_admission:  PASSED\n");
 }
 
@@ -98,17 +139,67 @@ static void test_timestamped_packet_view() {
     std::printf("  test_timestamped_packet_view: PASSED\n");
 }
 
+static void test_linux_boundaries_if_available() {
+    auto fd = topology::admit_ptp_clock_fd(999'999);
+    assert(fd.has_value());
+    auto now = topology::ptp_now(*fd);
+    assert(!now.has_value());
+    assert(now.error() == topology::PtpError::ClockReadFailed);
+
+    auto caps = topology::query_ptp_clock_caps(*fd);
+    assert(!caps.has_value());
+    assert(caps.error() == topology::PtpError::ClockCapsUnavailable);
+
+    auto index0 = topology::admit_ptp_device_index(0);
+    assert(index0.has_value());
+    auto clock = topology::open_ptp_clock(*index0);
+    if (clock.has_value()) {
+        assert(clock->peek().valid());
+        auto stamp = topology::ptp_now(clock->peek().fd());
+        assert(stamp.has_value() ||
+               stamp.error() == topology::PtpError::ClockReadFailed);
+    }
+
+    TestSocket socket{::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)};
+    assert(socket.valid());
+    auto sock_fd = crucible::cntp::admit_socket_fd(socket.raw());
+    assert(sock_fd.has_value());
+    auto enabled = topology::enable_socket_timestamping(*sock_fd);
+    assert(enabled.has_value() ||
+           enabled.error() == topology::PtpError::SocketTimestampingFailed);
+
+    auto lo = crucible::cntp::NicInterfaceName::from("lo");
+    assert(lo.has_value());
+    auto configured =
+        topology::configure_hardware_timestamping(*sock_fd, *lo);
+    assert(configured.has_value() ||
+           configured.error() == topology::PtpError::HardwareTimestampingFailed);
+
+    std::array<std::byte, 8> payload{};
+    auto empty = topology::recv_with_hw_timestamp(
+        *sock_fd, std::span<std::byte>{});
+    assert(!empty.has_value());
+    assert(empty.error() == topology::PtpError::InvalidReceiveBuffer);
+
+    auto recv = topology::recv_with_hw_timestamp(
+        *sock_fd, std::span<std::byte>{payload});
+    assert(recv.has_value() || recv.error() == topology::PtpError::RecvFailed ||
+           recv.error() == topology::PtpError::NoTimestamp);
+    std::printf("  test_linux_boundaries_if_available: PASSED\n");
+}
+
 int main() {
     static_assert(topology::CtxFitsPtpMint<effects::ColdInitCtx>);
     static_assert(!topology::CtxFitsPtpMint<effects::BgDrainCtx>);
     static_assert(topology::CtxFitsPtpRecord<effects::BgDrainCtx>);
     static_assert(!topology::CtxFitsPtpRecord<effects::HotFgCtx>);
 
-    std::printf("test_topology_ptp: 4 groups\n");
+    std::printf("test_topology_ptp: 5 groups\n");
     test_name_accessors();
     test_fd_and_nic_admission();
     test_handle_status_and_timestamp();
     test_timestamped_packet_view();
+    test_linux_boundaries_if_available();
     std::printf("test_topology_ptp: all passed\n");
     return 0;
 }

@@ -3,21 +3,25 @@
 // GAPS-129.  PTP clock substrate.
 //
 // This header owns typed PTP facts and admission gates.  It does not
-// start ptp4l/phc2sys, open /dev/ptp*, issue SIOCSHWTSTAMP, or program
-// socket timestamping.  Those privileged integration points feed this
-// substrate later with admitted clock fds, status samples, and hardware
-// timestamps carrying source::Ptp provenance.
+// start ptp4l/phc2sys or claim daemon health; those lifecycle decisions
+// remain operator/rt policy.  The Linux boundary here is deliberately
+// narrow: bounded /dev/ptpN paths, clock reads/caps, socket timestamping,
+// and hardware timestamp extraction into source::Ptp values.
 
 #include <crucible/cog/CogIdentity.h>
+#include <crucible/cntp/Pacing.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/safety/Linear.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Pre.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/RefinedAlgebra.h>
 #include <crucible/safety/Tagged.h>
 
 #include <atomic>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -39,6 +43,16 @@ enum class PtpError : std::uint8_t {
     InvalidClockFd = 3,
     NoTimestamp = 4,
     Degraded = 5,
+    InvalidDeviceIndex = 6,
+    OpenClockFailed = 7,
+    ClockReadFailed = 8,
+    ClockCapsUnavailable = 9,
+    SocketTimestampingFailed = 10,
+    HardwareTimestampingFailed = 11,
+    RecvFailed = 12,
+    InvalidReceiveBuffer = 13,
+    TimestampOverflow = 14,
+    MalformedTimestampControl = 15,
 };
 
 [[nodiscard]] std::string_view ptp_error_name(PtpError error) noexcept;
@@ -69,12 +83,67 @@ struct PtpStatus {
 };
 
 using DeclaredPtpStatus = safety::Tagged<PtpStatus, safety::source::Ptp>;
+using PtpDeviceIndex =
+    safety::Bounded<std::uint16_t{0}, std::uint16_t{255}, std::uint16_t>;
 
 struct TimestampedPacketView {
     std::span<const std::byte> payload{};
     PtpTimestampNs timestamp_ns{0};
     std::uint64_t sequence = 0;
 };
+
+struct TimestampedPacket {
+    std::span<std::byte> payload{};
+    std::size_t size = 0;
+    PtpTimestampNs timestamp_ns{0};
+    bool hardware = false;
+};
+
+struct PtpClockCaps {
+    std::int32_t max_adjustment_ppb = 0;
+    std::int32_t alarms = 0;
+    std::int32_t external_timestamp_channels = 0;
+    std::int32_t periodic_outputs = 0;
+    bool pps = false;
+    std::int32_t pins = 0;
+    bool cross_timestamping = false;
+    bool adjust_phase = false;
+    std::int32_t max_phase_adjustment_ns = 0;
+};
+
+struct PtpDevicePath {
+    static constexpr std::size_t max_bytes = 12;
+
+    std::array<char, max_bytes> bytes{};
+    std::uint8_t size = 0;
+
+    [[nodiscard]] constexpr std::string_view view() const noexcept {
+        return {bytes.data(), size};
+    }
+};
+
+class PtpClock {
+public:
+    PtpClock() noexcept = default;
+    explicit PtpClock(PtpClockFd fd) noexcept;
+    ~PtpClock() noexcept;
+
+    PtpClock(PtpClock const&) = delete;
+    PtpClock& operator=(PtpClock const&) = delete;
+    PtpClock(PtpClock&& other) noexcept;
+    PtpClock& operator=(PtpClock&& other) noexcept;
+
+    [[nodiscard]] PtpClockFd fd() const noexcept;
+    [[nodiscard]] bool valid() const noexcept;
+    [[nodiscard]] PtpClockFd release() noexcept;
+
+private:
+    int fd_ = -1;
+
+    void close() noexcept;
+};
+
+using OwnedPtpClock = safety::Linear<PtpClock>;
 
 template <class Ctx>
 concept CtxFitsPtpMint =
@@ -92,6 +161,38 @@ admit_ptp_clock_fd(int fd) noexcept {
         return std::unexpected(PtpError::InvalidClockFd);
     }
     return PtpClockFd{fd, typename PtpClockFd::Trusted{}};
+}
+
+[[nodiscard]] constexpr std::expected<PtpDeviceIndex, PtpError>
+admit_ptp_device_index(std::uint16_t index) noexcept {
+    if (index > 255u) {
+        return std::unexpected(PtpError::InvalidDeviceIndex);
+    }
+    return PtpDeviceIndex{index, typename PtpDeviceIndex::Trusted{}};
+}
+
+[[nodiscard]] constexpr PtpDevicePath
+ptp_device_path(PtpDeviceIndex index) noexcept {
+    PtpDevicePath out{};
+    constexpr std::string_view prefix = "/dev/ptp";
+    for (std::size_t i = 0; i < prefix.size(); ++i) {
+        out.bytes[out.size++] = prefix[i];
+    }
+
+    auto value = index.value();
+    if (value >= 100u) {
+        out.bytes[out.size++] = static_cast<char>('0' + (value / 100u));
+        value %= 100u;
+        out.bytes[out.size++] = static_cast<char>('0' + (value / 10u));
+        out.bytes[out.size++] = static_cast<char>('0' + (value % 10u));
+    } else if (value >= 10u) {
+        out.bytes[out.size++] = static_cast<char>('0' + (value / 10u));
+        out.bytes[out.size++] = static_cast<char>('0' + (value % 10u));
+    } else {
+        out.bytes[out.size++] = static_cast<char>('0' + value);
+    }
+    out.bytes[out.size] = '\0';
+    return out;
 }
 
 [[nodiscard]] constexpr bool
@@ -221,8 +322,32 @@ timestamp_packet_view(std::span<const std::byte> payload,
                       PtpTimestampNs timestamp,
                       std::uint64_t sequence) noexcept;
 
+[[nodiscard]] std::expected<OwnedPtpClock, PtpError>
+open_ptp_clock(PtpDeviceIndex index) noexcept;
+
+[[nodiscard]] std::expected<PtpClockCaps, PtpError>
+query_ptp_clock_caps(PtpClockFd fd) noexcept;
+
+[[nodiscard]] std::expected<PtpTimestampNs, PtpError>
+ptp_now(PtpClockFd fd) noexcept;
+
+[[nodiscard]] std::expected<void, PtpError>
+enable_socket_timestamping(cntp::SocketFd socket) noexcept;
+
+[[nodiscard]] std::expected<void, PtpError>
+configure_hardware_timestamping(cntp::SocketFd control_socket,
+                                cntp::NicInterfaceName iface) noexcept;
+
+[[nodiscard]] std::expected<TimestampedPacket, PtpError>
+recv_with_hw_timestamp(cntp::SocketFd socket,
+                       std::span<std::byte> buffer) noexcept;
+
 static_assert(sizeof(PtpClockFd) == sizeof(int));
 static_assert(sizeof(PtpTimestampNs) == sizeof(std::uint64_t));
+static_assert(sizeof(PtpDeviceIndex) == sizeof(std::uint16_t));
+static_assert(sizeof(OwnedPtpClock) == sizeof(PtpClock));
+static_assert(std::is_trivially_copyable_v<PtpClockCaps>);
+static_assert(std::is_trivially_copyable_v<PtpDevicePath>);
 static_assert(!CtxFitsPtpMint<effects::BgDrainCtx>);
 static_assert(CtxFitsPtpMint<effects::ColdInitCtx>);
 static_assert(!CtxFitsPtpRecord<effects::HotFgCtx>);

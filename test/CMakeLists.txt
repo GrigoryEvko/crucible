@@ -1418,6 +1418,8 @@ crucible_neg_compile_topology_test(neg_pingmesh_zero_peer_capacity
 #   * neg_ptp_raw_fd — raw int fds cannot mint PTP handles.
 #   * neg_ptp_raw_timestamp — raw nanoseconds cannot substitute for
 #     source::Ptp timestamps.
+#   * neg_ptp_open_raw_device_index — raw integers cannot name /dev/ptpN.
+#   * neg_ptp_enable_raw_socket — raw socket fds cannot program timestamping.
 crucible_neg_compile_topology_test(neg_ptp_mint_bg_ctx
     "constraint|constraints not satisfied|CtxFitsPtpMint|Init|Bg")
 crucible_neg_compile_topology_test(neg_ptp_record_fg_ctx
@@ -1426,6 +1428,10 @@ crucible_neg_compile_topology_test(neg_ptp_raw_fd
     "cannot convert|no matching function|could not convert|PtpClockFd|int")
 crucible_neg_compile_topology_test(neg_ptp_raw_timestamp
     "cannot convert|no matching function|could not convert|PtpTimestampNs|Tagged")
+crucible_neg_compile_topology_test(neg_ptp_open_raw_device_index
+    "cannot convert|no matching function|could not convert|PtpDeviceIndex|int")
+crucible_neg_compile_topology_test(neg_ptp_enable_raw_socket
+    "cannot convert|no matching function|could not convert|SocketFd|int")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #
