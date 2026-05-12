@@ -3268,6 +3268,16 @@ crucible_neg_compile_test(neg_expr_pool_int_cache_literal_below_low
 crucible_neg_compile_test(neg_expr_pool_int_cache_literal_above_high
   "contract|Refined|in_range|not a constant|non-constant|constexpr")
 
+# WRAP-ExprPool-2 (#916) — capacity_ is a PowerOfTwo<size_t>
+# and intern_count_ is a Monotonic<size_t>.  The fixtures pin the two
+# load-bearing absences: non-pow2 capacities cannot be constructed,
+# and the monotonic intern counter cannot be overwritten with a raw
+# integer.
+crucible_neg_compile_test(neg_expr_pool_capacity_not_power_of_two
+  "contract|Refined|power_of_two|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_expr_pool_intern_count_assign_raw
+  "no match for|no known conversion")
+
 # WRAP-RecipePool-2 (#971) — capacity_ is a PowerOfTwo<uint32_t>
 # and size_ is a Monotonic<uint32_t>.  The fixtures pin the two
 # load-bearing absences: non-pow2 capacities cannot be constructed,

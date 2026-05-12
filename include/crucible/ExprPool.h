@@ -5,6 +5,8 @@
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/SwissTable.h>
+#include <crucible/safety/Mutation.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/SwissTableBuffer.h>
 
@@ -298,9 +300,13 @@ class CRUCIBLE_OWNER ExprPool {
       safety::in_range<kIntCacheLow, kIntCacheHigh>, int64_t>;
   using IntCacheIndex = safety::Refined<
       safety::bounded_above<kIntCacheSize - 1>, size_t>;
+  using Capacity = safety::PowerOfTwo<size_t>;
+  using InternCount = safety::Monotonic<size_t>;
 
   static_assert(sizeof(IntCacheLiteral) == sizeof(int64_t));
   static_assert(sizeof(IntCacheIndex) == sizeof(size_t));
+  static_assert(sizeof(Capacity) == sizeof(size_t));
+  static_assert(sizeof(InternCount) == sizeof(size_t));
 
   // Default `initial_capacity` sized for real production graphs — ViT
   // forward+backward+optimizer is ~15k DAG ops, SD1.5 is ~30k. Each op
@@ -347,14 +353,12 @@ class CRUCIBLE_OWNER ExprPool {
                 "kDefaultInitialCapacity must be a power of two ≤ 1<<30");
 
   explicit ExprPool(effects::Alloc a,
-                    size_t initial_capacity = kDefaultInitialCapacity) : arena_() {
-    // Round up to power of 2, minimum one full SIMD group
-    capacity_ = detail::group_width();
-    while (capacity_ < initial_capacity)
-      capacity_ <<= 1;
-
-    alloc_tables_(capacity_);
-    intern_count_ = 0;
+                    size_t initial_capacity = kDefaultInitialCapacity)
+      pre (initial_capacity <= (std::size_t{1} << 30))
+      : arena_()
+      , capacity_{rounded_capacity_(initial_capacity)}
+      , intern_count_{0} {
+    alloc_tables_(capacity_.value());
 
     // Boolean singletons
     true_ = intern_node(a, Op::BOOL_TRUE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
@@ -384,13 +388,15 @@ class CRUCIBLE_OWNER ExprPool {
   // calls `pool.reserve(10'000)` right after construction and skips the
   // ~5 doublings (256→512→1024→2048→4096→8192→16384) that would
   // otherwise land on its insertion path.
-  void reserve(size_t n_entries) {
+  void reserve(size_t n_entries)
+      pre (n_entries <= (((std::size_t{1} << 30) * 7) / 8))
+  {
     // Need capacity such that n_entries * 8 <= capacity * 7 (87.5% LF).
     // Solve: capacity >= ceil(n_entries * 8 / 7).
     const size_t needed = (n_entries * 8 + 6) / 7;
     size_t target = detail::group_width();
     while (target < needed) target <<= 1;
-    if (target > capacity_) grow_to_(target);
+    if (target > capacity_.value()) grow_to_(target);
   }
 
   // ---- Atom construction ----
@@ -1024,10 +1030,10 @@ class CRUCIBLE_OWNER ExprPool {
   // ---- Stats ----
 
   [[nodiscard]] size_t intern_size() const {
-    return intern_count_;
+    return intern_count_.get();
   }
   [[nodiscard]] size_t intern_capacity() const {
-    return capacity_;
+    return capacity_.value();
   }
   [[nodiscard]] size_t arena_bytes() const {
     return arena_.total_allocated();
@@ -1050,6 +1056,16 @@ class CRUCIBLE_OWNER ExprPool {
   static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(
                     kIntCacheSize, std::size_t{1024}),
                 "kIntCacheSize must be a power of two ≤ 1024");
+
+  // Round up to a power-of-two table capacity, with at least one SIMD
+  // control group. The documented constructor ceiling is 1<<30, so the
+  // left shift cannot overflow for admitted callers.
+  [[nodiscard, gnu::const]] static constexpr size_t
+  rounded_capacity_(size_t initial_capacity) noexcept {
+    size_t cap = detail::group_width();
+    while (cap < initial_capacity) cap <<= 1;
+    return cap;
+  }
 
   [[nodiscard, gnu::const]] static constexpr IntCacheIndex
   int_cache_index(IntCacheLiteral literal) noexcept {
@@ -1467,7 +1483,8 @@ class CRUCIBLE_OWNER ExprPool {
       int64_t payload) {
     // Load factor 87.5% (7/8). Swiss table tolerates higher load than
     // linear probing because SIMD amortizes the cost of denser groups.
-    if (intern_count_ * 8 >= capacity_ * 7) [[unlikely]]
+    const size_t cap = capacity_.value();
+    if (intern_count_.get() * 8 >= cap * 7) [[unlikely]]
       rehash();
 
     uint64_t expr_full_hash =
@@ -1485,7 +1502,7 @@ class CRUCIBLE_OWNER ExprPool {
     // Operate directly on slot indices (probe_base_slot) instead of
     // group indices.  Eliminates the g*kGroupWidth multiply on every
     // probe iteration.
-    size_t slot_mask = capacity_ - 1;
+    size_t slot_mask = cap - 1;
     size_t probe_base_slot = (expr_full_hash * detail::group_width()) & slot_mask;
     size_t probe_iteration = 0;
 
@@ -1575,7 +1592,7 @@ class CRUCIBLE_OWNER ExprPool {
 
         ctrl_[match_slot_index] = slot_match_tag;
         slots_[match_slot_index] = interned_expr;
-        ++intern_count_;
+        intern_count_.bump();
         return interned_expr;
       }
 
@@ -1622,7 +1639,7 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  void rehash() { grow_to_(capacity_ * 2); }
+  void rehash() { grow_to_(capacity_.value() * 2); }
 
   // Core resize: allocate new ctrl_/slots_ of `new_capacity`, re-insert
   // every live entry at its new home, free the old buffer. Called both
@@ -1647,7 +1664,8 @@ class CRUCIBLE_OWNER ExprPool {
               new_capacity, std::size_t{1} << 30))
       pre (new_capacity >= detail::group_width())
   {
-    size_t old_capacity = capacity_;
+    size_t old_capacity = capacity_.value();
+    size_t old_count = intern_count_.get();
     // #915 WRAP-ExprPool-1: move the old SwissTableBuffer into a local;
     // its dtor frees the backing alloc when this function returns,
     // replacing the explicit std::free(old_backing) at the bottom.
@@ -1655,11 +1673,11 @@ class CRUCIBLE_OWNER ExprPool {
     int8_t* old_ctrl = old_backing.ctrl();
     const Expr** old_slots = old_backing.slots();
 
-    capacity_ = new_capacity;
-    alloc_tables_(capacity_);
-    intern_count_ = 0;
+    capacity_ = Capacity{new_capacity};
+    alloc_tables_(capacity_.value());
 
-    size_t slot_mask = capacity_ - 1;
+    size_t slot_mask = capacity_.value() - 1;
+    size_t reinserted = 0;
 
     for (size_t i = 0; i < old_capacity; ++i) {
       if (old_ctrl[i] == detail::kEmpty)
@@ -1678,7 +1696,7 @@ class CRUCIBLE_OWNER ExprPool {
           size_t insert_slot_index = probe_base_slot + empties.lowest();
           ctrl_[insert_slot_index] = slot_match_tag;
           slots_[insert_slot_index] = existing_expr;
-          ++intern_count_;
+          ++reinserted;
           break;
         }
         ++probe_iteration;
@@ -1686,6 +1704,8 @@ class CRUCIBLE_OWNER ExprPool {
             (probe_base_slot + probe_iteration * detail::group_width()) & slot_mask;
       }
     }
+    CRUCIBLE_POST(0, reinserted == old_count);
+    intern_count_.advance(reinserted);
     // old_backing.~SwissTableBuffer() frees old alloc via RAII.
   }
 
@@ -1697,8 +1717,8 @@ class CRUCIBLE_OWNER ExprPool {
   ::crucible::safety::SwissTableBuffer<const Expr*> backing_;
   int8_t* ctrl_;                // Points into backing_ at offset 0.
   const Expr** slots_;          // Points into backing_ at offset capacity_.
-  size_t capacity_;             // Total slots (always power of 2, multiple of kGroupWidth)
-  size_t intern_count_;         // Number of occupied slots
+  Capacity capacity_;           // Total slots (always power of 2, multiple of kGroupWidth)
+  InternCount intern_count_;    // Number of occupied slots
   std::vector<const char*> symbol_names_;
 
   // PERF-2: SymbolId → const Expr* parallel to symbol_names_.
