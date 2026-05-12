@@ -1,5 +1,5 @@
 #include <crucible/cntp/IncastControl.h>
-#include <crucible/rt/IncastControl.h>
+#include <crucible/cntp/IncastControlRuntime.h>
 
 #include <cassert>
 #include <cstdio>
@@ -11,7 +11,7 @@
 
 namespace cntp = crucible::cntp;
 namespace effects = crucible::effects;
-namespace rt = crucible::rt;
+namespace cntp = crucible::cntp;
 namespace saf = crucible::safety;
 
 namespace {
@@ -112,7 +112,7 @@ void test_config_minting() {
 void test_credit_pacing_state() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
-    auto controller = rt::mint_incast_controller<2>(init);
+    auto controller = cntp::mint_incast_controller<2>(init);
 
     auto fd0 = cntp::admit_socket_fd(10);
     auto fd1 = cntp::admit_socket_fd(11);
@@ -184,11 +184,11 @@ int main() {
     static_assert(std::same_as<
                   cntp::DeclaredIncastConfig::tag_type,
                   saf::source::IncastConfig>);
-    static_assert(rt::CtxFitsIncastConfigure<effects::ColdInitCtx>);
-    static_assert(rt::CtxFitsIncastConfigure<effects::BgDrainCtx>);
-    static_assert(!rt::CtxFitsIncastConfigure<effects::HotFgCtx>);
-    static_assert(rt::CtxFitsIncastCredit<effects::BgDrainCtx>);
-    static_assert(!rt::CtxFitsIncastCredit<effects::HotFgCtx>);
+    static_assert(cntp::CtxFitsIncastConfigure<effects::ColdInitCtx>);
+    static_assert(cntp::CtxFitsIncastConfigure<effects::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsIncastConfigure<effects::HotFgCtx>);
+    static_assert(cntp::CtxFitsIncastCredit<effects::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsIncastCredit<effects::HotFgCtx>);
 
     std::printf("test_cntp_incast_control:\n");
     test_admission_and_names();

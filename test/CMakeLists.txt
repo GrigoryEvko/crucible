@@ -481,13 +481,13 @@ crucible_test(test_recipe_registry_spec)
 # headers we don't own (other agents' territory); our .cpp still
 # honours -Werror.
 crucible_test(test_bench_harness)
-# Exercises the crucible::rt module — realtime policy rails
+# Exercises the crucible::warden module — realtime policy rails
 # (SCHED_FIFO/RR priority clamp, mlock, CPU-pin helpers). Header-only,
 # no special capabilities required at test time (the smoke checks the
 # policy arithmetic / guard object semantics, not live scheduler calls).
-crucible_test(test_rt_policy)
-crucible_test(test_rt_tc_ebpf)
-crucible_test(test_rt_xdp)
+crucible_test(test_warden_policy)
+crucible_test(test_cntp_dataplane_tc_ebpf)
+crucible_test(test_cntp_dataplane_xdp)
 
 # crucible::perf::SenseHub sentinel TU (GAPS-004a, 2026-05-03).
 # Verifies the promoted observability substrate compiles + links
@@ -509,11 +509,11 @@ crucible_test(test_perf_syscall_latency_smoke)
 crucible_test(test_perf_senses_smoke)
 crucible_test(test_perf_sched_tp_btf_smoke)
 crucible_test(test_perf_syscall_tp_btf_smoke)
-# GAPS-004g (#1283): rt::DeadlineWatchdog wires SchedSwitch context-
+# GAPS-004g (#1283): warden::DeadlineWatchdog wires SchedSwitch context-
 # switch telemetry into Policy's miss-budget enforcement.  Smoke
 # verifies type-shape (move-only, ≤64 B), nullptr-Senses graceful
 # degradation, demote_one_step ladder, and reset() semantics.
-crucible_test(test_rt_deadline_watchdog_smoke)
+crucible_test(test_warden_deadline_watchdog_smoke)
 # GAPS-004h (#1284): perf::WorkloadProfiler wires SenseHub counters
 # into ParallelismRule's parallel-vs-sequential decision.  Smoke
 # verifies type-shape (move-only), nullptr-Senses pass-through over
@@ -602,8 +602,8 @@ crucible_test(test_mpmc_channel_session)
 # multi-reader lifetime accounting, late-reader visibility, matching
 # SharedPermission proof minting, and PSH send/recv wrapper execution.
 crucible_test(test_swmr_session)
-crucible_test(test_rt_metrics_swmr)
-crucible_test(test_rt_health_observation)
+crucible_test(test_observe_metrics_swmr)
+crucible_test(test_observe_health)
 
 # L2 typing context Γ (SEPLOG-I1, task #343) — Entry, Context,
 # compose_context_t, lookup_context_t, contains_key_v, domain_of_t,
@@ -923,17 +923,31 @@ function(crucible_neg_compile_cog_test name expected_diag)
     PASS_REGULAR_EXPRESSION "${expected_diag}")
 endfunction()
 
-# Sister harness for rt_neg/. Runtime-policy negative tests live here
+# Sister harness for warden_neg/. Warden-policy negative tests live here
 # when they are not primarily probing the generic effects substrate.
-function(crucible_neg_compile_rt_test name expected_diag)
+function(crucible_neg_compile_warden_test name expected_diag)
   add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/rt_neg/${name}.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/warden_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
   add_test(NAME ${name}
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
             --target ${name} --config $<CONFIG>)
   set_tests_properties(${name} PROPERTIES
-    LABELS "rt_neg"
+    LABELS "warden_neg"
+    PASS_REGULAR_EXPRESSION "${expected_diag}")
+endfunction()
+
+# Sister harness for dataplane_neg/. XDP/TC negative tests live beside the
+# CNT-P dataplane ownership boundary instead of Warden.
+function(crucible_neg_compile_dataplane_test name expected_diag)
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/dataplane_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+            --target ${name} --config $<CONFIG>)
+  set_tests_properties(${name} PROPERTIES
+    LABELS "dataplane_neg"
     PASS_REGULAR_EXPRESSION "${expected_diag}")
 endfunction()
 
@@ -1307,7 +1321,7 @@ crucible_neg_compile_cog_test(neg_numa_nic_rejects_gpu
 crucible_neg_compile_cog_test(neg_numa_nic_raw_node
     "cannot convert|could not convert|NumaNodeId|GAPS-194")
 
-# ─── HS14 fixtures for rt::Quarantine (GAPS-118 #1236) ────────────
+# ─── HS14 fixtures for warden::Quarantine (GAPS-118 #1236) ────────
 #
 #   * neg_quarantine_mint_bg_ctx — only Init-row contexts mint the
 #     bounded policy carrier.
@@ -1316,16 +1330,16 @@ crucible_neg_compile_cog_test(neg_numa_nic_raw_node
 #   * neg_quarantine_override_missing_permission — operator override
 #     requires the explicit OperatorOverride Permission token.
 #   * neg_quarantine_zero_slots — policy state must have bounded slots.
-crucible_neg_compile_rt_test(neg_quarantine_mint_bg_ctx
+crucible_neg_compile_warden_test(neg_quarantine_mint_bg_ctx
     "constraint|constraints not satisfied|CtxFitsQuarantineMint|Init|Bg")
-crucible_neg_compile_rt_test(neg_quarantine_record_fg_ctx
+crucible_neg_compile_warden_test(neg_quarantine_record_fg_ctx
     "constraint|constraints not satisfied|CtxFitsQuarantineRecord|Bg|HotFgCtx")
-crucible_neg_compile_rt_test(neg_quarantine_override_missing_permission
+crucible_neg_compile_warden_test(neg_quarantine_override_missing_permission
     "no matching function|candidate|operator_override|Permission")
-crucible_neg_compile_rt_test(neg_quarantine_zero_slots
+crucible_neg_compile_warden_test(neg_quarantine_zero_slots
     "static assertion failed|QuarantinePolicy requires Cog slots|MaxCogs > 0")
 
-# ─── GAPS-130 rt/Xdp.h soundness gates ─────────────────────────────
+# ─── GAPS-130 cntp/dataplane/Xdp.h soundness gates ────────────────
 #
 #   * neg_xdp_raw_program_spec — NIC admission requires source::Xdp
 #     provenance, not a raw descriptor.
@@ -1333,28 +1347,28 @@ crucible_neg_compile_rt_test(neg_quarantine_zero_slots
 #   * neg_xdp_map_non_pod_value — BPF map values must be verifier-safe POD.
 #   * neg_xdp_map_key_without_equality — in-process map images require typed
 #     key equality, not bytewise accidental comparison.
-crucible_neg_compile_rt_test(neg_xdp_raw_program_spec
+crucible_neg_compile_dataplane_test(neg_xdp_raw_program_spec
     "cannot convert|could not convert|DeclaredXdpProgram|Tagged")
-crucible_neg_compile_rt_test(neg_xdp_mint_bg_ctx
+crucible_neg_compile_dataplane_test(neg_xdp_mint_bg_ctx
     "constraint|constraints not satisfied|CtxFitsXdpMint|Init|Bg")
-crucible_neg_compile_rt_test(neg_xdp_map_non_pod_value
+crucible_neg_compile_dataplane_test(neg_xdp_map_non_pod_value
     "constraint|constraints not satisfied|BpfScalar|string")
-crucible_neg_compile_rt_test(neg_xdp_map_key_without_equality
+crucible_neg_compile_dataplane_test(neg_xdp_map_key_without_equality
     "constraint|constraints not satisfied|BpfKey|operator==")
 
-# ─── GAPS-193 rt/TcEbpf.h soundness gates ──────────────────────────
+# ─── GAPS-193 cntp/dataplane/TcEbpf.h soundness gates ─────────────
 #
 #   * neg_tc_ebpf_raw_program_spec — NIC admission requires source::TcEbpf.
 #   * neg_tc_ebpf_mint_bg_ctx — only Init-row contexts mint attach plans.
 #   * neg_tc_ebpf_raw_flow_class — map values carry tagged flow classes.
 #   * neg_tc_ebpf_zero_flow_map — zero-capacity maps are rejected.
-crucible_neg_compile_rt_test(neg_tc_ebpf_raw_program_spec
+crucible_neg_compile_dataplane_test(neg_tc_ebpf_raw_program_spec
     "cannot convert|could not convert|DeclaredTcProgram|Tagged")
-crucible_neg_compile_rt_test(neg_tc_ebpf_mint_bg_ctx
+crucible_neg_compile_dataplane_test(neg_tc_ebpf_mint_bg_ctx
     "constraint|constraints not satisfied|CtxFitsTcMint|Init|Bg")
-crucible_neg_compile_rt_test(neg_tc_ebpf_raw_flow_class
+crucible_neg_compile_dataplane_test(neg_tc_ebpf_raw_flow_class
     "cannot convert|could not convert|DeclaredTcFlowClass|Tagged")
-crucible_neg_compile_rt_test(neg_tc_ebpf_zero_flow_map
+crucible_neg_compile_dataplane_test(neg_tc_ebpf_zero_flow_map
     "constraint|constraints not satisfied|MaxFlows")
 
 # ─── HS14 fixtures #1 + #2 for mimic::CogMimic (GAPS-188 #1213) ──
@@ -1748,13 +1762,13 @@ crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_wrong_cap
 crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_no_cap
     "too few arguments|no matching function|candidate expects 1 argument")
 
-# GAPS-004g (#1283): rt::DeadlineWatchdog cap-tag gate.  Construction
+# GAPS-004g (#1283): warden::DeadlineWatchdog cap-tag gate.  Construction
 # takes effects::Init by value as the third parameter — wrong-cap and
 # no-cap fixtures pin the gate against silent default-arg regressions.
 # Init-by-value discipline matches the Senses-touching facades upstream.
-crucible_neg_compile_effects_test(neg_rt_deadline_watchdog_wrong_cap
+crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_wrong_cap
     "could not convert|no matching function|cannot convert|expected.*Init")
-crucible_neg_compile_effects_test(neg_rt_deadline_watchdog_no_cap
+crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_no_cap
     "too few arguments|no matching function|candidate expects 3 arguments")
 
 # GAPS-004h (#1284): perf::WorkloadProfiler cap-tag gate.  Construction
@@ -2774,7 +2788,7 @@ crucible_neg_compile_test(neg_ktls_chacha_crypto
 crucible_neg_compile_test(neg_ktls_raw_crypto_offload
   "could not convert|no matching function|DeclaredTlsCryptoInfo|Tagged")
 
-# GAPS-137 — cntp/Backpressure.h + rt/Backpressure.h substrate.
+# GAPS-137 — cntp/Backpressure.h + cntp/BackpressureRuntime.h substrate.
 #   * neg_backpressure_raw_admission_decision: admission outcomes must be tagged.
 #   * neg_backpressure_invalid_resource_kind: pressure samples require ResourceKind.
 #   * neg_backpressure_hot_ctx_credit: hot replay contexts cannot mutate credits.
@@ -2796,7 +2810,7 @@ crucible_neg_compile_test(neg_af_xdp_non_power_of_two_frame
 crucible_neg_compile_test(neg_af_xdp_cross_source_packet
   "cannot convert|no matching function|Borrowed|OtherOwner|AfXdpSocket")
 
-# GAPS-136 — cntp/ConnectionPool.h + rt/ConnectionPool.h substrate.
+# GAPS-136 — cntp/ConnectionPool.h + cntp/ConnectionPoolRuntime.h substrate.
 #   * neg_connection_pool_raw_event: pool events must carry source::ConnectionPool.
 #   * neg_connection_pool_invalid_transport: only enumerated transport classes
 #     may mint connections/pools.

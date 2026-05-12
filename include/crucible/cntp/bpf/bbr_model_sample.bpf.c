@@ -6,7 +6,7 @@
  * BBRv3-shaped control loops. Current behavior: observe no callbacks.
  */
 
-#include "../../rt/bpf/net_common.h"
+#include "../dataplane/bpf/net_common.h"
 
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);

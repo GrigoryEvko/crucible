@@ -6,7 +6,7 @@
  * userspace TCP_INFO polling catches up. Current behavior: XDP_PASS.
  */
 
-#include "../../rt/bpf/net_common.h"
+#include "../dataplane/bpf/net_common.h"
 
 #ifndef XDP_PASS
 #define XDP_PASS 2

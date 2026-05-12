@@ -62,7 +62,7 @@
 //     template <typename Handle>
 //         requires HandleIsAt<Handle, AtRecv>
 //     void report_pending_recv(ScopedView<Handle, AtRecv> view) {
-//         rt::record_observation(...);
+//         observe::record_observation(...);
 //     }
 //
 //     // Caller mints the view; compile error if handle is at Send.

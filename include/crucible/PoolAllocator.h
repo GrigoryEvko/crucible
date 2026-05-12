@@ -16,7 +16,7 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
-#include <crucible/rt/Registry.h>
+#include <crucible/warden/Registry.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/Decide.h>
@@ -132,8 +132,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
     if (pool_bytes_ > 0) {
       // 2 MB alignment when pool ≥ 2 MB (THP-eligible); else 256 B floor.
       const size_t page_align =
-          (pool_bytes_ >= crucible::rt::kHugePageBytes)
-              ? crucible::rt::kHugePageBytes : ALIGNMENT;
+          (pool_bytes_ >= crucible::warden::kHugePageBytes)
+              ? crucible::warden::kHugePageBytes : ALIGNMENT;
       // CONTRACT-127: the page-padding sum discharges through
       // `decide::no_overflow_sum` over {pool_bytes_, page_align-1}.
       // Pre-clauses on init() pin pool_bytes_ <= kMaxPoolBytes (256 GB)
@@ -152,8 +152,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
 #ifndef NDEBUG
       std::memset(pool_, 0xCD, alloc_size);  // 0xCD: uninit reads visible
 #endif
-      const bool huge = (page_align == crucible::rt::kHugePageBytes);
-      crucible::rt::register_hot_region(pool_, alloc_size,
+      const bool huge = (page_align == crucible::warden::kHugePageBytes);
+      crucible::warden::register_hot_region(pool_, alloc_size,
           /*huge=*/huge, "PoolAllocator.pool");
     }
 
@@ -244,7 +244,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
   [[gnu::cold]]
   void destroy() noexcept
   {
-    if (pool_) crucible::rt::unregister_hot_region(pool_);
+    if (pool_) crucible::warden::unregister_hot_region(pool_);
     std::free(pool_);
     std::free(ptr_table_);
     pool_         = nullptr;
@@ -471,7 +471,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
   [[nodiscard, gnu::pure]]
   inline safety::AllocClass<safety::AllocClassTag_v::HugePage, void*>
   pool_base_huge_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (pool_bytes_ >= crucible::rt::kHugePageBytes)
+      pre (pool_bytes_ >= crucible::warden::kHugePageBytes)
   {
     return safety::AllocClass<safety::AllocClassTag_v::HugePage, void*>{pool_};
   }
@@ -491,7 +491,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
   {
     void* p          = pool_;
     uint64_t n       = pool_bytes_;
-    crucible::rt::unregister_hot_region(p);
+    crucible::warden::unregister_hot_region(p);
     pool_            = nullptr;   // destroy() skips free since pool_==nullptr
     destroy();
     return DetachedPool{p, n};
@@ -505,7 +505,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
   DetachedPool detach(InitializedView const&) noexcept {
     void* p          = pool_;
     uint64_t n       = pool_bytes_;
-    crucible::rt::unregister_hot_region(p);
+    crucible::warden::unregister_hot_region(p);
     pool_            = nullptr;
     destroy();
     return DetachedPool{p, n};

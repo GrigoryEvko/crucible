@@ -31,7 +31,7 @@
 //     - Cipher::publish_hot    → returns CipherTier<Hot, T>
 //     - Cipher::publish_warm   → returns CipherTier<Warm, T>
 //     - Cipher::flush_cold     → returns CipherTier<Cold, T>
-//     - rt::attribute_drift  → reads tier to distinguish "S3 latency"
+//     - observe::attribute_drift  → reads tier to distinguish "S3 latency"
 //                                  from "hot-tier issue"
 //     - Keeper::reincarnate    → requires CipherTier<Warm-or-better>
 //                                  for partial recovery (Hot tier

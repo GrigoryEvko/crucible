@@ -6,7 +6,7 @@
  * Current behavior: pass every packet through the kernel stack.
  */
 
-#include "../../rt/bpf/net_common.h"
+#include "../../cntp/dataplane/bpf/net_common.h"
 
 #ifndef XDP_PASS
 #define XDP_PASS 2

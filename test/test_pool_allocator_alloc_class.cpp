@@ -13,7 +13,7 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/effects/Capabilities.h>
-#include <crucible/rt/Registry.h>
+#include <crucible/warden/Registry.h>
 #include "test_assert.h"
 
 #include <bit>
@@ -215,7 +215,7 @@ static void test_pool_base_pinned_small_pool() {
 static void test_pool_base_huge_pinned() {
   // Allocate exactly kHugePageBytes (2MB) — triggers huge-page-
   // aligned allocation in PoolAllocator::init.
-  constexpr uint64_t HP = crucible::rt::kHugePageBytes;
+  constexpr uint64_t HP = crucible::warden::kHugePageBytes;
   TensorSlot slots[1]{};
   slots[0] = make_slot(0, HP / 2, 0);  // half the pool, well under HP
   MemoryPlan plan = make_plan(slots, 1, HP, 0);
@@ -309,7 +309,7 @@ static void test_e2e_fence_checked_consumer() {
 //         underlying allocation is huge-page aligned (Pool is the
 //         SAFE pinning — it always holds).
 static void test_pool_base_pinned_with_huge_alignment() {
-  constexpr uint64_t HP = crucible::rt::kHugePageBytes;
+  constexpr uint64_t HP = crucible::warden::kHugePageBytes;
   TensorSlot slots[1]{};
   slots[0] = make_slot(0, HP / 2, 0);
   MemoryPlan plan = make_plan(slots, 1, HP, 0);

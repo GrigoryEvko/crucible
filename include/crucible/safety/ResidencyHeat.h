@@ -37,9 +37,9 @@
 //                                    for IR003* per-vendor-family
 //     - KernelCache::publish_l3   → returns ResidencyHeat<Cold, T>
 //                                    for compiled-bytes archive
-//     - rt::record_observation  → ResidencyHeat<Hot, T>
+//     - observe::record_observation  → ResidencyHeat<Hot, T>
 //                                    for P95-window counters
-//     - rt::record_observation  → ResidencyHeat<Cold, T>
+//     - observe::record_observation  → ResidencyHeat<Cold, T>
 //                                    for long-window aggregates
 //     - KernelCache::evict_to_warm → moves
 //                                    ResidencyHeat<Hot> →
@@ -116,7 +116,7 @@
 //   but actually pays ~hundreds of ns L3 access).  No `tighten()`
 //   method exists; the only way to obtain a ResidencyHeat<Hot, T>
 //   is to construct one at a genuinely-L1-resident production
-//   site (e.g., KernelCache::publish_l1, rt::record_observation).
+//   site (e.g., KernelCache::publish_l1, observe::record_observation).
 //
 // API:
 //

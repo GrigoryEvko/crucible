@@ -89,8 +89,8 @@ namespace {
   assert(saw_guard1);
   assert(saw_feedback);
 
-  auto metrics = crucible::rt::metrics_sample_at(
-      crucible::rt::RuntimeMetrics{.ntk_alpha_drift = 0.125}, 4);
+  auto metrics = crucible::observe::metrics_sample_at(
+      crucible::observe::RuntimeMetrics{.ntk_alpha_drift = 0.125}, 4);
   crucible::vis::LiveTraceVisualizer live{
       static_cast<const crucible::TraceNode&>(*branch), metrics};
   const std::string svg = live.render_svg("visualizer-test");

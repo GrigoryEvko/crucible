@@ -21,7 +21,7 @@
 // rdtsc-derived ns timing (calibrated against steady_clock at process
 // start), drift detection, bootstrap CIs.  CRUCIBLE_BENCH_CORE=N
 // selects a specific core; CRUCIBLE_BENCH_HARDENING=production applies
-// the full sched-FIFO + mlock + THP policy from crucible::rt.
+// the full sched-FIFO + mlock + THP policy from crucible::warden.
 //
 // All push-only benches use a HUGE capacity (1 << 20 = 1M slots) so
 // the ring never fills inside the default 100k sample run.  This

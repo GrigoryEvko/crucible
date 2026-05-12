@@ -76,8 +76,8 @@
   #include <crucible/perf/Senses.h>
 #endif
 
-#include <crucible/rt/Hardening.h>
-#include <crucible/rt/Policy.h>
+#include <crucible/warden/Hardening.h>
+#include <crucible/warden/Policy.h>
 
 namespace bench {
 
@@ -1038,18 +1038,18 @@ class Run {
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
     Run& no_pin()          noexcept { pin_mode_ = Pin::None; return *this; }
 
-    // Apply a `crucible::rt::Policy` to the measuring thread for the
+    // Apply a `crucible::warden::Policy` to the measuring thread for the
     // duration of the Run. When set, the policy's `hot_core` selector
     // drives pinning and the direct pin_() path is skipped entirely —
     // so `.hardening(p)` unconditionally wins over any prior or
     // subsequent `.core(N)` / `.no_pin()` in the same builder chain.
-    // The RAII guard returned by crucible::rt::apply() reverts sched
+    // The RAII guard returned by crucible::warden::apply() reverts sched
     // class, affinity, mlock'd regions, and THP flag when measure()
     // returns.
     //
     // Default: no hardening (have_hardening_ == false -> direct pin_()).
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
-    Run& hardening(const crucible::rt::Policy& p) noexcept {
+    Run& hardening(const crucible::warden::Policy& p) noexcept {
         hardening_ = p;
         have_hardening_ = true;
         return *this;
@@ -1084,13 +1084,13 @@ class Run {
         // Resolve the policy: explicit .hardening() wins, else env var
         // CRUCIBLE_BENCH_HARDENING=production|cloud_vm|dev_quiet|none, else the
         // direct pin_() path.
-        crucible::rt::AppliedPolicy hardening_guard;
+        crucible::warden::AppliedPolicy hardening_guard;
         CpuId pinned_cpu;
         if (have_hardening_) {
-            hardening_guard = crucible::rt::apply(hardening_);
+            hardening_guard = crucible::warden::apply(hardening_);
             pinned_cpu      = CpuId{hardening_guard.pinned_cpu()};
         } else if (auto env = env_hardening_(); env.has_value()) {
-            hardening_guard = crucible::rt::apply(*env);
+            hardening_guard = crucible::warden::apply(*env);
             pinned_cpu      = CpuId{hardening_guard.pinned_cpu()};
         } else {
             pinned_cpu = pin_();
@@ -1348,28 +1348,28 @@ class Run {
     }
 
     // Optional realtime policy applied for the duration of measure().
-    // When set, crucible::rt::apply() is invoked at the top of measure()
+    // When set, crucible::warden::apply() is invoked at the top of measure()
     // and the returned AppliedPolicy is held until measure() returns —
     // scheduler / affinity / mlocks revert automatically. `.core()` and
     // `.no_pin()` are overridden by the policy's own CoreSelector when
     // hardening is set (the policy's Topology-based pick wins).
-    crucible::rt::Policy hardening_{crucible::rt::Policy::none()};
+    crucible::warden::Policy hardening_{crucible::warden::Policy::none()};
     bool                 have_hardening_ = false;
 
     // CRUCIBLE_BENCH_HARDENING=production|cloud_vm|dev_quiet|none —
     // applies the named profile to every Run that doesn't call
     // .hardening() itself. Unset -> fall through to direct pin_() (no
     // hardening).
-    [[nodiscard]] static std::optional<crucible::rt::Policy> env_hardening_() noexcept {
+    [[nodiscard]] static std::optional<crucible::warden::Policy> env_hardening_() noexcept {
         const char* s = std::getenv("CRUCIBLE_BENCH_HARDENING");
         if (s == nullptr || s[0] == '\0') return std::nullopt;
-        if (std::strcmp(s, "production") == 0) return crucible::rt::Policy::production();
+        if (std::strcmp(s, "production") == 0) return crucible::warden::Policy::production();
         if (std::strcmp(s, "cloud_vm") == 0 ||
             std::strcmp(s, "vm")       == 0 ||
-            std::strcmp(s, "cloud")    == 0) return crucible::rt::Policy::cloud_vm();
+            std::strcmp(s, "cloud")    == 0) return crucible::warden::Policy::cloud_vm();
         if (std::strcmp(s, "dev_quiet") == 0 ||
-            std::strcmp(s, "dev")       == 0) return crucible::rt::Policy::dev_quiet();
-        if (std::strcmp(s, "none") == 0)      return crucible::rt::Policy::none();
+            std::strcmp(s, "dev")       == 0) return crucible::warden::Policy::dev_quiet();
+        if (std::strcmp(s, "none") == 0)      return crucible::warden::Policy::none();
         return std::nullopt;
     }
 
@@ -1388,7 +1388,7 @@ class Run {
     //  • Pin::Explicit with core_ < 0 (e.g. `.core(-1)` because the
     //    caller's env var defaulted to -1) → fall through to the Auto
     //    discovery path instead of silently skipping pinning.
-    //  • Pin::Auto → hand off to `rt::select_hot_cpu`, which honors
+    //  • Pin::Auto → hand off to `warden::select_hot_cpu`, which honors
     //    isolcpus, prefers P-cores, and (crucially) steers away from
     //    cpu0 and its SMT sibling because cpu0 absorbs timer IRQs /
     //    RCU callbacks on most Linux configs. Falls back to
@@ -1417,7 +1417,7 @@ class Run {
             // Keeper's Policy::apply() uses: isolcpu first, P-core
             // preference, avoid cpu0 and its SMT sibling (timer-tick
             // IRQ landing pad).
-            target = crucible::rt::select_hot_cpu(crucible::rt::CoreSelector{});
+            target = crucible::warden::select_hot_cpu(crucible::warden::CoreSelector{});
             if (target < 0) target = sched_getcpu();
         }
         if (target < 0) return CpuId::none();

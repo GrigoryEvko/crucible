@@ -10,7 +10,7 @@
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
 namespace effects = crucible::effects;
-namespace rt = crucible::rt;
+namespace dataplane = crucible::cntp::dataplane;
 namespace saf = crucible::safety;
 
 namespace {
@@ -29,8 +29,8 @@ namespace {
     return id;
 }
 
-[[nodiscard]] rt::XdpIfIndex ifindex(std::uint32_t value) {
-    auto admitted = rt::admit_xdp_ifindex(value);
+[[nodiscard]] dataplane::XdpIfIndex ifindex(std::uint32_t value) {
+    auto admitted = dataplane::admit_xdp_ifindex(value);
     assert(admitted.has_value());
     return *admitted;
 }
@@ -86,10 +86,10 @@ void test_plan_registration_and_publish() {
                   saf::source::GossipMulticast>);
 
     auto xdp = cntp::gossip_multicast_xdp_program(plan.spec());
-    assert(xdp.value().kind == rt::XdpProgramKind::GossipMulticast);
+    assert(xdp.value().kind == dataplane::XdpProgramKind::GossipMulticast);
     assert(xdp.value().required_features.test(cog::NicFeature::XdpNative));
     assert(plan.spec().value().neighbor_map.value().kind ==
-           rt::BpfMapKind::LruHash);
+           dataplane::BpfMapKind::LruHash);
 
     auto topic = cntp::admit_gossip_topic("canopy.delta");
     auto other = cntp::admit_gossip_topic("federation.ack");
@@ -115,7 +115,7 @@ void test_plan_registration_and_publish() {
     assert(replication.has_value());
     assert(replication->neighbors.count == 2);
     assert(replication->packet_id.value() != 0);
-    assert(replication->terminal_action == rt::XdpAction::Drop);
+    assert(replication->terminal_action == dataplane::XdpAction::Drop);
 
     auto unknown = cntp::admit_gossip_topic("unknown.topic");
     assert(unknown.has_value());
@@ -137,8 +137,8 @@ int main() {
     static_assert(sizeof(cntp::GossipTopicHash) == sizeof(std::uint64_t));
     static_assert(sizeof(cntp::DeclaredGossipTopic) ==
                   sizeof(cntp::GossipTopicKey));
-    static_assert(rt::BpfKey<cntp::GossipTopicKey>);
-    static_assert(rt::BpfScalar<cntp::GossipNeighborTarget>);
+    static_assert(dataplane::BpfKey<cntp::GossipTopicKey>);
+    static_assert(dataplane::BpfScalar<cntp::GossipNeighborTarget>);
     static_assert(cntp::GossipMulticastShape<2, 2>);
     static_assert(!cntp::GossipMulticastShape<0, 2>);
     static_assert(!cntp::GossipMulticastShape<2, 0>);

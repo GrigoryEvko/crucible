@@ -1999,20 +1999,20 @@ int main() {
     // intervals_pairwise_disjoint runtime witnesses.  Defeat
     // constexpr folding by routing endpoint values through volatile
     // scalar sinks before constructing the Interval array.
-    uint64_t volatile rt_lo0 = 0, rt_hi0 = 64;
-    uint64_t volatile rt_lo1 = 64, rt_hi1 = 192;
-    uint64_t volatile rt_lo2 = 192, rt_hi2 = 256;
-    dc::Interval<uint64_t> rt_plan[3] = {
-        {static_cast<uint64_t>(rt_lo0), static_cast<uint64_t>(rt_hi0)},
-        {static_cast<uint64_t>(rt_lo1), static_cast<uint64_t>(rt_hi1)},
-        {static_cast<uint64_t>(rt_lo2), static_cast<uint64_t>(rt_hi2)},
+    uint64_t volatile runtime_lo0 = 0, runtime_hi0 = 64;
+    uint64_t volatile runtime_lo1 = 64, runtime_hi1 = 192;
+    uint64_t volatile runtime_lo2 = 192, runtime_hi2 = 256;
+    dc::Interval<uint64_t> runtime_plan[3] = {
+        {static_cast<uint64_t>(runtime_lo0), static_cast<uint64_t>(runtime_hi0)},
+        {static_cast<uint64_t>(runtime_lo1), static_cast<uint64_t>(runtime_hi1)},
+        {static_cast<uint64_t>(runtime_lo2), static_cast<uint64_t>(runtime_hi2)},
     };
     if (!dc::intervals_pairwise_disjoint(
-            std::span<const dc::Interval<uint64_t>>{rt_plan})) {
-        std::fprintf(stderr, "test_decide: rt_plan WRONGLY rejected\n");
+            std::span<const dc::Interval<uint64_t>>{runtime_plan})) {
+        std::fprintf(stderr, "test_decide: runtime_plan WRONGLY rejected\n");
         return 1;
     }
-    sink += static_cast<int>(rt_plan[0].hi);
+    sink += static_cast<int>(runtime_plan[0].hi);
 
     // Adjacent-overlap anti-pattern witness: a faulty sweep-line
     // assignment that emits {[0, 100), [50, 150)} must be rejected.

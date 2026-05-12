@@ -17,7 +17,8 @@ Python describes. Crucible executes. The 492,000 lines of framework overhead bet
 | **Canopy** | Collective | Mesh of Keepers — distributed awareness, gossip, consensus, self-healing. No master node. |
 | **Vessel** | Interface | PyTorch — the 2,000+ ATen operators Crucible intercepts via the Dispatcher. |
 | **Meridian** | Map | Startup calibration. Measured hardware truth. Discrete-search joint 5D partition optimization (topology, parallelism, communication, placement) over calibrated `CollectiveBenchmarks` + `TopologyMatrix`, driven by `mimic::fast_cost`. Re-solves on topology change or under runtime-detected congestion drift. No external SMT dependency — Crucible ships no Z3, no CVC, no proprietary solver; the partition optimizer is a bounded-depth branch-and-bound over the cost-model surface. |
-| **RT** | Runtime | Continuous prediction, monitoring, model intelligence. Digital twin. Loss landscape analysis. Convergence bounds. Scaling laws. Bottleneck diagnosis. Recommendations engine. |
+| **Observe** | Senses | Runtime observation surface: metrics, health observations, synthetic probes, histograms, passive BPF sample streams. It records facts; it does not enforce policy. |
+| **Warden** | Enforcer | Bounds-keeping runtime surface: deadline watchdog, hardening policy, hot-region registry, quarantine, socket-lifecycle enforcement hooks, CPU/NUMA selection. It acts on facts owned by Observe, Topology, CNT-P, Cog, and Perf. |
 | **Crucible** | Whole | The organism. Everything together. |
 
 ---
@@ -549,7 +550,7 @@ Contracts discipline the code. Safety wrappers carry invariants in the type syst
 
 ```
 L16  Ecosystem        computation genome, federated learning, hardware co-design
-L15  Meridian + RT     calibration, runtime observation, policy recommendations
+L15  Meridian + Observe/Warden calibration, runtime observation, policy enforcement
 ─────────────────────────────────────────────────────────────────────────────
 L14  Lifecycle        Cipher persistence, reincarnation, deterministic replay
 L13  Distribution     Canopy, Relays, no master, RAID, DiLoCo, 5D parallelism

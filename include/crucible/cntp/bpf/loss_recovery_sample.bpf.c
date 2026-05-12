@@ -6,7 +6,7 @@
  * path-swap policy. Current behavior: no-op tracepoint handler.
  */
 
-#include "../../rt/bpf/net_common.h"
+#include "../dataplane/bpf/net_common.h"
 
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);

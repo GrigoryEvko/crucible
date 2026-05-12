@@ -6,7 +6,7 @@
 // attach programs to a live NIC. It pins the userspace contract first:
 // source-tagged multicast plans, source-tagged topic IDs, bounded neighbor
 // tables, XDP program/map descriptors, and deterministic in-process
-// replication planning over rt::BpfMapImage.
+// replication planning over dataplane::BpfMapImage.
 
 #include <crucible/Platform.h>
 #include <crucible/cntp/Integrity.h>
@@ -14,7 +14,7 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/rt/Xdp.h>
+#include <crucible/cntp/dataplane/Xdp.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
@@ -65,7 +65,7 @@ using DeclaredGossipTopic =
 
 struct GossipNeighborTarget {
     cog::Uuid peer{};
-    rt::XdpIfIndex ifindex{std::uint32_t{1}};
+    dataplane::XdpIfIndex ifindex{std::uint32_t{1}};
     std::array<std::byte, 6> mac{};
     std::uint32_t ipv4_be = 0;
 };
@@ -124,8 +124,8 @@ struct GossipMulticastConfig {
 };
 
 struct GossipMulticastSpec {
-    rt::DeclaredXdpProgram program{rt::XdpProgramSpec{}};
-    rt::DeclaredBpfMap neighbor_map{rt::BpfMapSpec{}};
+    dataplane::DeclaredXdpProgram program{dataplane::XdpProgramSpec{}};
+    dataplane::DeclaredBpfMap neighbor_map{dataplane::BpfMapSpec{}};
     GossipMulticastConfig config{};
 };
 
@@ -138,7 +138,7 @@ struct GossipReplicationPlan {
     DeclaredGossipTopic topic{};
     IntegrityHash packet_id{std::uint64_t{1}};
     GossipNeighborList<MaxNeighbors> neighbors{};
-    rt::XdpAction terminal_action = rt::XdpAction::Drop;
+    dataplane::XdpAction terminal_action = dataplane::XdpAction::Drop;
 };
 
 template <class Ctx>
@@ -186,7 +186,7 @@ admit_gossip_payload_bytes(std::uint32_t bytes) noexcept {
 
 [[nodiscard]] constexpr GossipNeighborTarget
 gossip_neighbor_target(cog::CogIdentity const& peer,
-                       rt::XdpIfIndex ifindex,
+                       dataplane::XdpIfIndex ifindex,
                        std::array<std::byte, 6> mac,
                        std::uint32_t ipv4_be) noexcept {
     return GossipNeighborTarget{
@@ -197,7 +197,7 @@ gossip_neighbor_target(cog::CogIdentity const& peer,
     };
 }
 
-[[nodiscard]] constexpr rt::DeclaredXdpProgram
+[[nodiscard]] constexpr dataplane::DeclaredXdpProgram
 gossip_multicast_xdp_program(DeclaredGossipMulticastPlan plan) noexcept {
     return plan.value().program;
 }
@@ -209,8 +209,8 @@ class GossipMulticastPlan
 public:
     using neighbor_list_type = GossipNeighborList<MaxNeighbors>;
     using neighbor_map_type =
-        rt::BpfMapImage<GossipTopicKey, neighbor_list_type, MaxTopics,
-                        rt::BpfMapKind::LruHash>;
+        dataplane::BpfMapImage<GossipTopicKey, neighbor_list_type, MaxTopics,
+                        dataplane::BpfMapKind::LruHash>;
 
     static constexpr std::uint32_t max_topics = MaxTopics;
     static constexpr std::uint16_t max_neighbors = MaxNeighbors;
@@ -242,7 +242,7 @@ public:
         if (!pushed.has_value()) {
             return std::unexpected(pushed.error());
         }
-        auto updated = neighbors_.update(key, list, rt::BpfMapUpdate::Any);
+        auto updated = neighbors_.update(key, list, dataplane::BpfMapUpdate::Any);
         if (!updated.has_value()) {
             return std::unexpected(GossipMulticastError::TooManyTopics);
         }
@@ -276,7 +276,7 @@ public:
             .topic = topic,
             .packet_id = *packet_id,
             .neighbors = *neighbors,
-            .terminal_action = rt::XdpAction::Drop,
+            .terminal_action = dataplane::XdpAction::Drop,
         };
     }
 };
@@ -289,29 +289,29 @@ template <std::uint32_t MaxTopics,
 [[nodiscard]] constexpr GossipMulticastPlan<MaxTopics, MaxNeighbors>
 mint_gossip_multicast_plan(Ctx const& ctx,
                            NicInterfaceName iface,
-                           rt::XdpIfIndex ifindex,
+                           dataplane::XdpIfIndex ifindex,
                            GossipMulticastConfig config = {},
-                           rt::XdpMode mode = rt::XdpMode::Native) noexcept {
-    auto xdp = rt::mint_xdp_program(ctx, iface, ifindex,
-                                    rt::XdpProgramKind::GossipMulticast,
+                           dataplane::XdpMode mode = dataplane::XdpMode::Native) noexcept {
+    auto xdp = dataplane::mint_xdp_program(ctx, iface, ifindex,
+                                    dataplane::XdpProgramKind::GossipMulticast,
                                     mode);
-    rt::BpfMapSpec map{
-        .kind = rt::BpfMapKind::LruHash,
-        .key_bytes = rt::PositiveMapElementBytes{
+    dataplane::BpfMapSpec map{
+        .kind = dataplane::BpfMapKind::LruHash,
+        .key_bytes = dataplane::PositiveMapElementBytes{
             static_cast<std::uint16_t>(sizeof(GossipTopicKey)),
-            typename rt::PositiveMapElementBytes::Trusted{}},
-        .value_bytes = rt::PositiveMapElementBytes{
+            typename dataplane::PositiveMapElementBytes::Trusted{}},
+        .value_bytes = dataplane::PositiveMapElementBytes{
             static_cast<std::uint16_t>(
                 sizeof(GossipNeighborList<MaxNeighbors>)),
-            typename rt::PositiveMapElementBytes::Trusted{}},
-        .max_entries = rt::PositiveMapEntries{
+            typename dataplane::PositiveMapElementBytes::Trusted{}},
+        .max_entries = dataplane::PositiveMapEntries{
             MaxTopics,
-            typename rt::PositiveMapEntries::Trusted{}},
+            typename dataplane::PositiveMapEntries::Trusted{}},
     };
     return GossipMulticastPlan<MaxTopics, MaxNeighbors>{
         DeclaredGossipMulticastPlan{GossipMulticastSpec{
             .program = xdp,
-            .neighbor_map = rt::DeclaredBpfMap{map},
+            .neighbor_map = dataplane::DeclaredBpfMap{map},
             .config = config,
         }}};
 }
@@ -321,7 +321,7 @@ static_assert(sizeof(DeclaredGossipTopic) == sizeof(GossipTopicKey));
 static_assert(sizeof(DeclaredGossipMulticastPlan) ==
               sizeof(GossipMulticastSpec));
 static_assert(std::has_unique_object_representations_v<GossipTopicKey>);
-static_assert(rt::BpfKey<GossipTopicKey>);
-static_assert(rt::BpfScalar<GossipNeighborTarget>);
+static_assert(dataplane::BpfKey<GossipTopicKey>);
+static_assert(dataplane::BpfScalar<GossipNeighborTarget>);
 
 }  // namespace crucible::cntp

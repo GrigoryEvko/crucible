@@ -11,7 +11,7 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/rt/Observation.h>
+#include <crucible/observe/Observation.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/Pinned.h>
@@ -262,7 +262,7 @@ public:
     record_outcome(Ctx const&,
                    cog::CogIdentity const& peer,
                    ProbeOutcome outcome,
-                   rt::ObservationSnapshot* observations = nullptr) noexcept {
+                   observe::ObservationSnapshot* observations = nullptr) noexcept {
         auto const peer_index = find_peer(peer);
         if (peer_index == peers_.size()
             || !peers_[peer_index].enabled_kinds.test(outcome.kind)) {
@@ -289,12 +289,12 @@ public:
         }
 
         if (observations != nullptr) {
-            rt::record_observation(*observations, rt::latency_ns(
+            observe::record_observation(*observations, observe::latency_ns(
                 detail::metric_id_for(config_.metric_id_base, peer_index,
                     outcome.kind, 0),
                 outcome.latency_ns,
                 outcome.sequence));
-            rt::record_observation(*observations, rt::bits_transferred(
+            observe::record_observation(*observations, observe::bits_transferred(
                 detail::metric_id_for(config_.metric_id_base, peer_index,
                     outcome.kind, 1),
                 outcome.bytes_transferred * 8ull,

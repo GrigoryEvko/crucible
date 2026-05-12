@@ -173,11 +173,11 @@ namespace source {
     // drive encrypted federation transport behavior.
     struct Quic {};
     // AdmissionDecision: CNT-P backpressure/admission-control decisions
-    // minted by rt/Backpressure.h. Raw accept/reject structs cannot
+    // minted by cntp/BackpressureRuntime.h. Raw accept/reject structs cannot
     // cross runtime boundaries as operator-visible admission outcomes.
     struct AdmissionDecision {};
     // ConnectionPool: CNT-P connection lease/reuse events minted by
-    // rt/ConnectionPool.h. Raw pool events cannot substitute for the
+    // cntp/ConnectionPoolRuntime.h. Raw pool events cannot substitute for the
     // runtime-owned lease audit surface.
     struct ConnectionPool {};
     // Pingmesh: topology latency measurements admitted by
@@ -205,7 +205,8 @@ namespace source {
     // cntp/AfXdp.h. Raw ring sizes, frame sizes, queue IDs, and interface
     // names cannot directly mint a zero-copy transport surface.
     struct AfXdp {};
-    // Xdp / BpfMap: runtime-owned BPF/XDP plans admitted through rt/Xdp.h.
+    // Xdp / BpfMap: CNT-P dataplane BPF/XDP plans admitted through
+    // cntp/dataplane/Xdp.h.
     // Raw program descriptors or map dimensions cannot directly attach a
     // NIC dataplane program or allocate a userspace-visible map surface.
     struct Xdp {};
@@ -214,8 +215,8 @@ namespace source {
     // cntp/GossipMulticast.h. Raw topic hashes, neighbor arrays, and XDP
     // descriptors cannot directly drive kernel-side gossip replication.
     struct GossipMulticast {};
-    // TcEbpf: runtime-owned TC direct-action eBPF plans admitted through
-    // rt/TcEbpf.h. Raw skb action descriptors, DSCP values, and map specs
+    // TcEbpf: CNT-P dataplane TC direct-action eBPF plans admitted through
+    // cntp/dataplane/TcEbpf.h. Raw skb action descriptors, DSCP values, and map specs
     // cannot directly attach an egress/ingress TC dataplane program.
     struct TcEbpf {};
     // OverlayMulticast: CNT-P application-layer multicast plans admitted

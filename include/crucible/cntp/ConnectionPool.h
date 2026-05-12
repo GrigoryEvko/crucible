@@ -3,7 +3,7 @@
 // GAPS-136. CNT-P connection-pool substrate.
 //
 // CNT-P owns typed connection facts and lease-event provenance. The runtime
-// pool in rt/ConnectionPool.h owns mutable bounded reuse state. This substrate
+// pool in cntp/ConnectionPoolRuntime.h owns mutable bounded reuse state. This substrate
 // deliberately does not create RDMA queue pairs, perform TLS handshakes,
 // schedule health probes, or mutate quarantine policy; those producers feed
 // already-owned Connection<T> values into the pool.

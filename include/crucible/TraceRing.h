@@ -44,7 +44,7 @@
 #include <crucible/Types.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>
-#include <crucible/rt/Registry.h>
+#include <crucible/warden/Registry.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/FixedArray.h>
 #include <crucible/safety/HotPath.h>
@@ -104,7 +104,7 @@ enum class ScalarType2 : uint8_t {
 
 // 2 MB alignment so make_unique lands on a PMD-aligned region and
 // MADV_HUGEPAGE doesn't EINVAL (kernel 5.8+).
-struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
+struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // One cache line per op. Layout is load-bearing: bit-reinterpreted by
   // Serialize.h and assumed stable by Vigil / BackgroundThread / TraceLoader.
   //   schema(8) + shape(8) + num_inputs(2) + num_outputs(2)
@@ -257,10 +257,10 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   CallsiteHash              callsite_hashes[CAPACITY]{};  // 0 = no callsite
 
   TraceRing() noexcept {
-    crucible::rt::register_hot_region(this, sizeof(*this),
+    crucible::warden::register_hot_region(this, sizeof(*this),
         /*huge=*/true, "TraceRing");
   }
-  ~TraceRing() { crucible::rt::unregister_hot_region(this); }
+  ~TraceRing() { crucible::warden::unregister_hot_region(this); }
   TraceRing(const TraceRing&)            = delete("SPSC ring is pinned to a producer/consumer thread pair");
   TraceRing& operator=(const TraceRing&) = delete("SPSC ring is pinned to a producer/consumer thread pair");
   TraceRing(TraceRing&&)                 = delete("SPSC ring is pinned to a producer/consumer thread pair");

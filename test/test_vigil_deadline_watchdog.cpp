@@ -42,7 +42,7 @@
 //     atomic counters + verdict are part of the public surface.
 
 #include <crucible/Vigil.h>
-#include <crucible/rt/DeadlineWatchdog.h>
+#include <crucible/warden/DeadlineWatchdog.h>
 #include "test_harness.h"
 #include "test_assert.h"
 
@@ -125,7 +125,7 @@ void test_disabled_watchdog() {
     assert(!vigil.watchdog_enabled() &&
            "default Config disables the watchdog");
     assert(vigil.last_watchdog_verdict() ==
-               ::crucible::rt::WatchdogVerdict::InsufficientData &&
+               ::crucible::warden::WatchdogVerdict::InsufficientData &&
            "default verdict on disabled watchdog is InsufficientData");
     assert(vigil.watchdog_healthy_count() == 0);
     assert(vigil.watchdog_downgrade_count() == 0);
@@ -142,7 +142,7 @@ void test_disabled_watchdog() {
     assert(vigil.watchdog_downgrade_count() == 0);
     assert(vigil.watchdog_insufficient_count() == 0);
     assert(vigil.last_watchdog_verdict() ==
-               ::crucible::rt::WatchdogVerdict::InsufficientData);
+               ::crucible::warden::WatchdogVerdict::InsufficientData);
 
     // Vigil destructs at scope end — bg thread joins cleanly.  No
     // crash here means destruction-order discipline (bg_ first, then
@@ -169,7 +169,7 @@ void test_enabled_watchdog() {
     assert(vigil.watchdog_downgrade_count() == 0);
     assert(vigil.watchdog_insufficient_count() == 0);
     assert(vigil.last_watchdog_verdict() ==
-               ::crucible::rt::WatchdogVerdict::InsufficientData);
+               ::crucible::warden::WatchdogVerdict::InsufficientData);
 
     drive_one_region(vigil);
 
@@ -194,9 +194,9 @@ void test_enabled_watchdog() {
     //    see Healthy if a 60s test ran (but our test is sub-second)
     const auto v = vigil.last_watchdog_verdict();
     const bool legal_verdict =
-        (v == ::crucible::rt::WatchdogVerdict::InsufficientData) ||
-        (v == ::crucible::rt::WatchdogVerdict::Healthy) ||
-        (v == ::crucible::rt::WatchdogVerdict::Downgrade);
+        (v == ::crucible::warden::WatchdogVerdict::InsufficientData) ||
+        (v == ::crucible::warden::WatchdogVerdict::Healthy) ||
+        (v == ::crucible::warden::WatchdogVerdict::Downgrade);
     assert(legal_verdict && "verdict must be a legal enum value");
 
     // The MOST LIKELY outcome on a fast test: 1 InsufficientData

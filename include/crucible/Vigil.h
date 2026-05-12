@@ -43,8 +43,8 @@
 #include <crucible/effects/FxAliases.h>
 #include <crucible/handles/PublishOnce.h>
 #include <crucible/perf/Senses.h>
-#include <crucible/rt/DeadlineWatchdog.h>
-#include <crucible/rt/Policy.h>
+#include <crucible/warden/DeadlineWatchdog.h>
+#include <crucible/warden/Policy.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Refined.h>
@@ -201,7 +201,7 @@ class Vigil {
         // ignored at this site (Hardening.h would consume the rest).
         // Default: production() — 10 misses per 60-second window before
         // verdict flips to Downgrade.
-        rt::Policy  watchdog_policy = rt::Policy::production();
+        warden::Policy  watchdog_policy = warden::Policy::production();
     };
 
     // Number of consecutive op matches required to confirm an iteration
@@ -688,7 +688,7 @@ class Vigil {
     // Acquire load — pairs with the release store in on_region_ready.
     // Returns InsufficientData on a freshly-constructed Vigil (no
     // region transitions yet) or on a Vigil with watchdog disabled.
-    [[nodiscard]] ::crucible::rt::WatchdogVerdict
+    [[nodiscard]] ::crucible::warden::WatchdogVerdict
     last_watchdog_verdict() const noexcept {
         return wd_last_verdict_.load(std::memory_order_acquire);
     }
@@ -770,13 +770,13 @@ class Vigil {
             const auto v = wd_->observe();
             wd_last_verdict_.store(v, std::memory_order_release);
             switch (v) {
-                case ::crucible::rt::WatchdogVerdict::Healthy:
+                case ::crucible::warden::WatchdogVerdict::Healthy:
                     wd_healthy_count_.fetch_add(1, std::memory_order_release);
                     break;
-                case ::crucible::rt::WatchdogVerdict::Downgrade:
+                case ::crucible::warden::WatchdogVerdict::Downgrade:
                     wd_downgrade_count_.fetch_add(1, std::memory_order_release);
                     break;
-                case ::crucible::rt::WatchdogVerdict::InsufficientData:
+                case ::crucible::warden::WatchdogVerdict::InsufficientData:
                     wd_insufficient_count_.fetch_add(1, std::memory_order_release);
                     break;
                 default:
@@ -1100,9 +1100,9 @@ class Vigil {
     // wd_ (the bg thread writes wd_'s state and these counters in the
     // same on_region_ready frame).
     std::optional<::crucible::perf::Senses>             senses_;
-    std::optional<::crucible::rt::DeadlineWatchdog>     wd_;
-    std::atomic<::crucible::rt::WatchdogVerdict>        wd_last_verdict_{
-        ::crucible::rt::WatchdogVerdict::InsufficientData};
+    std::optional<::crucible::warden::DeadlineWatchdog>     wd_;
+    std::atomic<::crucible::warden::WatchdogVerdict>        wd_last_verdict_{
+        ::crucible::warden::WatchdogVerdict::InsufficientData};
     std::atomic<uint32_t>                               wd_healthy_count_{0};
     std::atomic<uint32_t>                               wd_downgrade_count_{0};
     std::atomic<uint32_t>                               wd_insufficient_count_{0};

@@ -37,7 +37,7 @@ using namespace crucible::safety;
 
 // Production-like consumer: Cipher freshness gate that demands
 // Warm-or-better tier.  Models the Cipher::publish_warm ⇄
-// rt::attribute_drift / KernelCache::evict-source pattern.
+// observe::attribute_drift / KernelCache::evict-source pattern.
 template <typename W>
     requires (W::template satisfies<CipherTierTag_v::Warm>)
 static int warm_publish_consumer(W wrapped) noexcept {

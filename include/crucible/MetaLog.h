@@ -9,7 +9,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>
-#include <crucible/rt/Registry.h>
+#include <crucible/warden/Registry.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/HugePageBuffer.h>
@@ -131,13 +131,13 @@ struct CRUCIBLE_OWNER MetaLog {
     // alignment + round_up_huge byte count, so MADV_HUGEPAGE in the
     // hot-region registration (kernel 5.8+ rejects on non-2-MB addrs)
     // works identically to the prior raw aligned_alloc path.
-    crucible::rt::register_hot_region(entries, entries_buffer_.bytes(),
+    crucible::warden::register_hot_region(entries, entries_buffer_.bytes(),
         /*huge=*/true, "MetaLog.entries");
   }
 
   ~MetaLog() {
     if (entries != nullptr) {
-      crucible::rt::unregister_hot_region(entries);
+      crucible::warden::unregister_hot_region(entries);
     }
     // entries_buffer_ dtor (HugePageBuffer move-only RAII) frees storage.
   }

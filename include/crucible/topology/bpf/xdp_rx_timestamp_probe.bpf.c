@@ -6,7 +6,7 @@
  * for PTP/pingmesh policy. Current behavior: XDP_PASS.
  */
 
-#include "../../rt/bpf/net_common.h"
+#include "../../cntp/dataplane/bpf/net_common.h"
 
 #ifndef XDP_PASS
 #define XDP_PASS 2

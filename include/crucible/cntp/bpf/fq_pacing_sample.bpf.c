@@ -6,7 +6,7 @@
  * qdisc validation. Current behavior: TC_ACT_OK for every skb.
  */
 
-#include "../../rt/bpf/net_common.h"
+#include "../dataplane/bpf/net_common.h"
 
 #ifndef TC_ACT_OK
 #define TC_ACT_OK 0

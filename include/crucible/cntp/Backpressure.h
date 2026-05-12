@@ -3,7 +3,7 @@
 // GAPS-137. CNT-P backpressure/admission-control substrate.
 //
 // CNT-P owns typed admission facts and admission-decision records. Mutable
-// runtime counters live in rt/Backpressure.h: credits, live connection
+// runtime counters live in cntp/BackpressureRuntime.h: credits, live connection
 // counts, and latest resource pressure are runtime state, not a transport
 // protocol by themselves. This header does not tune sockets, mutate kernel
 // receive windows, write Cipher audit events, or invent HealthScorer glue.

@@ -2,7 +2,7 @@
 //
 // TensorMeta is 168 B (2×64 B size/stride arrays + 24 B extended fields
 // + 16 B core fields); 1 M entries ≈ 168 MB backing, which exercises
-// rt::Hardening's huge_hint path when `CRUCIBLE_BENCH_HARDENING=
+// warden::Hardening's huge_hint path when `CRUCIBLE_BENCH_HARDENING=
 // production` or `cloud_vm`. MetaLog self-registers the region with
 // the HotRegionRegistry, so bench::Run(...)·hardening(p) mlocks and
 // MADV_HUGEPAGE's it automatically for the measured runs below.

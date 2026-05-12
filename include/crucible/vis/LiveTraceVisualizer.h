@@ -4,9 +4,9 @@
 //
 // GAPS-092 originally named `MerkleDag&` and `RuntimeMetrics::Snapshot&`, but
 // the current runtime exposes TraceNode / RegionNode roots and
-// rt::RuntimeMetricsSample. This header binds to those real surfaces.
+// observe::RuntimeMetricsSample. This header binds to those real surfaces.
 
-#include <crucible/rt/Metrics.h>
+#include <crucible/observe/Metrics.h>
 #include <crucible/vis/TraceVisualizer.h>
 
 #include <string>
@@ -25,11 +25,11 @@ class LiveTraceVisualizer {
       : root_{static_cast<const TraceNode*>(&root)} {}
 
   LiveTraceVisualizer(const TraceNode& root,
-                      rt::RuntimeMetricsSample metrics) noexcept
+                      observe::RuntimeMetricsSample metrics) noexcept
       : root_{&root}, metrics_{metrics}, has_metrics_{true} {}
 
   LiveTraceVisualizer(const RegionNode& root,
-                      rt::RuntimeMetricsSample metrics) noexcept
+                      observe::RuntimeMetricsSample metrics) noexcept
       : root_{static_cast<const TraceNode*>(&root)},
         metrics_{metrics},
         has_metrics_{true} {}
@@ -40,7 +40,7 @@ class LiveTraceVisualizer {
     root_ = static_cast<const TraceNode*>(&root);
   }
 
-  void update_metrics(rt::RuntimeMetricsSample metrics) noexcept {
+  void update_metrics(observe::RuntimeMetricsSample metrics) noexcept {
     metrics_ = metrics;
     has_metrics_ = true;
   }
@@ -61,7 +61,7 @@ class LiveTraceVisualizer {
 
   [[nodiscard]] std::string sample_tick(
       const TraceNode& root,
-      rt::RuntimeMetricsSample metrics,
+      observe::RuntimeMetricsSample metrics,
       std::string_view title = "Crucible Live Trace") {
     update_root(root);
     update_metrics(metrics);
@@ -79,7 +79,7 @@ class LiveTraceVisualizer {
 
  private:
   const TraceNode* root_ = nullptr;
-  rt::RuntimeMetricsSample metrics_{};
+  observe::RuntimeMetricsSample metrics_{};
   bool has_metrics_ = false;
 
   [[nodiscard]] std::string title_with_metrics(std::string_view title) const {

@@ -1,4 +1,4 @@
-#include <crucible/rt/CongestionTelemetry.h>
+#include <crucible/topology/CongestionTelemetryWorker.h>
 #include <crucible/topology/CongestionTelemetry.h>
 
 #include <array>
@@ -14,9 +14,9 @@
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
 namespace effects = crucible::effects;
-namespace rt = crucible::rt;
-namespace safety = crucible::safety;
+namespace observe = crucible::observe;
 namespace topology = crucible::topology;
+namespace safety = crucible::safety;
 
 namespace {
 
@@ -142,7 +142,7 @@ void test_worker_recording() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
     auto worker =
-        rt::mint_congestion_telemetry_worker<2, 8>(init);
+        topology::mint_congestion_telemetry_worker<2, 8>(init);
 
     std::array nics{nic(10), nic(11)};
     auto start = worker.start(init, std::span{nics});
@@ -168,12 +168,12 @@ void test_worker_recording() {
     assert(!bad_start.has_value());
     assert(bad_start.error() == topology::TelemetryError::InvalidNicCog);
 
-    rt::CongestionObservationSet sinks{};
-    rt::publish_congestion(sinks, 0, *last, 7);
-    auto p95 = rt::latest_observation(
-        sinks[static_cast<std::size_t>(rt::CongestionMetricSlot::P95BandwidthBps)]);
-    assert(p95.metric_id == rt::congestion_metric_id(
-        0, rt::CongestionMetricSlot::P95BandwidthBps));
+    topology::CongestionObservationSet sinks{};
+    topology::publish_congestion(sinks, 0, *last, 7);
+    auto p95 = observe::latest_observation(
+        sinks[static_cast<std::size_t>(topology::CongestionMetricSlot::P95BandwidthBps)]);
+    assert(p95.metric_id == topology::congestion_metric_id(
+        0, topology::CongestionMetricSlot::P95BandwidthBps));
     assert(p95.sequence == 7);
     std::printf("  test_worker_recording: PASSED\n");
 }
@@ -208,10 +208,10 @@ void test_live_tcp_info_if_available() {
 int main() {
     static_assert(sizeof(topology::TcpInfoSnapshot) ==
                   sizeof(topology::CongestionState));
-    static_assert(rt::CtxFitsCongestionTelemetryStart<effects::ColdInitCtx>);
-    static_assert(!rt::CtxFitsCongestionTelemetryStart<effects::BgDrainCtx>);
-    static_assert(rt::CtxFitsCongestionTelemetryHarvest<effects::BgDrainCtx>);
-    static_assert(!rt::CtxFitsCongestionTelemetryHarvest<effects::HotFgCtx>);
+    static_assert(topology::CtxFitsCongestionTelemetryStart<effects::ColdInitCtx>);
+    static_assert(!topology::CtxFitsCongestionTelemetryStart<effects::BgDrainCtx>);
+    static_assert(topology::CtxFitsCongestionTelemetryHarvest<effects::BgDrainCtx>);
+    static_assert(!topology::CtxFitsCongestionTelemetryHarvest<effects::HotFgCtx>);
     static_assert(std::same_as<
                   topology::TcpInfoSnapshot::tag_type,
                   safety::source::TcpInfo>);

@@ -9,7 +9,7 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
-#include <crucible/rt/Topology.h>
+#include <crucible/warden/Topology.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/Refined.h>
@@ -44,7 +44,7 @@ static_assert(sizeof(NumaNodeId) == sizeof(std::uint16_t));
 
 [[nodiscard]] inline NumaNodeId
 query_numa_for_nic(const char* sysfs_numa_node_path) noexcept {
-    int const node = rt::numa_node_of_device(sysfs_numa_node_path);
+    int const node = warden::numa_node_of_device(sysfs_numa_node_path);
     if (node < 0 || node > UINT16_MAX - 1) {
         return NumaNodeId::unknown();
     }

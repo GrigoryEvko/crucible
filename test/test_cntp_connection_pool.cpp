@@ -1,5 +1,5 @@
 #include <crucible/cntp/ConnectionPool.h>
-#include <crucible/rt/ConnectionPool.h>
+#include <crucible/cntp/ConnectionPoolRuntime.h>
 
 #include <cassert>
 #include <cstdio>
@@ -9,7 +9,6 @@
 namespace cntp = crucible::cntp;
 namespace cog = crucible::cog;
 namespace effects = crucible::effects;
-namespace rt = crucible::rt;
 namespace saf = crucible::safety;
 
 namespace {
@@ -72,7 +71,7 @@ void test_lease_return_and_capacity() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
     auto id = remote(1);
-    auto pool = rt::mint_connection_pool<
+    auto pool = cntp::mint_connection_pool<
         cntp::TransportClass::MtlsTcp, 2, 2>(init);
 
     assert(pool.add_connection(bg, connection(10, id, 1), 100).has_value());
@@ -109,7 +108,7 @@ void test_unhealthy_idle_and_quarantine_eviction() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
     auto id = remote(2);
-    auto pool = rt::mint_connection_pool<
+    auto pool = cntp::mint_connection_pool<
         cntp::TransportClass::MtlsTcp, 2, 2>(init, cntp::PoolConfig{
             .max_per_remote = cntp::PositivePoolSize{
                 std::uint16_t{2}, typename cntp::PositivePoolSize::Trusted{}},
@@ -146,7 +145,7 @@ void test_configured_per_remote_limit() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
     auto id = remote(3);
-    auto pool = rt::mint_connection_pool<
+    auto pool = cntp::mint_connection_pool<
         cntp::TransportClass::MtlsTcp, 2, 2>(init, cntp::PoolConfig{
             .max_per_remote = cntp::PositivePoolSize{
                 std::uint16_t{1}, typename cntp::PositivePoolSize::Trusted{}},
@@ -178,10 +177,10 @@ int main() {
                   saf::source::ConnectionPool>);
     static_assert(!std::copy_constructible<
                   cntp::LinearConnection<cntp::TransportClass::MtlsTcp>>);
-    static_assert(rt::CtxFitsConnectionPoolMint<effects::ColdInitCtx>);
-    static_assert(!rt::CtxFitsConnectionPoolMint<effects::BgDrainCtx>);
-    static_assert(rt::CtxFitsConnectionPoolRuntime<effects::BgDrainCtx>);
-    static_assert(!rt::CtxFitsConnectionPoolRuntime<effects::HotFgCtx>);
+    static_assert(cntp::CtxFitsConnectionPoolMint<effects::ColdInitCtx>);
+    static_assert(!cntp::CtxFitsConnectionPoolMint<effects::BgDrainCtx>);
+    static_assert(cntp::CtxFitsConnectionPoolRuntime<effects::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsConnectionPoolRuntime<effects::HotFgCtx>);
 
     std::printf("test_cntp_connection_pool:\n");
     test_admission_and_names();

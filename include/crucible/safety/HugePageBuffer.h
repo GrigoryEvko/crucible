@@ -6,22 +6,22 @@
 // with MADV_HUGEPAGE applied.  Replaces hand-rolled patterns like:
 //
 //   T* p = std::aligned_alloc(kHugePageBytes, round_up(n*sizeof(T)));
-//   crucible::rt::register_hot_region(p, bytes, /*huge=*/true, "name");
+//   crucible::warden::register_hot_region(p, bytes, /*huge=*/true, "name");
 //   ...
-//   crucible::rt::unregister_hot_region(p);
+//   crucible::warden::unregister_hot_region(p);
 //   std::free(p);
 //
 //   Axiom coverage: MemSafe, LeakSafe.
 //   Runtime cost:   one pointer + one count + zero registration extra
-//                   (the registration metadata lives in rt::Registry,
+//                   (the registration metadata lives in warden::Registry,
 //                   not on the buffer).
 //
-// Pairing with rt::register_hot_region / unregister_hot_region is
+// Pairing with warden::register_hot_region / unregister_hot_region is
 // explicit at the call site (the registry needs the friendly name);
 // HugePageBuffer owns the allocation lifetime.
 
 #include <crucible/Platform.h>
-#include <crucible/rt/Registry.h>
+#include <crucible/warden/Registry.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -40,7 +40,7 @@ public:
     using value_type = T;
     using size_type  = std::size_t;
 
-    static constexpr size_type huge_page_bytes = ::crucible::rt::kHugePageBytes;
+    static constexpr size_type huge_page_bytes = ::crucible::warden::kHugePageBytes;
 
     static constexpr std::string_view wrapper_kind() noexcept {
         return "structural::HugePageBuffer";
@@ -54,7 +54,7 @@ public:
     [[nodiscard]] static HugePageBuffer allocate(size_type count) {
         if (count == 0) [[unlikely]] return HugePageBuffer{};
         const size_type raw_bytes = count * sizeof(T);
-        const size_type alloc_bytes = ::crucible::rt::round_up_huge(raw_bytes);
+        const size_type alloc_bytes = ::crucible::warden::round_up_huge(raw_bytes);
         void* raw = std::aligned_alloc(huge_page_bytes, alloc_bytes);
         if (!raw) [[unlikely]] std::abort();
         return HugePageBuffer{static_cast<T*>(raw), count, alloc_bytes};

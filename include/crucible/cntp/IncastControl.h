@@ -5,7 +5,7 @@
 // This header owns socket-local incast mitigations that can be applied
 // without inventing a collective runtime: DCTCP selection, TCP_RTO_MIN_US
 // tuning where the kernel exposes it, and declared receiver-issued credit
-// pacing config.  Bounded credit state lives in rt/IncastControl.h.  This
+// pacing config. Bounded credit state lives in cntp/IncastControlRuntime.h. This
 // header deliberately does not mutate sysctls, install qdiscs, write Cipher
 // events, or auto-wire collectives; those are owned by NicConfig, Pacing,
 // Cipher, and CollectiveCatalog tasks.

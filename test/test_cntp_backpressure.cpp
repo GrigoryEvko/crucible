@@ -1,5 +1,5 @@
 #include <crucible/cntp/Backpressure.h>
-#include <crucible/rt/Backpressure.h>
+#include <crucible/cntp/BackpressureRuntime.h>
 
 #include <array>
 #include <cassert>
@@ -11,7 +11,7 @@
 
 namespace cntp = crucible::cntp;
 namespace effects = crucible::effects;
-namespace rt = crucible::rt;
+namespace cntp = crucible::cntp;
 namespace saf = crucible::safety;
 
 namespace {
@@ -63,7 +63,7 @@ void test_admission_helpers() {
 void test_credit_flow_control() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
-    auto controller = rt::mint_credit_flow_control<2>(init);
+    auto controller = cntp::mint_credit_flow_control<2>(init);
 
     auto fd0 = cntp::admit_socket_fd(20).value();
     auto fd1 = cntp::admit_socket_fd(21).value();
@@ -91,7 +91,7 @@ void test_credit_flow_control() {
 void test_credit_flow_control_parallel_grants() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
-    auto controller = rt::mint_credit_flow_control<1>(init);
+    auto controller = cntp::mint_credit_flow_control<1>(init);
 
     auto fd = cntp::admit_socket_fd(23).value();
     auto one = cntp::admit_backpressure_credit(1).value();
@@ -127,7 +127,7 @@ void test_credit_flow_control_parallel_grants() {
 void test_credit_flow_control_parallel_start_same_fd() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
-    auto controller = rt::mint_credit_flow_control<1>(init);
+    auto controller = cntp::mint_credit_flow_control<1>(init);
 
     auto fd = cntp::admit_socket_fd(24).value();
     auto first = cntp::admit_backpressure_credit(1).value();
@@ -158,7 +158,7 @@ void test_credit_flow_control_parallel_start_same_fd() {
 void test_admission_controller() {
     effects::ColdInitCtx init{};
     effects::BgDrainCtx bg{};
-    auto controller = rt::mint_admission_controller<2, 2>(init);
+    auto controller = cntp::mint_admission_controller<2, 2>(init);
 
     auto nic_limit =
         cntp::mint_resource_limit<effects::ResourceKind::NicQ>(900'000).value();
@@ -223,11 +223,11 @@ int main() {
     static_assert(std::same_as<
                   cntp::DeclaredAdmissionDecision::tag_type,
                   saf::source::AdmissionDecision>);
-    static_assert(rt::CtxFitsBackpressureMint<effects::ColdInitCtx>);
-    static_assert(!rt::CtxFitsBackpressureMint<effects::BgDrainCtx>);
-    static_assert(rt::CtxFitsBackpressureRuntime<effects::BgDrainCtx>);
-    static_assert(rt::CtxFitsBackpressureRuntime<effects::TestRunnerCtx>);
-    static_assert(!rt::CtxFitsBackpressureRuntime<effects::HotFgCtx>);
+    static_assert(cntp::CtxFitsBackpressureMint<effects::ColdInitCtx>);
+    static_assert(!cntp::CtxFitsBackpressureMint<effects::BgDrainCtx>);
+    static_assert(cntp::CtxFitsBackpressureRuntime<effects::BgDrainCtx>);
+    static_assert(cntp::CtxFitsBackpressureRuntime<effects::TestRunnerCtx>);
+    static_assert(!cntp::CtxFitsBackpressureRuntime<effects::HotFgCtx>);
 
     std::printf("test_cntp_backpressure:\n");
     test_admission_helpers();

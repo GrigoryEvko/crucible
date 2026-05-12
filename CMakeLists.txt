@@ -64,9 +64,9 @@ add_library(crucible STATIC
   src/cntp/RoceConfig.cpp
   src/observe/HdrHistogram.cpp
   src/observe/SyntheticProbe.cpp
-  src/rt/Quarantine.cpp
-  src/rt/TcEbpf.cpp
-  src/rt/Xdp.cpp
+  src/warden/Quarantine.cpp
+  src/cntp/dataplane/TcEbpf.cpp
+  src/cntp/dataplane/Xdp.cpp
   src/topology/AsymmetricFailure.cpp
   src/topology/CongestionTelemetry.cpp
   src/topology/Discovery.cpp
@@ -156,23 +156,23 @@ crucible_bpf_program(syscall_tp_btf   include/crucible/perf/bpf/syscall_tp_btf.b
 # ─── Runtime/networking BPF stubs ──────────────────────────────────
 #
 # These are intentionally rooted in the owning subsystem rather than
-# perf/: rt owns TC/XDP dataplane contracts; CNT-P owns transport-control
-# probes; canopy/topology/observe/cog own their mesh and NIC evidence.
+# perf/: CNT-P dataplane owns TC/XDP contracts; Warden owns enforcement
+# lifecycle hooks; canopy/topology/observe/cog own their mesh and NIC evidence.
 # Current programs are verifier-loadable no-op/pass-through stubs that pin
 # section names, map wire contracts, and embedded symbol names before policy
 # grows around them.
-crucible_bpf_program(rt_tc_ingress_classify
-  include/crucible/rt/bpf/rt_tc_ingress_classify.bpf.c)
-crucible_bpf_program(rt_tc_egress_classify
-  include/crucible/rt/bpf/rt_tc_egress_classify.bpf.c)
-crucible_bpf_program(rt_pacing_budget
-  include/crucible/rt/bpf/rt_pacing_budget.bpf.c)
-crucible_bpf_program(rt_queue_backlog
-  include/crucible/rt/bpf/rt_queue_backlog.bpf.c)
-crucible_bpf_program(rt_socket_lifecycle
-  include/crucible/rt/bpf/rt_socket_lifecycle.bpf.c)
-crucible_bpf_program(rt_fq_budget
-  include/crucible/rt/bpf/rt_fq_budget.bpf.c)
+crucible_bpf_program(cntp_dp_tc_ingress_classify
+  include/crucible/cntp/dataplane/bpf/dp_tc_ingress_classify.bpf.c)
+crucible_bpf_program(cntp_dp_tc_egress_classify
+  include/crucible/cntp/dataplane/bpf/dp_tc_egress_classify.bpf.c)
+crucible_bpf_program(cntp_dp_pacing_budget
+  include/crucible/cntp/dataplane/bpf/dp_pacing_budget.bpf.c)
+crucible_bpf_program(cntp_dp_queue_backlog
+  include/crucible/cntp/dataplane/bpf/dp_queue_backlog.bpf.c)
+crucible_bpf_program(warden_socket_lifecycle
+  include/crucible/warden/bpf/wd_socket_lifecycle.bpf.c)
+crucible_bpf_program(cntp_dp_fq_budget
+  include/crucible/cntp/dataplane/bpf/dp_fq_budget.bpf.c)
 
 crucible_bpf_program(cntp_xdp_flow_filter
   include/crucible/cntp/bpf/xdp_flow_filter.bpf.c)

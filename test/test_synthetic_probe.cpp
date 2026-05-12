@@ -8,7 +8,7 @@
 namespace cog = crucible::cog;
 namespace eff = crucible::effects;
 namespace observe = crucible::observe;
-namespace rt = crucible::rt;
+namespace observe = crucible::observe;
 namespace safety = crucible::safety;
 
 static cog::CogIdentity peer(std::uint64_t lo) {
@@ -43,7 +43,7 @@ static void test_register_and_record_success() {
     assert(!runner.register_peer(p, kinds));
     assert(runner.enabled(p, observe::TransportProbeKind::Quic));
 
-    rt::ObservationSnapshot observations;
+    observe::ObservationSnapshot observations;
     assert(runner.record_outcome(eff::BgDrainCtx{}, p,
         observe::ProbeOutcome{
             .kind = observe::TransportProbeKind::Quic,
@@ -61,8 +61,8 @@ static void test_register_and_record_success() {
     assert(stats.bytes_transferred == 256);
     assert(stats.last_latency_ns == 11'000);
     assert(stats.last_sequence == 9);
-    assert(rt::latest_observation(observations).kind
-           == rt::ObservationKind::BitsTransferred);
+    assert(observe::latest_observation(observations).kind
+           == observe::ObservationKind::BitsTransferred);
     std::printf("  test_register_and_record_success: PASSED\n");
 }
 
