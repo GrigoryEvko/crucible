@@ -267,7 +267,7 @@ template <typename PeerTag>
 consteval void require_crash_survivors_declared_() {
     static_assert(!::crucible::permissions::inheritance_list_empty_v<
         ::crucible::permissions::survivors_t<PeerTag>>,
-        "CrashWatchedHandle requires permission_inherit survivors for "
+        "CrashWatchedHandle requires mint_permission_inherit survivors for "
         "PeerTag. Specialize survivor_registry<PeerTag> at the peer tag "
         "declaration site before enabling crash recovery.");
 }
@@ -436,7 +436,7 @@ template <typename PeerTag,
         detail::crash_event_for_t<PeerTag, Resource>{
             WrapCrashReturnKey{},
             std::move(recovered),
-            ::crucible::permissions::permission_inherit<PeerTag>()}};
+            ::crucible::permissions::mint_permission_inherit<PeerTag>()}};
 }
 
 // ═════════════════════════════════════════════════════════════════════

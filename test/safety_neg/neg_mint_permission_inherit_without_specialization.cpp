@@ -7,4 +7,5 @@ struct SurvivorTag {};
 
 }  // namespace
 
-auto bad = ::crucible::permissions::permission_inherit<DeadTag, SurvivorTag>();
+auto bad = ::crucible::permissions::mint_permission_inherit<
+    DeadTag, SurvivorTag>();

@@ -3460,7 +3460,7 @@ crucible_neg_compile_test(neg_mint_crash_watched_session_non_handle
 crucible_neg_compile_test(neg_mint_crash_watched_session_missing_peer_tag
   "no matching function|could not (deduce|infer)|missing template argument")
 crucible_neg_compile_test(neg_crash_watched_no_survivors
-  "CrashWatchedHandle requires permission_inherit survivors")
+  "CrashWatchedHandle requires mint_permission_inherit survivors")
 crucible_neg_compile_test(neg_crash_event_missing_survivor
   "CrashEvent survivor list must match survivors_t")
 crucible_neg_compile_test(neg_crash_watched_ps_mismatch
@@ -5027,10 +5027,10 @@ crucible_neg_compile_test(neg_vigil_alignment_pos_uint8_max
 # GAPS-044 — Permission inheritance is explicit and acyclic.  Crash-stop
 # recovery may mint survivor permissions only for declared inheritance
 # edges; a peer cannot inherit to itself.
-crucible_neg_compile_test(neg_permission_inherit_without_specialization
-    "permission_inherit requires inherits_from")
-crucible_neg_compile_test(neg_permission_inherit_self_cycle
-    "permission_inherit forbids circular inheritance")
+crucible_neg_compile_test(neg_mint_permission_inherit_without_specialization
+    "mint_permission_inherit requires inherits_from")
+crucible_neg_compile_test(neg_mint_permission_inherit_self_cycle
+    "mint_permission_inherit forbids circular inheritance")
 
 # GAPS-073 — permission_fork is now a ctx-bound mint.  These fixtures
 # pin the three load-bearing gates: ctx-aware callables must provide a

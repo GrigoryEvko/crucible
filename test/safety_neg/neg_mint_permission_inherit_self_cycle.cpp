@@ -13,4 +13,4 @@ struct inherits_from<PeerTag, PeerTag> : std::true_type {};
 
 }  // namespace crucible::permissions
 
-auto bad = ::crucible::permissions::permission_inherit<PeerTag, PeerTag>();
+auto bad = ::crucible::permissions::mint_permission_inherit<PeerTag, PeerTag>();

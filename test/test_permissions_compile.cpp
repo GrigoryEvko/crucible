@@ -181,7 +181,7 @@ void test_permission_row_compile() {
         test_ctx, std::move(std::get<0>(split_n)), std::move(std::get<1>(split_n)));
     saf::permission_drop(std::move(joined_n));
 }
-void test_permission_inherit_compile() {
+void test_mint_permission_inherit_compile() {
     namespace pi = ::crucible::permissions;
     using WorkerSurvivors = pi::survivors_t<InheritWorkerTag>;
     static_assert(pi::inheritance_list_contains_v<
@@ -193,14 +193,15 @@ void test_permission_inherit_compile() {
         InheritWorkerTag, InheritNonInheritingTag>);
 
     using ExplicitTuple = decltype(
-        pi::permission_inherit<InheritWorkerTag, InheritCoordTag>());
-    using RegistryTuple = decltype(pi::permission_inherit<InheritWorkerTag>());
+        pi::mint_permission_inherit<InheritWorkerTag, InheritCoordTag>());
+    using RegistryTuple = decltype(
+        pi::mint_permission_inherit<InheritWorkerTag>());
     static_assert(std::is_same_v<
         ExplicitTuple,
         std::tuple<::crucible::safety::Permission<InheritCoordTag>>>);
     static_assert(std::is_same_v<ExplicitTuple, RegistryTuple>);
 
-    using ChainedTuple = decltype(pi::permission_inherit<InheritCoordTag>());
+    using ChainedTuple = decltype(pi::mint_permission_inherit<InheritCoordTag>());
     static_assert(std::is_same_v<
         ChainedTuple,
         std::tuple<::crucible::safety::Permission<InheritMasterTag>>>);
@@ -216,7 +217,8 @@ int main() {
     run_test("test_permission_compile",      test_permission_compile);
     run_test("test_permission_fork_compile", test_permission_fork_compile);
     run_test("test_permission_row_compile",  test_permission_row_compile);
-    run_test("test_permission_inherit_compile", test_permission_inherit_compile);
+    run_test("test_mint_permission_inherit_compile",
+        test_mint_permission_inherit_compile);
     run_test("test_permissions_umbrella",    test_permissions_umbrella);
     run_test("test_perm_set_compile",        test_perm_set_compile);
     run_test("test_read_view_compile",       test_read_view_compile);

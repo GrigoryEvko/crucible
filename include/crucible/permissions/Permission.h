@@ -185,12 +185,12 @@ struct NetworkBufferTag {};
 }  // namespace tag
 
 template <typename DeadTag, typename... SurvivorTags>
-[[nodiscard]] constexpr auto permission_inherit() noexcept;
+[[nodiscard]] constexpr auto mint_permission_inherit() noexcept;
 
 namespace detail {
 
 template <typename Tag>
-struct permission_inherit_minter_;
+struct mint_permission_inherit_minter_;
 
 }  // namespace detail
 
@@ -384,10 +384,10 @@ class [[nodiscard]] Permission {
     // after the previous holder is structurally dead.
     template <typename DeadTag, typename... SurvivorTags>
     friend constexpr auto
-    ::crucible::permissions::permission_inherit() noexcept;
+    ::crucible::permissions::mint_permission_inherit() noexcept;
 
     template <typename T>
-    friend struct ::crucible::permissions::detail::permission_inherit_minter_;
+    friend struct ::crucible::permissions::detail::mint_permission_inherit_minter_;
 
 
     // The Pool's try_upgrade re-emits the parked Permission when the

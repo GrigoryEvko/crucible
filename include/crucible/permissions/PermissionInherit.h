@@ -1,6 +1,6 @@
 #pragma once
 
-// ── crucible::permissions::permission_inherit — crash-stop CSL recovery ──
+// ── crucible::permissions::mint_permission_inherit — crash-stop CSL recovery ──
 //
 // GAPS-044 foundation for the CrashWatchedPSH LeakSafe fix.
 //
@@ -12,10 +12,10 @@
 //   * inherits_from<DeadTag, SurvivorTag> defaults to false.
 //   * Per-tag specializations opt in to a recovery edge.
 //   * survivor_registry<DeadTag> is the manual registry used when a
-//     caller wants permission_inherit<DeadTag>() to expand the full
+//     caller wants mint_permission_inherit<DeadTag>() to expand the full
 //     survivor list.  C++ cannot reflect over arbitrary trait
 //     specializations, so the registry is deliberately explicit.
-//   * permission_inherit<DeadTag, SurvivorTags...>() mints exactly
+//   * mint_permission_inherit<DeadTag, SurvivorTags...>() mints exactly
 //     the survivor Permission tokens, subject to compile-time gates.
 //
 // This is a registry-backed whitelist, not an algebraic lattice. There is no
@@ -49,17 +49,17 @@ struct inheritance_list {
 
 namespace detail {
 
-class permission_inherit_key {
-    constexpr permission_inherit_key() noexcept = default;
+class mint_permission_inherit_key {
+    constexpr mint_permission_inherit_key() noexcept = default;
 
     template <typename DeadTag, typename List>
     friend struct inherit_from_list;
 };
 
 template <typename Tag>
-struct permission_inherit_minter_ {
+struct mint_permission_inherit_minter_ {
     [[nodiscard]] static constexpr ::crucible::safety::Permission<Tag>
-    mint(permission_inherit_key) noexcept {
+    mint(mint_permission_inherit_key) noexcept {
         return ::crucible::safety::Permission<Tag>{};
     }
 };
@@ -81,7 +81,7 @@ struct inheritance_list_empty<inheritance_list<Tags...>>
 }  // namespace detail
 
 // Manual survivor registry.  Specialize at the tag declaration site
-// when callers need permission_inherit<DeadTag>() to expand all
+// when callers need mint_permission_inherit<DeadTag>() to expand all
 // survivor tags without naming them again.
 template <typename DeadTag>
 struct survivor_registry {
@@ -116,18 +116,19 @@ template <typename DeadTag, typename... SurvivorTags>
 struct inherit_from_list<DeadTag, inheritance_list<SurvivorTags...>> {
     [[nodiscard]] static constexpr auto mint() noexcept {
         static_assert(sizeof...(SurvivorTags) > 0,
-            "permission_inherit requires at least one survivor tag. "
+            "mint_permission_inherit requires at least one survivor tag. "
             "Specialize survivor_registry<DeadTag> or pass explicit "
             "SurvivorTags.");
         static_assert((!std::is_same_v<DeadTag, SurvivorTags> && ...),
-            "permission_inherit forbids circular inheritance: "
+            "mint_permission_inherit forbids circular inheritance: "
             "DeadTag cannot inherit to itself.");
         static_assert((inherits_from<DeadTag, SurvivorTags>::value && ...),
-            "permission_inherit requires inherits_from<DeadTag, "
+            "mint_permission_inherit requires inherits_from<DeadTag, "
             "SurvivorTag> to be true for every survivor.");
 
         return std::tuple<::crucible::safety::Permission<SurvivorTags>...>{
-            permission_inherit_minter_<SurvivorTags>::mint(permission_inherit_key{})...
+            mint_permission_inherit_minter_<SurvivorTags>::mint(
+                mint_permission_inherit_key{})...
         };
     }
 };
@@ -135,7 +136,7 @@ struct inherit_from_list<DeadTag, inheritance_list<SurvivorTags...>> {
 }  // namespace detail
 
 template <typename DeadTag, typename... SurvivorTags>
-[[nodiscard]] constexpr auto permission_inherit() noexcept {
+[[nodiscard]] constexpr auto mint_permission_inherit() noexcept {
     if constexpr (sizeof...(SurvivorTags) == 0) {
         return detail::inherit_from_list<DeadTag, survivors_t<DeadTag>>::mint();
     } else {
@@ -153,7 +154,7 @@ using ::crucible::permissions::inheritance_list_contains_v;
 using ::crucible::permissions::inheritance_list_empty_v;
 using ::crucible::permissions::inherits_from;
 using ::crucible::permissions::inherits_from_v;
-using ::crucible::permissions::permission_inherit;
+using ::crucible::permissions::mint_permission_inherit;
 using ::crucible::permissions::survivor_registry;
 using ::crucible::permissions::survivors_t;
 

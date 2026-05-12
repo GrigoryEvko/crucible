@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // GAPS-045: CrashWatchedHandle may only be constructed for a PeerTag
-// whose crash-recovery inheritance lattice declares at least one
+// whose crash-recovery survivor registry declares at least one
 // survivor.  Otherwise peer death would drop permissions without a typed
 // recovery target.
 
