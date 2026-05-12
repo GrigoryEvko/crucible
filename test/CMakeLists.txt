@@ -333,6 +333,7 @@ crucible_test(test_nic_offload_audit)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
 crucible_test(test_topology_graph)
+crucible_test(test_topology_health)
 crucible_test(test_concurrent_compile)
 crucible_test(test_auto_split)
 crucible_test(test_diagnostic_compile)
@@ -1312,6 +1313,22 @@ crucible_neg_compile_topology_test(neg_topology_graph_non_ctx_first_arg
     "constraint|constraints not satisfied|CtxFitsTopologyGraph|IsExecCtx|GAPS-110")
 crucible_neg_compile_topology_test(neg_topology_graph_test_ctx_refused
     "constraint|constraints not satisfied|CtxFitsTopologyGraph|row_contains|Init|Test|GAPS-110")
+
+# ─── HS14 fixtures for topology::Health (GAPS-113 #1219) ───────────
+#
+#   * neg_topology_health_mint_bg_ctx — only Init-row contexts mint the
+#     bounded health substrate; Bg may update supplied facts but may not
+#     create the policy carrier.
+#   * neg_topology_health_update_fg_ctx — hot foreground contexts cannot
+#     mutate heartbeat/thermal/ECC/drop/wear state.
+#   * neg_topology_health_raw_score — quarantine thresholds consume the
+#     HealthScore strong type, not raw integers.
+crucible_neg_compile_topology_test(neg_topology_health_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsHealthMint|Init|Bg")
+crucible_neg_compile_topology_test(neg_topology_health_update_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsHealthUpdate|Bg|HotFgCtx")
+crucible_neg_compile_topology_test(neg_topology_health_raw_score
+    "could not convert|invalid conversion|HealthScore")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #
