@@ -227,6 +227,7 @@ crucible_test(test_vector_clock)
 crucible_test(test_crdt)
 crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
+crucible_test(test_cntp_backpressure)
 crucible_test(test_cntp_congestion_control)
 crucible_test(test_cntp_incast_control)
 crucible_test(test_cntp_ktls_offload)
@@ -2594,6 +2595,17 @@ crucible_neg_compile_test(neg_ktls_chacha_crypto
   "constraints not satisfied|KtlsAesGcmCipherSuite|TlsChacha20Poly1305Sha256")
 crucible_neg_compile_test(neg_ktls_raw_crypto_offload
   "could not convert|no matching function|DeclaredTlsCryptoInfo|Tagged")
+
+# GAPS-137 — cntp/Backpressure.h + rt/Backpressure.h substrate.
+#   * neg_backpressure_raw_admission_decision: admission outcomes must be tagged.
+#   * neg_backpressure_invalid_resource_kind: pressure samples require ResourceKind.
+#   * neg_backpressure_hot_ctx_credit: hot replay contexts cannot mutate credits.
+crucible_neg_compile_test(neg_backpressure_raw_admission_decision
+  "conversion from|could not convert|DeclaredAdmissionDecision|Tagged")
+crucible_neg_compile_test(neg_backpressure_invalid_resource_kind
+  "constraints not satisfied|IsResourceKind|ResourceKind")
+crucible_neg_compile_test(neg_backpressure_hot_ctx_credit
+  "constraints not satisfied|CtxFitsBackpressureRuntime|HotFgCtx")
 
 # GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the

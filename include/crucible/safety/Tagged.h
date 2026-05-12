@@ -159,6 +159,10 @@ namespace source {
     // cntp/KtlsOffload.h. Raw sockets and raw TLS traffic keys cannot
     // directly program NIC/kernel TLS state.
     struct KtlsOffloaded {};
+    // AdmissionDecision: CNT-P backpressure/admission-control decisions
+    // minted by rt/Backpressure.h. Raw accept/reject structs cannot
+    // cross runtime boundaries as operator-visible admission outcomes.
+    struct AdmissionDecision {};
     // PathSwap: CNT-P application-level path-swap plan admitted through
     // cntp/PathSwap.h. Raw path IDs cannot directly drive a live
     // SessionHandle resource transition.
