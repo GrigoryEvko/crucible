@@ -85,6 +85,16 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
                   "RecipePool must not be move-constructible");
     static_assert(!std::is_move_assignable_v<RecipePool>,
                   "RecipePool must not be move-assignable");
+    static_assert(std::is_same_v<RecipePool::Capacity,
+                                 crucible::safety::PowerOfTwo<uint32_t>>,
+                  "RecipePool capacity must carry the power-of-two invariant");
+    static_assert(std::is_same_v<RecipePool::Size,
+                                 crucible::safety::Monotonic<uint32_t>>,
+                  "RecipePool size must carry the monotonic-growth invariant");
+    static_assert(sizeof(RecipePool::Capacity) == sizeof(uint32_t),
+                  "PowerOfTwo capacity wrapper must stay zero-cost");
+    static_assert(sizeof(RecipePool::Size) == sizeof(uint32_t),
+                  "Monotonic size wrapper must stay zero-cost");
   }
 
   // ═══════════════════════════════════════════════════════════════════

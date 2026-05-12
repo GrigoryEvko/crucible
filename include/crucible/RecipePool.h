@@ -45,8 +45,10 @@
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
+#include <crucible/safety/Refined.h>
 
 #include <bit>
 #include <cstddef>
@@ -56,6 +58,9 @@ namespace crucible {
 
 class CRUCIBLE_OWNER RecipePool {
  public:
+  using Capacity = safety::PowerOfTwo<uint32_t>;
+  using Size     = safety::Monotonic<uint32_t>;
+
   // Initial slot capacity.  Must be a power of two and ≥ 8.  Load
   // factor is capped at 50%, so `initial_capacity` accommodates
   // `initial_capacity / 2` distinct recipes before the first resize.
@@ -83,6 +88,7 @@ class CRUCIBLE_OWNER RecipePool {
           initial_capacity, UINT32_MAX))
       : arena_{&arena}
       , capacity_{initial_capacity}
+      , size_{0}
   {
     slots_ = arena.alloc_array_nonzero<Slot>(a, initial_capacity);
     for (uint32_t i = 0; i < initial_capacity; ++i) {
@@ -105,9 +111,9 @@ class CRUCIBLE_OWNER RecipePool {
     // return: first arg `0` is the conventional sentinel.  Under
     // NDEBUG these collapse to `[[assume]]` for downstream intern()
     // optimizer.
-    CRUCIBLE_POST(0, capacity_ == initial_capacity);
+    CRUCIBLE_POST(0, capacity_.value() == initial_capacity);
     CRUCIBLE_POST(0, slots_ != nullptr);
-    CRUCIBLE_POST(0, size_ == 0);
+    CRUCIBLE_POST(0, size_.get() == 0);
   }
 
   // Interior pointers into arena_ would dangle if this pool moved.
@@ -144,15 +150,16 @@ class CRUCIBLE_OWNER RecipePool {
     const uint64_t hv = h.raw();
 
     // Probe existing slots for a match.
-    const uint32_t mask = capacity_ - 1;
+    const uint32_t cap = capacity_.value();
+    const uint32_t mask = cap - 1;
     uint32_t idx = static_cast<uint32_t>(hv) & mask;
-    for (uint32_t probe = 0; probe < capacity_; ++probe) {
+    for (uint32_t probe = 0; probe < cap; ++probe) {
       const uint32_t i = (idx + probe) & mask;
       Slot& s = slots_[i];
       if (s.recipe == nullptr) {
         // Empty slot — grow if we'd exceed 50% load after insert,
         // then restart.  Otherwise install here.
-        if ((size_ + 1) * 2 > capacity_) [[unlikely]] {
+        if ((size_.get() + 1) * 2 > cap) [[unlikely]] {
           grow_(a);
           return intern(a, fields);  // restart probing in the new table
         }
@@ -169,8 +176,8 @@ class CRUCIBLE_OWNER RecipePool {
 
   // ─── Diagnostics ─────────────────────────────────────────────────
 
-  [[nodiscard, gnu::pure]] uint32_t size() const noexcept { return size_; }
-  [[nodiscard, gnu::pure]] uint32_t capacity() const noexcept { return capacity_; }
+  [[nodiscard, gnu::pure]] uint32_t size() const noexcept { return size_.get(); }
+  [[nodiscard, gnu::pure]] uint32_t capacity() const noexcept { return capacity_.value(); }
 
  private:
   struct Slot {
@@ -209,7 +216,7 @@ class CRUCIBLE_OWNER RecipePool {
     r->hash = h;
 
     slots_[i] = Slot{.hash = h.raw(), .recipe = r};
-    ++size_;
+    size_.bump();
     return r;
   }
 
@@ -217,7 +224,8 @@ class CRUCIBLE_OWNER RecipePool {
   // Called when the 50% load threshold would be exceeded.
   [[gnu::cold, gnu::noinline]]
   void grow_(effects::Alloc a) {
-    const uint32_t old_cap = capacity_;
+    const uint32_t old_cap = capacity_.value();
+    const uint32_t old_size = size_.get();
     Slot* old_slots = slots_;
     const uint32_t new_cap = old_cap * 2;
 
@@ -225,10 +233,10 @@ class CRUCIBLE_OWNER RecipePool {
     for (uint32_t i = 0; i < new_cap; ++i) {
       slots_[i] = Slot{};
     }
-    capacity_ = new_cap;
-    size_ = 0;
+    capacity_ = Capacity{new_cap};
 
     const uint32_t new_mask = new_cap - 1;
+    uint32_t reinserted = 0;
     for (uint32_t i = 0; i < old_cap; ++i) {
       Slot& s = old_slots[i];
       if (s.recipe == nullptr) continue;
@@ -237,11 +245,13 @@ class CRUCIBLE_OWNER RecipePool {
         const uint32_t j = (idx + probe) & new_mask;
         if (slots_[j].recipe == nullptr) {
           slots_[j] = s;
-          ++size_;
+          ++reinserted;
           break;
         }
       }
     }
+    CRUCIBLE_POST(0, reinserted == old_size);
+    size_.advance(reinserted);
     // Old slots remain in the arena until arena destruction — small
     // one-time leak of (old_cap) slot bytes, acceptable at the rate
     // of ~log2(N) resizes per pool lifetime.
@@ -249,8 +259,8 @@ class CRUCIBLE_OWNER RecipePool {
 
   Arena*   arena_;
   Slot*    slots_;
-  uint32_t capacity_ = 0;
-  uint32_t size_     = 0;
+  Capacity capacity_;
+  Size     size_;
 };
 
 } // namespace crucible
