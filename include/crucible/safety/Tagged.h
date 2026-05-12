@@ -134,6 +134,10 @@ namespace source {
     // selection and must not be substituted by arbitrary user strings
     // or ad-hoc diagnostic spans.
     struct JsonRegistry {};
+    // CcAlgorithm: CNT-P congestion-control selection admitted through
+    // cntp/CongestionControl.h. Raw enum values and raw kernel strings
+    // cannot directly drive per-socket TCP_CONGESTION changes.
+    struct CcAlgorithm {};
 }
 
 namespace trust {

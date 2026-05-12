@@ -227,6 +227,7 @@ crucible_test(test_vector_clock)
 crucible_test(test_crdt)
 crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
+crucible_test(test_cntp_congestion_control)
 crucible_test(test_cntp_integrity)
 crucible_test(test_cntp_fec)
 crucible_test(test_cntp_fountain)
@@ -2492,6 +2493,19 @@ crucible_neg_compile_test(neg_scuttlebutt_non_crdt_publish
   "constraints not satisfied|ScuttlebuttCrdt|state_type|merge")
 crucible_neg_compile_effects_test(neg_scuttlebutt_mint_test_context
   "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+
+# GAPS-120 — cntp/CongestionControl.h per-socket TCP CC selection.
+#   * neg_congestion_control_raw_algorithm_apply: raw enum values cannot
+#     drive TCP_CONGESTION; callers must use a tagged DeclaredCcChoice.
+#   * neg_congestion_control_dctcp_cross_dc: DCTCP is lossless-fabric only.
+#   * neg_congestion_control_custom_missing_name: custom CC modules must
+#     provide a constexpr kernel congestion-control name.
+crucible_neg_compile_test(neg_congestion_control_raw_algorithm_apply
+  "could not convert|no matching function|DeclaredCcChoice|Tagged")
+crucible_neg_compile_test(neg_congestion_control_dctcp_cross_dc
+  "constraints not satisfied|CcCompatible|LosslessDatacenterFabric")
+crucible_neg_compile_test(neg_congestion_control_custom_missing_name
+  "constraints not satisfied|CustomCcModule|congestion_control_name")
 
 # GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the

@@ -46,6 +46,7 @@ add_library(crucible STATIC
   src/DiagRuntime.cpp
   src/cog/NumaNic.cpp
   src/cog/NicOffloadAudit.cpp
+  src/cntp/CongestionControl.cpp
   src/observe/HdrHistogram.cpp
   src/observe/SyntheticProbe.cpp
   src/rt/Quarantine.cpp
