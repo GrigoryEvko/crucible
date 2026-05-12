@@ -41,6 +41,26 @@ using namespace crucible;
 using safety::DetSafe;
 using safety::DetSafeTier_v;
 
+[[nodiscard]] static constexpr uint64_t
+reference_fnv_mix(uint64_t h, uint64_t v) noexcept {
+    for (int i = 0; i < 8; ++i) {
+        h ^= (v >> (i * 8)) & 0xFFULL;
+        h *= 0x100000001b3ULL;
+    }
+    return h;
+}
+
+[[nodiscard]] static constexpr uint64_t
+reference_op_key(uint64_t master_counter,
+                 uint32_t op_index,
+                 ContentHash content_hash) noexcept {
+    uint64_t h = 0xcbf29ce484222325ULL;
+    h = reference_fnv_mix(h, master_counter);
+    h = reference_fnv_mix(h, static_cast<uint64_t>(op_index));
+    h = reference_fnv_mix(h, content_hash.raw());
+    return h;
+}
+
 // ── 1. Bit-equality between raw and DetSafe-pinned variants ────────
 
 static void test_generate_det_bit_equal_to_raw() {
@@ -140,7 +160,7 @@ static void test_op_key_det_bit_equal() {
     for (uint64_t m : masters) {
         for (uint32_t op : op_indices) {
             for (auto ch : content_hashes) {
-                const uint64_t raw   = Philox::op_key(m, op, ch);
+                const uint64_t raw   = reference_op_key(m, op, ch);
                 const uint64_t pinned = Philox::op_key_det(m, op, ch).peek();
                 assert(raw == pinned);
             }
@@ -276,7 +296,7 @@ static void test_chain_composition() {
     static_assert(decltype(rng)::tier == DetSafeTier_v::PhiloxRng);
 
     // Cross-check raw equivalence — same key yields same bytes.
-    const uint64_t key_bytes_raw = Philox::op_key(
+    const uint64_t key_bytes_raw = reference_op_key(
         0xCAFEBABEDEADBEEFull, 42u,
         ContentHash{0xDEADBEEFCAFEBABEull});
     assert(key_bytes == key_bytes_raw);
@@ -476,7 +496,8 @@ static void test_move_semantics_through_wrapper() {
     // Pure-tier op_key path moves through too.
     auto key_pure = Philox::op_key_det(0xCAFEull, 7u, ContentHash{0xBEEFull});
     uint64_t key_extracted = std::move(key_pure).consume();
-    assert(key_extracted == Philox::op_key(0xCAFEull, 7u, ContentHash{0xBEEFull}));
+    assert(key_extracted == reference_op_key(
+        0xCAFEull, 7u, ContentHash{0xBEEFull}));
 }
 
 // ── 12. Type-level chain composition — generate_det(uint64, DetSafe key) ─
@@ -595,7 +616,7 @@ static void test_e2e_typed_chain() {
     static_assert(decltype(rng)::tier == DetSafeTier_v::PhiloxRng);
 
     // Bit-equality cross-check.
-    const uint64_t key_bytes_raw = Philox::op_key(
+    const uint64_t key_bytes_raw = reference_op_key(
         0xCAFEBABEDEADBEEFull, 42u,
         ContentHash{0xDEADBEEFCAFEBABEull});
     auto rng_raw = Philox::generate(uint64_t{0}, key_bytes_raw);

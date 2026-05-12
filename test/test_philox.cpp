@@ -19,6 +19,13 @@
 
 using namespace crucible;
 
+[[nodiscard]] static constexpr uint64_t
+philox_key(uint64_t master_counter,
+           uint32_t op_index,
+           ContentHash content_hash) noexcept {
+    return Philox::op_key_det(master_counter, op_index, content_hash).peek();
+}
+
 // ── Reference vectors from Random123 (Salmon et al. 2011) ──────────
 
 static void test_reference_vectors() {
@@ -169,23 +176,23 @@ static void test_op_keys() {
     crucible::ContentHash hash_b{0x5678};
 
     // Different ops → different keys
-    uint64_t k0 = Philox::op_key(master, 0, hash_a);
-    uint64_t k1 = Philox::op_key(master, 1, hash_a);
+    uint64_t k0 = philox_key(master, 0, hash_a);
+    uint64_t k1 = philox_key(master, 1, hash_a);
     assert(k0 != k1);
 
     // Different content hashes → different keys
-    uint64_t ka = Philox::op_key(master, 0, hash_a);
-    uint64_t kb = Philox::op_key(master, 0, hash_b);
+    uint64_t ka = philox_key(master, 0, hash_a);
+    uint64_t kb = philox_key(master, 0, hash_b);
     assert(ka != kb);
 
     // Different master counters → different keys
-    uint64_t km0 = Philox::op_key(0, 0, hash_a);
-    uint64_t km1 = Philox::op_key(1, 0, hash_a);
+    uint64_t km0 = philox_key(0, 0, hash_a);
+    uint64_t km1 = philox_key(1, 0, hash_a);
     assert(km0 != km1);
 
     // Deterministic
-    assert(Philox::op_key(master, 5, hash_a) ==
-           Philox::op_key(master, 5, hash_a));
+    assert(philox_key(master, 5, hash_a) ==
+           philox_key(master, 5, hash_a));
 }
 
 // ── Full pipeline simulation ───────────────────────────────────────
@@ -204,7 +211,7 @@ static void test_pipeline() {
 
     for (uint64_t iter = 0; iter < 2; iter++) {
         for (uint32_t op = 0; op < 3; op++) {
-            uint64_t key = Philox::op_key(iter, op, content_hashes[op]);
+            uint64_t key = philox_key(iter, op, content_hashes[op]);
 
             for (uint64_t elem = 0; elem < 1000; elem++) {
                 auto r = Philox::generate(elem, key);
@@ -216,8 +223,8 @@ static void test_pipeline() {
     }
 
     // Cross-iteration: same op, same element, different iteration → different value
-    uint64_t k0 = Philox::op_key(0, 0, content_hashes[0]);
-    uint64_t k1 = Philox::op_key(1, 0, content_hashes[0]);
+    uint64_t k0 = philox_key(0, 0, content_hashes[0]);
+    uint64_t k1 = philox_key(1, 0, content_hashes[0]);
     auto r0 = Philox::generate(42ULL, k0);
     auto r1 = Philox::generate(42ULL, k1);
     assert(r0 != r1);
@@ -342,7 +349,7 @@ static void test_constexpr() {
     static constexpr auto r2 = Philox::generate(0ULL, 0ULL);
     static_assert(r2[0] == r[0]);
 
-    static constexpr uint64_t key = Philox::op_key(42, 7, ContentHash{0x1234});
+    static constexpr uint64_t key = philox_key(42, 7, ContentHash{0x1234});
     static_assert(key != 0);
 
     static constexpr float u = Philox::to_uniform(r[0]);

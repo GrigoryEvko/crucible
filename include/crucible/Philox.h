@@ -10,23 +10,23 @@
 //   - Cryptographically inspired: 10 rounds of S-box-like mixing
 //
 // Usage in the Crucible pipeline:
-//   uint64_t key = op_key(master_counter, op_index, content_hash);
-//   auto [r0, r1, r2, r3] = Philox::generate(element_offset, key);
+//   auto key = Philox::op_key_det(master_counter, op_index, content_hash);
+//   auto [r0, r1, r2, r3] =
+//       Philox::generate_det(element_offset, key).peek();
 //   float u = Philox::to_uniform(r0);        // [0, 1)
 //   auto [n0, n1] = Philox::box_muller(r0, r1);  // N(0,1)
 //
 // Master counter increments per iteration (from Cipher).
-// op_key() mixes op identity into the key space.
+// op_key_det() mixes op identity into the key space.
 // element_offset is the flat index into the output tensor.
 // Result: deterministic per-element, per-op, per-iteration randomness
 // that reproduces identically across CPU/CUDA/ROCm/XLA.
 //
-// ── Two surfaces: raw + DetSafe-pinned (FOUND-G17) ─────────────────
+// ── Raw generator + DetSafe-pinned production surface (FOUND-G17) ──
 //
 // `Philox::generate` / `to_uniform` / `to_uniform_d` / `box_muller`
-// / `op_key` are RAW primitives — they return primitive types
-// (uint32_t, Ctr, float, std::pair, uint64_t) without any
-// determinism-tier metadata.  Used by:
+// are RAW primitives — they return primitive types (uint32_t, Ctr,
+// float, std::pair) without any determinism-tier metadata.  Used by:
 //   - SIMD bit-equality oracle (PhiloxSimd.h's lane-by-lane
 //     verification calls scalar Philox::generate as the truth)
 //   - Test fuzzers (test_philox.cpp / test_philox_simd.cpp /
@@ -144,23 +144,6 @@ struct Philox {
         float theta = 6.2831853071795864f * u2;  // 2π
 
         return {r * std::cos(theta), r * std::sin(theta)};
-    }
-
-    // ── Per-op key derivation ──────────────────────────────────────
-    //
-    // Mixes master counter + op identity into a 64-bit key.
-    // Same (master, op_index, content_hash) → same key → same sequence.
-    // Different ops or iterations → statistically independent.
-
-    [[nodiscard]] static constexpr uint64_t
-    op_key(uint64_t master_counter, uint32_t op_index, ContentHash content_hash) {
-        // FNV-1a–style mixing. Not cryptographic, but sufficient
-        // for decorrelating Philox streams across ops.
-        uint64_t h = 0xcbf29ce484222325ULL;
-        h = fnv_mix_(h, master_counter);
-        h = fnv_mix_(h, static_cast<uint64_t>(op_index));
-        h = fnv_mix_(h, content_hash.raw());
-        return h;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -294,7 +277,8 @@ struct Philox {
 
     [[nodiscard]] static constexpr DetSafePureKey
     op_key_det(uint64_t master_counter, uint32_t op_index, ContentHash content_hash) {
-        return DetSafePureKey{op_key(master_counter, op_index, content_hash)};
+        return DetSafePureKey{
+            op_key_bytes_(master_counter, op_index, content_hash)};
     }
 
  private:
@@ -310,6 +294,23 @@ struct Philox {
             h ^= (v >> (i * 8)) & 0xFFULL;
             h *= 0x100000001b3ULL;
         }
+        return h;
+    }
+
+    // Mixes master counter + op identity into a 64-bit key.
+    // Same (master, op_index, content_hash) → same key → same sequence.
+    // Different ops or iterations → statistically independent. Private so
+    // production callers cannot erase the DetSafe<Pure> key provenance.
+    [[nodiscard]] static constexpr uint64_t
+    op_key_bytes_(uint64_t master_counter,
+                  uint32_t op_index,
+                  ContentHash content_hash) {
+        // FNV-1a–style mixing. Not cryptographic, but sufficient
+        // for decorrelating Philox streams across ops.
+        uint64_t h = 0xcbf29ce484222325ULL;
+        h = fnv_mix_(h, master_counter);
+        h = fnv_mix_(h, static_cast<uint64_t>(op_index));
+        h = fnv_mix_(h, content_hash.raw());
         return h;
     }
 };

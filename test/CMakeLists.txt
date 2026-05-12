@@ -2797,6 +2797,16 @@ crucible_neg_compile_test(neg_det_safe_at_cross_tier_mixing
 crucible_neg_compile_test(neg_det_safe_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── WRAP-Philox-4 op_key DetSafe gate neg-compiles (2 fixtures) ────
+#
+# The raw per-op key derivation API is not public.  Production callers
+# must route through op_key_det(), carrying DetSafe<Pure> provenance
+# until the boundary that explicitly unwraps the key bytes.
+crucible_neg_compile_test(neg_philox_raw_op_key
+  "op_key|no member|private|not a member")
+crucible_neg_compile_test(neg_philox_op_key_det_raw_uint64
+  "cannot convert|no viable|conversion from|DetSafe")
+
 # ─── FOUND-G21 HotPath wrapper neg-compiles (6 fixtures: 4+2) ────────
 #
 # 4 wrapper-surface fixtures (relax / assign / swap / equality):

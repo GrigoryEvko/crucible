@@ -79,8 +79,8 @@ int main() {
             auto pair = Philox::box_muller(u1, u2);
             bench::do_not_optimize(pair);
         }),
-        bench::run("op_key(master, op_idx, hash)", [&]{
-            uint64_t k = Philox::op_key(master, op_idx, content_hash);
+        bench::run("op_key_det(master, op_idx, hash).peek()", [&]{
+            uint64_t k = Philox::op_key_det(master, op_idx, content_hash).peek();
             bench::do_not_optimize(k);
         }),
         // Streaming buffer fill: 4096 u32 = 1024 generate() calls.
