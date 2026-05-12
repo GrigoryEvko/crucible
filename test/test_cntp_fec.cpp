@@ -42,6 +42,43 @@ same_prefix(std::array<std::byte, N> const& lhs,
     return true;
 }
 
+template <typename Codec, std::size_t InputBytes, std::size_t EncodedBytes>
+void verify_all_recoverable_erasures(
+    Codec const& codec,
+    std::array<std::byte, InputBytes> const& payload,
+    std::array<std::byte, EncodedBytes> const& encoded) {
+    constexpr auto total = Codec::total_shards;
+    static_assert(total < 64);
+    const auto shard_bytes = Codec::shard_bytes_for(InputBytes);
+    const auto mask_limit = std::uint64_t{1} << total;
+
+    for (std::uint64_t bits = 0; bits < mask_limit; ++bits) {
+        auto damaged = encoded;
+        std::array<bool, total> erasures{};
+        std::size_t erased = 0;
+
+        for (std::size_t shard = 0; shard < total; ++shard) {
+            const auto bit = std::uint64_t{1} << shard;
+            if ((bits & bit) == 0) {
+                continue;
+            }
+            erasures[shard] = true;
+            ++erased;
+            std::fill_n(damaged.data() + shard * shard_bytes,
+                        shard_bytes,
+                        static_cast<std::byte>(0xA5));
+        }
+        if (erased > Codec::parity_shards) {
+            continue;
+        }
+
+        std::array<std::byte, InputBytes> decoded{};
+        const auto decoded_ok = codec.decode(damaged, erasures, decoded);
+        assert(decoded_ok.has_value());
+        assert(same_prefix(payload, decoded));
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -76,6 +113,7 @@ int main() {
         std::array<std::byte, Rs42::encoded_size_for(payload.size())> encoded{};
         auto ok = rs42.encode(std::span<const std::byte>{payload}, encoded);
         assert(ok.has_value());
+        verify_all_recoverable_erasures(rs42, payload, encoded);
 
         std::array<bool, Rs42::total_shards> erasures{};
         std::array<std::byte, payload.size()> decoded{};

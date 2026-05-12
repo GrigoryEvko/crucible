@@ -204,7 +204,8 @@ invert_matrix(SquareMatrix<N> input, SquareMatrix<N>& inverse) noexcept {
     return true;
 }
 
-#if defined(__AVX2__)
+#if defined(__AVX2__) || \
+    ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
 struct alignas(32) NibbleTables {
     alignas(32) std::array<std::uint8_t, 32> lo{};
     alignas(32) std::array<std::uint8_t, 32> hi{};
@@ -223,7 +224,9 @@ make_nibble_tables(std::uint8_t coeff) noexcept {
     }
     return tables;
 }
+#endif
 
+#if defined(__AVX2__)
 CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst,
                                  std::byte const* src,
                                  std::size_t len) noexcept {
