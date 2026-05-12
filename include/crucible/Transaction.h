@@ -20,6 +20,7 @@
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
+#include <crucible/safety/Tagged.h>
 
 #include <cassert>
 #include <chrono>
@@ -50,6 +51,11 @@ enum class TxStatus : uint8_t {
 //                      total 48B
 
 struct Transaction {
+    using ArenaRegion = ::crucible::safety::Tagged<
+        RegionNode*, ::crucible::safety::source::Arena>;
+
+    static_assert(sizeof(ArenaRegion) == sizeof(RegionNode*));
+
     // ── step_id (#1060 WRAP-Transaction-1) ─────────────────────────
     // Monotonic<uint64_t> rejects retrograde / wrap-around assignment
     // at the type level.  Per CLAUDE.md §II DetSafe, step_id is
@@ -65,7 +71,7 @@ struct Transaction {
     ::crucible::safety::Monotonic<uint64_t> step_id{0};
     ContentHash  content_hash;        // default (0) until COMMITTED
     MerkleHash   merkle_root;         // default (0) until COMMITTED
-    RegionNode*  region = nullptr;    // null until COMMITTED; arena-owned
+    ArenaRegion  region{nullptr};     // null until COMMITTED; arena-owned
     uint64_t     ts_ns = 0;           // timestamp of last state change
     TxStatus     status = TxStatus::RECORDING;
     uint8_t      pad[7]{};
@@ -173,10 +179,10 @@ class TransactionLog {
     // re-checking).  Companion typed witness: ValidMerkleRoot
     // (MerkleDag.h) — callers that hold a ValidMerkleRoot can pass
     // `make_merkle_root(witness)` to surface the proof at the call site.
-    [[nodiscard]] bool commit(Transaction* const tx, RegionNode* const region,
+    [[nodiscard]] bool commit(Transaction* const tx, Transaction::ArenaRegion region,
                 ContentHash content_hash, MerkleHash merkle_root) noexcept
         pre (tx != nullptr)
-        pre (region != nullptr)
+        pre (region.value() != nullptr)
         pre (::crucible::decide::is_non_zero(merkle_root))
     {
         if (tx->status != TxStatus::RECORDING
@@ -213,7 +219,7 @@ class TransactionLog {
         // additional posts strengthen the contract without changing
         // semantics.  Same consteval-bypass framing as the failure path.
         CRUCIBLE_POST(true, tx->status == TxStatus::COMMITTED);
-        CRUCIBLE_POST(true, tx->region == region);
+        CRUCIBLE_POST(true, tx->region.value() == region.value());
         CRUCIBLE_POST(true, tx->content_hash == content_hash);
         CRUCIBLE_POST(true, tx->merkle_root == merkle_root);
         return true;

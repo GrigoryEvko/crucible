@@ -1982,6 +1982,14 @@ crucible_neg_compile_test(neg_transaction_log_count_above_cap
 crucible_neg_compile_test(neg_transaction_log_count_uint32_max
   "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
 
+# WRAP-Transaction-2 (#1061) — Transaction::region is committed via
+# Tagged<RegionNode*, source::Arena>.  Raw RegionNode* and loaded
+# serialized-region provenance must fail at the commit boundary.
+crucible_neg_compile_test(neg_transaction_region_raw_pointer
+  "no match|no known conversion|cannot convert|could not convert")
+crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
+  "no match|no known conversion|cannot convert|could not convert")
+
 # WRAP-Transaction-1 (#1060) — Transaction::step_id raw uint64_t →
 # safety::Monotonic<uint64_t>.  HS14 mandate: ≥2 negative-compile
 # fixtures per soundness gate, each demonstrating a distinct mismatch

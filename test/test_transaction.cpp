@@ -44,15 +44,17 @@
     // ── commit(tx1, region, hash, merkle) → COMMITTED ───────────────
     const crucible::ContentHash hash1   = region1->content_hash;
     const crucible::MerkleHash  merkle1 = region1->merkle_hash;
-    const bool committed = log.commit(tx1, region1, hash1, merkle1);
+    const bool committed = log.commit(
+        tx1, crucible::Transaction::ArenaRegion{region1}, hash1, merkle1);
     assert(committed);
     assert(tx1->status       == crucible::TxStatus::COMMITTED);
     assert(tx1->content_hash == hash1);
     assert(tx1->merkle_root  == merkle1);
-    assert(tx1->region       == region1);
+    assert(tx1->region.value() == region1);
 
     // Double-commit must fail.
-    const bool double_commit = log.commit(tx1, region1, hash1, merkle1);
+    const bool double_commit = log.commit(
+        tx1, crucible::Transaction::ArenaRegion{region1}, hash1, merkle1);
     assert(!double_commit && "commit on COMMITTED tx must return false");
 
     // ── activate(tx1) → ACTIVE ──────────────────────────────────────
@@ -71,7 +73,8 @@
 
     const crucible::ContentHash hash2   = region2->content_hash;
     const crucible::MerkleHash  merkle2 = region2->merkle_hash;
-    assert(log.commit(tx2, region2, hash2, merkle2));
+    assert(log.commit(
+        tx2, crucible::Transaction::ArenaRegion{region2}, hash2, merkle2));
     assert(tx2->status == crucible::TxStatus::COMMITTED);
 
     auto* superseded = log.activate(tx2);
@@ -104,7 +107,9 @@
         // commit (matches production BgThread::on_region_ready
         // ordering and discharges TX::commit's non-zero gate).
         crucible::recompute_merkle(r);
-        assert(log.commit(tx, r, r->content_hash, r->merkle_hash));
+        assert(log.commit(
+            tx, crucible::Transaction::ArenaRegion{r},
+            r->content_hash, r->merkle_hash));
         (void)log.activate(tx);
     }
     // The active tx must be the last one (step_id == 32).

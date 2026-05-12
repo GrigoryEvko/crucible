@@ -543,11 +543,11 @@ class Vigil {
             ctx_.deactivate();
         // Restore active region pointer from the rolled-back transaction.
         const Transaction* tx = tx_log_.active();
-        if (tx && tx->region) {
-            bg_.active_region.store(tx->region, std::memory_order_release);
+        if (tx && tx->region.value()) {
+            bg_.active_region.store(tx->region.value(), std::memory_order_release);
             // Re-activate CrucibleContext with the rolled-back region.
-            if (ctx_.activate(tx->region))
-                register_externals_from_region_(tx->region);
+            if (ctx_.activate(tx->region.value()))
+                register_externals_from_region_(tx->region.value());
         }
         return true;
     }
@@ -745,7 +745,7 @@ class Vigil {
         // accessor's `pre(is_non_zero(merkle_hash))` fires here if
         // recompute_merkle hasn't run; commit's runtime gate at
         // Transaction.h is the second line of defense).
-        (void)tx_log_.commit(tx, region,
+        (void)tx_log_.commit(tx, Transaction::ArenaRegion{region},
                              region->content_hash,
                              ::crucible::make_merkle_root(
                                  region->computed_merkle_hash()));

@@ -77,6 +77,7 @@ namespace source {
     struct FormatVersion {}; // in-process format/version constant
     struct Loaded       {};  // loaded from validated serialized state
     struct Interned     {};  // canonicalized by an interning owner
+    struct Arena        {};  // arena-owned object pointer/reference
     // Durable: loaded from on-disk state (Cipher, config, snapshots).
     // Computed: derived at startup / runtime from Durable + inputs.
     // The pair lets a reader distinguish "this came from disk" from "this
