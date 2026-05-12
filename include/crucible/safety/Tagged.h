@@ -142,6 +142,10 @@ namespace source {
     // admitted through cntp/Pacing.h. Raw interface strings / qdisc
     // names cannot directly drive pacing policy.
     struct QdiscConfig {};
+    // IncastConfig: CNT-P fan-in mitigation configuration admitted through
+    // cntp/IncastControl.h. Raw booleans / byte counts cannot directly
+    // tune socket RTO or receiver-issued credit pacing.
+    struct IncastConfig {};
     // PathSwap: CNT-P application-level path-swap plan admitted through
     // cntp/PathSwap.h. Raw path IDs cannot directly drive a live
     // SessionHandle resource transition.

@@ -228,6 +228,7 @@ crucible_test(test_crdt)
 crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_congestion_control)
+crucible_test(test_cntp_incast_control)
 crucible_test(test_cntp_path_swap)
 crucible_test(test_cntp_pacing)
 crucible_test(test_cntp_integrity)
@@ -2546,6 +2547,17 @@ crucible_neg_compile_test(neg_congestion_telemetry_raw_state_aggregate
   "could not convert|no matching function|TcpInfoSnapshot|Tagged")
 crucible_neg_compile_effects_test(neg_congestion_telemetry_worker_fg_record
   "constraints not satisfied|CtxFitsCongestionTelemetryHarvest|Bg")
+
+# GAPS-124 — cntp/IncastControl.h incast mitigation substrate.
+#   * neg_incast_raw_fd_configure: socket tuning requires admitted SocketFd.
+#   * neg_incast_raw_config_configure: socket tuning requires tagged config.
+#   * neg_incast_credit_fg_ctx: credit mutation is Bg-row work.
+crucible_neg_compile_test(neg_incast_raw_fd_configure
+  "could not convert|no matching function|SocketFd|Refined")
+crucible_neg_compile_test(neg_incast_raw_config_configure
+  "could not convert|no matching function|DeclaredIncastConfig|Tagged")
+crucible_neg_compile_effects_test(neg_incast_credit_fg_ctx
+  "constraints not satisfied|CtxFitsIncastCredit|Bg")
 
 # GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the
