@@ -7,13 +7,14 @@
 // consumers that want a trusted federation payload must first mint
 // Permission<tag::FederatedPeer<Org>> through the admittance factory.
 //
-// STATUS: V1 exploratory implementation. GAPS-107, the formal federation
-// peer-trust-model decision, is still pending. The current trust model is
-// self-signed peer identity fingerprints. The actual cryptographic verifier is
-// intentionally outside this header; mint_federation_admittance is the
-// substitution point that must be revisited when GAPS-107 chooses the verifier
-// and key-distribution discipline. This layer pins the type-level authority
-// flow and the deterministic fingerprint contract the verifier must satisfy.
+// GAPS-107 decision: V1 federation trust is self-signed peer identity
+// fingerprints admitted by an explicit per-org policy.  CA-issued chains and
+// web-of-trust are deferred until a real deployment needs those distribution
+// semantics.  The actual cryptographic verifier is intentionally outside this
+// header; mint_federation_admittance is the substitution point for the HACL*
+// verifier and key-distribution discipline.  This layer pins the type-level
+// authority flow and the deterministic fingerprint contract the verifier must
+// satisfy.
 
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Tagged.h>
