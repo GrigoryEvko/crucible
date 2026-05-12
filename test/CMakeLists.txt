@@ -227,6 +227,7 @@ crucible_test(test_vector_clock)
 crucible_test(test_crdt)
 crucible_test(test_swim)
 crucible_test(test_hyparview)
+crucible_test(test_lifeguard)
 crucible_test(test_plumtree)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_backpressure)
@@ -2598,6 +2599,17 @@ crucible_neg_compile_test(neg_plumtree_raw_message
 crucible_neg_compile_test(neg_plumtree_raw_ihave
   "cannot convert|no matching function|could not convert|GossipedPlumtreeIHave|Tagged")
 crucible_neg_compile_effects_test(neg_plumtree_mint_test_context
+  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+
+# GAPS-213 — canopy/Lifeguard.h SWIM false-positive reduction substrate.
+#   * neg_lifeguard_zero_peers: MaxPeers=0 is rejected structurally.
+#   * neg_lifeguard_raw_local_peer: local identity requires SwimPeer.
+#   * neg_lifeguard_mint_test_context: Init-only mint rejects Test.
+crucible_neg_compile_test(neg_lifeguard_zero_peers
+  "constraints not satisfied|LifeguardShape|SwimCapacity|MaxPeers")
+crucible_neg_compile_test(neg_lifeguard_raw_local_peer
+  "cannot convert|no matching function|could not convert|SwimPeer|Tagged")
+crucible_neg_compile_effects_test(neg_lifeguard_mint_test_context
   "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
 
 # GAPS-115 — canopy/Scuttlebutt.h bounded anti-entropy substrate.
