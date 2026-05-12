@@ -163,6 +163,10 @@ namespace source {
     // minted by rt/Backpressure.h. Raw accept/reject structs cannot
     // cross runtime boundaries as operator-visible admission outcomes.
     struct AdmissionDecision {};
+    // ConnectionPool: CNT-P connection lease/reuse events minted by
+    // rt/ConnectionPool.h. Raw pool events cannot substitute for the
+    // runtime-owned lease audit surface.
+    struct ConnectionPool {};
     // PathSwap: CNT-P application-level path-swap plan admitted through
     // cntp/PathSwap.h. Raw path IDs cannot directly drive a live
     // SessionHandle resource transition.

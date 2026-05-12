@@ -228,6 +228,7 @@ crucible_test(test_crdt)
 crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_backpressure)
+crucible_test(test_cntp_connection_pool)
 crucible_test(test_cntp_congestion_control)
 crucible_test(test_cntp_incast_control)
 crucible_test(test_cntp_ktls_offload)
@@ -2606,6 +2607,18 @@ crucible_neg_compile_test(neg_backpressure_invalid_resource_kind
   "constraints not satisfied|IsResourceKind|ResourceKind")
 crucible_neg_compile_test(neg_backpressure_hot_ctx_credit
   "constraints not satisfied|CtxFitsBackpressureRuntime|HotFgCtx")
+
+# GAPS-136 — cntp/ConnectionPool.h + rt/ConnectionPool.h substrate.
+#   * neg_connection_pool_raw_event: pool events must carry source::ConnectionPool.
+#   * neg_connection_pool_invalid_transport: only enumerated transport classes
+#     may mint connections/pools.
+#   * neg_connection_pool_hot_ctx_lease: hot replay contexts cannot mutate pool state.
+crucible_neg_compile_test(neg_connection_pool_raw_event
+  "conversion from|could not convert|DeclaredPoolEvent|Tagged")
+crucible_neg_compile_test(neg_connection_pool_invalid_transport
+  "constraints not satisfied|PoolTransportClass|TransportClass")
+crucible_neg_compile_test(neg_connection_pool_hot_ctx_lease
+  "constraints not satisfied|CtxFitsConnectionPoolRuntime|HotFgCtx")
 
 # GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the
