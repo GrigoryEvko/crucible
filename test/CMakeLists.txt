@@ -228,6 +228,7 @@ crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_integrity)
 crucible_test(test_cntp_fec)
+crucible_test(test_cntp_fountain)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
@@ -2342,6 +2343,24 @@ crucible_neg_compile_test(neg_fec_shape_over_256
 crucible_neg_compile_effects_test(neg_fec_mint_test_context
   "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
 crucible_neg_compile_test(neg_fec_encode_non_contiguous_owned
+  "constraints not satisfied|ByteContiguousBuffer|no matching function")
+
+# GAPS-119 — cntp/Fountain.h deterministic LT fountain primitive.
+#   * neg_fountain_zero_symbols / neg_fountain_zero_symbol_bytes:
+#     fountain shape dimensions must be positive.
+#   * neg_fountain_mint_test_context: the mint is Init-only.
+#   * neg_fountain_raw_seed: repair choices require a DetSafe Philox key.
+#   * neg_fountain_encode_non_contiguous_owned: owned payloads must be
+#     Linear byte-contiguous buffers.
+crucible_neg_compile_test(neg_fountain_zero_symbols
+  "constraints not satisfied|FountainShape|SourceSymbols")
+crucible_neg_compile_test(neg_fountain_zero_symbol_bytes
+  "constraints not satisfied|FountainShape|SymbolBytes")
+crucible_neg_compile_effects_test(neg_fountain_mint_test_context
+  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+crucible_neg_compile_test(neg_fountain_raw_seed
+  "cannot convert|no matching function|DetSafe|FountainSeed")
+crucible_neg_compile_test(neg_fountain_encode_non_contiguous_owned
   "constraints not satisfied|ByteContiguousBuffer|no matching function")
 
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
