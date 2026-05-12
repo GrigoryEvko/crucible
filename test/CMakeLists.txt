@@ -327,6 +327,7 @@ crucible_test(test_concurrent)
 crucible_test(test_cog_identity)
 crucible_test(test_target_caps)
 crucible_test(test_opcode_latency_table)
+crucible_test(test_nic_offload_audit)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
 crucible_test(test_topology_graph)
@@ -1236,6 +1237,20 @@ crucible_neg_compile_cog_test(neg_fits_cog_oversubscribed
     "constraint|constraints not satisfied|FitsCog|schedule_kernel|row_fits_cog|999|GAPS-191")
 crucible_neg_compile_cog_test(neg_fits_cog_non_substrate
     "constraint|constraints not satisfied|FitsCog|HasCogCapacity|schedule_kernel|PsuRail|GAPS-191")
+
+# ─── GAPS-140 cog/NicOffloadAudit.h soundness gates (HS14) ─────────
+#
+# Two fixtures, two distinct mismatch classes:
+# * neg_nic_offload_audit_rejects_gpu — SUBSTRATE-KIND gate.
+#   NicOffloadAuditableCog<K> only admits CogKind::NicPort; a GPU has
+#   no TSO/GSO/GRO/RSS audit surface.
+# * neg_nic_offload_audit_raw_required_offloads — TYPE gate.
+#   required_offloads is Bits<NicFeature>, not a raw integer mask, so
+#   wrong-universe feature masks cannot silently cross the policy API.
+crucible_neg_compile_cog_test(neg_nic_offload_audit_rejects_gpu
+    "constraint|constraints not satisfied|NicOffloadAuditableCog|audit_gate|GAPS-140")
+crucible_neg_compile_cog_test(neg_nic_offload_audit_raw_required_offloads
+    "cannot convert|could not convert|Bits|NicFeature|GAPS-140")
 
 # ─── HS14 fixtures #1 + #2 for mimic::CogMimic (GAPS-188 #1213) ──
 #
