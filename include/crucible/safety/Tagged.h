@@ -150,6 +150,11 @@ namespace source {
     // cntp/RoceConfig.h. Raw PFC masks, DSCP values, and DCQCN knobs
     // cannot directly drive privileged NIC/fabric policy.
     struct RoceConfig {};
+    // Mtls: CNT-P mutual-TLS policy and authenticated peer identity
+    // admitted through cntp/MtlsTransport.h. Raw certificate bytes,
+    // DNS names, cipher selections, and peer fingerprints cannot
+    // directly drive federation transport identity.
+    struct Mtls {};
     // PathSwap: CNT-P application-level path-swap plan admitted through
     // cntp/PathSwap.h. Raw path IDs cannot directly drive a live
     // SessionHandle resource transition.

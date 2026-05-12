@@ -229,6 +229,7 @@ crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_congestion_control)
 crucible_test(test_cntp_incast_control)
+crucible_test(test_cntp_mtls_transport)
 crucible_test(test_cntp_path_swap)
 crucible_test(test_cntp_pacing)
 crucible_test(test_cntp_roce_config)
@@ -2570,6 +2571,17 @@ crucible_neg_compile_test(neg_roce_dscp_above_max
   "constraints not satisfied|ValidRoceDscp|Dscp")
 crucible_neg_compile_test(neg_roce_raw_config_apply
   "could not convert|no matching function|DeclaredRoceConfig|Tagged")
+
+# GAPS-126 — cntp/MtlsTransport.h mutual-TLS federation policy substrate.
+#   * neg_mtls_tls12_config: TLS 1.2 cannot mint a declared mTLS config.
+#   * neg_mtls_legacy_cipher_config: RSA/3DES cannot enter the cipher set.
+#   * neg_mtls_raw_config_connect: runtime connect requires tagged policy.
+crucible_neg_compile_test(neg_mtls_tls12_config
+  "constraints not satisfied|SupportedMtlsVersion|TlsVersion::V12")
+crucible_neg_compile_test(neg_mtls_legacy_cipher_config
+  "constraints not satisfied|ApprovedMtlsCipherSuite|LegacyRsa3desSha")
+crucible_neg_compile_test(neg_mtls_raw_config_connect
+  "invalid initialization of reference|no matching function|DeclaredMtlsConfig|Tagged")
 
 # GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the
