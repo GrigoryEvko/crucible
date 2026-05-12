@@ -54,7 +54,7 @@ int main() {
     Arena arena{};
     effects::Test test_ctx{};
     RecipePool     pool{RecipePool::ArenaBorrow{arena}, test_ctx.alloc};
-    RecipeRegistry reg{pool,  test_ctx.alloc};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool},  test_ctx.alloc};
 
     // Should FAIL: by_name_spec returns
     //   std::expected<safety::RecipeSpec<const NumericalRecipe*>, RecipeError>

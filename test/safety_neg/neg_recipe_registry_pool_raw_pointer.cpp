@@ -1,0 +1,19 @@
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+//
+// WRAP-RecipeReg-5 (#980): RecipeRegistry seeds from a
+// RecipeRegistry::PoolBorrow = safety::BorrowedRef<RecipePool>.  A raw
+// RecipePool* would erase the explicit non-null pool borrow at the
+// registry boundary.
+//
+// Expected diagnostic: no constructor from RecipePool*.
+
+#include <crucible/RecipeRegistry.h>
+
+int main() {
+  crucible::effects::Test test{};
+  crucible::Arena arena{};
+  crucible::RecipePool pool{
+      crucible::RecipePool::ArenaBorrow{arena}, test.alloc};
+  crucible::RecipeRegistry registry{&pool, test.alloc};
+  return registry.entries().value().empty();
+}

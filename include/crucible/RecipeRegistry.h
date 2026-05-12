@@ -58,6 +58,8 @@
 #include <crucible/Platform.h>
 #include <crucible/RecipePool.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Borrowed.h>
+#include <crucible/safety/IsBorrowedRef.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/RecipeSpec.h>
 #include <crucible/safety/Tagged.h>
@@ -215,6 +217,10 @@ recipe_family_of(NumericalRecipe const& r) noexcept {
 
 class CRUCIBLE_OWNER RecipeRegistry {
  public:
+  using PoolBorrow = safety::BorrowedRef<RecipePool>;
+
+  static_assert(safety::extract::IsBorrowedRef<PoolBorrow>);
+
   // Registry-local (name, recipe*) binding.  name points at a static
   // string literal (the starter table lives in the header's .rodata);
   // recipe* points into the RecipePool's arena.  Both lifetimes
@@ -238,16 +244,18 @@ class CRUCIBLE_OWNER RecipeRegistry {
   // (no pool populated yet) so this runs in O(STARTER_COUNT × probe)
   // = O(1) in practice.
   //
-  // The pool is caller-owned; the registry holds a non-owning pointer
-  // to the pool's arena via the interned recipe pointers, but never
-  // mutates or destroys the pool.  Pool outlives the registry — the
-  // lifetime contract is implicit in the construction order.
-  [[gnu::cold]] explicit RecipeRegistry(RecipePool& pool CRUCIBLE_LIFETIMEBOUND,
+  // The pool is caller-owned; the registry holds non-owning recipe
+  // pointers into the pool's arena after construction, but never
+  // mutates or destroys the pool. Pool outlives the registry.
+  [[gnu::cold]] explicit RecipeRegistry(PoolBorrow pool,
                                         effects::Alloc a) noexcept;
 
-  // Interior pointers into pool_→arena; relocating would dangle.
-  RecipeRegistry(const RecipeRegistry&)            = delete("RecipeRegistry holds interior pointers into the caller's pool");
-  RecipeRegistry& operator=(const RecipeRegistry&) = delete("RecipeRegistry holds interior pointers into the caller's pool");
+  // Interior recipe pointers into the caller's pool arena; relocating
+  // the registry would not move those recipes, but copying the handle
+  // surface would duplicate a view whose construction was deliberately
+  // tied to one seed pass.
+  RecipeRegistry(const RecipeRegistry&)            = delete("RecipeRegistry holds interior recipe pointers into the caller's pool arena");
+  RecipeRegistry& operator=(const RecipeRegistry&) = delete("RecipeRegistry holds interior recipe pointers into the caller's pool arena");
   RecipeRegistry(RecipeRegistry&&)                 = delete("interior pointers would dangle");
   RecipeRegistry& operator=(RecipeRegistry&&)      = delete("interior pointers would dangle");
 
@@ -636,7 +644,7 @@ inline constexpr std::array<StarterSpec, RecipeRegistry::STARTER_COUNT>
 
 // ─── Inline implementation ──────────────────────────────────────────
 
-inline RecipeRegistry::RecipeRegistry(RecipePool& pool CRUCIBLE_LIFETIMEBOUND,
+inline RecipeRegistry::RecipeRegistry(PoolBorrow pool,
                                       effects::Alloc a) noexcept
 {
   // Intern every starter spec into the pool; the pool writes the
@@ -645,7 +653,7 @@ inline RecipeRegistry::RecipeRegistry(RecipePool& pool CRUCIBLE_LIFETIMEBOUND,
   for (std::size_t i = 0; i < STARTER_COUNT; ++i) {
     const auto& spec = detail_recipe_registry::kStarterRecipes[i];
     entries_[i].name   = spec.name;
-    entries_[i].recipe = pool.intern(a, spec.fields);
+    entries_[i].recipe = pool->intern(a, spec.fields);
   }
 }
 

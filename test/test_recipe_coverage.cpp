@@ -501,7 +501,7 @@ int main() {
   {
     Arena arena{};
     RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-    RecipeRegistry registry{pool, alloc_cap()};
+    RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     for (const auto& cell : kCoverageMatrix) {
       if (cell.covered) {

@@ -143,7 +143,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // Common pool + registry for the call-boundary tests below.
   Arena arena{};
   RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-  RecipeRegistry reg{pool, alloc_cap()};
+  RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
   // ═══════════════════════════════════════════════════════════════
   // T03 — by_name_pinned succeeds at the recipe's exact tier.

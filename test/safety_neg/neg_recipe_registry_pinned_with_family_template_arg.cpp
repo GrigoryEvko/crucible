@@ -51,7 +51,7 @@ int main() {
     Arena arena{};
     effects::Test test_ctx{};
     RecipePool     pool{RecipePool::ArenaBorrow{arena}, test_ctx.alloc};
-    RecipeRegistry reg{pool,  test_ctx.alloc};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool},  test_ctx.alloc};
 
     // Should FAIL: by_name_pinned is `template <safety::Tolerance T>`;
     // a RecipeFamily enumerator is the wrong template kind.  The

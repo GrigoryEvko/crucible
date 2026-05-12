@@ -152,7 +152,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // Common pool + registry for the call-boundary tests below.
   Arena arena{};
   RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-  RecipeRegistry reg{pool, alloc_cap()};
+  RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
   // ═══════════════════════════════════════════════════════════════
   // T02 — by_name_spec hit path populates BOTH axes from the recipe.
@@ -629,7 +629,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     // loading the persisted hash on a fresh process.
     Arena    arena2{};
     RecipePool     pool2{RecipePool::ArenaBorrow{arena2}, alloc_cap()};
-    RecipeRegistry reg2{pool2, alloc_cap()};
+    RecipeRegistry reg2{RecipeRegistry::PoolBorrow{pool2}, alloc_cap()};
 
     for (std::size_t i = 0; i < RecipeRegistry::STARTER_COUNT; ++i) {
       auto live_spec = reg.by_name_spec(entries_view(reg)[i].name).value();

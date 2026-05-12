@@ -68,6 +68,10 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     static_assert(RecipeRegistry::STARTER_COUNT == 8);
     static_assert(RecipeRegistry::size() == 8);
     static_assert(std::is_same_v<
+        RecipeRegistry::PoolBorrow,
+        crucible::safety::BorrowedRef<RecipePool>>);
+    static_assert(sizeof(RecipeRegistry::PoolBorrow) == sizeof(RecipePool*));
+    static_assert(std::is_same_v<
         RecipeRegistry::Entries,
         crucible::safety::Tagged<
             std::span<const RecipeRegistry::Entry>,
@@ -90,7 +94,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   {
     Arena arena{};
     RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-    RecipeRegistry reg{pool, alloc_cap()};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     assert(entries_view(reg).size() == RecipeRegistry::STARTER_COUNT);
     assert(pool.size() == RecipeRegistry::STARTER_COUNT);
@@ -113,7 +117,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   {
     Arena arena{};
     RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-    RecipeRegistry reg{pool, alloc_cap()};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     // Collect expected (name → recipe*) from entries().
     std::unordered_set<const NumericalRecipe*> entry_ptrs;
@@ -157,7 +161,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   {
     Arena arena{};
     RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-    RecipeRegistry reg{pool, alloc_cap()};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     const std::string_view missing[] = {
         "F32_STRICT",                    // wrong case
@@ -189,7 +193,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   {
     Arena arena{};
     RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-    RecipeRegistry reg{pool, alloc_cap()};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     {
       auto r = reg.by_name(names::kF32Strict);
@@ -258,7 +262,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   {
     Arena arena{};
     RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-    RecipeRegistry reg{pool, alloc_cap()};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     std::unordered_set<std::string_view> seen;
     for (const auto& e : entries_view(reg)) {
@@ -280,7 +284,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   {
     Arena arena{};
     RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-    RecipeRegistry reg{pool, alloc_cap()};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     std::unordered_set<const NumericalRecipe*> ptrs;
     std::unordered_set<uint64_t> hashes;
@@ -319,7 +323,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   {
     Arena arena{};
     RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-    RecipeRegistry reg{pool, alloc_cap()};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     struct Golden {
       std::string_view name;
@@ -371,7 +375,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   {
     Arena arena{};
     RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-    RecipeRegistry reg{pool, alloc_cap()};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     for (const auto& spec :
          crucible::detail_recipe_registry::kStarterRecipes) {
@@ -402,7 +406,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   {
     Arena arena{};
     RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
-    RecipeRegistry reg{pool, alloc_cap()};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     // (a) Every starter's hash resolves via by_hash to the same
     //     canonical pointer as by_name.
@@ -449,8 +453,8 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     Arena arena_b{};
     RecipePool pool_a{RecipePool::ArenaBorrow{arena_a}, alloc_cap()};
     RecipePool pool_b{RecipePool::ArenaBorrow{arena_b}, alloc_cap()};
-    RecipeRegistry reg_a{pool_a, alloc_cap()};
-    RecipeRegistry reg_b{pool_b, alloc_cap()};
+    RecipeRegistry reg_a{RecipeRegistry::PoolBorrow{pool_a}, alloc_cap()};
+    RecipeRegistry reg_b{RecipeRegistry::PoolBorrow{pool_b}, alloc_cap()};
 
     auto a = reg_a.by_name(names::kF16F32AccumTc);
     auto b = reg_b.by_name(names::kF16F32AccumTc);
