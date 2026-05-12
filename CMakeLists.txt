@@ -47,6 +47,7 @@ add_library(crucible STATIC
   src/cog/NumaNic.cpp
   src/cog/NicOffloadAudit.cpp
   src/observe/HdrHistogram.cpp
+  src/observe/SyntheticProbe.cpp
 )
 target_include_directories(crucible PUBLIC include/)
 set_target_properties(crucible PROPERTIES POSITION_INDEPENDENT_CODE ON)

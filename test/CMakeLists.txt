@@ -178,6 +178,7 @@ crucible_test(test_decide)
 # include/crucible/safety/DecideOracle.h.
 crucible_test(test_decide_fuzz)
 crucible_test(test_hdr_histogram)
+crucible_test(test_synthetic_probe)
 
 crucible_test(test_simd)
 
@@ -2332,6 +2333,17 @@ crucible_neg_compile_test(neg_hdr_histogram_record_raw_uint64
   "cannot convert|no matching function|could not convert|Refined|in_range|value_type")
 crucible_neg_compile_test(neg_hdr_histogram_merge_cross_config
   "cannot convert|no matching function|could not convert|HdrHistogram")
+
+# GAPS-141 — observe/SyntheticProbe.h keeps synthetic-probe publication
+# on the background row and transport registration typed:
+#   * neg_synthetic_probe_record_fg_ctx — HotFgCtx cannot record probe
+#     outcomes because it does not admit Row<Bg>.
+#   * neg_synthetic_probe_raw_kind_mask — raw integer masks cannot
+#     substitute for Bits<TransportProbeKind>.
+crucible_neg_compile_test(neg_synthetic_probe_record_fg_ctx
+  "constraint|constraints not satisfied|CtxFitsSyntheticProbeRecord|record_gate|GAPS-141")
+crucible_neg_compile_test(neg_synthetic_probe_raw_kind_mask
+  "cannot convert|no matching function|could not convert|Bits|TransportProbeKind|GAPS-141")
 
 # GAPS-138 — canopy/Hlc.h Hybrid Logical Clock primitive.
 #   * neg_hlc_raw_timestamp_to_tagged: raw HlcTimestamp cannot enter
