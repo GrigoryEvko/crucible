@@ -59,7 +59,7 @@ void test_admission() {
 void test_routes_and_message_plan() {
     effects::ColdInitCtx init{};
     auto local = overlay_peer(1);
-    std::array peers{overlay_peer(2), overlay_peer(3), overlay_peer(4)};
+    std::array peers{overlay_peer(3), overlay_peer(4), overlay_peer(5)};
     auto stripes = cntp::admit_overlay_stripe_count(4);
     auto threshold = cntp::admit_overlay_recovery_threshold(3, *stripes);
     auto fanout = cntp::admit_overlay_fanout(3);
@@ -86,6 +86,8 @@ void test_routes_and_message_plan() {
     assert(route1.has_value());
     assert(route0->stripe == 0);
     assert(route1->stripe == 1);
+    assert(!route0->has_parent);
+    assert(route0->child_count == 3);
     assert(route0->child_count <= cfg.fanout.value());
     assert(route1->child_count <= cfg.fanout.value());
     assert(!plan.route_for(4).has_value());

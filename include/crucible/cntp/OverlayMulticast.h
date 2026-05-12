@@ -200,10 +200,10 @@ public:
             config_.recovery_threshold.value() > config_.stripe_count.value()) {
             __builtin_trap();
         }
+        local_ = local_peer.value();
         if (!add_peer(local_peer).has_value()) [[unlikely]] {
             __builtin_trap();
         }
-        local_ = local_peer.value();
         for (DeclaredOverlayPeer const& peer : initial_peers) {
             if (!add_peer(peer).has_value()) [[unlikely]] {
                 __builtin_trap();
@@ -296,41 +296,19 @@ private:
         return false;
     }
 
-    [[nodiscard]] constexpr std::uint16_t
-    parent_index_for_(std::uint16_t child_idx, std::uint8_t stripe) const
-        noexcept {
-        const auto child_hash =
-            overlay_detail::stripe_hash(peers_[child_idx], stripe);
-        std::uint16_t best = child_idx;
-        std::uint64_t best_hash = 0;
-        bool found_lower = false;
-
-        for (std::uint16_t i = 0; i < peer_count_; ++i) {
-            if (i == child_idx) {
-                continue;
-            }
-            const auto h = overlay_detail::stripe_hash(peers_[i], stripe);
-            if (h < child_hash && (!found_lower || h > best_hash)) {
-                best = i;
-                best_hash = h;
-                found_lower = true;
-            }
+    [[nodiscard]] constexpr bool
+    route_less_(std::uint16_t lhs,
+                std::uint16_t rhs,
+                std::uint8_t stripe) const noexcept {
+        const auto lhs_hash = overlay_detail::stripe_hash(peers_[lhs], stripe);
+        const auto rhs_hash = overlay_detail::stripe_hash(peers_[rhs], stripe);
+        if (lhs_hash != rhs_hash) {
+            return lhs_hash < rhs_hash;
         }
-        if (found_lower) {
-            return best;
+        if (peers_[lhs].uuid.hi != peers_[rhs].uuid.hi) {
+            return peers_[lhs].uuid.hi < peers_[rhs].uuid.hi;
         }
-
-        for (std::uint16_t i = 0; i < peer_count_; ++i) {
-            if (i == child_idx) {
-                continue;
-            }
-            const auto h = overlay_detail::stripe_hash(peers_[i], stripe);
-            if (best == child_idx || h > best_hash) {
-                best = i;
-                best_hash = h;
-            }
-        }
-        return best;
+        return peers_[lhs].uuid.lo < peers_[rhs].uuid.lo;
     }
 
     [[nodiscard]] std::expected<void, OverlayMulticastError>
@@ -341,24 +319,42 @@ private:
 
         for (std::uint8_t stripe = 0; stripe < config_.stripe_count.value();
              ++stripe) {
-            route_type route{.stripe = stripe};
-            if (peer_count_ > 1) {
-                const std::uint16_t parent = parent_index_for_(0, stripe);
-                if (parent != 0) {
-                    route.has_parent = true;
-                    route.parent = peers_[parent];
+            safety::FixedArray<std::uint16_t, MaxPeers + 1u> order{};
+            for (std::uint16_t i = 0; i < peer_count_; ++i) {
+                std::uint16_t pos = i;
+                while (pos > 0 &&
+                       route_less_(i, order[pos - 1u], stripe)) {
+                    order[pos] = order[pos - 1u];
+                    --pos;
+                }
+                order[pos] = i;
+            }
+
+            std::size_t local_pos = 0;
+            for (std::size_t pos = 0; pos < peer_count_; ++pos) {
+                if (peers_[order[pos]] == local_) {
+                    local_pos = pos;
+                    break;
                 }
             }
 
-            for (std::uint16_t i = 1; i < peer_count_; ++i) {
-                if (parent_index_for_(i, stripe) != 0) {
-                    continue;
-                }
-                if (route.child_count >= config_.fanout.value()) {
-                    return std::unexpected(
-                        OverlayMulticastError::FanoutExceeded);
-                }
-                route.children[route.child_count] = peers_[i];
+            route_type route{.stripe = stripe};
+            if (local_pos > 0) {
+                const auto fanout =
+                    static_cast<std::size_t>(config_.fanout.value());
+                const std::size_t parent_pos = (local_pos - 1u) / fanout;
+                route.has_parent = true;
+                route.parent = peers_[order[parent_pos]];
+            }
+
+            const auto fanout =
+                static_cast<std::size_t>(config_.fanout.value());
+            const std::size_t first_child = local_pos * fanout + 1u;
+            const std::size_t end_child = first_child + fanout;
+            for (std::size_t pos = first_child;
+                 pos < peer_count_ && pos < end_child;
+                 ++pos) {
+                route.children[route.child_count] = peers_[order[pos]];
                 ++route.child_count;
             }
             routes_[stripe] = route;
