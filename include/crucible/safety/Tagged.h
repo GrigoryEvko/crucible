@@ -11,7 +11,8 @@
 //
 // Tag namespaces provided:
 //   source::*  — provenance: FromUser, FromDb, FromConfig, FromInternal,
-//                External (untrusted input), ABIBoundary, Sanitized.
+//                External (untrusted input), ABIBoundary, Sanitized,
+//                IntegrityVerified.
 //   trust::*   — verification status: Verified, Tested, Unverified,
 //                Assumed, External.
 //   access::*  — access mode (register / column / field semantics):
@@ -118,6 +119,10 @@ namespace source {
     // Raw discovery output must be admitted explicitly before it can
     // drive peer-health or gossip fanout decisions.
     struct SwimMember   {};
+    // IntegrityVerified: CNT-P payload whose end-to-end xxHash64 trailer
+    // has been recomputed and matched at the receiver.  Raw wire bytes
+    // and merely gossiped payloads cannot substitute for this tag.
+    struct IntegrityVerified {};
 }
 
 namespace trust {

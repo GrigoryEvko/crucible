@@ -226,6 +226,7 @@ crucible_test(test_vector_clock)
 crucible_test(test_crdt)
 crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
+crucible_test(test_cntp_integrity)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
@@ -2308,6 +2309,22 @@ crucible_neg_compile_test(neg_scuttlebutt_non_crdt_publish
   "constraints not satisfied|ScuttlebuttCrdt|state_type|merge")
 crucible_neg_compile_effects_test(neg_scuttlebutt_mint_test_context
   "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+
+# GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
+#   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the
+#     IntegrityVerified provenance lane.
+#   * neg_integrity_cross_tag_verified: External is not IntegrityVerified.
+#   * neg_integrity_raw_hash_field: hash field requires refined non-zero
+#     IntegrityHash admission.
+#   * neg_integrity_non_contiguous_wrap: payloads must be byte-contiguous.
+crucible_neg_compile_test(neg_integrity_raw_payload_as_verified
+  "cannot convert|no matching function|IntegrityVerified|Tagged")
+crucible_neg_compile_test(neg_integrity_cross_tag_verified
+  "cannot convert|no matching function|IntegrityVerified|External|Tagged")
+crucible_neg_compile_test(neg_integrity_raw_hash_field
+  "cannot convert|could not convert|IntegrityHash|Refined")
+crucible_neg_compile_test(neg_integrity_non_contiguous_wrap
+  "constraints not satisfied|ByteContiguousPayload|HasContiguousPayloadData|no matching function")
 
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
 # ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.
