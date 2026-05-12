@@ -53,11 +53,54 @@
 #include <crucible/Expr.h>            // detail::kDimMix
 #include <crucible/Platform.h>
 #include <crucible/TensorMeta.h>      // TensorMeta (extracted from MerkleDag.h)
+#include <crucible/safety/DetSafe.h>
 #include <crucible/safety/Simd.h>
+#include <crucible/safety/Tagged.h>
 
 #include <cstdint>
 #include <functional>   // std::bit_xor<>
 #include <simd>
+#include <type_traits>
+
+namespace crucible {
+
+// WRAP-DimHash-1 (#910): the per-TensorMeta dimension hash is a
+// deterministic, process-local helper value.  It is safe to recompute
+// from TensorMeta bytes, but it is not a persistent artifact key by
+// itself.  The nested wrapper forces consumers to acknowledge both
+// facts before mixing or exporting the bits.
+using DimHash = ::crucible::safety::Tagged<
+    uint64_t, ::crucible::hash_family::FamilyB>;
+using DimHashDet = ::crucible::safety::DetSafe<
+    ::crucible::safety::DetSafeTier_v::Pure, DimHash>;
+
+static_assert(sizeof(DimHash) == sizeof(uint64_t),
+    "Tagged<uint64_t, hash_family::FamilyB> must EBO-collapse so "
+    "dim-hash stays register-sized");
+static_assert(sizeof(DimHashDet) == sizeof(uint64_t),
+    "DetSafe<Pure, Tagged<uint64_t, hash_family::FamilyB>> must "
+    "EBO-collapse so dim-hash stays register-sized");
+static_assert(std::is_trivially_copyable_v<DimHash>);
+static_assert(std::is_trivially_copyable_v<DimHashDet>);
+static_assert(std::is_standard_layout_v<DimHash>);
+static_assert(std::is_standard_layout_v<DimHashDet>);
+
+[[nodiscard]] inline constexpr DimHash
+dim_hash(uint64_t hash) noexcept {
+  return DimHash{hash};
+}
+
+[[nodiscard]] inline constexpr uint64_t
+raw_dim_hash(const DimHash& hash) noexcept {
+  return hash.value();
+}
+
+[[nodiscard]] inline constexpr uint64_t
+raw_dim_hash(const DimHashDet& hash) noexcept {
+  return raw_dim_hash(hash.peek());
+}
+
+}  // namespace crucible
 
 namespace crucible::detail {
 
@@ -122,6 +165,11 @@ uint64_t dim_hash_simd(const TensorMeta& meta) noexcept {
   return std::simd::reduce(combined, valid_mask, std::bit_xor<>{}, 0ULL);
 }
 
+[[nodiscard, gnu::pure]] CRUCIBLE_INLINE
+DimHashDet dim_hash_simd_det(const TensorMeta& meta) noexcept {
+  return DimHashDet{dim_hash(dim_hash_simd(meta))};
+}
+
 // Scalar reference implementation — kept exposed so equivalence
 // fuzzers can compare scalar vs SIMD output bit-for-bit, and so
 // performance bench harnesses have a baseline to measure against.
@@ -139,6 +187,11 @@ uint64_t dim_hash_scalar(const TensorMeta& meta) noexcept {
     result ^= static_cast<uint64_t>(meta.strides[d]) * detail::kDimMix[d + 8];
   }
   return result;
+}
+
+[[nodiscard, gnu::pure]] CRUCIBLE_INLINE
+DimHashDet dim_hash_scalar_det(const TensorMeta& meta) noexcept {
+  return DimHashDet{dim_hash(dim_hash_scalar(meta))};
 }
 
 }  // namespace crucible::detail

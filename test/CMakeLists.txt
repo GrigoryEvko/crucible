@@ -2232,6 +2232,18 @@ crucible_neg_compile_test(neg_tensor_meta_grad_fn_hash_raw_uint64
 crucible_neg_compile_test(neg_tensor_meta_grad_fn_hash_cross_family
   "no match for|cannot convert|no viable|could not convert|operator=|Tagged|FamilyA|FamilyB")
 
+# WRAP-DimHash-1 (#910) — dim_hash_*_det returns
+# DetSafe<Pure, Tagged<uint64_t, hash_family::FamilyB>>.  Two HS14
+# fixtures cover both fences:
+#   * neg_dim_hash_raw_uint64 — raw uint64_t cannot enter the typed
+#     deterministic Family-B carrier.
+#   * neg_dim_hash_cross_family — Family-A values cannot substitute
+#     for process-local Family-B dim hashes.
+crucible_neg_compile_test(neg_dim_hash_raw_uint64
+  "cannot convert|no matching function|could not convert|DetSafe|DimHash|Tagged")
+crucible_neg_compile_test(neg_dim_hash_cross_family
+  "cannot convert|no matching function|could not convert|DetSafe|Tagged|FamilyA|FamilyB")
+
 # GAPS-135 — observe/HdrHistogram.h keeps the recording boundary typed
 # and the merge geometry exact:
 #   * neg_hdr_histogram_record_raw_uint64 — raw external samples cannot

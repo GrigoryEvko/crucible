@@ -29,6 +29,7 @@
 #include <functional>
 #include <memory>
 #include <simd>
+#include <type_traits>
 
 namespace simd = crucible::simd;
 
@@ -275,26 +276,42 @@ static void test_dim_hash_equivalence_handcoded() {
     auto m_empty = make_meta({}, {});
     assert(dim_hash_scalar(m_empty) == 0);
     assert(dim_hash_simd(m_empty)   == 0);
+    static_assert(std::is_same_v<decltype(dim_hash_scalar_det(m_empty)),
+                                 crucible::DimHashDet>);
+    static_assert(std::is_same_v<decltype(dim_hash_simd_det(m_empty)),
+                                 crucible::DimHashDet>);
+    assert(crucible::raw_dim_hash(dim_hash_scalar_det(m_empty)) == 0);
+    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_empty)) == 0);
 
     // 1-D contiguous.
     auto m_1d = make_meta({4096}, {1});
     assert(dim_hash_simd(m_1d) == dim_hash_scalar(m_1d));
+    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_1d)) ==
+           crucible::raw_dim_hash(dim_hash_scalar_det(m_1d)));
 
     // 2-D contiguous (matrix).
     auto m_2d = make_meta({128, 256}, {256, 1});
     assert(dim_hash_simd(m_2d) == dim_hash_scalar(m_2d));
+    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_2d)) ==
+           crucible::raw_dim_hash(dim_hash_scalar_det(m_2d)));
 
     // 4-D NCHW (typical conv).
     auto m_nchw = make_meta({32, 64, 224, 224}, {64*224*224, 224*224, 224, 1});
     assert(dim_hash_simd(m_nchw) == dim_hash_scalar(m_nchw));
+    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_nchw)) ==
+           crucible::raw_dim_hash(dim_hash_scalar_det(m_nchw)));
 
     // Full 8-D worst case.
     auto m_8d = make_meta({2,3,5,7,11,13,17,19}, {1,2,3,4,5,6,7,8});
     assert(dim_hash_simd(m_8d) == dim_hash_scalar(m_8d));
+    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_8d)) ==
+           crucible::raw_dim_hash(dim_hash_scalar_det(m_8d)));
 
     // Negative strides (transpose / flip view).
     auto m_neg = make_meta({4, 8}, {-8, 1});
     assert(dim_hash_simd(m_neg) == dim_hash_scalar(m_neg));
+    assert(crucible::raw_dim_hash(dim_hash_simd_det(m_neg)) ==
+           crucible::raw_dim_hash(dim_hash_scalar_det(m_neg)));
 
     // Trace-loader vectors and MetaLog buffers provide natural
     // TensorMeta alignment, not guaranteed 64-byte vector alignment.
@@ -317,6 +334,8 @@ static void test_dim_hash_equivalence_handcoded() {
         make_meta({16, 32, 64}, {2048, 64, 1}));
     assert(std::bit_cast<std::uintptr_t>(&unaligned->sizes[0]) % 64 != 0);
     assert(dim_hash_simd(*unaligned) == dim_hash_scalar(*unaligned));
+    assert(crucible::raw_dim_hash(dim_hash_simd_det(*unaligned)) ==
+           crucible::raw_dim_hash(dim_hash_scalar_det(*unaligned)));
     std::destroy_at(unaligned);
 
     // Distinct meta produces DISTINCT hash with overwhelming probability.

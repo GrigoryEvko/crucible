@@ -1068,7 +1068,8 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
       const TensorMeta& input_meta = op_record.input_metas[j];
       // SIMD dim-hash: bit-identical to the prior inline XOR-fold.
       // Locked by test_dim_hash_equivalence_handcoded in test_simd.cpp.
-      const uint64_t per_dim_hash_xor = detail::dim_hash_simd(input_meta);
+      const uint64_t per_dim_hash_xor =
+          raw_dim_hash(detail::dim_hash_simd_det(input_meta));
       uint64_t meta_packed =
           static_cast<uint64_t>(std::to_underlying(input_meta.dtype)) |
           (static_cast<uint64_t>(std::to_underlying(input_meta.device_type)) << 8) |

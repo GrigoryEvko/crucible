@@ -1421,7 +1421,8 @@ struct BackgroundThread {
           // SIMD dim-hash: bit-identical to the prior inline XOR-fold over
           // sizes[d]*kDimMix[d] + strides[d]*kDimMix[d+8].  Locked by
           // test_dim_hash_equivalence_handcoded in test_simd.cpp.
-          const uint64_t dim_h_local = detail::dim_hash_simd(meta);
+          const uint64_t dim_h_local =
+              raw_dim_hash(detail::dim_hash_simd_det(meta));
           uint64_t meta_packed =
               static_cast<uint64_t>(std::to_underlying(meta.dtype)) |
               (static_cast<uint64_t>(std::to_underlying(meta.device_type)) << 8) |
