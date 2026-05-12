@@ -2114,6 +2114,15 @@ crucible_neg_compile_test(neg_trace_num_names_above_max
 crucible_neg_compile_test(neg_trace_num_names_uint32_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# WRAP-TraceGraph-3 (#1044) — TraceGraph build counters are
+# WriteOnce<uint32_t>.  The fixtures pin both soundness directions:
+# producers cannot raw-assign a counter, and consumers cannot read one
+# through an implicit uint32_t conversion.
+crucible_neg_compile_test(neg_trace_graph_num_ops_assign_raw
+  "no match for|no known conversion")
+crucible_neg_compile_test(neg_trace_graph_num_edges_implicit_raw
+  "cannot convert|invalid conversion|no viable conversion")
+
 # ─── WRAP-MetaLog-2 (#945) ValidMetaAppendCount neg-compile fixtures ──
 #
 # MetaLog::try_append's `n` count parameter gains a typed Refined gate

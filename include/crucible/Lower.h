@@ -43,8 +43,8 @@ inline void lower_trace_to_graph(
     ExprPool& pool,
     Graph& graph)
 {
-  const uint32_t num_ops = tg.num_ops;
-  const uint32_t num_slots = tg.num_slots;
+  const uint32_t num_ops = tg.num_ops.get_assuming_set();
+  const uint32_t num_slots = tg.num_slots.get_assuming_set();
   if (num_ops == 0) return;
 
   Arena& arena = graph.arena();

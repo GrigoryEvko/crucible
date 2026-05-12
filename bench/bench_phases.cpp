@@ -237,8 +237,8 @@ void bench_phases_toplevel(
         repopulate();
         auto* ref = bg.build_trace(A, trace.num_ops);
 
-        const uint32_t num_ops   = ref->num_ops;
-        const uint32_t num_slots = ref->num_slots;
+        const uint32_t num_ops   = ref->num_ops.get_assuming_set();
+        const uint32_t num_slots = ref->num_slots.get_assuming_set();
         const uint32_t num_edges = ref->fwd_offsets[num_ops];
 
         std::vector<Edge> saved_edges(num_edges);
@@ -255,9 +255,8 @@ void bench_phases_toplevel(
         // build_csr
         for (uint32_t iter = 0; iter < iters; iter++) {
             Arena csr_arena{1 << 18};
-            auto* graph2 = csr_arena.alloc_obj<TraceGraph>(A);
+            auto* graph2 = alloc_trace_graph(A, csr_arena);
             graph2->ops     = nullptr;
-            graph2->num_ops = num_ops;
 
             const uint64_t t0 = bench::rdtsc_start();
             build_csr(A, csr_arena, graph2, saved_edges.data(),
@@ -719,7 +718,7 @@ void bench_phase2_subparts(
         new (&bg.arena) Arena{arena_bytes};
         repopulate();
         auto*          ref_graph = bg.build_trace(A, count);
-        const uint32_t num_slots = ref_graph->num_slots;
+        const uint32_t num_slots = ref_graph->num_slots.get_assuming_set();
 
         std::vector<BackgroundThread::SlotInfo> saved_slots(
             bg.scratch_slots_.data(), bg.scratch_slots_.data() + num_slots);

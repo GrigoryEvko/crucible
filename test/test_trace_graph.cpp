@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <type_traits>
 #include <vector>
 
 using namespace crucible;
@@ -23,7 +24,9 @@ static void test_empty_graph() {
     Arena arena{1 << 16};
     TraceGraph g{};
     build_csr(t.alloc, arena, &g, nullptr, 0, 0);
-    assert(g.num_edges == 0);
+    static_assert(std::is_same_v<TraceGraph::BuiltCount,
+                                 safety::WriteOnce<uint32_t>>);
+    assert(g.num_edges.get_assuming_set() == 0);
     std::printf("  test_empty:                     PASSED\n");
 }
 
@@ -33,7 +36,7 @@ static void test_single_edge_fwd_rev() {
     TraceGraph g{};
     Edge edges[] = {E(0, 1)};
     build_csr(t.alloc, arena, &g, edges, 1, /*num_ops=*/2);
-    assert(g.num_edges == 1);
+    assert(g.num_edges.get_assuming_set() == 1);
     // fwd: op 0 has 1 out-edge.
     assert(g.out_degree(OpIndex{0}) == 1);
     assert(g.out_degree(OpIndex{1}) == 0);

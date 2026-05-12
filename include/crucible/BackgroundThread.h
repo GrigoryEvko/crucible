@@ -391,15 +391,19 @@ struct BackgroundThread {
 
     iteration_graphs.append(graph);
 
-    auto* region = make_region(
-        a, arena, graph->ops, graph->num_ops, graph->content_hash);
+    const uint32_t num_ops = graph->num_ops.get_assuming_set();
+    const uint32_t num_slots = graph->num_slots.get_assuming_set();
+    const uint32_t max_meta_end = graph->max_meta_end.get_assuming_set();
 
-    if (graph->slots && graph->num_slots > 0) {
-      region->plan = compute_memory_plan(a, graph->slots, graph->num_slots);
+    auto* region = make_region(
+        a, arena, graph->ops, num_ops, graph->content_hash);
+
+    if (graph->slots && num_slots > 0) {
+      region->plan = compute_memory_plan(a, graph->slots, num_slots);
     }
 
-    if (graph->max_meta_end > 0) {
-      meta_log.get().value()->advance_tail(graph->max_meta_end);
+    if (max_meta_end > 0) {
+      meta_log.get().value()->advance_tail(max_meta_end);
     }
 
     recompute_merkle(region);
@@ -1155,19 +1159,22 @@ struct BackgroundThread {
       TraceGraph* graph = build_trace(a, completed_len);
       if (graph) {
         iteration_graphs.append(graph);
+        const uint32_t num_ops = graph->num_ops.get_assuming_set();
+        const uint32_t num_slots = graph->num_slots.get_assuming_set();
+        const uint32_t max_meta_end = graph->max_meta_end.get_assuming_set();
 
         // Use pre-computed content hash — no redundant second pass.
         auto* region = make_region(
-            a, arena, graph->ops, graph->num_ops, graph->content_hash);
+            a, arena, graph->ops, num_ops, graph->content_hash);
 
-        if (graph->slots && graph->num_slots > 0) {
+        if (graph->slots && num_slots > 0) {
           region->plan = compute_memory_plan(
-              a, graph->slots, graph->num_slots);
+              a, graph->slots, num_slots);
         }
 
         // Advance MetaLog tail AFTER all reads are done (zero-copy safety).
-        if (graph->max_meta_end > 0)
-          meta_log.get().value()->advance_tail(graph->max_meta_end);
+        if (max_meta_end > 0)
+          meta_log.get().value()->advance_tail(max_meta_end);
 
         recompute_merkle(region);
         uncompiled_regions.append(region);
@@ -1589,13 +1596,12 @@ struct BackgroundThread {
     }
 
     // Build CSR property graph.
-    auto* graph = arena.alloc_obj<TraceGraph>(a);
+    auto* graph = alloc_trace_graph(a, arena);
     graph->ops = ops;
-    graph->num_ops = count;
     graph->slots = slots;
-    graph->num_slots = num_slots;
+    graph->num_slots.set(num_slots);
     graph->content_hash = ContentHash{detail::fmix64(content_h_local)};
-    graph->max_meta_end = max_meta_end;
+    graph->max_meta_end.set(max_meta_end);
     build_csr(a, arena, graph, local_edges, num_edges, count);
 
     return graph;

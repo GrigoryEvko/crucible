@@ -169,11 +169,11 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
                 .is_external = false, .pad = {}, .slot_id = SlotId{5}, .pad2 = {}};
 
     // ── Assemble TraceGraph with CSR ────────────────────────────
-    auto* graph_tg = arena.alloc_obj<crucible::TraceGraph>(test.alloc);
+    auto* graph_tg = crucible::alloc_trace_graph(test.alloc, arena);
     graph_tg->ops = ops;
-    graph_tg->num_ops = NUM_OPS;
     graph_tg->slots = slots;
-    graph_tg->num_slots = NUM_SLOTS;
+    graph_tg->num_slots.set(NUM_SLOTS);
+    graph_tg->max_meta_end.set(0);
     crucible::build_csr(test.alloc, arena, graph_tg, edges, 2, NUM_OPS);
 
     // ════════════════════════════════════════════════════════════════
@@ -328,11 +328,11 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
                  .device_idx = 0, .layout = Layout::Strided,
                  .is_external = false, .pad = {}, .slot_id = SlotId{2}, .pad2 = {}};
 
-    auto* tg2 = arena2.alloc_obj<crucible::TraceGraph>(test.alloc);
+    auto* tg2 = crucible::alloc_trace_graph(test.alloc, arena2);
     tg2->ops = ops2;
-    tg2->num_ops = 1;
     tg2->slots = slots2;
-    tg2->num_slots = 3;
+    tg2->num_slots.set(3);
+    tg2->max_meta_end.set(0);
     // No DFG edges (all inputs are external or null).
     crucible::build_csr(test.alloc, arena2, tg2, nullptr, 0, 1);
 

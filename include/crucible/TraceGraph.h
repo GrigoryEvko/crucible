@@ -2,11 +2,13 @@
 
 #include <cstdint>
 #include <cstring>
+#include <new>
 #include <span>
 
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
 
@@ -103,9 +105,11 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Edge);
 // ═══════════════════════════════════════════════════════════════════
 
 struct TraceGraph {
+  using BuiltCount = crucible::safety::WriteOnce<uint32_t>;
+
   // Nodes (ops in trace order).
   TraceEntry* ops = nullptr;
-  uint32_t num_ops = 0;
+  BuiltCount num_ops;
 
   // Forward CSR: edges sorted by src.
   Edge* fwd_edges = nullptr;
@@ -115,11 +119,11 @@ struct TraceGraph {
   Edge* rev_edges = nullptr;
   uint32_t* rev_offsets = nullptr; // num_ops + 1 entries
 
-  uint32_t num_edges = 0;
+  BuiltCount num_edges;
 
   // Liveness analysis results (populated by build_trace Phase 3).
   TensorSlot* slots = nullptr;    // arena-allocated array of all tensor slots
-  uint32_t num_slots = 0;         // total unique storages identified
+  BuiltCount num_slots;           // total unique storages identified
 
   // Fused content hash — computed during build_trace as a streaming
   // accumulator, avoiding a redundant second pass over all ops.
@@ -127,7 +131,7 @@ struct TraceGraph {
 
   // Maximum MetaLog index consumed by this trace. Caller advances
   // MetaLog tail AFTER all meta reads are complete (zero-copy safety).
-  uint32_t max_meta_end = 0;      // 4B
+  BuiltCount max_meta_end;
   uint32_t pad_tg = 0;            // 4B — alignment
 
   // ── Forward queries (src → dst): "who consumes op i's outputs?" ──
@@ -157,55 +161,62 @@ struct TraceGraph {
   // consteval, runtime, and as `[[assume]]` for the optimizer.
   [[nodiscard, gnu::pure]] const Edge* fwd_begin(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
   {
-    CRUCIBLE_PRE(num_ops > 0u);
+    const uint32_t n_ops = num_ops.get_assuming_set();
+    CRUCIBLE_PRE(n_ops > 0u);
     CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
-        i.raw(), 0u, num_ops - 1u));
+        i.raw(), 0u, n_ops - 1u));
     return fwd_edges + fwd_offsets[i.raw()];
   }
   [[nodiscard, gnu::pure]] const Edge* fwd_end(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
   {
-    CRUCIBLE_PRE(num_ops > 0u);
+    const uint32_t n_ops = num_ops.get_assuming_set();
+    CRUCIBLE_PRE(n_ops > 0u);
     CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
-        i.raw(), 0u, num_ops - 1u));
+        i.raw(), 0u, n_ops - 1u));
     return fwd_edges + fwd_offsets[i.raw() + 1];
   }
   [[nodiscard, gnu::pure]] uint32_t out_degree(OpIndex i) const noexcept
   {
-    CRUCIBLE_PRE(num_ops > 0u);
+    const uint32_t n_ops = num_ops.get_assuming_set();
+    CRUCIBLE_PRE(n_ops > 0u);
     CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
-        i.raw(), 0u, num_ops - 1u));
+        i.raw(), 0u, n_ops - 1u));
     return fwd_offsets[i.raw() + 1] - fwd_offsets[i.raw()];
   }
 
   // ── Reverse queries (dst → src): "who produces op i's inputs?" ──
   [[nodiscard, gnu::pure]] const Edge* rev_begin(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
   {
-    CRUCIBLE_PRE(num_ops > 0u);
+    const uint32_t n_ops = num_ops.get_assuming_set();
+    CRUCIBLE_PRE(n_ops > 0u);
     CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
-        i.raw(), 0u, num_ops - 1u));
+        i.raw(), 0u, n_ops - 1u));
     return rev_edges + rev_offsets[i.raw()];
   }
   [[nodiscard, gnu::pure]] const Edge* rev_end(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
   {
-    CRUCIBLE_PRE(num_ops > 0u);
+    const uint32_t n_ops = num_ops.get_assuming_set();
+    CRUCIBLE_PRE(n_ops > 0u);
     CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
-        i.raw(), 0u, num_ops - 1u));
+        i.raw(), 0u, n_ops - 1u));
     return rev_edges + rev_offsets[i.raw() + 1];
   }
   [[nodiscard, gnu::pure]] uint32_t in_degree(OpIndex i) const noexcept
   {
-    CRUCIBLE_PRE(num_ops > 0u);
+    const uint32_t n_ops = num_ops.get_assuming_set();
+    CRUCIBLE_PRE(n_ops > 0u);
     CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
-        i.raw(), 0u, num_ops - 1u));
+        i.raw(), 0u, n_ops - 1u));
     return rev_offsets[i.raw() + 1] - rev_offsets[i.raw()];
   }
 
   // ── Node access ──
   [[nodiscard, gnu::pure]] const TraceEntry& op(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
   {
-    CRUCIBLE_PRE(num_ops > 0u);
+    const uint32_t n_ops = num_ops.get_assuming_set();
+    CRUCIBLE_PRE(n_ops > 0u);
     CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
-        i.raw(), 0u, num_ops - 1u));
+        i.raw(), 0u, n_ops - 1u));
     return ops[i.raw()];
   }
 
@@ -243,6 +254,12 @@ struct TraceGraph {
   }
 };
 
+[[nodiscard]] inline TraceGraph* alloc_trace_graph(
+    effects::Alloc a, Arena& arena) noexcept CRUCIBLE_LIFETIMEBOUND
+{
+  return ::new (arena.alloc_obj<TraceGraph>(a)) TraceGraph{};
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Build CSR from a flat edge array via counting sort. O(V + E).
 //
@@ -258,8 +275,8 @@ inline void build_csr(
     const Edge* edges,
     uint32_t num_edges,
     uint32_t num_ops) {
-  graph->num_edges = num_edges;
-  graph->num_ops   = num_ops;
+  graph->num_edges.set(num_edges);
+  graph->num_ops.set(num_ops);
 
   // Degenerate case: empty trace.  alloc_array(0) returns nullptr, and
   // memcpy/memset on nullptr is UB even with n=0.  Bail early.

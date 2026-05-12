@@ -212,9 +212,8 @@ int main(int argc, char* argv[]) {
         }
         return bench::run("build_csr (481 ops, 900 edges)", [&]{
             Arena csr_arena{1 << 16};
-            auto* graph = csr_arena.alloc_obj<TraceGraph>(test.alloc);
+            auto* graph = alloc_trace_graph(test.alloc, csr_arena);
             graph->ops     = nullptr;
-            graph->num_ops = NUM_OPS;
             build_csr(test.alloc, csr_arena, graph, edges, NUM_EDGES, NUM_OPS);
             bench::do_not_optimize(graph);
         });
