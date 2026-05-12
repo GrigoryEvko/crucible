@@ -348,6 +348,7 @@ crucible_test(test_nic_offload_audit)
 crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
+crucible_test(test_topology_discovery)
 crucible_test(test_topology_graph)
 crucible_test(test_topology_health)
 crucible_test(test_topology_pingmesh)
@@ -1400,6 +1401,21 @@ crucible_neg_compile_topology_test(neg_topology_graph_non_ctx_first_arg
     "constraint|constraints not satisfied|CtxFitsTopologyGraph|IsExecCtx|GAPS-110")
 crucible_neg_compile_topology_test(neg_topology_graph_test_ctx_refused
     "constraint|constraints not satisfied|CtxFitsTopologyGraph|row_contains|Init|Test|GAPS-110")
+
+# ─── HS14 fixtures for topology::Discovery (GAPS-111 #1217) ─────────
+#
+#   * neg_topology_discovery_mint_test_ctx — structural discovery snapshots
+#     are Init-owned; test-only rows cannot mint production topology storage.
+#   * neg_topology_discovery_raw_lspci_text — parser boundaries consume
+#     Tagged<source::External> text, not raw string views.
+#   * neg_topology_discovery_zero_nodes — snapshot shape requires at least
+#     one node and one edge slot.
+crucible_neg_compile_topology_test(neg_topology_discovery_mint_test_ctx
+    "constraint|constraints not satisfied|CtxFitsDiscoveryInit|Init|Test|GAPS-111")
+crucible_neg_compile_topology_test(neg_topology_discovery_raw_lspci_text
+    "could not convert|no matching function|Tagged|External|GAPS-111")
+crucible_neg_compile_topology_test(neg_topology_discovery_zero_nodes
+    "constraint|constraints not satisfied|DiscoveryShape|GAPS-111")
 
 # ─── HS14 fixtures for topology::Health (GAPS-113 #1219) ───────────
 #

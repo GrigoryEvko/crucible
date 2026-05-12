@@ -68,6 +68,7 @@ add_library(crucible STATIC
   src/rt/Xdp.cpp
   src/topology/AsymmetricFailure.cpp
   src/topology/CongestionTelemetry.cpp
+  src/topology/Discovery.cpp
   src/topology/Health.cpp
   src/topology/Pingmesh.cpp
   src/topology/Ptp.cpp
