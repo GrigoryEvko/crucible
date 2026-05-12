@@ -191,6 +191,11 @@ namespace source {
     // TCP_CC_INFO or an explicitly tagged synthetic test source.
     // Raw counters cannot directly drive topology congestion policy.
     struct TcpInfo {};
+    // KernelTelemetry: NIC telemetry admitted from Linux kernel-visible
+    // counters such as sysfs netdev stats, qdisc backlog, sysctl snapshots,
+    // and hwmon temperature readings. Raw text cannot directly drive
+    // topology capacity, health, or routing decisions.
+    struct KernelTelemetry {};
     // AfXdp: CNT-P AF_XDP socket / UMEM configuration admitted through
     // cntp/AfXdp.h. Raw ring sizes, frame sizes, queue IDs, and interface
     // names cannot directly mint a zero-copy transport surface.

@@ -353,6 +353,7 @@ crucible_test(test_topology_graph)
 crucible_test(test_topology_health)
 crucible_test(test_topology_pingmesh)
 crucible_test(test_topology_ptp)
+crucible_test(test_topology_telemetry)
 crucible_test(test_congestion_telemetry)
 crucible_test(test_asymmetric_failure)
 crucible_test(test_concurrent_compile)
@@ -1432,6 +1433,19 @@ crucible_neg_compile_topology_test(neg_topology_health_update_fg_ctx
     "constraint|constraints not satisfied|CtxFitsHealthUpdate|Bg|HotFgCtx")
 crucible_neg_compile_topology_test(neg_topology_health_raw_score
     "could not convert|invalid conversion|HealthScore")
+
+# ─── HS14 fixtures for topology::Telemetry (GAPS-112 #1218) ────────
+#
+#   * neg_topology_telemetry_mint_bg_ctx — history storage is Init-owned.
+#   * neg_topology_telemetry_raw_netdev_text — parser ingress consumes
+#     Tagged<source::External>, not raw strings.
+#   * neg_topology_telemetry_record_fg_ctx — sample publication is Bg-only.
+crucible_neg_compile_topology_test(neg_topology_telemetry_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsNicTelemetryMint|Init|Bg|GAPS-112")
+crucible_neg_compile_topology_test(neg_topology_telemetry_raw_netdev_text
+    "could not convert|no matching function|Tagged|External|GAPS-112")
+crucible_neg_compile_topology_test(neg_topology_telemetry_record_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsNicTelemetryRecord|Bg|GAPS-112")
 
 # ─── HS14 fixtures for topology::AsymmetricFailure (GAPS-127 #1220) ──
 #
