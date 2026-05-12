@@ -240,6 +240,7 @@ crucible_test(test_cntp_roce_config)
 crucible_test(test_cntp_integrity)
 crucible_test(test_cntp_fec)
 crucible_test(test_cntp_fountain)
+crucible_test(test_cntp_overlay_multicast)
 crucible_test(test_cntp_gossip_multicast)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
@@ -2742,6 +2743,21 @@ crucible_neg_compile_test(neg_gossip_multicast_raw_topic
   "cannot convert|could not convert|DeclaredGossipTopic|Tagged")
 crucible_neg_compile_test(neg_gossip_multicast_zero_neighbors
   "constraints not satisfied|GossipMulticastShape|GossipNeighborShape|MaxNeighbors")
+
+# GAPS-139 — cntp/OverlayMulticast.h application-layer route substrate.
+#   * neg_overlay_multicast_mint_bg_ctx: only Init-row contexts mint plans.
+#   * neg_overlay_multicast_raw_peer: raw peer refs cannot seed a plan.
+#   * neg_overlay_multicast_zero_stripes: zero-stripe route tables rejected.
+#   * neg_overlay_multicast_cross_tag_peer: externally tagged peer refs cannot
+#     seed an overlay route plan.
+crucible_neg_compile_test(neg_overlay_multicast_mint_bg_ctx
+  "constraints not satisfied|CtxFitsOverlayMulticastMint|Init|Bg")
+crucible_neg_compile_test(neg_overlay_multicast_raw_peer
+  "cannot convert|could not convert|DeclaredOverlayPeer|Tagged")
+crucible_neg_compile_test(neg_overlay_multicast_zero_stripes
+  "constraints not satisfied|OverlayMulticastShape|MaxStripes")
+crucible_neg_compile_test(neg_overlay_multicast_cross_tag_peer
+  "no matching function|cannot convert|could not convert|Tagged")
 
 # GAPS-117 — cntp/Fec.h GF(256) systematic Reed-Solomon primitive.
 #   * neg_fec_zero_k / neg_fec_zero_m: shard counts must be positive.

@@ -200,6 +200,10 @@ namespace source {
     // rt/TcEbpf.h. Raw skb action descriptors, DSCP values, and map specs
     // cannot directly attach an egress/ingress TC dataplane program.
     struct TcEbpf {};
+    // OverlayMulticast: CNT-P application-layer multicast plans admitted
+    // through cntp/OverlayMulticast.h. Raw CogIdentity values and unbounded
+    // stripe/tree plans cannot directly drive cross-peer fanout.
+    struct OverlayMulticast {};
 }
 
 namespace trust {
