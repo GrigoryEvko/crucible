@@ -478,6 +478,7 @@ crucible_test(test_bench_harness)
 # no special capabilities required at test time (the smoke checks the
 # policy arithmetic / guard object semantics, not live scheduler calls).
 crucible_test(test_rt_policy)
+crucible_test(test_rt_xdp)
 
 # crucible::perf::SenseHub sentinel TU (GAPS-004a, 2026-05-03).
 # Verifies the promoted observability substrate compiles + links
@@ -1314,6 +1315,23 @@ crucible_neg_compile_rt_test(neg_quarantine_override_missing_permission
     "no matching function|candidate|operator_override|Permission")
 crucible_neg_compile_rt_test(neg_quarantine_zero_slots
     "static assertion failed|QuarantinePolicy requires Cog slots|MaxCogs > 0")
+
+# ─── GAPS-130 rt/Xdp.h soundness gates ─────────────────────────────
+#
+#   * neg_xdp_raw_program_spec — NIC admission requires source::Xdp
+#     provenance, not a raw descriptor.
+#   * neg_xdp_mint_bg_ctx — only Init-row contexts mint attach plans.
+#   * neg_xdp_map_non_pod_value — BPF map values must be verifier-safe POD.
+#   * neg_xdp_map_key_without_equality — in-process map images require typed
+#     key equality, not bytewise accidental comparison.
+crucible_neg_compile_rt_test(neg_xdp_raw_program_spec
+    "cannot convert|could not convert|DeclaredXdpProgram|Tagged")
+crucible_neg_compile_rt_test(neg_xdp_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsXdpMint|Init|Bg")
+crucible_neg_compile_rt_test(neg_xdp_map_non_pod_value
+    "constraint|constraints not satisfied|BpfScalar|string")
+crucible_neg_compile_rt_test(neg_xdp_map_key_without_equality
+    "constraint|constraints not satisfied|BpfKey|operator==")
 
 # ─── HS14 fixtures #1 + #2 for mimic::CogMimic (GAPS-188 #1213) ──
 #

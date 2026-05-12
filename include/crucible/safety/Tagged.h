@@ -187,6 +187,11 @@ namespace source {
     // cntp/AfXdp.h. Raw ring sizes, frame sizes, queue IDs, and interface
     // names cannot directly mint a zero-copy transport surface.
     struct AfXdp {};
+    // Xdp / BpfMap: runtime-owned BPF/XDP plans admitted through rt/Xdp.h.
+    // Raw program descriptors or map dimensions cannot directly attach a
+    // NIC dataplane program or allocate a userspace-visible map surface.
+    struct Xdp {};
+    struct BpfMap {};
 }
 
 namespace trust {
