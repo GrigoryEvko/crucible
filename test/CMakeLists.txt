@@ -344,6 +344,7 @@ crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
 crucible_test(test_topology_graph)
 crucible_test(test_topology_health)
+crucible_test(test_topology_pingmesh)
 crucible_test(test_congestion_telemetry)
 crucible_test(test_asymmetric_failure)
 crucible_test(test_concurrent_compile)
@@ -1389,6 +1390,25 @@ crucible_neg_compile_topology_test(neg_asymmetric_failure_record_fg_ctx
     "constraint|constraints not satisfied|CtxFitsAsymmetricFailureRecord|Bg|HotFgCtx")
 crucible_neg_compile_topology_test(neg_asymmetric_failure_zero_window
     "static assertion failed|non-empty probe window|Window > 0")
+
+# ─── HS14 fixtures for topology::Pingmesh (GAPS-134 #1237) ──────────
+#
+#   * neg_pingmesh_mint_bg_ctx — only Init-row contexts mint the bounded
+#     all-pairs carrier.
+#   * neg_pingmesh_record_fg_ctx — HotFgCtx cannot mutate latency
+#     histograms; probe workers publish on the Bg row.
+#   * neg_pingmesh_raw_measurement — raw probe outcomes cannot bypass
+#     source::Pingmesh provenance.
+#   * neg_pingmesh_zero_peer_capacity — all-pairs storage must have at
+#     least two peers.
+crucible_neg_compile_topology_test(neg_pingmesh_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsPingmeshMint|Init|Bg")
+crucible_neg_compile_topology_test(neg_pingmesh_record_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsPingmeshRecord|Bg|HotFgCtx")
+crucible_neg_compile_topology_test(neg_pingmesh_raw_measurement
+    "cannot convert|no matching function|could not convert|Tagged|PingmeshMeasurement|Pingmesh")
+crucible_neg_compile_topology_test(neg_pingmesh_zero_peer_capacity
+    "static assertion failed|requires at least two peers")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #

@@ -167,6 +167,10 @@ namespace source {
     // rt/ConnectionPool.h. Raw pool events cannot substitute for the
     // runtime-owned lease audit surface.
     struct ConnectionPool {};
+    // Pingmesh: topology latency measurements admitted by
+    // topology/Pingmesh.h. Raw UDP/probe outcomes cannot directly
+    // update fleet latency histograms or anomaly reports.
+    struct Pingmesh {};
     // PathSwap: CNT-P application-level path-swap plan admitted through
     // cntp/PathSwap.h. Raw path IDs cannot directly drive a live
     // SessionHandle resource transition.

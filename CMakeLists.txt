@@ -61,6 +61,7 @@ add_library(crucible STATIC
   src/topology/AsymmetricFailure.cpp
   src/topology/CongestionTelemetry.cpp
   src/topology/Health.cpp
+  src/topology/Pingmesh.cpp
 )
 target_include_directories(crucible PUBLIC include/)
 set_target_properties(crucible PROPERTIES POSITION_INDEPENDENT_CODE ON)
