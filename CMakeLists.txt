@@ -168,6 +168,8 @@ crucible_bpf_program(rt_queue_backlog
   include/crucible/rt/bpf/rt_queue_backlog.bpf.c)
 crucible_bpf_program(rt_socket_lifecycle
   include/crucible/rt/bpf/rt_socket_lifecycle.bpf.c)
+crucible_bpf_program(rt_fq_budget
+  include/crucible/rt/bpf/rt_fq_budget.bpf.c)
 
 crucible_bpf_program(cntp_xdp_flow_filter
   include/crucible/cntp/bpf/xdp_flow_filter.bpf.c)
@@ -183,11 +185,19 @@ crucible_bpf_program(cntp_fq_pacing_sample
   include/crucible/cntp/bpf/fq_pacing_sample.bpf.c)
 crucible_bpf_program(cntp_ecn_ce_mark_sample
   include/crucible/cntp/bpf/ecn_ce_mark_sample.bpf.c)
+crucible_bpf_program(cntp_bbr_model_sample
+  include/crucible/cntp/bpf/bbr_model_sample.bpf.c)
+crucible_bpf_program(cntp_ack_clock_sample
+  include/crucible/cntp/bpf/ack_clock_sample.bpf.c)
+crucible_bpf_program(cntp_loss_recovery_sample
+  include/crucible/cntp/bpf/loss_recovery_sample.bpf.c)
 
 crucible_bpf_program(canopy_gossip_xdp_tx
   include/crucible/canopy/bpf/gossip_xdp_tx.bpf.c)
 crucible_bpf_program(canopy_peer_liveness_probe
   include/crucible/canopy/bpf/peer_liveness_probe.bpf.c)
+crucible_bpf_program(canopy_gossip_fanout_sample
+  include/crucible/canopy/bpf/gossip_fanout_sample.bpf.c)
 
 crucible_bpf_program(topology_xdp_rx_timestamp_probe
   include/crucible/topology/bpf/xdp_rx_timestamp_probe.bpf.c)
@@ -195,6 +205,8 @@ crucible_bpf_program(topology_napi_pressure_probe
   include/crucible/topology/bpf/napi_pressure_probe.bpf.c)
 crucible_bpf_program(topology_qdisc_backlog_probe
   include/crucible/topology/bpf/qdisc_backlog_probe.bpf.c)
+crucible_bpf_program(topology_lldp_rx_sample
+  include/crucible/topology/bpf/lldp_rx_sample.bpf.c)
 
 crucible_bpf_program(observe_tcp_flow_sample
   include/crucible/observe/bpf/tcp_flow_sample.bpf.c)
