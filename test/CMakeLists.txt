@@ -225,6 +225,7 @@ crucible_test(test_hlc)
 crucible_test(test_vector_clock)
 crucible_test(test_crdt)
 crucible_test(test_swim)
+crucible_test(test_scuttlebutt)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
@@ -2287,6 +2288,25 @@ crucible_neg_compile_test(neg_swim_raw_peer_add
 crucible_neg_compile_test(neg_swim_external_peer_add
   "cannot convert|no matching function|could not convert|External|SwimMember")
 crucible_neg_compile_effects_test(neg_swim_mint_test_context
+  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+
+# GAPS-115 — canopy/Scuttlebutt.h bounded anti-entropy substrate.
+#   * neg_scuttlebutt_zero_max_peers: MaxPeers=0 is rejected structurally.
+#   * neg_scuttlebutt_raw_key_register: raw ScuttlebuttKey cannot
+#     register a CRDT; LocalScuttlebuttKey is required.
+#   * neg_scuttlebutt_raw_delta_apply: raw deltas cannot cross the
+#     gossiped merge boundary.
+#   * neg_scuttlebutt_non_crdt_publish: publish requires the CRDT concept.
+#   * neg_scuttlebutt_mint_test_context: Init-only mint rejects Test.
+crucible_neg_compile_test(neg_scuttlebutt_zero_max_peers
+  "constraints not satisfied|ScuttlebuttShape|MaxPeers")
+crucible_neg_compile_test(neg_scuttlebutt_raw_key_register
+  "cannot convert|no matching function|could not convert|LocalScuttlebuttKey|Tagged")
+crucible_neg_compile_test(neg_scuttlebutt_raw_delta_apply
+  "cannot convert|no matching function|could not convert|GossipedScuttlebuttDelta|Tagged")
+crucible_neg_compile_test(neg_scuttlebutt_non_crdt_publish
+  "constraints not satisfied|ScuttlebuttCrdt|state_type|merge")
+crucible_neg_compile_effects_test(neg_scuttlebutt_mint_test_context
   "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
 
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
