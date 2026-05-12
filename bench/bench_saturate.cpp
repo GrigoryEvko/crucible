@@ -13,8 +13,14 @@
 #include "bench_harness.h"
 
 using crucible::sat::add_sat;
+using crucible::sat::add_sat_from;
+using crucible::sat::add_sat_into;
 using crucible::sat::mul_sat;
+using crucible::sat::mul_sat_from;
+using crucible::sat::mul_sat_into;
 using crucible::sat::sub_sat;
+using crucible::sat::sub_sat_from;
+using crucible::sat::sub_sat_into;
 
 int main() {
     bench::print_system_info();
@@ -46,6 +52,10 @@ int main() {
     volatile size_t n      = 10'000;
     volatile size_t elt_sz = 168;
 
+    uint32_t counter_add = 0x1234'0000u;
+    uint32_t counter_sub = 0x1234'0000u;
+    uint32_t counter_mul = 0x0000'1000u;
+
     std::printf("=== saturate ===\n\n");
 
     bench::Report reports[] = {
@@ -64,6 +74,14 @@ int main() {
         bench::run("add_sat<u64>   overflow", [&]{ auto r = add_sat(big_a, big_b); bench::do_not_optimize(r); }),
         bench::run("mul_sat<i32>   INT_MIN×-1", [&]{ auto r = mul_sat(imin, neg1); bench::do_not_optimize(r); }),
         bench::run("mul_sat<size_t> array-sz", [&]{ auto r = mul_sat(n, elt_sz);   bench::do_not_optimize(r); }),
+
+        bench::run("add_sat_from<u32> counter", [&]{ auto r = add_sat_from(counter_add, uint32_t{u_b}); bench::do_not_optimize(r); }),
+        bench::run("sub_sat_from<u32> counter", [&]{ auto r = sub_sat_from(counter_sub, uint32_t{u_b}); bench::do_not_optimize(r); }),
+        bench::run("mul_sat_from<u32> counter", [&]{ auto r = mul_sat_from(counter_mul, uint32_t{3}); bench::do_not_optimize(r); }),
+
+        bench::run("add_sat_into<u32> counter", [&]{ auto r = add_sat_into(counter_add, uint32_t{1}); bench::do_not_optimize(r); }),
+        bench::run("sub_sat_into<u32> counter", [&]{ auto r = sub_sat_into(counter_sub, uint32_t{1}); bench::do_not_optimize(r); }),
+        bench::run("mul_sat_into<u32> counter", [&]{ auto r = mul_sat_into(counter_mul, uint32_t{1}); bench::do_not_optimize(r); }),
     };
 
     bench::emit_reports_text(reports);

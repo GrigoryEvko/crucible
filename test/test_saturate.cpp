@@ -14,10 +14,16 @@
 
 using crucible::sat::add_sat;
 using crucible::sat::add_sat_det;
+using crucible::sat::add_sat_from;
+using crucible::sat::add_sat_into;
 using crucible::sat::sub_sat;
 using crucible::sat::sub_sat_det;
+using crucible::sat::sub_sat_from;
+using crucible::sat::sub_sat_into;
 using crucible::sat::mul_sat;
 using crucible::sat::mul_sat_det;
+using crucible::sat::mul_sat_from;
+using crucible::sat::mul_sat_into;
 
 // Helper: alias the numeric_limits bounds.
 template <typename T> constexpr T MIN = std::numeric_limits<T>::min();
@@ -159,6 +165,12 @@ static void test_constexpr_usable() {
     static_assert(decltype(mul_sat_det<int32_t>(MIN<int32_t>, -1))
                       ::template satisfies<
                           crucible::safety::DetSafeTier_v::Pure>);
+    constexpr uint32_t counter = 40;
+    static_assert(add_sat_from(counter, 2u).value() == 42u);
+    static_assert(!add_sat_from(counter, 2u).was_clamped());
+    static_assert(sub_sat_from(counter, 50u).value() == 0u);
+    static_assert(sub_sat_from(counter, 50u).was_clamped());
+    static_assert(mul_sat_from(counter, 2u).value() == 80u);
 }
 
 static void test_det_wrappers() {
@@ -178,6 +190,32 @@ static void test_det_wrappers() {
     assert(relaxed.peek().value() == MAX<int32_t>);
 }
 
+static void test_memory_counter_wrappers() {
+    uint32_t add_counter = MAX<uint32_t> - 1u;
+    auto add = add_sat_into(add_counter, 10u);
+    assert(add_counter == MAX<uint32_t>);
+    assert(add.value() == MAX<uint32_t>);
+    assert(add.was_clamped());
+
+    uint32_t sub_counter = 3u;
+    auto sub = sub_sat_into(sub_counter, 10u);
+    assert(sub_counter == 0u);
+    assert(sub.value() == 0u);
+    assert(sub.was_clamped());
+
+    uint16_t mul_counter = 1000u;
+    auto mul = mul_sat_into<uint16_t>(mul_counter, uint16_t{70});
+    assert(mul_counter == MAX<uint16_t>);
+    assert(mul.value() == MAX<uint16_t>);
+    assert(mul.was_clamped());
+
+    uint32_t read_only = 9u;
+    auto projected = mul_sat_from(read_only, 9u);
+    assert(read_only == 9u);
+    assert(projected.value() == 81u);
+    assert(!projected.was_clamped());
+}
+
 int main() {
     test_add_unsigned();
     test_add_signed();
@@ -187,6 +225,7 @@ int main() {
     test_mul_signed();
     test_constexpr_usable();
     test_det_wrappers();
-    std::printf("test_saturate: all 8 groups passed\n");
+    test_memory_counter_wrappers();
+    std::printf("test_saturate: all 9 groups passed\n");
     return 0;
 }

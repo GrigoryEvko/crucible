@@ -104,4 +104,46 @@ CRUCIBLE_CONST constexpr DetSatPure<T> mul_sat_det(T a, T b) noexcept {
     return DetSatPure<T>{::crucible::safety::mul_sat_checked(a, b)};
 }
 
+template <std::integral T>
+CRUCIBLE_PURE constexpr ::crucible::safety::Saturated<T>
+add_sat_from(T const& counter, T value) noexcept {
+    return ::crucible::safety::add_sat_checked(counter, value);
+}
+
+template <std::integral T>
+CRUCIBLE_PURE constexpr ::crucible::safety::Saturated<T>
+sub_sat_from(T const& counter, T value) noexcept {
+    return ::crucible::safety::sub_sat_checked(counter, value);
+}
+
+template <std::integral T>
+CRUCIBLE_PURE constexpr ::crucible::safety::Saturated<T>
+mul_sat_from(T const& counter, T value) noexcept {
+    return ::crucible::safety::mul_sat_checked(counter, value);
+}
+
+template <std::integral T>
+[[nodiscard]] constexpr ::crucible::safety::Saturated<T>
+add_sat_into(T& dest, T value) noexcept {
+    auto result = add_sat_from(dest, value);
+    dest = result.value();
+    return result;
+}
+
+template <std::integral T>
+[[nodiscard]] constexpr ::crucible::safety::Saturated<T>
+sub_sat_into(T& dest, T value) noexcept {
+    auto result = sub_sat_from(dest, value);
+    dest = result.value();
+    return result;
+}
+
+template <std::integral T>
+[[nodiscard]] constexpr ::crucible::safety::Saturated<T>
+mul_sat_into(T& dest, T value) noexcept {
+    auto result = mul_sat_from(dest, value);
+    dest = result.value();
+    return result;
+}
+
 } // namespace crucible::sat

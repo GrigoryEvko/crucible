@@ -3427,6 +3427,14 @@ crucible_neg_compile_test(neg_saturate_det_raw_result_escape
 crucible_neg_compile_test(neg_saturate_det_cross_tier_assignment
   "cannot convert|conversion from|no matching function|non-scalar type")
 
+# WRAP-Saturate-4 (#1002) — memory-resident counter helpers keep
+# read-only projections separate from mutating updates and preserve
+# the Saturated<T> clamp signal.
+crucible_neg_compile_test(neg_saturate_into_const_dest
+  "no matching function|binding reference|discards qualifiers|cannot convert")
+crucible_neg_compile_test(neg_saturate_from_raw_escape
+  "cannot convert|conversion from|no matching function|invalid conversion")
+
 # FairSharedPermissionPool fairness wrapper — audit fixtures (#861-followup):
 #   * BurstLimit=0 fires the static_assert ("must be > 0").
 #   * Copying the Pinned wrapper fires the deleted-copy diagnostic.
