@@ -15,6 +15,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
@@ -82,6 +83,15 @@ inline crucible::effects::Init init_cap() noexcept { return g_init; }
                   == sizeof(std::span<const RecipeRegistry::Entry>));
     static_assert(!std::is_convertible_v<
         std::span<const RecipeRegistry::Entry>, RecipeRegistry::Entries>);
+    static_assert(crucible::effects::Subrow<
+                  RecipeRegistry::pure_projection_row,
+                  crucible::effects::Row<>>);
+    static_assert(!crucible::effects::Subrow<
+                  crucible::effects::Row<crucible::effects::Effect::IO>,
+                  RecipeRegistry::pure_projection_row>);
+    static_assert(!crucible::effects::Subrow<
+                  crucible::effects::Row<crucible::effects::Effect::Init>,
+                  RecipeRegistry::pure_projection_row>);
 
     // Starter specs fully specified at compile time.
     static_assert(

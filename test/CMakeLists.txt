@@ -3039,6 +3039,20 @@ crucible_neg_compile_test(neg_recipe_registry_spec_assigned_to_pinned_expected
 crucible_neg_compile_test(neg_recipe_registry_pinned_assigned_to_spec_expected
   "conversion from|could not convert|cannot convert|no viable conversion|non-scalar type")
 
+# WRAP-RecipeReg-6 (#981) — registry lookup APIs are pure projections.
+# by_name/by_hash/entries, the NumericalTier-pinned lookups, and the
+# RecipeSpec lookups all reject non-empty caller rows.
+crucible_neg_compile_test(neg_recipe_registry_by_name_io_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+crucible_neg_compile_test(neg_recipe_registry_by_hash_init_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+crucible_neg_compile_test(neg_recipe_registry_entries_bg_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+crucible_neg_compile_test(neg_recipe_registry_pinned_alloc_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+crucible_neg_compile_test(neg_recipe_registry_spec_block_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+
 # WRAP-RecipeReg-3 — entries() span carries source::JsonRegistry
 # provenance. Raw spans and differently tagged spans must not reach a
 # registry-entry consumer without an explicit trusted unwrap.

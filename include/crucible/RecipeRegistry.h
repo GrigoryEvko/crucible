@@ -54,6 +54,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
 #include <crucible/RecipePool.h>
@@ -218,6 +219,7 @@ recipe_family_of(NumericalRecipe const& r) noexcept {
 class CRUCIBLE_OWNER RecipeRegistry {
  public:
   using PoolBorrow = safety::BorrowedRef<RecipePool>;
+  using pure_projection_row = effects::Row<>;
 
   static_assert(safety::extract::IsBorrowedRef<PoolBorrow>);
 
@@ -268,6 +270,8 @@ class CRUCIBLE_OWNER RecipeRegistry {
   // would be.
   //
   // Cost: ~15 ns for a miss, ~5-10 ns for a hit.
+  template <typename CallerRow = pure_projection_row>
+      requires effects::Subrow<CallerRow, pure_projection_row>
   [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError>
       by_name(std::string_view name) const noexcept;
 
@@ -295,6 +299,8 @@ class CRUCIBLE_OWNER RecipeRegistry {
   // Cost: ~8 ns miss, ~5 ns hit — one predicated branch per entry,
   // no string compare overhead.  Compared to by_name this is tighter
   // because 8-byte hash compare is a single integer test.
+  template <typename CallerRow = pure_projection_row>
+      requires effects::Subrow<CallerRow, pure_projection_row>
   [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError>
       by_hash(RecipeHash hash) const noexcept;
 
@@ -305,6 +311,8 @@ class CRUCIBLE_OWNER RecipeRegistry {
   // Used by tests (to sweep every starter recipe), Meridian probes
   // (to emit native_on bitmaps per chip — future), and diagnostic
   // dumps (`crucible-top --recipes`).
+  template <typename CallerRow = pure_projection_row>
+      requires effects::Subrow<CallerRow, pure_projection_row>
   [[nodiscard, gnu::pure]] Entries entries() const noexcept
       CRUCIBLE_LIFETIMEBOUND
   {
@@ -362,11 +370,12 @@ class CRUCIBLE_OWNER RecipeRegistry {
   // the non-pinned variant.
 
   // ── by_name_pinned — name lookup with tier admission ────────────
-  template <safety::Tolerance T>
+  template <safety::Tolerance T, typename CallerRow = pure_projection_row>
+      requires effects::Subrow<CallerRow, pure_projection_row>
   [[nodiscard, gnu::pure]]
   std::expected<safety::NumericalTier<T, const NumericalRecipe*>, RecipeError>
   by_name_pinned(std::string_view name) const noexcept {
-    auto base = by_name(name);
+    auto base = by_name<CallerRow>(name);
     if (!base) return std::unexpected(base.error());
     const NumericalRecipe* recipe = *base;
     // tolerance_of cannot be null (recipe pointer is guaranteed
@@ -379,11 +388,12 @@ class CRUCIBLE_OWNER RecipeRegistry {
   }
 
   // ── by_hash_pinned — hash lookup with tier admission ────────────
-  template <safety::Tolerance T>
+  template <safety::Tolerance T, typename CallerRow = pure_projection_row>
+      requires effects::Subrow<CallerRow, pure_projection_row>
   [[nodiscard, gnu::pure]]
   std::expected<safety::NumericalTier<T, const NumericalRecipe*>, RecipeError>
   by_hash_pinned(RecipeHash hash) const noexcept {
-    auto base = by_hash(hash);
+    auto base = by_hash<CallerRow>(hash);
     if (!base) return std::unexpected(base.error());
     const NumericalRecipe* recipe = *base;
     if (!safety::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
@@ -442,10 +452,12 @@ class CRUCIBLE_OWNER RecipeRegistry {
   // 1-byte stores); ~15 ns miss.  No heap, no atomic, no CAS.
 
   // ── by_name_spec — name lookup with two-axis spec wrap ──────────
+  template <typename CallerRow = pure_projection_row>
+      requires effects::Subrow<CallerRow, pure_projection_row>
   [[nodiscard, gnu::pure]]
   std::expected<safety::RecipeSpec<const NumericalRecipe*>, RecipeError>
   by_name_spec(std::string_view name) const noexcept {
-    auto base = by_name(name);
+    auto base = by_name<CallerRow>(name);
     if (!base) return std::unexpected(base.error());
     const NumericalRecipe* recipe = *base;
     return safety::RecipeSpec<const NumericalRecipe*>{
@@ -453,10 +465,12 @@ class CRUCIBLE_OWNER RecipeRegistry {
   }
 
   // ── by_hash_spec — hash lookup with two-axis spec wrap ──────────
+  template <typename CallerRow = pure_projection_row>
+      requires effects::Subrow<CallerRow, pure_projection_row>
   [[nodiscard, gnu::pure]]
   std::expected<safety::RecipeSpec<const NumericalRecipe*>, RecipeError>
   by_hash_spec(RecipeHash hash) const noexcept {
-    auto base = by_hash(hash);
+    auto base = by_hash<CallerRow>(hash);
     if (!base) return std::unexpected(base.error());
     const NumericalRecipe* recipe = *base;
     return safety::RecipeSpec<const NumericalRecipe*>{
@@ -657,6 +671,8 @@ inline RecipeRegistry::RecipeRegistry(PoolBorrow pool,
   }
 }
 
+template <typename CallerRow>
+  requires effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
 inline std::expected<const NumericalRecipe*, RecipeError>
 RecipeRegistry::by_name(std::string_view name) const noexcept
 {
@@ -670,6 +686,8 @@ RecipeRegistry::by_name(std::string_view name) const noexcept
   return std::unexpected(RecipeError::NameNotFound);
 }
 
+template <typename CallerRow>
+  requires effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
 inline std::expected<const NumericalRecipe*, RecipeError>
 RecipeRegistry::by_hash(RecipeHash hash) const noexcept
 {
