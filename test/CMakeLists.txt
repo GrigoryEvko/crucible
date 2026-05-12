@@ -1990,6 +1990,13 @@ crucible_neg_compile_test(neg_transaction_region_raw_pointer
 crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
   "no match|no known conversion|cannot convert|could not convert")
 
+# WRAP-Lower-4 (#934) — lower_trace_to_graph requires Recorded/Replayed
+# TraceGraph provenance and propagates that source to the returned Graph.
+crucible_neg_compile_test(neg_lower_trace_graph_raw_input
+  "no match|no known conversion|cannot convert|could not convert")
+crucible_neg_compile_test(neg_lower_trace_graph_cross_source
+  "conversion from|no match|no known conversion|cannot convert|could not convert")
+
 # WRAP-Transaction-1 (#1060) — Transaction::step_id raw uint64_t →
 # safety::Monotonic<uint64_t>.  HS14 mandate: ≥2 negative-compile
 # fixtures per soundness gate, each demonstrating a distinct mismatch

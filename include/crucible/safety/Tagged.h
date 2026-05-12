@@ -78,6 +78,8 @@ namespace source {
     struct Loaded       {};  // loaded from validated serialized state
     struct Interned     {};  // canonicalized by an interning owner
     struct Arena        {};  // arena-owned object pointer/reference
+    struct Recorded     {};  // produced from live RECORD-mode tracing
+    struct Replayed     {};  // reconstructed from replay/Cipher state
     // Durable: loaded from on-disk state (Cipher, config, snapshots).
     // Computed: derived at startup / runtime from Durable + inputs.
     // The pair lets a reader distinguish "this came from disk" from "this

@@ -181,7 +181,17 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
     // ════════════════════════════════════════════════════════════════
 
     crucible::Graph graph(test.alloc, &pool);
-    crucible::lower_trace_to_graph(test.alloc, *graph_tg, pool, graph);
+    using RecordedTraceGraph =
+        crucible::LowerTraceGraph<crucible::safety::source::Recorded>;
+    using RecordedGraph =
+        crucible::LoweredGraph<crucible::safety::source::Recorded>;
+    static_assert(sizeof(RecordedTraceGraph) == sizeof(const crucible::TraceGraph*));
+    static_assert(sizeof(RecordedGraph) == sizeof(crucible::Graph*));
+
+    RecordedGraph lowered =
+        crucible::lower_trace_to_graph(
+            test.alloc, RecordedTraceGraph{graph_tg}, pool, graph);
+    assert(lowered.value() == &graph);
 
     // ── Verify node count ───────────────────────────────────────
     // 3 INPUT nodes (slots 0, 1, 4) + 3 compute nodes = 6 total.
@@ -337,7 +347,10 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
     crucible::build_csr(test.alloc, arena2, tg2, nullptr, 0, 1);
 
     crucible::Graph graph2(test.alloc, &pool);
-    crucible::lower_trace_to_graph(test.alloc, *tg2, pool, graph2);
+    RecordedGraph lowered2 =
+        crucible::lower_trace_to_graph(
+            test.alloc, RecordedTraceGraph{tg2}, pool, graph2);
+    assert(lowered2.value() == &graph2);
 
     // 2 INPUT nodes (slots 0, 1) + 1 compute node = 3 total.
     // The null input (slot UINT32_MAX) was filtered out.

@@ -17,12 +17,25 @@
 #include <crucible/Graph.h>
 #include <crucible/TraceGraph.h>
 #include <crucible/safety/FixedArray.h>
+#include <crucible/safety/Tagged.h>
 
+#include <concepts>
 #include <cstring>
 
 namespace crucible {
 
-// Lower a recorded TraceGraph into a mutable Graph IR.
+template <typename Source>
+concept LowerTraceSource =
+    std::same_as<Source, safety::source::Recorded> ||
+    std::same_as<Source, safety::source::Replayed>;
+
+template <LowerTraceSource Source>
+using LowerTraceGraph = safety::Tagged<const TraceGraph*, Source>;
+
+template <LowerTraceSource Source>
+using LoweredGraph = safety::Tagged<Graph*, Source>;
+
+// Lower a provenance-tagged TraceGraph into a mutable Graph IR.
 //
 // Populates `graph` with one GraphNode per TraceEntry:
 //   - NodeKind from classify_node_kind(kernel_id)
@@ -37,15 +50,18 @@ namespace crucible {
 // Null tensor inputs (Optional[Tensor] = None) are filtered out:
 // the Graph node will have fewer inputs than the TraceEntry. Slot
 // IDs are compacted to match the filtered input list.
-inline void lower_trace_to_graph(
+template <LowerTraceSource Source>
+[[nodiscard]] inline LoweredGraph<Source> lower_trace_to_graph(
     effects::Alloc a,
-    const TraceGraph& tg,
+    LowerTraceGraph<Source> trace,
     ExprPool& pool,
     Graph& graph)
+    pre (trace.value() != nullptr)
 {
+  const TraceGraph& tg = *trace.value();
   const uint32_t num_ops = tg.num_ops.get_assuming_set();
   const uint32_t num_slots = tg.num_slots.get_assuming_set();
-  if (num_ops == 0) return;
+  if (num_ops == 0) return LoweredGraph<Source>{&graph};
 
   Arena& arena = graph.arena();
 
@@ -214,6 +230,8 @@ inline void lower_trace_to_graph(
   }
   if (n_outputs > 0)
     graph.set_graph_outputs(a, std::span{output_ids, n_outputs});
+
+  return LoweredGraph<Source>{&graph};
 }
 
 } // namespace crucible
