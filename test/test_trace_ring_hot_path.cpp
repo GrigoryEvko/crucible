@@ -116,8 +116,8 @@ static void test_metalog_try_append_pinned_type_identity() {
     // Real append of a single TensorMeta.
     TensorMeta meta{};
     meta.ndim = 1;
-    meta.sizes[0] = 16;
-    meta.strides[0] = 1;
+    meta.sizes[0] = ::crucible::tensor_dim(16);
+    meta.strides[0] = ::crucible::tensor_dim(1);
     auto p = log->try_append_pinned(&meta, 1);
     MetaIndex idx = std::move(p).consume();
     assert(idx.is_valid());
@@ -244,8 +244,8 @@ static void test_metalog_full_buffer_type_pin_survives_failure() {
     auto log = std::make_unique<MetaLog>();
     TensorMeta meta{};
     meta.ndim = 1;
-    meta.sizes[0] = 1;
-    meta.strides[0] = 1;
+    meta.sizes[0] = ::crucible::tensor_dim(1);
+    meta.strides[0] = ::crucible::tensor_dim(1);
 
     using NonePathT = HotPath<HotPathTier_v::Hot, MetaIndex>;
     NonePathT none_path{MetaIndex::none()};

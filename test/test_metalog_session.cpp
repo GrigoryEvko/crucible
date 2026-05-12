@@ -54,8 +54,8 @@ void run_test(const char* name, Body body) {
 
 [[nodiscard]] ::crucible::TensorMeta make_meta(std::int64_t id) {
     ::crucible::TensorMeta meta{};
-    meta.sizes[0] = id;
-    meta.strides[0] = 1;
+    meta.sizes[0] = ::crucible::tensor_dim(id);
+    meta.strides[0] = ::crucible::tensor_dim(1);
     meta.ndim = 1;
     meta.dtype = ::crucible::ScalarType::Float;
     meta.device_type = ::crucible::DeviceType::CPU;
@@ -67,8 +67,10 @@ void run_test(const char* name, Body body) {
 
 [[nodiscard]] bool same_meta(const ::crucible::TensorMeta& a,
                              const ::crucible::TensorMeta& b) {
-    return a.sizes[0] == b.sizes[0]
-        && a.strides[0] == b.strides[0]
+    return ::crucible::raw_tensor_dim(a.sizes[0]) ==
+               ::crucible::raw_tensor_dim(b.sizes[0])
+        && ::crucible::raw_tensor_dim(a.strides[0]) ==
+               ::crucible::raw_tensor_dim(b.strides[0])
         && a.ndim == b.ndim
         && a.dtype == b.dtype
         && a.device_type == b.device_type

@@ -20,8 +20,8 @@
 int main() {
   crucible::TensorMeta meta{};
   meta.ndim = 1;
-  meta.sizes[0] = 8;
-  meta.strides[0] = 1;
+  meta.sizes[0] = ::crucible::tensor_dim(8);
+  meta.strides[0] = ::crucible::tensor_dim(1);
   meta.dtype = crucible::ScalarType::Float;
 
   // MUST fail: compute_storage_nbytes requires ExternalTensorMeta,

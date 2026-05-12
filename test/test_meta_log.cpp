@@ -26,10 +26,10 @@ static TensorMeta make_meta(void* ptr, int64_t d0 = 128, int64_t d1 = 256) {
     TensorMeta m{};
     m.data_ptr = external_data_ptr(ptr);
     m.ndim = 2;
-    m.sizes[0] = d0;
-    m.sizes[1] = d1;
-    m.strides[0] = d1;
-    m.strides[1] = 1;
+    m.sizes[0] = ::crucible::tensor_dim(d0);
+    m.sizes[1] = ::crucible::tensor_dim(d1);
+    m.strides[0] = ::crucible::tensor_dim(d1);
+    m.strides[1] = ::crucible::tensor_dim(1);
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
     m.device_idx = 0;
@@ -54,8 +54,8 @@ static void test_single_append_returns_index_zero() {
     // Read back the stored meta.
     const auto& got = log.at(0);
     assert(raw_data_ptr(got) == raw_data_ptr(m));
-    assert(got.sizes[0] == 128);
-    assert(got.sizes[1] == 256);
+    assert(::crucible::raw_tensor_dim(got.sizes[0]) == 128);
+    assert(::crucible::raw_tensor_dim(got.sizes[1]) == 256);
     std::printf("  test_single_append:             PASSED\n");
 }
 
@@ -198,8 +198,8 @@ static void test_spsc_concurrent_integrity() {
                     static_cast<uintptr_t>(next + k + 1) << 16;
                 assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
                 // Spot-check non-pointer fields to catch torn reads.
-                assert(m.sizes[0]    == 128);
-                assert(m.sizes[1]    == 256);
+                assert(::crucible::raw_tensor_dim(m.sizes[0]) == 128);
+                assert(::crucible::raw_tensor_dim(m.sizes[1]) == 256);
                 assert(m.dtype       == ScalarType::Float);
                 assert(m.device_type == DeviceType::CUDA);
             }
@@ -352,8 +352,8 @@ static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
                 const uintptr_t expected =
                     static_cast<uintptr_t>(next + k + 1) << 16;
                 assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
-                assert(m.sizes[0]    == 128);
-                assert(m.sizes[1]    == 256);
+                assert(::crucible::raw_tensor_dim(m.sizes[0]) == 128);
+                assert(::crucible::raw_tensor_dim(m.sizes[1]) == 256);
                 assert(m.dtype       == ScalarType::Float);
                 assert(m.device_type == DeviceType::CUDA);
             }

@@ -10,10 +10,10 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
                                       void* ptr = nullptr) {
     crucible::TensorMeta m{};
     m.ndim = 2;
-    m.sizes[0] = d0;
-    m.sizes[1] = d1;
-    m.strides[0] = d1;
-    m.strides[1] = 1;
+    m.sizes[0] = ::crucible::tensor_dim(d0);
+    m.sizes[1] = ::crucible::tensor_dim(d1);
+    m.strides[0] = ::crucible::tensor_dim(d1);
+    m.strides[1] = ::crucible::tensor_dim(1);
     m.dtype = crucible::ScalarType::Float;
     m.device_type = crucible::DeviceType::CPU;
     m.device_idx = dev;

@@ -85,8 +85,8 @@ static constexpr int64_t BATCH = 4, IN_DIM = 8, HIDDEN = 4, OUT_DIM = 2;
 static TensorMeta make_2d(void* ptr, int64_t r, int64_t c) {
     TensorMeta m{};
     m.ndim = 2;
-    m.sizes[0] = r; m.sizes[1] = c;
-    m.strides[0] = c; m.strides[1] = 1;
+    m.sizes[0] = ::crucible::tensor_dim(r); m.sizes[1] = ::crucible::tensor_dim(c);
+    m.strides[0] = ::crucible::tensor_dim(c); m.strides[1] = ::crucible::tensor_dim(1);
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.device_idx = 0;
@@ -97,8 +97,8 @@ static TensorMeta make_2d(void* ptr, int64_t r, int64_t c) {
 static TensorMeta make_1d(void* ptr, int64_t n) {
     TensorMeta m{};
     m.ndim = 1;
-    m.sizes[0] = n;
-    m.strides[0] = 1;
+    m.sizes[0] = ::crucible::tensor_dim(n);
+    m.strides[0] = ::crucible::tensor_dim(1);
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.device_idx = 0;

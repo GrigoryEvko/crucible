@@ -28,8 +28,8 @@ static crucible::TraceRing::Entry make_entry(SchemaHash schema_hash) {
 static crucible::TensorMeta make_meta() {
     crucible::TensorMeta m{};
     m.ndim        = 1;
-    m.sizes[0]    = 8;
-    m.strides[0]  = 1;
+    m.sizes[0]    = ::crucible::tensor_dim(8);
+    m.strides[0]  = ::crucible::tensor_dim(1);
     m.dtype       = crucible::ScalarType::Float;
     m.device_type = crucible::DeviceType::CPU;
     m.device_idx  = -1;

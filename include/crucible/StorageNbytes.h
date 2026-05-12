@@ -107,11 +107,13 @@ safety::Saturated<uint64_t> compute_storage_nbytes_scalar(ExternalTensorMeta met
   int64_t max_offset = 0;
   int64_t min_offset = 0;
   for (uint8_t d = 0; d < raw.ndim; ++d) {
-    if (raw.sizes[d] == 0) return Sat{uint64_t{0}};  // zero-size tensor
+    const int64_t size = raw_tensor_dim(raw.sizes[d]);
+    const int64_t stride = raw_tensor_dim(raw.strides[d]);
+    if (size == 0) return Sat{uint64_t{0}};  // zero-size tensor
     int64_t dim_extent_bytes;
     // (sizes[d] - 1) * strides[d] can overflow int64 for huge dims.
     // sizes[d] is positive, so the subtraction never underflows.
-    if (__builtin_mul_overflow(raw.sizes[d] - 1, raw.strides[d],
+    if (__builtin_mul_overflow(size - 1, stride,
                                &dim_extent_bytes)) [[unlikely]] {
       return Sat{UINT64_MAX, true};
     }
@@ -182,9 +184,9 @@ bool storage_nbytes_simd_safe_(ExternalTensorMeta meta) noexcept {
   // Use element-aligned loads so trace-loader vectors and MetaLog
   // buffers are valid inputs.
   auto sizes = std::simd::unchecked_load<i64x8>(
-      raw.sizes,   i64x8::size());
+      raw.sizes.raw_data(),   i64x8::size());
   auto strides = std::simd::unchecked_load<i64x8>(
-      raw.strides, i64x8::size());
+      raw.strides.raw_data(), i64x8::size());
 
   auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
@@ -245,9 +247,9 @@ safety::Saturated<uint64_t> compute_storage_nbytes_simd(ExternalTensorMeta meta)
   // Load sizes and strides via element-aligned SIMD load.  TensorMeta
   // arrays are 64 bytes wide but not guaranteed 64-byte aligned.
   auto sizes = std::simd::unchecked_load<i64x8>(
-      raw.sizes,   i64x8::size());
+      raw.sizes.raw_data(),   i64x8::size());
   auto strides = std::simd::unchecked_load<i64x8>(
-      raw.strides, i64x8::size());
+      raw.strides.raw_data(), i64x8::size());
 
   auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 

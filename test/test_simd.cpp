@@ -262,8 +262,8 @@ static crucible::TensorMeta make_meta(
     auto size_it = sizes.begin();
     auto stride_it = strides.begin();
     for (uint8_t d = 0; d < meta.ndim; ++d) {
-        meta.sizes[d]   = *size_it++;
-        meta.strides[d] = *stride_it++;
+        meta.sizes[d]   = ::crucible::tensor_dim(*size_it++);
+        meta.strides[d] = ::crucible::tensor_dim(*stride_it++);
     }
     meta.dtype = dtype;
     return meta;
@@ -332,7 +332,7 @@ static void test_dim_hash_equivalence_handcoded() {
     auto* unaligned = std::construct_at(
         std::bit_cast<crucible::TensorMeta*>(chosen),
         make_meta({16, 32, 64}, {2048, 64, 1}));
-    assert(std::bit_cast<std::uintptr_t>(&unaligned->sizes[0]) % 64 != 0);
+    assert(std::bit_cast<std::uintptr_t>(unaligned->sizes.raw_data()) % 64 != 0);
     assert(dim_hash_simd(*unaligned) == dim_hash_scalar(*unaligned));
     assert(crucible::raw_dim_hash(dim_hash_simd_det(*unaligned)) ==
            crucible::raw_dim_hash(dim_hash_scalar_det(*unaligned)));

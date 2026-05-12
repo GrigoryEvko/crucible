@@ -48,8 +48,8 @@ static RegionNode* make_test_region(Arena& arena, uint32_t seed) {
     ops[0].input_metas = arena.alloc_array<TensorMeta>(g_test.alloc, 1);
     ops[0].input_metas[0] = {};
     ops[0].input_metas[0].ndim = 1;
-    ops[0].input_metas[0].sizes[0] = 16;
-    ops[0].input_metas[0].strides[0] = 1;
+    ops[0].input_metas[0].sizes[0] = ::crucible::tensor_dim(16);
+    ops[0].input_metas[0].strides[0] = ::crucible::tensor_dim(1);
     ops[0].input_metas[0].dtype = ScalarType::Float;
     ops[0].output_metas = arena.alloc_array<TensorMeta>(g_test.alloc, 1);
     ops[0].output_metas[0] = ops[0].input_metas[0];

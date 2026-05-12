@@ -123,8 +123,8 @@ struct Reader {
 // is meaningful after reload and neither may enter persistent bytes.
 // Pad bytes are written as zero for deterministic serialization.
 inline void write_meta(Writer& w, const TensorMeta& m) {
-    w.write_bytes(m.sizes,   sizeof(m.sizes));
-    w.write_bytes(m.strides, sizeof(m.strides));
+    w.write_bytes(m.sizes.raw_data(),   sizeof(m.sizes));
+    w.write_bytes(m.strides.raw_data(), sizeof(m.strides));
     // data_ptr → always 0 on disk
     const uint64_t zero_ptr = 0;
     w.w(zero_ptr);
@@ -147,8 +147,12 @@ inline void write_meta(Writer& w, const TensorMeta& m) {
 // deserialization, even if older or corrupt bytes carry non-zero values.
 inline TensorMeta read_meta(Reader& r) {
     TensorMeta m{};
-    r.read_bytes(m.sizes,   sizeof(m.sizes));
-    r.read_bytes(m.strides, sizeof(m.strides));
+    for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
+        m.sizes[d] = tensor_dim(r.r<int64_t>());
+    }
+    for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
+        m.strides[d] = tensor_dim(r.r<int64_t>());
+    }
     (void)r.r<uint64_t>(); // data_ptr (discarded)
     m.data_ptr   = external_data_ptr(nullptr);
     // ── PROD-WRAP-5 (#534) — typed widening at deserialize boundary ──

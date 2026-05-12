@@ -206,11 +206,14 @@ static TensorMeta make_meta(const TRef& s, uint32_t iter) {
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.ndim = s.ndim;
-    for (uint8_t i = 0; i < s.ndim; i++) m.sizes[i] = s.d[i];
+    for (uint8_t i = 0; i < s.ndim; i++) m.sizes[i] = ::crucible::tensor_dim(s.d[i]);
     if (s.ndim > 0) {
-        m.strides[s.ndim - 1] = 1;
-        for (int i = s.ndim - 2; i >= 0; i--)
-            m.strides[i] = m.strides[i + 1] * m.sizes[i + 1];
+        const std::size_t ndim = static_cast<std::size_t>(s.ndim);
+        m.strides[ndim - 1] = ::crucible::tensor_dim(1);
+        for (std::size_t i = ndim - 1; i-- > 0;)
+            m.strides[i] = ::crucible::tensor_dim(
+                ::crucible::raw_tensor_dim(m.strides[i + 1]) *
+                ::crucible::raw_tensor_dim(m.sizes[i + 1]));
     }
     return m;
 }

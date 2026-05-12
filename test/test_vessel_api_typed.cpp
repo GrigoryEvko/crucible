@@ -178,8 +178,10 @@ void test_meta_roundtrip() {
     // exercise sizes[], a scalar field, and a tail field to catch
     // offset-skew bugs across the struct.
     const auto* tm = typed_multi.value();
-    EXPECT(tm[0].sizes[0] == 4, "TensorMeta::sizes[0] must read 4 from CrucibleMeta");
-    EXPECT(tm[0].sizes[1] == 8, "TensorMeta::sizes[1] must read 8 from CrucibleMeta");
+    EXPECT(crucible::raw_tensor_dim(tm[0].sizes[0]) == 4,
+           "TensorMeta::sizes[0] must read 4 from CrucibleMeta");
+    EXPECT(crucible::raw_tensor_dim(tm[0].sizes[1]) == 8,
+           "TensorMeta::sizes[1] must read 8 from CrucibleMeta");
     EXPECT(tm[0].ndim == 3, "TensorMeta::ndim must read 3");
     EXPECT(crucible::raw_grad_fn_hash(tm[0]) == 0x0123456789ABCDEFULL,
            "TensorMeta::grad_fn_hash must read all 64 bits intact");

@@ -28,14 +28,14 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     crucible::TensorMeta m{};
     if (size1 > 0) {
         m.ndim       = 2;
-        m.sizes[0]   = size0;
-        m.sizes[1]   = size1;
-        m.strides[0] = size1;
-        m.strides[1] = 1;
+        m.sizes[0]   = ::crucible::tensor_dim(size0);
+        m.sizes[1]   = ::crucible::tensor_dim(size1);
+        m.strides[0] = ::crucible::tensor_dim(size1);
+        m.strides[1] = ::crucible::tensor_dim(1);
     } else {
         m.ndim       = 1;
-        m.sizes[0]   = size0;
-        m.strides[0] = 1;
+        m.sizes[0]   = ::crucible::tensor_dim(size0);
+        m.strides[0] = ::crucible::tensor_dim(1);
     }
     m.dtype       = crucible::ScalarType::Float;
     m.device_type = crucible::DeviceType::CPU;
@@ -151,10 +151,14 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
                    && "grad_fn_hash must be zero after deserialization");
             assert(loaded->ops[i].input_metas[j].ndim     == ops[i].input_metas[j].ndim);
             assert(loaded->ops[i].input_metas[j].dtype    == ops[i].input_metas[j].dtype);
-            assert(loaded->ops[i].input_metas[j].sizes[0] == ops[i].input_metas[j].sizes[0]);
-            assert(loaded->ops[i].input_metas[j].sizes[1] == ops[i].input_metas[j].sizes[1]);
-            assert(loaded->ops[i].input_metas[j].strides[0] == ops[i].input_metas[j].strides[0]);
-            assert(loaded->ops[i].input_metas[j].strides[1] == ops[i].input_metas[j].strides[1]);
+            assert(crucible::raw_tensor_dim(loaded->ops[i].input_metas[j].sizes[0]) ==
+                   crucible::raw_tensor_dim(ops[i].input_metas[j].sizes[0]));
+            assert(crucible::raw_tensor_dim(loaded->ops[i].input_metas[j].sizes[1]) ==
+                   crucible::raw_tensor_dim(ops[i].input_metas[j].sizes[1]));
+            assert(crucible::raw_tensor_dim(loaded->ops[i].input_metas[j].strides[0]) ==
+                   crucible::raw_tensor_dim(ops[i].input_metas[j].strides[0]));
+            assert(crucible::raw_tensor_dim(loaded->ops[i].input_metas[j].strides[1]) ==
+                   crucible::raw_tensor_dim(ops[i].input_metas[j].strides[1]));
         }
         for (uint16_t j = 0; j < ops[i].num_outputs; j++) {
             assert(crucible::raw_data_ptr(loaded->ops[i].output_metas[j]) == nullptr);

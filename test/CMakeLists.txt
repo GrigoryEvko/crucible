@@ -2232,6 +2232,14 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_above_max
 crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# WRAP-TensorMeta-1 (#1034) — TensorMeta sizes/strides lanes now
+# write through TensorDim = Refined<bounded_above<INT64_MAX / 16>,
+# int64_t> while keeping the raw 64-byte lane blocks for SIMD loads.
+crucible_neg_compile_test(neg_tensor_meta_dim_raw_assignment
+  "no match for|cannot convert|no viable|could not convert|operator=|TensorDim")
+crucible_neg_compile_test(neg_tensor_meta_dim_above_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+
 # WRAP-TensorMeta-2 (#1035) — TensorMeta::data_ptr now stores
 # ExternalDataPtr = Tagged<void*, source::External>.  Two HS14
 # fixtures cover the provenance gate's two field-write directions:

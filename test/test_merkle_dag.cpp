@@ -25,10 +25,10 @@ namespace {
   // Test compute_storage_nbytes
   crucible::TensorMeta m{};
   m.ndim = 2;
-  m.sizes[0] = 32;
-  m.sizes[1] = 64;
-  m.strides[0] = 64;
-  m.strides[1] = 1;
+  m.sizes[0] = ::crucible::tensor_dim(32);
+  m.sizes[1] = ::crucible::tensor_dim(64);
+  m.strides[0] = ::crucible::tensor_dim(64);
+  m.strides[1] = ::crucible::tensor_dim(1);
   m.dtype = crucible::ScalarType::Float;
   // compute_storage_nbytes returns Saturated<uint64_t> (#1018).  Happy
   // path: clamp flag is false, value matches the bare-arithmetic answer.
@@ -54,10 +54,10 @@ namespace {
   {
     crucible::TensorMeta huge{};
     huge.ndim = 2;
-    huge.sizes[0]   = 1LL << 32;   // 4G elements
-    huge.strides[0] = 1LL << 32;   // × 4G stride → 2^64, overflows i64
-    huge.sizes[1]   = 1;
-    huge.strides[1] = 1;
+    huge.sizes[0]   = ::crucible::tensor_dim(1LL << 32);   // 4G elements
+    huge.strides[0] = ::crucible::tensor_dim(1LL << 32);   // × 4G stride → 2^64, overflows i64
+    huge.sizes[1]   = ::crucible::tensor_dim(1);
+    huge.strides[1] = ::crucible::tensor_dim(1);
     huge.dtype = crucible::ScalarType::Float;
     auto nb = crucible::compute_storage_nbytes(
         crucible::external_tensor_meta(huge));

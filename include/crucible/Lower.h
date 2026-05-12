@@ -93,7 +93,7 @@ template <LowerTraceSource Source>
       safety::FixedArray<const Expr*, 8> sizes{};
       const uint8_t ndim = (m.ndim <= 8) ? m.ndim : 8;
       for (uint8_t d = 0; d < ndim; d++)
-        sizes[d] = pool.integer(a, m.sizes[d]);
+        sizes[d] = pool.integer(a, raw_tensor_dim(m.sizes[d]));
 
       auto* inp = graph.add_input(a, m.dtype, m.device_idx, std::span{sizes.data(), ndim});
       graph.set_output_slots(a, inp->id, std::span{&sid, 1u});
@@ -124,7 +124,7 @@ template <LowerTraceSource Source>
       dtype = m.dtype;
       dev = m.device_idx;
       for (uint8_t d = 0; d < ndim; d++)
-        sizes[d] = pool.integer(a, m.sizes[d]);
+        sizes[d] = pool.integer(a, raw_tensor_dim(m.sizes[d]));
     }
 
     // Resolve input dependencies, filtering null inputs.

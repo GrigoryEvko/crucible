@@ -70,8 +70,8 @@ static_assert(sizeof(StorageNbytesDet) == sizeof(safety::Saturated<uint64_t>));
     auto si = sizes.begin();
     auto ti = strides.begin();
     for (size_t d = 0; d < sizes.size(); ++d) {
-        meta.sizes[d] = *si++;
-        meta.strides[d] = *ti++;
+        meta.sizes[d] = ::crucible::tensor_dim(*si++);
+        meta.strides[d] = ::crucible::tensor_dim(*ti++);
     }
     return meta;
 }
@@ -108,13 +108,13 @@ static void check_equiv(const TensorMeta& meta, const char* what) noexcept {
             int(meta.dtype));
         for (uint8_t d = 0; d < meta.ndim; ++d) {
             std::fprintf(stderr, "%lld%s",
-                static_cast<long long>(meta.sizes[d]),
+                static_cast<long long>(crucible::raw_tensor_dim(meta.sizes[d])),
                 d + 1 < meta.ndim ? "," : "");
         }
         std::fprintf(stderr, "] strides=[");
         for (uint8_t d = 0; d < meta.ndim; ++d) {
             std::fprintf(stderr, "%lld%s",
-                static_cast<long long>(meta.strides[d]),
+                static_cast<long long>(crucible::raw_tensor_dim(meta.strides[d])),
                 d + 1 < meta.ndim ? "," : "");
         }
         std::fprintf(stderr, "]\n");
@@ -209,7 +209,7 @@ static void test_natural_tensor_meta_alignment() {
     auto* meta = std::construct_at(
         std::bit_cast<TensorMeta*>(chosen),
         make_meta({16, 32, 64}, {2048, 64, 1}));
-    assert(std::bit_cast<std::uintptr_t>(&meta->sizes[0]) % 64 != 0);
+    assert(std::bit_cast<std::uintptr_t>(meta->sizes.raw_data()) % 64 != 0);
     check_equiv(*meta, "natural-align-not-vector-align");
     std::destroy_at(meta);
 
@@ -363,8 +363,8 @@ static void test_random_well_bounded() {
         m.ndim = static_cast<uint8_t>(ndim_dist(rng));
         m.dtype = ScalarType::Float;
         for (uint8_t d = 0; d < m.ndim; ++d) {
-            m.sizes[d] = size_dist(rng);
-            m.strides[d] = stride_dist(rng);
+            m.sizes[d] = ::crucible::tensor_dim(size_dist(rng));
+            m.strides[d] = ::crucible::tensor_dim(stride_dist(rng));
         }
         check_equiv(m, "random-bounded");
     }
@@ -390,8 +390,8 @@ static void test_random_extreme() {
         m.ndim = static_cast<uint8_t>(ndim_dist(rng));
         m.dtype = ScalarType::Float;
         for (uint8_t d = 0; d < m.ndim; ++d) {
-            m.sizes[d] = size_dist(rng);
-            m.strides[d] = stride_dist(rng);
+            m.sizes[d] = ::crucible::tensor_dim(size_dist(rng));
+            m.strides[d] = ::crucible::tensor_dim(stride_dist(rng));
         }
         check_equiv(m, "random-extreme");
     }

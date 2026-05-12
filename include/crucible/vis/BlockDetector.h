@@ -212,7 +212,7 @@ struct DetectionResult {
             const auto& m = trace.metas[mi_out];
             op.out_ndim = m.ndim;
             for (uint8_t d = 0; d < m.ndim && d < 4; d++)
-              op.out_sizes[d] = m.sizes[d];
+              op.out_sizes[d] = raw_tensor_dim(m.sizes[d]);
           }
         }
       }

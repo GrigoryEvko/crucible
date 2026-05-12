@@ -72,7 +72,7 @@ struct MerkleDagBlockView {
   std::string out;
   for (uint8_t d = 0; d < meta.ndim && d < 4; ++d) {
     if (d != 0) out += 'x';
-    out += std::to_string(meta.sizes[d]);
+    out += std::to_string(raw_tensor_dim(meta.sizes[d]));
   }
   return out;
 }

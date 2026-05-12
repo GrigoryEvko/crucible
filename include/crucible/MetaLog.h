@@ -59,13 +59,15 @@ namespace crucible {
 //   2. Bulk memcpy: instead of per-element assignment with per-iteration
 //      masking ((h+i) & MASK), we split into contiguous vs wraparound cases.
 //      Contiguous (the overwhelming majority of calls): single memcpy of
-//      n*144 bytes. Wraparound: two memcpys. memcpy of 144B structs
+//      n*sizeof(TensorMeta) bytes. Wraparound: two memcpys. memcpy of
+//      compact TensorMeta structs
 //      compiles to a small number of vector stores instead of scalar
 //      field-by-field copy.
 //   3. Aligned allocation: 64-byte aligned buffer base for cache-line-
 //      friendly access patterns.
 //   4. Software prefetch: after each write, prefetch 3 cache lines for the
-//      NEXT write position. Each TensorMeta is 144B = 3 × 64B cache lines.
+//      NEXT write position. Each TensorMeta currently spans 3 × 64B cache
+//      lines.
 //   5. Cache-line layout: head, cached_tail_, and entries pointer share one
 //      64-byte cache line (producer-only). tail on a separate line
 //      (consumer). Zero false sharing between threads.
@@ -213,7 +215,7 @@ struct CRUCIBLE_OWNER MetaLog {
     // next call's write destination into L1. Issuing it before the release
     // store gives it maximum time to complete before the next call.
     //
-    // Each TensorMeta = 144B = 3 cache lines (at 64B/line, offsets 0/64/128).
+    // Each TensorMeta spans 3 cache lines at the current 168B layout.
     // We prefetch the first entry's 3 lines. For n>1, the hardware
     // prefetcher typically handles the sequential continuation.
     {
@@ -347,7 +349,7 @@ struct CRUCIBLE_OWNER MetaLog {
   // (caller must fall back to per-element at() copies).
   //
   // 99.99% of calls succeed (1M capacity, typical iteration ~1500 metas).
-  // Saves ~144B × count memcpy per op when successful.
+  // Saves sizeof(TensorMeta) × count memcpy per op when successful.
   // Background thread only (SPSC consumer): zero-copy span into buffer.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] TensorMeta* try_contiguous(uint32_t start, uint32_t count) const

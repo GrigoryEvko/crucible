@@ -27,8 +27,8 @@ static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
         ops[i].input_metas  = arena.alloc_array<crucible::TensorMeta>(g_test.alloc, 1);
         ops[i].input_metas[0] = {};
         ops[i].input_metas[0].ndim    = 1;
-        ops[i].input_metas[0].sizes[0]   = 16;
-        ops[i].input_metas[0].strides[0] = 1;
+        ops[i].input_metas[0].sizes[0]   = ::crucible::tensor_dim(16);
+        ops[i].input_metas[0].strides[0] = ::crucible::tensor_dim(1);
         ops[i].input_metas[0].dtype = crucible::ScalarType::Float;
 
         ops[i].output_metas  = arena.alloc_array<crucible::TensorMeta>(g_test.alloc, 1);

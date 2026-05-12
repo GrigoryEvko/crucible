@@ -44,8 +44,8 @@ static constexpr ShapeHash SHAPE[NUM_OPS] = {
 static TensorMeta make_meta(void* data_ptr) {
   TensorMeta m{};
   m.ndim = 1;
-  m.sizes[0] = 1024;
-  m.strides[0] = 1;
+  m.sizes[0] = ::crucible::tensor_dim(1024);
+  m.strides[0] = ::crucible::tensor_dim(1);
   m.dtype = ScalarType::Float;
   m.device_type = DeviceType::CPU;
   m.device_idx = 0;

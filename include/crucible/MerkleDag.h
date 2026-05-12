@@ -258,11 +258,13 @@ compute_storage_nbytes(ExternalTensorMeta meta)
   int64_t max_offset = 0;
   int64_t min_offset = 0;
   for (uint8_t d = 0; d < raw.ndim; d++) {
-    if (raw.sizes[d] == 0) return Sat{uint64_t{0}}; // zero-size tensor
+    const int64_t size = raw_tensor_dim(raw.sizes[d]);
+    const int64_t stride = raw_tensor_dim(raw.strides[d]);
+    if (size == 0) return Sat{uint64_t{0}}; // zero-size tensor
     int64_t dim_extent_bytes;
     // (sizes[d] - 1) * strides[d] can overflow for huge dims.
     // sizes[d] is positive, so the subtraction never overflows.
-    if (__builtin_mul_overflow(raw.sizes[d] - 1, raw.strides[d],
+    if (__builtin_mul_overflow(size - 1, stride,
                                &dim_extent_bytes)) [[unlikely]]
       return Sat{UINT64_MAX, true};
     if (dim_extent_bytes > 0) {

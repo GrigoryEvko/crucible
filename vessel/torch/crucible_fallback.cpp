@@ -258,13 +258,13 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
 
     const auto sizes = t.sizes();
     for (uint8_t d = 0; d < ndim; d++)
-        meta.sizes[d] = sizes[d];
+        meta.sizes[d] = ::crucible::tensor_dim(sizes[d]);
 
     const bool strided = (t.layout() == c10::Layout::Strided);
     if (strided) {
         const auto strides = t.strides();
         for (uint8_t d = 0; d < ndim; d++)
-            meta.strides[d] = strides[d];
+            meta.strides[d] = ::crucible::tensor_dim(strides[d]);
         meta.data_ptr = t.data_ptr();
     }
 

@@ -135,9 +135,9 @@ uint64_t dim_hash_simd(const TensorMeta& meta) noexcept {
   // trace-loader buffers, so vector-aligned loads would be unsound even
   // though the arrays are 64 bytes wide.
   auto sizes   = std::simd::unchecked_load<i64x8>(
-      meta.sizes,   i64x8::size());
+      meta.sizes.raw_data(),   i64x8::size());
   auto strides = std::simd::unchecked_load<i64x8>(
-      meta.strides, i64x8::size());
+      meta.strides.raw_data(), i64x8::size());
 
   // Load kDimMix halves: kDimMix[0..7] for sizes, kDimMix[8..15] for
   // strides.  element_aligned (== default) because the table is a
@@ -183,8 +183,10 @@ DimHashDet dim_hash_simd_det(const TensorMeta& meta) noexcept {
 uint64_t dim_hash_scalar(const TensorMeta& meta) noexcept {
   uint64_t result = 0;
   for (uint8_t d = 0; d < meta.ndim; ++d) {
-    result ^= static_cast<uint64_t>(meta.sizes[d])   * detail::kDimMix[d];
-    result ^= static_cast<uint64_t>(meta.strides[d]) * detail::kDimMix[d + 8];
+    result ^= static_cast<uint64_t>(raw_tensor_dim(meta.sizes[d])) *
+              detail::kDimMix[d];
+    result ^= static_cast<uint64_t>(raw_tensor_dim(meta.strides[d])) *
+              detail::kDimMix[d + 8];
   }
   return result;
 }

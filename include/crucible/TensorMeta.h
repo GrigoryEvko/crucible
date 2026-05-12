@@ -18,7 +18,9 @@
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 
 namespace crucible {
@@ -59,9 +61,101 @@ static_assert(sizeof(GradFnHash) == sizeof(uint64_t),
 static_assert(std::is_trivially_copyable_v<GradFnHash>);
 static_assert(std::is_standard_layout_v<GradFnHash>);
 
+// WRAP-TensorMeta-1 (#1034): sizes/strides are bounded by the largest
+// dtype byte width before storage-span arithmetic consumes them.  The
+// raw storage remains int64_t[8] so DimHash/StorageNbytes can keep
+// zero-copy SIMD loads; writes go through TensorDim.
+inline constexpr int64_t kTensorDimElementByteBudget = 16;
+inline constexpr int64_t kMaxTensorDimExtent =
+    std::numeric_limits<int64_t>::max() / kTensorDimElementByteBudget;
+
+using TensorDim = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<kMaxTensorDimExtent>, int64_t>;
+
+static_assert(sizeof(TensorDim) == sizeof(int64_t),
+    "Refined<bounded_above<kMaxTensorDimExtent>, int64_t> must "
+    "EBO-collapse so TensorMeta stays layout-stable");
+static_assert(std::is_trivially_copyable_v<TensorDim>);
+static_assert(std::is_standard_layout_v<TensorDim>);
+
+struct TensorDimArray {
+private:
+  int64_t lanes_[kMaxTensorNDim]{};
+
+public:
+  struct Slot {
+    int64_t* lane = nullptr;
+
+    constexpr void operator=(TensorDim dim) const noexcept {
+      *lane = dim.value();
+    }
+
+    [[nodiscard]] constexpr int64_t value() const noexcept {
+      return *lane;
+    }
+
+    [[nodiscard]] constexpr operator TensorDim() const noexcept {
+      return TensorDim{*lane, TensorDim::Trusted{}};
+    }
+  };
+
+  struct ConstSlot {
+    const int64_t* lane = nullptr;
+
+    [[nodiscard]] constexpr int64_t value() const noexcept {
+      return *lane;
+    }
+
+    [[nodiscard]] constexpr operator TensorDim() const noexcept {
+      return TensorDim{*lane, TensorDim::Trusted{}};
+    }
+  };
+
+  [[nodiscard]] constexpr Slot operator[](std::size_t index) noexcept {
+    return Slot{&lanes_[index]};
+  }
+
+  [[nodiscard]] constexpr ConstSlot operator[](std::size_t index) const noexcept {
+    return ConstSlot{&lanes_[index]};
+  }
+
+  [[nodiscard]] constexpr int64_t* raw_data() noexcept {
+    return lanes_;
+  }
+
+  [[nodiscard]] constexpr const int64_t* raw_data() const noexcept {
+    return lanes_;
+  }
+};
+
+static_assert(sizeof(TensorDimArray) == sizeof(int64_t) * kMaxTensorNDim,
+    "TensorDimArray must remain the same 64-byte lane block as int64_t[8]");
+static_assert(std::is_trivially_copyable_v<TensorDimArray>);
+static_assert(std::is_standard_layout_v<TensorDimArray>);
+
+[[nodiscard]] inline constexpr TensorDim
+tensor_dim(int64_t value) noexcept {
+  return TensorDim{value};
+}
+
+[[nodiscard]] inline constexpr int64_t
+raw_tensor_dim(TensorDim dim) noexcept {
+  return dim.value();
+}
+
+[[nodiscard]] inline constexpr int64_t
+raw_tensor_dim(TensorDimArray::Slot dim) noexcept {
+  return dim.value();
+}
+
+[[nodiscard]] inline constexpr int64_t
+raw_tensor_dim(TensorDimArray::ConstSlot dim) noexcept {
+  return dim.value();
+}
+
 struct TensorMeta {
-  int64_t sizes[8]{};        // 64B — zero-init prevents hash instability
-  int64_t strides[8]{};      // 64B
+  TensorDimArray sizes{};     // 64B — zero-init prevents hash instability
+  TensorDimArray strides{};   // 64B
   ExternalDataPtr data_ptr{nullptr}; // 8B — external tensor pointer cookie
   uint8_t ndim = 0;          // 1B — dimensions used (0..kMaxTensorNDim)
   ScalarType dtype = ScalarType::Undefined; // 1B
