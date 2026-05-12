@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <memory>
 
+namespace eff = ::crucible::effects;
+
 // Helper: build a TensorMeta for a 2D float tensor.
 static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
                                       int8_t dev = 0,
@@ -185,11 +187,21 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
         crucible::LowerTraceGraph<crucible::safety::source::Recorded>;
     using RecordedGraph =
         crucible::LoweredGraph<crucible::safety::source::Recorded>;
+    using LowerBgAllocRow =
+        eff::Row<eff::Effect::Bg, eff::Effect::Alloc>;
     static_assert(sizeof(RecordedTraceGraph) == sizeof(const crucible::TraceGraph*));
     static_assert(sizeof(RecordedGraph) == sizeof(crucible::Graph*));
+    static_assert(eff::Subrow<crucible::lower_trace_required_row,
+                              LowerBgAllocRow>);
+    static_assert(!eff::Subrow<crucible::lower_trace_required_row,
+                               eff::Row<>>);
+    static_assert(!eff::Subrow<crucible::lower_trace_required_row,
+                               eff::Row<eff::Effect::Alloc>>);
+    static_assert(!eff::Subrow<crucible::lower_trace_required_row,
+                               eff::Row<eff::Effect::Bg>>);
 
     RecordedGraph lowered =
-        crucible::lower_trace_to_graph(
+        crucible::lower_trace_to_graph<LowerBgAllocRow>(
             test.alloc, RecordedTraceGraph{graph_tg}, pool, graph);
     assert(lowered.value() == &graph);
 
@@ -348,7 +360,7 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
 
     crucible::Graph graph2(test.alloc, &pool);
     RecordedGraph lowered2 =
-        crucible::lower_trace_to_graph(
+        crucible::lower_trace_to_graph<LowerBgAllocRow>(
             test.alloc, RecordedTraceGraph{tg2}, pool, graph2);
     assert(lowered2.value() == &graph2);
 

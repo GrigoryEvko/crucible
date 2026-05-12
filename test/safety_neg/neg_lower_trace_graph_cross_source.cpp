@@ -9,6 +9,9 @@
 
 #include <crucible/Lower.h>
 #include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
+
+namespace eff = ::crucible::effects;
 
 int main() {
   crucible::effects::Test test{};
@@ -20,8 +23,10 @@ int main() {
       crucible::LowerTraceGraph<crucible::safety::source::Replayed>;
   using RecordedGraph =
       crucible::LoweredGraph<crucible::safety::source::Recorded>;
+  using LowerBgAllocRow =
+      eff::Row<eff::Effect::Bg, eff::Effect::Alloc>;
 
-  RecordedGraph wrong = crucible::lower_trace_to_graph(
+  RecordedGraph wrong = crucible::lower_trace_to_graph<LowerBgAllocRow>(
       test.alloc, ReplayedTraceGraph{&trace}, pool, graph);
   return wrong.value() == nullptr ? 0 : 1;
 }

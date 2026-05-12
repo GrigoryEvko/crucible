@@ -16,6 +16,7 @@
 #include <crucible/ExprPool.h>
 #include <crucible/Graph.h>
 #include <crucible/TraceGraph.h>
+#include <crucible/effects/EffectRow.h>
 #include <crucible/safety/FixedArray.h>
 #include <crucible/safety/Tagged.h>
 
@@ -35,6 +36,9 @@ using LowerTraceGraph = safety::Tagged<const TraceGraph*, Source>;
 template <LowerTraceSource Source>
 using LoweredGraph = safety::Tagged<Graph*, Source>;
 
+using lower_trace_required_row =
+    effects::Row<effects::Effect::Bg, effects::Effect::Alloc>;
+
 // Lower a provenance-tagged TraceGraph into a mutable Graph IR.
 //
 // Populates `graph` with one GraphNode per TraceEntry:
@@ -50,7 +54,8 @@ using LoweredGraph = safety::Tagged<Graph*, Source>;
 // Null tensor inputs (Optional[Tensor] = None) are filtered out:
 // the Graph node will have fewer inputs than the TraceEntry. Slot
 // IDs are compacted to match the filtered input list.
-template <LowerTraceSource Source>
+template <typename CallerRow, LowerTraceSource Source>
+    requires effects::Subrow<lower_trace_required_row, CallerRow>
 [[nodiscard]] inline LoweredGraph<Source> lower_trace_to_graph(
     effects::Alloc a,
     LowerTraceGraph<Source> trace,

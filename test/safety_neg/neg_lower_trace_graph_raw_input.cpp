@@ -8,12 +8,18 @@
 
 #include <crucible/Lower.h>
 #include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
+
+namespace eff = ::crucible::effects;
 
 int main() {
   crucible::effects::Test test{};
   crucible::ExprPool pool{test.alloc};
   crucible::Graph graph{test.alloc, &pool};
   crucible::TraceGraph trace{};
-  (void)crucible::lower_trace_to_graph(test.alloc, &trace, pool, graph);
+  using LowerBgAllocRow =
+      eff::Row<eff::Effect::Bg, eff::Effect::Alloc>;
+  (void)crucible::lower_trace_to_graph<LowerBgAllocRow>(
+      test.alloc, &trace, pool, graph);
   return 0;
 }

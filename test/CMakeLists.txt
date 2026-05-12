@@ -1997,6 +1997,16 @@ crucible_neg_compile_test(neg_lower_trace_graph_raw_input
 crucible_neg_compile_test(neg_lower_trace_graph_cross_source
   "conversion from|no match|no known conversion|cannot convert|could not convert")
 
+# WRAP-Lower-6 (#936) — lower_trace_to_graph runs in the background
+# compilation path and allocates Graph scratch.  Required row is
+# Row<Bg, Alloc>; pure, Alloc-only, and Bg-only callers are rejected.
+crucible_neg_compile_test(neg_lower_trace_graph_pure_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+crucible_neg_compile_test(neg_lower_trace_graph_alloc_only_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+crucible_neg_compile_test(neg_lower_trace_graph_bg_only_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+
 # WRAP-Transaction-1 (#1060) — Transaction::step_id raw uint64_t →
 # safety::Monotonic<uint64_t>.  HS14 mandate: ≥2 negative-compile
 # fixtures per soundness gate, each demonstrating a distinct mismatch
