@@ -196,6 +196,10 @@ namespace source {
     // cntp/GossipMulticast.h. Raw topic hashes, neighbor arrays, and XDP
     // descriptors cannot directly drive kernel-side gossip replication.
     struct GossipMulticast {};
+    // TcEbpf: runtime-owned TC direct-action eBPF plans admitted through
+    // rt/TcEbpf.h. Raw skb action descriptors, DSCP values, and map specs
+    // cannot directly attach an egress/ingress TC dataplane program.
+    struct TcEbpf {};
 }
 
 namespace trust {

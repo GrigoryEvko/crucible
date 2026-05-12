@@ -479,6 +479,7 @@ crucible_test(test_bench_harness)
 # no special capabilities required at test time (the smoke checks the
 # policy arithmetic / guard object semantics, not live scheduler calls).
 crucible_test(test_rt_policy)
+crucible_test(test_rt_tc_ebpf)
 crucible_test(test_rt_xdp)
 
 # crucible::perf::SenseHub sentinel TU (GAPS-004a, 2026-05-03).
@@ -1333,6 +1334,21 @@ crucible_neg_compile_rt_test(neg_xdp_map_non_pod_value
     "constraint|constraints not satisfied|BpfScalar|string")
 crucible_neg_compile_rt_test(neg_xdp_map_key_without_equality
     "constraint|constraints not satisfied|BpfKey|operator==")
+
+# ─── GAPS-193 rt/TcEbpf.h soundness gates ──────────────────────────
+#
+#   * neg_tc_ebpf_raw_program_spec — NIC admission requires source::TcEbpf.
+#   * neg_tc_ebpf_mint_bg_ctx — only Init-row contexts mint attach plans.
+#   * neg_tc_ebpf_raw_flow_class — map values carry tagged flow classes.
+#   * neg_tc_ebpf_zero_flow_map — zero-capacity maps are rejected.
+crucible_neg_compile_rt_test(neg_tc_ebpf_raw_program_spec
+    "cannot convert|could not convert|DeclaredTcProgram|Tagged")
+crucible_neg_compile_rt_test(neg_tc_ebpf_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsTcMint|Init|Bg")
+crucible_neg_compile_rt_test(neg_tc_ebpf_raw_flow_class
+    "cannot convert|could not convert|DeclaredTcFlowClass|Tagged")
+crucible_neg_compile_rt_test(neg_tc_ebpf_zero_flow_map
+    "constraint|constraints not satisfied|MaxFlows")
 
 # ─── HS14 fixtures #1 + #2 for mimic::CogMimic (GAPS-188 #1213) ──
 #

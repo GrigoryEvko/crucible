@@ -250,6 +250,7 @@ enum class NicFeature : std::uint32_t {
     Macsec          = 1u << 13,  // 802.1AE MAC encryption
     Ipsec           = 1u << 14,  // IPsec hardware offload
     TimestampingHw  = 1u << 15,  // Hardware PTP timestamping
+    TcEbpf          = 1u << 16,  // TC clsact direct-action eBPF
 };
 
 // SwitchFeature — switch-port capability catalog.  uint16_t.
@@ -330,6 +331,7 @@ nic_feature_name(NicFeature F) noexcept {
         case NicFeature::Macsec:         return "Macsec";
         case NicFeature::Ipsec:          return "Ipsec";
         case NicFeature::TimestampingHw: return "TimestampingHw";
+        case NicFeature::TcEbpf:         return "TcEbpf";
         default: return std::string_view{"<unknown NicFeature>"};
     }
 }
@@ -838,6 +840,7 @@ static_assert(static_cast<std::uint32_t>(NicFeature::SrIov)          == (1u << 1
 static_assert(static_cast<std::uint32_t>(NicFeature::Macsec)         == (1u << 13));
 static_assert(static_cast<std::uint32_t>(NicFeature::Ipsec)          == (1u << 14));
 static_assert(static_cast<std::uint32_t>(NicFeature::TimestampingHw) == (1u << 15));
+static_assert(static_cast<std::uint32_t>(NicFeature::TcEbpf)         == (1u << 16));
 
 // SwitchFeature — bit-position pins
 static_assert(static_cast<std::uint16_t>(SwitchFeature::Sharp)           == (1u << 0));

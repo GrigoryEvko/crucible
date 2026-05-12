@@ -60,6 +60,7 @@ add_library(crucible STATIC
   src/observe/HdrHistogram.cpp
   src/observe/SyntheticProbe.cpp
   src/rt/Quarantine.cpp
+  src/rt/TcEbpf.cpp
   src/rt/Xdp.cpp
   src/topology/AsymmetricFailure.cpp
   src/topology/CongestionTelemetry.cpp
