@@ -4,10 +4,11 @@
 //
 // This header owns socket-local incast mitigations that can be applied
 // without inventing a collective runtime: DCTCP selection, TCP_RTO_MIN_US
-// tuning where the kernel exposes it, and bounded receiver-issued credit
-// accounting for synchronous fan-in pacing.  It deliberately does not mutate
-// sysctls, install qdiscs, write Cipher events, or auto-wire collectives;
-// those are owned by NicConfig, Pacing, Cipher, and CollectiveCatalog tasks.
+// tuning where the kernel exposes it, and declared receiver-issued credit
+// pacing config.  Bounded credit state lives in rt/IncastControl.h.  This
+// header deliberately does not mutate sysctls, install qdiscs, write Cipher
+// events, or auto-wire collectives; those are owned by NicConfig, Pacing,
+// Cipher, and CollectiveCatalog tasks.
 
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/safety/Refined.h>
