@@ -146,6 +146,10 @@ namespace source {
     // cntp/IncastControl.h. Raw booleans / byte counts cannot directly
     // tune socket RTO or receiver-issued credit pacing.
     struct IncastConfig {};
+    // RoceConfig: CNT-P RoCEv2 fabric configuration admitted through
+    // cntp/RoceConfig.h. Raw PFC masks, DSCP values, and DCQCN knobs
+    // cannot directly drive privileged NIC/fabric policy.
+    struct RoceConfig {};
     // PathSwap: CNT-P application-level path-swap plan admitted through
     // cntp/PathSwap.h. Raw path IDs cannot directly drive a live
     // SessionHandle resource transition.

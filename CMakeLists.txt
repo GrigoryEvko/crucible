@@ -50,6 +50,7 @@ add_library(crucible STATIC
   src/cntp/IncastControl.cpp
   src/cntp/PathSwap.cpp
   src/cntp/Pacing.cpp
+  src/cntp/RoceConfig.cpp
   src/observe/HdrHistogram.cpp
   src/observe/SyntheticProbe.cpp
   src/rt/Quarantine.cpp

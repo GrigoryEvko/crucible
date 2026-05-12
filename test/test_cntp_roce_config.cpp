@@ -1,0 +1,144 @@
+#include <crucible/cntp/RoceConfig.h>
+
+#include <cassert>
+#include <cstdio>
+#include <string_view>
+#include <type_traits>
+
+namespace cntp = crucible::cntp;
+namespace saf = crucible::safety;
+
+namespace {
+
+void test_admission_and_names() {
+    assert(cntp::roce_error_name(cntp::RoceError::InvalidDscp) ==
+           std::string_view{"InvalidDscp"});
+
+    auto pfc = cntp::admit_pfc_priorities(0b0000'1000);
+    assert(pfc.has_value());
+    assert(pfc->value() == 0b0000'1000);
+
+    auto zero_pfc = cntp::admit_pfc_priorities(0);
+    assert(!zero_pfc.has_value());
+    assert(zero_pfc.error() == cntp::RoceError::InvalidPfcPriorityMask);
+
+    auto dscp = cntp::admit_roce_dscp(26);
+    assert(dscp.has_value());
+    assert(dscp->value() == 26);
+
+    auto invalid_dscp = cntp::admit_roce_dscp(64);
+    assert(!invalid_dscp.has_value());
+    assert(invalid_dscp.error() == cntp::RoceError::InvalidDscp);
+
+    auto alpha = cntp::admit_dcqcn_alpha_ppm(500'000);
+    assert(alpha.has_value());
+    assert(alpha->value() == 500'000);
+
+    auto alpha_zero = cntp::admit_dcqcn_alpha_ppm(0);
+    assert(!alpha_zero.has_value());
+    assert(alpha_zero.error() == cntp::RoceError::InvalidDcqcnAlpha);
+
+    auto target = cntp::admit_dcqcn_target_packets(5);
+    assert(target.has_value());
+    assert(target->value() == 5);
+
+    auto target_zero = cntp::admit_dcqcn_target_packets(0);
+    assert(!target_zero.has_value());
+    assert(target_zero.error() == cntp::RoceError::InvalidDcqcnTargetPackets);
+
+    auto ce = cntp::admit_dcqcn_ce_threshold_bytes(64 * 1024);
+    assert(ce.has_value());
+    assert(ce->value() == 64 * 1024);
+
+    std::printf("  test_admission_and_names: PASSED\n");
+}
+
+void test_config_minting_and_validation() {
+    auto iface = cntp::NicInterfaceName::from("eth0");
+    assert(iface.has_value());
+
+    auto config = cntp::mint_roce_config<0b0000'1000, 26>(*iface);
+    static_assert(std::same_as<decltype(config), cntp::DeclaredRoceConfig>);
+    assert(config.value().interface.view() == "eth0");
+    assert(config.value().enable_pfc);
+    assert(config.value().pfc_priorities.value() == 0b0000'1000);
+    assert(config.value().trust_dscp);
+    assert(config.value().enable_ecn);
+    assert(config.value().enable_dcqcn);
+    assert(config.value().roce_dscp.value() == 26);
+    assert(config.value().dcqcn.alpha_ppm.value() == 500'000);
+    assert(config.value().dcqcn.target_packets.value() == 5);
+
+    auto valid = cntp::validate_roce_config(config);
+    assert(valid.has_value());
+
+    auto apply = cntp::apply_roce_config(config);
+    assert(!apply.has_value());
+    assert(apply.error() == cntp::RoceError::PrivilegedApplyDeferred);
+
+    auto privileged = cntp::mint_roce_config<0b0000'1000, 26>(
+        *iface, cntp::DcqcnParams{}, true);
+    auto privileged_apply = cntp::apply_roce_config(privileged);
+    assert(!privileged_apply.has_value());
+    assert(privileged_apply.error() == cntp::RoceError::VendorBackendUnavailable);
+
+    std::printf("  test_config_minting_and_validation: PASSED\n");
+}
+
+void test_pause_counter_parse() {
+    auto parsed = cntp::parse_pfc_pause_counters(" 17\n", "23\n");
+    assert(parsed.has_value());
+    assert(parsed->rx_pause_frames == 17);
+    assert(parsed->tx_pause_frames == 23);
+
+    auto bad = cntp::parse_pfc_pause_counters("17x", "23\n");
+    assert(!bad.has_value());
+    assert(bad.error() == cntp::RoceError::CounterParseFailed);
+
+    std::printf("  test_pause_counter_parse: PASSED\n");
+}
+
+void test_live_surfaces_if_available() {
+    auto lo = cntp::NicInterfaceName::from("lo");
+    assert(lo.has_value());
+
+    auto counters = cntp::query_pfc_pause_counters(*lo);
+    if (!counters.has_value()) {
+        assert(counters.error() == cntp::RoceError::CounterUnavailable ||
+               counters.error() == cntp::RoceError::CounterParseFailed);
+        std::printf("  test_live_pfc_pause_counters: SKIPPED\n");
+    } else {
+        std::printf("  test_live_pfc_pause_counters: PASSED\n");
+    }
+
+    auto dcqcn = cntp::verify_dcqcn_active(*lo);
+    assert(!dcqcn.has_value());
+    assert(dcqcn.error() == cntp::RoceError::DcqcnStatusUnavailable);
+
+    std::printf("  test_live_surfaces_if_available: PASSED\n");
+}
+
+}  // namespace
+
+int main() {
+    static_assert(sizeof(cntp::PfcPriorityMask) == sizeof(std::uint8_t));
+    static_assert(sizeof(cntp::RoceDscp) == sizeof(std::uint8_t));
+    static_assert(sizeof(cntp::DeclaredRoceConfig) == sizeof(cntp::RoceConfig));
+    static_assert(cntp::ValidPfcPriorityMask<0b0000'1000>);
+    static_assert(!cntp::ValidPfcPriorityMask<0>);
+    static_assert(cntp::ValidRoceDscp<26>);
+    static_assert(!cntp::ValidRoceDscp<64>);
+    static_assert(std::same_as<
+                  cntp::DeclaredRoceConfig::tag_type,
+                  saf::source::RoceConfig>);
+    static_assert(std::is_trivially_copyable_v<cntp::DcqcnParams>);
+    static_assert(std::is_trivially_copyable_v<cntp::RoceConfig>);
+
+    std::printf("test_cntp_roce_config:\n");
+    test_admission_and_names();
+    test_config_minting_and_validation();
+    test_pause_counter_parse();
+    test_live_surfaces_if_available();
+    std::printf("test_cntp_roce_config: all PASSED\n");
+    return 0;
+}

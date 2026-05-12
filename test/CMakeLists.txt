@@ -231,6 +231,7 @@ crucible_test(test_cntp_congestion_control)
 crucible_test(test_cntp_incast_control)
 crucible_test(test_cntp_path_swap)
 crucible_test(test_cntp_pacing)
+crucible_test(test_cntp_roce_config)
 crucible_test(test_cntp_integrity)
 crucible_test(test_cntp_fec)
 crucible_test(test_cntp_fountain)
@@ -2558,6 +2559,17 @@ crucible_neg_compile_test(neg_incast_raw_config_configure
   "could not convert|no matching function|DeclaredIncastConfig|Tagged")
 crucible_neg_compile_effects_test(neg_incast_credit_fg_ctx
   "constraints not satisfied|CtxFitsIncastCredit|Bg")
+
+# GAPS-125 — cntp/RoceConfig.h RoCEv2 PFC/ECN/DCQCN config substrate.
+#   * neg_roce_zero_pfc_mask: PFC priority mask cannot be empty.
+#   * neg_roce_dscp_above_max: DSCP is a 6-bit value.
+#   * neg_roce_raw_config_apply: privileged apply requires tagged config.
+crucible_neg_compile_test(neg_roce_zero_pfc_mask
+  "constraints not satisfied|ValidPfcPriorityMask|PfcPriorities")
+crucible_neg_compile_test(neg_roce_dscp_above_max
+  "constraints not satisfied|ValidRoceDscp|Dscp")
+crucible_neg_compile_test(neg_roce_raw_config_apply
+  "could not convert|no matching function|DeclaredRoceConfig|Tagged")
 
 # GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the
