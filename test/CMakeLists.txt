@@ -227,6 +227,7 @@ crucible_test(test_vector_clock)
 crucible_test(test_crdt)
 crucible_test(test_swim)
 crucible_test(test_hyparview)
+crucible_test(test_plumtree)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_backpressure)
 crucible_test(test_cntp_af_xdp)
@@ -2580,6 +2581,23 @@ crucible_neg_compile_test(neg_hyparview_cross_tag_peer
 crucible_neg_compile_test(neg_hyparview_raw_shuffle
   "cannot convert|no matching function|could not convert|GossipedHyParViewShuffle|Tagged")
 crucible_neg_compile_effects_test(neg_hyparview_mint_test_context
+  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+
+# GAPS-212 — canopy/Plumtree.h eager/lazy broadcast substrate.
+#   * neg_plumtree_zero_peers: MaxPeers=0 is rejected structurally.
+#   * neg_plumtree_raw_peer: link mutation requires source::HyParView.
+#   * neg_plumtree_raw_message: received messages must be gossiped.
+#   * neg_plumtree_raw_ihave: repair summaries must be gossiped.
+#   * neg_plumtree_mint_test_context: Init-only mint rejects Test.
+crucible_neg_compile_test(neg_plumtree_zero_peers
+  "constraints not satisfied|PlumtreeShape|MaxPeers")
+crucible_neg_compile_test(neg_plumtree_raw_peer
+  "cannot convert|no matching function|could not convert|HyParViewPeer|Tagged")
+crucible_neg_compile_test(neg_plumtree_raw_message
+  "cannot convert|no matching function|could not convert|GossipedPlumtreeMessage|Tagged")
+crucible_neg_compile_test(neg_plumtree_raw_ihave
+  "cannot convert|no matching function|could not convert|GossipedPlumtreeIHave|Tagged")
+crucible_neg_compile_effects_test(neg_plumtree_mint_test_context
   "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
 
 # GAPS-115 — canopy/Scuttlebutt.h bounded anti-entropy substrate.

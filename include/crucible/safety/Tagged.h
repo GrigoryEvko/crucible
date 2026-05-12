@@ -128,6 +128,10 @@ namespace source {
     // Canopy overlay. Raw discovery output and foreign membership tags
     // cannot directly drive overlay repair or Plumtree fanout.
     struct HyParView    {};
+    // Plumtree: broadcast messages and repair summaries admitted through
+    // canopy/Plumtree.h. Raw message IDs and HyParView peer identities
+    // cannot directly drive eager/lazy tree state transitions.
+    struct Plumtree     {};
     // IntegrityVerified: CNT-P payload whose end-to-end xxHash64 trailer
     // has been recomputed and matched at the receiver.  Raw wire bytes
     // and merely gossiped payloads cannot substitute for this tag.
