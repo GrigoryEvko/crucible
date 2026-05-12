@@ -149,6 +149,64 @@ crucible_bpf_program(syscall_latency  include/crucible/perf/bpf/syscall_latency.
 crucible_bpf_program(sched_tp_btf     include/crucible/perf/bpf/sched_tp_btf.bpf.c)
 crucible_bpf_program(syscall_tp_btf   include/crucible/perf/bpf/syscall_tp_btf.bpf.c)
 
+# ─── Runtime/networking BPF stubs ──────────────────────────────────
+#
+# These are intentionally rooted in the owning subsystem rather than
+# perf/: rt owns TC/XDP dataplane contracts; CNT-P owns transport-control
+# probes; canopy/topology/observe/cog own their mesh and NIC evidence.
+# Current programs are verifier-loadable no-op/pass-through stubs that pin
+# section names, map wire contracts, and embedded symbol names before policy
+# grows around them.
+crucible_bpf_program(rt_tc_ingress_classify
+  include/crucible/rt/bpf/rt_tc_ingress_classify.bpf.c)
+crucible_bpf_program(rt_tc_egress_classify
+  include/crucible/rt/bpf/rt_tc_egress_classify.bpf.c)
+crucible_bpf_program(rt_pacing_budget
+  include/crucible/rt/bpf/rt_pacing_budget.bpf.c)
+crucible_bpf_program(rt_queue_backlog
+  include/crucible/rt/bpf/rt_queue_backlog.bpf.c)
+crucible_bpf_program(rt_socket_lifecycle
+  include/crucible/rt/bpf/rt_socket_lifecycle.bpf.c)
+
+crucible_bpf_program(cntp_xdp_flow_filter
+  include/crucible/cntp/bpf/xdp_flow_filter.bpf.c)
+crucible_bpf_program(cntp_af_xdp_redirect
+  include/crucible/cntp/bpf/af_xdp_redirect.bpf.c)
+crucible_bpf_program(cntp_tc_egress_mark
+  include/crucible/cntp/bpf/tc_egress_mark.bpf.c)
+crucible_bpf_program(cntp_sk_msg_credit_gate
+  include/crucible/cntp/bpf/sk_msg_credit_gate.bpf.c)
+crucible_bpf_program(cntp_sock_ops_telemetry
+  include/crucible/cntp/bpf/sock_ops_telemetry.bpf.c)
+crucible_bpf_program(cntp_fq_pacing_sample
+  include/crucible/cntp/bpf/fq_pacing_sample.bpf.c)
+crucible_bpf_program(cntp_ecn_ce_mark_sample
+  include/crucible/cntp/bpf/ecn_ce_mark_sample.bpf.c)
+
+crucible_bpf_program(canopy_gossip_xdp_tx
+  include/crucible/canopy/bpf/gossip_xdp_tx.bpf.c)
+crucible_bpf_program(canopy_peer_liveness_probe
+  include/crucible/canopy/bpf/peer_liveness_probe.bpf.c)
+
+crucible_bpf_program(topology_xdp_rx_timestamp_probe
+  include/crucible/topology/bpf/xdp_rx_timestamp_probe.bpf.c)
+crucible_bpf_program(topology_napi_pressure_probe
+  include/crucible/topology/bpf/napi_pressure_probe.bpf.c)
+crucible_bpf_program(topology_qdisc_backlog_probe
+  include/crucible/topology/bpf/qdisc_backlog_probe.bpf.c)
+
+crucible_bpf_program(observe_tcp_flow_sample
+  include/crucible/observe/bpf/tcp_flow_sample.bpf.c)
+crucible_bpf_program(observe_packet_loss_sample
+  include/crucible/observe/bpf/packet_loss_sample.bpf.c)
+crucible_bpf_program(observe_ecn_sample
+  include/crucible/observe/bpf/ecn_sample.bpf.c)
+
+crucible_bpf_program(cog_nic_cog_probe
+  include/crucible/cog/bpf/nic_cog_probe.bpf.c)
+crucible_bpf_program(cog_offload_cap_probe
+  include/crucible/cog/bpf/offload_cap_probe.bpf.c)
+
 # ─── SenseHub v2 — opt-in dual-tier hub (basic 128 + extended 256) ───
 #
 # v2 ships the architectural surface (counters/gauges segregation,
