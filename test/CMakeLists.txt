@@ -3237,6 +3237,18 @@ crucible_neg_compile_test(neg_swiss_table_buffer_copy
 crucible_neg_compile_test(neg_swiss_table_buffer_use_after_move
   "use of deleted function|deleted function|move-only")
 
+# WRAP-ExprPool-4 (#918) — int_cache_ access is routed through
+# IntCacheLiteral = Refined<in_range<-128, 127>, int64_t>.  Two HS14
+# fixtures pin both ends of the closed interval:
+#   * neg_expr_pool_int_cache_literal_below_low — -129 is one below
+#     the cache's lower endpoint.
+#   * neg_expr_pool_int_cache_literal_above_high — 128 is one above
+#     the cache's upper endpoint.
+crucible_neg_compile_test(neg_expr_pool_int_cache_literal_below_low
+  "contract|Refined|in_range|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_expr_pool_int_cache_literal_above_high
+  "contract|Refined|in_range|not a constant|non-constant|constexpr")
+
 # safety::Saturated<T> structural-wrapper — HS14 fixtures (#1084 piece):
 #   * neg_saturated_non_arithmetic   Saturated<MyStruct> must fail
 #                                    (the std::is_arithmetic_v<T>

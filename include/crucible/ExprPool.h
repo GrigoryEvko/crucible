@@ -5,9 +5,11 @@
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/SwissTable.h>
+#include <crucible/safety/Refined.h>
 #include <crucible/safety/SwissTableBuffer.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cassert>
 #include <cstdint>
@@ -287,6 +289,19 @@ namespace detail {
 //   - Term combining: add(a, 2a) → 3a (via coefficient decomposition)
 class CRUCIBLE_OWNER ExprPool {
  public:
+  static constexpr int64_t kIntCacheLow = -128;
+  static constexpr int64_t kIntCacheHigh = 127;
+  static constexpr size_t kIntCacheSize =
+      static_cast<size_t>(kIntCacheHigh - kIntCacheLow + 1);
+
+  using IntCacheLiteral = safety::Refined<
+      safety::in_range<kIntCacheLow, kIntCacheHigh>, int64_t>;
+  using IntCacheIndex = safety::Refined<
+      safety::bounded_above<kIntCacheSize - 1>, size_t>;
+
+  static_assert(sizeof(IntCacheLiteral) == sizeof(int64_t));
+  static_assert(sizeof(IntCacheIndex) == sizeof(size_t));
+
   // Default `initial_capacity` sized for real production graphs — ViT
   // forward+backward+optimizer is ~15k DAG ops, SD1.5 is ~30k. Each op
   // contributes 1-3 non-cached Exprs (shape polynomials, symbolic dims,
@@ -347,8 +362,11 @@ class CRUCIBLE_OWNER ExprPool {
         intern_node(a, Op::BOOL_FALSE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
 
     // Integer cache: -128..127 for O(1) access to common constants
-    for (int64_t i = kIntCacheLow; i <= kIntCacheHigh; ++i)
-      int_cache_[static_cast<size_t>(i - kIntCacheLow)] = make_integer(a, i);
+    for (int64_t i = kIntCacheLow; i <= kIntCacheHigh; ++i) {
+      const IntCacheLiteral literal{i};
+      int_cache_[raw_int_cache_index(int_cache_index(literal))] =
+          make_integer(a, i);
+    }
   }
 
   ~ExprPool() = default;  // backing_ owns the alloc via SwissTableBuffer RAII (#915 WRAP-ExprPool-1)
@@ -379,7 +397,7 @@ class CRUCIBLE_OWNER ExprPool {
 
   [[nodiscard]] const Expr* integer(effects::Alloc a, int64_t val) {
     if (val >= kIntCacheLow && val <= kIntCacheHigh)
-      return int_cache_[static_cast<size_t>(val - kIntCacheLow)];
+      return cached_integer(IntCacheLiteral{val});
     return make_integer(a, val);
   }
 
@@ -1019,11 +1037,6 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
  private:
-  static constexpr int64_t kIntCacheLow = -128;
-  static constexpr int64_t kIntCacheHigh = 127;
-  static constexpr size_t kIntCacheSize =
-      static_cast<size_t>(kIntCacheHigh - kIntCacheLow + 1);
-
   // CONTRACT-109: kIntCacheSize = 256 = 2^8.  The pow2 cite is structural
   // (the kIntCacheLow / kIntCacheHigh range is inclusive on both ends, so
   // the `+ 1` produces 256), but if either bound shifts by an odd offset
@@ -1037,6 +1050,22 @@ class CRUCIBLE_OWNER ExprPool {
   static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(
                     kIntCacheSize, std::size_t{1024}),
                 "kIntCacheSize must be a power of two ≤ 1024");
+
+  [[nodiscard, gnu::const]] static constexpr IntCacheIndex
+  int_cache_index(IntCacheLiteral literal) noexcept {
+    return IntCacheIndex{
+        static_cast<size_t>(literal.value() - kIntCacheLow)};
+  }
+
+  [[nodiscard, gnu::const]] static constexpr size_t
+  raw_int_cache_index(IntCacheIndex index) noexcept {
+    return index.value();
+  }
+
+  [[nodiscard]] const Expr*
+  cached_integer(IntCacheLiteral literal) const noexcept {
+    return int_cache_[raw_int_cache_index(int_cache_index(literal))];
+  }
 
   const Expr* make_integer(effects::Alloc a, int64_t val) {
     return intern_node(
@@ -1682,7 +1711,7 @@ class CRUCIBLE_OWNER ExprPool {
   // cache-line-friendly.
   std::vector<const Expr*> symbol_exprs_;
 
-  const Expr* int_cache_[kIntCacheSize];
+  std::array<const Expr*, kIntCacheSize> int_cache_{};
   const Expr* true_;
   const Expr* false_;
 };

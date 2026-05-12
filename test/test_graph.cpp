@@ -11,6 +11,19 @@
     crucible::ExprPool pool(test.alloc);
     crucible::Graph graph(test.alloc, &pool);
 
+    const crucible::Expr* low_cached =
+        pool.integer(test.alloc, crucible::ExprPool::kIntCacheLow);
+    const crucible::Expr* high_cached =
+        pool.integer(test.alloc, crucible::ExprPool::kIntCacheHigh);
+    const crucible::Expr* outside_cached =
+        pool.integer(test.alloc, crucible::ExprPool::kIntCacheHigh + 1);
+    assert(low_cached == pool.integer(test.alloc, crucible::ExprPool::kIntCacheLow));
+    assert(high_cached == pool.integer(test.alloc, crucible::ExprPool::kIntCacheHigh));
+    assert(outside_cached == pool.integer(test.alloc, crucible::ExprPool::kIntCacheHigh + 1));
+    assert(low_cached->as_int() == crucible::ExprPool::kIntCacheLow);
+    assert(high_cached->as_int() == crucible::ExprPool::kIntCacheHigh);
+    assert(outside_cached->as_int() == crucible::ExprPool::kIntCacheHigh + 1);
+
     // ── classify_node_kind coverage ─────────────────────────────────
 
     // Pointwise: activations + elementwise binary/unary
