@@ -228,6 +228,7 @@ crucible_test(test_crdt)
 crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_congestion_control)
+crucible_test(test_cntp_pacing)
 crucible_test(test_cntp_integrity)
 crucible_test(test_cntp_fec)
 crucible_test(test_cntp_fountain)
@@ -2506,6 +2507,17 @@ crucible_neg_compile_test(neg_congestion_control_dctcp_cross_dc
   "constraints not satisfied|CcCompatible|LosslessDatacenterFabric")
 crucible_neg_compile_test(neg_congestion_control_custom_missing_name
   "constraints not satisfied|CustomCcModule|congestion_control_name")
+
+# GAPS-121 — cntp/Pacing.h fq/qdisc verification + SO_MAX_PACING_RATE.
+#   * neg_pacing_bbr_pfifo_config: BBR pacing config admits only fq/fq_codel.
+#   * neg_pacing_raw_rate: socket pacing requires admitted positive rate.
+#   * neg_pacing_raw_config_ensure: fq verification requires tagged qdisc config.
+crucible_neg_compile_test(neg_pacing_bbr_pfifo_config
+  "constraints not satisfied|BbrCompatibleQdisc|Qdisc::Pfifo")
+crucible_neg_compile_test(neg_pacing_raw_rate
+  "could not convert|no matching function|PositivePacingRate|Refined")
+crucible_neg_compile_test(neg_pacing_raw_config_ensure
+  "could not convert|no matching function|DeclaredQdiscConfig|Tagged")
 
 # GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the

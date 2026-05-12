@@ -138,6 +138,10 @@ namespace source {
     // cntp/CongestionControl.h. Raw enum values and raw kernel strings
     // cannot directly drive per-socket TCP_CONGESTION changes.
     struct CcAlgorithm {};
+    // QdiscConfig: CNT-P queueing-discipline and pacing configuration
+    // admitted through cntp/Pacing.h. Raw interface strings / qdisc
+    // names cannot directly drive pacing policy.
+    struct QdiscConfig {};
 }
 
 namespace trust {
