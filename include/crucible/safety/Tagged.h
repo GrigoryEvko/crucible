@@ -124,6 +124,10 @@ namespace source {
     // Raw discovery output must be admitted explicitly before it can
     // drive peer-health or gossip fanout decisions.
     struct SwimMember   {};
+    // HyParView: CogIdentity admitted into the bounded active/passive
+    // Canopy overlay. Raw discovery output and foreign membership tags
+    // cannot directly drive overlay repair or Plumtree fanout.
+    struct HyParView    {};
     // IntegrityVerified: CNT-P payload whose end-to-end xxHash64 trailer
     // has been recomputed and matched at the receiver.  Raw wire bytes
     // and merely gossiped payloads cannot substitute for this tag.

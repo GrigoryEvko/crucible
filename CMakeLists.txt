@@ -44,6 +44,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_library(crucible STATIC
   src/ContractHandler.cpp
   src/DiagRuntime.cpp
+  src/canopy/HyParView.cpp
   src/cog/NumaNic.cpp
   src/cog/NicOffloadAudit.cpp
   src/cntp/Backpressure.cpp

@@ -226,6 +226,7 @@ crucible_test(test_hlc)
 crucible_test(test_vector_clock)
 crucible_test(test_crdt)
 crucible_test(test_swim)
+crucible_test(test_hyparview)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_backpressure)
 crucible_test(test_cntp_af_xdp)
@@ -2562,6 +2563,23 @@ crucible_neg_compile_test(neg_swim_raw_peer_add
 crucible_neg_compile_test(neg_swim_external_peer_add
   "cannot convert|no matching function|could not convert|External|SwimMember")
 crucible_neg_compile_effects_test(neg_swim_mint_test_context
+  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+
+# GAPS-211 — canopy/HyParView.h bounded active/passive overlay substrate.
+#   * neg_hyparview_zero_active: MaxActive=0 is rejected structurally.
+#   * neg_hyparview_raw_peer_join: join requires source::HyParView.
+#   * neg_hyparview_cross_tag_peer: source::External cannot substitute.
+#   * neg_hyparview_raw_shuffle: shuffle exchange must be gossiped.
+#   * neg_hyparview_mint_test_context: Init-only mint rejects Test.
+crucible_neg_compile_test(neg_hyparview_zero_active
+  "constraints not satisfied|HyParViewShape|MaxActive")
+crucible_neg_compile_test(neg_hyparview_raw_peer_join
+  "cannot convert|no matching function|could not convert|HyParViewPeer|Tagged")
+crucible_neg_compile_test(neg_hyparview_cross_tag_peer
+  "cannot convert|no matching function|could not convert|External|HyParView")
+crucible_neg_compile_test(neg_hyparview_raw_shuffle
+  "cannot convert|no matching function|could not convert|GossipedHyParViewShuffle|Tagged")
+crucible_neg_compile_effects_test(neg_hyparview_mint_test_context
   "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
 
 # GAPS-115 — canopy/Scuttlebutt.h bounded anti-entropy substrate.
