@@ -227,6 +227,7 @@ crucible_test(test_crdt)
 crucible_test(test_swim)
 crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_integrity)
+crucible_test(test_cntp_fec)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
@@ -2325,6 +2326,23 @@ crucible_neg_compile_test(neg_integrity_raw_hash_field
   "cannot convert|could not convert|IntegrityHash|Refined")
 crucible_neg_compile_test(neg_integrity_non_contiguous_wrap
   "constraints not satisfied|ByteContiguousPayload|HasContiguousPayloadData|no matching function")
+
+# GAPS-117 — cntp/Fec.h GF(256) systematic Reed-Solomon primitive.
+#   * neg_fec_zero_k / neg_fec_zero_m: shard counts must be positive.
+#   * neg_fec_shape_over_256: GF(2^8) limits K+M to 256 coordinates.
+#   * neg_fec_mint_test_context: the mint is Init-only.
+#   * neg_fec_encode_non_contiguous_owned: owned FEC input must be a
+#     Linear byte-contiguous buffer.
+crucible_neg_compile_test(neg_fec_zero_k
+  "constraints not satisfied|ReedSolomonShape|K")
+crucible_neg_compile_test(neg_fec_zero_m
+  "constraints not satisfied|ReedSolomonShape|M")
+crucible_neg_compile_test(neg_fec_shape_over_256
+  "constraints not satisfied|ReedSolomonShape|256")
+crucible_neg_compile_effects_test(neg_fec_mint_test_context
+  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+crucible_neg_compile_test(neg_fec_encode_non_contiguous_owned
+  "constraints not satisfied|ByteContiguousBuffer|no matching function")
 
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
 # ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.
