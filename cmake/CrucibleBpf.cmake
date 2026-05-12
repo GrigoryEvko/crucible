@@ -143,7 +143,11 @@ set_property(GLOBAL PROPERTY CRUCIBLE_BPF_EMBED_SOURCES "")
 # crucible_bpf_program(<name> <source> [EXTRA_FLAGS <flag>...])
 #
 # Compiles <source> (a .bpf.c file path relative to CMAKE_SOURCE_DIR)
-# to BPF bytecode and embeds it as a C array via xxd.
+# to BPF bytecode and embeds it as a C array via xxd.  BPF programs may
+# live under any subsystem-owned `include/crucible/*/bpf/` directory;
+# the compile command includes both that source directory and the shared
+# perf BPF directory so existing common.h/vmlinux.h consumers keep working
+# without forcing every networking program into perf/.
 #
 # Optional EXTRA_FLAGS <flag>... — additional clang flags to pass at
 # BPF compile time.  Used when a BPF program has a build-time switch
@@ -178,8 +182,9 @@ function(crucible_bpf_program name source)
 
   cmake_parse_arguments(_CBP "" "" "EXTRA_FLAGS" ${ARGN})
 
-  set(_BPF_DIR          "${CMAKE_SOURCE_DIR}/include/crucible/perf/bpf")
+  set(_BPF_COMMON_DIR   "${CMAKE_SOURCE_DIR}/include/crucible/perf/bpf")
   set(_BPF_SRC          "${CMAKE_SOURCE_DIR}/${source}")
+  get_filename_component(_BPF_SRC_DIR "${_BPF_SRC}" DIRECTORY)
   set(_BPF_OBJ          "${CMAKE_CURRENT_BINARY_DIR}/${name}.bpf.o")
   set(_BPF_EMBED_DIR    "${CMAKE_CURRENT_BINARY_DIR}/bpf_embed/${name}")
   set(_BPF_EMBED_STAGED "${_BPF_EMBED_DIR}/${name}_bpf_bytecode")
@@ -200,7 +205,8 @@ function(crucible_bpf_program name source)
             -target bpf
             ${_CRUCIBLE_BPF_ARCH_DEFINE}
             ${_CBP_EXTRA_FLAGS}
-            -I${_BPF_DIR}
+            -I${_BPF_SRC_DIR}
+            -I${_BPF_COMMON_DIR}
             -O2 -g
             -fdebug-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.
             -Wall -Wno-unused-function -Wno-address-of-packed-member
