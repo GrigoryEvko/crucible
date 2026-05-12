@@ -3362,6 +3362,16 @@ crucible_neg_compile_test(neg_recipe_pool_arena_raw_pointer
 crucible_neg_compile_test(neg_recipe_pool_arena_wrong_borrow
   "no matching function|no known conversion|cannot convert")
 
+# WRAP-RecipePool-5 (#974) — RecipePool construction is init-phase
+# work. The constructor defaults to Row<Init>; explicit pure,
+# Alloc-only, and Bg-only caller rows fail the Subrow gate.
+crucible_neg_compile_test(neg_recipe_pool_ctor_pure_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+crucible_neg_compile_test(neg_recipe_pool_ctor_alloc_only_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+crucible_neg_compile_test(neg_recipe_pool_ctor_bg_only_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+
 # WRAP-RecipeReg-5 (#980) — RecipeRegistry seeds from
 # BorrowedRef<RecipePool>. Raw RecipePool* and wrong-owner borrowed
 # references must fail at the constructor boundary.

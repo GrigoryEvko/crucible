@@ -11,7 +11,7 @@
 
 int main() {
   crucible::Arena arena{};
-  crucible::effects::Test test{};
-  crucible::RecipePool pool{&arena, test.alloc};
+  crucible::effects::Init init{};
+  crucible::RecipePool pool{&arena, init};
   return pool.capacity() == 0;
 }

@@ -42,6 +42,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
 #include <crucible/safety/Borrowed.h>
@@ -55,6 +56,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace crucible {
 
@@ -63,6 +65,7 @@ class CRUCIBLE_OWNER RecipePool {
   using ArenaBorrow = safety::BorrowedRef<Arena>;
   using Capacity = safety::PowerOfTwo<uint32_t>;
   using Size     = safety::Monotonic<uint32_t>;
+  using init_required_row = effects::Row<effects::Effect::Init>;
 
   static_assert(safety::extract::IsBorrowedRef<ArenaBorrow>);
 
@@ -73,9 +76,13 @@ class CRUCIBLE_OWNER RecipePool {
   // Defaults to 32 — covers the 5-15 recipes a typical ML model
   // pins (FORGE.md §19.2) with no growth.  Registries bootstrapping
   // with ~8 starter recipes fit comfortably.
-  [[gnu::cold]] explicit RecipePool(ArenaBorrow arena,
-                                    effects::Alloc a,
-                                    uint32_t initial_capacity = 32)
+  template <typename CallerRow = init_required_row>
+      requires effects::Subrow<init_required_row, CallerRow>
+  [[gnu::cold]] explicit RecipePool(
+      ArenaBorrow arena,
+      effects::Init init,
+      uint32_t initial_capacity = 32,
+      std::type_identity<CallerRow> = {})
       noexcept
       // CONTRACT-109: pow2 invariant discharges through the named
       // predicate `crucible::decide::is_power_of_two_le` (CONTRACT-050
@@ -95,6 +102,7 @@ class CRUCIBLE_OWNER RecipePool {
       , capacity_{initial_capacity}
       , size_{0}
   {
+    const effects::Alloc a = init.alloc;
     slots_ = arena_->alloc_array_nonzero<Slot>(a, initial_capacity);
     for (uint32_t i = 0; i < initial_capacity; ++i) {
       slots_[i] = Slot{};  // NSDMI: recipe=nullptr

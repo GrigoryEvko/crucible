@@ -11,9 +11,10 @@
 
 int main() {
   crucible::effects::Test test{};
+  crucible::effects::Init init{};
   crucible::Arena arena{};
   crucible::RecipePool pool{
-      crucible::RecipePool::ArenaBorrow{arena}, test.alloc};
+      crucible::RecipePool::ArenaBorrow{arena}, init};
   crucible::RecipeRegistry registry{&pool, test.alloc};
   return registry.entries().value().empty();
 }

@@ -77,7 +77,9 @@ using crucible::ScalarType;
 namespace names = crucible::recipe_names;
 
 crucible::effects::Test g_test{};
+crucible::effects::Init g_init{};
 inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
+inline crucible::effects::Init init_cap() noexcept { return g_init; }
 
 [[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept {
   return reg.entries().value();
@@ -500,7 +502,7 @@ int main() {
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, init_cap()};
     RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, alloc_cap()};
 
     for (const auto& cell : kCoverageMatrix) {
