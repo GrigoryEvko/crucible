@@ -171,6 +171,10 @@ namespace source {
     // topology/Pingmesh.h. Raw UDP/probe outcomes cannot directly
     // update fleet latency histograms or anomaly reports.
     struct Pingmesh {};
+    // Ptp: timestamp / clock-status facts admitted by topology/Ptp.h.
+    // Raw clock_gettime values, packet timestamps, and integer file
+    // descriptors cannot directly seed PTP-sensitive consumers.
+    struct Ptp {};
     // PathSwap: CNT-P application-level path-swap plan admitted through
     // cntp/PathSwap.h. Raw path IDs cannot directly drive a live
     // SessionHandle resource transition.

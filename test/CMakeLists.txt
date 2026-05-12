@@ -345,6 +345,7 @@ crucible_test(test_cog_mimic)
 crucible_test(test_topology_graph)
 crucible_test(test_topology_health)
 crucible_test(test_topology_pingmesh)
+crucible_test(test_topology_ptp)
 crucible_test(test_congestion_telemetry)
 crucible_test(test_asymmetric_failure)
 crucible_test(test_concurrent_compile)
@@ -1409,6 +1410,22 @@ crucible_neg_compile_topology_test(neg_pingmesh_raw_measurement
     "cannot convert|no matching function|could not convert|Tagged|PingmeshMeasurement|Pingmesh")
 crucible_neg_compile_topology_test(neg_pingmesh_zero_peer_capacity
     "static assertion failed|requires at least two peers")
+
+# ─── HS14 fixtures for topology::Ptp (GAPS-129 #1221) ───────────────
+#
+#   * neg_ptp_mint_bg_ctx — only Init-row contexts mint PTP handles.
+#   * neg_ptp_record_fg_ctx — HotFgCtx cannot publish PTP samples.
+#   * neg_ptp_raw_fd — raw int fds cannot mint PTP handles.
+#   * neg_ptp_raw_timestamp — raw nanoseconds cannot substitute for
+#     source::Ptp timestamps.
+crucible_neg_compile_topology_test(neg_ptp_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsPtpMint|Init|Bg")
+crucible_neg_compile_topology_test(neg_ptp_record_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsPtpRecord|Bg|HotFgCtx")
+crucible_neg_compile_topology_test(neg_ptp_raw_fd
+    "cannot convert|no matching function|could not convert|PtpClockFd|int")
+crucible_neg_compile_topology_test(neg_ptp_raw_timestamp
+    "cannot convert|no matching function|could not convert|PtpTimestampNs|Tagged")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #
