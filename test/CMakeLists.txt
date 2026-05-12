@@ -3313,6 +3313,14 @@ crucible_neg_compile_test(neg_recipe_registry_pool_raw_pointer
 crucible_neg_compile_test(neg_recipe_registry_pool_wrong_borrow
   "no matching function|no known conversion|cannot convert")
 
+# WRAP-RE-3 (#995) — ReplayEngine::init consumes
+# BorrowedRef<const PoolAllocator>. Raw PoolAllocator* and wrong-owner
+# borrowed references must fail at the init boundary.
+crucible_neg_compile_test(neg_replay_engine_pool_raw_pointer
+  "no matching function|no known conversion|cannot convert")
+crucible_neg_compile_test(neg_replay_engine_pool_wrong_borrow
+  "no matching function|no known conversion|cannot convert")
+
 # safety::Saturated<T> structural-wrapper — HS14 fixtures (#1084 piece):
 #   * neg_saturated_non_arithmetic   Saturated<MyStruct> must fail
 #                                    (the std::is_arithmetic_v<T>

@@ -318,7 +318,7 @@ int main() {
         PoolAllocator pool;
         pool.init(br.plan);
         ReplayEngine engine;
-        engine.init(br.region, &pool);
+        engine.init(br.region, ReplayEngine::PoolBorrow{pool});
         auto av = engine.mint_active_view();
 
         uint32_t op_idx = 0;

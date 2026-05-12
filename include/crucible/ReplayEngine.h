@@ -32,7 +32,9 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
+#include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/IsBorrowedRef.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
 #include <crucible/safety/Refined.h>
@@ -78,6 +80,10 @@ namespace op_role {
 }
 
 struct ReplayEngine {
+  using PoolBorrow = crucible::safety::BorrowedRef<const PoolAllocator>;
+
+  static_assert(crucible::safety::extract::IsBorrowedRef<PoolBorrow>);
+
   ReplayEngine() = default;
 
   ReplayEngine(const ReplayEngine&) = delete("ReplayEngine tracks mutable cursor position");
@@ -97,10 +103,9 @@ struct ReplayEngine {
   // depend on — in particular, that cursor_ starts at ops_ and that
   // slot_table_ is non-null (derived from pool->table() which is
   // non-null when pool is Initialized).
-  void init(const RegionNode* region, const PoolAllocator* pool)
+  void init(const RegionNode* region, PoolBorrow pool)
       CRUCIBLE_NO_THREAD_SAFETY
       pre (region != nullptr)
-      pre (pool   != nullptr)
       pre (pool->is_initialized())
       // Region bounds: num_ops==0 is legitimate (empty region), but if
       // num_ops>0 then ops must be non-null.  CONTRACT-055 valid_span
@@ -118,7 +123,6 @@ struct ReplayEngine {
     // matching ReplayEngine's slot_table_ != nullptr post-condition.
     const auto pool_view = pool->mint_initialized_view();
     slot_table_ = pool->table(pool_view);
-    pool_ = pool;
     // Prime the cache: load first entry's guard values.
     if (ops_ != end_) [[likely]] {
       expected_schema_ = ops_[0].schema_hash;
@@ -463,7 +467,7 @@ struct ReplayEngine {
   // Offsets 32-39: current_          (advance: write; output_ptr: read)
   // Offsets 40-47: slot_table_       (output_ptr: index into)
   // Offsets 48-55: ops_              (reset + diagnostics)
-  // Offsets 56-63: pool_             (diagnostics only)
+  // Offsets 56-63: pad_replay_       (keeps one-cache-line layout)
   //
   // Total: 64 bytes = exactly one cache line.
   //
@@ -477,7 +481,7 @@ struct ReplayEngine {
   const TraceEntry* current_ = nullptr;         // 8B — last matched entry
   void* const* slot_table_ = nullptr;           // 8B — pool slot pointer table
   const TraceEntry* ops_ = nullptr;             // 8B — base for reset + diagnostics
-  const PoolAllocator* pool_ = nullptr;         // 8B — kept for diagnostics
+  uint64_t pad_replay_ = 0;                     // 8B — preserves 64B layout
 };
 
 static_assert(sizeof(ReplayEngine) == 64, "ReplayEngine: 8 × 8B = 64 bytes (one cache line)");

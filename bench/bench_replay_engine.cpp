@@ -167,7 +167,7 @@ int main() {
         pool.init(&br.plan);
 
         ReplayEngine engine;
-        engine.init(&br.region, &pool);
+        engine.init(&br.region, ReplayEngine::PoolBorrow{pool});
 
         CrucibleContext ctx;
         (void)ctx.activate(&br.region);

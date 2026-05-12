@@ -120,7 +120,7 @@ struct CrucibleContext {
       deactivate();
 
     pool_.init(region->plan);
-    engine_.init(region, &pool_);
+    engine_.init(region, ReplayEngine::PoolBorrow{pool_});
     active_region_ = region;
     mode_ = ContextMode::COMPILED;
 
@@ -244,7 +244,7 @@ struct CrucibleContext {
     pool_.init(alt->plan);
     migrate_prefix_slots_(old_region, alt, old_pool.base, div_pos);
 
-    engine_.init(alt, &pool_);
+    engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
     active_region_ = alt;
 
     // Engine just init'd → mint an ActiveView and use the typed advance
