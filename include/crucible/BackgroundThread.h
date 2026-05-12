@@ -1498,13 +1498,12 @@ struct BackgroundThread {
           slot_info.birth_op = OpIndex{0};
           slot_info.death_op = OpIndex{i};
           slot_info.is_external = true;
-          // compute_storage_nbytes returns Saturated<uint64_t>; .value()
-          // strips the clamped flag.  Saturation propagates as
-          // UINT64_MAX, which fails downstream pool allocation cleanly
-          // — same behavior as the pre-#1018 bare-uint64_t API.
+          // compute_storage_nbytes_det pins this projection as
+          // DetSafe<Pure>; .peek().value() is the explicit boundary
+          // where the memory planner accepts the saturated byte count.
           slot_info.nbytes =
-              compute_storage_nbytes(external_tensor_meta(te.input_metas[j]))
-                  .value();
+              compute_storage_nbytes_det(
+                  external_tensor_meta(te.input_metas[j])).peek().value();
           slot_info.dtype = te.input_metas[j].dtype;
           slot_info.device_type = te.input_metas[j].device_type;
           slot_info.device_idx = te.input_metas[j].device_idx;
@@ -1534,8 +1533,8 @@ struct BackgroundThread {
             auto& slot_info = local_slots[result.old_slot.raw()];
             slot_info.death_op = std::max(slot_info.death_op, OpIndex{i});
             const uint64_t output_nbytes =
-                compute_storage_nbytes(
-                    external_tensor_meta(te.output_metas[j])).value();
+                compute_storage_nbytes_det(
+                    external_tensor_meta(te.output_metas[j])).peek().value();
             slot_info.nbytes = std::max(slot_info.nbytes, output_nbytes);
           }
           if (result.old_op.is_valid()) {
@@ -1552,8 +1551,8 @@ struct BackgroundThread {
           slot_info.death_op = OpIndex{i};
           slot_info.is_external = false;
           slot_info.nbytes =
-              compute_storage_nbytes(external_tensor_meta(te.output_metas[j]))
-                  .value();
+              compute_storage_nbytes_det(
+                  external_tensor_meta(te.output_metas[j])).peek().value();
           slot_info.dtype = te.output_metas[j].dtype;
           slot_info.device_type = te.output_metas[j].device_type;
           slot_info.device_idx = te.output_metas[j].device_idx;

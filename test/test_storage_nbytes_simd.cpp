@@ -35,9 +35,23 @@
 #include <initializer_list>
 #include <memory>
 #include <random>
+#include <type_traits>
+#include <utility>
 
 using namespace crucible;
 using namespace crucible::detail;
+
+using StorageNbytesDet = safety::DetSafe<
+    safety::DetSafeTier_v::Pure, safety::Saturated<uint64_t>>;
+static_assert(std::is_same_v<
+    decltype(compute_storage_nbytes_scalar_det(external_tensor_meta(
+        std::declval<const TensorMeta&>()))),
+    StorageNbytesDet>);
+static_assert(std::is_same_v<
+    decltype(compute_storage_nbytes_simd_det(external_tensor_meta(
+        std::declval<const TensorMeta&>()))),
+    StorageNbytesDet>);
+static_assert(sizeof(StorageNbytesDet) == sizeof(safety::Saturated<uint64_t>));
 
 // ── Helper: build TensorMeta from sizes/strides arrays ────────────
 
@@ -77,6 +91,10 @@ static void check_equiv(const TensorMeta& meta, const char* what) noexcept {
     const auto external = external_meta(meta);
     const auto scalar = compute_storage_nbytes_scalar(external);
     const auto simd_v = compute_storage_nbytes_simd(external);
+    const auto scalar_det = compute_storage_nbytes_scalar_det(external);
+    const auto simd_det = compute_storage_nbytes_simd_det(external);
+    assert(scalar_det.peek() == scalar);
+    assert(simd_det.peek() == simd_v);
     if (scalar != simd_v) {
         std::fprintf(stderr,
             "[%s] MISMATCH: scalar=%llu(clamped=%d) simd=%llu(clamped=%d)\n"

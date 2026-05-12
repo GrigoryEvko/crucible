@@ -76,6 +76,7 @@
 #include <crucible/Platform.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
+#include <crucible/safety/DetSafe.h>
 #include <crucible/safety/FixedArray.h>
 #include <crucible/safety/Saturated.h>
 #include <crucible/safety/Simd.h>
@@ -145,6 +146,14 @@ safety::Saturated<uint64_t> compute_storage_nbytes_scalar(ExternalTensorMeta met
     return Sat{UINT64_MAX, true};
   }
   return Sat{total_bytes};
+}
+
+[[nodiscard, gnu::const]] CRUCIBLE_INLINE
+safety::DetSafe<safety::DetSafeTier_v::Pure, safety::Saturated<uint64_t>>
+compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
+  return safety::DetSafe<
+      safety::DetSafeTier_v::Pure,
+      safety::Saturated<uint64_t>>{compute_storage_nbytes_scalar(meta)};
 }
 
 // ── Helper: pre-screen safety check ──────────────────────────────
@@ -318,6 +327,14 @@ safety::Saturated<uint64_t> compute_storage_nbytes_simd(ExternalTensorMeta meta)
     return Sat{UINT64_MAX, true};
   }
   return Sat{total_bytes};
+}
+
+[[nodiscard, gnu::pure]] CRUCIBLE_INLINE
+safety::DetSafe<safety::DetSafeTier_v::Pure, safety::Saturated<uint64_t>>
+compute_storage_nbytes_simd_det(ExternalTensorMeta meta) noexcept {
+  return safety::DetSafe<
+      safety::DetSafeTier_v::Pure,
+      safety::Saturated<uint64_t>>{compute_storage_nbytes_simd(meta)};
 }
 
 }  // namespace crucible::detail

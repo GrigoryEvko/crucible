@@ -2375,6 +2375,15 @@ crucible_neg_compile_test(neg_storage_nbytes_raw_tensor_meta
 crucible_neg_compile_test(neg_storage_nbytes_cross_tag
   "no match for|cannot convert|no viable|could not convert|Tagged|External|Sanitized")
 
+# WRAP-StorageNbytes-3 (#1020) — deterministic storage-byte
+# projections return DetSafe<Pure, Saturated<uint64_t>>.  Raw
+# Saturated slots and differently pinned DetSafe slots cannot consume
+# the result without an explicit unwrap / retag decision.
+crucible_neg_compile_test(neg_storage_nbytes_det_raw_saturated
+  "conversion from|could not convert|cannot convert|no viable conversion")
+crucible_neg_compile_test(neg_storage_nbytes_det_cross_tier
+  "conversion from|could not convert|cannot convert|no viable conversion")
+
 # ─── #884 WRAP-Cipher-1 — non-zero head invariant on advance_head ───
 #
 # Per #884, ValidCipherHead is safety::Refined<safety::non_zero,

@@ -30,6 +30,7 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/DetSafe.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
@@ -286,6 +287,15 @@ compute_storage_nbytes(ExternalTensorMeta meta)
                              &total_bytes)) [[unlikely]]
     return Sat{UINT64_MAX, true};
   return Sat{total_bytes};
+}
+
+[[nodiscard]] constexpr
+safety::DetSafe<safety::DetSafeTier_v::Pure, safety::Saturated<uint64_t>>
+compute_storage_nbytes_det(ExternalTensorMeta meta)
+{
+  return safety::DetSafe<
+      safety::DetSafeTier_v::Pure,
+      safety::Saturated<uint64_t>>{compute_storage_nbytes(meta)};
 }
 
 // ═══════════════════════════════════════════════════════════════════
