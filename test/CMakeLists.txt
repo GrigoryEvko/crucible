@@ -2600,6 +2600,22 @@ crucible_neg_compile_test(neg_costmodel_utilization_above_one
 crucible_neg_compile_test(neg_costmodel_utilization_negative
   "contract|Refined|in_range|InRange|not a constant|non-constant|constexpr")
 
+# ─── #902 WRAP-CostModel-8 pure-row neg-compile tests ───────────────
+#
+# CostModel's evaluator family is pure arithmetic over already-owned
+# inputs.  The row-typed overloads require Subrow<CallerRow, Row<>>,
+# so any caller that declares IO / Alloc / Bg / Block authority is
+# rejected at substitution time instead of silently weakening the pure
+# projection into an effect-bearing context.
+crucible_neg_compile_test(neg_costmodel_wave_efficiency_io_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+crucible_neg_compile_test(neg_costmodel_sm_occupancy_alloc_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+crucible_neg_compile_test(neg_costmodel_evaluate_cost_bg_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+crucible_neg_compile_test(neg_costmodel_fusion_benefit_block_row
+  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

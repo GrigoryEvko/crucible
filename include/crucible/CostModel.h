@@ -24,6 +24,7 @@
 // The cost model exposes this: launch_ns >> compute_ns for small ops.
 
 #include <crucible/Types.h>
+#include <crucible/effects/EffectRow.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/RefinedAlgebra.h>
 
@@ -479,6 +480,11 @@ struct KernelConfig {
   return true;
 }
 
+// WRAP-CostModel-8: evaluator functions below are pure projections of
+// caller-owned inputs.  CallerRow defaults to Row<> so existing pure
+// call sites stay source-compatible, while effect-bearing callers are
+// rejected by Subrow<CallerRow, Row<>> at template substitution.
+
 // ═══════════════════════════════════════════════════════════════════
 // CostBreakdown: Result of cost evaluation
 //
@@ -532,6 +538,9 @@ struct CostBreakdown {
 //            (* (to_real (ceil_div elems tpw)) (to_real tpw)))))
 // ═══════════════════════════════════════════════════════════════════
 
+template <typename CallerRow = ::crucible::effects::Row<>>
+    requires ::crucible::effects::Subrow<
+        CallerRow, ::crucible::effects::Row<>>
 [[nodiscard]] constexpr ValidUtilization wave_efficiency(
     uint64_t elements, const HardwareProfile& hw) {
   uint64_t tpw = static_cast<uint64_t>(hw.num_sms) * hw.warp_size.value();
@@ -569,6 +578,9 @@ struct CostBreakdown {
 //         (/ (to_real (min reg_limited smem_limited max_t)) (to_real max_t))))
 // ═══════════════════════════════════════════════════════════════════
 
+template <typename CallerRow = ::crucible::effects::Row<>>
+    requires ::crucible::effects::Subrow<
+        CallerRow, ::crucible::effects::Row<>>
 [[nodiscard]] constexpr ValidUtilization sm_occupancy(
     ValidRegsPerThread regs_per_thread, uint32_t smem_per_block,
     uint16_t warps_per_block, const HardwareProfile& hw) {
@@ -630,6 +642,9 @@ struct CostBreakdown {
 // happens at a higher level (the caller extracts flops/bytes).
 // ═══════════════════════════════════════════════════════════════════
 
+template <typename CallerRow = ::crucible::effects::Row<>>
+    requires ::crucible::effects::Subrow<
+        CallerRow, ::crucible::effects::Row<>>
 [[nodiscard]] inline CostBreakdown evaluate_cost(
     uint64_t flops, uint64_t bytes, uint64_t elements,
     ScalarType dtype,
@@ -645,13 +660,13 @@ struct CostBreakdown {
       ? static_cast<float>(flops) / static_cast<float>(bytes) : 0.0f;
 
   // Wave efficiency
-  cb.wave_efficiency = wave_efficiency(elements, hw);
+  cb.wave_efficiency = wave_efficiency<CallerRow>(elements, hw);
 
   // SM occupancy.  Pass the typed regs_per_thread directly — sm_occupancy
   // now consumes ValidRegsPerThread, so the caller cannot smuggle an
   // out-of-range raw uint16_t past the function boundary.
-  cb.occupancy = sm_occupancy(cfg.regs_per_thread, cfg.smem_bytes,
-                               cfg.warps_per_block, hw);
+  cb.occupancy = sm_occupancy<CallerRow>(
+      cfg.regs_per_thread, cfg.smem_bytes, cfg.warps_per_block, hw);
 
   // Compute time: flops / (effective throughput)
   // peak_tflops × 1e3 converts TFLOPS → FLOPS/ns
@@ -693,12 +708,16 @@ struct CostBreakdown {
 }
 
 // Convenience: evaluate with default kernel config (for quick estimation)
+template <typename CallerRow = ::crucible::effects::Row<>>
+    requires ::crucible::effects::Subrow<
+        CallerRow, ::crucible::effects::Row<>>
 [[nodiscard]] inline CostBreakdown evaluate_cost(
     uint64_t flops, uint64_t bytes, uint64_t elements,
     ScalarType dtype,
     const HardwareProfile& hw) {
   KernelConfig default_cfg{};
-  return evaluate_cost(flops, bytes, elements, dtype, default_cfg, hw);
+  return evaluate_cost<CallerRow>(
+      flops, bytes, elements, dtype, default_cfg, hw);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -720,6 +739,9 @@ struct FusionBenefit {
   float speedup = 0;               // unfused / fused (>1.0 = fusion wins)
 };
 
+template <typename CallerRow = ::crucible::effects::Row<>>
+    requires ::crucible::effects::Subrow<
+        CallerRow, ::crucible::effects::Row<>>
 [[nodiscard]] inline FusionBenefit compute_fusion_benefit(
     double unfused_ns, double fused_ns,
     uint64_t saved_bytes, uint32_t saved_launches) {

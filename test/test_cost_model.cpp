@@ -16,6 +16,7 @@
 #include <cstdio>
 
 using namespace crucible;
+namespace eff = ::crucible::effects;
 
 // Within-1% tolerance check for float equality.
 static bool approx(float actual, float expected, float tol = 0.01f) {
@@ -181,6 +182,26 @@ static void test_fusion_benefit() {
     std::printf("  test_fusion_benefit:            PASSED\n");
 }
 
+static void test_pure_row_fences() {
+    static_assert(eff::Subrow<eff::Row<>, eff::Row<>>);
+    static_assert(!eff::Subrow<eff::Row<eff::Effect::IO>, eff::Row<>>);
+    static_assert(!eff::Subrow<eff::Row<eff::Effect::Alloc>, eff::Row<>>);
+
+    auto hw = blackwell_b200();
+    KernelConfig cfg{};
+    (void)wave_efficiency<eff::Row<>>(0, hw);
+    (void)sm_occupancy<eff::Row<>>(cfg.regs_per_thread, cfg.smem_bytes,
+                                   cfg.warps_per_block, hw);
+    (void)evaluate_cost<eff::Row<>>(
+        1'024, 2'048, 4'096, ScalarType::Float, cfg, hw);
+    (void)evaluate_cost<eff::Row<>>(
+        1'024, 2'048, 4'096, ScalarType::Float, hw);
+    (void)compute_fusion_benefit<eff::Row<>>(
+        10'000.0, 6'000.0, 1'024'000, 1);
+
+    std::printf("  test_pure_row_fences:           PASSED\n");
+}
+
 int main() {
     test_preset_sanity();
     test_ridge_point();
@@ -188,6 +209,7 @@ int main() {
     test_sm_occupancy();
     test_validate_config();
     test_fusion_benefit();
-    std::printf("test_cost_model: 6 groups, all passed\n");
+    test_pure_row_fences();
+    std::printf("test_cost_model: 7 groups, all passed\n");
     return 0;
 }
