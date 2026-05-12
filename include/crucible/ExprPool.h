@@ -7,8 +7,10 @@
 #include <crucible/SwissTable.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
+#include <crucible/safety/DetSafe.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/SwissTableBuffer.h>
+#include <crucible/safety/Tagged.h>
 
 #include <algorithm>
 #include <array>
@@ -302,11 +304,16 @@ class CRUCIBLE_OWNER ExprPool {
       safety::bounded_above<kIntCacheSize - 1>, size_t>;
   using Capacity = safety::PowerOfTwo<size_t>;
   using InternCount = safety::Monotonic<size_t>;
+  using InternedExpr =
+      safety::Tagged<const Expr*, safety::source::Interned>;
+  using PureInternedExpr = safety::det_safe::Pure<InternedExpr>;
 
   static_assert(sizeof(IntCacheLiteral) == sizeof(int64_t));
   static_assert(sizeof(IntCacheIndex) == sizeof(size_t));
   static_assert(sizeof(Capacity) == sizeof(size_t));
   static_assert(sizeof(InternCount) == sizeof(size_t));
+  static_assert(sizeof(InternedExpr) == sizeof(const Expr*));
+  static_assert(sizeof(PureInternedExpr) == sizeof(const Expr*));
 
   // Default `initial_capacity` sized for real production graphs — ViT
   // forward+backward+optimizer is ~15k DAG ops, SD1.5 is ~30k. Each op
@@ -904,7 +911,13 @@ class CRUCIBLE_OWNER ExprPool {
   // bloating the function to ~900 B of stack frame + icache pressure
   // and REGRESSING the hit-path benchmark from 138 ns to 690 ns).
   // Relying on default inlining keeps make() lean.
-  [[nodiscard]] const Expr* make(
+  [[nodiscard]] PureInternedExpr make(
+      effects::Alloc a, Op op, std::span<const Expr* const> args) {
+    return PureInternedExpr{InternedExpr{make_raw_(a, op, args)}};
+  }
+
+ private:
+  [[nodiscard]] const Expr* make_raw_(
       effects::Alloc a, Op op, std::span<const Expr* const> args) {
     switch (op) {
       case Op::ADD:
@@ -1027,6 +1040,7 @@ class CRUCIBLE_OWNER ExprPool {
                        static_cast<uint8_t>(args.size()), f, SymbolId{}, 0);
   }
 
+ public:
   // ---- Stats ----
 
   [[nodiscard]] size_t intern_size() const {

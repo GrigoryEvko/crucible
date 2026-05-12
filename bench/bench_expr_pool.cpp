@@ -294,10 +294,10 @@ int main() {
         const Expr* x = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
         const Expr* y = pool.symbol(a, "y", SymbolId{1}, NUM_FLAGS);
         const Expr* args[] = {x, y};
-        const Expr* e = pool.make(a, Op::ADD, args);
+        const Expr* e = pool.make(a, Op::ADD, args).peek().value();
         bench::do_not_optimize(e);
         return bench::run("make(ADD, {x, y}) [hit]", [&]{
-            const Expr* r = pool.make(a, Op::ADD, args);
+            const Expr* r = pool.make(a, Op::ADD, args).peek().value();
             bench::do_not_optimize(r);
         });
     }());

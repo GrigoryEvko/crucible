@@ -3287,6 +3287,14 @@ crucible_neg_compile_test(neg_expr_pool_capacity_not_power_of_two
 crucible_neg_compile_test(neg_expr_pool_intern_count_assign_raw
   "no match for|no known conversion")
 
+# WRAP-ExprPool-5 (#919) — make() returns a DetSafe<Pure,
+# Tagged<const Expr*, source::Interned>>.  Raw Expr* and same-tier
+# cross-source values must fail at the consumer boundary.
+crucible_neg_compile_test(neg_expr_pool_make_raw_expr
+  "no match|no known conversion|cannot convert|could not convert")
+crucible_neg_compile_test(neg_expr_pool_make_cross_tag
+  "no match|no known conversion|cannot convert|could not convert")
+
 # WRAP-RecipePool-2 (#971) — capacity_ is a PowerOfTwo<uint32_t>
 # and size_ is a Monotonic<uint32_t>.  The fixtures pin the two
 # load-bearing absences: non-pow2 capacities cannot be constructed,

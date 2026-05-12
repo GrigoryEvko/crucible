@@ -18,6 +18,7 @@
 
 #include "test_assert.h"
 #include <cstdio>
+#include <type_traits>
 
 using namespace crucible;
 
@@ -142,13 +143,37 @@ static void test_dense_sids_stress() {
     std::printf("  test_dense_sids_stress: PASSED (%u symbols)\n", N);
 }
 
+static void test_make_returns_interned_det_safe() {
+    effects::Test t{};
+    const auto a = t.alloc;
+    ExprPool pool{a};
+
+    const Expr* x = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
+    const Expr* y = pool.symbol(a, "y", SymbolId{1}, NUM_FLAGS);
+    const Expr* args[] = {x, y};
+
+    const auto wrapped = pool.make(a, Op::ADD, args);
+    const Expr* raw = wrapped.peek().value();
+    assert(raw == pool.add(a, x, y));
+
+    std::printf("  test_make_returns_interned_det_safe: PASSED\n");
+}
+
 int main() {
     std::printf("test_expr_pool_fast_symbol:\n");
+    static_assert(std::is_same_v<
+        ExprPool::InternedExpr,
+        safety::Tagged<const Expr*, safety::source::Interned>>);
+    static_assert(std::is_same_v<
+        ExprPool::PureInternedExpr,
+        safety::det_safe::Pure<ExprPool::InternedExpr>>);
+    static_assert(sizeof(ExprPool::PureInternedExpr) == sizeof(const Expr*));
 
     test_unregistered_returns_nullptr();
     test_matches_slow_path();
     test_sparse_sids();
     test_dense_sids_stress();
+    test_make_returns_interned_det_safe();
 
     std::printf("test_expr_pool_fast_symbol: ALL PASSED\n");
     return 0;
