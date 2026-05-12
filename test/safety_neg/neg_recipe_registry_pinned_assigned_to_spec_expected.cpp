@@ -51,7 +51,7 @@ using namespace crucible;
 int main() {
     Arena arena{};
     effects::Test test_ctx{};
-    RecipePool     pool{arena, test_ctx.alloc};
+    RecipePool     pool{RecipePool::ArenaBorrow{arena}, test_ctx.alloc};
     RecipeRegistry reg{pool,  test_ctx.alloc};
 
     // Should FAIL: by_name_pinned<BITEXACT> returns

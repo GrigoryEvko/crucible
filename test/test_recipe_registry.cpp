@@ -89,7 +89,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry reg{pool, alloc_cap()};
 
     assert(entries_view(reg).size() == RecipeRegistry::STARTER_COUNT);
@@ -112,7 +112,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry reg{pool, alloc_cap()};
 
     // Collect expected (name → recipe*) from entries().
@@ -156,7 +156,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry reg{pool, alloc_cap()};
 
     const std::string_view missing[] = {
@@ -188,7 +188,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry reg{pool, alloc_cap()};
 
     {
@@ -257,7 +257,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry reg{pool, alloc_cap()};
 
     std::unordered_set<std::string_view> seen;
@@ -279,7 +279,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry reg{pool, alloc_cap()};
 
     std::unordered_set<const NumericalRecipe*> ptrs;
@@ -318,7 +318,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry reg{pool, alloc_cap()};
 
     struct Golden {
@@ -370,7 +370,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry reg{pool, alloc_cap()};
 
     for (const auto& spec :
@@ -401,7 +401,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry reg{pool, alloc_cap()};
 
     // (a) Every starter's hash resolves via by_hash to the same
@@ -447,8 +447,8 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   {
     Arena arena_a{};
     Arena arena_b{};
-    RecipePool pool_a{arena_a, alloc_cap()};
-    RecipePool pool_b{arena_b, alloc_cap()};
+    RecipePool pool_a{RecipePool::ArenaBorrow{arena_a}, alloc_cap()};
+    RecipePool pool_b{RecipePool::ArenaBorrow{arena_b}, alloc_cap()};
     RecipeRegistry reg_a{pool_a, alloc_cap()};
     RecipeRegistry reg_b{pool_b, alloc_cap()};
 

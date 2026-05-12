@@ -91,10 +91,15 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     static_assert(std::is_same_v<RecipePool::Size,
                                  crucible::safety::Monotonic<uint32_t>>,
                   "RecipePool size must carry the monotonic-growth invariant");
+    static_assert(std::is_same_v<RecipePool::ArenaBorrow,
+                                 crucible::safety::BorrowedRef<Arena>>,
+                  "RecipePool arena dependency must be an explicit borrow");
     static_assert(sizeof(RecipePool::Capacity) == sizeof(uint32_t),
                   "PowerOfTwo capacity wrapper must stay zero-cost");
     static_assert(sizeof(RecipePool::Size) == sizeof(uint32_t),
                   "Monotonic size wrapper must stay zero-cost");
+    static_assert(sizeof(RecipePool::ArenaBorrow) == sizeof(Arena*),
+                  "BorrowedRef<Arena> must stay pointer-sized");
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -102,7 +107,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap(), 32};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap(), 32};
     assert(pool.size() == 0);
     assert(pool.capacity() == 32);
   }
@@ -112,7 +117,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap(), 32};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap(), 32};
 
     const NumericalRecipe fields = mk(
         ScalarType::Float, ScalarType::Half,
@@ -137,7 +142,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap(), 32};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap(), 32};
 
     const auto* r_f32_strict = pool.intern(alloc_cap(),
         mk(ScalarType::Float, ScalarType::Float,
@@ -160,7 +165,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap(), 32};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap(), 32};
 
     NumericalRecipe poisoned = mk(
         ScalarType::Float, ScalarType::Half,
@@ -185,7 +190,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap(), 32};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap(), 32};
 
     NumericalRecipe fresh = mk(
         ScalarType::Float, ScalarType::Float,
@@ -215,7 +220,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap(), 8};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap(), 8};
     assert(pool.capacity() == 8);
 
     constexpr unsigned N = 10;
@@ -272,7 +277,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap(), 32};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap(), 32};
 
     const ScalarType dtypes[] = {
         ScalarType::Float, ScalarType::Half, ScalarType::BFloat16,
@@ -325,8 +330,8 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   {
     Arena arena_a{};
     Arena arena_b{};
-    RecipePool pool_a{arena_a, alloc_cap(), 32};
-    RecipePool pool_b{arena_b, alloc_cap(), 32};
+    RecipePool pool_a{RecipePool::ArenaBorrow{arena_a}, alloc_cap(), 32};
+    RecipePool pool_b{RecipePool::ArenaBorrow{arena_b}, alloc_cap(), 32};
 
     const NumericalRecipe fields = mk(
         ScalarType::Float, ScalarType::Float,
@@ -349,7 +354,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap(), 32};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap(), 32};
     const auto* r = pool.intern(alloc_cap(),
         mk(ScalarType::Float, ScalarType::Float,
            ReductionDeterminism::ORDERED));

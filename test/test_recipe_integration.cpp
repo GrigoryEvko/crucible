@@ -77,8 +77,8 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
   {
     Arena arena_a{};
     Arena arena_b{};
-    RecipePool pool_a{arena_a, alloc_cap()};
-    RecipePool pool_b{arena_b, alloc_cap()};
+    RecipePool pool_a{RecipePool::ArenaBorrow{arena_a}, alloc_cap()};
+    RecipePool pool_b{RecipePool::ArenaBorrow{arena_b}, alloc_cap()};
     RecipeRegistry reg_a{pool_a, alloc_cap()};
     RecipeRegistry reg_b{pool_b, alloc_cap()};
 
@@ -110,7 +110,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry registry{pool, alloc_cap()};
 
     auto rec_tc     = registry.by_name(names::kF16F32AccumTc);
@@ -153,7 +153,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry registry{pool, alloc_cap()};
 
     // "Persistence-time" — the original training process pins a
@@ -210,7 +210,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
   {
     // "Process A" — the original training process.
     Arena arena_a{};
-    RecipePool pool_a{arena_a, alloc_cap()};
+    RecipePool pool_a{RecipePool::ArenaBorrow{arena_a}, alloc_cap()};
     RecipeRegistry reg_a{pool_a, alloc_cap()};
     auto rec_a = reg_a.by_name(names::kFp8E4m3F32AccumMxOrd);
     assert(rec_a.has_value());
@@ -225,7 +225,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // pool / registry / arena state.  Different ASLR-derived
     // pointers everywhere.
     Arena arena_b{};
-    RecipePool pool_b{arena_b, alloc_cap()};
+    RecipePool pool_b{RecipePool::ArenaBorrow{arena_b}, alloc_cap()};
     RecipeRegistry reg_b{pool_b, alloc_cap()};
     auto rec_b = reg_b.by_name(names::kFp8E4m3F32AccumMxOrd);
     assert(rec_b.has_value());
@@ -260,7 +260,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry registry{pool, alloc_cap()};
 
     auto rec_tc       = registry.by_name(names::kF16F32AccumTc);

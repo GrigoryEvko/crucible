@@ -3297,6 +3297,14 @@ crucible_neg_compile_test(neg_recipe_pool_capacity_not_power_of_two
 crucible_neg_compile_test(neg_recipe_pool_size_assign_raw
   "no match for|no known conversion")
 
+# WRAP-RecipePool-3 (#972) — arena_ is a BorrowedRef<Arena>.
+# Raw Arena* and wrong-owner BorrowedRef<T> must fail at the
+# constructor boundary.
+crucible_neg_compile_test(neg_recipe_pool_arena_raw_pointer
+  "no matching function|no known conversion|cannot convert")
+crucible_neg_compile_test(neg_recipe_pool_arena_wrong_borrow
+  "no matching function|no known conversion|cannot convert")
+
 # safety::Saturated<T> structural-wrapper — HS14 fixtures (#1084 piece):
 #   * neg_saturated_non_arithmetic   Saturated<MyStruct> must fail
 #                                    (the std::is_arithmetic_v<T>

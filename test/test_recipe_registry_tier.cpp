@@ -142,7 +142,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
   // Common pool + registry for the call-boundary tests below.
   Arena arena{};
-  RecipePool pool{arena, alloc_cap()};
+  RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
   RecipeRegistry reg{pool, alloc_cap()};
 
   // ═══════════════════════════════════════════════════════════════

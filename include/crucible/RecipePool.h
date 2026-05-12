@@ -44,7 +44,9 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
+#include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/IsBorrowedRef.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
@@ -58,8 +60,11 @@ namespace crucible {
 
 class CRUCIBLE_OWNER RecipePool {
  public:
+  using ArenaBorrow = safety::BorrowedRef<Arena>;
   using Capacity = safety::PowerOfTwo<uint32_t>;
   using Size     = safety::Monotonic<uint32_t>;
+
+  static_assert(safety::extract::IsBorrowedRef<ArenaBorrow>);
 
   // Initial slot capacity.  Must be a power of two and ≥ 8.  Load
   // factor is capped at 50%, so `initial_capacity` accommodates
@@ -68,7 +73,7 @@ class CRUCIBLE_OWNER RecipePool {
   // Defaults to 32 — covers the 5-15 recipes a typical ML model
   // pins (FORGE.md §19.2) with no growth.  Registries bootstrapping
   // with ~8 starter recipes fit comfortably.
-  [[gnu::cold]] explicit RecipePool(Arena& arena CRUCIBLE_LIFETIMEBOUND,
+  [[gnu::cold]] explicit RecipePool(ArenaBorrow arena,
                                     effects::Alloc a,
                                     uint32_t initial_capacity = 32)
       noexcept
@@ -86,11 +91,11 @@ class CRUCIBLE_OWNER RecipePool {
       pre (initial_capacity >= 8)
       pre (::crucible::decide::is_power_of_two_le<std::uint32_t>(
           initial_capacity, UINT32_MAX))
-      : arena_{&arena}
+      : arena_{arena}
       , capacity_{initial_capacity}
       , size_{0}
   {
-    slots_ = arena.alloc_array_nonzero<Slot>(a, initial_capacity);
+    slots_ = arena_->alloc_array_nonzero<Slot>(a, initial_capacity);
     for (uint32_t i = 0; i < initial_capacity; ++i) {
       slots_[i] = Slot{};  // NSDMI: recipe=nullptr
     }
@@ -257,7 +262,7 @@ class CRUCIBLE_OWNER RecipePool {
     // of ~log2(N) resizes per pool lifetime.
   }
 
-  Arena*   arena_;
+  ArenaBorrow arena_;
   Slot*    slots_;
   Capacity capacity_;
   Size     size_;

@@ -500,7 +500,7 @@ int main() {
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena{};
-    RecipePool pool{arena, alloc_cap()};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
     RecipeRegistry registry{pool, alloc_cap()};
 
     for (const auto& cell : kCoverageMatrix) {

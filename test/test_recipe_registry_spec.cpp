@@ -151,7 +151,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
   // Common pool + registry for the call-boundary tests below.
   Arena arena{};
-  RecipePool pool{arena, alloc_cap()};
+  RecipePool pool{RecipePool::ArenaBorrow{arena}, alloc_cap()};
   RecipeRegistry reg{pool, alloc_cap()};
 
   // ═══════════════════════════════════════════════════════════════
@@ -628,7 +628,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     // Re-construct on a fresh pool / arena — simulates Cipher
     // loading the persisted hash on a fresh process.
     Arena    arena2{};
-    RecipePool     pool2{arena2, alloc_cap()};
+    RecipePool     pool2{RecipePool::ArenaBorrow{arena2}, alloc_cap()};
     RecipeRegistry reg2{pool2, alloc_cap()};
 
     for (std::size_t i = 0; i < RecipeRegistry::STARTER_COUNT; ++i) {
