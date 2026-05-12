@@ -192,6 +192,10 @@ namespace source {
     // NIC dataplane program or allocate a userspace-visible map surface.
     struct Xdp {};
     struct BpfMap {};
+    // GossipMulticast: CNT-P XDP_TX multicast plans admitted through
+    // cntp/GossipMulticast.h. Raw topic hashes, neighbor arrays, and XDP
+    // descriptors cannot directly drive kernel-side gossip replication.
+    struct GossipMulticast {};
 }
 
 namespace trust {

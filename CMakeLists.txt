@@ -50,6 +50,7 @@ add_library(crucible STATIC
   src/cntp/AfXdp.cpp
   src/cntp/ConnectionPool.cpp
   src/cntp/CongestionControl.cpp
+  src/cntp/GossipMulticast.cpp
   src/cntp/IncastControl.cpp
   src/cntp/KtlsOffload.cpp
   src/cntp/MtlsTransport.cpp

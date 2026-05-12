@@ -240,6 +240,7 @@ crucible_test(test_cntp_roce_config)
 crucible_test(test_cntp_integrity)
 crucible_test(test_cntp_fec)
 crucible_test(test_cntp_fountain)
+crucible_test(test_cntp_gossip_multicast)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
@@ -2708,6 +2709,23 @@ crucible_neg_compile_test(neg_integrity_raw_hash_field
   "cannot convert|could not convert|IntegrityHash|Refined")
 crucible_neg_compile_test(neg_integrity_non_contiguous_wrap
   "constraints not satisfied|ByteContiguousPayload|HasContiguousPayloadData|no matching function")
+
+# GAPS-172 — cntp/GossipMulticast.h XDP_TX multicast plan substrate.
+#   * neg_gossip_multicast_mint_bg_ctx: only Init-row contexts mint plans.
+#   * neg_gossip_multicast_raw_plan: XDP program extraction requires
+#     source::GossipMulticast provenance.
+#   * neg_gossip_multicast_raw_topic: raw topic keys cannot register
+#     neighbors; callers must pass DeclaredGossipTopic.
+#   * neg_gossip_multicast_zero_neighbors: zero-neighbor plans are rejected
+#     at the shape concept.
+crucible_neg_compile_test(neg_gossip_multicast_mint_bg_ctx
+  "constraints not satisfied|CtxFitsGossipMulticastMint|Init|Bg")
+crucible_neg_compile_test(neg_gossip_multicast_raw_plan
+  "cannot convert|could not convert|DeclaredGossipMulticastPlan|Tagged")
+crucible_neg_compile_test(neg_gossip_multicast_raw_topic
+  "cannot convert|could not convert|DeclaredGossipTopic|Tagged")
+crucible_neg_compile_test(neg_gossip_multicast_zero_neighbors
+  "constraints not satisfied|GossipMulticastShape|GossipNeighborShape|MaxNeighbors")
 
 # GAPS-117 — cntp/Fec.h GF(256) systematic Reed-Solomon primitive.
 #   * neg_fec_zero_k / neg_fec_zero_m: shard counts must be positive.
