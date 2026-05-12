@@ -334,6 +334,7 @@ crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
 crucible_test(test_topology_graph)
 crucible_test(test_topology_health)
+crucible_test(test_asymmetric_failure)
 crucible_test(test_concurrent_compile)
 crucible_test(test_auto_split)
 crucible_test(test_diagnostic_compile)
@@ -1330,6 +1331,21 @@ crucible_neg_compile_topology_test(neg_topology_health_update_fg_ctx
     "constraint|constraints not satisfied|CtxFitsHealthUpdate|Bg|HotFgCtx")
 crucible_neg_compile_topology_test(neg_topology_health_raw_score
     "could not convert|invalid conversion|HealthScore")
+
+# ─── HS14 fixtures for topology::AsymmetricFailure (GAPS-127 #1220) ──
+#
+#   * neg_asymmetric_failure_mint_bg_ctx — only Init-row contexts mint
+#     the bounded detector.
+#   * neg_asymmetric_failure_record_fg_ctx — hot foreground contexts
+#     cannot mutate probe/witness state.
+#   * neg_asymmetric_failure_zero_window — a detector must carry a
+#     non-empty bounded probe window.
+crucible_neg_compile_topology_test(neg_asymmetric_failure_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsAsymmetricFailureMint|Init|Bg")
+crucible_neg_compile_topology_test(neg_asymmetric_failure_record_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsAsymmetricFailureRecord|Bg|HotFgCtx")
+crucible_neg_compile_topology_test(neg_asymmetric_failure_zero_window
+    "static assertion failed|non-empty probe window|Window > 0")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #

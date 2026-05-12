@@ -48,6 +48,7 @@ add_library(crucible STATIC
   src/cog/NicOffloadAudit.cpp
   src/observe/HdrHistogram.cpp
   src/observe/SyntheticProbe.cpp
+  src/topology/AsymmetricFailure.cpp
   src/topology/Health.cpp
 )
 target_include_directories(crucible PUBLIC include/)
