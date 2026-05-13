@@ -147,6 +147,10 @@ namespace source {
     // ad-hoc policy tables cannot directly choose collective
     // algorithms at RecipeSelect boundaries.
     struct NetworkRecipeRegistry {};
+    // Ir001: Forge IR001 op nodes admitted by forge/Ir001/* substrate.
+    // Raw op descriptors cannot cross into Forge phase visitors or
+    // serialization boundaries without this provenance tag.
+    struct Ir001 {};
     // CcAlgorithm: CNT-P congestion-control selection admitted through
     // cntp/CongestionControl.h. Raw enum values and raw kernel strings
     // cannot directly drive per-socket TCP_CONGESTION changes.

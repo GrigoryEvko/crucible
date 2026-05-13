@@ -478,6 +478,7 @@ crucible_test(test_recipe_coverage)
 crucible_test(test_recipe_registry_tier)
 crucible_test(test_recipe_registry_spec)
 crucible_test(test_network_recipe)
+crucible_test(test_ir001_comm)
 
 # bench harness unit tests — include bench/ for bench_harness.h.
 # Snapshot now lives at <crucible/perf/SenseHub.h> (post-promotion via
@@ -4090,6 +4091,17 @@ crucible_neg_compile_test(neg_network_recipe_recursive_non_power2
   "constraints not satisfied|NetworkRecipeEligible|RecursiveHalvingDoubling|power")
 crucible_neg_compile_test(neg_network_recipe_raw_constraints
   "could not convert|no matching function|DeclaredNetworkRecipeConstraints|Tagged")
+
+# GAPS-167 — forge/Ir001/Comm.h comm-through-IR substrate.
+#   * neg_ir001_comm_raw_node: Forge visitors require source::Ir001 provenance.
+#   * neg_ir001_comm_send_as_collective: point-to-point ops are not collectives.
+#   * neg_ir001_comm_zero_participants: participant counts are positive.
+crucible_neg_compile_test(neg_ir001_comm_raw_node
+  "could not convert|no matching function|DeclaredIr001Node|Tagged")
+crucible_neg_compile_test(neg_ir001_comm_send_as_collective
+  "constraints not satisfied|Ir001CollectiveKind|SendAsync")
+crucible_neg_compile_test(neg_ir001_comm_zero_participants
+  "contract|precondition|in_range|positive|bounded")
 
 # WRAP-RE-3 (#995) — ReplayEngine::init consumes
 # BorrowedRef<const PoolAllocator>. Raw PoolAllocator* and wrong-owner
