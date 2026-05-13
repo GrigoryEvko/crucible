@@ -1,13 +1,13 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
 // HS14 fixture for GAPS-133. SHARP dispatch requires a
-// source::Sharp-declared fabric plan, not a raw aggregate.
+// _wip::sharp::wip_source::Sharp-declared fabric plan, not a raw aggregate.
 
-#include <crucible/cntp/Sharp.h>
+#include <crucible/cntp/_wip/Sharp.h>
 
 #include <array>
 
-namespace shp = crucible::cntp::sharp;
+namespace shp = crucible::cntp::_wip::sharp;
 
 int main() {
     std::array<float, 1> input{1.0f};

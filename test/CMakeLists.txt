@@ -2859,7 +2859,7 @@ crucible_neg_compile_test(neg_roce_dscp_above_max
 crucible_neg_compile_test(neg_roce_raw_config_apply
   "could not convert|no matching function|DeclaredRoceConfig|Tagged")
 
-# GAPS-132 — cntp/GpuDirect.h GPUDirect RDMA / Storage substrate.
+# GAPS-132 — cntp/_wip/GpuDirect.h GPUDirect RDMA / Storage substrate.
 #   * neg_gpu_direct_null_address: GPU virtual address must be non-null.
 #   * neg_gpu_direct_zero_bytes: registered/transfer size must be positive.
 #   * neg_gpu_direct_raw_plan_register: MR registration requires tagged intent.
@@ -2873,7 +2873,7 @@ crucible_neg_compile_test(neg_gpu_direct_raw_plan_register
 crucible_neg_compile_effects_test(neg_gpu_direct_mint_bg_ctx
   "constraints not satisfied|CtxFitsGpuDirectMint|Init")
 
-# GAPS-133 — cntp/Sharp.h in-network reduction substrate.
+# GAPS-133 — cntp/_wip/Sharp.h in-network reduction substrate.
 #   * neg_sharp_zero_participants: SHARP fabric participants are positive.
 #   * neg_sharp_raw_plan_dispatch: dispatch requires tagged Sharp intent.
 #   * neg_sharp_strict_recipe_concept: BITEXACT_STRICT cannot enter SHARP.
@@ -2890,7 +2890,7 @@ crucible_neg_compile_effects_test(neg_sharp_mint_bg_ctx
 crucible_neg_compile_effects_test(neg_sharp_dispatch_init_ctx
   "constraints not satisfied|CtxFitsSharpDispatch|Bg")
 
-# GAPS-144 — cntp/Doca.h DPU / SmartNIC offload substrate.
+# GAPS-144 — cntp/_wip/Doca.h DPU / SmartNIC offload substrate.
 #   * neg_doca_zero_program_id: DOCA program IDs reserve zero.
 #   * neg_doca_zero_image_bytes: offload images must be non-empty.
 #   * neg_doca_zero_queue_depth: DPU queues must have positive depth.
@@ -2910,7 +2910,7 @@ crucible_neg_compile_effects_test(neg_doca_mint_bg_ctx
 crucible_neg_compile_effects_test(neg_doca_send_init_ctx
   "constraints not satisfied|CtxFitsDocaComm|Bg")
 
-# GAPS-145 — cntp/P4.h programmable switch dataplane substrate.
+# GAPS-145 — cntp/_wip/P4.h programmable switch dataplane substrate.
 #   * neg_p4_zero_program_id: P4 program IDs reserve zero.
 #   * neg_p4_zero_source_bytes: admitted P4 source/program artifacts are non-empty.
 #   * neg_p4_zero_tcam_entries: switch TCAM budget requests are positive.
@@ -2944,7 +2944,7 @@ crucible_neg_compile_test(neg_tcam_rule_handle_copy
 crucible_neg_compile_effects_test(neg_tcam_mint_bg_ctx
   "constraints not satisfied|CtxFitsTcamMint|Init")
 
-# GAPS-160 — cntp/Wireguard.h site-to-site VPN substrate.
+# GAPS-160 — cntp/_wip/Wireguard.h site-to-site VPN substrate.
 #   * neg_wireguard_zero_allowed_ips: peers must own at least one allowed CIDR.
 #   * neg_wireguard_raw_public_key_peer: peer admission requires tagged pubkeys.
 #   * neg_wireguard_private_key_copy: private keys are Secret and move-only.
@@ -2969,7 +2969,7 @@ crucible_neg_compile_test(neg_mtls_legacy_cipher_config
 crucible_neg_compile_test(neg_mtls_raw_config_connect
   "invalid initialization of reference|no matching function|DeclaredMtlsConfig|Tagged")
 
-# GAPS-128 — cntp/QuicTransport.h QUIC + TLS 1.3 substrate.
+# GAPS-128 — cntp/_wip/QuicTransport.h QUIC + TLS 1.3 substrate.
 #   * neg_quic_raw_config_connect: runtime connect requires tagged QUIC policy.
 #   * neg_quic_raw_cc_config: QUIC config minting requires tagged CC policy.
 #   * neg_quic_open_stream_fg_ctx: foreground contexts cannot mutate streams.
@@ -2983,7 +2983,7 @@ crucible_neg_compile_effects_test(neg_quic_open_stream_fg_ctx
 crucible_neg_compile_test(neg_quic_raw_migration_plan
   "could not convert|no matching function|DeclaredPathSwapPlan|Tagged")
 
-# GAPS-146 — cntp/KtlsOffload.h kernel-TLS offload substrate.
+# GAPS-146 — cntp/_wip/KtlsOffload.h kernel-TLS offload substrate.
 #   * neg_ktls_tls12_crypto: TLS 1.2 record secrets cannot be admitted.
 #   * neg_ktls_chacha_crypto: software ChaCha20 TLS suites are not kTLS AES-GCM.
 #   * neg_ktls_raw_crypto_offload: offload requests require tagged crypto info.

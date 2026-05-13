@@ -1,4 +1,4 @@
-#include <crucible/cntp/QuicTransport.h>
+#include <crucible/cntp/_wip/QuicTransport.h>
 
 #include <array>
 #include <cassert>
@@ -8,7 +8,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace cntp = crucible::cntp;
+namespace cntp = crucible::cntp::_wip;
 namespace effects = crucible::effects;
 namespace saf = crucible::safety;
 
@@ -222,7 +222,7 @@ int main() {
                   sizeof(cntp::QuicStreamDescriptor));
     static_assert(std::same_as<
                   cntp::DeclaredQuicConfig::tag_type,
-                  saf::source::Quic>);
+                  crucible::cntp::_wip::wip_source::Quic>);
     static_assert(cntp::CtxFitsQuicMint<effects::ColdInitCtx>);
     static_assert(!cntp::CtxFitsQuicMint<effects::BgDrainCtx>);
     static_assert(cntp::CtxFitsQuicRuntime<effects::BgDrainCtx>);

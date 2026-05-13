@@ -1,6 +1,6 @@
 #pragma once
 
-// GAPS-160. CNT-P WireGuard site-to-site transport substrate.
+// GAPS-160 WIP. CNT-P WireGuard site-to-site transport sketch.
 //
 // This header owns typed admission for WireGuard keys, peers, allowed-IP
 // routes, and tunnel plans. It deliberately does not invoke wg(8), netlink,
@@ -27,7 +27,13 @@
 #include <type_traits>
 #include <utility>
 
-namespace crucible::cntp {
+namespace crucible::cntp::_wip {
+
+using ::crucible::cntp::NicInterfaceName;
+
+namespace wip_source {
+struct Wireguard {};
+}  // namespace wip_source
 
 inline constexpr std::uint8_t kWireguardKeyBase64Bytes = 44;
 inline constexpr std::uint8_t kWireguardMaxAllowedIps = 8;
@@ -112,7 +118,7 @@ struct WireguardSecretKeyBytes {
 };
 
 using DeclaredWireguardPublicKey =
-    safety::Tagged<WireguardKeyB64, safety::source::Wireguard>;
+    safety::Tagged<WireguardKeyB64, wip_source::Wireguard>;
 using WireguardSecretKey = safety::Secret<WireguardSecretKeyBytes>;
 
 struct WireguardEndpoint {
@@ -136,7 +142,7 @@ struct WireguardPeer {
 };
 
 using DeclaredWireguardPeer =
-    safety::Tagged<WireguardPeer, safety::source::Wireguard>;
+    safety::Tagged<WireguardPeer, wip_source::Wireguard>;
 
 struct WireguardTunnelHandle {
     NicInterfaceName interface{};
@@ -175,7 +181,7 @@ struct WireguardConfig {
 };
 
 using DeclaredWireguardConfig =
-    safety::Tagged<WireguardConfig, safety::source::Wireguard>;
+    safety::Tagged<WireguardConfig, wip_source::Wireguard>;
 
 template <class Ctx>
 concept CtxFitsWireguardMint =
@@ -537,4 +543,4 @@ static_assert(std::is_trivially_copyable_v<WireguardPeer>);
 static_assert(CtxFitsWireguardMint<effects::ColdInitCtx>);
 static_assert(!CtxFitsWireguardMint<effects::BgDrainCtx>);
 
-}  // namespace crucible::cntp
+}  // namespace crucible::cntp::_wip

@@ -1,6 +1,6 @@
 #pragma once
 
-// GAPS-133. CNT-P SHARP in-network reduction substrate.
+// GAPS-133 WIP. CNT-P SHARP in-network reduction sketch.
 //
 // This header owns typed eligibility for Mellanox/NVIDIA SHARP-style
 // in-fabric reductions. It deliberately does not link libsharp.so,
@@ -27,7 +27,11 @@
 #include <type_traits>
 #include <utility>
 
-namespace crucible::cntp::sharp {
+namespace crucible::cntp::_wip::sharp {
+
+namespace wip_source {
+struct Sharp {};
+}  // namespace wip_source
 
 enum class SharpError : std::uint8_t {
     None = 0,
@@ -79,7 +83,7 @@ struct SharpDispatchResult {
 
 using SharpParticipantCount = safety::Positive<std::uint16_t>;
 using DeclaredSharpDispatch =
-    safety::Tagged<SharpDispatchResult, safety::source::Sharp>;
+    safety::Tagged<SharpDispatchResult, wip_source::Sharp>;
 
 struct SharpFabricPlan {
     cog::CogIdentity fabric_switch{};
@@ -89,7 +93,7 @@ struct SharpFabricPlan {
 };
 
 using DeclaredSharpFabricPlan =
-    safety::Tagged<SharpFabricPlan, safety::source::Sharp>;
+    safety::Tagged<SharpFabricPlan, wip_source::Sharp>;
 
 struct SharpContextHandle {
     cog::Uuid switch_uuid{};
@@ -354,4 +358,4 @@ static_assert(std::is_trivially_copyable_v<SharpDispatchResult>);
 static_assert(std::is_trivially_copyable_v<SharpFabricPlan>);
 static_assert(std::is_trivially_copyable_v<SharpContextHandle>);
 
-}  // namespace crucible::cntp::sharp
+}  // namespace crucible::cntp::_wip::sharp

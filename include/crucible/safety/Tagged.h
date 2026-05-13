@@ -172,20 +172,6 @@ namespace source {
     // DNS names, cipher selections, and peer fingerprints cannot
     // directly drive federation transport identity.
     struct Mtls {};
-    // KtlsOffloaded: CNT-P kernel-TLS offload intent admitted through
-    // cntp/KtlsOffload.h. Raw sockets and raw TLS traffic keys cannot
-    // directly program NIC/kernel TLS state.
-    struct KtlsOffloaded {};
-    // Quic: CNT-P QUIC connection, stream, migration, datagram, and
-    // 0-RTT plans admitted through cntp/QuicTransport.h. Raw stream
-    // limits, resumption tokens, and path-swap plans cannot directly
-    // drive encrypted federation transport behavior.
-    struct Quic {};
-    // Wireguard: CNT-P site-to-site WireGuard configuration admitted
-    // through cntp/Wireguard.h. Raw base64 keys, interface names,
-    // endpoints, and allowed-IP lists cannot directly drive privileged
-    // kernel tunnel mutation.
-    struct Wireguard {};
     // AdmissionDecision: CNT-P backpressure/admission-control decisions
     // minted by cntp/BackpressureRuntime.h. Raw accept/reject structs cannot
     // cross runtime boundaries as operator-visible admission outcomes.
@@ -250,24 +236,6 @@ namespace source {
     // the physical NIC boundary. Raw VF counts, MACs, VLAN ids, and QoS
     // knobs cannot directly drive privileged SR-IOV mutation.
     struct SrIov {};
-    // GpuDirect: CNT-P GPU-peer DMA intent admitted through cntp/GpuDirect.h.
-    // Raw GPU virtual addresses, byte counts, access masks, and topology
-    // facts cannot directly drive peer-memory MR registration or storage I/O.
-    struct GpuDirect {};
-    // Sharp: CNT-P in-network reduction intent admitted through
-    // cntp/Sharp.h. Raw switch identities, participant counts, and
-    // recipe traits cannot directly drive SHARP context creation or
-    // in-fabric all-reduce dispatch.
-    struct Sharp {};
-    // DocaOffload: CNT-P DPU / SmartNIC offload intent admitted through
-    // cntp/Doca.h. Raw program IDs, byte counts, queue depths, and DPU
-    // identities cannot directly deploy code onto BlueField/Pensando-class
-    // devices.
-    struct DocaOffload {};
-    // P4Compiled: CNT-P programmable-switch intent admitted through
-    // cntp/P4.h. Raw P4 source byte counts, resource budgets, and switch
-    // identities cannot directly deploy code onto switch ASIC dataplanes.
-    struct P4Compiled {};
     // TcamTable: CNT-P hardware ACL / flow-steering table intent admitted
     // through cntp/Tcam.h. Raw Cog identities and unbounded capacity
     // requests cannot directly allocate hardware TCAM state.

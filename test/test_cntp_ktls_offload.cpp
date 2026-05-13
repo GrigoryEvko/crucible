@@ -1,4 +1,4 @@
-#include <crucible/cntp/KtlsOffload.h>
+#include <crucible/cntp/_wip/KtlsOffload.h>
 
 #include <array>
 #include <cassert>
@@ -8,7 +8,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace cntp = crucible::cntp;
+namespace cntp = crucible::cntp::_wip;
 namespace eff = crucible::effects;
 namespace saf = crucible::safety;
 
@@ -74,7 +74,7 @@ void test_crypto_mint_and_validation() {
                   cntp::DeclaredTlsCryptoInfo>);
     static_assert(std::same_as<
                   cntp::DeclaredTlsCryptoInfo::tag_type,
-                  saf::source::KtlsOffloaded>);
+                  crucible::cntp::_wip::wip_source::KtlsOffloaded>);
     assert(cntp::validate_ktls_crypto_info(*crypto).has_value());
     assert(crypto->value().shape.key_bytes == 32);
     assert(crypto->value().shape.iv_bytes == 12);

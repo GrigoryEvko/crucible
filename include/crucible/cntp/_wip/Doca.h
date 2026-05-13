@@ -1,6 +1,6 @@
 #pragma once
 
-// GAPS-144. CNT-P DOCA / DPU offload substrate.
+// GAPS-144 WIP. CNT-P DOCA / DPU offload sketch.
 //
 // This header owns typed admission for DPU / SmartNIC offload intent.
 // It deliberately does not link NVIDIA DOCA, Pensando SDKs, Nitro
@@ -25,7 +25,11 @@
 #include <type_traits>
 #include <utility>
 
-namespace crucible::cntp::doca {
+namespace crucible::cntp::_wip::doca {
+
+namespace wip_source {
+struct DocaOffload {};
+}  // namespace wip_source
 
 enum class DocaError : std::uint8_t {
     None = 0,
@@ -97,7 +101,7 @@ struct DocaChannelConfig {
 };
 
 using DeclaredDocaDeployPlan =
-    safety::Tagged<DocaDeployPlan, safety::source::DocaOffload>;
+    safety::Tagged<DocaDeployPlan, wip_source::DocaOffload>;
 using OwnedDocaOffload = safety::Linear<DocaOffloadHandle>;
 
 template <class Ctx>
@@ -270,4 +274,4 @@ static_assert(std::is_trivially_copyable_v<DocaOffloadSpec>);
 static_assert(std::is_trivially_copyable_v<DocaDeployPlan>);
 static_assert(std::is_trivially_copyable_v<DocaOffloadHandle>);
 
-}  // namespace crucible::cntp::doca
+}  // namespace crucible::cntp::_wip::doca

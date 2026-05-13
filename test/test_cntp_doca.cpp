@@ -1,4 +1,4 @@
-#include <crucible/cntp/Doca.h>
+#include <crucible/cntp/_wip/Doca.h>
 
 #include <array>
 #include <cassert>
@@ -8,7 +8,7 @@
 #include <type_traits>
 
 namespace cog = crucible::cog;
-namespace doca = crucible::cntp::doca;
+namespace doca = crucible::cntp::_wip::doca;
 namespace eff = crucible::effects;
 namespace saf = crucible::safety;
 
@@ -154,7 +154,7 @@ int main() {
                   == sizeof(doca::DocaOffloadHandle));
     static_assert(std::same_as<
                   doca::DeclaredDocaDeployPlan::tag_type,
-                  saf::source::DocaOffload>);
+                  doca::wip_source::DocaOffload>);
     static_assert(doca::CtxFitsDocaMint<eff::ColdInitCtx>);
     static_assert(!doca::CtxFitsDocaMint<eff::BgDrainCtx>);
     static_assert(doca::CtxFitsDocaComm<eff::BgDrainCtx>);

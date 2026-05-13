@@ -1,6 +1,6 @@
 #pragma once
 
-// GAPS-146.  CNT-P kernel TLS offload substrate.
+// GAPS-146 WIP. CNT-P kernel TLS offload sketch.
 //
 // This header owns typed admission for TLS 1.3 record keys that may be
 // handed to Linux kTLS / NIC TLS offload.  It deliberately does not
@@ -24,7 +24,17 @@
 #include <type_traits>
 #include <utility>
 
-namespace crucible::cntp {
+namespace crucible::cntp::_wip {
+
+using ::crucible::cntp::MtlsCipherSuite;
+using ::crucible::cntp::NicInterfaceName;
+using ::crucible::cntp::SocketFd;
+using ::crucible::cntp::TlsVersion;
+using ::crucible::cntp::admit_socket_fd;
+
+namespace wip_source {
+struct KtlsOffloaded {};
+}  // namespace wip_source
 
 enum class KtlsError : std::uint8_t {
     EmptyKey,
@@ -144,7 +154,7 @@ struct TlsCryptoInfo {
 };
 
 using DeclaredTlsCryptoInfo =
-    safety::Tagged<TlsCryptoInfo, safety::source::KtlsOffloaded>;
+    safety::Tagged<TlsCryptoInfo, wip_source::KtlsOffloaded>;
 
 struct KtlsOffloadRequest {
     SocketFd socket;
@@ -155,7 +165,7 @@ struct KtlsOffloadRequest {
 };
 
 using DeclaredKtlsOffload =
-    safety::Tagged<KtlsOffloadRequest, safety::source::KtlsOffloaded>;
+    safety::Tagged<KtlsOffloadRequest, wip_source::KtlsOffloaded>;
 
 class KtlsOffloadSocket : public safety::Pinned<KtlsOffloadSocket> {
 public:
@@ -339,4 +349,4 @@ static_assert(!KtlsAesGcmCipherSuite<MtlsCipherSuite::TlsChacha20Poly1305Sha256>
 static_assert(KtlsKeySizeForCipher<MtlsCipherSuite::TlsAes128GcmSha256, 16>);
 static_assert(!KtlsKeySizeForCipher<MtlsCipherSuite::TlsAes128GcmSha256, 32>);
 
-}  // namespace crucible::cntp
+}  // namespace crucible::cntp::_wip

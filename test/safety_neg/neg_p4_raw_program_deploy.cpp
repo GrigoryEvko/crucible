@@ -1,8 +1,8 @@
-#include <crucible/cntp/P4.h>
+#include <crucible/cntp/_wip/P4.h>
 
 int main() {
     namespace cog = crucible::cog;
-    namespace p4 = crucible::cntp::p4;
+    namespace p4 = crucible::cntp::_wip::p4;
 
     cog::CogIdentity sw{};
     cog::NvSwitchTargetCaps caps{};

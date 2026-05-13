@@ -1,6 +1,6 @@
 #pragma once
 
-// GAPS-145. CNT-P P4 programmable-switch substrate.
+// GAPS-145 WIP. CNT-P P4 programmable-switch sketch.
 //
 // This header owns typed admission for switch-dataplane program intent.
 // It does not call P4 Studio, SAI, Broadcom SDK, switchd, or any vendor
@@ -23,7 +23,11 @@
 #include <type_traits>
 #include <utility>
 
-namespace crucible::cntp::p4 {
+namespace crucible::cntp::_wip::p4 {
+
+namespace wip_source {
+struct P4Compiled {};
+}  // namespace wip_source
 
 enum class P4Error : std::uint8_t {
     None = 0,
@@ -90,7 +94,7 @@ struct P4DeploymentHandle {
 };
 
 using DeclaredP4Program =
-    safety::Tagged<P4ProgramSpec, safety::source::P4Compiled>;
+    safety::Tagged<P4ProgramSpec, wip_source::P4Compiled>;
 using OwnedP4Deployment = safety::Linear<P4DeploymentHandle>;
 
 template <class Ctx>
@@ -283,4 +287,4 @@ static_assert(std::is_trivially_copyable_v<P4ResourceBudget>);
 static_assert(std::is_trivially_copyable_v<P4ProgramSpec>);
 static_assert(std::is_trivially_copyable_v<P4DeploymentHandle>);
 
-}  // namespace crucible::cntp::p4
+}  // namespace crucible::cntp::_wip::p4

@@ -1,4 +1,4 @@
-#include <crucible/cntp/Wireguard.h>
+#include <crucible/cntp/_wip/Wireguard.h>
 
 #include <array>
 #include <cassert>
@@ -8,7 +8,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace cntp = crucible::cntp;
+namespace cntp = crucible::cntp::_wip;
 namespace eff = crucible::effects;
 namespace saf = crucible::safety;
 
@@ -119,7 +119,7 @@ void test_config_and_backend_boundary() {
     assert(config.value().peer_count == 1);
     assert(config.value().private_key.size() == kPrivateKey.size());
     assert(!config.value().has_preshared_key);
-    assert(validate_wireguard_config(config).has_value());
+    assert(cntp::validate_wireguard_config(config).has_value());
 
     auto backend = cntp::bring_up_wireguard(config);
     assert(!backend.has_value());
@@ -147,7 +147,7 @@ void test_preshared_key_and_endpoint_validation() {
     assert(with_psk.has_value());
     assert(with_psk->value().has_preshared_key);
     assert(with_psk->value().preshared_key.size() == kPsk.size());
-    assert(validate_wireguard_config(*with_psk).has_value());
+    assert(cntp::validate_wireguard_config(*with_psk).has_value());
 
     auto empty_psk = cntp::mint_wireguard_config_with_psk(
         iface(), port(), secret(kPrivateKey),
@@ -210,7 +210,7 @@ int main() {
                   == sizeof(cntp::WireguardTunnelHandle));
     static_assert(std::same_as<
                   cntp::DeclaredWireguardPublicKey::tag_type,
-                  saf::source::Wireguard>);
+                  crucible::cntp::_wip::wip_source::Wireguard>);
     static_assert(!std::copy_constructible<cntp::WireguardSecretKeyBytes>);
     static_assert(!std::copy_constructible<cntp::WireguardConfig>);
     static_assert(cntp::CtxFitsWireguardMint<eff::ColdInitCtx>);

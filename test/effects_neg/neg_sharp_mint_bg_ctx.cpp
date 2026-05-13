@@ -3,11 +3,11 @@
 // HS14 fixture for GAPS-133. SHARP fabric context minting is Init-row
 // work and cannot run in a background drain context.
 
-#include <crucible/cntp/Sharp.h>
+#include <crucible/cntp/_wip/Sharp.h>
 
 namespace cog = crucible::cog;
 namespace eff = crucible::effects;
-namespace shp = crucible::cntp::sharp;
+namespace shp = crucible::cntp::_wip::sharp;
 
 int main() {
     cog::CogIdentity sw{};

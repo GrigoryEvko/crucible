@@ -1,6 +1,6 @@
 #pragma once
 
-// GAPS-128.  CNT-P QUIC + TLS 1.3 transport substrate.
+// GAPS-128 WIP. CNT-P QUIC + TLS 1.3 transport sketch.
 //
 // This header owns typed admission for QUIC policy, stream budgeting,
 // datagram bounds, 0-RTT token provenance, and migration plans.  It
@@ -27,7 +27,36 @@
 #include <string_view>
 #include <type_traits>
 
-namespace crucible::cntp {
+namespace crucible::cntp::_wip {
+
+using ::crucible::cntp::CcAlgorithm;
+using ::crucible::cntp::CcSelection;
+using ::crucible::cntp::AuthenticatedMtlsPeer;
+using ::crucible::cntp::DeclaredCcChoice;
+using ::crucible::cntp::DeclaredMtlsConfig;
+using ::crucible::cntp::DeclaredPathSwapPlan;
+using ::crucible::cntp::LinkClass;
+using ::crucible::cntp::MtlsCertificateFingerprint;
+using ::crucible::cntp::MtlsDnsName;
+using ::crucible::cntp::MtlsKeyAlgorithm;
+using ::crucible::cntp::MtlsPeerIdentity;
+using ::crucible::cntp::MtlsPolicy;
+using ::crucible::cntp::MtlsSha256Fingerprint;
+using ::crucible::cntp::PathSwapPlan;
+using ::crucible::cntp::SocketFd;
+using ::crucible::cntp::admit_certificate_fingerprint;
+using ::crucible::cntp::admit_path_id;
+using ::crucible::cntp::admit_private_key_pem;
+using ::crucible::cntp::admit_swap_timeout_ns;
+using ::crucible::cntp::admit_socket_fd;
+using ::crucible::cntp::admit_x509_certificate_pem;
+using ::crucible::cntp::mint_cc_choice;
+using ::crucible::cntp::mint_mtls_config;
+using ::crucible::cntp::mint_path_swap_plan;
+
+namespace wip_source {
+struct Quic {};
+}  // namespace wip_source
 
 enum class QuicError : std::uint8_t {
     InvalidSocketFd,
@@ -90,7 +119,7 @@ struct QuicConfig {
 };
 
 using DeclaredQuicConfig =
-    safety::Tagged<QuicConfig, safety::source::Quic>;
+    safety::Tagged<QuicConfig, wip_source::Quic>;
 
 struct QuicResumptionToken {
     static constexpr std::size_t max_bytes = 512;
@@ -104,7 +133,7 @@ struct QuicResumptionToken {
 };
 
 using DeclaredQuicResumptionToken =
-    safety::Tagged<QuicResumptionToken, safety::source::Quic>;
+    safety::Tagged<QuicResumptionToken, wip_source::Quic>;
 
 struct QuicStreamDescriptor {
     std::uint64_t id = 0;
@@ -112,7 +141,7 @@ struct QuicStreamDescriptor {
 };
 
 using DeclaredQuicStream =
-    safety::Tagged<QuicStreamDescriptor, safety::source::Quic>;
+    safety::Tagged<QuicStreamDescriptor, wip_source::Quic>;
 
 struct QuicMigrationPlan {
     PathSwapPlan path_swap{};
@@ -120,7 +149,7 @@ struct QuicMigrationPlan {
 };
 
 using DeclaredQuicMigration =
-    safety::Tagged<QuicMigrationPlan, safety::source::Quic>;
+    safety::Tagged<QuicMigrationPlan, wip_source::Quic>;
 
 template <class Ctx>
 concept CtxFitsQuicMint =
@@ -374,4 +403,4 @@ static_assert(std::is_trivially_copyable_v<QuicMigrationPlan>);
 static_assert(CtxFitsQuicMint<effects::ColdInitCtx>);
 static_assert(CtxFitsQuicRuntime<effects::BgDrainCtx>);
 
-}  // namespace crucible::cntp
+}  // namespace crucible::cntp::_wip

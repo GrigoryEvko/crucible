@@ -1,11 +1,11 @@
-#include <crucible/cntp/KtlsOffload.h>
+#include <crucible/cntp/_wip/KtlsOffload.h>
 
 // GAPS-146 fixture #3: offload requests require DeclaredTlsCryptoInfo
-// tagged with source::KtlsOffloaded. Raw TLS crypto structs cannot
+// tagged with _wip::wip_source::KtlsOffloaded. Raw TLS crypto structs cannot
 // program kTLS/NIC state.
 
 int main() {
-    using namespace crucible::cntp;
+    using namespace crucible::cntp::_wip;
     crucible::effects::Init init{};
     auto fd = admit_socket_fd(3).value();
     auto iface = NicInterfaceName::from("eth0").value();

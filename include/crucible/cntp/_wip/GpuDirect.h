@@ -1,6 +1,6 @@
 #pragma once
 
-// GAPS-132. CNT-P GPUDirect RDMA / Storage substrate.
+// GAPS-132 WIP. CNT-P GPUDirect RDMA / Storage sketch.
 //
 // This header owns typed eligibility and registration intent for GPU-peer DMA.
 // It deliberately does not call CUDA, HIP, cuFile, libibverbs, or kernel peer
@@ -22,7 +22,11 @@
 #include <string_view>
 #include <type_traits>
 
-namespace crucible::cntp::gpu_direct {
+namespace crucible::cntp::_wip::gpu_direct {
+
+namespace wip_source {
+struct GpuDirect {};
+}  // namespace wip_source
 
 enum class GpuDirectError : std::uint8_t {
     None = 0,
@@ -107,9 +111,9 @@ struct GpuDirectMrHandle {
 };
 
 using DeclaredGpuDirectMrPlan =
-    safety::Tagged<GpuDirectMrPlan, safety::source::GpuDirect>;
+    safety::Tagged<GpuDirectMrPlan, wip_source::GpuDirect>;
 using DeclaredGpuDirectStoragePlan =
-    safety::Tagged<GpuDirectStoragePlan, safety::source::GpuDirect>;
+    safety::Tagged<GpuDirectStoragePlan, wip_source::GpuDirect>;
 
 template <class Ctx>
 concept CtxFitsGpuDirectMint =
@@ -384,4 +388,4 @@ static_assert(std::is_trivially_copyable_v<GpuDirectMrPlan>);
 static_assert(std::is_trivially_copyable_v<GpuDirectStoragePlan>);
 static_assert(std::is_trivially_copyable_v<GpuDirectMrHandle>);
 
-}  // namespace crucible::cntp::gpu_direct
+}  // namespace crucible::cntp::_wip::gpu_direct

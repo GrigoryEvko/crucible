@@ -1,4 +1,4 @@
-#include <crucible/cntp/GpuDirect.h>
+#include <crucible/cntp/_wip/GpuDirect.h>
 
 #include <cassert>
 #include <concepts>
@@ -8,7 +8,7 @@
 
 namespace cog = crucible::cog;
 namespace eff = crucible::effects;
-namespace gd = crucible::cntp::gpu_direct;
+namespace gd = crucible::cntp::_wip::gpu_direct;
 namespace saf = crucible::safety;
 
 namespace {
@@ -226,7 +226,7 @@ int main() {
                   == sizeof(gd::GpuDirectStoragePlan));
     static_assert(std::same_as<
                   gd::DeclaredGpuDirectMrPlan::tag_type,
-                  saf::source::GpuDirect>);
+                  gd::wip_source::GpuDirect>);
     static_assert(gd::CtxFitsGpuDirectMint<eff::ColdInitCtx>);
     static_assert(!gd::CtxFitsGpuDirectMint<eff::BgDrainCtx>);
     static_assert(std::is_trivially_copyable_v<gd::GpuDirectMrPlan>);

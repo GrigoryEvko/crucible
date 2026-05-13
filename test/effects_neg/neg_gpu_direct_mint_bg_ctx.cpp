@@ -3,11 +3,11 @@
 // HS14 fixture for GAPS-132. GPUDirect MR intent is startup resource
 // registration work and requires an Init-row context.
 
-#include <crucible/cntp/GpuDirect.h>
+#include <crucible/cntp/_wip/GpuDirect.h>
 
 namespace cog = crucible::cog;
 namespace eff = crucible::effects;
-namespace gd = crucible::cntp::gpu_direct;
+namespace gd = crucible::cntp::_wip::gpu_direct;
 
 int main() {
     cog::CogIdentity gpu{};

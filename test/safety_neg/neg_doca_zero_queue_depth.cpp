@@ -1,6 +1,6 @@
-#include <crucible/cntp/Doca.h>
+#include <crucible/cntp/_wip/Doca.h>
 
-namespace doca = crucible::cntp::doca;
+namespace doca = crucible::cntp::_wip::doca;
 
 constexpr doca::DocaQueueDepth bad_queue_depth{std::uint16_t{0}};
 

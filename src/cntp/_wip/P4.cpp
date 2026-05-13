@@ -1,6 +1,6 @@
-#include <crucible/cntp/P4.h>
+#include <crucible/cntp/_wip/P4.h>
 
-namespace crucible::cntp::p4 {
+namespace crucible::cntp::_wip::p4 {
 
 std::string_view p4_error_name(P4Error error) noexcept {
     switch (error) {
@@ -43,4 +43,4 @@ force_p4_vendor_boundary(cog::CogIdentity sw,
     return deploy_p4_program(sw, caps, program);
 }
 
-}  // namespace crucible::cntp::p4
+}  // namespace crucible::cntp::_wip::p4

@@ -1,10 +1,10 @@
-#include <crucible/cntp/QuicTransport.h>
+#include <crucible/cntp/_wip/QuicTransport.h>
 
 // GAPS-128 fixture #4: QUIC migration consumes a tagged path-swap plan.
 // Raw path IDs cannot directly drive connection migration.
 
 int main() {
-    namespace cntp = crucible::cntp;
+    namespace cntp = crucible::cntp::_wip;
 
     auto fd = cntp::admit_socket_fd(3).value();
     cntp::AuthenticatedMtlsPeer peer{cntp::MtlsPeerIdentity{}};

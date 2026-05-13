@@ -1,4 +1,4 @@
-#include <crucible/cntp/Sharp.h>
+#include <crucible/cntp/_wip/Sharp.h>
 
 #include <array>
 #include <cassert>
@@ -10,7 +10,7 @@
 namespace cog = crucible::cog;
 namespace eff = crucible::effects;
 namespace saf = crucible::safety;
-namespace shp = crucible::cntp::sharp;
+namespace shp = crucible::cntp::_wip::sharp;
 
 namespace {
 
@@ -219,7 +219,7 @@ int main() {
                   == sizeof(shp::SharpDispatchResult));
     static_assert(std::same_as<
                   shp::DeclaredSharpFabricPlan::tag_type,
-                  saf::source::Sharp>);
+                  shp::wip_source::Sharp>);
     static_assert(shp::CtxFitsSharpMint<eff::ColdInitCtx>);
     static_assert(!shp::CtxFitsSharpMint<eff::BgDrainCtx>);
     static_assert(shp::CtxFitsSharpDispatch<eff::BgDrainCtx>);

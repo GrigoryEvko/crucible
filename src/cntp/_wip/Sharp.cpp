@@ -1,6 +1,6 @@
-#include <crucible/cntp/Sharp.h>
+#include <crucible/cntp/_wip/Sharp.h>
 
-namespace crucible::cntp::sharp {
+namespace crucible::cntp::_wip::sharp {
 
 std::string_view sharp_error_name(SharpError error) noexcept {
     switch (error) {
@@ -62,4 +62,4 @@ dispatch_sharp_allreduce(std::span<const float> input,
         SharpError::VendorBackendUnavailable, plan, input.size());
 }
 
-}  // namespace crucible::cntp::sharp
+}  // namespace crucible::cntp::_wip::sharp

@@ -1,6 +1,6 @@
-#include <crucible/cntp/QuicTransport.h>
+#include <crucible/cntp/_wip/QuicTransport.h>
 
-namespace crucible::cntp {
+namespace crucible::cntp::_wip {
 
 std::string_view quic_error_name(QuicError error) noexcept {
     switch (error) {
@@ -85,4 +85,4 @@ connect_quic(SocketFd socket,
     return std::unexpected(QuicError::BackendUnavailable);
 }
 
-}  // namespace crucible::cntp
+}  // namespace crucible::cntp::_wip

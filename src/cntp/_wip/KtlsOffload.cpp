@@ -1,6 +1,6 @@
-#include <crucible/cntp/KtlsOffload.h>
+#include <crucible/cntp/_wip/KtlsOffload.h>
 
-namespace crucible::cntp {
+namespace crucible::cntp::_wip {
 
 std::string_view ktls_error_name(KtlsError error) noexcept {
     switch (error) {
@@ -49,4 +49,4 @@ enable_ktls_offload(KtlsOffloadSocket& socket,
     return std::unexpected(KtlsError::KernelTlsUnavailable);
 }
 
-}  // namespace crucible::cntp
+}  // namespace crucible::cntp::_wip

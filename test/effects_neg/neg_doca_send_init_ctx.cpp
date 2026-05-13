@@ -1,11 +1,11 @@
-#include <crucible/cntp/Doca.h>
+#include <crucible/cntp/_wip/Doca.h>
 
 #include <array>
 #include <cstddef>
 
 int main() {
     namespace cog = crucible::cog;
-    namespace doca = crucible::cntp::doca;
+    namespace doca = crucible::cntp::_wip::doca;
     namespace eff = crucible::effects;
 
     doca::OwnedDocaOffload offload{doca::DocaOffloadHandle{

@@ -1,6 +1,6 @@
-#include <crucible/cntp/Wireguard.h>
+#include <crucible/cntp/_wip/Wireguard.h>
 
-namespace crucible::cntp {
+namespace crucible::cntp::_wip {
 
 std::string_view wireguard_error_name(WireguardError error) noexcept {
     switch (error) {
@@ -60,4 +60,4 @@ apply_wireguard_peer_remove(DeclaredWireguardConfig const& config,
     return std::unexpected(WireguardError::PeerNotFound);
 }
 
-}  // namespace crucible::cntp
+}  // namespace crucible::cntp::_wip

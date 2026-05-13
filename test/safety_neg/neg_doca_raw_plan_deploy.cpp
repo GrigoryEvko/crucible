@@ -1,8 +1,8 @@
-#include <crucible/cntp/Doca.h>
+#include <crucible/cntp/_wip/Doca.h>
 
 int main() {
-    crucible::cntp::doca::DocaDeployPlan raw{};
-    auto deployed = crucible::cntp::doca::deploy_doca_offload(raw);
+    crucible::cntp::_wip::doca::DocaDeployPlan raw{};
+    auto deployed = crucible::cntp::_wip::doca::deploy_doca_offload(raw);
     (void)deployed;
     return 0;
 }

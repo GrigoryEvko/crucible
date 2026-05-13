@@ -3,9 +3,9 @@
 // HS14 fixture for GAPS-132. GPUDirect plans cannot carry a null GPU
 // virtual address; null must be rejected at the refinement boundary.
 
-#include <crucible/cntp/GpuDirect.h>
+#include <crucible/cntp/_wip/GpuDirect.h>
 
-namespace gd = crucible::cntp::gpu_direct;
+namespace gd = crucible::cntp::_wip::gpu_direct;
 
 constexpr gd::GpuVirtualAddress bad_address{std::uintptr_t{0}};
 

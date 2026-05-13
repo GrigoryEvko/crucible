@@ -3,13 +3,13 @@
 // HS14 fixture for GAPS-133. SHARP all-reduce dispatch is Bg-row work;
 // Init-only contexts can mint the fabric handle but cannot submit work.
 
-#include <crucible/cntp/Sharp.h>
+#include <crucible/cntp/_wip/Sharp.h>
 
 #include <array>
 
 namespace cog = crucible::cog;
 namespace eff = crucible::effects;
-namespace shp = crucible::cntp::sharp;
+namespace shp = crucible::cntp::_wip::sharp;
 
 int main() {
     cog::CogIdentity sw{};

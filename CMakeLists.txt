@@ -56,21 +56,21 @@ add_library(crucible STATIC
   src/cntp/AfXdp.cpp
   src/cntp/ConnectionPool.cpp
   src/cntp/CongestionControl.cpp
-  src/cntp/Doca.cpp
+  src/cntp/_wip/Doca.cpp
   src/cntp/GossipMulticast.cpp
-  src/cntp/GpuDirect.cpp
+  src/cntp/_wip/GpuDirect.cpp
   src/cntp/IncastControl.cpp
-  src/cntp/KtlsOffload.cpp
+  src/cntp/_wip/KtlsOffload.cpp
   src/cntp/MtlsTransport.cpp
   src/cntp/OverlayMulticast.cpp
-  src/cntp/P4.cpp
+  src/cntp/_wip/P4.cpp
   src/cntp/PathSwap.cpp
   src/cntp/Pacing.cpp
-  src/cntp/QuicTransport.cpp
+  src/cntp/_wip/QuicTransport.cpp
   src/cntp/RoceConfig.cpp
-  src/cntp/Sharp.cpp
+  src/cntp/_wip/Sharp.cpp
   src/cntp/Tcam.cpp
-  src/cntp/Wireguard.cpp
+  src/cntp/_wip/Wireguard.cpp
   src/forge/recipes/Network.cpp
   src/observe/HdrHistogram.cpp
   src/observe/SdcDetect.cpp
@@ -195,16 +195,16 @@ crucible_bpf_program(cntp_sk_msg_credit_gate
   include/crucible/cntp/bpf/sk_msg_credit_gate.bpf.c)
 crucible_bpf_program(cntp_sock_ops_telemetry
   include/crucible/cntp/bpf/sock_ops_telemetry.bpf.c)
-crucible_bpf_program(cntp_fq_pacing_sample
-  include/crucible/cntp/bpf/fq_pacing_sample.bpf.c)
+crucible_bpf_program(cntp_wip_fq_pacing_sample
+  include/crucible/cntp/_wip/bpf/fq_pacing_sample.bpf.c)
 crucible_bpf_program(cntp_ecn_ce_mark_sample
   include/crucible/cntp/bpf/ecn_ce_mark_sample.bpf.c)
-crucible_bpf_program(cntp_bbr_model_sample
-  include/crucible/cntp/bpf/bbr_model_sample.bpf.c)
-crucible_bpf_program(cntp_ack_clock_sample
-  include/crucible/cntp/bpf/ack_clock_sample.bpf.c)
-crucible_bpf_program(cntp_loss_recovery_sample
-  include/crucible/cntp/bpf/loss_recovery_sample.bpf.c)
+crucible_bpf_program(cntp_wip_bbr_model_sample
+  include/crucible/cntp/_wip/bpf/bbr_model_sample.bpf.c)
+crucible_bpf_program(cntp_wip_ack_clock_sample
+  include/crucible/cntp/_wip/bpf/ack_clock_sample.bpf.c)
+crucible_bpf_program(cntp_wip_loss_recovery_sample
+  include/crucible/cntp/_wip/bpf/loss_recovery_sample.bpf.c)
 
 crucible_bpf_program(canopy_gossip_xdp_tx
   include/crucible/canopy/bpf/gossip_xdp_tx.bpf.c)

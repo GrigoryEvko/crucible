@@ -1,9 +1,9 @@
-#include <crucible/cntp/P4.h>
+#include <crucible/cntp/_wip/P4.h>
 
 int main() {
     namespace cog = crucible::cog;
     namespace eff = crucible::effects;
-    namespace p4 = crucible::cntp::p4;
+    namespace p4 = crucible::cntp::_wip::p4;
 
     cog::CogIdentity sw{};
     sw.uuid = cog::Uuid{1, 2};

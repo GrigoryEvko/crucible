@@ -1,6 +1,6 @@
-#include <crucible/cntp/Doca.h>
+#include <crucible/cntp/_wip/Doca.h>
 
-namespace crucible::cntp::doca {
+namespace crucible::cntp::_wip::doca {
 
 std::string_view doca_error_name(DocaError error) noexcept {
     switch (error) {
@@ -45,4 +45,4 @@ force_doca_backend_boundary(DeclaredDocaDeployPlan plan) noexcept {
     return deploy_doca_offload(plan);
 }
 
-}  // namespace crucible::cntp::doca
+}  // namespace crucible::cntp::_wip::doca

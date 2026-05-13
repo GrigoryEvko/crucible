@@ -1,6 +1,6 @@
-#include <crucible/cntp/GpuDirect.h>
+#include <crucible/cntp/_wip/GpuDirect.h>
 
-namespace crucible::cntp::gpu_direct {
+namespace crucible::cntp::_wip::gpu_direct {
 
 std::string_view gpu_direct_error_name(GpuDirectError error) noexcept {
     switch (error) {
@@ -113,4 +113,4 @@ write_to_nvme(DeclaredGpuDirectStoragePlan plan) noexcept {
     return read_from_nvme(plan);
 }
 
-}  // namespace crucible::cntp::gpu_direct
+}  // namespace crucible::cntp::_wip::gpu_direct

@@ -1,4 +1,4 @@
-#include <crucible/cntp/KtlsOffload.h>
+#include <crucible/cntp/_wip/KtlsOffload.h>
 
 // GAPS-146 fixture #1: kTLS offload consumes TLS 1.3 record secrets only.
 // A TLS 1.2 crypto-info mint cannot produce a declared kTLS request.

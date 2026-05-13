@@ -4,9 +4,9 @@
 // reduction order and cannot enter the SHARP compile-time eligibility
 // lane.
 
-#include <crucible/cntp/Sharp.h>
+#include <crucible/cntp/_wip/Sharp.h>
 
-namespace shp = crucible::cntp::sharp;
+namespace shp = crucible::cntp::_wip::sharp;
 
 struct StrictRecipe {
     static constexpr bool associative = true;

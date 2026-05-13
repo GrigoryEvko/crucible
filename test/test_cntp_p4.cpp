@@ -1,4 +1,4 @@
-#include <crucible/cntp/P4.h>
+#include <crucible/cntp/_wip/P4.h>
 
 #include <cassert>
 #include <concepts>
@@ -8,7 +8,7 @@
 
 namespace cog = crucible::cog;
 namespace eff = crucible::effects;
-namespace p4 = crucible::cntp::p4;
+namespace p4 = crucible::cntp::_wip::p4;
 namespace saf = crucible::safety;
 
 namespace {
@@ -136,7 +136,7 @@ int main() {
                   == sizeof(p4::P4DeploymentHandle));
     static_assert(std::same_as<
                   p4::DeclaredP4Program::tag_type,
-                  saf::source::P4Compiled>);
+                  p4::wip_source::P4Compiled>);
     static_assert(p4::CtxFitsP4Mint<eff::ColdInitCtx>);
     static_assert(!p4::CtxFitsP4Mint<eff::BgDrainCtx>);
     static_assert(std::is_trivially_copyable_v<p4::P4ResourceBudget>);

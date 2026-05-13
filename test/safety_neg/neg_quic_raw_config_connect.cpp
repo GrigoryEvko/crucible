@@ -1,10 +1,10 @@
-#include <crucible/cntp/QuicTransport.h>
+#include <crucible/cntp/_wip/QuicTransport.h>
 
 // GAPS-128 fixture #1: connect_quic requires a DeclaredQuicConfig tagged
-// with source::Quic. Raw configs cannot drive federation transport setup.
+// with _wip::wip_source::Quic. Raw configs cannot drive federation transport setup.
 
 int main() {
-    namespace cntp = crucible::cntp;
+    namespace cntp = crucible::cntp::_wip;
 
     cntp::QuicConfig raw{};
     cntp::MtlsConfig mtls_raw{
