@@ -477,6 +477,7 @@ crucible_test(test_recipe_integration)
 crucible_test(test_recipe_coverage)
 crucible_test(test_recipe_registry_tier)
 crucible_test(test_recipe_registry_spec)
+crucible_test(test_network_recipe)
 
 # bench harness unit tests — include bench/ for bench_harness.h.
 # Snapshot now lives at <crucible/perf/SenseHub.h> (post-promotion via
@@ -4071,6 +4072,24 @@ crucible_neg_compile_test(neg_recipe_registry_pool_raw_pointer
   "no matching function|no known conversion|cannot convert")
 crucible_neg_compile_test(neg_recipe_registry_pool_wrong_borrow
   "no matching function|no known conversion|cannot convert")
+
+# GAPS-174 — forge/recipes/Network.h network-kernel recipe constraints.
+#   * neg_network_recipe_strict_sharp: BITEXACT_STRICT cannot enter SHARP.
+#   * neg_network_recipe_non_commutative_sharp: SHARP requires commutativity.
+#   * neg_network_recipe_bitexact_lossy: BITEXACT tiers reject lossy Top-K.
+#   * neg_network_recipe_recursive_non_power2: recursive halving-doubling
+#                                             requires power-of-two peers.
+#   * neg_network_recipe_raw_constraints: consumers require registry provenance.
+crucible_neg_compile_test(neg_network_recipe_strict_sharp
+  "constraints not satisfied|NetworkRecipeEligible|BITEXACT_STRICT|Sharp")
+crucible_neg_compile_test(neg_network_recipe_non_commutative_sharp
+  "constraints not satisfied|NetworkRecipeEligible|commutative|Sharp")
+crucible_neg_compile_test(neg_network_recipe_bitexact_lossy
+  "constraints not satisfied|NetworkRecipeEligible|BITEXACT_TC|TopK")
+crucible_neg_compile_test(neg_network_recipe_recursive_non_power2
+  "constraints not satisfied|NetworkRecipeEligible|RecursiveHalvingDoubling|power")
+crucible_neg_compile_test(neg_network_recipe_raw_constraints
+  "could not convert|no matching function|DeclaredNetworkRecipeConstraints|Tagged")
 
 # WRAP-RE-3 (#995) — ReplayEngine::init consumes
 # BorrowedRef<const PoolAllocator>. Raw PoolAllocator* and wrong-owner

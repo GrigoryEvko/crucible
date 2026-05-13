@@ -142,6 +142,11 @@ namespace source {
     // selection and must not be substituted by arbitrary user strings
     // or ad-hoc diagnostic spans.
     struct JsonRegistry {};
+    // NetworkRecipeRegistry: Forge network-kernel recipe constraints
+    // admitted through forge/recipes/Network.h. Raw booleans or
+    // ad-hoc policy tables cannot directly choose collective
+    // algorithms at RecipeSelect boundaries.
+    struct NetworkRecipeRegistry {};
     // CcAlgorithm: CNT-P congestion-control selection admitted through
     // cntp/CongestionControl.h. Raw enum values and raw kernel strings
     // cannot directly drive per-socket TCP_CONGESTION changes.

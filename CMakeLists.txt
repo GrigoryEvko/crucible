@@ -71,6 +71,7 @@ add_library(crucible STATIC
   src/cntp/Sharp.cpp
   src/cntp/Tcam.cpp
   src/cntp/Wireguard.cpp
+  src/forge/recipes/Network.cpp
   src/observe/HdrHistogram.cpp
   src/observe/SdcDetect.cpp
   src/observe/SyntheticProbe.cpp
