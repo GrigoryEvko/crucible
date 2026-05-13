@@ -38,6 +38,7 @@ enum class WireguardError : std::uint8_t {
     InvalidKeySize,
     InvalidKeyEncoding,
     InvalidPort,
+    InvalidEndpoint,
     InvalidCidrPrefix,
     EmptyAllowedIpSet,
     TooManyAllowedIps,
@@ -207,11 +208,14 @@ validate_wireguard_key_text(std::string_view key) noexcept {
     if (key.size() != kWireguardKeyBase64Bytes) {
         return std::unexpected(WireguardError::InvalidKeySize);
     }
+    if (key.back() != '=' || key[key.size() - 2u] == '=') {
+        return std::unexpected(WireguardError::InvalidKeyEncoding);
+    }
     for (std::size_t i = 0; i < key.size(); ++i) {
         if (!wireguard_key_char_ok(key[i])) {
             return std::unexpected(WireguardError::InvalidKeyEncoding);
         }
-        if (key[i] == '=' && i + 2u < key.size()) {
+        if (key[i] == '=' && i + 1u < key.size()) {
             return std::unexpected(WireguardError::InvalidKeyEncoding);
         }
     }
@@ -299,6 +303,17 @@ declare_wireguard_peer(DeclaredWireguardPublicKey public_key,
 }
 
 [[nodiscard]] constexpr std::expected<void, WireguardError>
+validate_wireguard_endpoint(WireguardEndpoint endpoint) noexcept {
+    if (endpoint.ipv4_be == 0u) {
+        return std::unexpected(WireguardError::InvalidEndpoint);
+    }
+    if (endpoint.port.value() == 0u) {
+        return std::unexpected(WireguardError::InvalidPort);
+    }
+    return {};
+}
+
+[[nodiscard]] constexpr std::expected<void, WireguardError>
 validate_wireguard_peer(WireguardPeer const& peer) noexcept {
     if (peer.allowed_ip_count == 0u) {
         return std::unexpected(WireguardError::EmptyAllowedIpSet);
@@ -306,9 +321,34 @@ validate_wireguard_peer(WireguardPeer const& peer) noexcept {
     if (peer.allowed_ip_count > kWireguardMaxAllowedIps) {
         return std::unexpected(WireguardError::TooManyAllowedIps);
     }
-    if (peer.endpoint.port.value() == 0u) {
-        return std::unexpected(WireguardError::InvalidPort);
+    auto endpoint_valid = validate_wireguard_endpoint(peer.endpoint);
+    if (!endpoint_valid.has_value()) {
+        return std::unexpected(endpoint_valid.error());
     }
+    return {};
+}
+
+template <std::size_t PeerCount>
+    requires WireguardPeerSetShape<PeerCount>
+[[nodiscard]] constexpr std::expected<void, WireguardError>
+copy_wireguard_peers(
+    WireguardConfig& config,
+    std::array<DeclaredWireguardPeer, PeerCount> const& peers) noexcept {
+    for (std::size_t i = 0; i < PeerCount; ++i) {
+        auto const& peer = peers[i].value();
+        auto valid = validate_wireguard_peer(peer);
+        if (!valid.has_value()) {
+            return std::unexpected(valid.error());
+        }
+        for (std::size_t j = 0; j < i; ++j) {
+            if (same_wireguard_key(config.peers[j].public_key.value(),
+                                   peer.public_key.value())) {
+                return std::unexpected(WireguardError::DuplicatePeer);
+            }
+        }
+        config.peers[i] = peer;
+    }
+    config.peer_count = static_cast<std::uint8_t>(PeerCount);
     return {};
 }
 
@@ -322,20 +362,32 @@ mint_wireguard_config(NicInterfaceName iface,
     WireguardConfig config{
         iface, listen_port, std::move(private_key),
         empty_wireguard_secret_key(), false};
-    for (std::size_t i = 0; i < PeerCount; ++i) {
-        auto valid = validate_wireguard_peer(peers[i].value());
-        if (!valid.has_value()) {
-            return std::unexpected(valid.error());
-        }
-        for (std::size_t j = 0; j < i; ++j) {
-            if (same_wireguard_key(config.peers[j].public_key.value(),
-                                   peers[i].value().public_key.value())) {
-                return std::unexpected(WireguardError::DuplicatePeer);
-            }
-        }
-        config.peers[i] = peers[i].value();
+    auto copied = copy_wireguard_peers(config, peers);
+    if (!copied.has_value()) {
+        return std::unexpected(copied.error());
     }
-    config.peer_count = static_cast<std::uint8_t>(PeerCount);
+    return DeclaredWireguardConfig{std::move(config)};
+}
+
+template <std::size_t PeerCount>
+    requires WireguardPeerSetShape<PeerCount>
+[[nodiscard]] constexpr std::expected<DeclaredWireguardConfig, WireguardError>
+mint_wireguard_config_with_psk(
+    NicInterfaceName iface,
+    WireguardPort listen_port,
+    WireguardSecretKey private_key,
+    WireguardSecretKey preshared_key,
+    std::array<DeclaredWireguardPeer, PeerCount> peers) noexcept {
+    if (preshared_key.size() == 0u) {
+        return std::unexpected(WireguardError::EmptyKey);
+    }
+    WireguardConfig config{
+        iface, listen_port, std::move(private_key),
+        std::move(preshared_key), true};
+    auto copied = copy_wireguard_peers(config, peers);
+    if (!copied.has_value()) {
+        return std::unexpected(copied.error());
+    }
     return DeclaredWireguardConfig{std::move(config)};
 }
 
@@ -347,6 +399,9 @@ validate_wireguard_config(DeclaredWireguardConfig const& config) noexcept {
     }
     if (raw.listen_port.value() == 0u) {
         return std::unexpected(WireguardError::InvalidPort);
+    }
+    if (raw.has_preshared_key && raw.preshared_key.size() == 0u) {
+        return std::unexpected(WireguardError::EmptyKey);
     }
     if (raw.peer_count == 0u) {
         return std::unexpected(WireguardError::EmptyPeerSet);

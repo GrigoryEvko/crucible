@@ -8,6 +8,7 @@ std::string_view wireguard_error_name(WireguardError error) noexcept {
         case WireguardError::InvalidKeySize:      return "InvalidKeySize";
         case WireguardError::InvalidKeyEncoding:  return "InvalidKeyEncoding";
         case WireguardError::InvalidPort:         return "InvalidPort";
+        case WireguardError::InvalidEndpoint:     return "InvalidEndpoint";
         case WireguardError::InvalidCidrPrefix:   return "InvalidCidrPrefix";
         case WireguardError::EmptyAllowedIpSet:   return "EmptyAllowedIpSet";
         case WireguardError::TooManyAllowedIps:   return "TooManyAllowedIps";

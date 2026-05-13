@@ -93,6 +93,8 @@ void test_admission_and_names() {
            == std::string_view{"BackendUnavailable"});
     assert(cntp::wireguard_error_name(cntp::WireguardError::DuplicatePeer)
            == std::string_view{"DuplicatePeer"});
+    assert(cntp::wireguard_error_name(cntp::WireguardError::InvalidEndpoint)
+           == std::string_view{"InvalidEndpoint"});
 
     assert(cntp::admit_wireguard_public_key_b64(kPeerA).has_value());
     assert(cntp::admit_wireguard_secret_key_b64(kPsk).has_value());
@@ -100,6 +102,10 @@ void test_admission_and_names() {
     assert(!cntp::admit_wireguard_public_key_b64("bad").has_value());
     assert(!cntp::admit_wireguard_public_key_b64(
         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA@=").has_value());
+    assert(!cntp::admit_wireguard_public_key_b64(
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA").has_value());
+    assert(!cntp::admit_wireguard_public_key_b64(
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==").has_value());
     assert(cntp::admit_wireguard_port(1).has_value());
     assert(!cntp::admit_wireguard_port(0).has_value());
     assert(cntp::admit_wireguard_cidr_prefix(32).has_value());
@@ -112,6 +118,7 @@ void test_config_and_backend_boundary() {
     auto config = config_one_peer();
     assert(config.value().peer_count == 1);
     assert(config.value().private_key.size() == kPrivateKey.size());
+    assert(!config.value().has_preshared_key);
     assert(validate_wireguard_config(config).has_value());
 
     auto backend = cntp::bring_up_wireguard(config);
@@ -131,6 +138,29 @@ void test_config_and_backend_boundary() {
     assert(not_found.error() == cntp::WireguardError::PeerNotFound);
 
     std::printf("  test_config_and_backend_boundary: PASSED\n");
+}
+
+void test_preshared_key_and_endpoint_validation() {
+    std::array<cntp::DeclaredWireguardPeer, 1> peers{peer_a()};
+    auto with_psk = cntp::mint_wireguard_config_with_psk(
+        iface(), port(), secret(kPrivateKey), secret(kPsk), peers);
+    assert(with_psk.has_value());
+    assert(with_psk->value().has_preshared_key);
+    assert(with_psk->value().preshared_key.size() == kPsk.size());
+    assert(validate_wireguard_config(*with_psk).has_value());
+
+    auto empty_psk = cntp::mint_wireguard_config_with_psk(
+        iface(), port(), secret(kPrivateKey),
+        cntp::empty_wireguard_secret_key(), peers);
+    assert(!empty_psk.has_value());
+    assert(empty_psk.error() == cntp::WireguardError::EmptyKey);
+
+    auto endpoint = cntp::validate_wireguard_endpoint(
+        cntp::WireguardEndpoint{.ipv4_be = 0u, .port = port(51820)});
+    assert(!endpoint.has_value());
+    assert(endpoint.error() == cntp::WireguardError::InvalidEndpoint);
+
+    std::printf("  test_preshared_key_and_endpoint_validation: PASSED\n");
 }
 
 void test_tunnel_plan_mutation() {
@@ -189,6 +219,7 @@ int main() {
     std::printf("test_cntp_wireguard:\n");
     test_admission_and_names();
     test_config_and_backend_boundary();
+    test_preshared_key_and_endpoint_validation();
     test_tunnel_plan_mutation();
     std::printf("test_cntp_wireguard: all PASSED\n");
     return 0;
