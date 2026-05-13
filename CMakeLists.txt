@@ -70,6 +70,7 @@ add_library(crucible STATIC
   src/cntp/RoceConfig.cpp
   src/cntp/Sharp.cpp
   src/cntp/Tcam.cpp
+  src/cntp/Wireguard.cpp
   src/observe/HdrHistogram.cpp
   src/observe/SdcDetect.cpp
   src/observe/SyntheticProbe.cpp

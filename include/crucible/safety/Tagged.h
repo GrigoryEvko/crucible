@@ -172,6 +172,11 @@ namespace source {
     // limits, resumption tokens, and path-swap plans cannot directly
     // drive encrypted federation transport behavior.
     struct Quic {};
+    // Wireguard: CNT-P site-to-site WireGuard configuration admitted
+    // through cntp/Wireguard.h. Raw base64 keys, interface names,
+    // endpoints, and allowed-IP lists cannot directly drive privileged
+    // kernel tunnel mutation.
+    struct Wireguard {};
     // AdmissionDecision: CNT-P backpressure/admission-control decisions
     // minted by cntp/BackpressureRuntime.h. Raw accept/reject structs cannot
     // cross runtime boundaries as operator-visible admission outcomes.

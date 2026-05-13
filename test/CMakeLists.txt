@@ -241,6 +241,7 @@ crucible_test(test_cntp_path_swap)
 crucible_test(test_cntp_pacing)
 crucible_test(test_cntp_quic_transport)
 crucible_test(test_cntp_roce_config)
+crucible_test(test_cntp_wireguard)
 crucible_test(test_cntp_integrity)
 crucible_test(test_cntp_fec)
 crucible_test(test_cntp_fountain)
@@ -2938,6 +2939,20 @@ crucible_neg_compile_test(neg_tcam_rule_handle_copy
   "Linear<T> is move-only|use of deleted|deleted function")
 crucible_neg_compile_effects_test(neg_tcam_mint_bg_ctx
   "constraints not satisfied|CtxFitsTcamMint|Init")
+
+# GAPS-160 — cntp/Wireguard.h site-to-site VPN substrate.
+#   * neg_wireguard_zero_allowed_ips: peers must own at least one allowed CIDR.
+#   * neg_wireguard_raw_public_key_peer: peer admission requires tagged pubkeys.
+#   * neg_wireguard_private_key_copy: private keys are Secret and move-only.
+#   * neg_wireguard_mint_bg_ctx: tunnel minting is Init-row work.
+crucible_neg_compile_test(neg_wireguard_zero_allowed_ips
+  "constraints not satisfied|WireguardAllowedIpShape")
+crucible_neg_compile_test(neg_wireguard_raw_public_key_peer
+  "could not convert|no matching function|DeclaredWireguardPublicKey|Tagged")
+crucible_neg_compile_test(neg_wireguard_private_key_copy
+  "Secret<T> cannot be silently duplicated|use of deleted|deleted function")
+crucible_neg_compile_effects_test(neg_wireguard_mint_bg_ctx
+  "constraints not satisfied|CtxFitsWireguardMint|Init")
 
 # GAPS-126 — cntp/MtlsTransport.h mutual-TLS federation policy substrate.
 #   * neg_mtls_tls12_config: TLS 1.2 cannot mint a declared mTLS config.
