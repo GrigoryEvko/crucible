@@ -250,9 +250,9 @@ void test_policy_production_degrades_gracefully() {
 
     // Silence the warning spray during the apply() — scoped tightly so
     // other tests continue to surface warnings if they fire.
-    ::setenv("CRUCIBLE_RT_QUIET", "1", 1);
+    ::setenv("CRUCIBLE_WARDEN_QUIET", "1", 1);
     auto g = apply(p);
-    ::unsetenv("CRUCIBLE_RT_QUIET");
+    ::unsetenv("CRUCIBLE_WARDEN_QUIET");
 
     // Pinning should succeed even without caps.
     CHECK(g.pinned_cpu() >= -1, "pinned_cpu is plausible after production()");
@@ -309,7 +309,7 @@ void test_registry_applies_on_apply() {
 
     // dev_quiet enables mlock_hot_regions but uses SCHED_OTHER, so no
     // CAP_SYS_NICE needed for the test to exercise the iteration path.
-    ::setenv("CRUCIBLE_RT_QUIET", "1", 1);
+    ::setenv("CRUCIBLE_WARDEN_QUIET", "1", 1);
     {
         auto g = apply(Policy::dev_quiet());
         // regions_locked() >= 1 iff mlock actually succeeded (requires
@@ -318,7 +318,7 @@ void test_registry_applies_on_apply() {
         // care about here.
         (void)g.regions_locked();
     }
-    ::unsetenv("CRUCIBLE_RT_QUIET");
+    ::unsetenv("CRUCIBLE_WARDEN_QUIET");
 
     unregister_hot_region(buf);
     CHECK(HotRegionRegistry::instance().size() == baseline,

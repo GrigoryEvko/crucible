@@ -1,6 +1,6 @@
 #pragma once
 
-// Unified realtime-policy description for Crucible.
+// Unified Warden bounds-enforcement policy for Crucible.
 //
 // One `Policy` struct, consumed by two clients:
 //   • the Keeper daemon (src/keeper/…) at startup — applies `production()`
@@ -212,7 +212,7 @@ struct Policy {
     }
 
     // Opt out entirely. For debugging ("does my bug reproduce without
-    // any hardening?") or for shells where realtime isn't wanted.
+    // any hardening?") or for shells where Warden enforcement isn't wanted.
     [[nodiscard]] static constexpr Policy none() noexcept {
         Policy p;
         p.hot_enabled           = false;

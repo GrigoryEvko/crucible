@@ -156,7 +156,7 @@ crucible_bpf_program(syscall_latency  include/crucible/perf/bpf/syscall_latency.
 crucible_bpf_program(sched_tp_btf     include/crucible/perf/bpf/sched_tp_btf.bpf.c)
 crucible_bpf_program(syscall_tp_btf   include/crucible/perf/bpf/syscall_tp_btf.bpf.c)
 
-# ─── Runtime/networking BPF stubs ──────────────────────────────────
+# ─── Subsystem-owned BPF stubs ─────────────────────────────────────
 #
 # These are intentionally rooted in the owning subsystem rather than
 # perf/: CNT-P dataplane owns TC/XDP contracts; Warden owns enforcement

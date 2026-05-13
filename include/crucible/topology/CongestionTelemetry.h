@@ -4,7 +4,7 @@
 //
 // This header owns the concrete socket-observation and per-link aggregation
 // surface for TCP_INFO / TCP_CC_INFO.  It does not choose routes, mutate
-// qdisc/sysctl state, or own runtime worker state; those belong to rt policy,
+// qdisc/sysctl state, or own runtime worker state; those belong to Warden,
 // NicConfig, and the later optimizer owners.  The invariant here is narrow:
 // congestion counters cross the runtime boundary only as admitted SocketFd
 // values and tagged TcpInfo snapshots, then aggregate into a per-NIC report

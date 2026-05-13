@@ -541,7 +541,7 @@ Cog queries return `std::span<const CogIdentity>` and are zero-cost — the topo
 | Topology graph storage | `topology/CogGraph.h` | composition queries |
 | Cog discovery | `cog/Discovery.h` (LLDP, PCIe, lspci) | composition into init flow |
 | Cog calibration | `cog/Calibrate.h` (microbenchmarks) | scheduling on calibration trigger |
-| Cog quarantine | `rt/Quarantine.h` (state machine over Cog identity) | per-deployment quarantine policy |
+| Cog quarantine | `warden/Quarantine.h` (state machine over Cog identity) | per-deployment quarantine policy |
 | Per-Cog Mimic instance | `mimic/CogMimic.h` (per-Cog compiler) | strategy-driven kernel selection |
 | Cog query DSL | (none) | `fixy::cog_query<>` |
 
@@ -818,8 +818,8 @@ The §5 multi-timescale loop discussed here adjusts **distributed scheduling dec
 | Concern | Substrate | Fixy DSL |
 |---|---|---|
 | Telemetry harvesters | `cog/Telemetry.h`, `perf/Bpf.h` | (uses) |
-| runtime observation per-step measurement | `rt/Step.h` | (uses) |
-| runtime observation per-K-step trends | `rt/Trend.h` | (uses) |
+| runtime observation per-step measurement | `observe/Step.h` | (uses) |
+| runtime observation per-K-step trends | `observe/Trend.h` | (uses) |
 | Atomic kernel swap mechanism | `cog/AtomicSwap.h` (existing) | (uses) |
 | Discrete-search optimizer | `cog/Optimizer.h` | (uses) |
 | Composite MFU computation | (none) | `fixy::Mfu` policy |
@@ -1219,8 +1219,8 @@ Programmability: full eBPF-restricted-C with verifier. Maps for state (per-CPU, 
 Crucible substrate primitive (planned, GAPS-130):
 
 ```cpp
-// crucible/perf/Xdp.h
-namespace crucible::perf {
+// crucible/cntp/dataplane/Xdp.h
+namespace crucible::cntp::dataplane {
 
 template <auto ProgramFnPtr>
 class XdpProgram {
@@ -1305,8 +1305,8 @@ Use cases: rate limiting per flow, priority queueing, action-driven steering, Qo
 Crucible substrate primitive (planned, partially subsumed by GAPS-130):
 
 ```cpp
-// crucible/perf/TcEbpf.h
-namespace crucible::perf {
+// crucible/cntp/dataplane/TcEbpf.h
+namespace crucible::cntp::dataplane {
 
 template <auto ProgramFnPtr>
 class TcProgram {
@@ -1542,8 +1542,8 @@ Compile-time checks ensure the assignment is sound. Runtime configures the actua
 | Layer | Crucible substrate | Fixy DSL |
 |---|---|---|
 | 1 ethtool/sysctl | `cog/NicConfig.h` | `fixy::nic_config<>` |
-| 2 XDP | `perf/Xdp.h` | `fixy::xdp_attach<>` |
-| 3 TC eBPF | `perf/TcEbpf.h` | `fixy::tc_attach<>` |
+| 2 XDP | `cntp/dataplane/Xdp.h` | `fixy::xdp_attach<>` |
+| 3 TC eBPF | `cntp/dataplane/TcEbpf.h` | `fixy::tc_attach<>` |
 | 4 AF_XDP | `cntp/AfXdp.h` | `fixy::af_xdp_socket<>` |
 | 5 RDMA verbs | `cntp/Rdma.h` | `fixy::rdma_qp<>` |
 | 6 DPU/SmartNIC | `cntp/Doca.h`, `cntp/Nitro.h`, `cntp/Pensando.h` | `fixy::doca_offload<>` |
@@ -4584,7 +4584,7 @@ fixy::ops::chaos{
 
 **Status.** Planned (GAPS-118).
 
-**Substrate.** `crucible/rt/Quarantine.h`. Composes φ-accrual + thermal + ECC + wear + operator inputs over Cog identity.
+**Substrate.** `crucible/warden/Quarantine.h`. Composes φ-accrual + thermal + ECC + wear + operator inputs over Cog identity.
 
 **Fixy DSL.** `fixy::ops::quarantine_policy{...}`.
 
@@ -4635,7 +4635,7 @@ The optimizer respects all operational policies: it doesn't schedule heavy work 
 | Lame-duck state | `runtime/LameDuck.h` | (uses) |
 | Canary state machine | `runtime/Canary.h` | (uses) |
 | Chaos fault injection | `runtime/Chaos.h` | (uses) |
-| Quarantine state machine | `rt/Quarantine.h` | (uses) |
+| Quarantine state machine | `warden/Quarantine.h` | (uses) |
 | Operational policy | (none) | `fixy::ops::*` |
 
 ═══════════════════════════════════════════════════════════════════════
@@ -4820,7 +4820,7 @@ Full catalog of new tasks for the networking + Cog + comm-through-IR effort. Eac
 | 115 | Scuttlebutt.h — anti-entropy CRDT | `canopy/Scuttlebutt.h` | 114 | 118, 162 | 400 | 3d |
 | 116 | Integrity.h — E2E xxHash64 | `cntp/Integrity.h` | — | 117 | 150 | 1d |
 | 117 | ReedSolomon.h — k+m FEC, AVX2 | `cntp/Fec.h` | 116 | 119 | 600 | 5d |
-| 118 | Quarantine.h — auto-evict + recovery | `rt/Quarantine.h` | 113-115 | 142, 143 | 300 | 3d |
+| 118 | Quarantine.h — auto-evict + recovery | `warden/Quarantine.h` | 113-115 | 142, 143 | 300 | 3d |
 | 119 | Fountain.h — LT/Raptor codes for multicast | `cntp/Fountain.h` | 117 | — | 400 | 4d |
 | 120 | CongestionControl.h — BBRv3, CUBIC, DCTCP | `cntp/CongestionControl.h` | — | 121, 123 | 150 | 1d |
 | 121 | Pacing.h — fq verification + auto-config | `cntp/Pacing.h` | 120 | — | 200 | 2d |
@@ -4832,7 +4832,7 @@ Full catalog of new tasks for the networking + Cog + comm-through-IR effort. Eac
 | 127 | AsymmetricFailure.h — multi-vantage detection | `topology/AsymmetricDetect.h` | 113 | — | 400 | 3d |
 | 128 | QuicTransport.h — QUIC + TLS 1.3 | `cntp/QuicTransport.h` | — | 162 | 600 | 5d |
 | 129 | Ptp.h — PTP daemon + hw timestamping | `topology/Ptp.h` | 110 | 134 | 300 | 2d |
-| 130 | XdpFilter.h — eBPF/XDP packet filtering | `perf/Xdp.h` | — | 131, 172 | 400 | 4d |
+| 130 | XdpFilter.h — eBPF/XDP packet filtering | `cntp/dataplane/Xdp.h` | — | 131, 172 | 400 | 4d |
 | 131 | AfXdpTransport.h — AF_XDP zero-copy | `cntp/AfXdp.h` | 130 | — | 500 | 4d |
 | 132 | GpuDirect.h — GPUDirect RDMA + Storage | `cntp/GpuDirect.h` | 125 | 167 | 400 | 3d |
 | 133 | InNetworkAgg.h — SHARP eligibility + dispatch | `cntp/Sharp.h` | 125, 145 | — | 350 | 3d |
@@ -6596,7 +6596,7 @@ cog/MrcCalibrate.h  Per-NIC fabric calibration: line rate, RTT distribution,
                     probes.  Output: calibrated fabric model fed to Forge.
                     ~500 LOC.
 
-rt/MrcDrift.h    Drift detection: P95 residual > 10% for 100+ samples
+observe/MrcDrift.h    Drift detection: P95 residual > 10% for 100+ samples
                     triggers FabricRecompile.  Per the §5 multi-timescale
                     loop; fabric drift is the per-K-step / per-event signal.
                     ~300 LOC.
@@ -7125,7 +7125,7 @@ The bench harness `bench/bench_mrc_session.cpp` (parallel to `bench/bench_permis
 - cntp/MrcCongestion.h CC policy template (~400 LOC)
 - mimic/{nv,am,broadcom,intel,mellanox}/network/MrcCodec.h (~800 LOC each, ~4000 total)
 - cog/MrcCalibrate.h fabric calibration (~500 LOC)
-- rt/MrcDrift.h drift detection (~300 LOC)
+- observe/MrcDrift.h drift detection (~300 LOC)
 - bench/bench_mrc_session.cpp head-to-head harness (~300 LOC, validates zero-cost overlay claim per §38.14)
 - test/cross_vendor_mrc/ pairwise CI harness (~600 LOC)
 - safety/diag/MrcCategories.h diagnostic taxonomy (~150 LOC, per §38.11)
@@ -7159,7 +7159,7 @@ New MRC-specific tasks (numbers proposed below — require allocation by maintai
 - **GAPS-226** mimic/intel/network/MrcCodec.h (E810 iWARP variant)
 - **GAPS-227** mimic/mellanox/network/MrcCodec.h (ConnectX RoCEv2 + SHARP)
 - **GAPS-228** cog/MrcCalibrate.h fabric calibration
-- **GAPS-229** rt/MrcDrift.h drift detection
+- **GAPS-229** observe/MrcDrift.h drift detection
 - **GAPS-230** test/cross_vendor_mrc/ pairwise CI harness
 
 ## §38.17 Phasing — minimum viable plain MRC integration

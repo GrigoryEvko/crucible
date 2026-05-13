@@ -483,7 +483,7 @@ crucible_test(test_recipe_registry_spec)
 # headers we don't own (other agents' territory); our .cpp still
 # honours -Werror.
 crucible_test(test_bench_harness)
-# Exercises the crucible::warden module — realtime policy rails
+# Exercises the crucible::warden module — bounds-enforcement policy rails
 # (SCHED_FIFO/RR priority clamp, mlock, CPU-pin helpers). Header-only,
 # no special capabilities required at test time (the smoke checks the
 # policy arithmetic / guard object semantics, not live scheduler calls).

@@ -4,7 +4,7 @@
 //
 // This header owns typed PTP facts and admission gates.  It does not
 // start ptp4l/phc2sys or claim daemon health; those lifecycle decisions
-// remain operator/rt policy.  The Linux boundary here is deliberately
+// remain operator/Warden policy.  The Linux boundary here is deliberately
 // narrow: bounded /dev/ptpN paths, clock reads/caps, socket timestamping,
 // and hardware timestamp extraction into source::Ptp values.
 

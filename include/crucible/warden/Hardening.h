@@ -3,7 +3,7 @@
 // Apply a `crucible::warden::Policy` to the current thread / process.
 //
 // Every knob has a graceful-degradation path: if a capability is
-// missing, we log (unless CRUCIBLE_RT_QUIET=1) and continue. The
+// missing, we log (unless CRUCIBLE_WARDEN_QUIET=1) and continue. The
 // returned `AppliedPolicy` is an RAII handle that remembers what
 // actually changed and reverts it on destruction — critical for the
 // bench harness, which applies a Policy per-Run and then expects the
@@ -98,20 +98,20 @@ mlock2_sys(const void* addr, size_t len, unsigned flags) noexcept {
 namespace detail {
 
 [[nodiscard]] inline bool warden_quiet() noexcept {
-    const char* v = std::getenv("CRUCIBLE_RT_QUIET");
+    const char* v = std::getenv("CRUCIBLE_WARDEN_QUIET");
     return v != nullptr && v[0] == '1';
 }
 
 // Cold-path diagnostic. Only fires when a capability is missing. The
-// "[rt] " prefix plus "unavailable:" infix is the stable grep anchor for
+// "[warden] " prefix plus "unavailable:" infix is the stable grep anchor for
 // automated log scanners (bench harness, Keeper health monitors, CI).
-// Format: "[rt] <mechanism> unavailable[: <errno-string>]\n"
+// Format: "[warden] <mechanism> unavailable[: <errno-string>]\n"
 [[gnu::cold]] inline void warn(const char* mechanism, int err) noexcept {
     if (warden_quiet()) return;
     if (err != 0) {
-        std::fprintf(stderr, "[rt] %s unavailable: %s\n", mechanism, std::strerror(err));
+        std::fprintf(stderr, "[warden] %s unavailable: %s\n", mechanism, std::strerror(err));
     } else {
-        std::fprintf(stderr, "[rt] %s unavailable\n", mechanism);
+        std::fprintf(stderr, "[warden] %s unavailable\n", mechanism);
     }
 }
 
@@ -202,7 +202,7 @@ class Hardening {
     // Apply the policy to the calling thread / process. Returns an
     // RAII guard; hold it as long as the policy should be in effect.
     // On failure of any single mechanism, logs a warning (unless
-    // CRUCIBLE_RT_QUIET=1) and continues — the returned guard
+    // CRUCIBLE_WARDEN_QUIET=1) and continues — the returned guard
     // reflects what actually took effect.
     [[nodiscard]] static AppliedPolicy apply(const Policy& p) noexcept {
         AppliedPolicy g;
@@ -236,18 +236,18 @@ class Hardening {
 
         // 2. Scheduler policy. Skip RT on a non-isolated CPU — FIFO/RR
         // on a shared core starves whatever else lives there (Wayland
-        // compositor → frozen cursor). Override with CRUCIBLE_RT_FORCE=1.
+        // compositor → frozen cursor). Override with CRUCIBLE_WARDEN_FORCE=1.
         bool realtime_allowed = true;
         if (p.hot_sched != SchedClass::Other && g.pinned_cpu_ >= 0) {
             const auto iso = isolated_cpus();
             const bool on_isolcpu = std::find(iso.begin(), iso.end(),
                                               g.pinned_cpu_) != iso.end();
             if (!on_isolcpu) {
-                const char* force = std::getenv("CRUCIBLE_RT_FORCE");
+                const char* force = std::getenv("CRUCIBLE_WARDEN_FORCE");
                 if (!force || std::strcmp(force, "1") != 0) {
                     std::fprintf(stderr,
-                        "[rt] CPU %d not isolated — skipping RT class "
-                        "(set CRUCIBLE_RT_FORCE=1 or boot isolcpus=%d).\n",
+                        "[warden] CPU %d not isolated — skipping RT class "
+                        "(set CRUCIBLE_WARDEN_FORCE=1 or boot isolcpus=%d).\n",
                         g.pinned_cpu_, g.pinned_cpu_);
                     realtime_allowed = false;
                 }
@@ -300,7 +300,7 @@ class Hardening {
                         static_cast<uint32_t>(p.hot_rt_priority);
                     if (sched_setattr_sys(0, &fifo, 0) == 0) {
                         std::fprintf(stderr,
-                            "[rt] SCHED_DEADLINE EPERM — fell back to "
+                            "[warden] SCHED_DEADLINE EPERM — fell back to "
                             "SCHED_FIFO prio=%d\n", p.hot_rt_priority);
                     } else {
                         g.prior_sched_set_ = false;
