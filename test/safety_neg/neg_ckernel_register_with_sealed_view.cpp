@@ -6,7 +6,7 @@
 // once the classifier table is sealed, no call site can reach
 // register_op via the typed path.
 
-#include <crucible/CKernel.h>
+#include <crucible/ir001/CKernel.h>
 
 int main() {
     crucible::CKernelTable t;

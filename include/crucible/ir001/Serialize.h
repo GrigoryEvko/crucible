@@ -13,8 +13,8 @@
 // Zero external dependencies: C++26 standard library only.
 
 #include <crucible/Arena.h>
-#include <crucible/MerkleDag.h>
-#include <crucible/MetaLog.h>
+#include <crucible/ir001/MerkleDag.h>
+#include <crucible/ir001/MetaLog.h>
 #include <crucible/safety/Tagged.h>
 
 #include <concepts>

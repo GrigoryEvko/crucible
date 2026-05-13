@@ -12,7 +12,7 @@
 #include <optional>
 #include <utility>
 
-#include <crucible/MetaLog.h>
+#include <crucible/ir001/MetaLog.h>
 #include <crucible/concurrent/PermissionedMetaLog.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/MetaLogSession.h>

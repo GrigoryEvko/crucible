@@ -11,7 +11,7 @@
 //   * Companion: raw void* rejected at the field write surface.
 //   * This fixture: Tagged<void*, Sanitized> is not ExternalDataPtr.
 
-#include <crucible/TensorMeta.h>
+#include <crucible/ir001/TensorMeta.h>
 #include <crucible/safety/Tagged.h>
 
 int main() {

@@ -7,8 +7,8 @@
 //
 // Expected diagnostic: no conversion from LoadedRegionNode to ArenaRegion.
 
-#include <crucible/Serialize.h>
-#include <crucible/Transaction.h>
+#include <crucible/ir001/Serialize.h>
+#include <crucible/ir001/Transaction.h>
 
 int main() {
   crucible::TransactionLog<16> log{};

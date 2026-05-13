@@ -17,7 +17,7 @@
 #include <cstring>
 #include <vector>
 
-#include <crucible/Expr.h>
+#include <crucible/ir001/Expr.h>
 #include <crucible/SwissTable.h>
 
 #include "bench_harness.h"

@@ -1,6 +1,6 @@
 #include "../vessel/torch/vessel_api_typed.h"
 
-#include <crucible/TensorMeta.h>
+#include <crucible/ir001/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
 #include <crucible/safety/Tagged.h>

@@ -1,4 +1,4 @@
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/safety/IsSwmrHandle.h>
 #include "test_assert.h"

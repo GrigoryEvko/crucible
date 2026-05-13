@@ -20,7 +20,7 @@
 //
 // Two fixtures cover both directions of the new soundness gate per HS14.
 
-#include <crucible/TraceRing.h>
+#include <crucible/ir001/TraceRing.h>
 
 int main() {
     crucible::TraceRing::Entry entry{};

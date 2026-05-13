@@ -38,7 +38,7 @@
 // makes the expression non-constant per P1494R5 — using it where a
 // constant is required is ill-formed.
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 #include <crucible/Types.h>
 
 int main() {

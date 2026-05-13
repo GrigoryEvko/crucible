@@ -13,7 +13,7 @@
 //   * Companion: raw TensorMeta rejected at the write boundary.
 //   * This fixture: cross-tag passback rejected at the read boundary.
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 #include <crucible/safety/Tagged.h>
 
 int main() {

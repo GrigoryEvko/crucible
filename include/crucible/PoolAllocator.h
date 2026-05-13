@@ -14,7 +14,7 @@
 // from the foreground replay after init returns. Not movable — ptr_table_
 // entries are interior pointers into pool_.
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/warden/Registry.h>
 #include <crucible/safety/AllocClass.h>

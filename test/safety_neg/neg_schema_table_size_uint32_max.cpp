@@ -29,7 +29,7 @@
 // Per HS14, ≥2 negative-compile fixtures per new soundness gate,
 // each demonstrating a distinct mismatch class.
 
-#include <crucible/SchemaTable.h>
+#include <crucible/ir001/SchemaTable.h>
 
 #include <climits>
 #include <cstdint>

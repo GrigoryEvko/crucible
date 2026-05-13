@@ -24,7 +24,7 @@
 // `(x != INT32_MIN)`; vice versa for "drop the lower bound entirely".
 // Both fixtures together pin the gate.
 
-#include <crucible/CallSiteTable.h>
+#include <crucible/ir001/CallSiteTable.h>
 #include <climits>
 
 int main() {

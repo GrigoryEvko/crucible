@@ -12,7 +12,7 @@
 //   * This fixture: raw void* rejected at the field write surface.
 //   * Companion: wrong Tagged provenance rejected at the same surface.
 
-#include <crucible/TensorMeta.h>
+#include <crucible/ir001/TensorMeta.h>
 
 int main() {
   crucible::TensorMeta meta{};

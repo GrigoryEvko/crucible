@@ -18,14 +18,14 @@
 // All nodes are arena-allocated.
 
 #include <crucible/Arena.h>
-#include <crucible/CKernel.h>
-#include <crucible/DimHash.h>
-#include <crucible/Expr.h>
-#include <crucible/IterationDetector.h>
+#include <crucible/ir001/CKernel.h>
+#include <crucible/ir001/DimHash.h>
+#include <crucible/ir001/Expr.h>
+#include <crucible/ir001/IterationDetector.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Reflect.h>
-#include <crucible/TensorMeta.h>
-#include <crucible/TraceRing.h>
+#include <crucible/ir001/TensorMeta.h>
+#include <crucible/ir001/TraceRing.h>
 #include <crucible/handles/PublishOnce.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Borrowed.h>

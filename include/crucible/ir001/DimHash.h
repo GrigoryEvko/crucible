@@ -50,9 +50,9 @@
 // remains correct.
 // ═══════════════════════════════════════════════════════════════════
 
-#include <crucible/Expr.h>            // detail::kDimMix
+#include <crucible/ir001/Expr.h>            // detail::kDimMix
 #include <crucible/Platform.h>
-#include <crucible/TensorMeta.h>      // TensorMeta (extracted from MerkleDag.h)
+#include <crucible/ir001/TensorMeta.h>      // TensorMeta (extracted from MerkleDag.h)
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/Simd.h>
 #include <crucible/safety/Tagged.h>

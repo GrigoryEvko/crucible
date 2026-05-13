@@ -28,7 +28,7 @@
 #include "property_runner.h"
 #include "random_input.h"
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
 
 #include <array>

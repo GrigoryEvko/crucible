@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 
-#include <crucible/CKernel.h>
+#include <crucible/ir001/CKernel.h>
 
 #include "bench_harness.h"
 

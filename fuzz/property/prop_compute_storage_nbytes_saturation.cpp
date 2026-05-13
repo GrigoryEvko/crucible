@@ -30,7 +30,7 @@
 #include "property_runner.h"
 #include "random_input.h"
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 #include <crucible/Types.h>
 
 #include <cstdint>

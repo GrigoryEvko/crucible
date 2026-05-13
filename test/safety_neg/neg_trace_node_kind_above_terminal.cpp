@@ -37,7 +37,7 @@
 // Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
 // demonstrating a distinct mismatch class.
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 
 #include <cstdint>
 

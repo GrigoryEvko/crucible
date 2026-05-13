@@ -23,8 +23,8 @@
 #include "vessel_api.h"
 #include "vessel_api_typed.h"
 
-#include <crucible/SchemaTable.h>
-#include <crucible/TraceLoader.h>
+#include <crucible/ir001/SchemaTable.h>
+#include <crucible/ir001/TraceLoader.h>
 #include <crucible/Vigil.h>
 
 #include <cstddef>

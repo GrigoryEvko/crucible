@@ -16,8 +16,8 @@
 #include <cstring>
 #include <vector>
 
-#include <crucible/CrucibleContext.h>
-#include <crucible/ReplayEngine.h>
+#include <crucible/ir001/CrucibleContext.h>
+#include <crucible/ir001/ReplayEngine.h>
 
 #include "bench_harness.h"
 

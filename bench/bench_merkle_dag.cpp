@@ -19,12 +19,12 @@
 #include <vector>
 
 #include <crucible/Arena.h>
-#include <crucible/BackgroundThread.h>
+#include <crucible/ir001/BackgroundThread.h>
 #include <crucible/effects/Capabilities.h>
-#include <crucible/MerkleDag.h>
-#include <crucible/MetaLog.h>
-#include <crucible/TraceLoader.h>
-#include <crucible/TraceRing.h>
+#include <crucible/ir001/MerkleDag.h>
+#include <crucible/ir001/MetaLog.h>
+#include <crucible/ir001/TraceLoader.h>
+#include <crucible/ir001/TraceRing.h>
 
 #include "bench_harness.h"
 

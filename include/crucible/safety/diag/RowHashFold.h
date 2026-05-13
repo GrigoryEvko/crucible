@@ -98,7 +98,7 @@
 //
 // FOUND-I02 — RowHash recursive fmix64 fold over wrapper stack.
 
-#include <crucible/Expr.h>                       // detail::fmix64
+#include <crucible/ir001/Expr.h>                       // detail::fmix64
 #include <crucible/Platform.h>
 #include <crucible/Types.h>                      // RowHash strong type
 #include <crucible/effects/Capabilities.h>       // Effect enum

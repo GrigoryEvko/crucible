@@ -4,7 +4,7 @@
 // This fixture provokes the raw-value fence: a bare uint64_t must not
 // enter APIs that require a deterministic, Family-B dim hash.
 
-#include <crucible/DimHash.h>
+#include <crucible/ir001/DimHash.h>
 
 #include <cstdint>
 

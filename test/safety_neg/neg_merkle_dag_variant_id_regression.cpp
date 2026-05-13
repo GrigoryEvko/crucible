@@ -25,7 +25,7 @@
 // invariant the original set_variant comment intended but had no
 // type-level witness for.
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 
 #include <cstdint>
 

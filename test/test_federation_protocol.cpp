@@ -22,7 +22,7 @@
 //                 deserialize.
 
 #include <crucible/cipher/FederationProtocol.h>
-#include <crucible/Serialize.h>           // FOUND-I08-AUDIT (Finding G): CDAG_MAGIC
+#include <crucible/ir001/Serialize.h>           // FOUND-I08-AUDIT (Finding G): CDAG_MAGIC
 #include <crucible/Types.h>
 #include <crucible/effects/OsUniverse.h>
 

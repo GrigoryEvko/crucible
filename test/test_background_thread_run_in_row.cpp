@@ -36,7 +36,7 @@
 //   audit-C — F* alias predicate matrix: Pure/Tot/Ghost rejected,
 //             Div/ST partially rejected, AllRow/STRow superset accepted
 
-#include <crucible/BackgroundThread.h>
+#include <crucible/ir001/BackgroundThread.h>
 #include <crucible/Cipher.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>

@@ -81,7 +81,7 @@
 
 #include "property_runner.h"
 
-#include <crucible/CallSiteTable.h>
+#include <crucible/ir001/CallSiteTable.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Tagged.h>
 

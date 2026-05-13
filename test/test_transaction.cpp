@@ -1,4 +1,4 @@
-#include <crucible/Transaction.h>
+#include <crucible/ir001/Transaction.h>
 #include <crucible/effects/Capabilities.h>
 #include "test_assert.h"
 #include <cstdio>

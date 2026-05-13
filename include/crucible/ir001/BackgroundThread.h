@@ -12,12 +12,12 @@
 #include <thread>
 #include <vector>
 
-#include <crucible/DimHash.h>
-#include <crucible/MetaLog.h>
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/DimHash.h>
+#include <crucible/ir001/MetaLog.h>
+#include <crucible/ir001/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/Saturate.h>
-#include <crucible/SchemaTable.h>
+#include <crucible/ir001/SchemaTable.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/concurrent/Pipeline.h>
 #include <crucible/concurrent/SpinLock.h>
@@ -31,7 +31,7 @@
 #include <crucible/safety/PublishCommit.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
-#include <crucible/TraceGraph.h>
+#include <crucible/ir001/TraceGraph.h>
 
 namespace crucible {
 

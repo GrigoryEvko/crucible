@@ -1,5 +1,5 @@
 #include <crucible/Platform.h>
-#include <crucible/TraceRing.h>
+#include <crucible/ir001/TraceRing.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>

@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: Refined bounded_above contract failure.
 
-#include <crucible/TensorMeta.h>
+#include <crucible/ir001/TensorMeta.h>
 
 #include <cstdint>
 

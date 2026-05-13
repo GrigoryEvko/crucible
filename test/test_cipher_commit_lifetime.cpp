@@ -39,7 +39,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/Cipher.h>
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/IsOpaqueLifetime.h>

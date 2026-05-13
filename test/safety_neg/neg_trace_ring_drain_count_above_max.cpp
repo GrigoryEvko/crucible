@@ -27,7 +27,7 @@
 // Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
 // demonstrating a distinct mismatch class.
 
-#include <crucible/TraceRing.h>
+#include <crucible/ir001/TraceRing.h>
 
 #include <cstdint>
 

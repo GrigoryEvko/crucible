@@ -5,8 +5,8 @@
 // version, truncated header, truncated op records, truncated metas,
 // and the happy path round-trip.
 
-#include <crucible/TraceLoader.h>
-#include <crucible/SchemaTable.h>
+#include <crucible/ir001/TraceLoader.h>
+#include <crucible/ir001/SchemaTable.h>
 
 #include "test_assert.h"
 #include <cstdint>

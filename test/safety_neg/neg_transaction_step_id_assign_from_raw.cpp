@@ -24,7 +24,7 @@
 //
 // Two fixtures cover both directions of the new soundness gate per HS14.
 
-#include <crucible/Transaction.h>
+#include <crucible/ir001/Transaction.h>
 
 #include <cstdint>
 

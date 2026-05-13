@@ -30,7 +30,7 @@
 #include <cstdio>
 #include <cstdint>
 
-#include <crucible/TraceRing.h>
+#include <crucible/ir001/TraceRing.h>
 #include <crucible/concurrent/AtomicSnapshot.h>
 #include <crucible/concurrent/MpmcRing.h>
 #include <crucible/concurrent/SpscRing.h>

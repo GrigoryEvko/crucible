@@ -26,7 +26,7 @@
 // thread — insert() from try_align_(), find_alternate() from the
 // dispatch_op divergence path.
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 
 #include <cassert>
 #include <cstdint>

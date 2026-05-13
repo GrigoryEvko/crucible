@@ -22,7 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#include <crucible/MetaLog.h>
+#include <crucible/ir001/MetaLog.h>
 
 #include "bench_harness.h"
 

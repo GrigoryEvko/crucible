@@ -3,7 +3,7 @@
 // GAPS-061 fixture #2 — MetaLog consumer endpoints drain only.  The
 // producer-side append method is structurally absent from ConsumerHandle.
 
-#include <crucible/MetaLog.h>
+#include <crucible/ir001/MetaLog.h>
 #include <crucible/concurrent/PermissionedMetaLog.h>
 #include <crucible/permissions/Permission.h>
 

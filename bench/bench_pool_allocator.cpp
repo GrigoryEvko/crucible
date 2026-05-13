@@ -20,7 +20,7 @@
 #include <random>
 #include <vector>
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
 
 #include "bench_harness.h"

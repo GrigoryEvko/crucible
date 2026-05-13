@@ -1,6 +1,6 @@
 // Tests for CallSiteTable — open-addressing dedup set + entry store.
 
-#include <crucible/CallSiteTable.h>
+#include <crucible/ir001/CallSiteTable.h>
 
 #include "test_assert.h"
 #include <cstdint>

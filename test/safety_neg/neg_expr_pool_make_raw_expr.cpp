@@ -6,7 +6,7 @@
 //
 // Expected diagnostic: no conversion from const Expr* to PureInternedExpr.
 
-#include <crucible/ExprPool.h>
+#include <crucible/ir001/ExprPool.h>
 
 static void consume(crucible::ExprPool::PureInternedExpr) {}
 

@@ -5,8 +5,8 @@
 // reset, and overflow → MetaIndex::none() behavior (synthetically
 // exercised by driving head via many appends).
 
-#include <crucible/MerkleDag.h>
-#include <crucible/MetaLog.h>
+#include <crucible/ir001/MerkleDag.h>
+#include <crucible/ir001/MetaLog.h>
 #include <crucible/Platform.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>

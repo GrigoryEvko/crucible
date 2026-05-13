@@ -13,8 +13,8 @@
 
 #include "cpu_kernels.h"
 
-#include <crucible/BackgroundThread.h>
-#include <crucible/CrucibleContext.h>
+#include <crucible/ir001/BackgroundThread.h>
+#include <crucible/ir001/CrucibleContext.h>
 #include <crucible/effects/Capabilities.h>
 
 #include "test_assert.h"

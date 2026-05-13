@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/Ops.h>
+#include <crucible/ir001/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>

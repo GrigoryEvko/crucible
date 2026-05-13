@@ -13,8 +13,8 @@
 //   * This fixture: internal Tagged value cannot convert to an
 //     external Tagged value.
 
-#include <crucible/SymbolTable.h>
-#include <crucible/Ops.h>
+#include <crucible/ir001/SymbolTable.h>
+#include <crucible/ir001/Ops.h>
 #include <crucible/safety/Tagged.h>
 
 int main() {

@@ -10,7 +10,7 @@
 // request is anchored to an admitted IR001 comm node plus recipe constraints.
 
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/forge/Ir001/Comm.h>
+#include <crucible/ir001/Comm.h>
 #include <crucible/forge/recipes/Network.h>
 #include <crucible/mimic/CogMimic.h>
 #include <crucible/safety/Tagged.h>

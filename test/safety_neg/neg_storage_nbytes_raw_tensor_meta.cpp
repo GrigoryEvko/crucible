@@ -15,7 +15,7 @@
 //   * Companion: another Tagged provenance is rejected because
 //     Tagged<T, Sanitized> is not Tagged<T, External>.
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 
 int main() {
   crucible::TensorMeta meta{};

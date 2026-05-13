@@ -21,7 +21,7 @@
 // never SUPPOSED to hold by control flow).  This is the narrow case
 // that catches off-by-one drift in MATCH_POS_MAX.
 
-#include <crucible/IterationDetector.h>
+#include <crucible/ir001/IterationDetector.h>
 
 int main() {
     // constexpr forces constant evaluation of the ctor's pre clause.

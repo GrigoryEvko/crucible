@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: no viable operator= from int to TensorDim slot.
 
-#include <crucible/TensorMeta.h>
+#include <crucible/ir001/TensorMeta.h>
 
 int main() {
   crucible::TensorMeta meta{};

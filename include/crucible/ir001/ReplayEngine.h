@@ -29,7 +29,7 @@
 //     xor  eax, eax            ; return MATCH
 //     ret
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/safety/Borrowed.h>

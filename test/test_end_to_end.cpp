@@ -8,8 +8,8 @@
 //   4. Replay verifies guards, returns pre-allocated output pointers
 //   5. Data written to op i's output is readable from op i+1's input
 
-#include <crucible/CrucibleContext.h>
-#include <crucible/BackgroundThread.h>
+#include <crucible/ir001/CrucibleContext.h>
+#include <crucible/ir001/BackgroundThread.h>
 #include "test_assert.h"
 #include <bit>
 #include <cstdint>

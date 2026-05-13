@@ -1,4 +1,4 @@
-#include <crucible/Serialize.h>
+#include <crucible/ir001/Serialize.h>
 #include <crucible/effects/Capabilities.h>
 #include "test_assert.h"
 #include <bit>

@@ -12,7 +12,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
-#include <crucible/ReplayEngine.h>
+#include <crucible/ir001/ReplayEngine.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Mutation.h>

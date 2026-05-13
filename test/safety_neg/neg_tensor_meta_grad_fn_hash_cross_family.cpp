@@ -11,7 +11,7 @@
 //   * Companion: raw uint64_t rejected at the field write surface.
 //   * This fixture: Tagged<uint64_t, FamilyA> is not GradFnHash.
 
-#include <crucible/TensorMeta.h>
+#include <crucible/ir001/TensorMeta.h>
 #include <crucible/safety/Tagged.h>
 
 int main() {

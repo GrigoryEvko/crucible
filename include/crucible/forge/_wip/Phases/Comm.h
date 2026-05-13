@@ -11,7 +11,7 @@
 
 #include <crucible/cog/FitsCog.h>
 #include <crucible/effects/Concurrent.h>
-#include <crucible/forge/Ir001/Comm.h>
+#include <crucible/ir001/Comm.h>
 #include <crucible/forge/recipes/Network.h>
 #include <crucible/safety/Tagged.h>
 

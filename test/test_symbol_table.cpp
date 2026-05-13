@@ -1,7 +1,7 @@
 // Tests for SymbolTable — per-symbol metadata (kind, hints, ranges).
 
-#include <crucible/Ops.h>
-#include <crucible/SymbolTable.h>
+#include <crucible/ir001/Ops.h>
+#include <crucible/ir001/SymbolTable.h>
 #include <crucible/safety/Reflected.h>
 
 #include "test_assert.h"

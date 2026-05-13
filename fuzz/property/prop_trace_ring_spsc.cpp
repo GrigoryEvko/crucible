@@ -48,7 +48,7 @@
 #include "property_runner.h"
 #include "random_input.h"
 
-#include <crucible/TraceRing.h>
+#include <crucible/ir001/TraceRing.h>
 #include <crucible/Types.h>
 
 #include <array>

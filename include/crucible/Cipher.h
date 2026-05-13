@@ -27,9 +27,9 @@
 // for a Closed Cipher too (empty root, null head).
 
 #include <crucible/Arena.h>
-#include <crucible/MerkleDag.h>
-#include <crucible/MetaLog.h>
-#include <crucible/Serialize.h>
+#include <crucible/ir001/MerkleDag.h>
+#include <crucible/ir001/MetaLog.h>
+#include <crucible/ir001/Serialize.h>
 #include <crucible/cipher/CipherTierPromotion.h>
 #include <crucible/cipher/FederationProtocol.h>
 #include <crucible/effects/EffectRow.h>           // FOUND-I09

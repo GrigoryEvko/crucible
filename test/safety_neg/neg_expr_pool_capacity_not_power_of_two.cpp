@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: Refined<power_of_two, size_t> contract failure.
 
-#include <crucible/ExprPool.h>
+#include <crucible/ir001/ExprPool.h>
 
 int main() {
   constexpr crucible::ExprPool::Capacity bad{std::size_t{12}};

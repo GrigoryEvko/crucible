@@ -11,7 +11,7 @@
 //   * This fixture: raw uint64_t rejected at the field write surface.
 //   * Companion: wrong hash-family tag rejected at the same surface.
 
-#include <crucible/TensorMeta.h>
+#include <crucible/ir001/TensorMeta.h>
 
 int main() {
   crucible::TensorMeta meta{};

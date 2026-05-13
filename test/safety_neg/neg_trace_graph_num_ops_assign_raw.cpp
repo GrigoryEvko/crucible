@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: no assignment operator from raw uint32_t.
 
-#include <crucible/TraceGraph.h>
+#include <crucible/ir001/TraceGraph.h>
 
 int main() {
   crucible::TraceGraph g{};

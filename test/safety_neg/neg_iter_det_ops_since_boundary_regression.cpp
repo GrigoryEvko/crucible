@@ -23,7 +23,7 @@
 // monotonicity AND overflow guards on this counter at the type-system
 // level.
 
-#include <crucible/IterationDetector.h>
+#include <crucible/ir001/IterationDetector.h>
 
 #include <cstdint>
 

@@ -15,7 +15,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/effects/Capabilities.h>
-#include <crucible/RegionCache.h>
+#include <crucible/ir001/RegionCache.h>
 
 #include "bench_harness.h"
 

@@ -5,7 +5,7 @@
 // hash must not substitute for a process-local Family-B dim hash even
 // when both carry the same DetSafe<Pure> tier.
 
-#include <crucible/DimHash.h>
+#include <crucible/ir001/DimHash.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/Tagged.h>
 

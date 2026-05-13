@@ -23,9 +23,9 @@
 #include <torch/csrc/autograd/function.h>
 #include <torch/csrc/autograd/variable.h>
 
-#include <crucible/MerkleDag.h>
-#include <crucible/SchemaTable.h>
-#include <crucible/TraceRing.h>
+#include <crucible/ir001/MerkleDag.h>
+#include <crucible/ir001/SchemaTable.h>
+#include <crucible/ir001/TraceRing.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
 #include <crucible/safety/Tagged.h>

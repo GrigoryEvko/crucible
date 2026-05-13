@@ -13,9 +13,9 @@
 // Graph inputs  = INPUT nodes (external tensors).
 // Graph outputs = ops with no DATA_FLOW consumers in the DFG.
 
-#include <crucible/ExprPool.h>
+#include <crucible/ir001/ExprPool.h>
 #include <crucible/Graph.h>
-#include <crucible/TraceGraph.h>
+#include <crucible/ir001/TraceGraph.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/safety/FixedArray.h>
 #include <crucible/safety/Tagged.h>

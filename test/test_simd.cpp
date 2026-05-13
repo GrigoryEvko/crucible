@@ -15,8 +15,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/safety/Simd.h>
-#include <crucible/DimHash.h>
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/DimHash.h>
+#include <crucible/ir001/MerkleDag.h>
 
 #include "test_assert.h"
 

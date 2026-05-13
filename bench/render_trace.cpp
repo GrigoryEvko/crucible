@@ -11,7 +11,7 @@
 //                  5 = individual submodules (query/key/value)
 //
 // Input format — .crtrace binary (little-endian), produced by Vessel.
-// Full schema in include/crucible/TraceLoader.h:
+// Full schema in include/crucible/ir001/TraceLoader.h:
 //   Header (16B):   "CRTR" magic | version | num_ops | num_metas
 //   Op records:     num_ops × 80B (schema/shape/scope/callsite hashes,
 //                   scalar args, tensor counts, op_flags)

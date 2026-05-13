@@ -4,7 +4,7 @@
 // type.  A Pure storage-byte projection cannot be silently assigned
 // to a differently pinned DetSafe slot.
 
-#include <crucible/MerkleDag.h>
+#include <crucible/ir001/MerkleDag.h>
 
 #include <cstdint>
 

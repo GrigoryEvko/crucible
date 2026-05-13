@@ -1,4 +1,4 @@
-#include <crucible/forge/Ir001/Comm.h>
+#include <crucible/ir001/Comm.h>
 
 #include <array>
 #include <cassert>

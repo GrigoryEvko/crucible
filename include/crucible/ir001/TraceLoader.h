@@ -40,9 +40,9 @@
 #include <memory>
 #include <vector>
 
-#include <crucible/MerkleDag.h>
-#include <crucible/SchemaTable.h>
-#include <crucible/TraceRing.h>
+#include <crucible/ir001/MerkleDag.h>
+#include <crucible/ir001/SchemaTable.h>
+#include <crucible/ir001/TraceRing.h>
 #include <crucible/safety/Refined.h>
 
 namespace crucible {

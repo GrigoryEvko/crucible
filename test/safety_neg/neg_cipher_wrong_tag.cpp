@@ -11,7 +11,7 @@
 // own parametric lock.
 
 #include <crucible/Cipher.h>
-#include <crucible/SchemaTable.h>
+#include <crucible/ir001/SchemaTable.h>
 
 int main() {
     crucible::SchemaTable st;
