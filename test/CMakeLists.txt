@@ -480,6 +480,7 @@ crucible_test(test_recipe_registry_spec)
 crucible_test(test_network_recipe)
 crucible_test(test_ir001_comm)
 crucible_test(test_forge_comm_phase)
+crucible_test(test_mimic_network_backend)
 
 # bench harness unit tests — include bench/ for bench_harness.h.
 # Snapshot now lives at <crucible/perf/SenseHub.h> (post-promotion via
@@ -4104,7 +4105,7 @@ crucible_neg_compile_test(neg_ir001_comm_send_as_collective
 crucible_neg_compile_test(neg_ir001_comm_zero_participants
   "contract|precondition|in_range|positive|bounded")
 
-# GAPS-168 — forge/Phases/Comm.h vendor-neutral comm phase substrate.
+# GAPS-168 WIP — forge/_wip/Phases/Comm.h vendor-neutral comm phase sketch.
 #   * neg_forge_comm_phase_raw_compute: fusion admission requires source::Ir001.
 #   * neg_forge_comm_phase_send_as_collective: ReduceOnRecv requires collective
 #     communication, not point-to-point Send.
@@ -4119,6 +4120,24 @@ crucible_neg_compile_test(neg_forge_comm_phase_oversubscribed
   "static assertion failed|constraints not satisfied|CommFusionEligible|FitsCog|999")
 crucible_neg_compile_test(neg_forge_comm_phase_strict_compress
   "constraints not satisfied|CommFusionRecipeAllowed|BITEXACT_STRICT|CompressBeforeSend")
+
+# GAPS-169 WIP — mimic/_wip/network/Backend.h per-vendor backend sketch.
+#   * neg_mimic_network_backend_raw_node: backend planning requires admitted
+#     source::Ir001 nodes, not raw comm descriptors.
+#   * neg_mimic_network_backend_compute_node: backend planning accepts only
+#     network-visible point-to-point or collective IR001 nodes.
+#   * neg_mimic_network_backend_cross_vendor: backend artifacts are source-tagged
+#     per vendor and cannot cross vendor launch boundaries.
+#   * neg_mimic_network_backend_wrong_cog: vendor/cog compatibility is a
+#     compile-time gate.
+crucible_neg_compile_test(neg_mimic_network_backend_raw_node
+  "no matching function|could not convert|DeclaredIr001Node|Tagged|source::Ir001")
+crucible_neg_compile_test(neg_mimic_network_backend_compute_node
+  "static assertion failed|NetworkKernelNode|ir001_network_kernel_kind")
+crucible_neg_compile_test(neg_mimic_network_backend_cross_vendor
+  "could not convert|no known conversion|AmNetwork|NvNetwork|Tagged")
+crucible_neg_compile_test(neg_mimic_network_backend_wrong_cog
+  "static assertion failed|BackendAcceptsCog|Mellanox|Gpu")
 
 # WRAP-RE-3 (#995) — ReplayEngine::init consumes
 # BorrowedRef<const PoolAllocator>. Raw PoolAllocator* and wrong-owner

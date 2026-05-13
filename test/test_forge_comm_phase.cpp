@@ -1,4 +1,4 @@
-#include <crucible/forge/Phases/Comm.h>
+#include <crucible/forge/_wip/Phases/Comm.h>
 
 #include <array>
 #include <cassert>
@@ -7,7 +7,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace phase = crucible::forge::phases::comm;
+namespace phase = crucible::forge::_wip::phases::comm;
 namespace ir = crucible::forge::ir001;
 namespace net = crucible::forge::recipes;
 

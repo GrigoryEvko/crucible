@@ -1,12 +1,13 @@
 #pragma once
 
-// GAPS-168. Vendor-neutral Forge comm-phase substrate.
+// GAPS-168 WIP. Vendor-neutral Forge comm-phase sketch.
 //
-// This header deliberately does not implement a Forge pass manager, IR002
-// KernelNode lowering, Mimic backend emission, verbs, eBPF, or runtime
-// scheduling. It records the compile-time gates those later layers must pass:
-// IR001 provenance, compute/comm pattern shape, recipe-tier legality, and
-// combined resource-row fit against a Cog substrate.
+// This header is deliberately parked under forge/_wip because the real Forge
+// phase model is not settled in this checkout. It does not implement a Forge
+// pass manager, IR002 KernelNode lowering, Mimic backend emission, verbs, eBPF,
+// or runtime scheduling. It only records experimental compile-time gates those
+// later layers might reuse: IR001 provenance, compute/comm pattern shape,
+// recipe-tier legality, and combined resource-row fit against a Cog substrate.
 
 #include <crucible/cog/FitsCog.h>
 #include <crucible/effects/Concurrent.h>
@@ -20,10 +21,14 @@
 #include <type_traits>
 #include <utility>
 
-namespace crucible::forge::phases::comm {
+namespace crucible::forge::_wip::phases::comm {
 
 namespace ir = ::crucible::forge::ir001;
 namespace net = ::crucible::forge::recipes;
+
+namespace source {
+struct ForgeFused {};
+}  // namespace source
 
 namespace detail {
 [[nodiscard]] constexpr std::uint64_t fmix64(std::uint64_t k) noexcept {
@@ -96,7 +101,7 @@ struct FusedCommDecision {
 };
 
 using DeclaredFusedCommDecision =
-    safety::Tagged<FusedCommDecision, safety::source::ForgeFused>;
+    safety::Tagged<FusedCommDecision, source::ForgeFused>;
 
 [[nodiscard]] constexpr std::string_view
 comm_phase_kind_name(CommPhaseKind phase) noexcept {
@@ -352,4 +357,4 @@ admit_comm_fusion(
 static_assert(sizeof(DeclaredFusedCommDecision) == sizeof(FusedCommDecision));
 static_assert(std::is_trivially_copyable_v<FusedCommDecision>);
 
-}  // namespace crucible::forge::phases::comm
+}  // namespace crucible::forge::_wip::phases::comm

@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 
-#include <crucible/forge/Phases/Comm.h>
+#include <crucible/forge/_wip/Phases/Comm.h>
 
-namespace phase = crucible::forge::phases::comm;
+namespace phase = crucible::forge::_wip::phases::comm;
 namespace ir = crucible::forge::ir001;
 
 using OversubscribedComputeNode = ir::Ir001Node<
