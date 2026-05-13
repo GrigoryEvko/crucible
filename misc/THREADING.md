@@ -2465,7 +2465,7 @@ This appendix walks through one complete domain integration end-to-end: Crucible
 
 ### C.1 The current sequential structure
 
-Crucible's `BackgroundThread` (in `include/crucible/BackgroundThread.h`) currently runs five stages serially in one thread:
+Crucible's `BackgroundThread` (in `include/crucible/ir001/BackgroundThread.h`) currently runs five stages serially in one thread:
 
 ```
 foreground records ops
