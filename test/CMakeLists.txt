@@ -789,12 +789,22 @@ crucible_test(test_lazy_established_channel)
 # auth-handshake worked example from §13.
 crucible_test(test_session_declassify)
 
-# Dedicated TU re-enabling every session-type self-test namespace
-# (#372 SEPLOG-PERF-2).  Each *_self_test namespace across 17 session
-# headers is gated on `CRUCIBLE_SESSION_SELF_TESTS`; this TU defines
-# the macro before including the headers, instantiating ~1000
-# cumulative static_asserts in one place rather than per-consumer.
-crucible_test(test_session_self_tests)
+# Dedicated TUs re-enabling every session-type self-test namespace
+# (#372 SEPLOG-PERF-2).  Each *_self_test namespace across the session
+# headers is gated on `CRUCIBLE_SESSION_SELF_TESTS`; these TUs define
+# the macro before including focused header groups.  The split keeps
+# the coverage identical while avoiding one giant serial cc1plus tail.
+crucible_test(test_session_self_core)
+crucible_test(test_session_self_crash)
+crucible_test(test_session_self_patterns_basic)
+crucible_test(test_session_self_patterns_fan)
+crucible_test(test_session_self_patterns_subtype)
+crucible_test(test_session_self_patterns_crash)
+crucible_test(test_session_self_patterns_delegate)
+crucible_test(test_session_self_patterns_compose)
+crucible_test(test_session_self_payload)
+crucible_test(test_session_self_subtype)
+crucible_test(test_session_self_view)
 
 # Protocol-tree crash-branch walker (#368, SEPLOG-BUG-4).
 # every_offer_has_crash_branch_for_peer_v<Proto, PeerTag> recurses

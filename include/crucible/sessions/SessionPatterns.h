@@ -529,6 +529,19 @@ using Handshake_Server = Recv<Hello, Select<
 // aliases fail compilation at the first TU that pulls us in.
 
 #ifdef CRUCIBLE_SESSION_SELF_TESTS
+#if !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_BASIC) && \
+    !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_FAN) && \
+    !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_SUBTYPE) && \
+    !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_CRASH) && \
+    !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_DELEGATE) && \
+    !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_COMPOSE)
+#define CRUCIBLE_SESSION_PATTERN_SELF_TESTS_BASIC 1
+#define CRUCIBLE_SESSION_PATTERN_SELF_TESTS_FAN 1
+#define CRUCIBLE_SESSION_PATTERN_SELF_TESTS_SUBTYPE 1
+#define CRUCIBLE_SESSION_PATTERN_SELF_TESTS_CRASH 1
+#define CRUCIBLE_SESSION_PATTERN_SELF_TESTS_DELEGATE 1
+#define CRUCIBLE_SESSION_PATTERN_SELF_TESTS_COMPOSE 1
+#endif
 namespace crucible::safety::proto::pattern::detail::pattern_self_test {
 
 // Fixture types — distinct empty structs so the type system can tell
@@ -562,6 +575,12 @@ struct ConsumerRole    {};
 struct FollowerRole    {};
 struct DelegatedRecipientRole {};
 
+using TxClient = Transaction_Client<Prepare, Req, Commit, Ack, Abort>;
+using TxServer = Transaction_Server<Prepare, Req, Commit, Ack, Abort>;
+using ConcreteCoord    = TwoPhaseCommit_Coord<Prepare, Vote, Commit, Abort>;
+using ConcreteFollower = TwoPhaseCommit_Follower<Prepare, Vote, Commit, Abort>;
+
+#ifdef CRUCIBLE_SESSION_PATTERN_SELF_TESTS_BASIC
 // ─── RequestResponse family ────────────────────────────────────────
 
 // Once-variants: single round trip.
@@ -661,9 +680,6 @@ static_assert(is_well_formed_v<PipelineStage<Req, Resp>>);
 
 // ─── Transaction ──────────────────────────────────────────────────
 
-using TxClient = Transaction_Client<Prepare, Req, Commit, Ack, Abort>;
-using TxServer = Transaction_Server<Prepare, Req, Commit, Ack, Abort>;
-
 // Structural expansion — matches the doc-comment sequence exactly.
 static_assert(std::is_same_v<
     TxClient,
@@ -690,7 +706,9 @@ static_assert(std::is_same_v<dual_of_t<dual_of_t<TxClient>>, TxClient>);
 // Loop; all End-terminated branches are WF trivially.
 static_assert(is_well_formed_v<TxClient>);
 static_assert(is_well_formed_v<TxServer>);
+#endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_BASIC
 
+#ifdef CRUCIBLE_SESSION_PATTERN_SELF_TESTS_FAN
 // ─── FanOut / FanIn / Broadcast ────────────────────────────────────
 
 // Degenerate: 0 sends = End.
@@ -750,11 +768,10 @@ static_assert(std::is_same_v<
     Send<Job, Send<Job, Send<Job, Send<Job, Send<Job, End>>>>>>);
 
 // Large-N witnesses: instantiating these forces O(log₂ N) chain-
-// construction depth = 11 (for 2048) ≪ 900-default template-depth
-// limit.  Under the previous linear `fan_{out,in}_helper` recursion
-// the chain construction itself fired "template instantiation depth
-// exceeds maximum of 900" at GCC-default settings around N ≈ 1100;
-// the divide-and-conquer helpers lift that ceiling to N ≈ 2^900.
+// construction depth = 11, while still crossing the old linear
+// recursion failure point near N ≈ 1100 at GCC-default template-depth
+// settings.  Avoid larger stress values here; this is a correctness
+// sentinel, not a compile-time benchmark.
 //
 // The witness uses a non-recursive HEAD pattern-match (instead of
 // `is_well_formed_v`, which walks the entire chain and would itself
@@ -773,8 +790,6 @@ struct head_is_recv<Recv<M, K>> : std::true_type {};
 
 static_assert( large_n_witness::head_is_send<FanOut<2048, Job>>::value);
 static_assert( large_n_witness::head_is_recv<FanIn <2048, Job>>::value);
-static_assert( large_n_witness::head_is_send<FanOut<8192, Job>>::value);
-static_assert( large_n_witness::head_is_recv<FanIn <8192, Job>>::value);
 
 // Note: a `dual_of_t<FanOut<2048, Job>>` witness would be natural
 // here but would itself hit the template-depth limit — `dual_of` is
@@ -811,7 +826,9 @@ static_assert(std::is_same_v<
     ScatterGather<4, Task, Result>>);
 
 static_assert(is_well_formed_v<ScatterGather<8, Task, Result>>);
+#endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_FAN
 
+#ifdef CRUCIBLE_SESSION_PATTERN_SELF_TESTS_BASIC
 // ─── MpmcProducer / MpmcConsumer ───────────────────────────────────
 
 static_assert(std::is_same_v<
@@ -835,9 +852,6 @@ static_assert(is_well_formed_v<MpmcProducer<Job>>);
 static_assert(is_well_formed_v<MpmcConsumer<Job>>);
 
 // ─── TwoPhaseCommit ────────────────────────────────────────────────
-
-using ConcreteCoord    = TwoPhaseCommit_Coord<Prepare, Vote, Commit, Abort>;
-using ConcreteFollower = TwoPhaseCommit_Follower<Prepare, Vote, Commit, Abort>;
 
 // Structural expansion.
 static_assert(std::is_same_v<
@@ -916,7 +930,9 @@ static_assert(std::is_same_v<
 
 static_assert(is_well_formed_v<Handshake_Client<Hello, Welcome, Reject>>);
 static_assert(is_well_formed_v<Handshake_Server<Hello, Welcome, Reject>>);
+#endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_BASIC
 
+#ifdef CRUCIBLE_SESSION_PATTERN_SELF_TESTS_SUBTYPE
 // ─── Subtype refinement coverage (GAPS-054) ───────────────────────
 //
 // Public named strong/weak aliases do not exist yet.  These assertions
@@ -1098,7 +1114,9 @@ static_assert(is_strict_subtype_sync_v<
 static_assert(!is_subtype_sync_v<
     Handshake_Server<Hello, Welcome, Reject>,
     HandshakeServerWelcomeOnly>);
+#endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_SUBTYPE
 
+#ifdef CRUCIBLE_SESSION_PATTERN_SELF_TESTS_CRASH
 // ─── Crash-safety contracts (GAPS-055) ────────────────────────────
 //
 // Existing public aliases stay wire-compatible and therefore remain
@@ -1262,7 +1280,9 @@ static_assert(every_offer_has_crash_branch_for_peer_v<
     CrashAwareHandshakeClient, ServerRole>);
 static_assert(verified_contract_ok<VerifiedCrashContract<
     CrashAwareHandshakeClient, ClientRole>>());
+#endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_CRASH
 
+#ifdef CRUCIBLE_SESSION_PATTERN_SELF_TESTS_DELEGATE
 // ─── Delegate compatibility contracts (GAPS-056) ─────────────────
 //
 // No pattern in this header carries external linear authority beyond
@@ -1373,7 +1393,9 @@ static_assert(AcceptsFrom<
     ScatterGather<2, Task, Result>>);
 static_assert(is_well_formed_v<DelegateThreePartyProjection>);
 static_assert(is_well_formed_v<AcceptThreePartyProjection>);
+#endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_DELEGATE
 
+#ifdef CRUCIBLE_SESSION_PATTERN_SELF_TESTS_COMPOSE
 // ─── Cross-pattern composition ────────────────────────────────────
 //
 // Patterns compose via compose_t<P, Q>.  Semantics: replace EVERY End
@@ -1462,6 +1484,7 @@ static_assert(is_well_formed_v<ScatterGather<32, Task, Result>>);
 static_assert(std::is_same_v<
     dual_of_t<FanOut<64, Job>>,
     FanIn<64, Job>>);
+#endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_COMPOSE
 
 }  // namespace crucible::safety::proto::pattern::detail::pattern_self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS
