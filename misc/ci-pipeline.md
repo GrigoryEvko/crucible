@@ -346,7 +346,7 @@ include/crucible/Cipher.h:128:10: warning [CRUC-W-Linear-002]
    Suggested fix: Linear<ScopedFile> stream
    GAPS task: PROD-WRAP-4 (#533)
 
-include/crucible/ir001/MerkleDag.h:336:5: warning [CRUC-W-Refined-001]
+include/crucible/MerkleDag.h:336:5: warning [CRUC-W-Refined-001]
    ContentHash field with implicit non-zero invariant
    Doc: https://crucible-lint.dev/rules/CRUC-W-Refined-001
    Suggested fix: Refined<non_zero, ContentHash> merkle_hash

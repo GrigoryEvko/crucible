@@ -72,10 +72,10 @@ at the time of writing (2026-05-03). Verified counts at that moment:
 | `include/crucible/canopy/` | **0** | **0** |
 | `include/crucible/network/` | **0** | **0** |
 | `include/crucible/cog/` | **0** | **0** |
-| `include/crucible/ir001/MerkleDag.h` | 1 | 2,006 |
+| `include/crucible/MerkleDag.h` | 1 | 2,006 |
 | `include/crucible/Vigil.h` | 1 | 756 |
 | `include/crucible/Cipher.h` | 1 | 855 |
-| `include/crucible/ir001/TraceGraph.h` | 1 | 201 |
+| `include/crucible/TraceGraph.h` | 1 | 201 |
 
 The networking-related directories are entirely greenfield. The existing substrate (sessions, concurrent, safety, effects, bridges) is what every networking primitive will compose from.
 

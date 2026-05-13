@@ -1062,7 +1062,7 @@ About three hundred lines of refactor; closes tasks #33, #34, #41, #46, #78, #87
 
 ## 30. Transaction → CheckpointedSession + Tagged provenance
 
-`include/crucible/ir001/Transaction.h:28-57` is currently a hand-rolled state machine with explicit begin/commit/abort methods. Task #101 wants it as `Session<TxStatus, ...>`. The integration uses `CheckpointedSession<CommitPath, RollbackPath>` (already shipped in `SessionCheckpoint.h`):
+`include/crucible/Transaction.h:28-57` is currently a hand-rolled state machine with explicit begin/commit/abort methods. Task #101 wants it as `Session<TxStatus, ...>`. The integration uses `CheckpointedSession<CommitPath, RollbackPath>` (already shipped in `SessionCheckpoint.h`):
 
 ```cpp
 using TxnSession = CheckpointedSession<
@@ -1078,7 +1078,7 @@ About two hundred lines; resolves task #101 and #164.
 
 > **SHIPPED-AS marker (added 2026-04-27, partial).** The session-typed wiring SHAPE shipped as `sessions/SpscSession.h` (commit c2ceb86, refined in SPSC-FIX-1..4). This is the framework + tooling: typed-session factories `mint_producer_session<Channel>(handle&)` / `mint_consumer_session<Channel>(handle&)` over `PermissionedSpscChannel<T, N, Tag>`, transport helpers `blocking_push` / `blocking_pop`, integration test `test/test_spsc_session.cpp`, head-to-head bench `bench/bench_spsc_session.cpp`. Asm-comparison capability ships generic via `cmake -DCRUCIBLE_DUMP_ASM=ON`. **Honest scope**: SpscSession.h uses EmptyPermSet by design (TraceRing-shape SPSC streams plain payloads, no wire-permission transfer); the §5 PermSet evolution path is exercised by FOUND-C v1's own integration test. **Still pending**: the production-side switchover — Vigil's recording path, BackgroundThread's drain, MerkleDag's TraceRing consumer, vessel_api's dispatch hot path all still call into `TraceRing.h` directly with hand-coded acquire/release. The TraceRing-internal rewrite (replace TraceRing's atomics with PermissionedSpscChannel internally + plumb the typed handles to consumers) is the still-pending finish of SAFEINT-R31. Adding Tagged<TraceEntry, vessel_trust::Validated> to the wire (§5/§6 composition) is the next layer.
 
-`include/crucible/ir001/TraceRing.h` is a Pinned SPSC ring with hand-coded acquire/release. Task #384 (SEPLOG-INT-1) wants to wire it as a `PermissionedSpscChannel<TraceEntry, N, TraceRingTag>`. The §5/§6 integration extends to add Tagged provenance:
+`include/crucible/TraceRing.h` is a Pinned SPSC ring with hand-coded acquire/release. Task #384 (SEPLOG-INT-1) wants to wire it as a `PermissionedSpscChannel<TraceEntry, N, TraceRingTag>`. The §5/§6 integration extends to add Tagged provenance:
 
 - TraceEntry payloads carry `Tagged<TraceEntry, vessel_trust::Validated>` because they originate at the Vessel FFI boundary (§23).
 - The producer endpoint (Vessel dispatch) holds `Permission<TraceRingTag::Producer>`; the consumer endpoint (bg drain) holds `Permission<TraceRingTag::Consumer>`.
@@ -1121,7 +1121,7 @@ About six hundred lines; resolves #355, #356, #357, #358 (the K-series productio
 
 ## 35. BackgroundThread pipeline → mint_permission_fork + StreamSession
 
-`include/crucible/ir001/BackgroundThread.h` runs a sequential pipeline (drain → build → transform → compile). Task #315 (SEPLOG-D1) wants it as a staged pipeline; the §9 integration uses `session_fork` over a global type `G_BgPipeline` whose roles are the four stages; the §8 integration backs each inter-stage channel with `OwnedRegion<StageMessage, StageTag>`.
+`include/crucible/BackgroundThread.h` runs a sequential pipeline (drain → build → transform → compile). Task #315 (SEPLOG-D1) wants it as a staged pipeline; the §9 integration uses `session_fork` over a global type `G_BgPipeline` whose roles are the four stages; the §8 integration backs each inter-stage channel with `OwnedRegion<StageMessage, StageTag>`.
 
 The refactor:
 - Replace the for-loop dispatcher with a `session_fork` over five roles (drain, build, transform, compile, publish).
