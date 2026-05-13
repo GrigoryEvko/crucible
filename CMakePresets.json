@@ -101,7 +101,10 @@
       "configurePreset": "default",
       "displayName": "Repeat-until-fail ×50 (race condition detector)",
       "output": { "outputOnFailure": true },
-      "execution": { "repeat": { "mode": "until-fail", "count": 50 } }
+      "execution": {
+        "jobs": 16,
+        "repeat": { "mode": "until-fail", "count": 50 }
+      }
     }
   ]
 }
