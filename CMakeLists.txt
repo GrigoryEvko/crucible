@@ -63,6 +63,7 @@ add_library(crucible STATIC
   src/cntp/KtlsOffload.cpp
   src/cntp/MtlsTransport.cpp
   src/cntp/OverlayMulticast.cpp
+  src/cntp/P4.cpp
   src/cntp/PathSwap.cpp
   src/cntp/Pacing.cpp
   src/cntp/QuicTransport.cpp

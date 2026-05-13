@@ -352,6 +352,7 @@ crucible_test(test_sriov)
 crucible_test(test_cntp_gpu_direct)
 crucible_test(test_cntp_sharp)
 crucible_test(test_cntp_doca)
+crucible_test(test_cntp_p4)
 crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
@@ -2892,6 +2893,23 @@ crucible_neg_compile_effects_test(neg_doca_mint_bg_ctx
   "constraints not satisfied|CtxFitsDocaMint|Init")
 crucible_neg_compile_effects_test(neg_doca_send_init_ctx
   "constraints not satisfied|CtxFitsDocaComm|Bg")
+
+# GAPS-145 — cntp/P4.h programmable switch dataplane substrate.
+#   * neg_p4_zero_program_id: P4 program IDs reserve zero.
+#   * neg_p4_zero_source_bytes: admitted P4 source/program artifacts are non-empty.
+#   * neg_p4_zero_tcam_entries: switch TCAM budget requests are positive.
+#   * neg_p4_raw_program_deploy: deployment requires tagged P4 intent.
+#   * neg_p4_mint_bg_ctx: program minting is Init-row work.
+crucible_neg_compile_test(neg_p4_zero_program_id
+  "contract|precondition|non_zero|predicate|static assertion")
+crucible_neg_compile_test(neg_p4_zero_source_bytes
+  "contract|precondition|positive|predicate|static assertion")
+crucible_neg_compile_test(neg_p4_zero_tcam_entries
+  "contract|precondition|positive|predicate|static assertion")
+crucible_neg_compile_test(neg_p4_raw_program_deploy
+  "could not convert|no matching function|DeclaredP4Program|Tagged")
+crucible_neg_compile_effects_test(neg_p4_mint_bg_ctx
+  "constraints not satisfied|CtxFitsP4Mint|Init")
 
 # GAPS-126 — cntp/MtlsTransport.h mutual-TLS federation policy substrate.
 #   * neg_mtls_tls12_config: TLS 1.2 cannot mint a declared mTLS config.

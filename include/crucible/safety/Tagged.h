@@ -250,6 +250,10 @@ namespace source {
     // identities cannot directly deploy code onto BlueField/Pensando-class
     // devices.
     struct DocaOffload {};
+    // P4Compiled: CNT-P programmable-switch intent admitted through
+    // cntp/P4.h. Raw P4 source byte counts, resource budgets, and switch
+    // identities cannot directly deploy code onto switch ASIC dataplanes.
+    struct P4Compiled {};
 }
 
 namespace trust {
