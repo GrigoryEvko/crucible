@@ -330,6 +330,65 @@ namespace detail {
                                                std::uint64_t v) noexcept {
     return fmix64(h ^ (v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2)));
 }
+
+template <typename E>
+[[nodiscard]] constexpr std::uint64_t enum_hash_word(E value) noexcept {
+    return static_cast<std::uint64_t>(
+        static_cast<std::int64_t>(std::to_underlying(value)));
+}
+
+[[nodiscard]] constexpr std::uint64_t hash_tensor_meta(
+    std::uint64_t h, TensorMeta const& meta) noexcept {
+    h = hash_mix(h, meta.ndim);
+    h = hash_mix(h, enum_hash_word(meta.dtype));
+    h = hash_mix(h, enum_hash_word(meta.device_type));
+    h = hash_mix(h, static_cast<std::uint64_t>(
+        static_cast<std::int64_t>(meta.device_idx)));
+    h = hash_mix(h, enum_hash_word(meta.layout));
+    h = hash_mix(h, meta.requires_grad ? 1U : 0U);
+    h = hash_mix(h, meta.flags);
+    h = hash_mix(h, meta.output_nr);
+    h = hash_mix(h, static_cast<std::uint64_t>(meta.storage_offset));
+    h = hash_mix(h, meta.version);
+    h = hash_mix(h, meta.storage_nbytes);
+    for (std::uint8_t i = 0; i < kMaxTensorNDim; ++i) {
+        h = hash_mix(h, static_cast<std::uint64_t>(meta.sizes[i].value()));
+        h = hash_mix(h, static_cast<std::uint64_t>(meta.strides[i].value()));
+    }
+    return h;
+}
+
+[[nodiscard]] constexpr std::uint64_t hash_tensor_port(
+    std::uint64_t h, TensorPort const& port) noexcept {
+    h = hash_tensor_meta(h, port.meta);
+    return hash_mix(h, port.slot.raw());
+}
+
+[[nodiscard]] constexpr std::uint64_t hash_cog_identity(
+    std::uint64_t h, cog::CogIdentity const& peer) noexcept {
+    h = hash_mix(h, peer.uuid.hi);
+    h = hash_mix(h, peer.uuid.lo);
+    h = hash_mix(h, enum_hash_word(peer.level));
+    return hash_mix(h, enum_hash_word(peer.kind));
+}
+
+[[nodiscard]] constexpr std::uint64_t hash_peer_set(
+    std::uint64_t h, PeerSetRef const& participants) noexcept {
+    auto const peers = participants.peers.value();
+    h = hash_mix(h, participants.count.value());
+    h = hash_mix(h, peers.size());
+    auto const declared = static_cast<std::size_t>(participants.count.value());
+    auto const n = peers.size() < declared ? peers.size() : declared;
+    for (std::size_t i = 0; i < n; ++i) {
+        h = hash_cog_identity(h, peers[i]);
+    }
+    return h;
+}
+
+[[nodiscard]] constexpr std::uint64_t hash_recipe_semantics(
+    std::uint64_t h, NumericalRecipe const& recipe) noexcept {
+    return hash_mix(h, compute_recipe_hash(recipe).raw());
+}
 }  // namespace detail
 
 template <Ir001OpKind Kind, class Attrs, class Row = effects::Row<>>
@@ -415,19 +474,24 @@ template <Ir001NodeLike Node>
     h = detail::hash_mix(h, std::to_underlying(Node::kind));
     h = detail::hash_mix(h, sizeof(typename Node::attrs_type));
     if constexpr (std::same_as<typename Node::attrs_type, CollectiveAttrs>) {
-        h = detail::hash_mix(h, node.attrs.participants.count.value());
-        h = detail::hash_mix(h, std::to_underlying(node.attrs.recipe.determinism));
+        h = detail::hash_tensor_port(h, node.attrs.input);
+        h = detail::hash_tensor_port(h, node.attrs.output);
+        h = detail::hash_peer_set(h, node.attrs.participants);
+        h = detail::hash_recipe_semantics(h, node.attrs.recipe);
         h = detail::hash_mix(h, std::to_underlying(node.attrs.algorithm));
     } else if constexpr (std::same_as<typename Node::attrs_type,
                                       PointToPointAttrs>) {
+        h = detail::hash_tensor_port(h, node.attrs.payload);
+        h = detail::hash_cog_identity(h, node.attrs.peer);
         h = detail::hash_mix(h, node.attrs.timeout_ms.value());
     } else if constexpr (std::same_as<typename Node::attrs_type,
                                       BarrierAttrs>) {
-        h = detail::hash_mix(h, node.attrs.participants.count.value());
+        h = detail::hash_peer_set(h, node.attrs.participants);
         h = detail::hash_mix(h, node.attrs.quorum.value());
         h = detail::hash_mix(h, node.attrs.timeout_ms.value());
     } else if constexpr (std::same_as<typename Node::attrs_type,
                                       StorageAttrs>) {
+        h = detail::hash_tensor_port(h, node.attrs.tensor);
         h = detail::hash_mix(h, node.attrs.object.raw());
     } else if constexpr (std::same_as<typename Node::attrs_type,
                                       TelemetryAttrs>) {
