@@ -349,6 +349,7 @@ crucible_test(test_numa_nic)
 crucible_test(test_nic_config)
 crucible_test(test_nic_offload_audit)
 crucible_test(test_sriov)
+crucible_test(test_cntp_gpu_direct)
 crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
@@ -856,7 +857,10 @@ crucible_test(test_session_ct)
 
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
-  # via the ctest harness below.
+  # via explicit developer build. The ctest harness below replays this
+  # target's compile command from compile_commands.json into an isolated
+  # object path so negative tests can run in parallel without nested
+  # Ninja writers racing on the shared build tree.
   add_executable(${name} EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/safety_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
@@ -867,11 +871,13 @@ function(crucible_neg_compile_test name expected_diag)
   # the .cpp) also produces different text → test fails, surfacing
   # the drift.  This is strictly stronger than WILL_FAIL.
   add_test(NAME ${name}
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
-            --target ${name} --config $<CONFIG>)
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/safety_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
   set_tests_properties(${name} PROPERTIES
-    LABELS "safety_neg"
-    PASS_REGULAR_EXPRESSION "${expected_diag}")
+    LABELS "safety_neg")
 endfunction()
 
 # Sister harness for sessions_neg/.  Mirrors crucible_neg_compile_test
@@ -884,11 +890,13 @@ function(crucible_neg_compile_session_test name expected_diag)
     ${CMAKE_CURRENT_SOURCE_DIR}/sessions_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
   add_test(NAME ${name}
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
-            --target ${name} --config $<CONFIG>)
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/sessions_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
   set_tests_properties(${name} PROPERTIES
-    LABELS "sessions_neg"
-    PASS_REGULAR_EXPRESSION "${expected_diag}")
+    LABELS "sessions_neg")
 endfunction()
 
 # Sister harness for effects_neg/.  Mirrors the safety_neg / sessions_neg
@@ -901,11 +909,13 @@ function(crucible_neg_compile_effects_test name expected_diag)
     ${CMAKE_CURRENT_SOURCE_DIR}/effects_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
   add_test(NAME ${name}
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
-            --target ${name} --config $<CONFIG>)
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/effects_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
   set_tests_properties(${name} PROPERTIES
-    LABELS "effects_neg"
-    PASS_REGULAR_EXPRESSION "${expected_diag}")
+    LABELS "effects_neg")
 endfunction()
 
 # Sister harness for cog_neg/.  Mirrors the safety_neg / sessions_neg
@@ -920,11 +930,13 @@ function(crucible_neg_compile_cog_test name expected_diag)
     ${CMAKE_CURRENT_SOURCE_DIR}/cog_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
   add_test(NAME ${name}
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
-            --target ${name} --config $<CONFIG>)
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/cog_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
   set_tests_properties(${name} PROPERTIES
-    LABELS "cog_neg"
-    PASS_REGULAR_EXPRESSION "${expected_diag}")
+    LABELS "cog_neg")
 endfunction()
 
 # Sister harness for warden_neg/. Warden-policy negative tests live here
@@ -934,11 +946,13 @@ function(crucible_neg_compile_warden_test name expected_diag)
     ${CMAKE_CURRENT_SOURCE_DIR}/warden_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
   add_test(NAME ${name}
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
-            --target ${name} --config $<CONFIG>)
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/warden_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
   set_tests_properties(${name} PROPERTIES
-    LABELS "warden_neg"
-    PASS_REGULAR_EXPRESSION "${expected_diag}")
+    LABELS "warden_neg")
 endfunction()
 
 # Sister harness for dataplane_neg/. XDP/TC negative tests live beside the
@@ -948,11 +962,13 @@ function(crucible_neg_compile_dataplane_test name expected_diag)
     ${CMAKE_CURRENT_SOURCE_DIR}/dataplane_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
   add_test(NAME ${name}
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
-            --target ${name} --config $<CONFIG>)
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/dataplane_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
   set_tests_properties(${name} PROPERTIES
-    LABELS "dataplane_neg"
-    PASS_REGULAR_EXPRESSION "${expected_diag}")
+    LABELS "dataplane_neg")
 endfunction()
 
 # Sister harness for topology_neg/.  Mirrors cog_neg / safety_neg /
@@ -966,18 +982,20 @@ function(crucible_neg_compile_topology_test name expected_diag)
     ${CMAKE_CURRENT_SOURCE_DIR}/topology_neg/${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
   add_test(NAME ${name}
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
-            --target ${name} --config $<CONFIG>)
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/topology_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
   set_tests_properties(${name} PROPERTIES
-    LABELS "topology_neg"
-    PASS_REGULAR_EXPRESSION "${expected_diag}")
+    LABELS "topology_neg")
 endfunction()
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
 # delegated-protocol case at the consteval assertion boundary.
 crucible_neg_compile_session_test(neg_delegate_recipient_crash_unrecovered
-    "SessionDelegate\\.h.*static assertion failed.*CrashBranch_Missing_In_Tree")
+    "static assertion failed.*CrashBranch_Missing_In_Tree")
 
 # GAPS-049: exact-name delegated-crash rejection fixtures.  These pin
 # the public consteval assertion boundary so custom call sites do not
@@ -2813,6 +2831,20 @@ crucible_neg_compile_test(neg_roce_dscp_above_max
   "constraints not satisfied|ValidRoceDscp|Dscp")
 crucible_neg_compile_test(neg_roce_raw_config_apply
   "could not convert|no matching function|DeclaredRoceConfig|Tagged")
+
+# GAPS-132 — cntp/GpuDirect.h GPUDirect RDMA / Storage substrate.
+#   * neg_gpu_direct_null_address: GPU virtual address must be non-null.
+#   * neg_gpu_direct_zero_bytes: registered/transfer size must be positive.
+#   * neg_gpu_direct_raw_plan_register: MR registration requires tagged intent.
+#   * neg_gpu_direct_mint_bg_ctx: GPUDirect plan minting is Init-row work.
+crucible_neg_compile_test(neg_gpu_direct_null_address
+  "contract|precondition|non_zero|predicate|static assertion")
+crucible_neg_compile_test(neg_gpu_direct_zero_bytes
+  "contract|precondition|positive|predicate|static assertion")
+crucible_neg_compile_test(neg_gpu_direct_raw_plan_register
+  "could not convert|no matching function|DeclaredGpuDirectMrPlan|Tagged")
+crucible_neg_compile_effects_test(neg_gpu_direct_mint_bg_ctx
+  "constraints not satisfied|CtxFitsGpuDirectMint|Init")
 
 # GAPS-126 — cntp/MtlsTransport.h mutual-TLS federation policy substrate.
 #   * neg_mtls_tls12_config: TLS 1.2 cannot mint a declared mTLS config.

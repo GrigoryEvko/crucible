@@ -236,6 +236,10 @@ namespace source {
     // the physical NIC boundary. Raw VF counts, MACs, VLAN ids, and QoS
     // knobs cannot directly drive privileged SR-IOV mutation.
     struct SrIov {};
+    // GpuDirect: CNT-P GPU-peer DMA intent admitted through cntp/GpuDirect.h.
+    // Raw GPU virtual addresses, byte counts, access masks, and topology
+    // facts cannot directly drive peer-memory MR registration or storage I/O.
+    struct GpuDirect {};
 }
 
 namespace trust {
