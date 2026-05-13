@@ -240,6 +240,11 @@ namespace source {
     // Raw GPU virtual addresses, byte counts, access masks, and topology
     // facts cannot directly drive peer-memory MR registration or storage I/O.
     struct GpuDirect {};
+    // Sharp: CNT-P in-network reduction intent admitted through
+    // cntp/Sharp.h. Raw switch identities, participant counts, and
+    // recipe traits cannot directly drive SHARP context creation or
+    // in-fabric all-reduce dispatch.
+    struct Sharp {};
 }
 
 namespace trust {

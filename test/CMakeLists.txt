@@ -350,6 +350,7 @@ crucible_test(test_nic_config)
 crucible_test(test_nic_offload_audit)
 crucible_test(test_sriov)
 crucible_test(test_cntp_gpu_direct)
+crucible_test(test_cntp_sharp)
 crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
@@ -2845,6 +2846,23 @@ crucible_neg_compile_test(neg_gpu_direct_raw_plan_register
   "could not convert|no matching function|DeclaredGpuDirectMrPlan|Tagged")
 crucible_neg_compile_effects_test(neg_gpu_direct_mint_bg_ctx
   "constraints not satisfied|CtxFitsGpuDirectMint|Init")
+
+# GAPS-133 — cntp/Sharp.h in-network reduction substrate.
+#   * neg_sharp_zero_participants: SHARP fabric participants are positive.
+#   * neg_sharp_raw_plan_dispatch: dispatch requires tagged Sharp intent.
+#   * neg_sharp_strict_recipe_concept: BITEXACT_STRICT cannot enter SHARP.
+#   * neg_sharp_mint_bg_ctx: fabric context minting is Init-row work.
+#   * neg_sharp_dispatch_init_ctx: all-reduce dispatch is Bg-row work.
+crucible_neg_compile_test(neg_sharp_zero_participants
+  "contract|precondition|positive|predicate|static assertion")
+crucible_neg_compile_test(neg_sharp_raw_plan_dispatch
+  "could not convert|no matching function|DeclaredSharpFabricPlan|Tagged")
+crucible_neg_compile_test(neg_sharp_strict_recipe_concept
+  "constraints not satisfied|SharpEligibleRecipe|BITEXACT_STRICT|determinism")
+crucible_neg_compile_effects_test(neg_sharp_mint_bg_ctx
+  "constraints not satisfied|CtxFitsSharpMint|Init")
+crucible_neg_compile_effects_test(neg_sharp_dispatch_init_ctx
+  "constraints not satisfied|CtxFitsSharpDispatch|Bg")
 
 # GAPS-126 — cntp/MtlsTransport.h mutual-TLS federation policy substrate.
 #   * neg_mtls_tls12_config: TLS 1.2 cannot mint a declared mTLS config.
