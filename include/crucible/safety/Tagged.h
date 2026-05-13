@@ -245,6 +245,11 @@ namespace source {
     // recipe traits cannot directly drive SHARP context creation or
     // in-fabric all-reduce dispatch.
     struct Sharp {};
+    // DocaOffload: CNT-P DPU / SmartNIC offload intent admitted through
+    // cntp/Doca.h. Raw program IDs, byte counts, queue depths, and DPU
+    // identities cannot directly deploy code onto BlueField/Pensando-class
+    // devices.
+    struct DocaOffload {};
 }
 
 namespace trust {

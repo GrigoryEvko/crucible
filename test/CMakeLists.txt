@@ -351,6 +351,7 @@ crucible_test(test_nic_offload_audit)
 crucible_test(test_sriov)
 crucible_test(test_cntp_gpu_direct)
 crucible_test(test_cntp_sharp)
+crucible_test(test_cntp_doca)
 crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
@@ -2871,6 +2872,26 @@ crucible_neg_compile_effects_test(neg_sharp_mint_bg_ctx
   "constraints not satisfied|CtxFitsSharpMint|Init")
 crucible_neg_compile_effects_test(neg_sharp_dispatch_init_ctx
   "constraints not satisfied|CtxFitsSharpDispatch|Bg")
+
+# GAPS-144 — cntp/Doca.h DPU / SmartNIC offload substrate.
+#   * neg_doca_zero_program_id: DOCA program IDs reserve zero.
+#   * neg_doca_zero_image_bytes: offload images must be non-empty.
+#   * neg_doca_zero_queue_depth: DPU queues must have positive depth.
+#   * neg_doca_raw_plan_deploy: deploy requires tagged DOCA intent.
+#   * neg_doca_mint_bg_ctx: deployment-plan minting is Init-row work.
+#   * neg_doca_send_init_ctx: DPU communication is Bg-row work.
+crucible_neg_compile_test(neg_doca_zero_program_id
+  "contract|precondition|non_zero|predicate|static assertion")
+crucible_neg_compile_test(neg_doca_zero_image_bytes
+  "contract|precondition|positive|predicate|static assertion")
+crucible_neg_compile_test(neg_doca_zero_queue_depth
+  "contract|precondition|positive|predicate|static assertion")
+crucible_neg_compile_test(neg_doca_raw_plan_deploy
+  "could not convert|no matching function|DeclaredDocaDeployPlan|Tagged")
+crucible_neg_compile_effects_test(neg_doca_mint_bg_ctx
+  "constraints not satisfied|CtxFitsDocaMint|Init")
+crucible_neg_compile_effects_test(neg_doca_send_init_ctx
+  "constraints not satisfied|CtxFitsDocaComm|Bg")
 
 # GAPS-126 — cntp/MtlsTransport.h mutual-TLS federation policy substrate.
 #   * neg_mtls_tls12_config: TLS 1.2 cannot mint a declared mTLS config.
