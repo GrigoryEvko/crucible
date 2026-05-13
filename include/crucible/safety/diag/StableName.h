@@ -107,7 +107,7 @@
 // FOUND-E09 — stable_function_id<FnPtr>
 // FOUND-E10 — canonicalize_pack<Ts...>
 
-#include <crucible/ir001/Expr.h>             // detail::fmix64
+#include <crucible/Expr.h>             // detail::fmix64
 #include <crucible/Platform.h>
 
 #include <array>

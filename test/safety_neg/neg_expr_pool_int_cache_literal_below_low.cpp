@@ -5,7 +5,7 @@
 // must reject the value immediately below the closed interval so
 // `int_cache_[val - kIntCacheLow]` cannot underflow.
 
-#include <crucible/ir001/ExprPool.h>
+#include <crucible/ExprPool.h>
 
 int main() {
   constexpr crucible::ExprPool::IntCacheLiteral bad{-129};

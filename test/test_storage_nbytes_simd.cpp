@@ -21,8 +21,8 @@
 //  10. Bit-equality across hundreds of well-bounded random inputs
 // ═══════════════════════════════════════════════════════════════════
 
-#include <crucible/ir001/StorageNbytes.h>
-#include <crucible/ir001/TensorMeta.h>
+#include <crucible/StorageNbytes.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 
 #include <array>

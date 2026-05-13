@@ -2,7 +2,7 @@
 
 #include <cstdio>
 
-#include <crucible/ir001/TraceRing.h>
+#include <crucible/TraceRing.h>
 
 #include "bench_harness.h"
 

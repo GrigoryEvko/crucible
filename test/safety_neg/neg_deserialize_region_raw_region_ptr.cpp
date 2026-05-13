@@ -12,7 +12,7 @@
 //   * This fixture: Tagged -> raw RegionNode* implicit extraction rejected.
 //   * Companion: Loaded -> External cross-tag assignment rejected.
 
-#include <crucible/ir001/Serialize.h>
+#include <crucible/Serialize.h>
 
 int main() {
   crucible::Arena arena{1024};

@@ -30,14 +30,14 @@
 //   declaration order, bg_ is destroyed FIRST, joining the background
 //   thread before the above members are invalidated.
 
-#include <crucible/ir001/BackgroundThread.h>
+#include <crucible/BackgroundThread.h>
 #include <crucible/Cipher.h>
-#include <crucible/ir001/CrucibleContext.h>
-#include <crucible/ir001/MetaLog.h>
-#include <crucible/ir001/MerkleDag.h>
-#include <crucible/ir001/RegionCache.h>
-#include <crucible/ir001/TraceRing.h>
-#include <crucible/ir001/Transaction.h>
+#include <crucible/CrucibleContext.h>
+#include <crucible/MetaLog.h>
+#include <crucible/MerkleDag.h>
+#include <crucible/RegionCache.h>
+#include <crucible/TraceRing.h>
+#include <crucible/Transaction.h>
 #include <crucible/bridges/MachineSessionBridge.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>

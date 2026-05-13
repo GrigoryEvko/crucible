@@ -6,7 +6,7 @@
 // is the core state-discipline guarantee: once the table is sealed,
 // no call site can reach register_name via the typed path.
 
-#include <crucible/ir001/SchemaTable.h>
+#include <crucible/SchemaTable.h>
 
 int main() {
     crucible::SchemaTable t;

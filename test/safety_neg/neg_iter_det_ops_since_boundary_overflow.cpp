@@ -26,7 +26,7 @@
 // overflow) cover different drift modes; both fixtures together pin
 // the wrapper's contracts.
 
-#include <crucible/ir001/IterationDetector.h>
+#include <crucible/IterationDetector.h>
 
 #include <climits>
 #include <cstdint>

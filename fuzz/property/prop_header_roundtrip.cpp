@@ -24,8 +24,8 @@
 #include "property_runner.h"
 #include "random_input.h"
 
-#include <crucible/ir001/MerkleDag.h>
-#include <crucible/ir001/Serialize.h>
+#include <crucible/MerkleDag.h>
+#include <crucible/Serialize.h>
 
 #include <array>
 #include <cstdint>

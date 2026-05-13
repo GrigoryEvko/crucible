@@ -24,7 +24,7 @@
 // modes — see the companion fixture's docstring for the symmetric
 // rationale.
 
-#include <crucible/ir001/IterationDetector.h>
+#include <crucible/IterationDetector.h>
 
 #include <climits>
 #include <cstdint>

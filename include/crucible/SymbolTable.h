@@ -8,7 +8,7 @@
 // Designed to hold everything the Simplifier needs for range-based
 // rewriting without calling back into Python.
 
-#include <crucible/ir001/Ops.h>
+#include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Bits.h>

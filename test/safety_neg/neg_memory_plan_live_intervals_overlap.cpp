@@ -34,7 +34,7 @@
 //   "non-constant condition" / "not a constant expression" /
 //   "must be initialized by a constant expression".
 
-#include <crucible/ir001/MerkleDag.h>
+#include <crucible/MerkleDag.h>
 
 #include <array>
 #include <cstdint>

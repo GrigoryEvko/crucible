@@ -3,8 +3,8 @@
 // paths (mid-match break with overlap, two-match confirmation, K=5
 // signature build) deserve explicit coverage.
 
-#include <crucible/ir001/IterationDetector.h>
-#include <crucible/ir001/IterationDetectorState.h>
+#include <crucible/IterationDetector.h>
+#include <crucible/IterationDetectorState.h>
 #include <crucible/safety/ScopedView.h>
 
 #include "test_assert.h"

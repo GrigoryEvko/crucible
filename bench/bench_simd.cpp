@@ -19,9 +19,9 @@
 #include <cstdint>
 #include <cstdio>
 
-#include <crucible/ir001/DimHash.h>
-#include <crucible/ir001/StorageNbytes.h>
-#include <crucible/ir001/TensorMeta.h>
+#include <crucible/DimHash.h>
+#include <crucible/StorageNbytes.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Simd.h>
 

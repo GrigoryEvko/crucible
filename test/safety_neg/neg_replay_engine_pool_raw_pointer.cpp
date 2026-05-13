@@ -6,7 +6,7 @@
 //
 // Expected diagnostic: no init overload accepting PoolAllocator*.
 
-#include <crucible/ir001/ReplayEngine.h>
+#include <crucible/ReplayEngine.h>
 
 int main() {
   crucible::ReplayEngine engine{};

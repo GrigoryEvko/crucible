@@ -16,7 +16,7 @@
 // MetaLog reference plus an empty Permission token, so release-mode
 // handle size remains one pointer.
 
-#include <crucible/ir001/MetaLog.h>
+#include <crucible/MetaLog.h>
 #include <crucible/permissions/Permission.h>
 
 #include <algorithm>

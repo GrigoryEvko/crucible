@@ -20,7 +20,7 @@
 
 #include "../../vessel/torch/vessel_api_typed.h"
 
-#include <crucible/ir001/TensorMeta.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/safety/Tagged.h>
 
 using crucible::TensorMeta;

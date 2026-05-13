@@ -1,5 +1,5 @@
 #include <crucible/Reflect.h>
-#include <crucible/ir001/MerkleDag.h>
+#include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
 #include "test_assert.h"

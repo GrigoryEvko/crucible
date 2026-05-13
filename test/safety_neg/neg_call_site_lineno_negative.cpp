@@ -21,7 +21,7 @@
 // of "≥ 0", which would falsely admit -1 == 0 - 1 if the comparison
 // got rewritten).  Companion fixture (_int_min) covers wide miss.
 
-#include <crucible/ir001/CallSiteTable.h>
+#include <crucible/CallSiteTable.h>
 
 int main() {
     // constexpr forces constant evaluation of the ctor's pre clause.

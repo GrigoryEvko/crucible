@@ -1,5 +1,5 @@
 #include <crucible/PoolAllocator.h>
-#include <crucible/ir001/BackgroundThread.h>
+#include <crucible/BackgroundThread.h>
 #include <crucible/effects/Capabilities.h>
 #include "test_assert.h"
 #include <bit>

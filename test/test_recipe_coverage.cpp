@@ -51,7 +51,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Arena.h>
-#include <crucible/ir001/CKernel.h>
+#include <crucible/CKernel.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>

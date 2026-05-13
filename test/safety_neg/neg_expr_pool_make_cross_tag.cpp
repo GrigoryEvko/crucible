@@ -6,7 +6,7 @@
 //
 // Expected diagnostic: no conversion from ExternalExpr to PureInternedExpr.
 
-#include <crucible/ir001/ExprPool.h>
+#include <crucible/ExprPool.h>
 
 namespace saf = crucible::safety;
 

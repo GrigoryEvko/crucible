@@ -7,7 +7,7 @@
 // when built via the project presets.
 
 #include <crucible/Platform.h>
-#include <crucible/ir001/Expr.h> // detail::fmix64
+#include <crucible/Expr.h> // detail::fmix64
 
 #include <bit>
 #include <cstdint>

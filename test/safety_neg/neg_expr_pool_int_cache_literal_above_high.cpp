@@ -5,7 +5,7 @@
 // must reject the value immediately above the closed interval so
 // `int_cache_[val - kIntCacheLow]` cannot index past 255.
 
-#include <crucible/ir001/ExprPool.h>
+#include <crucible/ExprPool.h>
 
 int main() {
   constexpr crucible::ExprPool::IntCacheLiteral bad{128};

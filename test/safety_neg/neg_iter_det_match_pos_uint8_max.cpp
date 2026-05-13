@@ -21,7 +21,7 @@
 // miss fixture, but fails the boundary one; vice versa for "drop the
 // upper bound entirely".  Both fixtures together pin the gate.
 
-#include <crucible/ir001/IterationDetector.h>
+#include <crucible/IterationDetector.h>
 
 int main() {
     // Wide miss: 255 fits in the underlying uint8_t but vastly

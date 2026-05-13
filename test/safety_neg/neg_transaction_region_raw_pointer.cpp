@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: no commit overload accepting raw RegionNode*.
 
-#include <crucible/ir001/Transaction.h>
+#include <crucible/Transaction.h>
 
 int main() {
   crucible::TransactionLog<16> log{};

@@ -6,7 +6,7 @@
 #include <cstring>
 
 #include <crucible/Platform.h>
-#include <crucible/ir001/MerkleDag.h>
+#include <crucible/MerkleDag.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/warden/Registry.h>

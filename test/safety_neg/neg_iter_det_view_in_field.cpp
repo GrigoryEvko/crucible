@@ -29,7 +29,7 @@
 //
 // Together they pin BOTH soundness gates of WRAP-IterDet-4.
 
-#include <crucible/ir001/IterationDetectorState.h>
+#include <crucible/IterationDetectorState.h>
 
 // A struct with a ScopedView field — the audit walks its members
 // recursively and finds an iter_det Steady view.  No constructor is

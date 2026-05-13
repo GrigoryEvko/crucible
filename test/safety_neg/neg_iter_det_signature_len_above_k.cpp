@@ -22,7 +22,7 @@
 // fires but this one would silently pass.  Both fixtures together
 // pin the upper bound exactly at K.
 
-#include <crucible/ir001/IterationDetector.h>
+#include <crucible/IterationDetector.h>
 
 #include <cstdint>
 

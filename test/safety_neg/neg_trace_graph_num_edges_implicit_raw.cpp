@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: no implicit conversion to uint32_t.
 
-#include <crucible/ir001/TraceGraph.h>
+#include <crucible/TraceGraph.h>
 
 int main() {
   crucible::TraceGraph g{};

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <crucible/Arena.h>
-#include <crucible/ir001/Expr.h>
-#include <crucible/ir001/Ops.h>
+#include <crucible/Expr.h>
+#include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/SwissTable.h>
 #include <crucible/safety/Mutation.h>

@@ -17,7 +17,7 @@
 // fixtures, per the HS14 mandate adapted for predicate libraries:
 // each fixture demonstrates a distinct mismatch class.
 
-#include <crucible/ir001/Expr.h>  // for crucible::detail::fmix64 in fmix_* witnesses
+#include <crucible/Expr.h>  // for crucible::detail::fmix64 in fmix_* witnesses
 #include <crucible/algebra/lattices/CipherTierLattice.h>
 #include <crucible/algebra/lattices/DetSafeLattice.h>
 #include <crucible/algebra/lattices/HotPathLattice.h>

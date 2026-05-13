@@ -11,7 +11,7 @@
 //
 // Uses SugiyamaLayout for both intra-block and inter-block positioning.
 
-#include <crucible/ir001/MerkleDag.h>
+#include <crucible/MerkleDag.h>
 #include <crucible/vis/BlockDetector.h>
 #include <crucible/vis/SugiyamaLayout.h>
 #include <crucible/vis/SvgRenderer.h>

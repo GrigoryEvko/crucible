@@ -15,7 +15,7 @@
 //   * This fixture: cross-tag assignment rejected because
 //     Tagged<T, Sanitized> is not Tagged<T, External>.
 
-#include <crucible/ir001/SchemaTable.h>
+#include <crucible/SchemaTable.h>
 #include <crucible/safety/Tagged.h>
 
 int main() {

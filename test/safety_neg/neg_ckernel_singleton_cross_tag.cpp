@@ -4,7 +4,7 @@
 // provenance lanes.  A value tagged as External must not satisfy a
 // singleton-only CKernelTable consumer.
 
-#include <crucible/ir001/CKernel.h>
+#include <crucible/CKernel.h>
 
 static void needs_singleton(crucible::CKernelTableSingleton) {}
 

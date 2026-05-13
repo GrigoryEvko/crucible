@@ -1,6 +1,6 @@
 #include <crucible/Graph.h>
 #include <crucible/effects/Capabilities.h>
-#include <crucible/ir001/ExprPool.h>
+#include <crucible/ExprPool.h>
 #include <crucible/Types.h>
 #include "test_assert.h"
 #include <cstdio>

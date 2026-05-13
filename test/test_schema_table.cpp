@@ -2,7 +2,7 @@
 // search.  Validates insertion order independence, short_name aten::
 // prefix stripping, idempotent re-register, and capacity bounds.
 
-#include <crucible/ir001/SchemaTable.h>
+#include <crucible/SchemaTable.h>
 
 #include "test_assert.h"
 

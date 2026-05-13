@@ -55,8 +55,8 @@
 #include "vessel_api.h"
 
 #include <crucible/Platform.h>
-#include <crucible/ir001/SchemaTable.h>
-#include <crucible/ir001/TensorMeta.h>
+#include <crucible/SchemaTable.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
 #include <crucible/safety/Tagged.h>

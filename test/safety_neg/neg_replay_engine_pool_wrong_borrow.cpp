@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: no init overload accepting BorrowedRef<RegionNode>.
 
-#include <crucible/ir001/ReplayEngine.h>
+#include <crucible/ReplayEngine.h>
 
 int main() {
   crucible::ReplayEngine engine{};

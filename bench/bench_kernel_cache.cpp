@@ -1,4 +1,4 @@
-#include <crucible/ir001/MerkleDag.h>
+#include <crucible/MerkleDag.h>
 
 #include "bench_harness.h"
 

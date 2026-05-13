@@ -21,7 +21,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
-#include <crucible/ir001/TraceRing.h>
+#include <crucible/TraceRing.h>
 
 #include <atomic>
 #include "test_assert.h"

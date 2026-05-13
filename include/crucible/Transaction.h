@@ -15,7 +15,7 @@
 // (the writes use seq-cst via std::atomic where needed — here we keep it
 // simple since both reader and writer are the same background thread).
 
-#include <crucible/ir001/MerkleDag.h>
+#include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Mutation.h>

@@ -7,7 +7,7 @@
 //
 // Expected diagnostic: no assignment operator from raw size_t.
 
-#include <crucible/ir001/ExprPool.h>
+#include <crucible/ExprPool.h>
 
 int main() {
   crucible::ExprPool::InternCount count{std::size_t{0}};

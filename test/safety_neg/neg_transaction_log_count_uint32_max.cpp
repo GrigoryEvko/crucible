@@ -31,7 +31,7 @@
 // Per HS14, ≥2 negative-compile fixtures per new soundness gate,
 // each demonstrating a distinct mismatch class.
 
-#include <crucible/ir001/Transaction.h>
+#include <crucible/Transaction.h>
 
 #include <climits>
 #include <cstdint>

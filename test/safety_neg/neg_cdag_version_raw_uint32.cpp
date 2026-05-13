@@ -11,7 +11,7 @@
 //   * This fixture: Tagged -> raw uint32_t implicit extraction rejected.
 //   * Companion: FormatVersion -> External retag rejected.
 
-#include <crucible/ir001/Serialize.h>
+#include <crucible/Serialize.h>
 
 #include <cstdint>
 

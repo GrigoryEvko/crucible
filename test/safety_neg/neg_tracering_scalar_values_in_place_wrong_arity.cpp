@@ -20,7 +20,7 @@
 //
 // Two fixtures cover both directions of the new soundness gate per HS14.
 
-#include <crucible/ir001/TraceRing.h>
+#include <crucible/TraceRing.h>
 
 int main() {
     // Brace-init with 6 arguments hits FixedArray's variadic ctor:

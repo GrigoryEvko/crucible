@@ -4,7 +4,7 @@
 // CKernelTableSingleton, not a raw CKernelTable*.  A raw pointer cannot
 // enter a singleton-only consumer without explicit provenance tagging.
 
-#include <crucible/ir001/CKernel.h>
+#include <crucible/CKernel.h>
 
 static void needs_singleton(crucible::CKernelTableSingleton) {}
 

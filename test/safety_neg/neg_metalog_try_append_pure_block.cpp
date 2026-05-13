@@ -14,7 +14,7 @@
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
 // IsPure<Row<Effect::Block>>.
 
-#include <crucible/ir001/MetaLog.h>
+#include <crucible/MetaLog.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 

@@ -70,7 +70,7 @@
 // sizeof(void*); the tag carries no storage.  Construction pays
 // one runtime `view_ok` check; downstream consumers pay zero.
 
-#include <crucible/ir001/IterationDetector.h>
+#include <crucible/IterationDetector.h>
 #include <crucible/safety/ScopedView.h>
 
 #include <type_traits>

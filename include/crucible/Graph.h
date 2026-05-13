@@ -12,8 +12,8 @@
 // emittable to CUDA C++.
 
 #include <crucible/Arena.h>
-#include <crucible/ir001/CKernel.h>
-#include <crucible/ir001/Expr.h>
+#include <crucible/CKernel.h>
+#include <crucible/Expr.h>
 #include <crucible/Platform.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/Decide.h>

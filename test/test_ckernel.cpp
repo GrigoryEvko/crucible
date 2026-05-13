@@ -1,5 +1,5 @@
-#include <crucible/ir001/CKernel.h>
-#include <crucible/ir001/MerkleDag.h>
+#include <crucible/CKernel.h>
+#include <crucible/MerkleDag.h>
 #include <crucible/safety/Tagged.h>
 #include "test_assert.h"
 #include <cstdio>

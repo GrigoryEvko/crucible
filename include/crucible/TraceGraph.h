@@ -6,7 +6,7 @@
 #include <span>
 
 #include <crucible/Arena.h>
-#include <crucible/ir001/MerkleDag.h>
+#include <crucible/MerkleDag.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>

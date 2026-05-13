@@ -5,7 +5,7 @@
 // value.  The caller must explicitly unwrap at the boundary that
 // owns the determinism claim.
 
-#include <crucible/ir001/MerkleDag.h>
+#include <crucible/MerkleDag.h>
 
 #include <cstdint>
 

@@ -74,7 +74,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
-#include <crucible/ir001/TensorMeta.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/FixedArray.h>

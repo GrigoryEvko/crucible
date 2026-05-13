@@ -14,7 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-#include <crucible/ir001/IterationDetector.h>
+#include <crucible/IterationDetector.h>
 
 #include "bench_harness.h"
 

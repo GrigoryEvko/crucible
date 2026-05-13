@@ -67,10 +67,10 @@
 
 #include "property_runner.h"
 
-#include <crucible/ir001/Expr.h>
-#include <crucible/ir001/ExprPool.h>
-#include <crucible/ir001/Ops.h>
-#include <crucible/ir001/SymbolTable.h>
+#include <crucible/Expr.h>
+#include <crucible/ExprPool.h>
+#include <crucible/Ops.h>
+#include <crucible/SymbolTable.h>
 #include <crucible/Types.h>
 #include <crucible/effects/Capabilities.h>
 

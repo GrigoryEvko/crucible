@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 
-#include <crucible/ir001/SchemaTable.h>
+#include <crucible/SchemaTable.h>
 
 #include "bench_harness.h"
 

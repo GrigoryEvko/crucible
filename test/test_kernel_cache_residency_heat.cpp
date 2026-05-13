@@ -29,7 +29,7 @@
 //   T13 — phase-5-stub semantics (l2/l3 lookups always miss; l2/l3
 //          publishes return success-marker but don't persist)
 
-#include <crucible/ir001/MerkleDag.h>
+#include <crucible/MerkleDag.h>
 #include <crucible/cipher/ComputationCacheFederation.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>

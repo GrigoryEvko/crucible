@@ -13,8 +13,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/effects/Capabilities.h>
-#include <crucible/ir001/Expr.h>
-#include <crucible/ir001/ExprPool.h>
+#include <crucible/Expr.h>
+#include <crucible/ExprPool.h>
 
 #include "test_assert.h"
 #include <cstdio>

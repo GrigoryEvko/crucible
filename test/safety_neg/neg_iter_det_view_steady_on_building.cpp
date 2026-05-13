@@ -27,7 +27,7 @@
 // per HS14's "≥ 2 fixtures per new soundness gate, each demonstrating
 // a distinct mismatch class".
 
-#include <crucible/ir001/IterationDetectorState.h>
+#include <crucible/IterationDetectorState.h>
 
 // Wrap the failing call in a constexpr function so the pre fires
 // during constant evaluation (P1494R5).  Returning bool rather than

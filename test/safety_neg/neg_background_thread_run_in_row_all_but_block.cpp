@@ -12,7 +12,7 @@
 // Subrow<Row<Bg, Alloc, IO, Block>, Row<Bg, Alloc, IO, Init,
 //   Test>>.
 
-#include <crucible/ir001/BackgroundThread.h>
+#include <crucible/BackgroundThread.h>
 #include <crucible/effects/EffectRow.h>
 
 namespace eff = ::crucible::effects;

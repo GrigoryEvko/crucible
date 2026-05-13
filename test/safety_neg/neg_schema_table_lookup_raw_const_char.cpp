@@ -16,7 +16,7 @@
 //   * Companion: cross-tag assignment rejected because Sanitized
 //     provenance is not External provenance.
 
-#include <crucible/ir001/SchemaTable.h>
+#include <crucible/SchemaTable.h>
 
 int main() {
   crucible::SchemaTable table;

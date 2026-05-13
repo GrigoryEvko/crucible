@@ -27,7 +27,7 @@
 // Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
 // demonstrating a distinct mismatch class.
 
-#include <crucible/ir001/MetaLog.h>
+#include <crucible/MetaLog.h>
 
 #include <climits>
 #include <cstdint>

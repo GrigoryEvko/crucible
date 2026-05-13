@@ -26,8 +26,8 @@
 //   T14 — drain_pinned of empty ring returns 0-pinned-Warm
 //   T15 — cannot-tighten-to-stronger matrix (UPWARD relax rejected)
 
-#include <crucible/ir001/MetaLog.h>
-#include <crucible/ir001/TraceRing.h>
+#include <crucible/MetaLog.h>
+#include <crucible/TraceRing.h>
 #include <crucible/safety/HotPath.h>
 #include "test_assert.h"
 

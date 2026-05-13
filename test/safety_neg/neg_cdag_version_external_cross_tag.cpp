@@ -12,7 +12,7 @@
 //   * Companion: implicit raw extraction rejected.
 //   * This fixture: cross-tag assignment rejected.
 
-#include <crucible/ir001/Serialize.h>
+#include <crucible/Serialize.h>
 #include <crucible/safety/Tagged.h>
 
 #include <cstdint>

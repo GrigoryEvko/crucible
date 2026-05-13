@@ -27,7 +27,7 @@
 // overflow) cover different drift modes; both fixtures together pin
 // the wrapper's contracts on RegionNode::variant_id.
 
-#include <crucible/ir001/MerkleDag.h>
+#include <crucible/MerkleDag.h>
 
 #include <climits>
 #include <cstdint>

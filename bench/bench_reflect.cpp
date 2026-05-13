@@ -18,8 +18,8 @@
 #include <cstdio>
 #include <utility>
 
-#include <crucible/ir001/Expr.h>       // detail::fmix64
-#include <crucible/ir001/MerkleDag.h>  // FeedbackEdge, LoopTermKind, NumericalRecipe
+#include <crucible/Expr.h>       // detail::fmix64
+#include <crucible/MerkleDag.h>  // FeedbackEdge, LoopTermKind, NumericalRecipe
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Reflect.h>
 

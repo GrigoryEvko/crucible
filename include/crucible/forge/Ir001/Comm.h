@@ -7,7 +7,7 @@
 // CI consume this surface in later tasks; they are not implemented here.
 
 #include <crucible/NumericalRecipe.h>
-#include <crucible/ir001/TensorMeta.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/EffectRow.h>

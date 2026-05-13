@@ -15,9 +15,9 @@
 // Backward: scope is stale → chunked by size.
 // Optimizer: detected by OpFamily::OPTIM.
 
-#include <crucible/ir001/MerkleDag.h>
-#include <crucible/ir001/SchemaTable.h>
-#include <crucible/ir001/TraceLoader.h>
+#include <crucible/MerkleDag.h>
+#include <crucible/SchemaTable.h>
+#include <crucible/TraceLoader.h>
 
 #include <algorithm>
 #include <bit>

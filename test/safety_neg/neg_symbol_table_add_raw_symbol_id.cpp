@@ -14,8 +14,8 @@
 //   * Companion: cross-tag assignment rejected because internal
 //     provenance is not external provenance.
 
-#include <crucible/ir001/SymbolTable.h>
-#include <crucible/ir001/Ops.h>
+#include <crucible/SymbolTable.h>
+#include <crucible/Ops.h>
 
 int main() {
   crucible::SymbolTable table;

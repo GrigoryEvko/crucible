@@ -19,8 +19,8 @@
 #include <crucible/Arena.h>
 #include <crucible/Cipher.h>
 #include <crucible/effects/Capabilities.h>
-#include <crucible/ir001/MerkleDag.h>
-#include <crucible/ir001/Serialize.h>
+#include <crucible/MerkleDag.h>
+#include <crucible/Serialize.h>
 
 #include "bench_harness.h"
 
