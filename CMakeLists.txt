@@ -51,6 +51,7 @@ add_library(crucible STATIC
   src/cog/NumaNic.cpp
   src/cog/NicConfig.cpp
   src/cog/NicOffloadAudit.cpp
+  src/cog/SrIov.cpp
   src/cntp/Backpressure.cpp
   src/cntp/AfXdp.cpp
   src/cntp/ConnectionPool.cpp

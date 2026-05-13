@@ -348,6 +348,7 @@ crucible_test(test_opcode_latency_table)
 crucible_test(test_numa_nic)
 crucible_test(test_nic_config)
 crucible_test(test_nic_offload_audit)
+crucible_test(test_sriov)
 crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
@@ -2739,6 +2740,20 @@ crucible_neg_compile_cog_test(neg_nic_config_ring_not_power_of_two
   "contract|precondition|power_of_two|Refined|NicRingSize")
 crucible_neg_compile_effects_test(neg_nic_config_mint_bg_ctx
   "constraints not satisfied|CtxFitsNicConfigMint|Init")
+
+# GAPS-147 — cog/SrIov.h SR-IOV / VF management substrate.
+#   * neg_sriov_raw_plan_enable: privileged enable requires tagged intent.
+#   * neg_sriov_zero_vfs: zero VFs are the disable state, not an enable plan.
+#   * neg_sriov_multicast_mac: VF MACs must be non-zero unicast addresses.
+#   * neg_sriov_mint_bg_ctx: SR-IOV plan minting is Init-row work.
+crucible_neg_compile_cog_test(neg_sriov_raw_plan_enable
+  "could not convert|no matching function|DeclaredSrIovPlan|Tagged")
+crucible_neg_compile_cog_test(neg_sriov_zero_vfs
+  "contract|precondition|bounded|Bounded|VfCount|Refined")
+crucible_neg_compile_cog_test(neg_sriov_multicast_mac
+  "contract|precondition|vf_mac_valid|Refined|VfMacAddress")
+crucible_neg_compile_effects_test(neg_sriov_mint_bg_ctx
+  "constraints not satisfied|CtxFitsSrIovMint|Init")
 
 # GAPS-121 — cntp/Pacing.h fq/qdisc verification + SO_MAX_PACING_RATE.
 #   * neg_pacing_bbr_pfifo_config: BBR pacing config admits only fq/fq_codel.

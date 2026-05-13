@@ -232,6 +232,10 @@ namespace source {
     // qdisc kinds, sysctl byte counts, and TCP congestion strings cannot
     // directly drive privileged NIC mutation.
     struct NicConfig {};
+    // SrIov: cog/SrIov.h virtual-function partitioning intent admitted at
+    // the physical NIC boundary. Raw VF counts, MACs, VLAN ids, and QoS
+    // knobs cannot directly drive privileged SR-IOV mutation.
+    struct SrIov {};
 }
 
 namespace trust {
