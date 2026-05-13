@@ -254,6 +254,14 @@ namespace source {
     // cntp/P4.h. Raw P4 source byte counts, resource budgets, and switch
     // identities cannot directly deploy code onto switch ASIC dataplanes.
     struct P4Compiled {};
+    // TcamTable: CNT-P hardware ACL / flow-steering table intent admitted
+    // through cntp/Tcam.h. Raw Cog identities and unbounded capacity
+    // requests cannot directly allocate hardware TCAM state.
+    struct TcamTable {};
+    // TcamFlowRule: CNT-P hardware ACL / flow-steering rules admitted
+    // through cntp/Tcam.h. Raw five-tuples and actions cannot directly
+    // program NIC or switch TCAM tables.
+    struct TcamFlowRule {};
 }
 
 namespace trust {

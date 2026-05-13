@@ -133,6 +133,7 @@ static void test_nic_feature_runtime() {
         cog::NicFeature::XdpOffload, cog::NicFeature::AfXdp,
         cog::NicFeature::SrIov, cog::NicFeature::Macsec,
         cog::NicFeature::Ipsec, cog::NicFeature::TimestampingHw,
+        cog::NicFeature::TcEbpf, cog::NicFeature::Tcam,
     };
     for (cog::NicFeature F : flags) {
         volatile auto vF = F;
@@ -245,6 +246,8 @@ static void test_nic_port_target_caps_construction() {
     caps.mtu_bytes = cog::ValidMtu{std::uint16_t{9000}};
     caps.max_qp_count = crucible::safety::Tagged<std::uint32_t,
         crucible::safety::source::Vendor>{262144};
+    caps.tcam_entries = crucible::safety::Tagged<std::uint32_t,
+        crucible::safety::source::Vendor>{65536};
     caps.effective_bandwidth_bytes_per_sec = crucible::safety::Tagged<std::uint64_t,
         crucible::safety::source::Calibrated>{45ull * 1000ull * 1000ull * 1000ull / 8ull};
     caps.features.set(cog::NicFeature::Roce);
@@ -253,6 +256,8 @@ static void test_nic_port_target_caps_construction() {
 
     volatile auto qp = caps.max_qp_count.value();
     assert(qp == 262144);
+    volatile auto tcam = caps.tcam_entries.value();
+    assert(tcam == 65536);
     volatile auto eff = caps.effective_bandwidth_bytes_per_sec.value();
     assert(eff < caps.line_rate_bytes_per_sec.value());
     assert(caps.features.test(cog::NicFeature::Roce));

@@ -69,6 +69,7 @@ add_library(crucible STATIC
   src/cntp/QuicTransport.cpp
   src/cntp/RoceConfig.cpp
   src/cntp/Sharp.cpp
+  src/cntp/Tcam.cpp
   src/observe/HdrHistogram.cpp
   src/observe/SdcDetect.cpp
   src/observe/SyntheticProbe.cpp

@@ -509,6 +509,8 @@ struct caps_runtime_capacity<CogKind::NicPort> {
                 return std::uint64_t{caps.max_cq_count.value()};
             case ResourceKind::NicMr:
                 return std::uint64_t{caps.max_mr_count.value()};
+            case ResourceKind::Tcam:
+                return std::uint64_t{caps.tcam_entries.value()};
             case ResourceKind::PcieBw:
                 return 0ULL;  // see GpuTargetCaps comment above
             default: return 0ULL;

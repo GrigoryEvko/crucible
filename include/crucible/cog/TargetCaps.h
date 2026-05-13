@@ -251,6 +251,7 @@ enum class NicFeature : std::uint32_t {
     Ipsec           = 1u << 14,  // IPsec hardware offload
     TimestampingHw  = 1u << 15,  // Hardware PTP timestamping
     TcEbpf          = 1u << 16,  // TC clsact direct-action eBPF
+    Tcam            = 1u << 17,  // Hardware ACL / flow steering TCAM
 };
 
 // SwitchFeature — switch-port capability catalog.  uint16_t.
@@ -332,6 +333,7 @@ nic_feature_name(NicFeature F) noexcept {
         case NicFeature::Ipsec:          return "Ipsec";
         case NicFeature::TimestampingHw: return "TimestampingHw";
         case NicFeature::TcEbpf:         return "TcEbpf";
+        case NicFeature::Tcam:           return "Tcam";
         default: return std::string_view{"<unknown NicFeature>"};
     }
 }
@@ -478,6 +480,8 @@ struct NicPortTargetCaps {
         max_mr_count{std::uint32_t{0}};       // RDMA memory regions
     safety::Tagged<std::uint64_t, safety::source::Vendor>
         max_mr_size_bytes{std::uint64_t{0}};
+    safety::Tagged<std::uint32_t, safety::source::Vendor>
+        tcam_entries{std::uint32_t{0}};
 
     // ── Calibrated effective throughput (runtime measured) ─────────
     // Real-world line rate after PCIe / driver / kernel overhead.
@@ -841,6 +845,7 @@ static_assert(static_cast<std::uint32_t>(NicFeature::Macsec)         == (1u << 1
 static_assert(static_cast<std::uint32_t>(NicFeature::Ipsec)          == (1u << 14));
 static_assert(static_cast<std::uint32_t>(NicFeature::TimestampingHw) == (1u << 15));
 static_assert(static_cast<std::uint32_t>(NicFeature::TcEbpf)         == (1u << 16));
+static_assert(static_cast<std::uint32_t>(NicFeature::Tcam)           == (1u << 17));
 
 // SwitchFeature — bit-position pins
 static_assert(static_cast<std::uint16_t>(SwitchFeature::Sharp)           == (1u << 0));

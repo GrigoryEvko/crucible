@@ -353,6 +353,7 @@ crucible_test(test_cntp_gpu_direct)
 crucible_test(test_cntp_sharp)
 crucible_test(test_cntp_doca)
 crucible_test(test_cntp_p4)
+crucible_test(test_cntp_tcam)
 crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
@@ -2920,6 +2921,23 @@ crucible_neg_compile_test(neg_p4_raw_program_deploy
   "could not convert|no matching function|DeclaredP4Program|Tagged")
 crucible_neg_compile_effects_test(neg_p4_mint_bg_ctx
   "constraints not satisfied|CtxFitsP4Mint|Init")
+
+# GAPS-148 — cntp/Tcam.h hardware ACL / flow-rule substrate.
+#   * neg_tcam_zero_entry_count: TCAM table capacities are positive.
+#   * neg_tcam_static_table_zero: in-process table image has nonzero capacity.
+#   * neg_tcam_raw_rule_add: add_rule requires source::TcamFlowRule provenance.
+#   * neg_tcam_rule_handle_copy: installed rule handles are linear.
+#   * neg_tcam_mint_bg_ctx: table minting is Init-row work.
+crucible_neg_compile_test(neg_tcam_zero_entry_count
+  "contract|precondition|positive|predicate|static assertion")
+crucible_neg_compile_test(neg_tcam_static_table_zero
+  "constraints not satisfied|TcamTableShape")
+crucible_neg_compile_test(neg_tcam_raw_rule_add
+  "could not convert|no matching function|DeclaredTcamFlowRule|Tagged")
+crucible_neg_compile_test(neg_tcam_rule_handle_copy
+  "Linear<T> is move-only|use of deleted|deleted function")
+crucible_neg_compile_effects_test(neg_tcam_mint_bg_ctx
+  "constraints not satisfied|CtxFitsTcamMint|Init")
 
 # GAPS-126 — cntp/MtlsTransport.h mutual-TLS federation policy substrate.
 #   * neg_mtls_tls12_config: TLS 1.2 cannot mint a declared mTLS config.
