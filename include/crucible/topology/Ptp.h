@@ -35,6 +35,7 @@ using PtpClockFd = safety::NonNegative<int>;
 using PtpTimestampNs = safety::Tagged<std::uint64_t, safety::source::Ptp>;
 using PositivePtpSkewBoundNs = safety::Positive<std::uint64_t>;
 using PositivePtpPathDelayNs = safety::Positive<std::uint64_t>;
+using PositivePtpOffsetBoundNs = safety::Positive<std::uint64_t>;
 
 enum class PtpError : std::uint8_t {
     None = 0,
@@ -69,6 +70,19 @@ enum class PtpServoState : std::uint8_t {
 
 [[nodiscard]] std::string_view ptp_servo_state_name(PtpServoState state) noexcept;
 
+enum class PtpDegradationReason : std::uint8_t {
+    None = 0,
+    Ptp4lUnavailable = 1,
+    Phc2sysUnavailable = 2,
+    GrandmasterMissing = 3,
+    ServoUnlocked = 4,
+    ExcessiveOffset = 5,
+    ExcessiveSkew = 6,
+};
+
+[[nodiscard]] std::string_view
+ptp_degradation_reason_name(PtpDegradationReason reason) noexcept;
+
 struct PtpStatus {
     PtpServoState servo = PtpServoState::Unknown;
     std::int64_t offset_from_master_ns = 0;
@@ -83,6 +97,35 @@ struct PtpStatus {
 };
 
 using DeclaredPtpStatus = safety::Tagged<PtpStatus, safety::source::Ptp>;
+
+struct PtpDaemonReport {
+    bool ptp4l_running = false;
+    bool phc2sys_running = false;
+    bool grandmaster_present = false;
+    PtpServoState servo = PtpServoState::Unknown;
+    std::int64_t offset_from_master_ns = 0;
+    PositivePtpPathDelayNs mean_path_delay_ns{std::uint64_t{1}};
+    std::int64_t frequency_adjustment_ppb = 0;
+    PositivePtpSkewBoundNs skew_bound_ns{std::uint64_t{1'000}};
+    PositivePtpSkewBoundNs max_accepted_skew_ns{std::uint64_t{1'000}};
+    PositivePtpOffsetBoundNs max_accepted_offset_ns{std::uint64_t{1'000}};
+    std::uint64_t sequence = 0;
+};
+
+struct PtpDiagnostic {
+    PtpDegradationReason reason = PtpDegradationReason::None;
+    PtpStatus status{};
+    std::uint64_t sequence = 0;
+
+    [[nodiscard]] constexpr bool degraded() const noexcept {
+        return reason != PtpDegradationReason::None;
+    }
+};
+
+using DeclaredPtpDaemonReport =
+    safety::Tagged<PtpDaemonReport, safety::source::Ptp>;
+using DeclaredPtpDiagnostic =
+    safety::Tagged<PtpDiagnostic, safety::source::Ptp>;
 using PtpDeviceIndex =
     safety::Bounded<std::uint16_t{0}, std::uint16_t{255}, std::uint16_t>;
 
@@ -199,6 +242,67 @@ ptp_device_path(PtpDeviceIndex index) noexcept {
 ptp_capable_cog(cog::CogIdentity const& nic) noexcept {
     return !nic.uuid.is_zero()
         && (nic.kind == cog::CogKind::NicPort || nic.kind == cog::CogKind::NicCard);
+}
+
+template <effects::IsExecCtx Ctx>
+    requires CtxFitsPtpRecord<Ctx>
+[[nodiscard]] constexpr DeclaredPtpDaemonReport
+admit_ptp_daemon_report(Ctx const&, PtpDaemonReport report) noexcept {
+    return DeclaredPtpDaemonReport{report};
+}
+
+[[nodiscard]] constexpr PtpDegradationReason
+ptp_degradation_reason(PtpDaemonReport const& report) noexcept {
+    if (!report.ptp4l_running) {
+        return PtpDegradationReason::Ptp4lUnavailable;
+    }
+    if (!report.phc2sys_running) {
+        return PtpDegradationReason::Phc2sysUnavailable;
+    }
+    if (!report.grandmaster_present) {
+        return PtpDegradationReason::GrandmasterMissing;
+    }
+    if (report.servo != PtpServoState::Slave
+        && report.servo != PtpServoState::Master) {
+        return PtpDegradationReason::ServoUnlocked;
+    }
+    const auto abs_offset = report.offset_from_master_ns < 0
+        ? std::uint64_t{0}
+            - static_cast<std::uint64_t>(report.offset_from_master_ns)
+        : static_cast<std::uint64_t>(report.offset_from_master_ns);
+    if (abs_offset > report.max_accepted_offset_ns.value()) {
+        return PtpDegradationReason::ExcessiveOffset;
+    }
+    if (report.skew_bound_ns.value() > report.max_accepted_skew_ns.value()) {
+        return PtpDegradationReason::ExcessiveSkew;
+    }
+    return PtpDegradationReason::None;
+}
+
+[[nodiscard]] constexpr DeclaredPtpStatus
+ptp_status_from_daemon_report(DeclaredPtpDaemonReport report) noexcept {
+    auto const& raw = report.value();
+    const auto reason = ptp_degradation_reason(raw);
+    return DeclaredPtpStatus{PtpStatus{
+        .servo = reason == PtpDegradationReason::None
+            ? raw.servo
+            : PtpServoState::Degraded,
+        .offset_from_master_ns = raw.offset_from_master_ns,
+        .mean_path_delay_ns = raw.mean_path_delay_ns,
+        .frequency_adjustment_ppb = raw.frequency_adjustment_ppb,
+        .skew_bound_ns = raw.skew_bound_ns,
+        .sequence = raw.sequence,
+    }};
+}
+
+[[nodiscard]] constexpr DeclaredPtpDiagnostic
+ptp_diagnostic_from_daemon_report(DeclaredPtpDaemonReport report) noexcept {
+    auto const status = ptp_status_from_daemon_report(report);
+    return DeclaredPtpDiagnostic{PtpDiagnostic{
+        .reason = ptp_degradation_reason(report.value()),
+        .status = status.value(),
+        .sequence = report.value().sequence,
+    }};
 }
 
 class PtpHandle : public safety::Pinned<PtpHandle> {
@@ -346,8 +450,12 @@ static_assert(sizeof(PtpClockFd) == sizeof(int));
 static_assert(sizeof(PtpTimestampNs) == sizeof(std::uint64_t));
 static_assert(sizeof(PtpDeviceIndex) == sizeof(std::uint16_t));
 static_assert(sizeof(OwnedPtpClock) == sizeof(PtpClock));
+static_assert(sizeof(DeclaredPtpDaemonReport) == sizeof(PtpDaemonReport));
+static_assert(sizeof(DeclaredPtpDiagnostic) == sizeof(PtpDiagnostic));
 static_assert(std::is_trivially_copyable_v<PtpClockCaps>);
 static_assert(std::is_trivially_copyable_v<PtpDevicePath>);
+static_assert(std::is_trivially_copyable_v<PtpDaemonReport>);
+static_assert(std::is_trivially_copyable_v<PtpDiagnostic>);
 static_assert(!CtxFitsPtpMint<effects::BgDrainCtx>);
 static_assert(CtxFitsPtpMint<effects::ColdInitCtx>);
 static_assert(!CtxFitsPtpRecord<effects::HotFgCtx>);

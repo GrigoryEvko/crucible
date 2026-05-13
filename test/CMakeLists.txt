@@ -1532,6 +1532,10 @@ crucible_neg_compile_topology_test(neg_pingmesh_zero_peer_capacity
 #     source::Ptp timestamps.
 #   * neg_ptp_open_raw_device_index — raw integers cannot name /dev/ptpN.
 #   * neg_ptp_enable_raw_socket — raw socket fds cannot program timestamping.
+#   * neg_ptp_raw_daemon_report_status — daemon status conversion requires
+#     source::Ptp provenance at the external-state boundary.
+#   * neg_ptp_daemon_report_fg_ctx — foreground contexts cannot admit
+#     external daemon reports.
 crucible_neg_compile_topology_test(neg_ptp_mint_bg_ctx
     "constraint|constraints not satisfied|CtxFitsPtpMint|Init|Bg")
 crucible_neg_compile_topology_test(neg_ptp_record_fg_ctx
@@ -1544,6 +1548,10 @@ crucible_neg_compile_topology_test(neg_ptp_open_raw_device_index
     "cannot convert|no matching function|could not convert|PtpDeviceIndex|int")
 crucible_neg_compile_topology_test(neg_ptp_enable_raw_socket
     "cannot convert|no matching function|could not convert|SocketFd|int")
+crucible_neg_compile_topology_test(neg_ptp_raw_daemon_report_status
+    "cannot convert|no matching function|could not convert|DeclaredPtpDaemonReport|Tagged")
+crucible_neg_compile_topology_test(neg_ptp_daemon_report_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsPtpRecord|Bg|HotFgCtx")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #

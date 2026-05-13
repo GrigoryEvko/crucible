@@ -163,6 +163,28 @@ std::string_view ptp_servo_state_name(PtpServoState state) noexcept {
     }
 }
 
+std::string_view
+ptp_degradation_reason_name(PtpDegradationReason reason) noexcept {
+    switch (reason) {
+        case PtpDegradationReason::None:
+            return "None";
+        case PtpDegradationReason::Ptp4lUnavailable:
+            return "Ptp4lUnavailable";
+        case PtpDegradationReason::Phc2sysUnavailable:
+            return "Phc2sysUnavailable";
+        case PtpDegradationReason::GrandmasterMissing:
+            return "GrandmasterMissing";
+        case PtpDegradationReason::ServoUnlocked:
+            return "ServoUnlocked";
+        case PtpDegradationReason::ExcessiveOffset:
+            return "ExcessiveOffset";
+        case PtpDegradationReason::ExcessiveSkew:
+            return "ExcessiveSkew";
+        default:
+            return "<unknown PtpDegradationReason>";
+    }
+}
+
 std::expected<TimestampedPacketView, PtpError>
 timestamp_packet_view(std::span<const std::byte> payload,
                       PtpTimestampNs timestamp,

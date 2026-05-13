@@ -122,6 +122,62 @@ static void test_handle_status_and_timestamp() {
     std::printf("  test_handle_status_and_timestamp: PASSED\n");
 }
 
+static void test_daemon_report_boundary() {
+    topology::PtpDaemonReport report{
+        .ptp4l_running = true,
+        .phc2sys_running = true,
+        .grandmaster_present = true,
+        .servo = topology::PtpServoState::Slave,
+        .offset_from_master_ns = -80,
+        .mean_path_delay_ns = topology::PositivePtpPathDelayNs{700},
+        .frequency_adjustment_ppb = 2,
+        .skew_bound_ns = topology::PositivePtpSkewBoundNs{90},
+        .max_accepted_skew_ns = topology::PositivePtpSkewBoundNs{100},
+        .max_accepted_offset_ns = topology::PositivePtpOffsetBoundNs{100},
+        .sequence = 7,
+    };
+    auto declared =
+        topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report);
+    auto status = topology::ptp_status_from_daemon_report(declared);
+    assert(status.value().synchronized());
+    assert(status.value().offset_from_master_ns == -80);
+    assert(status.value().sequence == 7);
+
+    auto diagnostic = topology::ptp_diagnostic_from_daemon_report(declared);
+    assert(!diagnostic.value().degraded());
+    assert(diagnostic.value().reason == topology::PtpDegradationReason::None);
+    assert(topology::ptp_degradation_reason_name(
+               diagnostic.value().reason) == std::string_view{"None"});
+
+    report.grandmaster_present = false;
+    auto no_grandmaster =
+        topology::ptp_diagnostic_from_daemon_report(
+            topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
+    assert(no_grandmaster.value().degraded());
+    assert(no_grandmaster.value().reason
+           == topology::PtpDegradationReason::GrandmasterMissing);
+    assert(no_grandmaster.value().status.servo
+           == topology::PtpServoState::Degraded);
+
+    report.grandmaster_present = true;
+    report.offset_from_master_ns = -101;
+    auto excessive_offset =
+        topology::ptp_diagnostic_from_daemon_report(
+            topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
+    assert(excessive_offset.value().reason
+           == topology::PtpDegradationReason::ExcessiveOffset);
+
+    report.offset_from_master_ns = 0;
+    report.skew_bound_ns = topology::PositivePtpSkewBoundNs{101};
+    auto excessive_skew =
+        topology::ptp_diagnostic_from_daemon_report(
+            topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
+    assert(excessive_skew.value().reason
+           == topology::PtpDegradationReason::ExcessiveSkew);
+
+    std::printf("  test_daemon_report_boundary: PASSED\n");
+}
+
 static void test_timestamped_packet_view() {
     std::array<std::byte, 4> payload{
         std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
@@ -194,10 +250,11 @@ int main() {
     static_assert(topology::CtxFitsPtpRecord<effects::BgDrainCtx>);
     static_assert(!topology::CtxFitsPtpRecord<effects::HotFgCtx>);
 
-    std::printf("test_topology_ptp: 5 groups\n");
+    std::printf("test_topology_ptp: 6 groups\n");
     test_name_accessors();
     test_fd_and_nic_admission();
     test_handle_status_and_timestamp();
+    test_daemon_report_boundary();
     test_timestamped_packet_view();
     test_linux_boundaries_if_available();
     std::printf("test_topology_ptp: all passed\n");
