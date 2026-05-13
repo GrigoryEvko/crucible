@@ -151,6 +151,11 @@ namespace source {
     // Raw op descriptors cannot cross into Forge phase visitors or
     // serialization boundaries without this provenance tag.
     struct Ir001 {};
+    // ForgeFused: Forge Phase-D comm-fusion decisions admitted by the
+    // vendor-neutral phase substrate. Raw "fusion happened" records cannot
+    // directly cross into later lowering/audit consumers without proving that
+    // pattern, recipe tier, and resource-row gates all fired.
+    struct ForgeFused {};
     // CcAlgorithm: CNT-P congestion-control selection admitted through
     // cntp/CongestionControl.h. Raw enum values and raw kernel strings
     // cannot directly drive per-socket TCP_CONGESTION changes.

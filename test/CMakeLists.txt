@@ -479,6 +479,7 @@ crucible_test(test_recipe_registry_tier)
 crucible_test(test_recipe_registry_spec)
 crucible_test(test_network_recipe)
 crucible_test(test_ir001_comm)
+crucible_test(test_forge_comm_phase)
 
 # bench harness unit tests — include bench/ for bench_harness.h.
 # Snapshot now lives at <crucible/perf/SenseHub.h> (post-promotion via
@@ -4102,6 +4103,22 @@ crucible_neg_compile_test(neg_ir001_comm_send_as_collective
   "constraints not satisfied|Ir001CollectiveKind|SendAsync")
 crucible_neg_compile_test(neg_ir001_comm_zero_participants
   "contract|precondition|in_range|positive|bounded")
+
+# GAPS-168 — forge/Phases/Comm.h vendor-neutral comm phase substrate.
+#   * neg_forge_comm_phase_raw_compute: fusion admission requires source::Ir001.
+#   * neg_forge_comm_phase_send_as_collective: ReduceOnRecv requires collective
+#     communication, not point-to-point Send.
+#   * neg_forge_comm_phase_oversubscribed: combined resource row must FitCog.
+#   * neg_forge_comm_phase_strict_compress: BITEXACT_STRICT rejects lossy
+#     compression at the compile-time recipe gate.
+crucible_neg_compile_test(neg_forge_comm_phase_raw_compute
+  "could not convert|no matching function|DeclaredIr001Node|Tagged|source::Ir001")
+crucible_neg_compile_test(neg_forge_comm_phase_send_as_collective
+  "static assertion failed|constraints not satisfied|CommFusionEligible|ReduceOnRecv|Ir001CollectiveKind")
+crucible_neg_compile_test(neg_forge_comm_phase_oversubscribed
+  "static assertion failed|constraints not satisfied|CommFusionEligible|FitsCog|999")
+crucible_neg_compile_test(neg_forge_comm_phase_strict_compress
+  "constraints not satisfied|CommFusionRecipeAllowed|BITEXACT_STRICT|CompressBeforeSend")
 
 # WRAP-RE-3 (#995) — ReplayEngine::init consumes
 # BorrowedRef<const PoolAllocator>. Raw PoolAllocator* and wrong-owner
