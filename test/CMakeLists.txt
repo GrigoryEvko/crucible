@@ -341,6 +341,7 @@ crucible_test(test_bridges_compile)
 crucible_test(test_effects_compile)
 crucible_test(test_resources)
 crucible_test(test_concurrent)
+crucible_test(test_calibrate)
 crucible_test(test_cog_identity)
 crucible_test(test_target_caps)
 crucible_test(test_opcode_latency_table)
@@ -2715,6 +2716,17 @@ crucible_neg_compile_test(neg_congestion_control_dctcp_cross_dc
   "constraints not satisfied|CcCompatible|LosslessDatacenterFabric")
 crucible_neg_compile_test(neg_congestion_control_custom_missing_name
   "constraints not satisfied|CustomCcModule|congestion_control_name")
+
+# GAPS-196 — cog/Calibrate.h per-Cog calibration substrate.
+#   * neg_calibrate_psu_rail: only schedulable substrates calibrate.
+#   * neg_calibrate_zero_latency_quantile: measured latency must be positive.
+#   * neg_calibrate_hot_fg_ctx: calibration is Init/Bg work, never hot Fg.
+crucible_neg_compile_cog_test(neg_calibrate_psu_rail
+  "constraints not satisfied|CalibratableCogKind|HasOpcodeTable|HasCaps")
+crucible_neg_compile_cog_test(neg_calibrate_zero_latency_quantile
+  "contract|precondition|calibration_quantiles_valid|Refined|CalibrationLatencyQuantiles")
+crucible_neg_compile_effects_test(neg_calibrate_hot_fg_ctx
+  "constraints not satisfied|CtxFitsCalibration|CtxAdmits|Init|Bg")
 
 # GAPS-192 — cog/NicConfig.h ethtool/sysctl/tc-qdisc config substrate.
 #   * neg_nic_config_raw_apply: privileged apply requires tagged config.

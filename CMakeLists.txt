@@ -47,6 +47,7 @@ add_library(crucible STATIC
   src/canopy/HyParView.cpp
   src/canopy/Lifeguard.cpp
   src/canopy/Plumtree.cpp
+  src/cog/Calibrate.cpp
   src/cog/NumaNic.cpp
   src/cog/NicConfig.cpp
   src/cog/NicOffloadAudit.cpp
