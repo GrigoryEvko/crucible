@@ -245,6 +245,10 @@ set_tests_properties(test_fixy_federation PROPERTIES LABELS "fixy")
 crucible_test(test_fixy_witness)
 set_tests_properties(test_fixy_witness PROPERTIES LABELS "fixy")
 
+# ── FIXY-G10 — Modality classification positive test ────────────────
+crucible_test(test_fixy_modality)
+set_tests_properties(test_fixy_modality PROPERTIES LABELS "fixy")
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1287,6 +1291,16 @@ crucible_neg_compile_fixy_test(neg_fixy_witness_platform_bounded_disallowed
     "PlatformBounded|FnWitnessAtLeast|Tested floor")
 crucible_neg_compile_fixy_test(neg_fixy_witness_wire_decode_mismatch
     "WitnessFloor|wire_decode rejects")
+
+# ── FIXY-G10 — Modality classification discipline fixtures ──────────
+crucible_neg_compile_fixy_test(neg_fixy_rule_R017_linear_alias
+    "R017|Linear|frame rule")
+crucible_neg_compile_fixy_test(neg_fixy_modality_misclassified
+    "ModalityMismatch|Declares|mutable_in_place")
+crucible_neg_compile_fixy_test(neg_fixy_modality_quotient_collision
+    "engage the same dim|ModalityMismatch|Quotient|dims_all_distinct")
+crucible_neg_compile_fixy_test(neg_fixy_modality_frame_vs_declares
+    "ModalityMismatch|Declares|Frame|same class")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound

@@ -725,6 +725,49 @@ struct InsufficientWitness : tag_base {
         "CrossValidated<id> references safety/diag/CiRunRegistry.h.";
 };
 
+// ── 27. ModalityMismatch (FIXY-G10) ────────────────────────────────
+struct ModalityMismatch : tag_base {
+    static constexpr std::string_view name = "ModalityMismatch";
+    static constexpr std::string_view description =
+        "Two grants engaging the same fixy dim carry incompatible "
+        "modality classes — typically Frame (invariant) paired with "
+        "Declares (witness-producing) on the same axis (R018), or two "
+        "Quotient grants naming different equivalence-class "
+        "representatives (Version<3> vs Version<5>).  Modality classes: "
+        "Frame, Declares, Requires, Linear, Quotient.  See "
+        "fixy/Modality.h for the taxonomy.";
+    static constexpr std::string_view remediation =
+        "Audit the grant pack and pick a single grant per dim with the "
+        "correct modality class for the intended semantics.  A property "
+        "that is invariant of the value uses Frame; a property the "
+        "binding produces uses Declares; an input refinement the "
+        "caller must satisfy uses Requires; a consume-and-produce "
+        "resource transfer uses Linear; equivalence-class membership "
+        "uses Quotient.  Two grants on the same axis cannot mix Frame "
+        "with Declares — the invariant claim contradicts the "
+        "witness-producing claim.";
+};
+
+// ── 28. LinearAliasViolation (FIXY-G10 R017) ───────────────────────
+struct LinearAliasViolation : tag_base {
+    static constexpr std::string_view name = "LinearAliasViolation";
+    static constexpr std::string_view description =
+        "Two Linear-modality grants on the same Permission tag in a "
+        "single binding's pack.  Linear modality encodes one-shot "
+        "consume-and-produce resource transfer (lifetime_region<Tag> + "
+        "Mutable); two Linear grants on the SAME tag means two parallel "
+        "consumers of the same exclusive permission — a CSL frame-rule "
+        "violation.  R017 fires before R013 because it catches the "
+        "binding-shape error earlier than the call-site rule.";
+    static constexpr std::string_view remediation =
+        "Either remove one of the duplicate lifetime_region<Tag> grants "
+        "(if the binding actually consumes the permission ONCE), OR "
+        "split the binding into two separate fixy::fn instances each "
+        "consuming one borrow.  CSL discipline: each Permission<Tag> "
+        "has exactly one consumer; sharing requires SharedPermission + "
+        "explicit fractional borrow via SharedPermissionPool<Tag>.";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_diagnostic_class_v<T> ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -875,6 +918,8 @@ inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 //   [23] DivergenceBudgetViolation   (FOUND-E18)
 //   [24] StateBudgetViolation        (FOUND-E18)
 //   [25] InsufficientWitness         (FIXY-G9)
+//   [26] ModalityMismatch            (FIXY-G10)
+//   [27] LinearAliasViolation        (FIXY-G10 R017)
 
 using Catalog = std::tuple<
     EffectRowMismatch,        //  0
@@ -902,7 +947,9 @@ using Catalog = std::tuple<
     PureFunctionViolation,    // 22
     DivergenceBudgetViolation,// 23
     StateBudgetViolation,     // 24
-    InsufficientWitness       // 25
+    InsufficientWitness,      // 25
+    ModalityMismatch,         // 26
+    LinearAliasViolation      // 27
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
@@ -957,6 +1004,8 @@ enum class Category : std::uint8_t {
     DivergenceBudgetViolation= 23,
     StateBudgetViolation     = 24,
     InsufficientWitness      = 25,
+    ModalityMismatch         = 26,
+    LinearAliasViolation     = 27,
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1102,6 +1151,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::DivergenceBudgetViolation:return DivergenceBudgetViolation::name;
         case Category::StateBudgetViolation:     return StateBudgetViolation::name;
         case Category::InsufficientWitness:      return InsufficientWitness::name;
+        case Category::ModalityMismatch:         return ModalityMismatch::name;
+        case Category::LinearAliasViolation:     return LinearAliasViolation::name;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1134,6 +1185,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::DivergenceBudgetViolation:return DivergenceBudgetViolation::description;
         case Category::StateBudgetViolation:     return StateBudgetViolation::description;
         case Category::InsufficientWitness:      return InsufficientWitness::description;
+        case Category::ModalityMismatch:         return ModalityMismatch::description;
+        case Category::LinearAliasViolation:     return LinearAliasViolation::description;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1166,6 +1219,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::DivergenceBudgetViolation:return DivergenceBudgetViolation::remediation;
         case Category::StateBudgetViolation:     return StateBudgetViolation::remediation;
         case Category::InsufficientWitness:      return InsufficientWitness::remediation;
+        case Category::ModalityMismatch:         return ModalityMismatch::remediation;
+        case Category::LinearAliasViolation:     return LinearAliasViolation::remediation;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1346,11 +1401,11 @@ static_assert(diagnostic_name_v<user_defined_tag> == "UserDefinedTag");
 // same integer value.  The bijection self-test below asserts both in
 // lock step.
 
-static_assert(catalog_size == 26,
-    "Catalog cardinality drifted from the 26-tag inventory "
-    "(22 wrapper-axis + 3 F* alias + 1 witness FIXY-G9) — confirm "
-    "the new tag was added to Catalog AND to Category at the same "
-    "integer index.");
+static_assert(catalog_size == 28,
+    "Catalog cardinality drifted from the 28-tag inventory "
+    "(22 wrapper-axis + 3 F* alias + 1 witness FIXY-G9 + 2 modality "
+    "FIXY-G10) — confirm the new tag was added to Catalog AND to "
+    "Category at the same integer index.");
 
 // ─── Catalog ↔ Category bijection ─────────────────────────────────
 //
@@ -1540,7 +1595,7 @@ static_assert(categories_v.size() == catalog_size,
     "categories_v cardinality drifted from catalog_size — both must "
     "track the same source of truth.");
 static_assert(categories_v[0] == Category::EffectRowMismatch);
-static_assert(categories_v[catalog_size - 1] == Category::InsufficientWitness);
+static_assert(categories_v[catalog_size - 1] == Category::LinearAliasViolation);
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool categories_array_matches_enum_impl(

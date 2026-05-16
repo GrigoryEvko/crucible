@@ -72,15 +72,27 @@ void test_catalog_indices_for_fx_alias_tags() {
     static_assert(diag::category_of_v<diag::StateBudgetViolation>
                   == diag::Category::StateBudgetViolation);
 
-    // InsufficientWitness at index 25 — the catalog's last entry (FIXY-G9).
+    // InsufficientWitness at index 25 (FIXY-G9).
     static_assert(std::is_same_v<
         diag::tag_of_t<diag::Category::InsufficientWitness>,
         diag::InsufficientWitness>);
     static_assert(diag::category_of_v<diag::InsufficientWitness>
                   == diag::Category::InsufficientWitness);
 
-    EXPECT_TRUE(diag::catalog_size == 26);
-    EXPECT_TRUE(static_cast<std::size_t>(diag::Category::InsufficientWitness)
+    // ModalityMismatch at 26, LinearAliasViolation at 27 (FIXY-G10).
+    static_assert(std::is_same_v<
+        diag::tag_of_t<diag::Category::ModalityMismatch>,
+        diag::ModalityMismatch>);
+    static_assert(diag::category_of_v<diag::ModalityMismatch>
+                  == diag::Category::ModalityMismatch);
+    static_assert(std::is_same_v<
+        diag::tag_of_t<diag::Category::LinearAliasViolation>,
+        diag::LinearAliasViolation>);
+    static_assert(diag::category_of_v<diag::LinearAliasViolation>
+                  == diag::Category::LinearAliasViolation);
+
+    EXPECT_TRUE(diag::catalog_size == 28);
+    EXPECT_TRUE(static_cast<std::size_t>(diag::Category::LinearAliasViolation)
                 == diag::catalog_size - 1);
 }
 

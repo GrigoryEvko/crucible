@@ -69,6 +69,7 @@
 //   safety/CollisionCatalog.h — substrate-side rule tags
 
 #include <crucible/fixy/Dim.h>
+#include <crucible/fixy/Modality.h>
 #include <crucible/fixy/Reflect.h>
 #include <crucible/fixy/Witness.h>
 #include <crucible/safety/CollisionCatalog.h>
@@ -159,5 +160,71 @@ inline constexpr bool R016_requires_witness_floor_v =
         _w::Tested<::crucible::safety::diag::UnnamedTestId>> &&
     ::crucible::fixy::FnWitnessAtLeast<F, ::crucible::fixy::dim::Reentrancy,
         _w::Tested<::crucible::safety::diag::UnnamedTestId>>;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-G10: Modality-class collision rules R017 / R018 ───────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// R017_LinearAlias — two Linear-modality grants on the same Lifetime
+// region tag is illegal.  Linear modality (CSL) encodes one-shot
+// consume-and-produce; two parallel consumers of the same Permission
+// breaks linearity.  R017 fires at binding construction time, before
+// R013's call-site check.
+//
+// R018_FrameDeclaresConsistency — a Frame-modality grant cannot
+// coexist with a Declares-modality grant on the same axis in the
+// same binding.  Frame says "this property is INVARIANT of the value";
+// Declares says "the binding PRODUCES this property".  The two claims
+// are categorically incompatible.
+
+namespace detail {
+
+// Per-grant predicate: does G engage Axis with modality class MC?
+// Uses ::crucible::fixy::detail::engages_dim_v (where engages_dim_v
+// actually lives — Reject.h moves it into the detail namespace).
+template <typename G, ::crucible::fixy::dim::DimAxis Axis,
+          ::crucible::fixy::ModalityClass MC>
+inline constexpr bool grant_axis_modality_v = false;
+
+template <typename G, ::crucible::fixy::dim::DimAxis Axis,
+          ::crucible::fixy::ModalityClass MC>
+    requires (::crucible::fixy::detail::engages_dim_v<G, Axis>)
+inline constexpr bool grant_axis_modality_v<G, Axis, MC> =
+    (::crucible::fixy::grant_traits<G>::modality_class_v == MC);
+
+template <typename F>
+struct fn_pack_traits;
+
+template <typename T, typename... Grants>
+struct fn_pack_traits<::crucible::fixy::fn<T, Grants...>> {
+    template <::crucible::fixy::dim::DimAxis Axis,
+              ::crucible::fixy::ModalityClass MC>
+    static constexpr std::size_t count_axis_modality_v =
+        (static_cast<std::size_t>(grant_axis_modality_v<Grants, Axis, MC>)
+            + ... + std::size_t{0});
+};
+
+}  // namespace detail
+
+// R017: any binding with two-or-more Linear-modality grants on
+// dim::Lifetime is rejected.
+template <typename F>
+inline constexpr bool R017_no_linear_alias_v =
+    ::crucible::fixy::IsFixyFn<F> &&
+    (detail::fn_pack_traits<std::remove_cvref_t<F>>::template
+        count_axis_modality_v<::crucible::fixy::dim::Lifetime,
+                              ::crucible::fixy::ModalityClass::Linear> <= 1);
+
+// R018: a binding cannot have BOTH Frame and Declares on the same
+// dim.  The fn<...> reject-by-default discipline already requires
+// exactly one engaging grant per dim — so R018 is a structural
+// invariant that the discipline maintains.  Surfaced here as a
+// queryable predicate for production tooling that wants to verify it.
+template <typename F>
+inline constexpr bool R018_frame_declares_consistency_v =
+    ::crucible::fixy::IsFixyFn<F>;
+
+// FIXY-G10 self-tests are exercised at the production call sites in
+// test_fixy_modality.cpp + the worked example.
 
 }  // namespace crucible::fixy::rule

@@ -60,3 +60,6 @@ crucible_fixy_example(example_fixy_cipher_writer)
 
 # FIXY-G9 — Witness metadata progressive upgrade.
 crucible_fixy_example(example_fixy_witness_evidenced)
+
+# FIXY-G10 — Modality-classified Mimic NV emit binding.
+crucible_fixy_example(example_fixy_modality_aware)

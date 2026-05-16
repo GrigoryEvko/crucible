@@ -93,6 +93,7 @@
 //   fixy/Dim.h                          — dim::DimAxis identity layer
 //   fixy/Reject.h                       — IsGrantTag concept consumer
 
+#include <crucible/algebra/Modality.h>
 #include <crucible/algebra/lattices/ToleranceLattice.h>
 #include <crucible/algebra/lattices/VendorLattice.h>
 #include <crucible/effects/Capabilities.h>
@@ -132,6 +133,14 @@ namespace crucible::fixy {
 
 struct grant_base {
     using witness_t = ::crucible::safety::witness::DefaultWitness;
+    // FIXY-G10: every grant declares a modality.  grant_base defaults
+    // to Absolute (= ModalityClass::Frame at the fixy layer); grants
+    // in the Comonad / RelativeMonad / Relative / Quotient classes
+    // override.  This means a grant declared without thinking about
+    // modality is classified as Frame — the safest, most restrictive
+    // default; it cannot accidentally claim to produce a witness or
+    // demand an input refinement.
+    using modality  = ::crucible::algebra::modality::Absolute_t;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -181,11 +190,12 @@ struct typed final : grant_base {
     using type = T;
 };
 
-// ── Refinement (dim::Refinement) ─────────────────────────────────────
+// ── Refinement (dim::Refinement) — Requires modality ────────────────
 template <typename Pred>
 struct refined_with final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Refinement;
     using predicate = Pred;
+    using modality = ::crucible::algebra::modality::RelativeMonad_t;
 };
 
 // ── Usage (dim::Usage) ────────────────────────────────────────────────
@@ -208,6 +218,7 @@ struct capability_usage final : grant_base { static constexpr dim::DimAxis relax
 template <::crucible::effects::Effect... Es>
 struct with final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Effect;
+    using modality = ::crucible::algebra::modality::RelativeMonad_t;
     static_assert(sizeof...(Es) > 0,
         "grant::with<> with empty effect pack is structurally degenerate "
         "(engages Effect with the empty row, which IS the strict default). "
@@ -222,15 +233,17 @@ using with_block = with<::crucible::effects::Effect::Block>;
 using with_init  = with<::crucible::effects::Effect::Init>;
 using with_test  = with<::crucible::effects::Effect::Test>;
 
-// ── Security (dim::Security) ──────────────────────────────────────────
+// ── Security (dim::Security) — Declares modality ─────────────────────
 template <typename Policy>
 struct declassify final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Security;
     using policy = Policy;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
 struct upgrade_to_secret final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Security;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
 // ── Protocol (dim::Protocol) ─────────────────────────────────────────
@@ -240,13 +253,14 @@ struct protocol_session final : grant_base {
     using protocol = Proto;
 };
 
-// ── Lifetime (dim::Lifetime) ─────────────────────────────────────────
+// ── Lifetime (dim::Lifetime) — Linear modality ───────────────────────
 template <auto RegionTag>
 struct lifetime_region final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Lifetime;
+    using modality = ::crucible::algebra::modality::Relative_t;
 };
 
-// ── Provenance (dim::Provenance) ─────────────────────────────────────
+// ── Provenance (dim::Provenance) — Declares modality ─────────────────
 //
 // **A2 fix**: `sanitize<TaintClass>` is now mapped to dim::Provenance
 // (was incorrectly dim::Trust pre-A-PLUS-2).  Sanitization is a
@@ -255,12 +269,14 @@ template <typename SourceTag>
 struct from_source final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Provenance;
     using source_tag = SourceTag;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
 template <typename TaintClass>
 struct sanitize final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Provenance;
     using taint_class = TaintClass;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
 // ── Trust (dim::Trust) ────────────────────────────────────────────────
@@ -270,15 +286,19 @@ struct sanitize final : grant_base {
 // `trust_assumed_for<TaintClass>` — companion to sanitize<TaintClass>
 // for the rare standalone trust-assumed case (sanitize engages
 // Provenance; trust_assumed_for engages Trust).
+// Trust (dim::Trust) — Declares modality.  The binding declares a
+// rationale for assuming trust.
 template <auto Rationale>
 struct trust_assumed final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Trust;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
 template <typename TaintClass>
 struct trust_assumed_for final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Trust;
     using taint_class = TaintClass;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
 // ── Representation (dim::Representation) ─────────────────────────────
@@ -316,16 +336,19 @@ struct tier final : grant_base {
 using ::crucible::algebra::lattices::Tolerance;
 using ::crucible::algebra::lattices::VendorBackend;
 
+// Vendor / recipe tier — Quotient modality (equivalence-class names).
 template <VendorBackend Backend>
 struct vendor_backend final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Representation;
     static constexpr VendorBackend value = Backend;
+    using modality = ::crucible::algebra::modality::Quotient_t;
 };
 
 template <Tolerance T>
 struct recipe_tier final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Representation;
     static constexpr Tolerance value = T;
+    using modality = ::crucible::algebra::modality::Quotient_t;
 };
 
 // Convenience aliases — one per shipped vendor / tier.
@@ -345,9 +368,10 @@ using tier_ulp_fp32   = recipe_tier<Tolerance::ULP_FP32>;
 using tier_ulp_fp64   = recipe_tier<Tolerance::ULP_FP64>;
 using tier_bitexact   = recipe_tier<Tolerance::BITEXACT>;
 
-// ── Observability (dim::Observability) ───────────────────────────────
+// ── Observability (dim::Observability) — Declares modality ──────────
 struct observability_visible final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Observability;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
 // ── Complexity (dim::Complexity) ─────────────────────────────────────
@@ -376,14 +400,24 @@ struct complexity_quadratic final : grant_base {
     static constexpr auto value = N;
 };
 
-// ── Precision (dim::Precision) ───────────────────────────────────────
-struct precision_f32 final : grant_base { static constexpr dim::DimAxis relaxes = dim::Precision; };
-struct precision_f64 final : grant_base { static constexpr dim::DimAxis relaxes = dim::Precision; };
-struct reassociate   final : grant_base { static constexpr dim::DimAxis relaxes = dim::Precision; };
+// ── Precision (dim::Precision) — Declares modality ──────────────────
+struct precision_f32 final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Precision;
+    using modality = ::crucible::algebra::modality::Comonad_t;
+};
+struct precision_f64 final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Precision;
+    using modality = ::crucible::algebra::modality::Comonad_t;
+};
+struct reassociate final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Precision;
+    using modality = ::crucible::algebra::modality::Comonad_t;
+};
 
 template <auto Bound>
 struct precision_higham final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Precision;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
 // ── Space (dim::Space) ───────────────────────────────────────────────
@@ -404,15 +438,33 @@ struct space_bounded final : grant_base {
     static constexpr auto value = N;
 };
 
-// ── Overflow (dim::Overflow) ─────────────────────────────────────────
-struct overflow_wrap     final : grant_base { static constexpr dim::DimAxis relaxes = dim::Overflow; };
-struct overflow_saturate final : grant_base { static constexpr dim::DimAxis relaxes = dim::Overflow; };
-struct overflow_widen    final : grant_base { static constexpr dim::DimAxis relaxes = dim::Overflow; };
+// ── Overflow (dim::Overflow) — Requires modality ────────────────────
+struct overflow_wrap final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Overflow;
+    using modality = ::crucible::algebra::modality::RelativeMonad_t;
+};
+struct overflow_saturate final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Overflow;
+    using modality = ::crucible::algebra::modality::RelativeMonad_t;
+};
+struct overflow_widen final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Overflow;
+    using modality = ::crucible::algebra::modality::RelativeMonad_t;
+};
 
-// ── Mutation (dim::Mutation) ─────────────────────────────────────────
-struct mutable_in_place  final : grant_base { static constexpr dim::DimAxis relaxes = dim::Mutation; };
-struct append_only       final : grant_base { static constexpr dim::DimAxis relaxes = dim::Mutation; };
-struct monotonic_advance final : grant_base { static constexpr dim::DimAxis relaxes = dim::Mutation; };
+// ── Mutation (dim::Mutation) — Declares modality ────────────────────
+struct mutable_in_place final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Mutation;
+    using modality = ::crucible::algebra::modality::Comonad_t;
+};
+struct append_only final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Mutation;
+    using modality = ::crucible::algebra::modality::Comonad_t;
+};
+struct monotonic_advance final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Mutation;
+    using modality = ::crucible::algebra::modality::Comonad_t;
+};
 
 // ── Reentrancy (dim::Reentrancy) ─────────────────────────────────────
 struct reentrant final : grant_base { static constexpr dim::DimAxis relaxes = dim::Reentrancy; };
@@ -432,11 +484,12 @@ struct sized final : grant_base {
     static constexpr auto value = Depth;
 };
 
-// ── Version (dim::Version) ───────────────────────────────────────────
+// ── Version (dim::Version) — Quotient modality ──────────────────────
 template <std::uint32_t V>
 struct version final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Version;
     static constexpr std::uint32_t value = V;
+    using modality = ::crucible::algebra::modality::Quotient_t;
     // FIXY-AUDIT-NTTP: V=0 is structurally meaningless (substrate strict
     // default is 1; a literal v=0 in a federation-cache key would
     // collide with "unset").  Authors who want strict default use
@@ -478,6 +531,7 @@ template <ForgePhase P>
 struct forge_phase final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Provenance;
     static constexpr ForgePhase value = P;
+    using modality = ::crucible::algebra::modality::Quotient_t;
 };
 
 // ── CNTP transport-tier identity (Representation axis) ───────────────
@@ -507,6 +561,7 @@ template <TransportTier T>
 struct transport_tier final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Representation;
     static constexpr TransportTier value = T;
+    using modality = ::crucible::algebra::modality::Quotient_t;
 };
 
 // ── Staleness (dim::Staleness) ───────────────────────────────────────
@@ -542,61 +597,48 @@ struct stale_to final : grant_base {
 // Parametric grants (template <auto N> struct sized) get hand-rolled
 // variants below — the macro handles the bulk.
 
-#define CRUCIBLE_FIXY_EVIDENCED_VARIANT(base_name, dim_value)         \
+// FIXY-G10: the macro accepts modality so evidenced variants share
+// their bare counterpart's modality classification.
+#define CRUCIBLE_FIXY_EVIDENCED_VARIANT(base_name, dim_value, mod_tag) \
     template <::crucible::safety::witness::IsWitness W>               \
     struct base_name##_e final : grant_base {                         \
         static constexpr dim::DimAxis relaxes = dim_value;            \
         using witness_t = W;                                          \
+        using modality = ::crucible::algebra::modality::mod_tag;      \
     }
 
-// ── Usage ─────────────────────────────────────────────────────────────
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(affine,           dim::Usage);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(copy,             dim::Usage);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(ghost,            dim::Usage);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(borrow,           dim::Usage);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(capability_usage, dim::Usage);
+// Frame-modality bases.
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(affine,           dim::Usage,          Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(copy,             dim::Usage,          Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(ghost,            dim::Usage,          Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(borrow,           dim::Usage,          Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(capability_usage, dim::Usage,          Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_c,           dim::Representation, Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_packed,      dim::Representation, Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_aligned,     dim::Representation, Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_simd,        dim::Representation, Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_atomic,      dim::Representation, Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(complexity_constant,  dim::Complexity, Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(complexity_unbounded, dim::Complexity, Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(space_unbounded,  dim::Space,          Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(reentrant,        dim::Reentrancy,     Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(coroutine,        dim::Reentrancy,     Absolute_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(productive,       dim::Size,           Absolute_t);
 
-// ── Security ──────────────────────────────────────────────────────────
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(upgrade_to_secret, dim::Security);
+// Declares-modality bases.
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(upgrade_to_secret,     dim::Security,      Comonad_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(observability_visible, dim::Observability, Comonad_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(precision_f32,         dim::Precision,     Comonad_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(precision_f64,         dim::Precision,     Comonad_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(reassociate,           dim::Precision,     Comonad_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(mutable_in_place,      dim::Mutation,      Comonad_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(append_only,           dim::Mutation,      Comonad_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(monotonic_advance,     dim::Mutation,      Comonad_t);
 
-// ── Representation ────────────────────────────────────────────────────
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_c,       dim::Representation);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_packed,  dim::Representation);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_aligned, dim::Representation);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_simd,    dim::Representation);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_atomic,  dim::Representation);
-
-// ── Observability ─────────────────────────────────────────────────────
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(observability_visible, dim::Observability);
-
-// ── Complexity ────────────────────────────────────────────────────────
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(complexity_constant,  dim::Complexity);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(complexity_unbounded, dim::Complexity);
-
-// ── Precision ─────────────────────────────────────────────────────────
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(precision_f32, dim::Precision);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(precision_f64, dim::Precision);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(reassociate,   dim::Precision);
-
-// ── Space ─────────────────────────────────────────────────────────────
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(space_unbounded, dim::Space);
-
-// ── Overflow ──────────────────────────────────────────────────────────
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(overflow_wrap,     dim::Overflow);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(overflow_saturate, dim::Overflow);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(overflow_widen,    dim::Overflow);
-
-// ── Mutation ──────────────────────────────────────────────────────────
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(mutable_in_place,  dim::Mutation);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(append_only,       dim::Mutation);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(monotonic_advance, dim::Mutation);
-
-// ── Reentrancy ────────────────────────────────────────────────────────
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(reentrant, dim::Reentrancy);
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(coroutine, dim::Reentrancy);
-
-// ── Size ──────────────────────────────────────────────────────────────
-CRUCIBLE_FIXY_EVIDENCED_VARIANT(productive, dim::Size);
+// Requires-modality bases.
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(overflow_wrap,         dim::Overflow,      RelativeMonad_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(overflow_saturate,     dim::Overflow,      RelativeMonad_t);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(overflow_widen,        dim::Overflow,      RelativeMonad_t);
 
 #undef CRUCIBLE_FIXY_EVIDENCED_VARIANT
 
@@ -608,6 +650,7 @@ struct vendor_backend_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Representation;
     static constexpr VendorBackend value = Backend;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Quotient_t;
 };
 
 template <Tolerance T, ::crucible::safety::witness::IsWitness W>
@@ -615,6 +658,7 @@ struct recipe_tier_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Representation;
     static constexpr Tolerance value = T;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Quotient_t;
 };
 
 template <TransportTier T, ::crucible::safety::witness::IsWitness W>
@@ -622,6 +666,7 @@ struct transport_tier_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Representation;
     static constexpr TransportTier value = T;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Quotient_t;
 };
 
 template <ForgePhase P, ::crucible::safety::witness::IsWitness W>
@@ -629,6 +674,7 @@ struct forge_phase_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Provenance;
     static constexpr ForgePhase value = P;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Quotient_t;
 };
 
 // with<Es...> with witness (variadic effects need their own template).
@@ -637,56 +683,63 @@ template <::crucible::safety::witness::IsWitness W,
 struct with_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Effect;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::RelativeMonad_t;
     static_assert(sizeof...(Es) > 0,
         "grant::with_e<W> with empty effect pack is structurally degenerate. "
         "Use accept_default_strict_for<dim::Effect> for the strict-default case.");
 };
 
-// declassify<Policy> with witness.
+// declassify<Policy> with witness — Declares.
 template <typename Policy, ::crucible::safety::witness::IsWitness W>
 struct declassify_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Security;
     using policy = Policy;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
-// from_source<SourceTag> with witness.
+// from_source<SourceTag> with witness — Declares.
 template <typename SourceTag, ::crucible::safety::witness::IsWitness W>
 struct from_source_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Provenance;
     using source_tag = SourceTag;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
-// sanitize<TaintClass> with witness.
+// sanitize<TaintClass> with witness — Declares.
 template <typename TaintClass, ::crucible::safety::witness::IsWitness W>
 struct sanitize_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Provenance;
     using taint_class = TaintClass;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
-// trust_assumed_for<TaintClass> with witness.
+// trust_assumed_for<TaintClass> with witness — Declares.
 template <typename TaintClass, ::crucible::safety::witness::IsWitness W>
 struct trust_assumed_for_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Trust;
     using taint_class = TaintClass;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
-// lifetime_region<auto RegionTag> with witness.
+// lifetime_region<auto RegionTag> with witness — Linear.
 template <auto RegionTag, ::crucible::safety::witness::IsWitness W>
 struct lifetime_region_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Lifetime;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Relative_t;
 };
 
-// refined_with<Pred> with witness.
+// refined_with<Pred> with witness — Requires.
 template <typename Pred, ::crucible::safety::witness::IsWitness W>
 struct refined_with_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Refinement;
     using predicate = Pred;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::RelativeMonad_t;
 };
 
 // space_bounded<N> with witness.
@@ -713,12 +766,13 @@ struct sized_e final : grant_base {
     using witness_t = W;
 };
 
-// version<V> with witness.
+// version<V> with witness — Quotient (equivalence-class).
 template <std::uint32_t V, ::crucible::safety::witness::IsWitness W>
 struct version_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Version;
     static constexpr std::uint32_t value = V;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Quotient_t;
     static_assert(V > 0, "grant::version_e<V, W> requires V > 0.");
 };
 
@@ -742,14 +796,17 @@ struct typed_e final : grant_base {
     using witness_t = W;
 };
 
-// trust_assumed<auto Rationale> with witness.
+// trust_assumed<auto Rationale> with witness — Declares.
 template <auto Rationale, ::crucible::safety::witness::IsWitness W>
 struct trust_assumed_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Trust;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
-// protocol_session<Proto> with witness.
+// protocol_session<Proto> with witness — keeps grant_base's Absolute_t
+// default (Protocol is a Frame property — the session-type is invariant
+// of the value).
 template <typename Proto, ::crucible::safety::witness::IsWitness W>
 struct protocol_session_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Protocol;
@@ -757,11 +814,12 @@ struct protocol_session_e final : grant_base {
     using witness_t = W;
 };
 
-// precision_higham<Bound> with witness.
+// precision_higham<Bound> with witness — Declares.
 template <auto Bound, ::crucible::safety::witness::IsWitness W>
 struct precision_higham_e final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Precision;
     using witness_t = W;
+    using modality = ::crucible::algebra::modality::Comonad_t;
 };
 
 // complexity_linear<N> / complexity_quadratic<N> with witness.
@@ -923,6 +981,48 @@ static_assert(sizeof(grant::with_e<TestedW, ::crucible::effects::Effect::IO>) ==
 // Evidenced variants are `final` (cheat-bypass closure).
 static_assert(::crucible::safety::NotInherited<grant::copy_e<TestedW>>);
 static_assert(::crucible::safety::NotInherited<grant::reentrant_e<TestedW>>);
+
+// FIXY-G10: every grant carries `modality` associated type.
+static_assert(std::is_same_v<typename grant::copy::modality,
+                             ::crucible::algebra::modality::Absolute_t>);
+static_assert(std::is_same_v<typename grant::reentrant::modality,
+                             ::crucible::algebra::modality::Absolute_t>);
+static_assert(std::is_same_v<typename grant::mutable_in_place::modality,
+                             ::crucible::algebra::modality::Comonad_t>);
+static_assert(std::is_same_v<typename grant::append_only::modality,
+                             ::crucible::algebra::modality::Comonad_t>);
+static_assert(std::is_same_v<typename grant::overflow_wrap::modality,
+                             ::crucible::algebra::modality::RelativeMonad_t>);
+static_assert(std::is_same_v<typename grant::with<::crucible::effects::Effect::IO>::modality,
+                             ::crucible::algebra::modality::RelativeMonad_t>);
+static_assert(std::is_same_v<typename grant::vendor_nv::modality,
+                             ::crucible::algebra::modality::Quotient_t>);
+static_assert(std::is_same_v<typename grant::version<3>::modality,
+                             ::crucible::algebra::modality::Quotient_t>);
+static_assert(std::is_same_v<typename grant::declassify<int>::modality,
+                             ::crucible::algebra::modality::Comonad_t>);
+static_assert(std::is_same_v<typename grant::from_source<int>::modality,
+                             ::crucible::algebra::modality::Comonad_t>);
+static_assert(std::is_same_v<typename grant::lifetime_region<0>::modality,
+                             ::crucible::algebra::modality::Relative_t>);
+static_assert(std::is_same_v<typename grant::refined_with<int>::modality,
+                             ::crucible::algebra::modality::RelativeMonad_t>);
+static_assert(std::is_same_v<typename grant::observability_visible::modality,
+                             ::crucible::algebra::modality::Comonad_t>);
+static_assert(std::is_same_v<typename grant::precision_f32::modality,
+                             ::crucible::algebra::modality::Comonad_t>);
+
+// Evidenced variants preserve modality.
+static_assert(std::is_same_v<typename grant::mutable_in_place_e<TestedW>::modality,
+                             ::crucible::algebra::modality::Comonad_t>);
+static_assert(std::is_same_v<typename grant::overflow_wrap_e<TestedW>::modality,
+                             ::crucible::algebra::modality::RelativeMonad_t>);
+static_assert(std::is_same_v<typename grant::vendor_backend_e<grant::VendorBackend::NV, TestedW>::modality,
+                             ::crucible::algebra::modality::Quotient_t>);
+static_assert(std::is_same_v<typename grant::lifetime_region_e<0, TestedW>::modality,
+                             ::crucible::algebra::modality::Relative_t>);
+static_assert(std::is_same_v<typename grant::with_e<TestedW, ::crucible::effects::Effect::IO>::modality,
+                             ::crucible::algebra::modality::RelativeMonad_t>);
 
 }  // namespace detail
 

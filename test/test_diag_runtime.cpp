@@ -166,9 +166,9 @@ namespace {
             ++seen;
         }
     });
-    EXPECT(seen == 26,
-           "every one of 26 foundation Categories must route through sink "
-           "(22 wrapper-axis + 3 F* alias + 1 witness FIXY-G9)");
+    EXPECT(seen == 28,
+           "every one of 28 foundation Categories must route through sink "
+           "(22 wrapper-axis + 3 F* alias + 1 witness FIXY-G9 + 2 modality FIXY-G10)");
 
     diag::set_violation_sink(previous);
 }
