@@ -217,6 +217,10 @@ set_tests_properties(test_fixy_reflect PROPERTIES LABELS "fixy")
 crucible_test(test_fixy_wire_grade)
 set_tests_properties(test_fixy_wire_grade PROPERTIES LABELS "fixy")
 
+# ── FIXY-G2 — value_t<F> substrate stack alignment sentinel TU ──────
+crucible_test(test_fixy_value_t)
+set_tests_properties(test_fixy_value_t PROPERTIES LABELS "fixy")
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1209,6 +1213,12 @@ crucible_neg_compile_fixy_test(neg_fixy_wire_decode_grade_mismatch
     "wire_decode rejects: grade mismatch")
 crucible_neg_compile_fixy_test(neg_fixy_wire_encode_non_fn
     "requires F to be a fixy::fn|IsFixyFn")
+
+# ── FIXY-G2 — value_t<F> alignment discipline fixtures ──────────────
+crucible_neg_compile_fixy_test(neg_fixy_value_t_non_fn
+    "requires F to be a fixy::fn|IsFixyFn|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_call_args_mismatched_arity
+    "too few arguments|no match|cannot convert|mismatched")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound

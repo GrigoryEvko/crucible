@@ -149,6 +149,24 @@ struct fn final {
     [[nodiscard]] constexpr auto&& value(this Self&& self) noexcept {
         return std::forward<Self>(self).value_.value();
     }
+
+    // ─── call(Args...) — FIXY-G2 value-grade-aligned invocation ────
+    //
+    // Forwards to the underlying value's callable.  Return type is
+    // `value_t<fn>` — today that's `type_t` (the substrate-resolved
+    // underlying type); future iterations may wrap the return in
+    // outer-axis substrate wrappers per canonical-nesting order.
+    //
+    // The bare `.value()()` direct-invocation form is preserved as
+    // backwards-compat — call sites that don't care about value-axis
+    // alignment can keep using it.
+    template <typename Self, typename... Args>
+    constexpr decltype(auto) call(this Self&& self, Args&&... args)
+        noexcept(noexcept(std::forward<Self>(self).value()(
+            std::forward<Args>(args)...)))
+    {
+        return std::forward<Self>(self).value()(std::forward<Args>(args)...);
+    }
 };
 
 // ═════════════════════════════════════════════════════════════════════
