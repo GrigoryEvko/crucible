@@ -555,6 +555,37 @@ static_assert(::crucible::safety::NotInherited<grant::affine>);
 static_assert(::crucible::safety::NotInherited<grant::with<::crucible::effects::Effect::IO>>);
 static_assert(::crucible::safety::NotInherited<grant::declassify<int>>);
 
+// New typed-NTTP CNTP/Forge/Mimic vocab — empty + final + grant_base.
+static_assert(IsGrantTag<grant::vendor_nv>);
+static_assert(IsGrantTag<grant::tier_bitexact>);
+static_assert(IsGrantTag<grant::transport_tier<grant::TransportTier::AfXdp>>);
+static_assert(IsGrantTag<grant::forge_phase<grant::ForgePhase::Ingest>>);
+static_assert(sizeof(grant::vendor_nv) == 1);
+static_assert(sizeof(grant::tier_bitexact) == 1);
+static_assert(sizeof(grant::transport_tier<grant::TransportTier::Tcp>) == 1);
+static_assert(sizeof(grant::forge_phase<grant::ForgePhase::Lower>) == 1);
+static_assert(::crucible::safety::NotInherited<grant::vendor_nv>);
+static_assert(::crucible::safety::NotInherited<grant::tier_bitexact>);
+static_assert(::crucible::safety::NotInherited<grant::transport_tier<grant::TransportTier::Quic>>);
+static_assert(::crucible::safety::NotInherited<grant::forge_phase<grant::ForgePhase::Emit>>);
+
+// Typed-NTTP values round-trip through the tag's `value` member.
+static_assert(grant::vendor_nv::value      == grant::VendorBackend::NV);
+static_assert(grant::tier_bitexact::value  == grant::Tolerance::BITEXACT);
+static_assert(grant::transport_tier<grant::TransportTier::Rdma>::value
+              == grant::TransportTier::Rdma);
+static_assert(grant::forge_phase<grant::ForgePhase::Validate>::value
+              == grant::ForgePhase::Validate);
+
+// All shipped typed-NTTP tags engage dim::Representation (vendor/tier/
+// transport) or dim::Provenance (forge_phase) — confirms relaxes axis.
+static_assert(grant::vendor_nv::relaxes      == dim::Representation);
+static_assert(grant::tier_bitexact::relaxes  == dim::Representation);
+static_assert(grant::transport_tier<grant::TransportTier::Tcp>::relaxes
+              == dim::Representation);
+static_assert(grant::forge_phase<grant::ForgePhase::Ingest>::relaxes
+              == dim::Provenance);
+
 }  // namespace detail
 
 }  // namespace crucible::fixy
