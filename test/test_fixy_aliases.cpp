@@ -87,6 +87,11 @@ using Sess_Ckpt = cs::CheckpointedSession<cs::Send<int, cs::End>, cs::End>;
 using Sub_Ckpt  = sp::CheckpointedSession<sp::Send<int, sp::End>, sp::End>;
 static_assert(std::is_same_v<Sess_Ckpt, Sub_Ckpt>);
 
+// EpochedDelegate (epoch-aware delegation, Phase C re-export)
+using Sess_Epoch = cs::EpochedDelegate<cs::Send<int, cs::End>, cs::End, 0, 0>;
+using Sub_Epoch  = sp::EpochedDelegate<sp::Send<int, sp::End>, sp::End, 0, 0>;
+static_assert(std::is_same_v<Sess_Epoch, Sub_Epoch>);
+
 // ─── 2. fixy::mach — Machine + mint factories are identity aliases ────
 
 struct DummyState { int x = 0; };
@@ -114,6 +119,26 @@ static_assert(sizeof(Mach_T) == sizeof(DummyState));
 
 static_assert(double_positive(3) == 6);
 static_assert(double_positive(100) == 200);
+
+// ─── 4. fixy::decide — named predicate catalog re-export ─────────────
+//
+// `fixy::decide::no_overflow_sum(a, b)` is the substrate
+// `safety::decide::no_overflow_sum(a, b)` by namespace alias.  A call
+// through either path produces the same machine code.  Pin via
+// constexpr equality checks that fire at compile time.
+
+namespace cd = crucible::fixy::decide;
+
+// The compiler sees cd::X and crucible::decide::X as the same symbol
+// (namespace alias collapses), which is the whole point — the
+// substrate symbol IS the fixy::decide path.  Pin the actual predicate
+// behavior to prove the re-export is live.
+static_assert(cd::no_overflow_sum(int{3}, int{5}));
+static_assert(!cd::no_overflow_sum(INT32_MAX, int{1}));
+static_assert(cd::in_range(int{7}, int{0}, int{10}));
+static_assert(cd::positive(int{42}));
+static_assert(!cd::positive(int{0}));
+static_assert(cd::implies(true, true));
 
 }  // namespace
 

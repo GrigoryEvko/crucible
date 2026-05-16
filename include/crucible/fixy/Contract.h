@@ -46,7 +46,27 @@
 //   safety/Post.h                       — consteval-fire post-condition macro
 
 #include <crucible/safety/Contract.h>
+#include <crucible/safety/Decide.h>
 
-// No namespace re-open: CRUCIBLE_PRE / CRUCIBLE_POST are macros, not
-// namespaced identifiers.  The fixy:: surface promise here is the
-// stable include path, not a renaming of the call form.
+// No namespace re-open for the macros: CRUCIBLE_PRE / CRUCIBLE_POST
+// are preprocessor symbols.  Their include path through fixy::contract
+// IS the discipline surface promise; the call form remains identical.
+
+// ─── decide::* named-predicate catalog re-export ──────────────────────
+//
+// The substrate's `crucible::decide::*` catalog (14 named VC
+// predicates per CLAUDE.md §X / feedback_decide_catalog) is the
+// canonical surface every CONTRACT-* migration cites at `CRUCIBLE_PRE`
+// / `CRUCIBLE_POST` sites.  Re-exporting under `fixy::decide` keeps
+// fixy-only call sites one namespace path away from the load-bearing
+// predicates.
+//
+// **Surface guarantee.**  `fixy::decide::*` IS `crucible::decide::*`
+// by namespace-alias semantics — every function template, every
+// `Interval<T>` instantiation, every predicate constant is the
+// substrate symbol.  A future substrate rename surfaces here first
+// (rather than at every greenfield call site).
+
+namespace crucible::fixy {
+namespace decide = ::crucible::decide;
+}  // namespace crucible::fixy

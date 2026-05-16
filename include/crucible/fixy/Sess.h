@@ -60,6 +60,8 @@
 //   sessions/SessionCheckpoint.h        — CheckpointedSession
 //   sessions/SessionMint.h              — mint_session, mint_channel, mint_permissioned_session
 
+#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
@@ -105,12 +107,47 @@ using ::crucible::safety::proto::Accept;
 using ::crucible::safety::proto::CheckpointedSession;
 
 // ═════════════════════════════════════════════════════════════════════
+// ── Delegate epoch-versioned variant (sessions/SessionDelegate.h) ──
+// ═════════════════════════════════════════════════════════════════════
+//
+// EpochedDelegate<T, K, MinEpoch, MinGeneration> is the canonical
+// delegated session form for Canopy reshard-aware membership
+// protocols: the delegated continuation only fires if the surrounding
+// LoopCtx's epoch/generation lattice admits MinEpoch/MinGeneration.
+
+using ::crucible::safety::proto::EpochedDelegate;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Recording / crash-watched handle re-exports ────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// RecordingSessionHandle wraps a SessionHandle with SessionEventLog
+// event emission for replay / debugging.  CrashWatchedHandle wraps a
+// SessionHandle with Stop_g<C> peer-crash propagation.  Both are
+// orthogonal to the protocol layer and compose with the typed-session
+// stack — production code that wires either through fixy::fn::Fn
+// instantiates the handle template directly through fixy::sess.
+
+using ::crucible::safety::proto::RecordingSessionHandle;
+using ::crucible::safety::proto::CrashWatchedHandle;
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Mint factories (CLAUDE.md §XXI Universal Mint Pattern) ─────────
 // ═════════════════════════════════════════════════════════════════════
+//
+// Note: `mint_session<Proto>(ctx, resource)` is `=delete`d in
+// sessions/SessionMint.h — production code uses
+// `mint_permissioned_session<Proto>(ctx, resource, perms...)` for the
+// empty-PermSet shim AND the non-empty form alike.  The deleted
+// declarations stay re-exported so stale call sites surface the
+// canonical diagnostic via the fixy namespace path.
 
 using ::crucible::safety::proto::mint_session;
 using ::crucible::safety::proto::mint_permissioned_session;
 using ::crucible::safety::proto::mint_channel;
+using ::crucible::safety::proto::mint_session_handle;
+using ::crucible::safety::proto::mint_recording_session;
+using ::crucible::safety::proto::mint_crash_watched_session;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test — identity check for the re-export ──────────────────
@@ -142,6 +179,15 @@ static_assert(std::is_same_v<End, ::crucible::safety::proto::End>,
 
 static_assert(std::is_same_v<Continue, ::crucible::safety::proto::Continue>,
     "fixy::sess::Continue alias must be identical to safety::proto::Continue.");
+
+// EpochedDelegate identity check — Phase C re-export.
+static_assert(std::is_same_v<
+    EpochedDelegate<Send<int, End>, End, 0, 0>,
+    ::crucible::safety::proto::EpochedDelegate<
+        ::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>,
+        ::crucible::safety::proto::End, 0, 0>>,
+    "fixy::sess::EpochedDelegate alias must be identical to "
+    "safety::proto::EpochedDelegate.");
 
 }  // namespace self_test
 
