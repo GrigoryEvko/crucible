@@ -77,6 +77,7 @@
 #include <crucible/fixy/Grant.h>
 #include <crucible/fixy/Modality.h>
 #include <crucible/fixy/Reject.h>
+#include <crucible/safety/witness/Witness.h>
 
 #include <tuple>
 #include <type_traits>
@@ -149,7 +150,77 @@ public:
 template <typename... Ts>
 inline constexpr bool dims_all_distinct_v = dims_all_distinct<Ts...>::value;
 
+// ── Followup C — stance::compose witness-floor consistency ────────
+//
+// When a NewGrant carries an EVIDENCED witness (witness_t != the bare
+// substrate default Asserted<UnnamedRationale>) the tier MUST meet
+// the modality-class floor recorded in default_witness_for_class<MC>.
+// Otherwise the composition silently DOWNGRADES the binding's witness
+// posture below its declared modality's expectation.
+//
+// Examples of the check firing:
+//   * Coeffect modality class default = Tested<0> (tier 2).  A
+//     cost_polynomial_e<W, ...> grant with W = Asserted<R> (tier 1) is
+//     BELOW the class floor.  Compose rejects.
+//   * Linear modality class default = CrossValidated<0> (tier 3).  A
+//     lifetime_region_e<R, W> with W = Tested<id> (tier 2) is below
+//     the class floor.  Compose rejects.
+//
+// Bare (non-evidenced) grants carry witness_t = DefaultWitness =
+// Asserted<UnnamedRationale> and are EXEMPT from the check — the
+// check fires only when the grant DECLARES a distinct witness_t that
+// happens to be weaker than the class floor.  The discriminator
+// `is_default_witness_v<W>` returns true for DefaultWitness, so bare
+// grants pass through with no per-class floor demand.
+
+template <typename W>
+inline constexpr bool is_default_witness_v =
+    std::is_same_v<W, ::crucible::safety::witness::DefaultWitness>;
+
+template <typename G>
+struct grant_witness_consistent_with_class {
+private:
+    using grant_w_t = typename G::witness_t;
+    static constexpr ::crucible::fixy::ModalityClass mc_v =
+        ::crucible::fixy::grant_traits<G>::modality_class_v;
+    using class_floor_t = ::crucible::fixy::default_witness_for_class<mc_v>;
+    static constexpr std::uint8_t grant_tier =
+        ::crucible::safety::witness::witness_tier_v<grant_w_t>;
+    static constexpr std::uint8_t floor_tier =
+        ::crucible::safety::witness::witness_tier_v<class_floor_t>;
+public:
+    // Exempt bare grants (DefaultWitness) so the check ONLY fires on
+    // explicit witness downgrades.
+    static constexpr bool value =
+        is_default_witness_v<grant_w_t> || (grant_tier >= floor_tier);
+};
+
+template <typename G>
+inline constexpr bool grant_witness_consistent_with_class_v =
+    grant_witness_consistent_with_class<std::remove_cvref_t<G>>::value;
+
+template <typename... NewGrants>
+inline constexpr bool stance_compose_witness_consistent_v =
+    (grant_witness_consistent_with_class_v<NewGrants> && ... && true);
+
 }  // namespace detail
+
+// ── public reflection façade for diagnostics + tests ──────────────
+template <typename... NewGrants>
+inline constexpr bool stance_compose_witness_consistent_v =
+    detail::stance_compose_witness_consistent_v<NewGrants...>;
+
+template <typename Base, typename NewGrant, typename FoundW, typename ExpectedW>
+struct StanceComposeWitnessDowngrade {
+    static constexpr const char* description =
+        "stance::compose rejects: a NewGrant in the pack declared an "
+        "evidenced witness_t weaker than its modality class's floor.  "
+        "Frame=Asserted, Declares=Tested, Requires=Asserted, "
+        "Linear=CrossValidated, Quotient=Tested, Coeffect=Tested.  "
+        "Either lift the grant's witness_t to the class floor, OR drop "
+        "the evidence and rely on the bare-grant default (witness_t = "
+        "Asserted<UnnamedRationale>, which is exempt from this check).";
+};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── stance::compose<Base, NewGrants...> ────────────────────────────
@@ -190,6 +261,19 @@ struct compose {
         "PRODUCES the property'.  The two claims are categorically "
         "incompatible.  Pick one — keep Frame OR Declares — and resolve "
         "the intent at the author site.");
+    // Followup C: every EVIDENCED grant must carry a witness_t at or
+    // above its modality class's floor.  Bare grants (DefaultWitness)
+    // are exempt; the check fires only on explicit downgrades.
+    static_assert(detail::stance_compose_witness_consistent_v<NewGrants...>,
+        "stance::compose<Base, NewGrants...> rejects: a NewGrant carries "
+        "an EVIDENCED witness_t weaker than the modality class's floor.  "
+        "Frame class floor = Asserted<>.  Declares class floor = Tested<0>.  "
+        "Requires class floor = Asserted<>.  Linear class floor = "
+        "CrossValidated<0>.  Quotient class floor = Tested<0>.  Coeffect "
+        "class floor = Tested<0>.  Lift the grant's witness_t to the "
+        "class floor OR drop the evidence (bare grants are exempt).  "
+        "See StanceComposeWitnessDowngrade<Base, NewGrant, FoundW, "
+        "ExpectedW> for the structured diagnostic carrier.");
     using type = typename detail::compose_fold<Base, NewGrants...>::type;
 };
 

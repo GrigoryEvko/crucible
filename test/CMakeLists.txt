@@ -1344,6 +1344,18 @@ crucible_neg_compile_fixy_test(neg_fixy_resources_bgworker_without_budget
 crucible_neg_compile_fixy_test(neg_fixy_resources_unbounded_recursion
     "loop_bound|UINT64_MAX|structurally inconsistent|no bound declared")
 
+# ── FIXY-G11/G12 Followups (Commit 1) ───────────────────────────────
+# A: R020 at mint_federation_channel — pre-condition failed.
+crucible_neg_compile_fixy_test(neg_fixy_rule_R020_federation_peer_unbounded
+    "all_roles_r020_satisfied_v|R020|federation_peer|mint_federation_channel|wallclock_budget")
+# B: terminating_e<Asserted<>> under hot-path Tested-floor admission.
+crucible_neg_compile_fixy_test(neg_fixy_resources_witness_floor_terminating
+    "FnWitnessAtLeast|witness floor|Tested|terminating_e|Asserted")
+# C: stance::compose witness-floor consistency rejects evidenced
+#    downgrades below the modality class floor.
+crucible_neg_compile_fixy_test(neg_fixy_stance_compose_witness_downgrade
+    "stance_compose_witness_consistent_v|class.s floor|StanceComposeWitnessDowngrade|witness_t weaker|Coeffect|Tested")
+
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
 # delegated-protocol case at the consteval assertion boundary.

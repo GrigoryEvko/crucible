@@ -28,6 +28,9 @@
 //
 //   cg::bounded_alloc_e<W, MaxBytes>  — evidenced variant
 //   cg::wallclock_budget_e<W, Nanos>  — evidenced variant
+//   cg::bounded_io_e<W, MaxOps>       — evidenced variant
+//   cg::loop_bound_e<W, N>            — evidenced variant
+//   cg::terminating_e<W>              — evidenced variant
 //
 //   HasResourcesGrant<F>           — consumer-side predicate
 //   wallclock_budget_v<F>          — extract deadline (UINT64_MAX = unset)
@@ -156,6 +159,26 @@ struct terminating_e final : grant_base {
     using witness_t = W;
 };
 
+template <::crucible::safety::witness::IsWitness W, std::uint64_t MaxOps>
+struct bounded_io_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Resources;
+    static constexpr std::uint64_t max_ops = MaxOps;
+    using witness_t = W;
+};
+
+template <::crucible::safety::witness::IsWitness W, std::uint64_t N>
+struct loop_bound_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Resources;
+    static constexpr std::uint64_t max_iterations = N;
+    using witness_t = W;
+    static_assert(N > 0,
+        "cg::loop_bound_e<W, N> requires N > 0.");
+    static_assert(N != UINT64_MAX,
+        "cg::loop_bound_e<W, UINT64_MAX> is structurally inconsistent: "
+        "UINT64_MAX is the sentinel for 'no bound declared'.  Use a "
+        "concretely-numbered upper bound for genuine bounded loops.");
+};
+
 }  // namespace crucible::fixy::grant
 
 namespace crucible::fixy {
@@ -195,6 +218,12 @@ inline constexpr bool grant_engages_resources_v<::crucible::fixy::grant::wallclo
 
 template <typename W>
 inline constexpr bool grant_engages_resources_v<::crucible::fixy::grant::terminating_e<W>> = true;
+
+template <typename W, std::uint64_t N>
+inline constexpr bool grant_engages_resources_v<::crucible::fixy::grant::bounded_io_e<W, N>> = true;
+
+template <typename W, std::uint64_t N>
+inline constexpr bool grant_engages_resources_v<::crucible::fixy::grant::loop_bound_e<W, N>> = true;
 
 template <typename F>
 struct fn_has_resources_grant;
@@ -322,6 +351,11 @@ struct io_of_grant<::crucible::fixy::grant::bounded_io<N>> {
     static constexpr std::uint64_t value = N;
 };
 
+template <typename W, std::uint64_t N>
+struct io_of_grant<::crucible::fixy::grant::bounded_io_e<W, N>> {
+    static constexpr std::uint64_t value = N;
+};
+
 template <typename... Grants>
 struct first_io_in {
     static constexpr std::uint64_t value = UINT64_MAX;
@@ -361,6 +395,11 @@ struct loop_bound_of_grant {
 
 template <std::uint64_t N>
 struct loop_bound_of_grant<::crucible::fixy::grant::loop_bound<N>> {
+    static constexpr std::uint64_t value = N;
+};
+
+template <typename W, std::uint64_t N>
+struct loop_bound_of_grant<::crucible::fixy::grant::loop_bound_e<W, N>> {
     static constexpr std::uint64_t value = N;
 };
 
@@ -443,6 +482,19 @@ static_assert(cg::wallclock_budget<1'000'000>::budget_ns == 1'000'000);
 static_assert(cg::bounded_io<0>::max_ops == 0);
 static_assert(cg::loop_bound<256>::max_iterations == 256);
 static_assert(cg::terminating::claims_terminating);
+
+// Followup B: evidenced variants engage Resources + carry witness_t.
+namespace sw_tt = ::crucible::safety::witness;
+static_assert(cg::bounded_io_e<sw_tt::Tested<0>, 0>::relaxes == dim::Resources);
+static_assert(cg::bounded_io_e<sw_tt::Tested<0>, 0>::max_ops == 0);
+static_assert(cg::loop_bound_e<sw_tt::Tested<0>, 256>::relaxes == dim::Resources);
+static_assert(cg::loop_bound_e<sw_tt::Tested<0>, 256>::max_iterations == 256);
+static_assert(std::is_same_v<
+    typename cg::bounded_io_e<sw_tt::Tested<0>, 0>::witness_t,
+    sw_tt::Tested<0>>);
+static_assert(std::is_same_v<
+    typename cg::loop_bound_e<sw_tt::Tested<0>, 256>::witness_t,
+    sw_tt::Tested<0>>);
 
 }  // namespace termination_self_test
 

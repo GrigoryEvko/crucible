@@ -50,6 +50,7 @@
 #include <crucible/fixy/Fn.h>
 #include <crucible/fixy/Reflect.h>
 #include <crucible/fixy/Reject.h>
+#include <crucible/fixy/Rules.h>
 
 #include <tuple>
 #include <type_traits>
@@ -128,6 +129,49 @@ concept FederationCompatible =
     detail::all_pairs_compatible_v<Roles...>;
 
 // ═════════════════════════════════════════════════════════════════════
+// ── Followup A — R020 mint-time enforcement ────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-G12 shipped R020 (federation peer roles require terminating +
+// wallclock_budget) as a CONSUMER-SIDE predicate.  The pre-Followup
+// `mint_federation_channel<Roles...>` did NOT auto-enforce R020 — a
+// channel could be minted with peer roles that lacked bounded-resource
+// discipline and the violation surfaced only at admission downstream.
+//
+// Followup A threads R020 into the mint's `requires` clause: every
+// participating role MUST satisfy `R020_federation_peer_bounded_v`.
+// A peer missing terminating or wallclock_budget rejects at the mint
+// construction site with a structured diagnostic naming the offending
+// role's position in the pack.
+
+namespace detail {
+
+template <typename... Roles>
+inline constexpr bool all_roles_r020_satisfied_v =
+    (::crucible::fixy::rule::R020_federation_peer_bounded_v<
+        std::remove_cvref_t<Roles>> && ... && true);
+
+}  // namespace detail
+
+template <typename... Roles>
+inline constexpr bool all_roles_r020_satisfied_v =
+    detail::all_roles_r020_satisfied_v<Roles...>;
+
+// R020_FederationPeerUnbounded<Role> — diagnostic carrier naming the
+// offending role.  Substrate-level Categories live in safety/Diagnostic.h;
+// fixy-layer rule diagnostics carry their own type identity for grep-
+// discoverable rejection messages.
+template <typename Role>
+struct R020_FederationPeerUnbounded {
+    static constexpr const char* description =
+        "R020 — federation peer role lacks bounded-resource discipline "
+        "(terminating + wallclock_budget required).  A federation "
+        "participant that can spin indefinitely poisons the MPST "
+        "channel.  Annotate the role with cg::terminating + "
+        "cg::wallclock_budget<Nanos> before participating.";
+};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── FederationGrade<Roles...> ──────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
@@ -167,10 +211,17 @@ struct FederationChannel final {
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename... Roles>
-    requires FederationCompatible<Roles...>
+    requires FederationCompatible<Roles...> &&
+             detail::all_roles_r020_satisfied_v<Roles...>
 [[nodiscard]] constexpr FederationChannel<std::remove_cvref_t<Roles>...>
 mint_federation_channel(Roles... roles) noexcept
 {
+    static_assert(detail::all_roles_r020_satisfied_v<Roles...>,
+        "mint_federation_channel rejects: at least one role in the Roles "
+        "pack fails R020 — federation peer roles must carry cg::terminating "
+        "+ cg::wallclock_budget<Nanos>.  Decorate the offending role(s) "
+        "and retry.  See fixy::R020_FederationPeerUnbounded<Role> for the "
+        "structured diagnostic carrier.");
     return FederationChannel<std::remove_cvref_t<Roles>...>{
         std::forward<Roles>(roles)...};
 }

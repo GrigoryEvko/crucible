@@ -18,7 +18,10 @@ using FnPtr = int(*)(int);
 
 int identity_impl(int x) noexcept { return x; }
 
-// Three roles — same grade vector → federation compatible.
+// Three roles — same grade vector → federation compatible.  Each role
+// carries cg::terminating + cg::wallclock_budget<...> per R020 (federation
+// peer bounded-resource discipline), which mint_federation_channel
+// enforces at construction time (FIXY-G11/G12 Followup A).
 template <int RoleId>
 using RoleBinding = cf::fn<FnPtr,
     cf::accept_default_strict_for<cd::Type>,
@@ -40,7 +43,9 @@ using RoleBinding = cf::fn<FnPtr,
     cf::accept_default_strict_for<cd::Reentrancy>,
     cf::accept_default_strict_for<cd::Size>,
     cf::accept_default_strict_for<cd::Version>,
-    cf::accept_default_strict_for<cd::Staleness>
+    cf::accept_default_strict_for<cd::Staleness>,
+    cg::terminating,
+    cg::wallclock_budget<1'000'000'000>  // 1 second deadline
 >;
 
 using Org1 = RoleBinding<1>;
