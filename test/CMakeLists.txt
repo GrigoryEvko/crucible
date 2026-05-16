@@ -1103,6 +1103,15 @@ crucible_neg_compile_fixy_test(neg_fixy_wrong_dim_grant               "FixyNotEn
 crucible_neg_compile_fixy_test(neg_fixy_inheritance_bypass_attempt
     "cannot derive from .*final.* base")
 
+# FIXY-B4 — §6.8 collision rule triggered THROUGH fixy::fn.  M012 is
+# the only rule fully reachable from grant tags in Phase B (others
+# require substrate-side opt-in marker traits like marks_async /
+# marks_ct).  Witness: grant::monotonic_advance + grant::with<Bg> at
+# default (non-Atomic) Representation triggers the substrate's M012
+# diagnostic.
+crucible_neg_compile_fixy_test(neg_fixy_rule_M012_monotonic_concurrent
+    "M012.*monotonic.*concurrent")
+
 # FIXY-AUDIT-NTTP / FIXY-AUDIT-CVR — discovered during the post-A-PLUS
 # soundness audit.  Two new bypass classes closed:
 #   - NTTP escape: out-of-range DimAxis NTTP on accept_default_strict_for
