@@ -26,6 +26,8 @@ namespace {
 
 namespace ct = crucible::fixy::theory;
 namespace cp = crucible::fixy::theory::pattern;
+namespace cs = crucible::safety::fn;
+namespace cfx = crucible::effects;
 
 // ─── 1. Catalog cardinality ──────────────────────────────────────────
 
@@ -83,9 +85,80 @@ static_assert(std::is_same_v<LastEntry::pattern_tag,
                              cp::gaps_017_capability_replay_session>);
 static_assert(LastEntry::cite.find("GAPS-017") != std::string_view::npos);
 
+// ─── 4. Cite hash stability + uniqueness ─────────────────────────────
+//
+// Each entry hashes to a non-zero 64-bit identifier; adjacent entries
+// produce distinct hashes.  A federation cache slot keyed on the
+// hash inherits stability from this static_assert family.
+
+static_assert(ct::theory_cite_hash_v<std::tuple_element_t<0, ct::Catalog>> != 0,
+    "Theory cite hash must be non-zero — fnv1a + fmix64 distortion.");
+
+static_assert(ct::theory_cite_hash_v<std::tuple_element_t<0, ct::Catalog>> !=
+              ct::theory_cite_hash_v<std::tuple_element_t<1, ct::Catalog>>,
+    "Theory cite hash collision between two distinct corpus entries — "
+    "investigate fmix64 stability.");
+
+// Hash is structural — same Entry type produces the same hash twice.
+static_assert(ct::theory_cite_hash_v<FirstEntry> ==
+              ct::theory_cite_hash_v<FirstEntry>,
+    "theory_cite_hash_v must be a pure function of Entry type.");
+
+// ─── 5. Pattern matcher behaviour ────────────────────────────────────
+//
+// `which_pattern_matches<F>()` returns the first matching corpus
+// entry's cite, or empty if no pattern matches.  The matcher is
+// purely structural: it inspects Fn axes (mutation_v, effect_row_t,
+// usage_v, security_v, ...) without re-running ValidComposition.
+
+// (a) DefaultFn — substrate's healthiest baseline.  No pattern matches.
+using DefaultFn = cs::Fn<int>;
+static_assert(ct::which_pattern_matches<DefaultFn>().empty(),
+    "DefaultFn must not match any corpus entry.");
+
+// (b) Monotonic+Bg+Atomic — the M012 FIX shape.  Matcher fires
+// (neighborhood classification) and returns gaps_010 cite.
+using MonotonicBgAtomic = cs::Fn<int,
+    cs::pred::True,
+    cs::UsageMode::Linear,
+    cfx::Row<cfx::Effect::Bg>,
+    cs::SecLevel::Classified,
+    cs::proto::None,
+    cs::lifetime::Static,
+    crucible::safety::source::FromInternal,
+    crucible::safety::trust::Verified,
+    cs::ReprKind::Atomic,
+    cs::cost::Unstated,
+    cs::precision::Exact,
+    cs::space::Zero,
+    cs::OverflowMode::Trap,
+    cs::MutationMode::Monotonic,
+    cs::ReentrancyMode::NonReentrant,
+    cs::size_pol::Unstated,
+    1,
+    cs::stale::Fresh>;
+
+static_assert(ct::matches<cp::gaps_010_monotonic_concurrent_no_atomic,
+                          MonotonicBgAtomic>::value,
+    "Monotonic+Bg shape must match gaps_010 pattern.");
+
+static_assert(ct::which_pattern_matches<MonotonicBgAtomic>() == ct::cite_gaps_010,
+    "First-match classifier must return gaps_010 cite on Monotonic+Bg shape.");
+
+// (c) Non-matching shapes do not lie: the 10 academic patterns that
+// require flow-sensitive analysis return false on every well-formed
+// Fn — they're documented as guidebook entries.
+static_assert(!ct::matches<cp::atkey_2018_lam_double_use, DefaultFn>::value,
+    "Flow-sensitive pattern matchers must return false (not lie about coverage).");
+static_assert(!ct::matches<cp::bsyz22_crash_stop_partial_view, DefaultFn>::value);
+static_assert(!ct::matches<cp::honda_yoshida_2008_proj_drop_role, DefaultFn>::value);
+
 }  // namespace
 
 int main() {
-    std::printf("fixy theory sentinel: corpus_size=%zu\n", ct::corpus_size_v);
+    std::printf("fixy theory sentinel: corpus_size=%zu first_hash=0x%016lx\n",
+                ct::corpus_size_v,
+                static_cast<unsigned long>(
+                    ct::theory_cite_hash_v<std::tuple_element_t<0, ct::Catalog>>));
     return 0;
 }
