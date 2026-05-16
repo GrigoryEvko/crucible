@@ -19,6 +19,7 @@
 // in the next task (FIXY-CLEAN-B4).
 
 #include <crucible/fixy/Fn.h>
+#include <crucible/fixy/Rules.h>
 
 #include <type_traits>
 #include <utility>
@@ -95,6 +96,14 @@ static_assert(std::is_same_v<
     crucible::effects::Row<crucible::effects::Effect::Bg,
                            crucible::effects::Effect::Alloc>>,
     "stance::BgWorker's Effect row must contain Bg + Alloc.");
+
+// ─── 7b. fixy::rule:: alias smoke — R001..R020 substrate bijection
+//        already verified inside Rules.h.  Here we just witness that
+//        the alias names resolve and are distinct from one another.
+
+static_assert(!std::is_same_v<fixy::rule::R001, fixy::rule::R002>);
+static_assert(!std::is_same_v<fixy::rule::R013, fixy::rule::R017>);
+static_assert(!std::is_same_v<fixy::rule::R019, fixy::rule::R020>);
 
 // ─── 8. EBO collapse across multiple types ────────────────────────
 
