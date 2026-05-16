@@ -1155,4 +1155,62 @@ inline void runtime_smoke_test() {
 
 }  // namespace detail::graded_self_test
 
+// ════════════════════════════════════════════════════════════════════
+// ── FIXY-G*-AUDIT: IsGraded introspection concept ──────────────────
+// ════════════════════════════════════════════════════════════════════
+//
+// Structural predicate detecting whether a type T is a specialization
+// of `Graded<M, L, V>`.  Used by audit tooling, downstream substrate-
+// composition helpers (e.g. fixy/Value.h's future canonical-stack
+// projection), and the `GradedWrapper` concept's diagnostic emitters
+// to identify substrate-backed types vs bare values.
+//
+// Distinct from `GradedWrapper` (GradedTrait.h): GradedWrapper asks
+// "does W expose the diagnostic surface that every migrated wrapper
+// exposes?" — it admits Linear<T>, Refined<P, T>, etc. (which are
+// CLASSES wrapping Graded, not Graded itself).  IsGraded asks "is T
+// LITERALLY a Graded<M, L, V> specialization?" — strict identity.
+//
+//   Axiom coverage: TypeSafe — concept rejection is a clean compile-
+//                   time diagnostic at the call site.
+//   Runtime cost:   zero — pure type-level introspection.
+
+namespace detail {
+
+template <typename>
+inline constexpr bool is_graded_v_impl = false;
+
+template <ModalityKind M, Lattice L, typename V>
+inline constexpr bool is_graded_v_impl<Graded<M, L, V>> = true;
+
+}  // namespace detail
+
+template <typename T>
+inline constexpr bool is_graded_v =
+    detail::is_graded_v_impl<std::remove_cvref_t<T>>;
+
+template <typename T>
+concept IsGraded = is_graded_v<T>;
+
+namespace detail::is_graded_self_test {
+
+// Cross-references the lattice_self_test::TrivialBoolLattice (defined
+// in algebra/Lattice.h's self-test block) — both live under
+// crucible::algebra::detail::, so the unqualified spelling resolves
+// after standard ADL lookup at the same nested-namespace scope.
+using GraderAB = Graded<ModalityKind::Absolute,
+                        ::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice,
+                        bool>;
+
+static_assert(IsGraded<GraderAB>);
+static_assert(IsGraded<GraderAB const>);
+static_assert(IsGraded<GraderAB&>);
+static_assert(IsGraded<GraderAB&&>);
+
+static_assert(!IsGraded<int>);
+static_assert(!IsGraded<void>);
+static_assert(!IsGraded<::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice>);
+
+}  // namespace detail::is_graded_self_test
+
 }  // namespace crucible::algebra

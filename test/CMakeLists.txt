@@ -168,102 +168,14 @@ crucible_test(test_safety)
 crucible_test(test_pre_post)
 crucible_test(test_decide)
 
-# ── FIXY-A5 + FIXY-A7 — reject-by-default discipline + cheat probe ──
+# ── FIXY tests removed ───────────────────────────────────────────────
 #
-# Phase A foundation: IsAccepted concept gate over the 20-dim FX
-# engagement check.  Positive coverage (8 stance scenarios + diag
-# catalog), and 5 adversarial bypass probes proving the gate is sound
-# against trait-spec injection / inheritance bypass / ADL hook /
-# friend-class circumvention / wrong-field-read attacks.  See
-# include/crucible/fixy/Reject.h and misc/16_05_2026_fixy.md §3.
-crucible_test(test_fixy_engaged)
-crucible_test(test_fixy_diag)
-crucible_test(test_fixy_cheat_probe)
-
-# ── FIXY-B — fn aggregator + Stance + Rules end-to-end integration ──
-#
-# Pins Resolve.h's 19-axis dispatch, fn<>'s two-layer gate
-# (IsAccepted + ValidComposition), Stance.h's 8 canonical aliases,
-# and Rules.h's 12-tag re-export.  See include/crucible/fixy/Fn.h
-# and misc/16_05_2026_fixy.md §4.
-crucible_test(test_fixy_b)
-
-# ── FIXY-C — Sess/Mach/Contract alias re-exports identity check ─────
-#
-# Pins fixy::sess::*, fixy::mach::*, and the fixy/Contract.h macro
-# include path produce types identical to their substrate counterparts.
-# See include/crucible/fixy/{Sess,Mach,Contract}.h and
-# misc/16_05_2026_fixy.md §4 Phase C.
-crucible_test(test_fixy_aliases)
-
-# ── FIXY-D — Profile + Theory sentinel TUs ───────────────────────────
-#
-# Pin sketch/release toggle behavior (test_fixy_profile) and the
-# §30.14 Known-Unsoundness corpus seeded with 15 entries
-# (test_fixy_theory).  Acceptance per misc/16_05_2026_fixy.md §4
-# Phase D + §9 R6 (corpus is monotonic-grow-only data).
-crucible_test(test_fixy_profile)
-crucible_test(test_fixy_theory)
-
-# ── FIXY-G8 — runtime grade reflection sentinel TU ──────────────────
-#
-# Pin reflect_grade<F>() + stable_grade_hash<F> against 4 worked-example
-# binding shapes (AllStrict, CntpFrame, MimicHook, AllStrictDouble).
-# See include/crucible/fixy/Reflect.h.
-crucible_test(test_fixy_reflect)
-set_tests_properties(test_fixy_reflect PROPERTIES LABELS "fixy")
-
-# ── FIXY-G6 — wire-format grade serialization sentinel TU ───────────
-crucible_test(test_fixy_wire_grade)
-set_tests_properties(test_fixy_wire_grade PROPERTIES LABELS "fixy")
-
-# ── FIXY-G2 — value_t<F> substrate stack alignment sentinel TU ──────
-crucible_test(test_fixy_value_t)
-set_tests_properties(test_fixy_value_t PROPERTIES LABELS "fixy")
-
-# ── FIXY-G5 — arg-grade promotion sentinel TU ───────────────────────
-crucible_test(test_fixy_arg_promote)
-set_tests_properties(test_fixy_arg_promote PROPERTIES LABELS "fixy")
-
-# ── FIXY-G3 — call_with_caps capability-gate sentinel TU ────────────
-crucible_test(test_fixy_call_with_caps)
-set_tests_properties(test_fixy_call_with_caps PROPERTIES LABELS "fixy")
-
-# ── FIXY-G4 — call_with_perm lifetime-region permission sentinel TU ─
-crucible_test(test_fixy_call_with_perm)
-set_tests_properties(test_fixy_call_with_perm PROPERTIES LABELS "fixy")
-
-# ── FIXY-G1 — Flow cross-binding algebra sentinel TU ────────────────
-crucible_test(test_fixy_flow)
-set_tests_properties(test_fixy_flow PROPERTIES LABELS "fixy")
-
-# ── FIXY-G7 — Federation grade-intersection sentinel TU ─────────────
-crucible_test(test_fixy_federation)
-set_tests_properties(test_fixy_federation PROPERTIES LABELS "fixy")
-
-# ── FIXY-G9 — Witness metadata positive test ────────────────────────
-crucible_test(test_fixy_witness)
-set_tests_properties(test_fixy_witness PROPERTIES LABELS "fixy")
-
-# ── FIXY-G10 — Modality classification positive test ────────────────
-crucible_test(test_fixy_modality)
-set_tests_properties(test_fixy_modality PROPERTIES LABELS "fixy")
-
-# FIXY-G11 — cost-semiring + dim::Cost positive test.
-crucible_test(test_fixy_cost)
-set_tests_properties(test_fixy_cost PROPERTIES LABELS "fixy")
-
-# FIXY-G12 — termination + bounded-resource axis positive test.
-crucible_test(test_fixy_termination)
-set_tests_properties(test_fixy_termination PROPERTIES LABELS "fixy")
-
-# FIXY-G13 — stance versioning + lifecycle positive test.
-crucible_test(test_fixy_stance_version)
-set_tests_properties(test_fixy_stance_version PROPERTIES LABELS "fixy")
-
-# FIXY-G14 — seam theory matcher positive test (KEYSTONE).
-crucible_test(test_fixy_seam)
-set_tests_properties(test_fixy_seam PROPERTIES LABELS "fixy")
+# The parallel-universe include/crucible/fixy/ tree (32 headers, 21
+# positive tests, 87 neg-compile fixtures, 13 worked examples, ~10,750
+# LoC) was deleted per misc/16_05_2026_fixy.md §2.2 LoC-delta + §11
+# first-PR plan.  The clean reimplementation composes against substrate
+# primitives — every test will be reauthored under the new shape with
+# substrate citations per §4.5 G1-G16 catalog.
 
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
@@ -432,17 +344,10 @@ add_test(NAME refined_pre_subsumption_self_test
           --self-test)
 add_test(NAME refined_pre_subsumption
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.sh)
-# FIXY-F: reject-by-default discipline guard.  Catches raw
-# safety::fn::Fn<...> use in directories that opted into the
-# fixy reject-by-default surface (FIXY_ONLY_DIRS in the script).
-# Self-test mode plants a synthetic match to guard against
-# ripgrep regex drift; production scan fails on real violations.
-add_test(NAME fixy_discipline_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.sh
-          --self-test)
-add_test(NAME fixy_discipline
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.sh
-          --check)
+# FIXY discipline linter removed alongside the parallel-universe
+# fixy/ tree.  The clean reimplementation re-ships
+# scripts/check-fixy-discipline.sh under Phase F per
+# misc/16_05_2026_fixy.md §4 Phase F.
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
@@ -1118,273 +1023,18 @@ function(crucible_neg_compile_topology_test name expected_diag)
     LABELS "topology_neg")
 endfunction()
 
-# ── FIXY-A6 sister harness for fixy_neg/ ─────────────────────────────
-#
-# Mirrors the safety_neg / sessions_neg / effects_neg / cog_neg /
-# warden_neg / dataplane_neg / topology_neg pattern.  Each fixture
-# probes the IsAccepted<...> 20-dim engagement gate by omitting
-# exactly one dim's engagement tag and asserting the compiler
-# diagnostic embeds the corresponding `FixyNotEngaged_<DimName>` tag
-# name.  PASS_REGULAR_EXPRESSION matches the embedded tag.
-function(crucible_neg_compile_fixy_test name expected_diag)
-  add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp)
-  target_link_libraries(${name} PRIVATE crucible)
-  add_test(NAME ${name}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
-            ${CMAKE_BINARY_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp
-            ${name}
-            "${expected_diag}")
-  set_tests_properties(${name} PROPERTIES
-    LABELS "fixy_neg")
-endfunction()
-
-# FIXY-A6 + FIXY-A-PLUS-6 — 20 per-dim-omission neg-compile fixtures
-# (one per dim::DimAxis enumerator) plus 4 cross-cutting trap fixtures.
-# Each PASS_REGULAR_EXPRESSION matches the static_assert message
-# embedding the canonical FixyNotEngaged_<DimName> tag (see
-# include/crucible/fixy/Reject.h).
-#
-# Registration order matches dim::DimAxis enumerator order so a reader
-# of the test output sees failures in the same sequence the conjunction
-# in IsAccepted<> evaluates them.
-
-# ── Per-dim omission (20 fixtures, dim-enumerator order) ──────────────
-crucible_neg_compile_fixy_test(neg_fixy_no_type_engagement            "FixyNotEngaged_Type")
-crucible_neg_compile_fixy_test(neg_fixy_no_refinement_engagement      "FixyNotEngaged_Refinement")
-crucible_neg_compile_fixy_test(neg_fixy_no_usage_engagement           "FixyNotEngaged_Usage")
-crucible_neg_compile_fixy_test(neg_fixy_no_effect_engagement          "FixyNotEngaged_Effect")
-crucible_neg_compile_fixy_test(neg_fixy_no_security_engagement        "FixyNotEngaged_Security")
-crucible_neg_compile_fixy_test(neg_fixy_no_protocol_engagement        "FixyNotEngaged_Protocol")
-crucible_neg_compile_fixy_test(neg_fixy_no_lifetime_engagement        "FixyNotEngaged_Lifetime")
-crucible_neg_compile_fixy_test(neg_fixy_no_provenance_engagement      "FixyNotEngaged_Provenance")
-crucible_neg_compile_fixy_test(neg_fixy_no_trust_engagement           "FixyNotEngaged_Trust")
-crucible_neg_compile_fixy_test(neg_fixy_no_representation_engagement  "FixyNotEngaged_Representation")
-crucible_neg_compile_fixy_test(neg_fixy_no_observability_engagement   "FixyNotEngaged_Observability")
-crucible_neg_compile_fixy_test(neg_fixy_no_complexity_engagement      "FixyNotEngaged_Complexity")
-crucible_neg_compile_fixy_test(neg_fixy_no_precision_engagement       "FixyNotEngaged_Precision")
-crucible_neg_compile_fixy_test(neg_fixy_no_space_engagement           "FixyNotEngaged_Space")
-crucible_neg_compile_fixy_test(neg_fixy_no_overflow_engagement        "FixyNotEngaged_Overflow")
-crucible_neg_compile_fixy_test(neg_fixy_no_mutation_engagement        "FixyNotEngaged_Mutation")
-crucible_neg_compile_fixy_test(neg_fixy_no_reentrancy_engagement      "FixyNotEngaged_Reentrancy")
-crucible_neg_compile_fixy_test(neg_fixy_no_size_engagement            "FixyNotEngaged_Size")
-crucible_neg_compile_fixy_test(neg_fixy_no_version_engagement         "FixyNotEngaged_Version")
-crucible_neg_compile_fixy_test(neg_fixy_no_staleness_engagement       "FixyNotEngaged_Staleness")
-
-# ── Cross-cutting traps (4 fixtures) ──────────────────────────────────
-# These exercise authoring traps that are NOT pure per-dim omission:
-# - empty_grants: every dim unengaged (first failure: Type)
-# - only_one_grant: one grant + 19 unengaged (first failure: Type)
-# - partial_19_of_20: 19 of 20 engaged, exercises "near-enough" rejection
-# - wrong_dim_grant: cg::copy used as a substitute for accept_default_for
-#   <Effect> (author's misconception that grants substitute across dims)
-crucible_neg_compile_fixy_test(neg_fixy_empty_grants                  "FixyNotEngaged_Type")
-crucible_neg_compile_fixy_test(neg_fixy_only_one_grant                "FixyNotEngaged_Type")
-crucible_neg_compile_fixy_test(neg_fixy_partial_19_of_20              "FixyNotEngaged_Reentrancy")
-crucible_neg_compile_fixy_test(neg_fixy_wrong_dim_grant               "FixyNotEngaged_Effect")
-
-# FIXY-A-PLUS-1 — inheritance-bypass closure.  Post-A-PLUS-1 every
-# grant tag is `final`; the pre-A-PLUS-1 architectural-limit cheat
-# ("struct fake : accept_default_strict_for<dim::X> {};") is now a
-# compile error with GCC's `cannot derive from 'final' base` diagnostic.
-crucible_neg_compile_fixy_test(neg_fixy_inheritance_bypass_attempt
-    "cannot derive from .*final.* base")
-
-# FIXY-B4 — §6.8 collision rule triggered THROUGH fixy::fn.  M012 is
-# the only rule fully reachable from grant tags in Phase B (others
-# require substrate-side opt-in marker traits like marks_async /
-# marks_ct).  Witness: grant::monotonic_advance + grant::with<Bg> at
-# default (non-Atomic) Representation triggers the substrate's M012
-# diagnostic.
-crucible_neg_compile_fixy_test(neg_fixy_rule_M012_monotonic_concurrent
-    "M012.*monotonic.*concurrent")
-
-# FIXY-B4 — N002 (decimal x overflow-wrap) — second §6.8 rule reachable
-# from grants today.  User opts into exact-decimal semantics via
-# is_exact_decimal<T> partial specialization, then composes with
-# grant::overflow_wrap.  Substrate's ValidComposition rejects.
-crucible_neg_compile_fixy_test(neg_fixy_rule_N002_decimal_overflow_wrap
-    "N002.*decimal.*overflow|decimal.*Wrap")
-
-# FIXY-AUDIT-NTTP / FIXY-AUDIT-CVR — discovered during the post-A-PLUS
-# soundness audit.  Two new bypass classes closed:
-#   - NTTP escape: out-of-range DimAxis NTTP on accept_default_strict_for
-#   - Reference-type Grant pack member produces hard substitution error
-crucible_neg_compile_fixy_test(neg_fixy_nttp_escape_attempt
-    "outside the 20-enumerator range")
-crucible_neg_compile_fixy_test(neg_fixy_reference_grant_attempt
-    "FixyNotEngaged_Usage")
-
-# FIXY-AUDIT-NTTP-RANGE — value-NTTP grant tags now reject N=0 / V=0
-# degenerate values that previously compiled silently into a federation
-# cache key polluting the discipline.  One fixture per range-checked tag.
-crucible_neg_compile_fixy_test(neg_fixy_version_zero_rejected
-    "requires V > 0")
-crucible_neg_compile_fixy_test(neg_fixy_space_bounded_zero_rejected
-    "requires N > 0")
-crucible_neg_compile_fixy_test(neg_fixy_sized_zero_rejected
-    "requires Depth > 0")
-crucible_neg_compile_fixy_test(neg_fixy_stale_to_zero_rejected
-    "requires TauMax > 0")
-crucible_neg_compile_fixy_test(neg_fixy_complexity_linear_zero_rejected
-    "requires N > 0")
-
-# FIXY-AUDIT-LEGITGRANT — EngagedFor now requires derived_from<grant_base>.
-# A look-alike struct with `relaxes` field but no grant_base derivation
-# is rejected, closing the bypass where any user struct could forge
-# engagement by naming a `relaxes` field.
-crucible_neg_compile_fixy_test(neg_fixy_legit_grant_forge_lookalike
-    "FixyNotEngaged_Usage")
-
-# FIXY-C-STANCE-COMPOSE — `stance::compose<Base, NewGrants...>` rejects
-# packs where two NewGrants engage the same dim within a single
-# compose call.  Two HS14 fixtures: direct compose collision; and
-# mint_fn_for_extra collision (compose runs inside the mint).
-crucible_neg_compile_fixy_test(neg_fixy_compose_same_dim_twice
-    "two NewGrants.*engage the same dim|dims_all_distinct")
-crucible_neg_compile_fixy_test(neg_fixy_mint_extra_conflict
-    "two NewGrants.*engage the same dim|dims_all_distinct")
-
-# ── FIXY-G8 — reflect_grade / stable_grade_hash discipline fixtures ──
-crucible_neg_compile_fixy_test(neg_fixy_reflect_grade_non_fn
-    "requires F to be a fixy::fn|IsFixyFn")
-crucible_neg_compile_fixy_test(neg_fixy_stable_grade_hash_requires_engaged
-    "FixyNotEngaged_Staleness")
-
-# ── FIXY-G6 — wire-format grade serialization discipline fixtures ────
-crucible_neg_compile_fixy_test(neg_fixy_wire_decode_grade_mismatch
-    "wire_decode rejects: grade mismatch")
-crucible_neg_compile_fixy_test(neg_fixy_wire_encode_non_fn
-    "requires F to be a fixy::fn|IsFixyFn")
-
-# ── FIXY-G2 — value_t<F> alignment discipline fixtures ──────────────
-crucible_neg_compile_fixy_test(neg_fixy_value_t_non_fn
-    "requires F to be a fixy::fn|IsFixyFn|constraints not satisfied")
-crucible_neg_compile_fixy_test(neg_fixy_call_args_mismatched_arity
-    "too few arguments|no match|cannot convert|mismatched")
-
-# ── FIXY-G5 — arg-promote discipline fixtures ───────────────────────
-crucible_neg_compile_fixy_test(neg_fixy_arg_promote_no_path
-    "PromoteImpossible|cannot promote raw argument|ArgPromotable")
-crucible_neg_compile_fixy_test(neg_fixy_arg_promote_violates_refinement
-    "PromoteImpossible|cannot promote raw argument|ArgPromotable")
-
-# ── FIXY-G3 — call_with_caps discipline fixtures ────────────────────
-crucible_neg_compile_fixy_test(neg_fixy_call_with_caps_missing_io
-    "caps_cover_v|constraints not satisfied|no matching function")
-crucible_neg_compile_fixy_test(neg_fixy_call_with_caps_wrong_source
-    "caps_cover_v|constraints not satisfied|no matching function")
-
-# ── FIXY-G4 — call_with_perm + R013 discipline fixtures ─────────────
-crucible_neg_compile_fixy_test(neg_fixy_call_with_perm_wrong_tag
-    "PermissionMatchesLifetime|constraints not satisfied|no matching function")
-crucible_neg_compile_fixy_test(neg_fixy_rule_R013_mutable_without_perm
-    "R013|requires Permission|mutable lifetime_region")
-
-# ── FIXY-G1 — Flow cross-binding algebra discipline fixtures ────────
-crucible_neg_compile_fixy_test(neg_fixy_flow_recipe_tier_downgrade
-    "FlowMismatch|FlowOk|recipe_tier")
-crucible_neg_compile_fixy_test(neg_fixy_flow_vendor_disjoint
-    "FlowMismatch|FlowOk|vendor")
-crucible_neg_compile_fixy_test(neg_fixy_flow_provenance_laundering
-    "FlowMismatch|FlowOk|provenance|sanitize")
-crucible_neg_compile_fixy_test(neg_fixy_flow_trust_under_federate
-    "FlowMismatch|FlowOk|trust")
-
-# ── FIXY-G7 — Federation grade-intersection discipline fixtures ─────
-crucible_neg_compile_fixy_test(neg_fixy_federation_empty_intersection
-    "FederationEmpty|FederationCompatible|no shared")
-crucible_neg_compile_fixy_test(neg_fixy_federation_recipe_tier_disjoint
-    "FederationEmpty|FederationCompatible|disjoint|Vendor")
-
-# ── FIXY-G9 — Witness metadata discipline fixtures ──────────────────
-crucible_neg_compile_fixy_test(neg_fixy_witness_floor_hot_residency
-    "R016|witness floor|HotPath::Hot")
-crucible_neg_compile_fixy_test(neg_fixy_witness_below_tested_floor
-    "FnWitnessAtLeast|WitnessAtLeast|Tested floor")
-crucible_neg_compile_fixy_test(neg_fixy_witness_platform_bounded_disallowed
-    "PlatformBounded|FnWitnessAtLeast|Tested floor")
-crucible_neg_compile_fixy_test(neg_fixy_witness_wire_decode_mismatch
-    "WitnessFloor|wire_decode rejects")
-
-# ── FIXY-G10 — Modality classification discipline fixtures ──────────
-crucible_neg_compile_fixy_test(neg_fixy_rule_R017_linear_alias
-    "R017|Linear|frame rule|RegionTag")
-crucible_neg_compile_fixy_test(neg_fixy_modality_misclassified
-    "ModalityMismatch|Declares|mutable_in_place")
-crucible_neg_compile_fixy_test(neg_fixy_modality_quotient_collision
-    "engage the same dim|ModalityMismatch|Quotient|dims_all_distinct")
-crucible_neg_compile_fixy_test(neg_fixy_modality_frame_vs_declares
-    "ModalityMismatch|Declares|Frame|same class")
-
-# ── Commit 1 (G9/G10 followups) — 4 new HS14 fixtures ───────────────
-# Followup A: R017 per-RegionTag precision.
-crucible_neg_compile_fixy_test(neg_fixy_rule_R017_same_region_tag_alias
-    "R017|Linear|RegionTag|frame rule")
-# Followup B: R018 teeth on stance::compose paths.
-crucible_neg_compile_fixy_test(neg_fixy_rule_R018_stance_compose_frame_declares
-    "R018|Frame.*Declares|frame_declares_consistency|modality-class collision")
-# Followup C: TestRegistry / CiRunRegistry entries + is_valid_witness_v.
-crucible_neg_compile_fixy_test(neg_fixy_witness_registry_revoked
-    "is_valid_witness|RequiresValidTestedFloor|Revoked|revoked")
-# Followup D: MultiplatformWitness aggregation rejects out-of-pack platforms.
-crucible_neg_compile_fixy_test(neg_fixy_witness_multiplatform_aggregation
-    "claims_on_platform|MultiplatformWitness|RISCV|ClaimsTestedOnPlatform")
-
-# ── FIXY-G11 — Cost semiring + dim::Cost axis fixtures ─────────────
-crucible_neg_compile_fixy_test(neg_fixy_cost_semiring_associativity
-    "is_same|CostPolynomial|seq_compose|coeffs")
-crucible_neg_compile_fixy_test(neg_fixy_rule_R015_hot_unbounded_cost
-    "R015|cost_unknown|UINT64_MAX|unbounded")
-crucible_neg_compile_fixy_test(neg_fixy_cost_per_cog_missing
-    "has_calibration|OpticalTransceiver|ProjectableOn|calibration")
-crucible_neg_compile_fixy_test(neg_fixy_cost_witness_floor_calibration
-    "R015_Plus_TestedCostFloor|FnWitnessAtLeast|Tested|witness floor")
-
-# ── FIXY-G12 — Termination + bounded-resource axis fixtures ─────────
-crucible_neg_compile_fixy_test(neg_fixy_resources_hot_with_io
-    "R019_hot_path_resources_v|bounded_io|hot.path")
-crucible_neg_compile_fixy_test(neg_fixy_resources_budget_lt_cost
-    "cost_within_budget_v|predicted|budget|cost.budget")
-crucible_neg_compile_fixy_test(neg_fixy_resources_bgworker_without_budget
-    "R014_bg_observable_bounded_v|wallclock_budget|observability")
-crucible_neg_compile_fixy_test(neg_fixy_resources_unbounded_recursion
-    "loop_bound|UINT64_MAX|structurally inconsistent|no bound declared")
-
-# ── FIXY-G11/G12 Followups (Commit 1) ───────────────────────────────
-# A: R020 at mint_federation_channel — pre-condition failed.
-crucible_neg_compile_fixy_test(neg_fixy_rule_R020_federation_peer_unbounded
-    "all_roles_r020_satisfied_v|R020|federation_peer|mint_federation_channel|wallclock_budget")
-# B: terminating_e<Asserted<>> under hot-path Tested-floor admission.
-crucible_neg_compile_fixy_test(neg_fixy_resources_witness_floor_terminating
-    "FnWitnessAtLeast|witness floor|Tested|terminating_e|Asserted")
-# C: stance::compose witness-floor consistency rejects evidenced
-#    downgrades below the modality class floor.
-crucible_neg_compile_fixy_test(neg_fixy_stance_compose_witness_downgrade
-    "stance_compose_witness_consistent_v|class.s floor|StanceComposeWitnessDowngrade|witness_t weaker|Coeffect|Tested")
-
-# ── FIXY-G13 — Stance versioning + lifecycle fixtures ───────────────
-crucible_neg_compile_fixy_test(neg_fixy_stance_version_out_of_window_load
-    "accept_versions|Lo <= Hi|inclusive on both ends")
-crucible_neg_compile_fixy_test(neg_fixy_federation_stance_version_disjoint
-    "VersionedFederationChannel|stance version windows|empty intersection|FederationProtocolError")
-crucible_neg_compile_fixy_test(neg_fixy_stance_migration_path_missing
-    "migrate_v|migrate<OldS, NewS>|no migration path|MissingMigrationPath")
-crucible_neg_compile_fixy_test(neg_fixy_stance_legacy_stanceless_rejected
-    "legacy_decode_returns_missing|StanceVersionMissing|accept_legacy_stanceless|EXPECTED outcome")
-
-# ── FIXY-G14 — Seam theory matcher fixtures (KEYSTONE) ──────────────
-crucible_neg_compile_fixy_test(neg_fixy_seam_gaps_010_monotonic_concurrent
-    "any_seam_pattern_matches_v|gaps_010|Monotonic|Reentrant|Identity|EXPECTED outcome")
-crucible_neg_compile_fixy_test(neg_fixy_seam_gaps_013_trust_laundering_federate
-    "any_seam_pattern_matches_v|gaps_013|External|FromInternal|Federate|EXPECTED outcome")
-crucible_neg_compile_fixy_test(neg_fixy_seam_krishnaswami_2017_cap_undischarged_persist
-    "any_seam_pattern_matches_v|krishnaswami_2017|IO cap|Block cap|Persist|EXPECTED outcome")
-crucible_neg_compile_fixy_test(neg_fixy_seam_krishnaswami_2014_linear_dup_federate_fanout
-    "any_seam_pattern_matches_v|krishnaswami_2014|Capability|Federate|EXPECTED outcome")
-crucible_neg_compile_fixy_test(neg_fixy_seam_caires_pfenning_2010_delegate_drift_reshard
-    "any_seam_pattern_matches_v|caires_pfenning_2010|protocol_t|Reshard|EXPECTED outcome")
+# ── FIXY-A6 / FIXY-B4 / G1-G14 neg-fixture harness REMOVED ──────────
+# The parallel-universe fixy/ tree (32 headers, 87 neg-compile fixtures,
+# 21 positive tests, 13 worked examples, ~10,750 LoC) was deleted per
+# misc/16_05_2026_fixy.md §2.2 LoC-delta + §11 first-PR plan.  The
+# clean reimplementation reauthors per-dim engagement fixtures + the
+# §6.8 collision rule fixtures + the G1-G14 cross-binding primitive
+# fixtures against the substrate-composing facade shape.  The
+# `crucible_neg_compile_fixy_test` function will be re-shipped under
+# Phase A per §4 once `fixy/Reject.h` and `fixy/Grant.h` ship as
+# thin facades over `safety/CollisionCatalog.h` +
+# `algebra/lattices/*.h` + `safety/{Tagged,Refined,Linear,Vendor,
+# NumericalTier,Stale,Budgeted}.h`.
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
