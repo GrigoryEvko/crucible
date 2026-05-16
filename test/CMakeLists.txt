@@ -168,6 +168,18 @@ crucible_test(test_safety)
 crucible_test(test_pre_post)
 crucible_test(test_decide)
 
+# ── FIXY-A5 + FIXY-A7 — reject-by-default discipline + cheat probe ──
+#
+# Phase A foundation: IsAccepted concept gate over the 20-dim FX
+# engagement check.  Positive coverage (8 stance scenarios + diag
+# catalog), and 5 adversarial bypass probes proving the gate is sound
+# against trait-spec injection / inheritance bypass / ADL hook /
+# friend-class circumvention / wrong-field-read attacks.  See
+# include/crucible/fixy/Reject.h and misc/16_05_2026_fixy.md §3.
+crucible_test(test_fixy_engaged)
+crucible_test(test_fixy_diag)
+crucible_test(test_fixy_cheat_probe)
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1009,6 +1021,45 @@ function(crucible_neg_compile_topology_test name expected_diag)
   set_tests_properties(${name} PROPERTIES
     LABELS "topology_neg")
 endfunction()
+
+# ── FIXY-A6 sister harness for fixy_neg/ ─────────────────────────────
+#
+# Mirrors the safety_neg / sessions_neg / effects_neg / cog_neg /
+# warden_neg / dataplane_neg / topology_neg pattern.  Each fixture
+# probes the IsAccepted<...> 20-dim engagement gate by omitting
+# exactly one dim's engagement tag and asserting the compiler
+# diagnostic embeds the corresponding `FixyNotEngaged_<DimName>` tag
+# name.  PASS_REGULAR_EXPRESSION matches the embedded tag.
+function(crucible_neg_compile_fixy_test name expected_diag)
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
+  set_tests_properties(${name} PROPERTIES
+    LABELS "fixy_neg")
+endfunction()
+
+# FIXY-A6 — 12 neg-compile fixtures, one per distinct dim-engagement
+# gap.  Each PASS_REGULAR_EXPRESSION matches the static_assert message
+# embedding the canonical FixyNotEngaged_<DimName> tag (see
+# include/crucible/fixy/Reject.h).
+crucible_neg_compile_fixy_test(neg_fixy_no_usage_engagement     "FixyNotEngaged_Usage")
+crucible_neg_compile_fixy_test(neg_fixy_no_effect_engagement    "FixyNotEngaged_Effect")
+crucible_neg_compile_fixy_test(neg_fixy_no_security_engagement  "FixyNotEngaged_Security")
+crucible_neg_compile_fixy_test(neg_fixy_no_trust_engagement     "FixyNotEngaged_Trust")
+crucible_neg_compile_fixy_test(neg_fixy_no_overflow_engagement  "FixyNotEngaged_Overflow")
+crucible_neg_compile_fixy_test(neg_fixy_no_mutation_engagement  "FixyNotEngaged_Mutation")
+crucible_neg_compile_fixy_test(neg_fixy_no_staleness_engagement "FixyNotEngaged_Staleness")
+crucible_neg_compile_fixy_test(neg_fixy_no_version_engagement   "FixyNotEngaged_Version")
+crucible_neg_compile_fixy_test(neg_fixy_empty_grants            "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_only_one_grant          "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_partial_19_of_20        "FixyNotEngaged_Reentrancy")
+crucible_neg_compile_fixy_test(neg_fixy_wrong_dim_grant         "FixyNotEngaged_Effect")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
