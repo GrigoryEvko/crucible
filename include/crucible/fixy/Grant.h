@@ -93,6 +93,8 @@
 //   fixy/Dim.h                          — dim::DimAxis identity layer
 //   fixy/Reject.h                       — IsGrantTag concept consumer
 
+#include <crucible/algebra/lattices/ToleranceLattice.h>
+#include <crucible/algebra/lattices/VendorLattice.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/safety/NotInherited.h>
@@ -287,6 +289,51 @@ struct tier final : grant_base {
     using recipe_tier = RecipeTier;
 };
 
+// ── Typed-NTTP vendor / recipe tier (CNTP/Forge/Mimic vocab) ─────────
+//
+// The opaque `vendor<V>` / `tier<R>` forms above admit arbitrary tag
+// types — useful for unique-identity tags from a downstream crate but
+// silent if the author forgets to thread a meaningful identity.  The
+// typed-NTTP variants below carry the substrate's algebra-lattice
+// enum directly, so a `grant::vendor_backend<NV>` is round-trippable
+// through the federation cache key without naming an external tag.
+//
+// `IsMimicVendor` (CLAUDE.md taxonomy) keeps the strict-tier semantic
+// — None / Portable still admit through, but the kernel-emit path
+// gates on `backend != None` separately at the Mimic level.
+
+using ::crucible::algebra::lattices::Tolerance;
+using ::crucible::algebra::lattices::VendorBackend;
+
+template <VendorBackend Backend>
+struct vendor_backend final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Representation;
+    static constexpr VendorBackend value = Backend;
+};
+
+template <Tolerance T>
+struct recipe_tier final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Representation;
+    static constexpr Tolerance value = T;
+};
+
+// Convenience aliases — one per shipped vendor / tier.
+using vendor_cpu      = vendor_backend<VendorBackend::CPU>;
+using vendor_nv       = vendor_backend<VendorBackend::NV>;
+using vendor_am       = vendor_backend<VendorBackend::AMD>;
+using vendor_tpu      = vendor_backend<VendorBackend::TPU>;
+using vendor_trn      = vendor_backend<VendorBackend::TRN>;
+using vendor_cer      = vendor_backend<VendorBackend::CER>;
+using vendor_portable = vendor_backend<VendorBackend::Portable>;
+
+using tier_relaxed    = recipe_tier<Tolerance::RELAXED>;
+using tier_ulp_int8   = recipe_tier<Tolerance::ULP_INT8>;
+using tier_ulp_fp8    = recipe_tier<Tolerance::ULP_FP8>;
+using tier_ulp_fp16   = recipe_tier<Tolerance::ULP_FP16>;
+using tier_ulp_fp32   = recipe_tier<Tolerance::ULP_FP32>;
+using tier_ulp_fp64   = recipe_tier<Tolerance::ULP_FP64>;
+using tier_bitexact   = recipe_tier<Tolerance::BITEXACT>;
+
 // ── Observability (dim::Observability) ───────────────────────────────
 struct observability_visible final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Observability;
@@ -299,11 +346,23 @@ struct complexity_unbounded final : grant_base { static constexpr dim::DimAxis r
 template <auto N>
 struct complexity_linear final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Complexity;
+    static_assert(std::is_integral_v<decltype(N)>,
+        "grant::complexity_linear<N> requires an integral N.");
+    static_assert(N > 0,
+        "grant::complexity_linear<N> requires N > 0.  Use grant::"
+        "complexity_constant for O(1).");
+    static constexpr auto value = N;
 };
 
 template <auto N>
 struct complexity_quadratic final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Complexity;
+    static_assert(std::is_integral_v<decltype(N)>,
+        "grant::complexity_quadratic<N> requires an integral N.");
+    static_assert(N > 0,
+        "grant::complexity_quadratic<N> requires N > 0.  Use grant::"
+        "complexity_constant for O(1).");
+    static constexpr auto value = N;
 };
 
 // ── Precision (dim::Precision) ───────────────────────────────────────
@@ -322,6 +381,16 @@ struct space_unbounded final : grant_base { static constexpr dim::DimAxis relaxe
 template <auto N>
 struct space_bounded final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Space;
+    // FIXY-AUDIT-NTTP: N must be a positive integral byte bound.  Zero
+    // or negative would silently collapse to "no allocation permitted"
+    // which IS the strict default (space::Zero) — engaging Space with
+    // a degenerate bound masks the author's intent.
+    static_assert(std::is_integral_v<decltype(N)>,
+        "grant::space_bounded<N> requires an integral N.");
+    static_assert(N > 0,
+        "grant::space_bounded<N> requires N > 0.  Use accept_default_"
+        "strict_for<dim::Space> for the zero-byte (stack-only) case.");
+    static constexpr auto value = N;
 };
 
 // ── Overflow (dim::Overflow) ─────────────────────────────────────────
@@ -344,6 +413,12 @@ struct productive final : grant_base { static constexpr dim::DimAxis relaxes = d
 template <auto Depth>
 struct sized final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Size;
+    static_assert(std::is_integral_v<decltype(Depth)>,
+        "grant::sized<Depth> requires an integral Depth.");
+    static_assert(Depth > 0,
+        "grant::sized<Depth> requires Depth > 0.  Use accept_default_"
+        "strict_for<dim::Size> for unstated-depth bindings.");
+    static constexpr auto value = Depth;
 };
 
 // ── Version (dim::Version) ───────────────────────────────────────────
@@ -351,12 +426,89 @@ template <std::uint32_t V>
 struct version final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Version;
     static constexpr std::uint32_t value = V;
+    // FIXY-AUDIT-NTTP: V=0 is structurally meaningless (substrate strict
+    // default is 1; a literal v=0 in a federation-cache key would
+    // collide with "unset").  Authors who want strict default use
+    // accept_default_strict_for<dim::Version>.
+    static_assert(V > 0,
+        "grant::version<V> requires V > 0.  Use accept_default_strict_"
+        "for<dim::Version> for the strict default (V=1).");
+};
+
+// ── Forge phase identity (Provenance axis, CNTP/Forge vocab) ─────────
+//
+// Forge runs a 12-phase pipeline (FORGE.md §5: INGEST → ANALYZE →
+// REWRITE → FUSE → LOWER → TILE → MEMPLAN → COMPILE → SCHEDULE → EMIT
+// → DISTRIBUTE → VALIDATE).  A binding produced INSIDE a phase carries
+// that phase's identity in its provenance, so cross-phase composition
+// (mint_pipeline) can verify the phase ORDER at the type level.
+//
+// ForgePhase is a closed enumeration (12 values) under the Provenance
+// dim — distinct from generic `from_source<S>` which admits arbitrary
+// source tags.  Pinning to an enum gives Forge code a single greppable
+// surface and makes phase-ordering verification a compile-time check.
+
+enum class ForgePhase : std::uint8_t {
+    Ingest     = 0,
+    Analyze    = 1,
+    Rewrite    = 2,
+    Fuse       = 3,
+    Lower      = 4,
+    Tile       = 5,
+    MemPlan    = 6,
+    Compile    = 7,
+    Schedule   = 8,
+    Emit       = 9,
+    Distribute = 10,
+    Validate   = 11,
+};
+
+template <ForgePhase P>
+struct forge_phase final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Provenance;
+    static constexpr ForgePhase value = P;
+};
+
+// ── CNTP transport-tier identity (Representation axis) ───────────────
+//
+// CNTP layers compose across heterogeneous transports (AF_XDP, RDMA,
+// TCP, KTLS, QUIC, RoCEv2).  Each layer engages Representation through
+// transport_tier; the typed NTTP makes the transport visible in the
+// signature so receive-side trust posture (Sanitized after CRC vs
+// Sanitized after AEAD) can gate on it.
+//
+// Like ForgePhase, this is a closed enumeration — adding a transport
+// is a single-edit story (enum addition + neg-compile fixture per
+// HS14 if the new value affects a resolver decision).
+
+enum class TransportTier : std::uint8_t {
+    Loopback = 0,
+    Tcp      = 1,
+    AfXdp    = 2,
+    Rdma     = 3,
+    RoceV2   = 4,
+    Ktls     = 5,
+    Quic     = 6,
+    Wireguard = 7,
+};
+
+template <TransportTier T>
+struct transport_tier final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Representation;
+    static constexpr TransportTier value = T;
 };
 
 // ── Staleness (dim::Staleness) ───────────────────────────────────────
 template <auto TauMax>
 struct stale_to final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Staleness;
+    static_assert(std::is_integral_v<decltype(TauMax)>,
+        "grant::stale_to<TauMax> requires an integral TauMax (the "
+        "maximum allowable staleness in implementation-defined units).");
+    static_assert(TauMax > 0,
+        "grant::stale_to<TauMax> requires TauMax > 0.  Use accept_"
+        "default_strict_for<dim::Staleness> for Fresh (τ=0).");
+    static constexpr auto value = TauMax;
 };
 
 }  // namespace grant

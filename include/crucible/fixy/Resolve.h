@@ -271,16 +271,31 @@ using resolve_protocol_t = typename resolve_protocol<Grants...>::type;
 
 // ── 7. Lifetime ──────────────────────────────────────────────────────
 //
-// grant::lifetime_region<Tag> carries `auto RegionTag` as NTTP.  The
-// resolver just substitutes `lifetime::In<Tag>`.  For simplicity Phase
-// B falls back to lifetime::Static when grant::lifetime_region is
-// detected — Phase C will thread the actual tag through.
+// grant::lifetime_region<Tag> carries `auto RegionTag` as NTTP — the
+// resolver threads it through to `fn::lifetime::In<Tag>` so the
+// downstream Fn carries the region identity.  accept_default_strict
+// falls back to fn::lifetime::Static.
+namespace detail {
+
+template <typename T>
+struct lifetime_from_grant { using type = fn::lifetime::Static; };
+
+template <auto RegionTag>
+struct lifetime_from_grant<grant::lifetime_region<RegionTag>> {
+    using type = fn::lifetime::In<RegionTag>;
+};
+
+}  // namespace detail
+
 template <typename... Grants>
 struct resolve_lifetime {
 private:
     using matched = detail::pack_first_t<dim::Lifetime, Grants...>;
 public:
-    using type = fn::lifetime::Static;  // Phase B: always Static.  Phase C threads region tag.
+    using type = std::conditional_t<
+        detail::is_accept_v<matched>,
+        fn::lifetime::Static,
+        typename detail::lifetime_from_grant<matched>::type>;
     static_assert(detail::is_accept_v<matched> ||
                   !std::is_same_v<matched, void>,
                   "Lifetime dim must engage via accept_default_strict_for or grant::lifetime_region.");
@@ -304,7 +319,13 @@ public:
     >;
 };
 
-// Provenance resolver: from_source<S> → S; sanitize<C> → FromInternal (Phase B fallback).
+// Provenance resolver: from_source<S> → S; sanitize<C> → source::Sanitized.
+// Per FX §6, sanitization is a provenance-tag CHANGE (FromUser → Sanitized);
+// the previous Phase B fallback dropped C silently and left the source at
+// FromInternal — semantically wrong (a sanitized buffer was indistinguishable
+// from an internally-sourced one). Sanitize now resolves to source::Sanitized
+// uniformly across taint classes (the taint class itself is the audit-trail
+// literal, NOT the destination source tag).
 namespace detail {
 
 template <typename T>
@@ -312,6 +333,11 @@ struct provenance_source { using type = ::crucible::safety::source::FromInternal
 
 template <typename S>
 struct provenance_source<grant::from_source<S>> { using type = S; };
+
+template <typename TaintClass>
+struct provenance_source<grant::sanitize<TaintClass>> {
+    using type = ::crucible::safety::source::Sanitized;
+};
 
 }  // namespace detail
 
@@ -348,6 +374,14 @@ template <typename... Grants>
 using resolve_trust_t = typename resolve_trust<Grants...>::type;
 
 // ── 10. Representation ───────────────────────────────────────────────
+//
+// repr_* tags map to the substrate ReprKind enum directly.  vendor<V>/
+// tier<R>/vendor_backend<B>/recipe_tier<T>/transport_tier<T> retain
+// Opaque at the substrate Repr slot — the vendor/tier/transport identity
+// is exposed separately via `resolve_vendor_backend_v` /
+// `resolve_recipe_tier_v` / `resolve_transport_tier_v` so downstream
+// composition (mint_pipeline, Mimic backend selection) can read it
+// without scraping the Grants pack.
 template <typename... Grants>
 [[nodiscard]] consteval fn::ReprKind resolve_repr() noexcept {
     using matched = detail::pack_first_t<dim::Representation, Grants...>;
@@ -357,14 +391,216 @@ template <typename... Grants>
     else if constexpr (std::is_same_v<matched, grant::repr_aligned>) return fn::ReprKind::Aligned;
     else if constexpr (std::is_same_v<matched, grant::repr_simd>)    return fn::ReprKind::Simd;
     else if constexpr (std::is_same_v<matched, grant::repr_atomic>)  return fn::ReprKind::Atomic;
-    // vendor<V> / tier<R> retain Opaque at the substrate Repr slot; the
-    // V / R parameters are Phase C metadata that flow through
-    // dedicated wrapper composition, not through ReprKind.
+    // vendor / tier / transport tags retain Opaque at ReprKind; values
+    // are exposed via the dedicated resolvers below.
     else return fn::ReprKind::Opaque;
 }
 
 template <typename... Grants>
 inline constexpr fn::ReprKind resolve_repr_v = resolve_repr<Grants...>();
+
+// ── Vendor / recipe-tier / transport-tier identity resolvers ─────────
+//
+// Walk the Grants pack to recover the typed-NTTP value for vendor /
+// recipe / transport.  Each returns the substrate default (None /
+// RELAXED / Loopback) when the binding accepts the strict default;
+// otherwise the explicit NTTP from the grant.
+//
+// These are SEPARATE resolvers (not part of `resolved_fn_t`) because
+// the substrate Fn slot is ReprKind-shaped — the typed identity lives
+// in side metadata that flows into vendor-pinning composition outside
+// the Fn aggregate.
+
+namespace detail {
+
+// Per-member "is-this-tag" + value extractor: primary template reports
+// `present == false`; partial spec on the typed-NTTP grant reports the
+// value.  Walks Grants and returns the FIRST present match (or the
+// sentinel when none present).  Uses `present` instead of comparing
+// against a default value because the typed enums admit their own
+// default-equivalent (None / RELAXED / Loopback) as legitimate user
+// choices that should NOT be confused with "no engagement".
+
+template <typename T>
+struct vendor_backend_of {
+    static constexpr bool present = false;
+    static constexpr ::crucible::algebra::lattices::VendorBackend value =
+        ::crucible::algebra::lattices::VendorBackend::None;
+};
+
+template <::crucible::algebra::lattices::VendorBackend Backend>
+struct vendor_backend_of<grant::vendor_backend<Backend>> {
+    static constexpr bool present = true;
+    static constexpr ::crucible::algebra::lattices::VendorBackend value = Backend;
+};
+
+template <typename T>
+struct recipe_tier_of {
+    static constexpr bool present = false;
+    static constexpr ::crucible::algebra::lattices::Tolerance value =
+        ::crucible::algebra::lattices::Tolerance::RELAXED;
+};
+
+template <::crucible::algebra::lattices::Tolerance T>
+struct recipe_tier_of<grant::recipe_tier<T>> {
+    static constexpr bool present = true;
+    static constexpr ::crucible::algebra::lattices::Tolerance value = T;
+};
+
+template <typename T>
+struct transport_tier_of {
+    static constexpr bool present = false;
+    static constexpr grant::TransportTier value = grant::TransportTier::Loopback;
+};
+
+template <grant::TransportTier T>
+struct transport_tier_of<grant::transport_tier<T>> {
+    static constexpr bool present = true;
+    static constexpr grant::TransportTier value = T;
+};
+
+template <typename... Grants>
+[[nodiscard]] consteval ::crucible::algebra::lattices::VendorBackend
+    find_vendor_backend() noexcept {
+    auto v = ::crucible::algebra::lattices::VendorBackend::None;
+    bool found = false;
+    (void)found;
+    ((found
+        ? v
+        : (vendor_backend_of<std::remove_cvref_t<Grants>>::present
+            ? (found = true,
+               v = vendor_backend_of<std::remove_cvref_t<Grants>>::value)
+            : v)), ...);
+    return v;
+}
+
+template <typename... Grants>
+[[nodiscard]] consteval ::crucible::algebra::lattices::Tolerance
+    find_recipe_tier() noexcept {
+    auto t = ::crucible::algebra::lattices::Tolerance::RELAXED;
+    bool found = false;
+    (void)found;
+    ((found
+        ? t
+        : (recipe_tier_of<std::remove_cvref_t<Grants>>::present
+            ? (found = true,
+               t = recipe_tier_of<std::remove_cvref_t<Grants>>::value)
+            : t)), ...);
+    return t;
+}
+
+template <typename... Grants>
+[[nodiscard]] consteval grant::TransportTier find_transport_tier() noexcept {
+    auto t = grant::TransportTier::Loopback;
+    bool found = false;
+    (void)found;
+    ((found
+        ? t
+        : (transport_tier_of<std::remove_cvref_t<Grants>>::present
+            ? (found = true,
+               t = transport_tier_of<std::remove_cvref_t<Grants>>::value)
+            : t)), ...);
+    return t;
+}
+
+}  // namespace detail
+
+template <typename... Grants>
+inline constexpr auto resolve_vendor_backend_v =
+    detail::find_vendor_backend<Grants...>();
+
+template <typename... Grants>
+inline constexpr auto resolve_recipe_tier_v =
+    detail::find_recipe_tier<Grants...>();
+
+template <typename... Grants>
+inline constexpr auto resolve_transport_tier_v =
+    detail::find_transport_tier<Grants...>();
+
+// "Was a typed-NTTP tag actually present in the pack?" — distinguishes
+// "author chose None / RELAXED / Loopback explicitly" from "author
+// engaged Representation via accept_default_strict_for".  Phase B/C
+// vendor-pinning composition reads these before threading the typed
+// identity downstream.
+
+namespace detail {
+
+template <typename... Grants>
+[[nodiscard]] consteval bool any_vendor_backend_present() noexcept {
+    return (false || ... || vendor_backend_of<std::remove_cvref_t<Grants>>::present);
+}
+
+template <typename... Grants>
+[[nodiscard]] consteval bool any_recipe_tier_present() noexcept {
+    return (false || ... || recipe_tier_of<std::remove_cvref_t<Grants>>::present);
+}
+
+template <typename... Grants>
+[[nodiscard]] consteval bool any_transport_tier_present() noexcept {
+    return (false || ... || transport_tier_of<std::remove_cvref_t<Grants>>::present);
+}
+
+}  // namespace detail
+
+template <typename... Grants>
+inline constexpr bool resolve_vendor_backend_present_v =
+    detail::any_vendor_backend_present<Grants...>();
+
+template <typename... Grants>
+inline constexpr bool resolve_recipe_tier_present_v =
+    detail::any_recipe_tier_present<Grants...>();
+
+template <typename... Grants>
+inline constexpr bool resolve_transport_tier_present_v =
+    detail::any_transport_tier_present<Grants...>();
+
+// ── Forge phase identity (Provenance axis) ───────────────────────────
+//
+// forge_phase<P> is one possible Provenance grant.  Walks the Grants
+// pack and returns the first ForgePhase value; falls back to the
+// sentinel `0xFF` cast-to-ForgePhase when no forge_phase tag is
+// present.  Downstream consumers (mint_pipeline-shaped Forge
+// composition) read this to verify P_i+1 = P_i + 1 across phase
+// boundaries at compile time.
+
+namespace detail {
+
+template <typename T>
+struct forge_phase_of {
+    static constexpr bool present = false;
+    static constexpr grant::ForgePhase value = static_cast<grant::ForgePhase>(0xFF);
+};
+
+template <grant::ForgePhase P>
+struct forge_phase_of<grant::forge_phase<P>> {
+    static constexpr bool present = true;
+    static constexpr grant::ForgePhase value = P;
+};
+
+template <typename... Grants>
+[[nodiscard]] consteval grant::ForgePhase find_forge_phase() noexcept {
+    auto p = static_cast<grant::ForgePhase>(0xFF);
+    bool found = false;
+    (void)found;
+    ((found
+        ? p
+        : (forge_phase_of<std::remove_cvref_t<Grants>>::present
+            ? (found = true,
+               p = forge_phase_of<std::remove_cvref_t<Grants>>::value)
+            : p)), ...);
+    return p;
+}
+
+}  // namespace detail
+
+template <typename... Grants>
+inline constexpr auto resolve_forge_phase_v =
+    detail::find_forge_phase<Grants...>();
+
+// Sentinel: 0xFF means "no forge_phase tag in the pack" — consumers
+// check against this before reading the value.
+inline constexpr grant::ForgePhase kNoForgePhase =
+    static_cast<grant::ForgePhase>(0xFF);
 
 // ── 12. Complexity ───────────────────────────────────────────────────
 namespace detail {
@@ -696,6 +932,101 @@ static_assert(std::is_same_v<typename IoBgResolution::effect_row_t,
                              ::crucible::effects::Row<::crucible::effects::Effect::IO,
                                                      ::crucible::effects::Effect::Bg>>,
     "grant::with<IO, Bg> must resolve to effects::Row<IO, Bg>.");
+
+// ── Vendor / recipe / transport / forge_phase resolution pins ────────
+
+namespace vlat = ::crucible::algebra::lattices;
+
+// Empty-pack defaults: None / RELAXED / Loopback / kNoForgePhase.
+static_assert(resolve_vendor_backend_v<>      == vlat::VendorBackend::None);
+static_assert(resolve_recipe_tier_v<>         == vlat::Tolerance::RELAXED);
+static_assert(resolve_transport_tier_v<>      == grant::TransportTier::Loopback);
+static_assert(resolve_forge_phase_v<>         == kNoForgePhase);
+static_assert(!resolve_vendor_backend_present_v<>);
+static_assert(!resolve_recipe_tier_present_v<>);
+static_assert(!resolve_transport_tier_present_v<>);
+
+// grant::vendor_nv pack → NV; present_v true.
+static_assert(resolve_vendor_backend_v<grant::vendor_nv> ==
+              vlat::VendorBackend::NV);
+static_assert(resolve_vendor_backend_present_v<grant::vendor_nv>);
+
+// grant::tier_bitexact → Tolerance::BITEXACT.
+static_assert(resolve_recipe_tier_v<grant::tier_bitexact> ==
+              vlat::Tolerance::BITEXACT);
+static_assert(resolve_recipe_tier_present_v<grant::tier_bitexact>);
+
+// grant::transport_tier<AfXdp> → AfXdp.
+static_assert(resolve_transport_tier_v<grant::transport_tier<grant::TransportTier::AfXdp>>
+              == grant::TransportTier::AfXdp);
+
+// grant::forge_phase<Lower> → Lower.
+static_assert(resolve_forge_phase_v<grant::forge_phase<grant::ForgePhase::Lower>>
+              == grant::ForgePhase::Lower);
+
+// Mixed pack: vendor + tier in same Representation engagement — both
+// resolvers find their respective tags despite sharing the Repr dim.
+static_assert(resolve_vendor_backend_v<grant::vendor_nv, grant::tier_bitexact>
+              == vlat::VendorBackend::NV);
+static_assert(resolve_recipe_tier_v<grant::vendor_nv, grant::tier_bitexact>
+              == vlat::Tolerance::BITEXACT);
+
+// Sanitize remaps Provenance to source::Sanitized (bug fix from Phase B).
+struct XssTaint {};
+using SanitizedPack = resolved_fn_t<int,
+    grant::sanitize<XssTaint>,
+    accept_default_strict_for<dim::Type>,
+    accept_default_strict_for<dim::Refinement>,
+    accept_default_strict_for<dim::Usage>,
+    accept_default_strict_for<dim::Effect>,
+    accept_default_strict_for<dim::Security>,
+    accept_default_strict_for<dim::Protocol>,
+    accept_default_strict_for<dim::Lifetime>,
+    accept_default_strict_for<dim::Trust>,
+    accept_default_strict_for<dim::Representation>,
+    accept_default_strict_for<dim::Observability>,
+    accept_default_strict_for<dim::Complexity>,
+    accept_default_strict_for<dim::Precision>,
+    accept_default_strict_for<dim::Space>,
+    accept_default_strict_for<dim::Overflow>,
+    accept_default_strict_for<dim::Mutation>,
+    accept_default_strict_for<dim::Reentrancy>,
+    accept_default_strict_for<dim::Size>,
+    accept_default_strict_for<dim::Version>,
+    accept_default_strict_for<dim::Staleness>
+>;
+static_assert(std::is_same_v<typename SanitizedPack::source_t,
+                             ::crucible::safety::source::Sanitized>,
+    "grant::sanitize<C> must resolve Provenance to source::Sanitized.");
+
+// lifetime_region threads through to lifetime::In<Tag> (was Static).
+struct ArenaTag {};
+inline constexpr ArenaTag kArena{};
+using ArenaLifetimePack = resolved_fn_t<int,
+    grant::lifetime_region<kArena>,
+    accept_default_strict_for<dim::Type>,
+    accept_default_strict_for<dim::Refinement>,
+    accept_default_strict_for<dim::Usage>,
+    accept_default_strict_for<dim::Effect>,
+    accept_default_strict_for<dim::Security>,
+    accept_default_strict_for<dim::Protocol>,
+    accept_default_strict_for<dim::Provenance>,
+    accept_default_strict_for<dim::Trust>,
+    accept_default_strict_for<dim::Representation>,
+    accept_default_strict_for<dim::Observability>,
+    accept_default_strict_for<dim::Complexity>,
+    accept_default_strict_for<dim::Precision>,
+    accept_default_strict_for<dim::Space>,
+    accept_default_strict_for<dim::Overflow>,
+    accept_default_strict_for<dim::Mutation>,
+    accept_default_strict_for<dim::Reentrancy>,
+    accept_default_strict_for<dim::Size>,
+    accept_default_strict_for<dim::Version>,
+    accept_default_strict_for<dim::Staleness>
+>;
+static_assert(std::is_same_v<typename ArenaLifetimePack::lifetime_t,
+                             fn::lifetime::In<kArena>>,
+    "grant::lifetime_region<Tag> must resolve Lifetime to lifetime::In<Tag>.");
 
 }  // namespace self_test
 
