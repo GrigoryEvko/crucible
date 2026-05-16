@@ -187,6 +187,7 @@ crucible_test(test_decide)
 crucible_test(test_fixy_engaged)
 crucible_test(test_fixy_cheat_probe)
 crucible_test(test_fixy_fn)
+crucible_test(test_fixy_cap)
 
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
@@ -1087,6 +1088,13 @@ crucible_neg_compile_fixy_test(neg_fixy_rule_l003 "L003:")
 crucible_neg_compile_fixy_test(neg_fixy_rule_m011 "M011:")
 crucible_neg_compile_fixy_test(neg_fixy_rule_s010 "S010:")
 crucible_neg_compile_fixy_test(neg_fixy_rule_s011 "S011:")
+
+# ── FIXY-MINT-Cap — fixy/Cap.h re-export of effects::mint_cap +
+# effects::mint_from_ctx.  Two HS14 fixtures pin the alias's gate:
+crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_fg
+    "associated constraints are not satisfied|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_ctx_wrong_effect
+    "associated constraints are not satisfied|constraints not satisfied")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
