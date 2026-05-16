@@ -56,6 +56,15 @@ enum class ModalityKind : std::uint8_t {
     // Two grants of Quotient modality on the same axis are
     // incompatible iff their equivalence-class representatives differ.
     Quotient      = 4,
+    // FIXY-G11: Coeffect — RESOURCE-CONSUMPTION duality of effects.
+    // Effects track WHAT IS PRODUCED (IO, Bg, Alloc...); coeffects
+    // track WHAT IS CONSUMED (compute time, energy budget, cache
+    // residency).  Composition algebra is a SEMIRING (Petricek-
+    // Orchard-Mycroft 2014; Brunel-Gaboardi-Mazza-Zdancewic 2014):
+    // sequential composition is `+`, parallel composition is `max`,
+    // repetition is `·`.  Used by dim::Cost grants whose grade is a
+    // polynomial in input-size encoding nanos-per-op.
+    Coeffect      = 5,
 };
 
 // Cardinality derived via reflection (P2996R13).  Adding a new
@@ -76,7 +85,8 @@ concept IsModality =
     K == ModalityKind::RelativeMonad ||
     K == ModalityKind::Absolute      ||
     K == ModalityKind::Relative      ||
-    K == ModalityKind::Quotient;
+    K == ModalityKind::Quotient      ||
+    K == ModalityKind::Coeffect;
 
 template <ModalityKind K>
 concept ComonadModality        = (K == ModalityKind::Comonad);
@@ -93,6 +103,9 @@ concept RelativeModality       = (K == ModalityKind::Relative);
 template <ModalityKind K>
 concept QuotientModality       = (K == ModalityKind::Quotient);
 
+template <ModalityKind K>
+concept CoeffectModality       = (K == ModalityKind::Coeffect);
+
 // ── Compile-time queries ────────────────────────────────────────────
 //
 // Mutually exclusive predicates classifying a modality by which
@@ -107,7 +120,7 @@ inline constexpr bool has_unit_v       = (K == ModalityKind::RelativeMonad);
 template <ModalityKind K>
 inline constexpr bool has_grade_only_v =
     (K == ModalityKind::Absolute) || (K == ModalityKind::Relative) ||
-    (K == ModalityKind::Quotient);
+    (K == ModalityKind::Quotient)  || (K == ModalityKind::Coeffect);
 
 // ── Diagnostic name emitter ─────────────────────────────────────────
 //
@@ -122,6 +135,7 @@ inline constexpr bool has_grade_only_v =
         case ModalityKind::Absolute:      return "Absolute";
         case ModalityKind::Relative:      return "Relative";
         case ModalityKind::Quotient:      return "Quotient";
+        case ModalityKind::Coeffect:      return "Coeffect";
         default:                          return std::string_view{"<unknown ModalityKind>"};
     }
 }
@@ -137,6 +151,7 @@ struct RelativeMonad_t { static constexpr ModalityKind kind = ModalityKind::Rela
 struct Absolute_t      { static constexpr ModalityKind kind = ModalityKind::Absolute;      };
 struct Relative_t      { static constexpr ModalityKind kind = ModalityKind::Relative;      };
 struct Quotient_t      { static constexpr ModalityKind kind = ModalityKind::Quotient;      };
+struct Coeffect_t      { static constexpr ModalityKind kind = ModalityKind::Coeffect;      };
 
 }  // namespace modality
 
@@ -147,16 +162,16 @@ struct Quotient_t      { static constexpr ModalityKind kind = ModalityKind::Quot
 // header-inclusion time if any modality invariant breaks.
 namespace detail::modality_self_test {
 
-// Cardinality.  Five enumerators since FIXY-G10 added Quotient to the
-// original Comonad / RelativeMonad / Absolute / Relative quartet.
-// Adding a sixth modality fires this guard AND the name-coverage
+// Cardinality.  Six enumerators since FIXY-G11 added Coeffect to the
+// FIXY-G10 (Comonad/RelativeMonad/Absolute/Relative/Quotient) set.
+// Adding a seventh modality fires this guard AND the name-coverage
 // assertion below independently (the latter is the load-bearing one
 // because it pinpoints the missing switch arm in modality_name()).
-static_assert(modality_kind_count == 5,
-    "Modality count diverged from the five-member set "
-    "(Comonad/RelativeMonad/Absolute/Relative/Quotient) — confirm the "
-    "addition is intentional and the name-coverage assertion below "
-    "still fires for the new enumerator.");
+static_assert(modality_kind_count == 6,
+    "Modality count diverged from the six-member set "
+    "(Comonad/RelativeMonad/Absolute/Relative/Quotient/Coeffect) — "
+    "confirm the addition is intentional and the name-coverage "
+    "assertion below still fires for the new enumerator.");
 
 // Name coverage via reflection — every enumerator MUST have a
 // non-sentinel name from modality_name().  If an enumerator is added
@@ -197,6 +212,7 @@ static_assert(is_exactly_one_predicate<ModalityKind::RelativeMonad>);
 static_assert(is_exactly_one_predicate<ModalityKind::Absolute>);
 static_assert(is_exactly_one_predicate<ModalityKind::Relative>);
 static_assert(is_exactly_one_predicate<ModalityKind::Quotient>);
+static_assert(is_exactly_one_predicate<ModalityKind::Coeffect>);
 
 // Tag-type round-trip.
 static_assert(modality::Comonad_t::kind       == ModalityKind::Comonad);
@@ -204,6 +220,7 @@ static_assert(modality::RelativeMonad_t::kind == ModalityKind::RelativeMonad);
 static_assert(modality::Absolute_t::kind      == ModalityKind::Absolute);
 static_assert(modality::Relative_t::kind      == ModalityKind::Relative);
 static_assert(modality::Quotient_t::kind      == ModalityKind::Quotient);
+static_assert(modality::Coeffect_t::kind      == ModalityKind::Coeffect);
 
 // Concept gate exhaustiveness.
 static_assert(IsModality<ModalityKind::Comonad>);
@@ -211,6 +228,7 @@ static_assert(IsModality<ModalityKind::RelativeMonad>);
 static_assert(IsModality<ModalityKind::Absolute>);
 static_assert(IsModality<ModalityKind::Relative>);
 static_assert(IsModality<ModalityKind::Quotient>);
+static_assert(IsModality<ModalityKind::Coeffect>);
 
 // Per-form concept narrowness.
 static_assert( ComonadModality<ModalityKind::Comonad>);
@@ -223,6 +241,8 @@ static_assert( RelativeModality<ModalityKind::Relative>);
 static_assert(!RelativeModality<ModalityKind::Absolute>);
 static_assert( QuotientModality<ModalityKind::Quotient>);
 static_assert(!QuotientModality<ModalityKind::Absolute>);
+static_assert( CoeffectModality<ModalityKind::Coeffect>);
+static_assert(!CoeffectModality<ModalityKind::Absolute>);
 
 // Diagnostic name coverage — every kind has a non-empty name; no kind
 // resolves to the "<unknown>" sentinel.
@@ -231,11 +251,13 @@ static_assert(!modality_name(ModalityKind::RelativeMonad).empty());
 static_assert(!modality_name(ModalityKind::Absolute).empty());
 static_assert(!modality_name(ModalityKind::Relative).empty());
 static_assert(!modality_name(ModalityKind::Quotient).empty());
+static_assert(!modality_name(ModalityKind::Coeffect).empty());
 static_assert( modality_name(ModalityKind::Comonad)       != "<unknown ModalityKind>");
 static_assert( modality_name(ModalityKind::RelativeMonad) != "<unknown ModalityKind>");
 static_assert( modality_name(ModalityKind::Absolute)      != "<unknown ModalityKind>");
 static_assert( modality_name(ModalityKind::Relative)      != "<unknown ModalityKind>");
 static_assert( modality_name(ModalityKind::Quotient)      != "<unknown ModalityKind>");
+static_assert( modality_name(ModalityKind::Coeffect)      != "<unknown ModalityKind>");
 
 // Tag types are empty (EBO must collapse them to zero bytes when used
 // as `[[no_unique_address]]` members).
@@ -244,6 +266,7 @@ static_assert(std::is_empty_v<modality::RelativeMonad_t>);
 static_assert(std::is_empty_v<modality::Absolute_t>);
 static_assert(std::is_empty_v<modality::Relative_t>);
 static_assert(std::is_empty_v<modality::Quotient_t>);
+static_assert(std::is_empty_v<modality::Coeffect_t>);
 
 }  // namespace detail::modality_self_test
 

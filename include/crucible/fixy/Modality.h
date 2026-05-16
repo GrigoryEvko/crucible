@@ -72,6 +72,7 @@ enum class ModalityClass : std::uint8_t {
     Requires   = 2,  // RelativeMonad  — demands refinement
     Linear     = 3,  // Linear         — consume-and-produce
     Quotient   = 4,  // Quotient       — equivalence class
+    Coeffect   = 5,  // Coeffect       — resource consumption (G11)
 };
 
 [[nodiscard]] consteval std::string_view modality_class_name(
@@ -83,6 +84,7 @@ enum class ModalityClass : std::uint8_t {
         case ModalityClass::Requires: return "Requires";
         case ModalityClass::Linear:   return "Linear";
         case ModalityClass::Quotient: return "Quotient";
+        case ModalityClass::Coeffect: return "Coeffect";
         default:                       return std::string_view{"<unknown ModalityClass>"};
     }
 }
@@ -127,6 +129,11 @@ struct classify_modality_impl<::crucible::algebra::modality::Relative_t> {
 template <>
 struct classify_modality_impl<::crucible::algebra::modality::Quotient_t> {
     static constexpr ModalityClass value = ModalityClass::Quotient;
+};
+
+template <>
+struct classify_modality_impl<::crucible::algebra::modality::Coeffect_t> {
+    static constexpr ModalityClass value = ModalityClass::Coeffect;
 };
 
 }  // namespace detail
@@ -189,6 +196,16 @@ struct default_witness_for_class_impl<ModalityClass::Linear> {
 
 template <>
 struct default_witness_for_class_impl<ModalityClass::Quotient> {
+    using type = ::crucible::safety::witness::Tested<0>;
+};
+
+template <>
+struct default_witness_for_class_impl<ModalityClass::Coeffect> {
+    // FIXY-G11: cost grades benefit from per-Cog calibration evidence.
+    // Default-suggested witness floor is Tested (per the bench-suite
+    // hooks that populate per-Cog OpcodeLatencyTable entries).  A bare
+    // cost grant defaults to Asserted; the hot-path R015 rule demands
+    // Tested for the high-residency paths.
     using type = ::crucible::safety::witness::Tested<0>;
 };
 
@@ -377,12 +394,14 @@ static_assert(classify_modality_v<alg::modality::Comonad_t>       == ModalityCla
 static_assert(classify_modality_v<alg::modality::RelativeMonad_t> == ModalityClass::Requires);
 static_assert(classify_modality_v<alg::modality::Relative_t>      == ModalityClass::Linear);
 static_assert(classify_modality_v<alg::modality::Quotient_t>      == ModalityClass::Quotient);
+static_assert(classify_modality_v<alg::modality::Coeffect_t>      == ModalityClass::Coeffect);
 
 static_assert(modality_class_name(ModalityClass::Frame)    == "Frame");
 static_assert(modality_class_name(ModalityClass::Declares) == "Declares");
 static_assert(modality_class_name(ModalityClass::Requires) == "Requires");
 static_assert(modality_class_name(ModalityClass::Linear)   == "Linear");
 static_assert(modality_class_name(ModalityClass::Quotient) == "Quotient");
+static_assert(modality_class_name(ModalityClass::Coeffect) == "Coeffect");
 
 // ── Followup A — same_region_tag_aliased_v ─────────────────────────
 //

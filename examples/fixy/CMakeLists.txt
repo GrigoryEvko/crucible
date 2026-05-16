@@ -63,3 +63,6 @@ crucible_fixy_example(example_fixy_witness_evidenced)
 
 # FIXY-G10 — Modality-classified Mimic NV emit binding.
 crucible_fixy_example(example_fixy_modality_aware)
+
+# FIXY-G11 — cost-semiring + dim::Cost worked example.
+crucible_fixy_example(example_fixy_cost_annotated)

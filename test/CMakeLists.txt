@@ -249,6 +249,10 @@ set_tests_properties(test_fixy_witness PROPERTIES LABELS "fixy")
 crucible_test(test_fixy_modality)
 set_tests_properties(test_fixy_modality PROPERTIES LABELS "fixy")
 
+# FIXY-G11 — cost-semiring + dim::Cost positive test.
+crucible_test(test_fixy_cost)
+set_tests_properties(test_fixy_cost PROPERTIES LABELS "fixy")
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1315,6 +1319,16 @@ crucible_neg_compile_fixy_test(neg_fixy_witness_registry_revoked
 # Followup D: MultiplatformWitness aggregation rejects out-of-pack platforms.
 crucible_neg_compile_fixy_test(neg_fixy_witness_multiplatform_aggregation
     "claims_on_platform|MultiplatformWitness|RISCV|ClaimsTestedOnPlatform")
+
+# ── FIXY-G11 — Cost semiring + dim::Cost axis fixtures ─────────────
+crucible_neg_compile_fixy_test(neg_fixy_cost_semiring_associativity
+    "is_same|CostPolynomial|seq_compose|coeffs")
+crucible_neg_compile_fixy_test(neg_fixy_rule_R015_hot_unbounded_cost
+    "R015|cost_unknown|UINT64_MAX|unbounded")
+crucible_neg_compile_fixy_test(neg_fixy_cost_per_cog_missing
+    "has_calibration|OpticalTransceiver|ProjectableOn|calibration")
+crucible_neg_compile_fixy_test(neg_fixy_cost_witness_floor_calibration
+    "R015_Plus_TestedCostFloor|FnWitnessAtLeast|Tested|witness floor")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound

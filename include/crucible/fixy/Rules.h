@@ -72,11 +72,13 @@
 #include <crucible/fixy/Modality.h>
 #include <crucible/fixy/Reflect.h>
 #include <crucible/fixy/Witness.h>
+#include <crucible/fixy/dim/Cost.h>
 #include <crucible/safety/CollisionCatalog.h>
 #include <crucible/safety/diag/TestRegistry.h>
 #include <crucible/safety/witness/IsWitness.h>
 #include <crucible/safety/witness/Witness.h>
 
+#include <cstdint>
 #include <type_traits>
 
 namespace crucible::fixy::rule {
@@ -245,5 +247,52 @@ inline constexpr bool R018_frame_declares_consistency_v =
 
 // FIXY-G10 self-tests are exercised at the production call sites in
 // test_fixy_modality.cpp + the worked example.
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-G11: R015 — Hot-residency cost discipline ─────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// R015 — HotPath::Hot residency requires bounded cost.  Bindings
+// claiming Hot residency MUST carry a cost_polynomial<...> grant with
+// finite leading coefficients; bare cost_unknown (with
+// CostPolynomial<UINT64_MAX>) is rejected — the residency-tier
+// promotion gate cannot admit a binding with no cost bound.
+//
+// HotPath/residency-tier identity is a substrate-level annotation
+// (safety::HotPath<Tier, T>); at the fixy layer, R015 fires as a
+// consumer-side predicate that downstream hot-tier admission
+// templates spell as:
+//
+//   template <typename F>
+//       requires rule::R015_hot_cost_bounded_v<F>
+//   void admit_hot_path(F&&);
+
+namespace detail {
+
+// True iff F's cost polynomial is BOUNDED — every coefficient is
+// strictly less than UINT64_MAX (saturation infinity).  An unbounded
+// polynomial signifies "no cost claim made"; R015 rejects.
+template <typename F>
+struct cost_is_bounded {
+    using poly = ::crucible::fixy::fn_cost_polynomial_t<F>;
+private:
+    [[nodiscard]] static consteval bool all_coeffs_bounded() noexcept {
+        for (auto c : poly::coeffs) {
+            if (c == UINT64_MAX) return false;
+        }
+        return true;
+    }
+public:
+    static constexpr bool value = all_coeffs_bounded();
+};
+
+}  // namespace detail
+
+// R015: hot-residency bindings need a bounded cost.
+template <typename F>
+inline constexpr bool R015_hot_cost_bounded_v =
+    ::crucible::fixy::IsFixyFn<F> &&
+    ::crucible::fixy::HasCostGrant<F> &&
+    detail::cost_is_bounded<std::remove_cvref_t<F>>::value;
 
 }  // namespace crucible::fixy::rule
