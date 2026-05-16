@@ -220,6 +220,14 @@ enum class WireGradeError : std::uint8_t {
     TruncatedPayload  = 6,
     // FIXY-G9: witness opcode missing or below per-binding floor.
     WitnessFloor      = 7,
+    // FIXY-G13: stance version header missing (legacy artifact, no
+    // accept_legacy_stanceless opt-in).
+    StanceVersionMissing      = 8,
+    // FIXY-G13: artifact version outside the consumer's accept_versions
+    // window.
+    StanceVersionUnsupported  = 9,
+    // FIXY-G13: artifact stance_id doesn't match the expected stance.
+    StanceIdMismatch          = 10,
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1284,14 +1292,17 @@ wire_decode(std::span<const std::uint8_t> buf) noexcept
 wire_grade_error_name(WireGradeError e) noexcept
 {
     switch (e) {
-        case WireGradeError::BufferTooSmall:   return "BufferTooSmall";
-        case WireGradeError::BadOpcodeCount:   return "BadOpcodeCount";
-        case WireGradeError::UnknownOpcode:    return "UnknownOpcode";
-        case WireGradeError::GradeMismatch:    return "GradeMismatch";
-        case WireGradeError::PayloadSizeWrong: return "PayloadSizeWrong";
-        case WireGradeError::TruncatedPayload: return "TruncatedPayload";
-        case WireGradeError::WitnessFloor:     return "WitnessFloor";
-        default:                                return "<unknown WireGradeError>";
+        case WireGradeError::BufferTooSmall:           return "BufferTooSmall";
+        case WireGradeError::BadOpcodeCount:           return "BadOpcodeCount";
+        case WireGradeError::UnknownOpcode:            return "UnknownOpcode";
+        case WireGradeError::GradeMismatch:            return "GradeMismatch";
+        case WireGradeError::PayloadSizeWrong:         return "PayloadSizeWrong";
+        case WireGradeError::TruncatedPayload:         return "TruncatedPayload";
+        case WireGradeError::WitnessFloor:             return "WitnessFloor";
+        case WireGradeError::StanceVersionMissing:     return "StanceVersionMissing";
+        case WireGradeError::StanceVersionUnsupported: return "StanceVersionUnsupported";
+        case WireGradeError::StanceIdMismatch:         return "StanceIdMismatch";
+        default:                                        return "<unknown WireGradeError>";
     }
 }
 

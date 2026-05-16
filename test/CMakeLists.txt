@@ -257,6 +257,10 @@ set_tests_properties(test_fixy_cost PROPERTIES LABELS "fixy")
 crucible_test(test_fixy_termination)
 set_tests_properties(test_fixy_termination PROPERTIES LABELS "fixy")
 
+# FIXY-G13 — stance versioning + lifecycle positive test.
+crucible_test(test_fixy_stance_version)
+set_tests_properties(test_fixy_stance_version PROPERTIES LABELS "fixy")
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1355,6 +1359,16 @@ crucible_neg_compile_fixy_test(neg_fixy_resources_witness_floor_terminating
 #    downgrades below the modality class floor.
 crucible_neg_compile_fixy_test(neg_fixy_stance_compose_witness_downgrade
     "stance_compose_witness_consistent_v|class.s floor|StanceComposeWitnessDowngrade|witness_t weaker|Coeffect|Tested")
+
+# ── FIXY-G13 — Stance versioning + lifecycle fixtures ───────────────
+crucible_neg_compile_fixy_test(neg_fixy_stance_version_out_of_window_load
+    "accept_versions|Lo <= Hi|inclusive on both ends")
+crucible_neg_compile_fixy_test(neg_fixy_federation_stance_version_disjoint
+    "VersionedFederationChannel|stance version windows|empty intersection|FederationProtocolError")
+crucible_neg_compile_fixy_test(neg_fixy_stance_migration_path_missing
+    "migrate_v|migrate<OldS, NewS>|no migration path|MissingMigrationPath")
+crucible_neg_compile_fixy_test(neg_fixy_stance_legacy_stanceless_rejected
+    "legacy_decode_returns_missing|StanceVersionMissing|accept_legacy_stanceless|EXPECTED outcome")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound

@@ -62,6 +62,10 @@
 #include <crucible/fixy/Theory.h>
 #include <crucible/fixy/Value.h>
 #include <crucible/fixy/WireGrade.h>
+// FIXY-G13: stance versioning + lifecycle.
+#include <crucible/fixy/stance/Migration.h>
+#include <crucible/fixy/stance/Version.h>
+#include <crucible/fixy/stance/WireGradeV2.h>
 
 #define CRUCIBLE_FIXY 1
 

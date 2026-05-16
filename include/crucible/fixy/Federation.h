@@ -51,7 +51,9 @@
 #include <crucible/fixy/Reflect.h>
 #include <crucible/fixy/Reject.h>
 #include <crucible/fixy/Rules.h>
+#include <crucible/fixy/stance/Version.h>
 
+#include <algorithm>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -224,6 +226,102 @@ mint_federation_channel(Roles... roles) noexcept
         "structured diagnostic carrier.");
     return FederationChannel<std::remove_cvref_t<Roles>...>{
         std::forward<Roles>(roles)...};
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-G13 — Stance version negotiation ──────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Each federation participant declares which stance versions it
+// accepts via `RoleVersionAccept<Stance, Lo, Hi>`.  Federation
+// intersects the per-role accept windows AND checks they're non-
+// disjoint.  When the intersection of `[Lo_i, Hi_i]` is empty, the
+// federation cannot proceed.
+//
+// **Mechanism.**  Pairwise window intersection per role-pack.  The
+// channel-wide window is the intersection of every role's window.
+// An empty intersection rejects.
+
+template <typename... StanceTags>
+struct FederationProtocolError {
+    static constexpr const char* description =
+        "FederationProtocolError: stance version windows across the "
+        "peer pack have an empty intersection.  No shared version "
+        "exists that every peer accepts.  Widen the accept_versions "
+        "window on the offending role(s) or migrate to a shared "
+        "version range.";
+};
+
+namespace detail {
+
+// Pack-level fold: compute the intersection [max(Lo_i), min(Hi_i)].
+template <typename... Accepts>
+struct accept_windows_meet;
+
+template <>
+struct accept_windows_meet<> {
+    static constexpr std::uint16_t min_v = 0;
+    static constexpr std::uint16_t max_v = UINT16_MAX;
+    static constexpr bool non_empty_v = true;
+};
+
+template <typename A, typename... Rest>
+struct accept_windows_meet<A, Rest...> {
+private:
+    using TailMeet = accept_windows_meet<Rest...>;
+public:
+    static constexpr std::uint16_t min_v =
+        (A::min_v > TailMeet::min_v) ? A::min_v : TailMeet::min_v;
+    static constexpr std::uint16_t max_v =
+        (A::max_v < TailMeet::max_v) ? A::max_v : TailMeet::max_v;
+    static constexpr bool non_empty_v =
+        (min_v <= max_v) && TailMeet::non_empty_v;
+};
+
+}  // namespace detail
+
+// Public façade: intersect a pack of accept_versions windows.
+template <typename... Accepts>
+inline constexpr std::uint16_t federation_version_meet_lo_v =
+    detail::accept_windows_meet<Accepts...>::min_v;
+
+template <typename... Accepts>
+inline constexpr std::uint16_t federation_version_meet_hi_v =
+    detail::accept_windows_meet<Accepts...>::max_v;
+
+template <typename... Accepts>
+inline constexpr bool federation_version_windows_compatible_v =
+    detail::accept_windows_meet<Accepts...>::non_empty_v;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── mint_federation_channel_versioned ──────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Stance-versioned federation mint.  Each role pairs with an
+// `accept_versions<S, Lo, Hi>` declaring the role's accepted window.
+// The channel-wide shared window is the intersection.  Empty
+// intersection → reject.
+
+template <typename... AcceptVersions>
+struct VersionedFederationChannel final {
+    static_assert(federation_version_windows_compatible_v<AcceptVersions...>,
+        "VersionedFederationChannel: stance version windows have an "
+        "empty intersection across the peer pack.  See "
+        "fixy::FederationProtocolError<Stances...> for the structured "
+        "carrier and widen the offending role(s)' accept_versions.");
+
+    static constexpr std::uint16_t shared_min_v =
+        federation_version_meet_lo_v<AcceptVersions...>;
+    static constexpr std::uint16_t shared_max_v =
+        federation_version_meet_hi_v<AcceptVersions...>;
+};
+
+template <typename... AcceptVersions>
+    requires (federation_version_windows_compatible_v<AcceptVersions...>)
+[[nodiscard]] constexpr VersionedFederationChannel<AcceptVersions...>
+mint_federation_channel_versioned() noexcept
+{
+    return {};
 }
 
 }  // namespace crucible::fixy
