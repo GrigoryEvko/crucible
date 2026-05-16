@@ -42,6 +42,7 @@
 // engagement at the macro level.
 
 #include <crucible/fixy/AllStrict.h>
+#include <crucible/fixy/ArgPromote.h>
 #include <crucible/fixy/Contract.h>
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>

@@ -221,6 +221,10 @@ set_tests_properties(test_fixy_wire_grade PROPERTIES LABELS "fixy")
 crucible_test(test_fixy_value_t)
 set_tests_properties(test_fixy_value_t PROPERTIES LABELS "fixy")
 
+# ── FIXY-G5 — arg-grade promotion sentinel TU ───────────────────────
+crucible_test(test_fixy_arg_promote)
+set_tests_properties(test_fixy_arg_promote PROPERTIES LABELS "fixy")
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1219,6 +1223,12 @@ crucible_neg_compile_fixy_test(neg_fixy_value_t_non_fn
     "requires F to be a fixy::fn|IsFixyFn|constraints not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_call_args_mismatched_arity
     "too few arguments|no match|cannot convert|mismatched")
+
+# ── FIXY-G5 — arg-promote discipline fixtures ───────────────────────
+crucible_neg_compile_fixy_test(neg_fixy_arg_promote_no_path
+    "PromoteImpossible|cannot promote raw argument|ArgPromotable")
+crucible_neg_compile_fixy_test(neg_fixy_arg_promote_violates_refinement
+    "PromoteImpossible|cannot promote raw argument|ArgPromotable")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
