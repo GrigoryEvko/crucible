@@ -115,17 +115,19 @@ using BoundForgePhase = cf::fn<ForgePhasePtr,
     // 11. Observability — derived from Effect row.
     cf::accept_default_strict_for<cd::Observability>,
 
-    // 12. Complexity = Linear<0> — O(N) in IR node count.
-    cg::complexity_linear<0>,
+    // 12. Complexity = Linear<1> — O(1·N) in IR node count.  N is the
+    //     per-element constant multiplier; the actual N is the runtime
+    //     graph size, declared at the call site.
+    cg::complexity_linear<1>,
 
     // 13. Precision — STRICT (Exact).  IR transformations preserve
     //     the recipe pin bit-exactly; relaxing to F32 would forfeit
     //     BITEXACT_STRICT compatibility.
     cf::accept_default_strict_for<cd::Precision>,
 
-    // 14. Space = Bounded<0> — bounded by arena capacity (the
-    //     bound is declared at the arena's construction site).
-    cg::space_bounded<0>,
+    // 14. Space = Bounded<sizeof(KernelGraph)> — one IR-node-sized bump
+    //     per phase invocation.  Declared at the arena's bump site.
+    cg::space_bounded<sizeof(KernelGraph)>,
 
     // 15. Overflow — Trap strict default.
     cf::accept_default_strict_for<cd::Overflow>,
@@ -172,8 +174,9 @@ static_assert(std::is_same_v<BoundForgePhase::source_t,
 static_assert(std::is_same_v<BoundForgePhase::precision_t,
                              fn::precision::Exact>,
     "Forge phases preserve bit-exact numerics under the IR's recipe pin.");
-static_assert(std::is_same_v<BoundForgePhase::cost_t, fn::cost::Linear<0>>);
-static_assert(std::is_same_v<BoundForgePhase::space_t, fn::space::Bounded<0>>);
+static_assert(std::is_same_v<BoundForgePhase::cost_t, fn::cost::Linear<1>>);
+static_assert(std::is_same_v<BoundForgePhase::space_t,
+                             fn::space::Bounded<sizeof(KernelGraph)>>);
 static_assert(std::is_same_v<BoundForgePhase::effect_row_t,
                              fx::Row<fx::Effect::Bg, fx::Effect::Alloc>>);
 

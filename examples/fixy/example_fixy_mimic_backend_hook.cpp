@@ -137,15 +137,18 @@ using BoundMimicNvEmit = cf::fn<EmitKernelPtr,
     // 11. Observability — derived from Effect row.
     cf::accept_default_strict_for<cd::Observability>,
 
-    // 12. Complexity = Linear<0> — O(N) in IR node count.
-    cg::complexity_linear<0>,
+    // 12. Complexity = Linear<1> — O(1·N) in IR node count.  N is
+    //     the per-element multiplier; the actual N is the IR's node
+    //     count, declared at the call site.
+    cg::complexity_linear<1>,
 
     // 13. Precision — STRICT (Exact).  Emission preserves the IR's
     //     recipe pin (BITEXACT_TC / BITEXACT_STRICT) bit-exactly.
     cf::accept_default_strict_for<cd::Precision>,
 
-    // 14. Space = Bounded<0> — bounded by arena capacity.
-    cg::space_bounded<0>,
+    // 14. Space = Bounded<sizeof(CompiledBytes)> — one compiled-bytes
+    //     descriptor per emission.  Declared at the arena's bump site.
+    cg::space_bounded<sizeof(CompiledBytes)>,
 
     // 15. Overflow — Trap strict default.
     cf::accept_default_strict_for<cd::Overflow>,

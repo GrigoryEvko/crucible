@@ -20,7 +20,7 @@
 //
 // THE LOAD-BEARING DELTA from example_fixy_custom_kernel:
 //   - Effect:      `cg::with<Bg, Alloc>` adds Alloc (kernel was Bg-only).
-//   - Complexity:  `cg::complexity_linear<0>` declares O(N).
+//   - Complexity:  `cg::complexity_linear<1>` declares O(1·N).
 //   - Space:       `cg::space_bounded<3>` — three persistent buffers
 //                  (params + m + v).
 //   - Reentrancy:  STRICT (NonReentrant).  Optimizer state would race
@@ -118,10 +118,10 @@ using BoundOptimizer = cf::fn<AdamStepPtr,
     // 11. Observability — derived from Effect row.
     cf::accept_default_strict_for<cd::Observability>,
 
-    // 12. Complexity = Linear<0> — O(N) in parameter count (the
-    //     template arg is the per-call N upper bound; 0 = unspecified
-    //     bound, but axis declared linear).
-    cg::complexity_linear<0>,
+    // 12. Complexity = Linear<1> — O(1·N) in parameter count.  The
+    //     template arg is the per-element constant multiplier; the
+    //     actual N (parameter count) is declared at the call site.
+    cg::complexity_linear<1>,
 
     // 13. Precision = F32 — Adam accumulates in FP32.
     cg::precision_f32,
@@ -167,7 +167,7 @@ static_assert(BoundOptimizer::reentrancy_v  == fn::ReentrancyMode::NonReentrant,
 static_assert(BoundOptimizer::mutation_v    == fn::MutationMode::Mutable);
 static_assert(BoundOptimizer::security_v    == fn::SecLevel::Classified);
 static_assert(std::is_same_v<typename BoundOptimizer::cost_t,
-                             fn::cost::Linear<0>>,
+                             fn::cost::Linear<1>>,
     "Optimizer step is O(N) in parameter count.");
 static_assert(std::is_same_v<typename BoundOptimizer::space_t,
                              fn::space::Bounded<3>>,
