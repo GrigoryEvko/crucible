@@ -261,6 +261,10 @@ set_tests_properties(test_fixy_termination PROPERTIES LABELS "fixy")
 crucible_test(test_fixy_stance_version)
 set_tests_properties(test_fixy_stance_version PROPERTIES LABELS "fixy")
 
+# FIXY-G14 — seam theory matcher positive test (KEYSTONE).
+crucible_test(test_fixy_seam)
+set_tests_properties(test_fixy_seam PROPERTIES LABELS "fixy")
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1369,6 +1373,18 @@ crucible_neg_compile_fixy_test(neg_fixy_stance_migration_path_missing
     "migrate_v|migrate<OldS, NewS>|no migration path|MissingMigrationPath")
 crucible_neg_compile_fixy_test(neg_fixy_stance_legacy_stanceless_rejected
     "legacy_decode_returns_missing|StanceVersionMissing|accept_legacy_stanceless|EXPECTED outcome")
+
+# ── FIXY-G14 — Seam theory matcher fixtures (KEYSTONE) ──────────────
+crucible_neg_compile_fixy_test(neg_fixy_seam_gaps_010_monotonic_concurrent
+    "any_seam_pattern_matches_v|gaps_010|Monotonic|Reentrant|Identity|EXPECTED outcome")
+crucible_neg_compile_fixy_test(neg_fixy_seam_gaps_013_trust_laundering_federate
+    "any_seam_pattern_matches_v|gaps_013|External|FromInternal|Federate|EXPECTED outcome")
+crucible_neg_compile_fixy_test(neg_fixy_seam_krishnaswami_2017_cap_undischarged_persist
+    "any_seam_pattern_matches_v|krishnaswami_2017|IO cap|Block cap|Persist|EXPECTED outcome")
+crucible_neg_compile_fixy_test(neg_fixy_seam_krishnaswami_2014_linear_dup_federate_fanout
+    "any_seam_pattern_matches_v|krishnaswami_2014|Capability|Federate|EXPECTED outcome")
+crucible_neg_compile_fixy_test(neg_fixy_seam_caires_pfenning_2010_delegate_drift_reshard
+    "any_seam_pattern_matches_v|caires_pfenning_2010|protocol_t|Reshard|EXPECTED outcome")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound

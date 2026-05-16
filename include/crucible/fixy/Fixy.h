@@ -66,6 +66,8 @@
 #include <crucible/fixy/stance/Migration.h>
 #include <crucible/fixy/stance/Version.h>
 #include <crucible/fixy/stance/WireGradeV2.h>
+// FIXY-G14: seam theory matcher.
+#include <crucible/fixy/theory/Seam.h>
 
 #define CRUCIBLE_FIXY 1
 

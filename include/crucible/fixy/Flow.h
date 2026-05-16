@@ -65,9 +65,11 @@
 //   fixy/Call.h                           — call_with_caps companion
 //   fixy/Reflect.h                        — companion reflection layer
 
+#include <crucible/fixy/Channel.h>
 #include <crucible/fixy/Fn.h>
 #include <crucible/fixy/Reflect.h>
 #include <crucible/fixy/Reject.h>
+#include <crucible/fixy/theory/Seam.h>
 
 #include <type_traits>
 #include <utility>
@@ -77,51 +79,9 @@ namespace crucible::fixy {
 // ═════════════════════════════════════════════════════════════════════
 // ── Channel types ──────────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
-
-namespace channel {
-
-// Identity — value passes through unchanged.  Used for in-process
-// short-circuit composition (producer and consumer share an arena).
-struct Identity {
-    static constexpr const char* name = "Identity";
-};
-
-// Persist — value crosses a durability boundary (Cipher / disk /
-// snapshot).  Staleness degrades to Stale<bound>; other axes
-// preserve.
-struct Persist {
-    static constexpr const char* name = "Persist";
-};
-
-// Serialize — value crosses an encoded boundary (wire format,
-// process-process IPC).  No semantic transform; identity for grade.
-struct Serialize {
-    static constexpr const char* name = "Serialize";
-};
-
-// Federate — value crosses an organization / trust boundary.  Trust
-// degrades; Provenance accumulates External tag.  Vendor pins are
-// disjoint (different fleet can't honor producer's vendor).
-struct Federate {
-    static constexpr const char* name = "Federate";
-};
-
-// Reshard — value crosses a region-rearrangement boundary (FSDP
-// reshard, fleet resize).  Lifetime::In<X> is rejected — regions
-// don't survive reshard.
-struct Reshard {
-    static constexpr const char* name = "Reshard";
-};
-
-}  // namespace channel
-
-template <typename Ch>
-concept ChannelType =
-    std::is_same_v<Ch, channel::Identity>  ||
-    std::is_same_v<Ch, channel::Persist>   ||
-    std::is_same_v<Ch, channel::Serialize> ||
-    std::is_same_v<Ch, channel::Federate>  ||
-    std::is_same_v<Ch, channel::Reshard>;
+//
+// Channel types and ChannelType concept live in Channel.h (extracted
+// FIXY-G14 to break the include cycle between Flow.h and theory/Seam.h).
 
 // ═════════════════════════════════════════════════════════════════════
 // ── FlowMismatch diagnostic carrier ────────────────────────────────
@@ -429,10 +389,30 @@ struct Flow final {
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename F1, typename Ch, typename F2>
-    requires FlowOk<F1, Ch, F2>
+    requires FlowOk<F1, Ch, F2> &&
+             (!::crucible::fixy::theory::any_seam_pattern_matches_v<
+                  typename std::remove_cvref_t<F1>::underlying_fn_t,
+                  Ch,
+                  typename std::remove_cvref_t<F2>::underlying_fn_t>)
 [[nodiscard]] constexpr Flow<F1, Ch, F2>
 mint_flow(F1 producer, Ch channel, F2 consumer) noexcept
 {
+    static_assert(
+        !::crucible::fixy::theory::any_seam_pattern_matches_v<
+            typename std::remove_cvref_t<F1>::underlying_fn_t,
+            Ch,
+            typename std::remove_cvref_t<F2>::underlying_fn_t>,
+        "FIXY-G14 SeamPatternViolation: producer/channel/consumer "
+        "composition matches a §30.14 unsoundness pattern that "
+        "manifests at the seam.  Each per-binding grade vector clears "
+        "the substrate's ValidComposition gate, but the COMPOSITION "
+        "exposes unsoundness invisible per-component.  See "
+        "fixy::theory::SeamPatternViolation<...> and "
+        "fixy::theory::which_seam_pattern_matches<P, Ch, C>() for the "
+        "cite identifying the offending corpus entry.  Common cases: "
+        "gaps_010 (monotonic × concurrent), gaps_013 (trust laundering), "
+        "krishnaswami_2017 (cap evaporates), krishnaswami_2014 (linear "
+        "duplication), caires_pfenning_2010 (delegate drift).");
     return Flow<F1, Ch, F2>{
         std::move(producer), std::move(channel), std::move(consumer)};
 }
