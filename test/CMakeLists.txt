@@ -168,14 +168,24 @@ crucible_test(test_safety)
 crucible_test(test_pre_post)
 crucible_test(test_decide)
 
-# ── FIXY tests removed ───────────────────────────────────────────────
+# ── FIXY-CLEAN Phase A — engagement-gate test corpus ────────────────
 #
-# The parallel-universe include/crucible/fixy/ tree (32 headers, 21
-# positive tests, 87 neg-compile fixtures, 13 worked examples, ~10,750
-# LoC) was deleted per misc/16_05_2026_fixy.md §2.2 LoC-delta + §11
-# first-PR plan.  The clean reimplementation composes against substrate
-# primitives — every test will be reauthored under the new shape with
-# substrate citations per §4.5 G1-G16 catalog.
+# Clean reimplementation per misc/16_05_2026_fixy.md §4 Phase A.  Three
+# sentinel TUs cover the positive surface (engagement accepts), the
+# 12 neg-compile fixtures cover the per-axis rejection surface, and the
+# cheat-probe round covers IsAccepted trait-spec-injection resistance.
+#
+# Substrate composition (per §2.1):
+#   - fixy/Dim.h        aliases safety::DimensionAxis (the 20-axis enum)
+#   - fixy/Default.h    aliases safety::fn::Fn<int> defaults per axis
+#   - fixy/Grant.h      uses safety::NotInherited final-class discipline
+#   - fixy/Reject.h     delegates to safety/CollisionCatalog.h's
+#                         ValidComposition (Phase B activation) and
+#                         registers per-axis diag tags via safety/
+#                         Diagnostic.h's tag_base.
+
+crucible_test(test_fixy_engaged)
+crucible_test(test_fixy_cheat_probe)
 
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
@@ -1023,18 +1033,39 @@ function(crucible_neg_compile_topology_test name expected_diag)
     LABELS "topology_neg")
 endfunction()
 
-# ── FIXY-A6 / FIXY-B4 / G1-G14 neg-fixture harness REMOVED ──────────
-# The parallel-universe fixy/ tree (32 headers, 87 neg-compile fixtures,
-# 21 positive tests, 13 worked examples, ~10,750 LoC) was deleted per
-# misc/16_05_2026_fixy.md §2.2 LoC-delta + §11 first-PR plan.  The
-# clean reimplementation reauthors per-dim engagement fixtures + the
-# §6.8 collision rule fixtures + the G1-G14 cross-binding primitive
-# fixtures against the substrate-composing facade shape.  The
-# `crucible_neg_compile_fixy_test` function will be re-shipped under
-# Phase A per §4 once `fixy/Reject.h` and `fixy/Grant.h` ship as
-# thin facades over `safety/CollisionCatalog.h` +
-# `algebra/lattices/*.h` + `safety/{Tagged,Refined,Linear,Vendor,
-# NumericalTier,Stale,Budgeted}.h`.
+# ── FIXY-CLEAN Phase A — neg-compile fixture harness ────────────────
+#
+# 12 per-axis engagement-gap fixtures live in test/fixy_neg/.  Each
+# fixture instantiates the IsAccepted concept with a 19-engaged pack
+# that omits exactly one axis; the named diagnostic
+# `FixyNotEngaged_<Axis>` must appear in the compile output.
+
+function(crucible_neg_compile_fixy_test name expected_diag)
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
+  set_tests_properties(${name} PROPERTIES
+    LABELS "fixy_neg")
+endfunction()
+
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_usage          "FixyNotEngaged_Usage")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_effect         "FixyNotEngaged_Effect")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_security       "FixyNotEngaged_Security")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_protocol       "FixyNotEngaged_Protocol")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_lifetime       "FixyNotEngaged_Lifetime")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_provenance     "FixyNotEngaged_Provenance")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_trust          "FixyNotEngaged_Trust")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_representation "FixyNotEngaged_Representation")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_complexity     "FixyNotEngaged_Complexity")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_precision      "FixyNotEngaged_Precision")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_mutation       "FixyNotEngaged_Mutation")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_staleness      "FixyNotEngaged_Staleness")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
