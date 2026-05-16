@@ -36,17 +36,6 @@ namespace cd = crucible::fixy::dim;
 namespace cg = crucible::fixy::grant;
 namespace ce = crucible::effects;
 
-// ── Stance-builder shorthand ───────────────────────────────────────────
-//
-// Every scenario needs at least 19 `accept_default_strict_for<dim::X>`
-// tags + 1-N relaxation tags.  The N=0 "all-strict" baseline is the
-// AllStrictExceptType template — every scenario imports it and
-// substitutes the relaxed-dim tags.  Type is always engaged explicitly
-// (either via grant::typed<T> or accept_default_strict_for<dim::Type>).
-
-template <cd::DimAxis... Skip>
-struct skip_set {};
-
 // ─── Scenario 1: stance::PureLinear-equivalent ────────────────────────
 //
 // Every dim defaults to strict.  Type is engaged via the explicit
@@ -294,33 +283,6 @@ static_assert(sizeof(cg::copy)                            == 1);
 static_assert(sizeof(cf::accept_default_strict_for<cd::Type>) == 1);
 static_assert(sizeof(cg::with_io)                         == 1);
 
-// ─── WhichDimUnengaged on accepted packs returns sentinel ──────────────
-//
-// `value` is meaningless when `all_engaged` is true; this pins the
-// documented sentinel (dim::Type).
-using AcceptedPack = std::tuple<
-    cf::accept_default_strict_for<cd::Type>,
-    cf::accept_default_strict_for<cd::Refinement>,
-    cf::accept_default_strict_for<cd::Usage>,
-    cf::accept_default_strict_for<cd::Effect>,
-    cf::accept_default_strict_for<cd::Security>,
-    cf::accept_default_strict_for<cd::Protocol>,
-    cf::accept_default_strict_for<cd::Lifetime>,
-    cf::accept_default_strict_for<cd::Provenance>,
-    cf::accept_default_strict_for<cd::Trust>,
-    cf::accept_default_strict_for<cd::Representation>,
-    cf::accept_default_strict_for<cd::Observability>,
-    cf::accept_default_strict_for<cd::Complexity>,
-    cf::accept_default_strict_for<cd::Precision>,
-    cf::accept_default_strict_for<cd::Space>,
-    cf::accept_default_strict_for<cd::Overflow>,
-    cf::accept_default_strict_for<cd::Mutation>,
-    cf::accept_default_strict_for<cd::Reentrancy>,
-    cf::accept_default_strict_for<cd::Size>,
-    cf::accept_default_strict_for<cd::Version>,
-    cf::accept_default_strict_for<cd::Staleness>
->;
-
 // ── Per-dim engagement EBO check (Phase A pins the cost model) ─────────
 //
 // Phase B fixy::fn wrapper compiles `Grants...` into the substrate's
@@ -373,6 +335,43 @@ int main() {
     if (BadPack::all_engaged) {
         std::fprintf(stderr,
             "test_fixy_engaged: all_engaged true on incomplete pack\n");
+        return 1;
+    }
+
+    // ── tier_of_v exercise (Dim.h) ────────────────────────────────────
+    //
+    // Per feedback_algebra_runtime_smoke_test_discipline: the
+    // substrate-passthrough variable template `tier_of_v<D>` must also
+    // be reachable from a runtime path that compares against a known
+    // expected value.  Volatile sentinel prevents the entire chain from
+    // folding to a compile-time immediate.
+    constexpr auto usage_tier = cd::tier_of_v<cd::Usage>;
+    volatile std::uint8_t actual_tier_v =
+        static_cast<std::uint8_t>(usage_tier);
+    volatile std::uint8_t expected_tier_v =
+        static_cast<std::uint8_t>(
+            ::crucible::safety::tier_of_axis(cd::Usage));
+    if (actual_tier_v != expected_tier_v) {
+        std::fprintf(stderr,
+            "test_fixy_engaged: tier_of_v<Usage> divergence\n");
+        return 1;
+    }
+
+    // ── strict_default_for exercise (Default.h) ───────────────────────
+    //
+    // The Usage strict default is Linear (substrate's
+    // safety::fn::UsageMode::Linear).  Read back via volatile to defeat
+    // consteval folding; pin against the substrate's authoritative value
+    // so a future skew between fixy catalog and substrate fires here.
+    namespace ds = ::crucible::fixy::default_strict;
+    volatile auto actual_usage_default_v = static_cast<std::uint8_t>(
+        ds::strict_default_for<cd::Usage>::value);
+    volatile auto expected_usage_default_v = static_cast<std::uint8_t>(
+        ::crucible::safety::fn::UsageMode::Linear);
+    if (actual_usage_default_v != expected_usage_default_v) {
+        std::fprintf(stderr,
+            "test_fixy_engaged: strict_default_for<Usage>::value != "
+            "Linear\n");
         return 1;
     }
 

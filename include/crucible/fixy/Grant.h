@@ -131,6 +131,18 @@ struct grant_base {};
 
 template <dim::DimAxis D>
 struct accept_default_strict_for final : grant_base {
+    // FIXY-AUDIT-NTTP: reject out-of-range NTTPs (e.g.,
+    // `accept_default_strict_for<static_cast<dim::DimAxis>(99)>`).
+    // The enum class's uint8_t underlying type admits 0..255, but only
+    // 0..19 name real dims; an engagement tag pointing at a phantom
+    // value silently fails to engage anything, which would mask
+    // authoring bugs.  Pin at instantiation so the compiler diagnostic
+    // names the offending template argument.
+    static_assert(dim::is_valid_axis_v<D>,
+        "fixy::accept_default_strict_for<D> instantiated with a "
+        "DimAxis value outside the 20-enumerator range.  Use one of "
+        "dim::Type ... dim::Staleness — out-of-range casts engage no "
+        "real dim and silently mask an authoring bug.");
     static constexpr dim::DimAxis relaxes = D;
     static constexpr bool is_explicit_accept = true;
 };

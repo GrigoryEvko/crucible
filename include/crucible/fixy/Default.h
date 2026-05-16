@@ -53,12 +53,27 @@
 //
 //   InitSafe   — every specialization explicitly defines `type` and/or
 //                `value`; no fallthrough to a defaulted-int member.
+//                Reflection-driven coverage assertion catches any new
+//                substrate dim that lacks a specialization here.
 //   TypeSafe   — enum-valued strict defaults carry the substrate's
-//                enum class; no implicit conversion admitted.
+//                enum class; no implicit conversion admitted.  Named
+//                sentinel types `default_required` and
+//                `derived_from_effect` disambiguate the dim::Type and
+//                dim::Observability "no default" cases respectively.
+//   NullSafe   — no pointer members; specializations carry either a
+//                strong-enum `value` (for enum-valued dims) or a
+//                substrate-type `type` alias.
+//   MemSafe    — empty-struct specializations; zero allocation, zero
+//                resource ownership.
+//   BorrowSafe — pure metadata; no shared state.
+//   ThreadSafe — entire header is compile-time identity material;
+//                no runtime read/write to race over.
+//   LeakSafe   — zero-state types; no resource.
 //   DetSafe    — pure consteval-callable surface; output identical
 //                across compiles by reference equality to the
-//                substrate symbols.
-//   LeakSafe   — zero-state types; no resource.
+//                substrate symbols.  The no-skew static_assert block
+//                pins fixy's catalog values to safety::fn::Fn<int>'s
+//                shipping defaults — any drift fires at build time.
 //
 // ── Runtime cost ──────────────────────────────────────────────────────
 //

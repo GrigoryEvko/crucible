@@ -13,6 +13,7 @@
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Reject.h>
 #include <crucible/safety/diag/Insights.h>
+#include <crucible/safety/diag/JsonEmitter.h>
 #include <crucible/safety/diag/StableName.h>
 
 #include <cstdint>
@@ -130,6 +131,13 @@ static_assert(tag_has_nonempty_description<19>());
 // why_this_matters + symptom_pattern + correct_example +
 // violating_example.  The substrate's primary template returns empty
 // strings; non-empty here proves our specialization landed.
+//
+// Severity check: any of the four named severities (Hint / Warning /
+// Error / Fatal — see safety/diag/Insights.h's Severity enum) is
+// valid.  Specific severity-tier policy (Fatal for Security / Trust /
+// Provenance / Lifetime, Warning for Observability, Error for the
+// rest) is the substrate's call; we only pin that severity is one of
+// the four named enumerators.
 namespace sdiag = ::crucible::safety::diag;
 
 template <std::size_t I>
@@ -140,28 +148,134 @@ constexpr bool tag_has_populated_insight() {
         && !Insight::symptom_pattern.empty()
         && !Insight::correct_example.empty()
         && !Insight::violating_example.empty()
-        && Insight::severity == sdiag::Severity::Error;
+        && (Insight::severity == sdiag::Severity::Error
+            || Insight::severity == sdiag::Severity::Warning
+            || Insight::severity == sdiag::Severity::Fatal
+            || Insight::severity == sdiag::Severity::Hint);
 }
 
-static_assert(tag_has_populated_insight<0>());
-static_assert(tag_has_populated_insight<5>());
-static_assert(tag_has_populated_insight<10>());
-static_assert(tag_has_populated_insight<15>());
-static_assert(tag_has_populated_insight<19>());
+static_assert(tag_has_populated_insight<0>());   // Type — Error
+static_assert(tag_has_populated_insight<5>());   // Protocol — Error
+static_assert(tag_has_populated_insight<10>());  // Observability — Warning
+static_assert(tag_has_populated_insight<15>());  // Mutation — Error
+static_assert(tag_has_populated_insight<19>());  // Staleness — Error
+
+// Full-coverage gate: every one of the 20 dims has populated
+// insights.  Mirror of the reflection-driven consteval gate in
+// fixy/Reject.h (which iterates dim::DimAxis directly); this version
+// proves the equivalence via the FixyDiagCatalog tuple so a reviewer
+// reading tests-only confirms the coverage without diving into the
+// header.
+template <std::size_t... Is>
+constexpr bool every_tag_populated_helper(std::index_sequence<Is...>) {
+    return (tag_has_populated_insight<Is>() && ...);
+}
+
+static_assert(every_tag_populated_helper(
+    std::make_index_sequence<std::tuple_size_v<cfd::FixyDiagCatalog>>{}),
+    "Every fixy::diag::FixyNotEngaged_<D> tag must have a populated "
+    "insight_provider<> specialization.");
+
+// ── Severity policy audit ─────────────────────────────────────────
+//
+// Mirrors the substrate's LifetimeViolation = Fatal precedent for
+// security-class dims.  Observability mirrors ResidencyHeatViolation
+// = Warning.  All other dims are Error.  Locks the policy at compile
+// time so a refactor that downgrades a Fatal to Error fires here.
+static_assert(sdiag::insight_provider<cfd::FixyNotEngaged_Security>::severity
+              == sdiag::Severity::Fatal);
+static_assert(sdiag::insight_provider<cfd::FixyNotEngaged_Lifetime>::severity
+              == sdiag::Severity::Fatal);
+static_assert(sdiag::insight_provider<cfd::FixyNotEngaged_Provenance>::severity
+              == sdiag::Severity::Fatal);
+static_assert(sdiag::insight_provider<cfd::FixyNotEngaged_Trust>::severity
+              == sdiag::Severity::Fatal);
+static_assert(sdiag::insight_provider<cfd::FixyNotEngaged_Observability>::severity
+              == sdiag::Severity::Warning);
+// Spot-check remaining dims stay Error (sample — full pass via the
+// catalog walk above).
+static_assert(sdiag::insight_provider<cfd::FixyNotEngaged_Type>::severity
+              == sdiag::Severity::Error);
+static_assert(sdiag::insight_provider<cfd::FixyNotEngaged_Effect>::severity
+              == sdiag::Severity::Error);
+static_assert(sdiag::insight_provider<cfd::FixyNotEngaged_Staleness>::severity
+              == sdiag::Severity::Error);
 
 // ── stable_name_for_dim integration ────────────────────────────────
 //
 // safety::diag::stable_name_of returns a portable consteval string.
-// For our fixy tags it must contain the tag's identifier — proving
-// federation-cache hashing and JsonEmitter can reach our tags
-// without scraping compiler diagnostics.
-static_assert(cfd::stable_name_for_dim<cd::Usage>.find("FixyNotEngaged_Usage")
-              != std::string_view::npos);
-static_assert(cfd::stable_name_for_dim<cd::Staleness>.find("FixyNotEngaged_Staleness")
-              != std::string_view::npos);
-// Hashes are non-zero (FNV-1a + fmix combine produces non-zero for
-// non-empty inputs).
+// Per StableName.h's TU-fragility contract, use `.ends_with(...)`
+// against the simple-suffix form rather than `.find(...)` which would
+// match an imposter like `FixyNotEngaged_Usage_fake`.  The simple
+// name is always a suffix of the qualified form (which renders as
+// `crucible::fixy::diag::FixyNotEngaged_<D>`).
+static_assert(cfd::stable_name_for_dim<cd::Usage>
+              .ends_with("FixyNotEngaged_Usage"));
+static_assert(cfd::stable_name_for_dim<cd::Staleness>
+              .ends_with("FixyNotEngaged_Staleness"));
+static_assert(cfd::stable_name_for_dim<cd::Type>
+              .ends_with("FixyNotEngaged_Type"));
+// Hashes are non-zero AND pairwise-distinct across dims (no FNV-1a
+// collision on the 20 stable names).
 static_assert(cfd::stable_type_id_for_dim<cd::Usage> != 0);
+static_assert(cfd::stable_type_id_for_dim<cd::Usage>
+              != cfd::stable_type_id_for_dim<cd::Effect>);
+static_assert(cfd::stable_type_id_for_dim<cd::Type>
+              != cfd::stable_type_id_for_dim<cd::Staleness>);
+
+// ── WellInsightedTag / HasSubstantiveInsights concept gates ─────
+//
+// Downstream consumers can `requires WellInsightedTag<T>` to
+// guarantee diagnostic prose; same for HasSubstantiveInsights.
+// Verify all three named-severity tiers in the fixy catalog satisfy
+// both concepts.
+static_assert(sdiag::WellInsightedTag<cfd::FixyNotEngaged_Type>);
+static_assert(sdiag::WellInsightedTag<cfd::FixyNotEngaged_Security>);
+static_assert(sdiag::WellInsightedTag<cfd::FixyNotEngaged_Observability>);
+static_assert(sdiag::HasSubstantiveInsights<cfd::FixyNotEngaged_Type>);
+static_assert(sdiag::HasSubstantiveInsights<cfd::FixyNotEngaged_Security>);
+static_assert(sdiag::HasSubstantiveInsights<cfd::FixyNotEngaged_Observability>);
+
+// ── description fits IDE hover constraint (≤120 chars) ─────────
+//
+// Same threshold as the consteval gate in Reject.h
+// (DESCRIPTION_MAX_CHARS).  Locked here too so the test surface
+// tells the story for a reviewer who reads tests before the header.
+template <std::size_t I>
+constexpr bool description_fits_hover() {
+    using Tag = std::tuple_element_t<I, cfd::FixyDiagCatalog>;
+    return !Tag::description.empty()
+        && Tag::description.size() <= 120;
+}
+
+template <std::size_t... Is>
+constexpr bool all_descriptions_fit(std::index_sequence<Is...>) {
+    return (description_fits_hover<Is>() && ...);
+}
+
+static_assert(all_descriptions_fit(
+    std::make_index_sequence<std::tuple_size_v<cfd::FixyDiagCatalog>>{}));
+
+// ── JsonEmitter / Category-enum non-registration documentation ───
+//
+// fixy diag tags are NOT entries of `safety::diag::Category`.  The
+// substrate Category enum is closed (the 25 enumerators in
+// Diagnostic.h).  Fixy ships its own catalog (FixyDiagCatalog) for
+// extension purposes.  JsonEmitter::record_from_violation consumes
+// Category, NOT a tag-T — so the JSON record path doesn't accept
+// fixy tags directly today.  This is the documented design.
+//
+// Downstream consumers that want JSON emission for a fixy diagnostic
+// either (a) wrap the fixy tag in a context-specific Category-bearing
+// shim, or (b) emit via the insight_provider's prose directly.  The
+// surface remains lean; no new emitter API ships here.
+//
+// We DO confirm the parsing path for our stable names round-trips:
+constexpr auto parsed = ::crucible::safety::diag::parse_source_position(
+    "fake_file.cpp:42:7@fake_fn");
+static_assert(parsed.line == 42u);
+static_assert(parsed.column == 7u);
+static_assert(parsed.function == "fake_fn");
 
 }  // namespace
 

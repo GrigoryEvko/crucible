@@ -103,12 +103,16 @@ static_assert(count_v == 20,
     "as the FIRST line of defense — coordinate with fixy::dim::Type..."
     "Staleness aliases + Default.h + Grant.h before bumping count_v.");
 
-// ── Bijection self-check ──────────────────────────────────────────────
+// ── Bijection self-check (FIXY-AUDIT-BIJECTION; restoration) ──────────
 //
 // Reading the substrate enumerator-by-enumerator and pinning our
 // alias values catches a subtle bug where someone reorders the
 // substrate enum but forgets to update fixy/ aliases — the alias
-// values would compile but bind to the wrong dim semantically.
+// values would compile but bind to the wrong dim semantically.  The
+// `count_v == 20` check above catches APPENDS but not RENAMES /
+// REORDERS — that's what these 20 per-name asserts are for.  Each
+// line is the second line of defense pinning a single alias name to
+// the substrate enumerator with the same spelling.
 static_assert(Type           == DimAxis::Type);
 static_assert(Refinement     == DimAxis::Refinement);
 static_assert(Usage          == DimAxis::Usage);
@@ -143,5 +147,30 @@ static_assert(Staleness      == DimAxis::Staleness);
 template <DimAxis D>
 inline constexpr ::crucible::safety::TierKind tier_of_v =
     ::crucible::safety::tier_of_axis(D);
+
+// ── In-range validation (FIXY-AUDIT-NTTP) ─────────────────────────────
+//
+// An author can instantiate any template parametrized on DimAxis with a
+// value cast from an out-of-range integer (e.g.,
+// `accept_default_strict_for<static_cast<DimAxis>(99)>`).  The enum
+// class's fixed underlying type (uint8_t) admits values 0..255; only
+// 0..19 are actually named.  An "engagement" tag pointing at
+// DimAxis{99} is structurally meaningless — it engages no real dim.
+//
+// `is_valid_axis_v<D>` is the consteval predicate that returns true
+// iff D matches one of the 20 named enumerators.  Templates that take
+// `DimAxis D` as a non-type parameter MUST static_assert on this so a
+// `static_cast<DimAxis>(99)` NTTP fires a clear compile error at the
+// instantiation site, not a silent bind-to-nothing.
+namespace detail {
+[[nodiscard]] consteval bool axis_in_enumerator_set(DimAxis d) noexcept {
+    constexpr std::size_t lo = 0;
+    return static_cast<std::size_t>(d) >= lo
+        && static_cast<std::size_t>(d) < count_v;
+}
+}  // namespace detail
+
+template <DimAxis D>
+inline constexpr bool is_valid_axis_v = detail::axis_in_enumerator_set(D);
 
 }  // namespace crucible::fixy::dim

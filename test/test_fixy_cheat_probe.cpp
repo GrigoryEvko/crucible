@@ -166,8 +166,15 @@ int main() {
     // Runtime self-check that the cheat-probe TU built and the
     // static_asserts above hold.  If any cheat had succeeded, the
     // build would have failed; reaching main means the gate is sound.
+    //
+    // Post FIXY-A-PLUS-1: cheat #2 (inheritance-base bypass) is
+    // structurally CLOSED — every shipped grant tag is `final`, and
+    // the bypass attempt is a compile error caught by
+    // test/fixy_neg/neg_fixy_inheritance_bypass_attempt.cpp.  No
+    // architectural-limit admissions remain in this probe.
     std::fprintf(stderr,
         "test_fixy_cheat_probe: 5 cheat attempts rejected at compile "
-        "time (1 architectural-limit admission documented)\n");
+        "time (0 architectural-limit admissions; cheat #2 closed by "
+        "FIXY-A-PLUS-1)\n");
     return 0;
 }

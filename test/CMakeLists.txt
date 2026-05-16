@@ -1044,22 +1044,49 @@ function(crucible_neg_compile_fixy_test name expected_diag)
     LABELS "fixy_neg")
 endfunction()
 
-# FIXY-A6 — 12 neg-compile fixtures, one per distinct dim-engagement
-# gap.  Each PASS_REGULAR_EXPRESSION matches the static_assert message
+# FIXY-A6 + FIXY-A-PLUS-6 — 20 per-dim-omission neg-compile fixtures
+# (one per dim::DimAxis enumerator) plus 4 cross-cutting trap fixtures.
+# Each PASS_REGULAR_EXPRESSION matches the static_assert message
 # embedding the canonical FixyNotEngaged_<DimName> tag (see
 # include/crucible/fixy/Reject.h).
-crucible_neg_compile_fixy_test(neg_fixy_no_usage_engagement     "FixyNotEngaged_Usage")
-crucible_neg_compile_fixy_test(neg_fixy_no_effect_engagement    "FixyNotEngaged_Effect")
-crucible_neg_compile_fixy_test(neg_fixy_no_security_engagement  "FixyNotEngaged_Security")
-crucible_neg_compile_fixy_test(neg_fixy_no_trust_engagement     "FixyNotEngaged_Trust")
-crucible_neg_compile_fixy_test(neg_fixy_no_overflow_engagement  "FixyNotEngaged_Overflow")
-crucible_neg_compile_fixy_test(neg_fixy_no_mutation_engagement  "FixyNotEngaged_Mutation")
-crucible_neg_compile_fixy_test(neg_fixy_no_staleness_engagement "FixyNotEngaged_Staleness")
-crucible_neg_compile_fixy_test(neg_fixy_no_version_engagement   "FixyNotEngaged_Version")
-crucible_neg_compile_fixy_test(neg_fixy_empty_grants            "FixyNotEngaged_Type")
-crucible_neg_compile_fixy_test(neg_fixy_only_one_grant          "FixyNotEngaged_Type")
-crucible_neg_compile_fixy_test(neg_fixy_partial_19_of_20        "FixyNotEngaged_Reentrancy")
-crucible_neg_compile_fixy_test(neg_fixy_wrong_dim_grant         "FixyNotEngaged_Effect")
+#
+# Registration order matches dim::DimAxis enumerator order so a reader
+# of the test output sees failures in the same sequence the conjunction
+# in IsAccepted<> evaluates them.
+
+# ── Per-dim omission (20 fixtures, dim-enumerator order) ──────────────
+crucible_neg_compile_fixy_test(neg_fixy_no_type_engagement            "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_no_refinement_engagement      "FixyNotEngaged_Refinement")
+crucible_neg_compile_fixy_test(neg_fixy_no_usage_engagement           "FixyNotEngaged_Usage")
+crucible_neg_compile_fixy_test(neg_fixy_no_effect_engagement          "FixyNotEngaged_Effect")
+crucible_neg_compile_fixy_test(neg_fixy_no_security_engagement        "FixyNotEngaged_Security")
+crucible_neg_compile_fixy_test(neg_fixy_no_protocol_engagement        "FixyNotEngaged_Protocol")
+crucible_neg_compile_fixy_test(neg_fixy_no_lifetime_engagement        "FixyNotEngaged_Lifetime")
+crucible_neg_compile_fixy_test(neg_fixy_no_provenance_engagement      "FixyNotEngaged_Provenance")
+crucible_neg_compile_fixy_test(neg_fixy_no_trust_engagement           "FixyNotEngaged_Trust")
+crucible_neg_compile_fixy_test(neg_fixy_no_representation_engagement  "FixyNotEngaged_Representation")
+crucible_neg_compile_fixy_test(neg_fixy_no_observability_engagement   "FixyNotEngaged_Observability")
+crucible_neg_compile_fixy_test(neg_fixy_no_complexity_engagement      "FixyNotEngaged_Complexity")
+crucible_neg_compile_fixy_test(neg_fixy_no_precision_engagement       "FixyNotEngaged_Precision")
+crucible_neg_compile_fixy_test(neg_fixy_no_space_engagement           "FixyNotEngaged_Space")
+crucible_neg_compile_fixy_test(neg_fixy_no_overflow_engagement        "FixyNotEngaged_Overflow")
+crucible_neg_compile_fixy_test(neg_fixy_no_mutation_engagement        "FixyNotEngaged_Mutation")
+crucible_neg_compile_fixy_test(neg_fixy_no_reentrancy_engagement      "FixyNotEngaged_Reentrancy")
+crucible_neg_compile_fixy_test(neg_fixy_no_size_engagement            "FixyNotEngaged_Size")
+crucible_neg_compile_fixy_test(neg_fixy_no_version_engagement         "FixyNotEngaged_Version")
+crucible_neg_compile_fixy_test(neg_fixy_no_staleness_engagement       "FixyNotEngaged_Staleness")
+
+# ── Cross-cutting traps (4 fixtures) ──────────────────────────────────
+# These exercise authoring traps that are NOT pure per-dim omission:
+# - empty_grants: every dim unengaged (first failure: Type)
+# - only_one_grant: one grant + 19 unengaged (first failure: Type)
+# - partial_19_of_20: 19 of 20 engaged, exercises "near-enough" rejection
+# - wrong_dim_grant: cg::copy used as a substitute for accept_default_for
+#   <Effect> (author's misconception that grants substitute across dims)
+crucible_neg_compile_fixy_test(neg_fixy_empty_grants                  "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_only_one_grant                "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_partial_19_of_20              "FixyNotEngaged_Reentrancy")
+crucible_neg_compile_fixy_test(neg_fixy_wrong_dim_grant               "FixyNotEngaged_Effect")
 
 # FIXY-A-PLUS-1 — inheritance-bypass closure.  Post-A-PLUS-1 every
 # grant tag is `final`; the pre-A-PLUS-1 architectural-limit cheat
@@ -1067,6 +1094,15 @@ crucible_neg_compile_fixy_test(neg_fixy_wrong_dim_grant         "FixyNotEngaged_
 # compile error with GCC's `cannot derive from 'final' base` diagnostic.
 crucible_neg_compile_fixy_test(neg_fixy_inheritance_bypass_attempt
     "cannot derive from .*final.* base")
+
+# FIXY-AUDIT-NTTP / FIXY-AUDIT-CVR — discovered during the post-A-PLUS
+# soundness audit.  Two new bypass classes closed:
+#   - NTTP escape: out-of-range DimAxis NTTP on accept_default_strict_for
+#   - Reference-type Grant pack member produces hard substitution error
+crucible_neg_compile_fixy_test(neg_fixy_nttp_escape_attempt
+    "outside the 20-enumerator range")
+crucible_neg_compile_fixy_test(neg_fixy_reference_grant_attempt
+    "FixyNotEngaged_Usage")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
