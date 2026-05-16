@@ -1,0 +1,441 @@
+#pragma once
+
+// ── crucible::fixy::grant — engagement markers + relaxation tags ───
+//
+// Phase A of the clean reimplementation per misc/16_05_2026_fixy.md §4.
+//
+// Every fixy:: binding's `Grants` pack consists of tags from this
+// header.  Each tag:
+//
+//   (1) inherits `grant_base` (structural marker for IsGrantTag)
+//   (2) is `final` (per safety/NotInherited.h discipline — caller may
+//       not extend tags to inject behavior into IsAccepted)
+//   (3) names the dimension it engages with via `which_dim_v<G>` —
+//       used by Reject.h to compute the engagement check
+//   (4) is empty (zero-state) — every tag is EBO-collapsible
+//
+// Two grant flavors:
+//
+//   ── Acceptance markers ─────────────────────────────────────────
+//   `accept_default_strict_for<D>` — the author has read the
+//   discipline and accepts the strict default on dim D.  These tags
+//   carry no payload; they are pure engagement markers.  Required
+//   for every dim that doesn't have an explicit relaxation in the
+//   `Grants` pack.
+//
+//   ── Relaxation tags ────────────────────────────────────────────
+//   `affine`, `copy`, `ghost`, `with<Es...>`, `declassify<Policy>`,
+//   `vendor_backend<V>`, etc.  Each relaxation tag carries the
+//   per-axis information needed to resolve the underlying `Fn<...>`
+//   instantiation in Phase B (Resolve.h).  Phase A only needs the
+//   tag's identity (which dim it engages with); the resolution
+//   semantics ship in Phase B.
+//
+// ── Substrate consumed ─────────────────────────────────────────────
+//
+//   safety::NotInherited / FinalBy — final-class discipline
+//   safety::source::* / trust::*    — Provenance / Trust aliases
+//   safety::fn::pred::True          — Refinement strict default
+//   effects::Row / effects::Effect  — Effect pack
+//
+// ── Substrate added by this header ─────────────────────────────────
+//
+// NONE.  Every relaxation tag is a phantom type carrying parameters
+// that downstream consumers (Resolve.h, Phase B) project onto
+// substrate template arguments.  No new lattice, no new wrapper.
+//
+// ── Cost ───────────────────────────────────────────────────────────
+//
+// Zero.  Every tag is empty + final + inherits a tag-base; `sizeof`
+// is 1, EBO-collapse takes that to 0 in any aggregator.
+//
+// ── Self-test ──────────────────────────────────────────────────────
+//
+// Three load-bearing assertions:
+//   1. Every shipped grant tag inherits `grant_base`.
+//   2. Every shipped grant tag is `final`.
+//   3. Every DimensionAxis has at least one acceptance marker (the
+//      `accept_default_strict_for<D>` specialization), enforced by
+//      the reflection-driven coverage check in Reject.h.
+
+#include <crucible/fixy/Dim.h>
+#include <crucible/safety/NotInherited.h>
+#include <crucible/safety/Tagged.h>
+#include <crucible/safety/Fn.h>
+#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
+
+#include <concepts>
+#include <cstdint>
+#include <type_traits>
+
+namespace crucible::fixy::grant {
+
+// ─── grant_base — structural marker for every grant tag ────────────
+//
+// Detection is `is_base_of_v<grant_base, T>` (no trait specialization
+// gymnastics).  Every shipped grant tag inherits this; user-defined
+// tags that want to participate in `IsAccepted` MUST inherit too —
+// the cheat-probe round will catch a tag that doesn't.
+
+struct grant_base {
+    constexpr grant_base()                              noexcept = default;
+    constexpr grant_base(const grant_base&)             noexcept = default;
+    constexpr grant_base(grant_base&&)                  noexcept = default;
+    constexpr grant_base& operator=(const grant_base&)  noexcept = default;
+    constexpr grant_base& operator=(grant_base&&)       noexcept = default;
+    ~grant_base()                                                = default;
+};
+
+// IsGrantTag — structural concept gate.
+//
+// Two clauses: (a) inherits grant_base, (b) is final per
+// safety/NotInherited.h discipline.  Inheriting without final would
+// allow a user-defined subclass to inject behavior into IsAccepted,
+// bypassing the fixy:: discipline; the cheat-probe round caches a
+// neg-compile fixture for this exact attempt.
+
+template <typename G>
+inline constexpr bool IsGrantTag_v =
+       std::is_base_of_v<grant_base, std::remove_cvref_t<G>>
+    && std::is_final_v<std::remove_cvref_t<G>>;
+
+template <typename G>
+concept IsGrantTag = IsGrantTag_v<G>;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── which_dim_v<G> — primary template + per-tag specialization ─────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Tells Reject.h which dimension a given grant tag engages with.  An
+// unrecognized tag (no specialization) is a hard error caught at the
+// `Engaged<F, Dim>` check site.
+
+template <typename G>
+struct which_dim;  // primary — left undefined; specialize per tag
+
+template <typename G>
+inline constexpr dim::DimensionAxis which_dim_v = which_dim<G>::value;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Acceptance markers — one per DimensionAxis ─────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// `accept_default_strict_for<D>` says: "I have read the discipline
+// for axis D and choose the strict default."  These tags are pure
+// engagement markers; resolution to `Fn<>`'s default is automatic in
+// Phase B (Resolve.h reads `strict_default_for<D>::type` or `::value`).
+//
+// The Type axis exposes a marker too even though it has no strict
+// default — the marker means "I am binding this function to its own
+// declared type" and is implied automatically by `fixy::fn<Type, ...>`
+// (Phase B will add the implicit Type engagement at the resolver
+// site).
+
+template <dim::DimensionAxis D>
+struct accept_default_strict_for final : grant_base {};
+
+template <dim::DimensionAxis D>
+struct which_dim<accept_default_strict_for<D>>
+    : std::integral_constant<dim::DimensionAxis, D> {};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Relaxation tags ─────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Per-axis relaxations.  Each tag:
+//   1. inherits grant_base + final
+//   2. specializes which_dim with its DimensionAxis
+//   3. is empty (parameters live in the template, not as fields)
+//
+// The actual mapping of "what does this tag mean inside Fn<>?" is the
+// job of Resolve.h (Phase B).  Phase A only needs the dim-mapping
+// for the engagement check.
+
+// ── Dim 3 Usage relaxations ────────────────────────────────────────
+struct affine          final : grant_base {};  // Usage = Affine
+struct copy            final : grant_base {};  // Usage = Copy
+struct ghost           final : grant_base {};  // Usage = Ghost
+struct borrow          final : grant_base {};  // Usage = Borrow
+struct capability_usage final : grant_base {};  // Usage = Capability
+//   (`capability_usage` not `capability` — avoid clash with the
+//    Effect-axis capability concept.  fixy.md §24.2 precedent.)
+
+template <> struct which_dim<affine>           : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
+template <> struct which_dim<copy>             : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
+template <> struct which_dim<ghost>            : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
+template <> struct which_dim<borrow>           : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
+template <> struct which_dim<capability_usage> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
+
+// ── Dim 4 Effect relaxations ───────────────────────────────────────
+//
+// `with<Es...>` engages the Effect axis with an explicit effects::Row
+// of the supplied effects.  The Es pack is `effects::Effect` enum
+// values; Resolve.h projects them into `effects::Row<Es...>`.
+
+template <effects::Effect... Es>
+struct with final : grant_base {};
+
+template <effects::Effect... Es>
+struct which_dim<with<Es...>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Effect> {};
+
+// Convenience subtagged aliases — `with_alloc`, `with_io`, `with_bg`
+// engage the Effect axis with single-effect rows (the most common
+// production case).  Each is final + grant_base via the primary
+// `with<>` specialization.
+
+using with_alloc = with<effects::Effect::Alloc>;
+using with_io    = with<effects::Effect::IO>;
+using with_block = with<effects::Effect::Block>;
+using with_bg    = with<effects::Effect::Bg>;
+using with_init  = with<effects::Effect::Init>;
+using with_test  = with<effects::Effect::Test>;
+
+// ── Dim 5 Security relaxations ─────────────────────────────────────
+//
+// `declassify<Policy>` engages Security with a named policy tag.
+// The Policy parameter is treated opaquely by Phase A; the policy
+// catalog ships under safety::secret_policy::* and is consumed by
+// Phase B's Resolve.h + the declassification call sites.
+
+template <typename Policy>
+struct declassify final : grant_base {};
+
+template <typename Policy>
+struct which_dim<declassify<Policy>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+
+// ── Dim 6 Protocol relaxations ─────────────────────────────────────
+//
+// `protocol<Proto>` engages Protocol with a session-type or machine
+// state-type.  Resolve.h projects to `safety::fn::Protocol` slot.
+
+template <typename Proto>
+struct protocol final : grant_base {};
+
+template <typename Proto>
+struct which_dim<protocol<Proto>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Protocol> {};
+
+// ── Dim 7 Lifetime relaxations ─────────────────────────────────────
+//
+// `in_region<RegionTag>` engages Lifetime with a named region tag,
+// projecting to `safety::fn::lifetime::In<RegionTag>`.
+
+template <auto RegionTag>
+struct in_region final : grant_base {};
+
+template <auto RegionTag>
+struct which_dim<in_region<RegionTag>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Lifetime> {};
+
+// ── Dim 8 Provenance relaxations ───────────────────────────────────
+//
+// `from_source<Source>` engages Provenance with a substrate source
+// tag (source::FromUser / source::FromDb / source::FromNetwork /
+// etc.).  Resolve.h projects to `safety::fn::source_t`.
+
+template <typename Source>
+struct from_source final : grant_base {};
+
+template <typename Source>
+struct which_dim<from_source<Source>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Provenance> {};
+
+// ── Dim 9 Trust relaxations ────────────────────────────────────────
+//
+// `trust_assumed<auto Rationale>` engages Trust with a documented
+// rationale string (the rationale is a non-type template parameter
+// — typically a `std::array<char, N>` literal — captured for audit
+// trails but treated opaquely by IsAccepted).  Resolve.h projects to
+// `safety::trust::Assumed`.
+
+template <auto Rationale = 0>
+struct trust_assumed final : grant_base {};
+
+template <auto Rationale>
+struct which_dim<trust_assumed<Rationale>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
+
+// ── Dim 10 Representation relaxations ──────────────────────────────
+//
+// `repr<Kind>` engages Representation with a ReprKind enum value.
+
+template <safety::fn::ReprKind Kind>
+struct repr final : grant_base {};
+
+template <safety::fn::ReprKind Kind>
+struct which_dim<repr<Kind>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Representation> {};
+
+// ── Dim 11 Observability — derived from Effect ─────────────────────
+//
+// Observability is derived from EffectRow per fixy.md §24.1.  The
+// only valid grant on this axis is the acceptance marker; explicit
+// relaxation would be inconsistent with the derivation rule.  We
+// ship NO relaxation tag for Observability — only
+// `accept_default_strict_for<Observability>` is legal.
+
+// ── Dim 13 Complexity relaxations ──────────────────────────────────
+//
+// `cost_constant`, `cost_linear<N>`, `cost_quadratic<N>` engage
+// Complexity with the corresponding `safety::fn::cost::*` tag.
+
+struct cost_constant   final : grant_base {};
+template <auto N> struct cost_linear     final : grant_base {};
+template <auto N> struct cost_quadratic  final : grant_base {};
+struct cost_unbounded  final : grant_base {};
+
+template <>            struct which_dim<cost_constant>      : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
+template <auto N>      struct which_dim<cost_linear<N>>     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
+template <auto N>      struct which_dim<cost_quadratic<N>>  : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
+template <>            struct which_dim<cost_unbounded>     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
+
+// ── Dim 14 Precision relaxations ───────────────────────────────────
+//
+// `precision_f32`, `precision_f64`, `precision_higham<Bound>` —
+// Resolve.h projects to `safety::fn::precision::*`.
+
+struct precision_f32   final : grant_base {};
+struct precision_f64   final : grant_base {};
+template <auto Bound> struct precision_higham final : grant_base {};
+
+template <>           struct which_dim<precision_f32>          : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Precision> {};
+template <>           struct which_dim<precision_f64>          : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Precision> {};
+template <auto Bound> struct which_dim<precision_higham<Bound>>: std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Precision> {};
+
+// ── Dim 15 Space relaxations ───────────────────────────────────────
+template <auto N> struct space_bounded final : grant_base {};
+struct space_unbounded final : grant_base {};
+
+template <auto N> struct which_dim<space_bounded<N>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Space> {};
+template <>       struct which_dim<space_unbounded>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Space> {};
+
+// ── Dim 16 Overflow relaxations ────────────────────────────────────
+struct overflow_wrap     final : grant_base {};
+struct overflow_saturate final : grant_base {};
+struct overflow_widen    final : grant_base {};
+
+template <> struct which_dim<overflow_wrap>     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Overflow> {};
+template <> struct which_dim<overflow_saturate> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Overflow> {};
+template <> struct which_dim<overflow_widen>    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Overflow> {};
+
+// ── Dim 18 Mutation relaxations ────────────────────────────────────
+struct mut_mutable    final : grant_base {};
+struct mut_append     final : grant_base {};
+struct mut_monotonic  final : grant_base {};
+
+template <> struct which_dim<mut_mutable>   : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
+template <> struct which_dim<mut_append>    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
+template <> struct which_dim<mut_monotonic> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
+
+// ── Dim 19 Reentrancy relaxations ──────────────────────────────────
+struct reentrant final : grant_base {};
+struct coroutine final : grant_base {};
+
+template <> struct which_dim<reentrant> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Reentrancy> {};
+template <> struct which_dim<coroutine> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Reentrancy> {};
+
+// ── Dim 20 Size relaxations ────────────────────────────────────────
+template <auto Depth> struct sized_at final : grant_base {};
+struct productive final : grant_base {};
+
+template <auto Depth> struct which_dim<sized_at<Depth>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Size> {};
+template <>           struct which_dim<productive>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Size> {};
+
+// ── Dim 21 Version relaxations ─────────────────────────────────────
+template <std::uint32_t V> struct version final : grant_base {};
+
+template <std::uint32_t V> struct which_dim<version<V>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Version> {};
+
+// ── Dim 22 Staleness relaxations ───────────────────────────────────
+template <auto TauMax> struct stale_to final : grant_base {};
+
+template <auto TauMax> struct which_dim<stale_to<TauMax>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Staleness> {};
+
+// ── Dim 2 Refinement relaxations ───────────────────────────────────
+//
+// `refined_with<Pred>` engages Refinement with a predicate type that
+// satisfies the `pred::check` interface.  Resolve.h projects to
+// `Fn<Type, Pred, ...>`.
+
+template <typename Pred>
+struct refined_with final : grant_base {};
+
+template <typename Pred>
+struct which_dim<refined_with<Pred>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Refinement> {};
+
+// ── Dim 1 Type relaxations ─────────────────────────────────────────
+//
+// The Type axis is caller-supplied via `fixy::fn<Type, Grants...>`'s
+// first template parameter.  Phase B's Resolve.h synthesizes an
+// implicit `accept_default_strict_for<Type>` engagement marker at
+// `fixy::fn<>` construction time, so callers do NOT need to write
+// the marker.  There is no Type-axis relaxation tag — the Type IS
+// the parameter.
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Self-test (compile-time) ───────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+namespace detail::grant_self_test {
+
+// Every shipped grant tag must inherit grant_base + be final.
+// IsGrantTag checks both; sampling representative tags here, the
+// cheat-probe round catches subclass attempts and missing-final
+// attempts.
+
+static_assert(IsGrantTag<accept_default_strict_for<dim::DimensionAxis::Usage>>);
+static_assert(IsGrantTag<affine>);
+static_assert(IsGrantTag<copy>);
+static_assert(IsGrantTag<ghost>);
+static_assert(IsGrantTag<borrow>);
+static_assert(IsGrantTag<capability_usage>);
+static_assert(IsGrantTag<with<effects::Effect::IO>>);
+static_assert(IsGrantTag<with<>>);
+static_assert(IsGrantTag<declassify<int>>);
+static_assert(IsGrantTag<refined_with<safety::fn::pred::True>>);
+static_assert(IsGrantTag<version<3>>);
+static_assert(IsGrantTag<stale_to<5>>);
+
+// EBO-collapse witness — empty + final + grant_base = 1-byte tag.
+static_assert(sizeof(affine)                 == 1);
+static_assert(sizeof(copy)                   == 1);
+static_assert(sizeof(ghost)                  == 1);
+static_assert(sizeof(with<>)                 == 1);
+static_assert(sizeof(with<effects::Effect::Bg, effects::Effect::IO>) == 1);
+static_assert(sizeof(accept_default_strict_for<dim::DimensionAxis::Trust>) == 1);
+
+// which_dim_v round-trip — every dim's tags route to that dim.
+static_assert(which_dim_v<affine>                                            == dim::DimensionAxis::Usage);
+static_assert(which_dim_v<copy>                                              == dim::DimensionAxis::Usage);
+static_assert(which_dim_v<with<effects::Effect::IO>>                         == dim::DimensionAxis::Effect);
+static_assert(which_dim_v<declassify<int>>                                   == dim::DimensionAxis::Security);
+static_assert(which_dim_v<refined_with<safety::fn::pred::True>>              == dim::DimensionAxis::Refinement);
+static_assert(which_dim_v<accept_default_strict_for<dim::DimensionAxis::Trust>> == dim::DimensionAxis::Trust);
+static_assert(which_dim_v<version<3>>                                        == dim::DimensionAxis::Version);
+static_assert(which_dim_v<stale_to<5>>                                       == dim::DimensionAxis::Staleness);
+static_assert(which_dim_v<repr<safety::fn::ReprKind::C>>                     == dim::DimensionAxis::Representation);
+static_assert(which_dim_v<overflow_wrap>                                     == dim::DimensionAxis::Overflow);
+static_assert(which_dim_v<mut_mutable>                                       == dim::DimensionAxis::Mutation);
+static_assert(which_dim_v<reentrant>                                         == dim::DimensionAxis::Reentrancy);
+static_assert(which_dim_v<cost_constant>                                     == dim::DimensionAxis::Complexity);
+static_assert(which_dim_v<precision_f64>                                     == dim::DimensionAxis::Precision);
+static_assert(which_dim_v<space_unbounded>                                   == dim::DimensionAxis::Space);
+static_assert(which_dim_v<productive>                                        == dim::DimensionAxis::Size);
+static_assert(which_dim_v<in_region<0>>                                      == dim::DimensionAxis::Lifetime);
+static_assert(which_dim_v<from_source<safety::source::FromUser>>             == dim::DimensionAxis::Provenance);
+static_assert(which_dim_v<trust_assumed<>>                                   == dim::DimensionAxis::Trust);
+static_assert(which_dim_v<protocol<safety::fn::proto::None>>                 == dim::DimensionAxis::Protocol);
+
+}  // namespace detail::grant_self_test
+
+}  // namespace crucible::fixy::grant
