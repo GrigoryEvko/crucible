@@ -229,6 +229,10 @@ set_tests_properties(test_fixy_arg_promote PROPERTIES LABELS "fixy")
 crucible_test(test_fixy_call_with_caps)
 set_tests_properties(test_fixy_call_with_caps PROPERTIES LABELS "fixy")
 
+# ── FIXY-G4 — call_with_perm lifetime-region permission sentinel TU ─
+crucible_test(test_fixy_call_with_perm)
+set_tests_properties(test_fixy_call_with_perm PROPERTIES LABELS "fixy")
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1239,6 +1243,12 @@ crucible_neg_compile_fixy_test(neg_fixy_call_with_caps_missing_io
     "caps_cover_v|constraints not satisfied|no matching function")
 crucible_neg_compile_fixy_test(neg_fixy_call_with_caps_wrong_source
     "caps_cover_v|constraints not satisfied|no matching function")
+
+# ── FIXY-G4 — call_with_perm + R013 discipline fixtures ─────────────
+crucible_neg_compile_fixy_test(neg_fixy_call_with_perm_wrong_tag
+    "PermissionMatchesLifetime|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_rule_R013_mutable_without_perm
+    "R013|requires Permission|mutable lifetime_region")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound

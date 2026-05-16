@@ -173,20 +173,46 @@ call_with_ctx(Bound&& bound, Ctx const& ctx, Args&&... args)
 namespace detail {
 
 template <typename L>
-struct lifetime_tag_of {
-    using type = void;  // strict-default Static (no region tag).
+struct lifetime_tag_match {
+    template <typename PermTag>
+    static constexpr bool matches_v = false;
 };
 
-template <auto Tag>
-struct lifetime_tag_of<::crucible::safety::fn::lifetime::In<Tag>> {
-    static constexpr auto tag_value = Tag;
-    using type = decltype(Tag);
+template <auto RegionTag>
+struct lifetime_tag_match<::crucible::safety::fn::lifetime::In<RegionTag>> {
+    template <typename PermTag>
+    static constexpr bool matches_v =
+        std::is_same_v<std::remove_cvref_t<decltype(RegionTag)>, PermTag> ||
+        // Tag-as-value case: PermTag IS the tag type, RegionTag is a
+        // value of that type.  Either spelling is accepted.
+        std::is_same_v<PermTag, std::remove_cvref_t<decltype(RegionTag)>>;
 };
+
+template <typename F, typename PermTag>
+inline constexpr bool perm_tag_matches_lifetime_v =
+    lifetime_tag_match<typename std::remove_cvref_t<F>::lifetime_t>
+        ::template matches_v<PermTag>;
 
 }  // namespace detail
 
+// PermissionMatchesLifetime — concept gate for call_with_perm.
+//
+// F's declared lifetime_t must be a lifetime::In<Tag> whose Tag
+// type matches PermTag, OR the binding accepts ANY-perm (strict-
+// default lifetime::Static — opt-out check).  When lifetime_t is
+// strict-default Static, call_with_perm accepts any tag (no region
+// requirement); when lifetime_t is In<X>, only Permission<X> is
+// accepted.
+
+template <typename F, typename PermTag>
+concept PermissionMatchesLifetime =
+    IsFixyFn<F> &&
+    (std::is_same_v<typename std::remove_cvref_t<F>::lifetime_t,
+                    ::crucible::safety::fn::lifetime::Static> ||
+     detail::perm_tag_matches_lifetime_v<F, PermTag>);
+
 template <typename F, typename Bound, typename PermTag, typename... Args>
-    requires IsFixyFn<F>
+    requires IsFixyFn<F> && PermissionMatchesLifetime<F, PermTag>
 constexpr decltype(auto)
 call_with_perm(Bound&& bound,
                [[maybe_unused]] ::crucible::safety::Permission<PermTag> perm,
@@ -195,13 +221,46 @@ call_with_perm(Bound&& bound,
     return std::forward<Bound>(bound).value()(std::forward<Args>(args)...);
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// ── R013 — Mutable + lifetime_region<Tag> ⇒ Permission required ────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Cross-axis rule (§6.8 collision catalog extension): when a binding
+// is Mutable (Mutation axis) AND scoped to a named region (Lifetime
+// = In<X>), invoking it MUST present Permission<X>.  R013 is enforced
+// statically through call_with_perm's PermissionMatchesLifetime gate;
+// at the binding declaration site, R013_warns_if_no_perm<F> can be
+// referenced by reviewers / linters but does not by itself block
+// invocation via .value()() (which remains the documented escape
+// hatch for non-perm-aware call sites).
+
+namespace detail {
+
+template <typename F>
+inline constexpr bool is_mutable_lifetime_region_v = false;
+
+template <typename T, typename... Grants>
+inline constexpr bool is_mutable_lifetime_region_v<::crucible::fixy::fn<T, Grants...>>
+    = (std::remove_cvref_t<::crucible::fixy::fn<T, Grants...>>::mutation_v
+       == ::crucible::safety::fn::MutationMode::Mutable) &&
+      !std::is_same_v<typename std::remove_cvref_t<
+                          ::crucible::fixy::fn<T, Grants...>>::lifetime_t,
+                      ::crucible::safety::fn::lifetime::Static>;
+
+}  // namespace detail
+
+template <typename F>
+inline constexpr bool R013_requires_permission_v =
+    IsFixyFn<F> && detail::is_mutable_lifetime_region_v<std::remove_cvref_t<F>>;
+
 // Combined form — F's caps gate AND perm gate at once.
 
 template <typename F, typename CapsPack_, typename PermTag,
           typename Bound, typename... Args>
     requires IsFixyFn<F> &&
              caps_cover_v<CapsPack_,
-                          typename std::remove_cvref_t<F>::effect_row_t>
+                          typename std::remove_cvref_t<F>::effect_row_t> &&
+             PermissionMatchesLifetime<F, PermTag>
 constexpr decltype(auto)
 call_with_caps_and_perm(
     Bound&& bound,
