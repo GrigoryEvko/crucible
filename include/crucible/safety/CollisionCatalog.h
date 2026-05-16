@@ -26,10 +26,12 @@
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::safety::fn::collision {
 
 enum class RuleCode : std::uint8_t {
+    // ── 12 §6.8 rules shipped Phase 0 (GAPS-005..018) ────────────────
     I002 = 0,
     L002 = 1,
     E044 = 2,
@@ -42,6 +44,22 @@ enum class RuleCode : std::uint8_t {
     M011 = 9,
     S010 = 10,
     S011 = 11,
+    // ── 8 NEW rules shipped Phase B per misc/16_05_2026_fixy.md §4 ──
+    //
+    // Per the Phase-B substrate-grows-by-200-LoC plan, these eight
+    // rules live alongside the §6.8 rules in the substrate catalog so
+    // that direct `safety::Fn<...>` instantiation is gated identically
+    // to the `fixy::fn<...>` aggregator (no fixy-only rule machinery).
+    // `fixy::rule::R013..R020` are one-line aliases over them (shipped
+    // in fixy/Rules.h, Phase B).
+    L004 = 12,  // Linear x lifetime_region without Permission token
+    B001 = 13,  // Bg observable surface without bounded-resource decl
+    H001 = 14,  // HotPath with Unstated or Unbounded Cost
+    H002 = 15,  // HotPath without refinement witness floor
+    L005 = 16,  // Linear aliasing — two Linears sharing one region tag
+    F001 = 17,  // Frame manifesto: axis values disagree across pack
+    H003 = 18,  // HotPath row contains Alloc or IO without budget
+    F002 = 19,  // Federation peer without terminating budget
     None = 255,
 };
 
@@ -82,6 +100,33 @@ struct S011_CapabilityReplay : diag::tag_base {
     static constexpr std::string_view name = "S011_CapabilityReplay";
 };
 
+// ── 8 NEW rule tags (Phase B per misc/16_05_2026_fixy.md §4) ────────
+
+struct L004_LinearLifetimeNeedsPermission : diag::tag_base {
+    static constexpr std::string_view name = "L004_LinearLifetimeNeedsPermission";
+};
+struct B001_BgObservableBoundedResource : diag::tag_base {
+    static constexpr std::string_view name = "B001_BgObservableBoundedResource";
+};
+struct H001_HotPathBoundedCost : diag::tag_base {
+    static constexpr std::string_view name = "H001_HotPathBoundedCost";
+};
+struct H002_HotPathWitnessFloor : diag::tag_base {
+    static constexpr std::string_view name = "H002_HotPathWitnessFloor";
+};
+struct L005_LinearAliasSameRegionTag : diag::tag_base {
+    static constexpr std::string_view name = "L005_LinearAliasSameRegionTag";
+};
+struct F001_FrameDeclaresAxisCollision : diag::tag_base {
+    static constexpr std::string_view name = "F001_FrameDeclaresAxisCollision";
+};
+struct H003_HotPathTerminatingAllocIo : diag::tag_base {
+    static constexpr std::string_view name = "H003_HotPathTerminatingAllocIo";
+};
+struct F002_FederationPeerTerminatingBudget : diag::tag_base {
+    static constexpr std::string_view name = "F002_FederationPeerTerminatingBudget";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -94,11 +139,19 @@ using Catalog = std::tuple<
     L003_BorrowUnscopedSpawn,
     M011_LinearFailNoCleanup,
     S010_StalenessConstantTime,
-    S011_CapabilityReplay
+    S011_CapabilityReplay,
+    L004_LinearLifetimeNeedsPermission,
+    B001_BgObservableBoundedResource,
+    H001_HotPathBoundedCost,
+    H002_HotPathWitnessFloor,
+    L005_LinearAliasSameRegionTag,
+    F001_FrameDeclaresAxisCollision,
+    H003_HotPathTerminatingAllocIo,
+    F002_FederationPeerTerminatingBudget
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 12);
+static_assert(catalog_size == 20);
 
 template <RuleCode R>
 struct rule_tag;
@@ -115,6 +168,14 @@ template <> struct rule_tag<RuleCode::L003> { using type = L003_BorrowUnscopedSp
 template <> struct rule_tag<RuleCode::M011> { using type = M011_LinearFailNoCleanup; };
 template <> struct rule_tag<RuleCode::S010> { using type = S010_StalenessConstantTime; };
 template <> struct rule_tag<RuleCode::S011> { using type = S011_CapabilityReplay; };
+template <> struct rule_tag<RuleCode::L004> { using type = L004_LinearLifetimeNeedsPermission; };
+template <> struct rule_tag<RuleCode::B001> { using type = B001_BgObservableBoundedResource; };
+template <> struct rule_tag<RuleCode::H001> { using type = H001_HotPathBoundedCost; };
+template <> struct rule_tag<RuleCode::H002> { using type = H002_HotPathWitnessFloor; };
+template <> struct rule_tag<RuleCode::L005> { using type = L005_LinearAliasSameRegionTag; };
+template <> struct rule_tag<RuleCode::F001> { using type = F001_FrameDeclaresAxisCollision; };
+template <> struct rule_tag<RuleCode::H003> { using type = H003_HotPathTerminatingAllocIo; };
+template <> struct rule_tag<RuleCode::F002> { using type = F002_FederationPeerTerminatingBudget; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -157,6 +218,30 @@ template <> struct rule_code_of<S010_StalenessConstantTime> {
 };
 template <> struct rule_code_of<S011_CapabilityReplay> {
     static constexpr RuleCode value = RuleCode::S011;
+};
+template <> struct rule_code_of<L004_LinearLifetimeNeedsPermission> {
+    static constexpr RuleCode value = RuleCode::L004;
+};
+template <> struct rule_code_of<B001_BgObservableBoundedResource> {
+    static constexpr RuleCode value = RuleCode::B001;
+};
+template <> struct rule_code_of<H001_HotPathBoundedCost> {
+    static constexpr RuleCode value = RuleCode::H001;
+};
+template <> struct rule_code_of<H002_HotPathWitnessFloor> {
+    static constexpr RuleCode value = RuleCode::H002;
+};
+template <> struct rule_code_of<L005_LinearAliasSameRegionTag> {
+    static constexpr RuleCode value = RuleCode::L005;
+};
+template <> struct rule_code_of<F001_FrameDeclaresAxisCollision> {
+    static constexpr RuleCode value = RuleCode::F001;
+};
+template <> struct rule_code_of<H003_HotPathTerminatingAllocIo> {
+    static constexpr RuleCode value = RuleCode::H003;
+};
+template <> struct rule_code_of<F002_FederationPeerTerminatingBudget> {
+    static constexpr RuleCode value = RuleCode::F002;
 };
 
 template <typename Tag>
@@ -245,6 +330,38 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(S011, "S011", "replay-stable code has reconstructa
     "ephemeral capability is used in replay-required code without a stable handle",
     "use content-addressed handles or remove replay eligibility",
     "fixy.md §24.2 S011");
+CRUCIBLE_COLLISION_DIAGNOSTIC(L004, "L004", "linear values in region lifetime carry Permission proof",
+    "Usage::Linear with lifetime::In<Tag> declared without a Permission token marker",
+    "thread Permission<Tag> through the call (permissions/Permission.h) or move Usage out of Linear",
+    "fixy.md §24.2 L004");
+CRUCIBLE_COLLISION_DIAGNOSTIC(B001, "B001", "Bg observable surface declares bounded resource",
+    "row contains Effect::Bg AND the function is externally observable but resource budget is Unstated",
+    "declare space::Bounded<N> + cost::Linear<N> (or stricter); a Bg-observable surface that may run unbounded is a back-pressure trap",
+    "fixy.md §24.2 B001");
+CRUCIBLE_COLLISION_DIAGNOSTIC(H001, "H001", "HotPath functions declare bounded cost",
+    "marks_hot_path with cost_t == cost::Unstated or cost::Unbounded",
+    "declare cost::Constant or cost::Linear<N>; the hot path must justify its compute envelope",
+    "fixy.md §24.2 H001");
+CRUCIBLE_COLLISION_DIAGNOSTIC(H002, "H002", "HotPath functions carry a refinement witness floor",
+    "marks_hot_path with refinement_t == pred::True (no witness)",
+    "attach a Refined<predicate, Type> input that proves an invariant the hot body assumes (e.g., aligned, in-range, non-zero); pred::True is review-rejected on hot paths",
+    "fixy.md §24.2 H002");
+CRUCIBLE_COLLISION_DIAGNOSTIC(L005, "L005", "linear bindings in same region tag do not alias",
+    "two or more Linear bindings in a pack share the same lifetime::In<Tag>",
+    "split the region into distinct tags or convert one of the aliasing linears to Borrow",
+    "fixy.md §24.2 L005");
+CRUCIBLE_COLLISION_DIAGNOSTIC(F001, "F001", "frame manifesto axes agree across the pack",
+    "two or more bindings in a frame manifesto declare conflicting values for the same axis",
+    "reconcile the conflicting axis values or split the frame; F001 is the multi-binding version of TypeSafe at the discipline layer",
+    "fixy.md §24.2 F001");
+CRUCIBLE_COLLISION_DIAGNOSTIC(H003, "H003", "HotPath does not perform unbounded Alloc or IO",
+    "marks_hot_path with row containing Effect::Alloc or Effect::IO without bounded budget",
+    "move Alloc/IO outside the hot path or attach an Init/Bg context that owns the unbounded surface",
+    "fixy.md §24.2 H003");
+CRUCIBLE_COLLISION_DIAGNOSTIC(F002, "F002", "federation peers terminate within a budget",
+    "marks_federation_peer is true but cost_t == cost::Unstated or cost::Unbounded",
+    "attach a wall-clock budget (cost::Linear<N>) and a terminating bound; federation peers cannot run forever",
+    "fixy.md §24.2 F002");
 
 #undef CRUCIBLE_COLLISION_DIAGNOSTIC
 
@@ -260,6 +377,28 @@ template <typename F> struct marks_unscoped_spawn         : std::false_type {};
 template <typename F> struct marks_linear_uncleaned_fail  : std::false_type {};
 template <typename F> struct marks_replay_required        : std::false_type {};
 template <typename F> struct marks_replay_stable          : std::false_type {};
+
+// ── Phase B marker traits (8 new rules) ─────────────────────────────
+//
+// Source-visible opt-ins.  A binding marks itself as "hot path",
+// "federation peer", or "externally observable" via specialization,
+// and the corresponding §6.8-family rule fires when the marker is
+// combined with an unsound axis value.  This keeps Phase B honest:
+// the source-of-truth is the marker, not a hidden compiler pass.
+//
+// `marks_lifetime_region_unprotected` is the L004 anti-marker — it
+// defaults TRUE (the unprotected state).  A binding that has plumbed a
+// Permission<Tag> through its call signature specializes the trait to
+// `std::false_type`, asserting "I have the proof token".  L004 then
+// fires only when (a) Usage::Linear, (b) lifetime is region-tagged,
+// AND (c) the binding has NOT specialized away the unprotected
+// default.  This makes the rule "opt-out of unprotected" rather than
+// "opt-in to protected" — the safer default for a freshly-written
+// Fn<...> that no one has reviewed yet.
+template <typename F> struct marks_lifetime_region_unprotected : std::true_type {};
+template <typename F> struct marks_hot_path                    : std::false_type {};
+template <typename F> struct marks_externally_observable       : std::false_type {};
+template <typename F> struct marks_federation_peer             : std::false_type {};
 
 template <typename T> struct is_exact_decimal             : std::false_type {};
 
@@ -348,11 +487,74 @@ concept S011_OK = !(F::usage_v == UsageMode::Capability &&
                     marks_replay_required<F>::value &&
                     !marks_replay_stable<F>::value);
 
+// ── Phase B helper traits ───────────────────────────────────────────
+
+// `lifetime::In<RegionTag>` detector — used by L004.  `lifetime::Static`
+// is the program-wide default; any region-tagged lifetime needs proof.
+template <typename L> struct is_region_lifetime : std::false_type {};
+template <auto RegionTag>
+struct is_region_lifetime<lifetime::In<RegionTag>> : std::true_type {};
+
+// `cost::Unstated` / `cost::Unbounded` detector — used by H001/F002.
+template <typename C> struct is_unbounded_cost : std::false_type {};
+template <> struct is_unbounded_cost<cost::Unstated>  : std::true_type {};
+template <> struct is_unbounded_cost<cost::Unbounded> : std::true_type {};
+
+// `pred::True` (no witness) detector — used by H002.  A trivial-true
+// refinement on a hot path is the no-witness case the rule catches.
+template <typename R> struct is_trivial_refinement : std::false_type {};
+template <> struct is_trivial_refinement<pred::True> : std::true_type {};
+
+// ── Phase B per-Fn rule concepts (6 of 8) ────────────────────────────
+//
+// L005 (alias of two Linears on one region tag) and F001 (frame axis
+// disagreement) are PACK-LEVEL rules — they read across a Grants pack,
+// not across a single Fn's axes.  Phase B ships them as pack
+// metafunctions further below; the Fn-level concept gate trivially
+// passes for those two (a single Fn cannot alias itself, and a single
+// Fn cannot disagree on a single axis).
+
+template <typename F>
+concept L004_OK = !(F::usage_v == UsageMode::Linear &&
+                    is_region_lifetime<typename F::lifetime_t>::value &&
+                    marks_lifetime_region_unprotected<F>::value);
+
+template <typename F>
+concept B001_OK = !(row_has_effect_v<typename F::effect_row_t, effects::Effect::Bg> &&
+                    marks_externally_observable<F>::value &&
+                    is_unbounded_cost<typename F::cost_t>::value);
+
+template <typename F>
+concept H001_OK = !(marks_hot_path<F>::value &&
+                    is_unbounded_cost<typename F::cost_t>::value);
+
+template <typename F>
+concept H002_OK = !(marks_hot_path<F>::value &&
+                    is_trivial_refinement<typename F::refinement_t>::value);
+
+template <typename F>
+concept L005_OK = true;  // pack-level; see pack::no_linear_region_alias_v
+
+template <typename F>
+concept F001_OK = true;  // pack-level; see pack::frame_axis_consistent_v
+
+template <typename F>
+concept H003_OK = !(marks_hot_path<F>::value &&
+                    (row_has_effect_v<typename F::effect_row_t, effects::Effect::Alloc> ||
+                     row_has_effect_v<typename F::effect_row_t, effects::Effect::IO>) &&
+                    is_unbounded_cost<typename F::cost_t>::value);
+
+template <typename F>
+concept F002_OK = !(marks_federation_peer<F>::value &&
+                    is_unbounded_cost<typename F::cost_t>::value);
+
 template <typename F>
 concept AllRulesOK =
     I002_OK<F> && L002_OK<F> && E044_OK<F> && I003_OK<F> &&
     M012_OK<F> && P002_OK<F> && I004_OK<F> && N002_OK<F> &&
-    L003_OK<F> && M011_OK<F> && S010_OK<F> && S011_OK<F>;
+    L003_OK<F> && M011_OK<F> && S010_OK<F> && S011_OK<F> &&
+    L004_OK<F> && B001_OK<F> && H001_OK<F> && H002_OK<F> &&
+    L005_OK<F> && F001_OK<F> && H003_OK<F> && F002_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -380,6 +582,22 @@ template <typename F>
         return RuleCode::S010;
     } else if constexpr (!S011_OK<F>) {
         return RuleCode::S011;
+    } else if constexpr (!L004_OK<F>) {
+        return RuleCode::L004;
+    } else if constexpr (!B001_OK<F>) {
+        return RuleCode::B001;
+    } else if constexpr (!H001_OK<F>) {
+        return RuleCode::H001;
+    } else if constexpr (!H002_OK<F>) {
+        return RuleCode::H002;
+    } else if constexpr (!L005_OK<F>) {
+        return RuleCode::L005;
+    } else if constexpr (!F001_OK<F>) {
+        return RuleCode::F001;
+    } else if constexpr (!H003_OK<F>) {
+        return RuleCode::H003;
+    } else if constexpr (!F002_OK<F>) {
+        return RuleCode::F002;
     } else {
         return RuleCode::None;
     }
@@ -391,6 +609,131 @@ inline constexpr RuleCode first_failure_v = first_failure<F>();
 template <typename F>
 struct CollisionDiagnostic
     : CollisionDiagnosticByRule<F, first_failure_v<F>> {};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Phase B pack-level rules (L005 + F001) ────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Two of the eight Phase B rules read across MULTIPLE Fn instances —
+// they cannot be enforced by a single-Fn concept gate.  Phase B ships
+// them under `crucible::safety::fn::collision::pack` as compile-time
+// boolean metafunctions over `Fn<...>...` packs.  fixy/Fn.h reads them
+// after resolving its `Grants...` pack into a `safety::Fn<...>` pack.
+//
+//   L005_LinearAliasSameRegionTag —
+//     no two Linear-usage Fns share the same lifetime::In<Tag>.
+//     `lifetime::Static` is a global default and is never an alias;
+//     only region-tagged lifetimes participate.
+//
+//   F001_FrameDeclaresAxisCollision —
+//     in a frame manifesto (a curated pack), no axis disagrees across
+//     the pack.  Phase B ships the security axis as the seed (every
+//     binding in a frame must agree on classification level); future
+//     axes are added by extending the conjunction below.
+
+namespace pack {
+
+// ── Lifetime tag extraction ─────────────────────────────────────────
+//
+// For non-region lifetimes (lifetime::Static or anything else that is
+// not a region), the extraction returns `void` — a sentinel that the
+// aliasing check ignores.  For lifetime::In<Tag>, the extraction
+// returns the Tag value at type level via std::integral_constant.
+template <typename L>
+struct region_tag_of {
+    using type = void;
+};
+template <auto RegionTag>
+struct region_tag_of<lifetime::In<RegionTag>> {
+    using type = std::integral_constant<decltype(RegionTag), RegionTag>;
+};
+template <typename L>
+using region_tag_of_t = typename region_tag_of<L>::type;
+
+// ── Is a given Fn a Linear in a region? ────────────────────────────
+template <typename F>
+inline constexpr bool is_linear_in_region_v =
+    F::usage_v == UsageMode::Linear &&
+    is_region_lifetime<typename F::lifetime_t>::value;
+
+// ── Are two extracted region-tag carriers identical and non-void? ──
+template <typename Tag1, typename Tag2>
+inline constexpr bool same_region_tag_v =
+    !std::is_void_v<Tag1> &&
+    !std::is_void_v<Tag2> &&
+    std::is_same_v<Tag1, Tag2>;
+
+// ── Pairwise alias check across a Fn pack ──────────────────────────
+//
+// O(n^2) over a typically small pack (≤ 20 grants/fns in production).
+// Uses a fold expression over two index packs.
+template <typename... Fs>
+[[nodiscard]] consteval bool no_linear_region_alias() noexcept {
+    constexpr std::size_t N = sizeof...(Fs);
+    if constexpr (N < 2) {
+        return true;  // single binding cannot alias itself
+    } else {
+        bool ok = true;
+        [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            using FnTuple = std::tuple<Fs...>;
+            ((void)([&]<std::size_t I>() {
+                using Fi = std::tuple_element_t<I, FnTuple>;
+                if constexpr (is_linear_in_region_v<Fi>) {
+                    using TagI = region_tag_of_t<typename Fi::lifetime_t>;
+                    [&]<std::size_t... Js>(std::index_sequence<Js...>) {
+                        ((void)([&]<std::size_t J>() {
+                            if constexpr (J > I) {
+                                using Fj = std::tuple_element_t<J, FnTuple>;
+                                if constexpr (is_linear_in_region_v<Fj>) {
+                                    using TagJ = region_tag_of_t<typename Fj::lifetime_t>;
+                                    if constexpr (same_region_tag_v<TagI, TagJ>) {
+                                        ok = false;
+                                    }
+                                }
+                            }
+                        }.template operator()<Js>()), ...);
+                    }(std::make_index_sequence<N>{});
+                }
+            }.template operator()<Is>()), ...);
+        }(std::make_index_sequence<N>{});
+        return ok;
+    }
+}
+
+template <typename... Fs>
+inline constexpr bool no_linear_region_alias_v = no_linear_region_alias<Fs...>();
+
+// ── Frame manifesto axis consistency (security seed) ───────────────
+//
+// Every binding in a frame manifesto must agree on the security axis.
+// More axes can be added to this conjunction as the frame discipline
+// grows; Phase B ships the security seed.
+template <typename... Fs>
+[[nodiscard]] consteval bool frame_axis_consistent() noexcept {
+    constexpr std::size_t N = sizeof...(Fs);
+    if constexpr (N < 2) {
+        return true;
+    } else {
+        using FnTuple = std::tuple<Fs...>;
+        constexpr SecLevel first_security =
+            std::tuple_element_t<0, FnTuple>::security_v;
+        bool ok = true;
+        [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            ((void)([&]<std::size_t I>() {
+                using Fi = std::tuple_element_t<I, FnTuple>;
+                if constexpr (Fi::security_v != first_security) {
+                    ok = false;
+                }
+            }.template operator()<Is>()), ...);
+        }(std::make_index_sequence<N>{});
+        return ok;
+    }
+}
+
+template <typename... Fs>
+inline constexpr bool frame_axis_consistent_v = frame_axis_consistent<Fs...>();
+
+}  // namespace pack
 
 }  // namespace crucible::safety::fn::collision
 
@@ -448,6 +791,26 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
     static constexpr bool session_protocol = !std::is_same_v<Protocol, proto::None>;
     static constexpr bool stale_nonfresh = !std::is_same_v<Staleness, stale::Fresh>;
 
+    // ── Phase B per-F predicates (6 of 8 new rules) ──────────────────
+    static constexpr bool region_lifetime =
+        collision::is_region_lifetime<Lifetime>::value;
+    static constexpr bool lifetime_unprotected =
+        collision::marks_lifetime_region_unprotected<F>::value;
+    static constexpr bool unbounded_cost =
+        collision::is_unbounded_cost<Cost>::value;
+    static constexpr bool hot_path = collision::marks_hot_path<F>::value;
+    static constexpr bool externally_observable =
+        collision::marks_externally_observable<F>::value;
+    static constexpr bool federation_peer =
+        collision::marks_federation_peer<F>::value;
+    static constexpr bool trivial_refinement =
+        collision::is_trivial_refinement<Refinement>::value;
+    static constexpr bool row_has_bg =
+        collision::row_has_effect_v<EffectRow, effects::Effect::Bg>;
+    static constexpr bool row_has_alloc_or_io =
+        collision::row_has_effect_v<EffectRow, effects::Effect::Alloc> ||
+        collision::row_has_effect_v<EffectRow, effects::Effect::IO>;
+
     [[nodiscard]] static consteval bool validate() noexcept {
         static_assert(!(classified && fail && !fail_secret),
             "I002: classified value cannot flow through Fail(E) with "
@@ -495,6 +858,36 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                         !collision::marks_replay_stable<F>::value),
             "S011: Capability x Replay incompatible. Ephemeral capabilities "
             "must not enter replay-stable code without content-addressed handles.");
+        // ── Phase B per-Fn collision asserts ─────────────────────────
+        static_assert(!(Usage == UsageMode::Linear &&
+                        region_lifetime && lifetime_unprotected),
+            "L004: Linear x lifetime::In<Tag> without Permission proof. "
+            "Thread a Permission<Tag> through the call or move Usage out "
+            "of Linear.");
+        static_assert(!(row_has_bg && externally_observable && unbounded_cost),
+            "B001: Bg observable surface with unbounded resource. "
+            "Declare space::Bounded<N> + cost::Linear<N> (or stricter); a "
+            "Bg-observable surface that may run unbounded is a back-pressure trap.");
+        static_assert(!(hot_path && unbounded_cost),
+            "H001: HotPath x cost::Unstated/Unbounded. Declare "
+            "cost::Constant or cost::Linear<N>; the hot path must justify "
+            "its compute envelope.");
+        static_assert(!(hot_path && trivial_refinement),
+            "H002: HotPath x pred::True refinement (no witness floor). "
+            "Attach a Refined<predicate, Type> input that proves an invariant "
+            "the hot body assumes (aligned, in-range, non-zero); pred::True "
+            "is review-rejected on hot paths.");
+        static_assert(!(hot_path && row_has_alloc_or_io && unbounded_cost),
+            "H003: HotPath x (Alloc or IO) x unbounded cost. Move Alloc/IO "
+            "outside the hot path or attach an Init/Bg context that owns "
+            "the unbounded surface.");
+        static_assert(!(federation_peer && unbounded_cost),
+            "F002: federation peer x unbounded cost. Attach a wall-clock "
+            "budget (cost::Linear<N>) and a terminating bound; federation "
+            "peers cannot run forever.");
+        // L005 and F001 are pack-level rules (no single-Fn enforcement
+        // shape); fixy/Fn.h checks them across the Grants pack via
+        // pack::no_linear_region_alias_v and pack::frame_axis_consistent_v.
         return !(classified && fail && !fail_secret) &&
                !(borrow_capture && async) &&
                !(ct && async) &&
@@ -512,7 +905,14 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(ct && stale_nonfresh) &&
                !(Usage == UsageMode::Capability &&
                  collision::marks_replay_required<F>::value &&
-                 !collision::marks_replay_stable<F>::value);
+                 !collision::marks_replay_stable<F>::value) &&
+               !(Usage == UsageMode::Linear && region_lifetime &&
+                 lifetime_unprotected) &&
+               !(row_has_bg && externally_observable && unbounded_cost) &&
+               !(hot_path && unbounded_cost) &&
+               !(hot_path && trivial_refinement) &&
+               !(hot_path && row_has_alloc_or_io && unbounded_cost) &&
+               !(federation_peer && unbounded_cost);
     }
 
     static constexpr bool valid = validate();
@@ -536,7 +936,7 @@ namespace detail::collision_catalog_self_test {
 
 using DefaultFn = Fn<int>;
 static_assert(ValidComposition<DefaultFn>);
-static_assert(collision::catalog_size == 12);
+static_assert(collision::catalog_size == 20);
 static_assert(std::is_same_v<
     collision::rule_tag_t<collision::RuleCode::I002>,
     collision::I002_ClassifiedFailPayload>);
@@ -554,6 +954,14 @@ static_assert(collision::rule_bijection_v<collision::RuleCode::L003>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::M011>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::S010>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::S011>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::L004>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::B001>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::H001>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::H002>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::L005>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::F001>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::H003>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::F002>);
 static_assert(collision::CollisionDiagnosticByRule<DefaultFn, collision::RuleCode::I002>::rule_code()
               == std::string_view{"I002"});
 static_assert(collision::CollisionDiagnostic<DefaultFn>::category()
