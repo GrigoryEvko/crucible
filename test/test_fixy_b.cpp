@@ -198,6 +198,49 @@ auto v_emit = cs::mint_fn_for<cs::PublicEmit<AuditedPolicy>>(99);
 static_assert(decltype(v_emit)::security_v == sfn::SecLevel::Public);
 static_assert(sizeof(v_emit) == sizeof(int));
 
+// ─── 10. stance::compose — variadic substitute round-trip ────────────
+//
+// `compose<PureLinear, grant::copy>` is positionally identical to
+// `PureCopy`.  Verifies the compose fold yields the same 20-tuple
+// shape as the hand-built `detail::replace_one`-based alias.
+static_assert(std::is_same_v<cs::compose_t<cs::PureLinear, cg::copy>,
+                             cs::PureCopy>,
+    "compose<PureLinear, grant::copy> must be identical to PureCopy.");
+
+// Two-step compose collapses to single-step compose with the same
+// pack — proves substitution semantics, not append semantics.
+static_assert(std::is_same_v<
+    cs::compose_t<cs::compose_t<cs::PureLinear, cg::copy>, cg::with_io>,
+    cs::compose_t<cs::PureLinear, cg::copy, cg::with_io>>,
+    "compose is order-stable: nested compose == flat compose with the "
+    "same pack.");
+
+// ─── 11. Production stances mint cleanly through fixy::fn ───────────
+struct DemoNvVendor {};
+struct DemoBitexactTier {};
+
+auto v_forge = cs::mint_fn_for<cs::ForgePhase<DemoBitexactTier>>(int{77});
+static_assert(sizeof(v_forge) == sizeof(int));
+
+auto v_mimic = cs::mint_fn_for<cs::MimicEmit<DemoNvVendor, DemoBitexactTier>>(int{99});
+static_assert(sizeof(v_mimic) == sizeof(int));
+
+auto v_cipher = cs::mint_fn_for<cs::CipherColdWriter>(int{42});
+static_assert(decltype(v_cipher)::mutation_v == sfn::MutationMode::Append);
+static_assert(sizeof(v_cipher) == sizeof(int));
+
+auto v_augur = cs::mint_fn_for<cs::AugurPredictor>(int{1});
+static_assert(sizeof(v_augur) == sizeof(int));
+
+// ─── 12. mint_fn_for_extra — stance + extra relaxation ──────────────
+//
+// Layer grant::overflow_wrap onto BgWorker.  The composed stance
+// engages Effect (Bg+Alloc+Block) AND Overflow (Wrap).  Underlying
+// Fn's overflow_v must reflect the relaxation.
+auto v_extra = cs::mint_fn_for_extra<cs::BgWorker, cg::overflow_wrap>(int{10});
+static_assert(decltype(v_extra)::overflow_v == sfn::OverflowMode::Wrap);
+static_assert(sizeof(v_extra) == sizeof(int));
+
 }  // namespace
 
 // ─── Runtime smoke driver ────────────────────────────────────────────

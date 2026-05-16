@@ -20,6 +20,8 @@
 #                                         (Phase E / FIXY-E)
 #   5. example_fixy_mimic_backend_hook  — Mimic NV SASS emit
 #                                         (Phase E / FIXY-E)
+#   6. example_fixy_cipher_writer       — Cipher cold-tier append-only
+#                                         writer (Phase E ext / FIXY-E2)
 #
 # Each example is the reject-by-default analogue of its
 # examples/fn/example_*.cpp peer.  Both forms compile under the
@@ -49,3 +51,9 @@ crucible_fixy_example(example_fixy_custom_optimizer)
 crucible_fixy_example(example_fixy_cntp_frame)
 crucible_fixy_example(example_fixy_forge_phase)
 crucible_fixy_example(example_fixy_mimic_backend_hook)
+# Cipher cold-tier append-only writer — Mutation=Append stance with
+# Bg+IO+Block effect row.  Demonstrates Crucible's event-sourced
+# persistence binding shape (CRUCIBLE.md §14, Cipher 3-tier).  No
+# examples/fn/ peer today — Cipher entry points still consume raw
+# safety::* types; when they migrate to fn<>, the contrast fills in.
+crucible_fixy_example(example_fixy_cipher_writer)

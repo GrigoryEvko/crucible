@@ -25,6 +25,38 @@
 //   S010 — non-fresh staleness combined with constant-time.
 //   S011 — ephemeral capability used in replay-required code.
 //
+// ── Reachability through `fixy::fn` (FIXY-B4 audit) ──────────────────
+//
+// Substrate's collision detectors live in `safety/CollisionCatalog.h`
+// and check both AXIS values (Usage/Mutation/Overflow/Repr/etc., set
+// directly via grant tags) AND MARKER traits (`marks_async`,
+// `marks_ct`, `marks_fail`, `marks_runtime_ghost_use`, ...) that the
+// substrate primary-templates to false_type.  Marker propagation from
+// fixy grants to substrate marker traits requires partial
+// specialization on `marks_X<safety::fn::Fn<...>>` — substrate-side
+// scaffold; not in fixy slice.
+//
+//   Rule | Reachable via grants today | Gap
+//   -----+----------------------------+----------------------------
+//   I002 | NO  — needs marks_fail + marks_fail_error_secret
+//   L002 | NO  — needs marks_async (grant::borrow gives borrow_capture)
+//   E044 | NO  — needs marks_ct + marks_async
+//   I003 | NO  — needs marks_ct + marks_fail + marks_fail_on_secret
+//   M012 | YES — grant::monotonic_advance + grant::with<Bg>; SHIPPED
+//   P002 | NO  — grant::ghost gives Usage=Ghost; needs marks_runtime_ghost_use
+//   I004 | NO  — needs marks_async on classified session path
+//   N002 | YES — grant::overflow_wrap + user-defined exact_decimal type
+//   L003 | NO  — needs marks_unscoped_spawn
+//   M011 | NO  — needs marks_fail + marks_linear_uncleaned_fail
+//   S010 | NO  — needs marks_ct
+//   S011 | NO  — needs marks_replay_required (capability replay tracking)
+//
+// Of the 12 rules, **2 are reachable today** purely through grant tags
+// (M012 with a fixture; N002 needs a user-side exact_decimal type so
+// the fixture lives test-side).  The remaining 10 await substrate
+// marker-propagation work; their fixtures are documented gaps, not
+// missing tests.
+//
 // ── Axiom coverage ──────────────────────────────────────────────────
 //
 //   TypeSafe — substrate tag identity preserved via `using` aliases.

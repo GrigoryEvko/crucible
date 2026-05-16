@@ -1140,6 +1140,13 @@ crucible_neg_compile_fixy_test(neg_fixy_inheritance_bypass_attempt
 crucible_neg_compile_fixy_test(neg_fixy_rule_M012_monotonic_concurrent
     "M012.*monotonic.*concurrent")
 
+# FIXY-B4 — N002 (decimal x overflow-wrap) — second §6.8 rule reachable
+# from grants today.  User opts into exact-decimal semantics via
+# is_exact_decimal<T> partial specialization, then composes with
+# grant::overflow_wrap.  Substrate's ValidComposition rejects.
+crucible_neg_compile_fixy_test(neg_fixy_rule_N002_decimal_overflow_wrap
+    "N002.*decimal.*overflow|decimal.*Wrap")
+
 # FIXY-AUDIT-NTTP / FIXY-AUDIT-CVR — discovered during the post-A-PLUS
 # soundness audit.  Two new bypass classes closed:
 #   - NTTP escape: out-of-range DimAxis NTTP on accept_default_strict_for
@@ -1169,6 +1176,15 @@ crucible_neg_compile_fixy_test(neg_fixy_complexity_linear_zero_rejected
 # engagement by naming a `relaxes` field.
 crucible_neg_compile_fixy_test(neg_fixy_legit_grant_forge_lookalike
     "FixyNotEngaged_Usage")
+
+# FIXY-C-STANCE-COMPOSE — `stance::compose<Base, NewGrants...>` rejects
+# packs where two NewGrants engage the same dim within a single
+# compose call.  Two HS14 fixtures: direct compose collision; and
+# mint_fn_for_extra collision (compose runs inside the mint).
+crucible_neg_compile_fixy_test(neg_fixy_compose_same_dim_twice
+    "two NewGrants.*engage the same dim|dims_all_distinct")
+crucible_neg_compile_fixy_test(neg_fixy_mint_extra_conflict
+    "two NewGrants.*engage the same dim|dims_all_distinct")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
