@@ -66,3 +66,6 @@ crucible_fixy_example(example_fixy_modality_aware)
 
 # FIXY-G11 — cost-semiring + dim::Cost worked example.
 crucible_fixy_example(example_fixy_cost_annotated)
+
+# FIXY-G12 — termination + bounded-resource axis worked example.
+crucible_fixy_example(example_fixy_bounded)

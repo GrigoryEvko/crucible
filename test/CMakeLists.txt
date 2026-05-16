@@ -253,6 +253,10 @@ set_tests_properties(test_fixy_modality PROPERTIES LABELS "fixy")
 crucible_test(test_fixy_cost)
 set_tests_properties(test_fixy_cost PROPERTIES LABELS "fixy")
 
+# FIXY-G12 — termination + bounded-resource axis positive test.
+crucible_test(test_fixy_termination)
+set_tests_properties(test_fixy_termination PROPERTIES LABELS "fixy")
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1329,6 +1333,16 @@ crucible_neg_compile_fixy_test(neg_fixy_cost_per_cog_missing
     "has_calibration|OpticalTransceiver|ProjectableOn|calibration")
 crucible_neg_compile_fixy_test(neg_fixy_cost_witness_floor_calibration
     "R015_Plus_TestedCostFloor|FnWitnessAtLeast|Tested|witness floor")
+
+# ── FIXY-G12 — Termination + bounded-resource axis fixtures ─────────
+crucible_neg_compile_fixy_test(neg_fixy_resources_hot_with_io
+    "R019_hot_path_resources_v|bounded_io|hot.path")
+crucible_neg_compile_fixy_test(neg_fixy_resources_budget_lt_cost
+    "cost_within_budget_v|predicted|budget|cost.budget")
+crucible_neg_compile_fixy_test(neg_fixy_resources_bgworker_without_budget
+    "R014_bg_observable_bounded_v|wallclock_budget|observability")
+crucible_neg_compile_fixy_test(neg_fixy_resources_unbounded_recursion
+    "loop_bound|UINT64_MAX|structurally inconsistent|no bound declared")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound

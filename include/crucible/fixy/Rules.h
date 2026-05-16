@@ -68,11 +68,13 @@
 //   misc/fixy.md §24.2 collision rule table
 //   safety/CollisionCatalog.h — substrate-side rule tags
 
+#include <crucible/cog/CostProjection.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Modality.h>
 #include <crucible/fixy/Reflect.h>
 #include <crucible/fixy/Witness.h>
 #include <crucible/fixy/dim/Cost.h>
+#include <crucible/fixy/dim/Termination.h>
 #include <crucible/safety/CollisionCatalog.h>
 #include <crucible/safety/diag/TestRegistry.h>
 #include <crucible/safety/witness/IsWitness.h>
@@ -294,5 +296,105 @@ inline constexpr bool R015_hot_cost_bounded_v =
     ::crucible::fixy::IsFixyFn<F> &&
     ::crucible::fixy::HasCostGrant<F> &&
     detail::cost_is_bounded<std::remove_cvref_t<F>>::value;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-G12: R014 / R019 / R020 — Bounded-resource discipline ─────
+// ═════════════════════════════════════════════════════════════════════
+//
+// R014 — BgWorker + Observable requires bounded_alloc + wallclock_budget.
+// A background-context binding that reports through the warden surface
+// must declare both its memory ceiling AND its wallclock deadline.
+// Otherwise the warden has nothing to bound the worker against;
+// runaway BG workers cause OOM / cluster-wide deadline cascades.
+//
+// R019 — Hot-path bindings require terminating + bounded_alloc<≤4KB>
+// + bounded_io<0>.  The hot path admits no syscalls and no growable
+// allocations.
+//
+// R020 — Federation peer roles require terminating + wallclock_budget.
+// A federation participant that can spin indefinitely poisons the
+// MPST channel.
+
+namespace detail {
+
+template <typename F>
+inline constexpr bool has_terminating_claim_v =
+    ::crucible::fixy::is_terminating_v<F>;
+
+template <typename F>
+inline constexpr bool has_wallclock_budget_v =
+    (::crucible::fixy::wallclock_budget_v<F> != UINT64_MAX);
+
+template <typename F>
+inline constexpr bool has_bounded_alloc_v =
+    (::crucible::fixy::bounded_alloc_v<F> != UINT64_MAX);
+
+template <typename F>
+inline constexpr bool has_bounded_io_v =
+    (::crucible::fixy::bounded_io_v<F> != UINT64_MAX);
+
+}  // namespace detail
+
+// R014: BG worker bindings with observability MUST carry both
+// bounded_alloc and wallclock_budget.  Consumer-side gate; callers
+// promoting a binding to "observable" wrap with this predicate.
+template <typename F>
+inline constexpr bool R014_bg_observable_bounded_v =
+    ::crucible::fixy::IsFixyFn<F> &&
+    detail::has_bounded_alloc_v<F> &&
+    detail::has_wallclock_budget_v<F>;
+
+// R019: Hot-path bindings — strictest bounded-resource profile.
+//   * terminating engaged
+//   * bounded_alloc ≤ 4 KB
+//   * bounded_io == 0 (zero syscalls)
+template <typename F>
+inline constexpr bool R019_hot_path_resources_v =
+    ::crucible::fixy::IsFixyFn<F> &&
+    detail::has_terminating_claim_v<F> &&
+    detail::has_bounded_alloc_v<F> &&
+    (::crucible::fixy::bounded_alloc_v<F> <= 4096) &&
+    detail::has_bounded_io_v<F> &&
+    (::crucible::fixy::bounded_io_v<F> == 0);
+
+// R020: Federation peer roles MUST carry terminating + wallclock_budget.
+template <typename F>
+inline constexpr bool R020_federation_peer_bounded_v =
+    ::crucible::fixy::IsFixyFn<F> &&
+    detail::has_terminating_claim_v<F> &&
+    detail::has_wallclock_budget_v<F>;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Cross-axis cost-budget soundness check (G11 × G12) ─────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// When a binding engages BOTH wallclock_budget<N> AND cost_polynomial,
+// the cost-budget soundness check verifies wallclock_budget ≥ predicted
+// cost on a known Cog.  When the Cog is compile-time known via
+// VendorCtx (or a similar context), the check fires at the call site;
+// when the Cog is runtime-only, the check defers to warden-arm time.
+//
+// `cost_within_budget_v<F, KnownCog, InputSize>` ships the compile-
+// time check: predicted_cost_v ≤ wallclock_budget_v.  A consumer
+// demanding both gates writes:
+//
+//   template <typename F, cog::CogKind K, std::uint64_t N>
+//       requires rule::cost_within_budget_v<F, K, N>
+//   void admit_with_cog(F&&);
+
+template <typename F, ::crucible::cog::CogKind K, std::uint64_t InputSize>
+inline constexpr bool cost_within_budget_v = []() {
+    if constexpr (!::crucible::fixy::HasCostGrant<F>) {
+        return false;  // no cost claim — cannot verify budget
+    } else if constexpr (!detail::has_wallclock_budget_v<F>) {
+        return false;  // no budget claim — vacuous
+    } else {
+        constexpr std::uint64_t predicted =
+            ::crucible::cog::predicted_cost_v<F, K, InputSize>;
+        constexpr std::uint64_t budget =
+            ::crucible::fixy::wallclock_budget_v<F>;
+        return predicted <= budget;
+    }
+}();
 
 }  // namespace crucible::fixy::rule
