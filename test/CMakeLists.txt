@@ -188,6 +188,7 @@ crucible_test(test_fixy_engaged)
 crucible_test(test_fixy_cheat_probe)
 crucible_test(test_fixy_fn)
 crucible_test(test_fixy_cap)
+crucible_test(test_fixy_perm)
 
 # FIXY-LAT-Security + FIXY-LAT-Trust — every SecLevel and every
 # safety::trust::* tag is reachable through one named grant tag.
@@ -1122,6 +1123,14 @@ crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_fg
     "associated constraints are not satisfied|constraints not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_ctx_wrong_effect
     "associated constraints are not satisfied|constraints not satisfied")
+
+# ── FIXY-MINT-Perm — fixy/Perm.h re-export of permission token mints
+# (mint_permission_root/split/combine/split_n/combine_n/share/fork/
+# inherit).  Two HS14 fixtures pin the alias's gate:
+crucible_neg_compile_fixy_test(neg_fixy_perm_root_no_row_admission
+    "CtxAdmitsPermission|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perm_fork_ctx_no_bg
+    "CtxFitsPermissionFork|row_contains_v|constraints not satisfied|associated constraints are not satisfied")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
