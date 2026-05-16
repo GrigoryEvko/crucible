@@ -56,6 +56,7 @@
 #include <crucible/fixy/Sess.h>
 #include <crucible/fixy/Stance.h>
 #include <crucible/fixy/Theory.h>
+#include <crucible/fixy/WireGrade.h>
 
 #define CRUCIBLE_FIXY 1
 
