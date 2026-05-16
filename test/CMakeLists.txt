@@ -189,6 +189,12 @@ crucible_test(test_fixy_cheat_probe)
 crucible_test(test_fixy_fn)
 crucible_test(test_fixy_cap)
 
+# FIXY-LAT-Security + FIXY-LAT-Trust — every SecLevel and every
+# safety::trust::* tag is reachable through one named grant tag.
+# Positive-compile witnesses live in test_fixy_lattice_points; the
+# matching HS14 neg-compile fixtures land below.
+crucible_test(test_fixy_lattice_points)
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1088,6 +1094,27 @@ crucible_neg_compile_fixy_test(neg_fixy_rule_l003 "L003:")
 crucible_neg_compile_fixy_test(neg_fixy_rule_m011 "M011:")
 crucible_neg_compile_fixy_test(neg_fixy_rule_s010 "S010:")
 crucible_neg_compile_fixy_test(neg_fixy_rule_s011 "S011:")
+
+# ── FIXY-LAT-Security + FIXY-LAT-Trust HS14 neg-compile fixtures ──
+#
+# Each fixture demonstrates a distinct mismatch class for the new
+# Security / Trust lattice grant tags introduced by FIXY-LAT-Security
+# (gr::as_unclassified / as_public / as_internal / as_classified /
+# as_secret) and FIXY-LAT-Trust (gr::trust_verified / trust_tested /
+# trust_unverified / trust_external).
+#
+#   _secret_wrong_axis    — as_secret in lieu of Trust grant: Trust
+#                            axis unengaged, FixyNotEngaged_Trust fires
+#   _unclassified_only    — as_unclassified is the only engagement: 19
+#                            other axes unengaged, FixyNotEngaged_Type
+#   _external_wrong_axis  — trust_external in lieu of Security grant:
+#                            Security axis unengaged, FixyNotEngaged_Security
+#   _tested_only          — trust_tested is the only engagement: 19
+#                            other axes unengaged, FixyNotEngaged_Type
+crucible_neg_compile_fixy_test(neg_fixy_lat_secret_wrong_axis   "FixyNotEngaged_Trust")
+crucible_neg_compile_fixy_test(neg_fixy_lat_unclassified_only   "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_lat_external_wrong_axis "FixyNotEngaged_Security")
+crucible_neg_compile_fixy_test(neg_fixy_lat_tested_only         "FixyNotEngaged_Type")
 
 # ── FIXY-MINT-Cap — fixy/Cap.h re-export of effects::mint_cap +
 # effects::mint_from_ctx.  Two HS14 fixtures pin the alias's gate:

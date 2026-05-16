@@ -194,16 +194,61 @@ using with_test  = with<effects::Effect::Test>;
 
 // ── Dim 5 Security relaxations ─────────────────────────────────────
 //
-// `declassify<Policy>` engages Security with a named policy tag.
-// The Policy parameter is treated opaquely by Phase A; the policy
-// catalog ships under safety::secret_policy::* and is consumed by
-// Phase B's Resolve.h + the declassification call sites.
+// `declassify<Policy>` engages Security with a named policy tag,
+// projecting to `SecLevel::Public`.  The Policy parameter is
+// captured for audit-trail purposes by Phase A; the policy catalog
+// ships under safety::secret_policy::* and is consumed by Phase B's
+// Resolve.h + the declassification call sites.
+//
+// Five more relaxation tags expose the remaining SecLevel lattice
+// points so callers can reach every value of the security lattice
+// (Unclassified < Public < Internal < Classified < Secret) through
+// a single explicit grant rather than relying on the strict default
+// alone.  Conventions:
+//
+//   - `as_unclassified`  — pin Security to SecLevel::Unclassified.
+//                          The lattice bottom; suitable for fully
+//                          public emission paths whose output carries
+//                          NO confidentiality obligation.
+//   - `as_public`        — pin Security to SecLevel::Public.  Distinct
+//                          from `declassify<P>` because this form does
+//                          not carry a Policy tag: the binding asserts
+//                          the data was never classified to begin with.
+//   - `as_internal`      — pin Security to SecLevel::Internal.  The
+//                          "org-internal" tier — observable inside the
+//                          organization, not for external emission.
+//   - `as_classified`    — pin Security to SecLevel::Classified (the
+//                          strict default).  Explicit form for
+//                          self-documenting bindings that want a named
+//                          relaxation rather than the implicit
+//                          accept-default marker.
+//   - `as_secret`        — pin Security to SecLevel::Secret.  Top of
+//                          the lattice; the value MUST NOT be
+//                          declassified.  Required for crypto keys,
+//                          Cipher encryption keys, private weights.
 
 template <typename Policy>
 struct declassify final : grant_base {};
 
 template <typename Policy>
 struct which_dim<declassify<Policy>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+
+struct as_unclassified final : grant_base {};
+struct as_public       final : grant_base {};
+struct as_internal     final : grant_base {};
+struct as_classified   final : grant_base {};
+struct as_secret       final : grant_base {};
+
+template <> struct which_dim<as_unclassified>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+template <> struct which_dim<as_public>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+template <> struct which_dim<as_internal>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+template <> struct which_dim<as_classified>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+template <> struct which_dim<as_secret>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
 
 // ── Dim 6 Protocol relaxations ─────────────────────────────────────
@@ -250,12 +295,47 @@ struct which_dim<from_source<Source>>
 // — typically a `std::array<char, N>` literal — captured for audit
 // trails but treated opaquely by IsAccepted).  Resolve.h projects to
 // `safety::trust::Assumed`.
+//
+// Four additional relaxation tags expose the remaining lattice points
+// of safety::trust::* so every named trust level is reachable through
+// fixy::: Verified (strict default), Tested, Unverified, Assumed
+// (already covered by trust_assumed), External.  Conventions:
+//
+//   - `trust_verified`   — pin Trust to safety::trust::Verified.
+//                          Explicit form of the strict default; useful
+//                          for self-documenting bindings.
+//   - `trust_tested`     — pin Trust to safety::trust::Tested.  The
+//                          value is covered by tests but lacks formal
+//                          coverage — typical for code under active
+//                          development.
+//   - `trust_unverified` — pin Trust to safety::trust::Unverified.  No
+//                          formal coverage at all; requires reviewer
+//                          attention before reaching production.
+//   - `trust_external`   — pin Trust to safety::trust::External.  Trust
+//                          delegated to a foreign source (vendor library,
+//                          firmware, BMC).  Resolution time MUST verify
+//                          the upstream's claim through a separate
+//                          channel.
 
 template <auto Rationale = 0>
 struct trust_assumed final : grant_base {};
 
 template <auto Rationale>
 struct which_dim<trust_assumed<Rationale>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
+
+struct trust_verified   final : grant_base {};
+struct trust_tested     final : grant_base {};
+struct trust_unverified final : grant_base {};
+struct trust_external   final : grant_base {};
+
+template <> struct which_dim<trust_verified>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
+template <> struct which_dim<trust_tested>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
+template <> struct which_dim<trust_unverified>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
+template <> struct which_dim<trust_external>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
 
 // ── Dim 10 Representation relaxations ──────────────────────────────
@@ -402,9 +482,43 @@ static_assert(IsGrantTag<capability_usage>);
 static_assert(IsGrantTag<with<effects::Effect::IO>>);
 static_assert(IsGrantTag<with<>>);
 static_assert(IsGrantTag<declassify<int>>);
+static_assert(IsGrantTag<as_unclassified>);
+static_assert(IsGrantTag<as_public>);
+static_assert(IsGrantTag<as_internal>);
+static_assert(IsGrantTag<as_classified>);
+static_assert(IsGrantTag<as_secret>);
+static_assert(IsGrantTag<trust_verified>);
+static_assert(IsGrantTag<trust_tested>);
+static_assert(IsGrantTag<trust_unverified>);
+static_assert(IsGrantTag<trust_external>);
 static_assert(IsGrantTag<refined_with<safety::fn::pred::True>>);
 static_assert(IsGrantTag<version<3>>);
 static_assert(IsGrantTag<stale_to<5>>);
+
+// EBO-collapse witnesses for the new Security/Trust lattice tags —
+// each empty + final + grant_base → 1-byte tag.
+static_assert(sizeof(as_unclassified)   == 1);
+static_assert(sizeof(as_public)         == 1);
+static_assert(sizeof(as_internal)       == 1);
+static_assert(sizeof(as_classified)     == 1);
+static_assert(sizeof(as_secret)         == 1);
+static_assert(sizeof(trust_verified)    == 1);
+static_assert(sizeof(trust_tested)      == 1);
+static_assert(sizeof(trust_unverified)  == 1);
+static_assert(sizeof(trust_external)    == 1);
+
+// which_dim_v round-trip for the new Security lattice tags.
+static_assert(which_dim_v<as_unclassified>   == dim::DimensionAxis::Security);
+static_assert(which_dim_v<as_public>         == dim::DimensionAxis::Security);
+static_assert(which_dim_v<as_internal>       == dim::DimensionAxis::Security);
+static_assert(which_dim_v<as_classified>     == dim::DimensionAxis::Security);
+static_assert(which_dim_v<as_secret>         == dim::DimensionAxis::Security);
+
+// which_dim_v round-trip for the new Trust lattice tags.
+static_assert(which_dim_v<trust_verified>    == dim::DimensionAxis::Trust);
+static_assert(which_dim_v<trust_tested>      == dim::DimensionAxis::Trust);
+static_assert(which_dim_v<trust_unverified>  == dim::DimensionAxis::Trust);
+static_assert(which_dim_v<trust_external>    == dim::DimensionAxis::Trust);
 
 // EBO-collapse witness — empty + final + grant_base = 1-byte tag.
 static_assert(sizeof(affine)                 == 1);

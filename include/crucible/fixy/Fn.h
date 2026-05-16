@@ -169,6 +169,29 @@ struct project<grant::declassify<Policy>> {
     static constexpr value_type value = safety::fn::SecLevel::Public;
 };
 
+// FIXY-LAT-Security: explicit Security lattice point projections —
+// every SecLevel enumerator reachable through a named grant tag.
+template <> struct project<grant::as_unclassified> {
+    using value_type = safety::fn::SecLevel;
+    static constexpr value_type value = safety::fn::SecLevel::Unclassified;
+};
+template <> struct project<grant::as_public> {
+    using value_type = safety::fn::SecLevel;
+    static constexpr value_type value = safety::fn::SecLevel::Public;
+};
+template <> struct project<grant::as_internal> {
+    using value_type = safety::fn::SecLevel;
+    static constexpr value_type value = safety::fn::SecLevel::Internal;
+};
+template <> struct project<grant::as_classified> {
+    using value_type = safety::fn::SecLevel;
+    static constexpr value_type value = safety::fn::SecLevel::Classified;
+};
+template <> struct project<grant::as_secret> {
+    using value_type = safety::fn::SecLevel;
+    static constexpr value_type value = safety::fn::SecLevel::Secret;
+};
+
 // ── Dim 6 Protocol (type-valued) ──────────────────────────────────
 template <typename Proto>
 struct project<grant::protocol<Proto>> { using type = Proto; };
@@ -188,6 +211,13 @@ template <auto Rationale>
 struct project<grant::trust_assumed<Rationale>> {
     using type = safety::trust::Assumed;
 };
+
+// FIXY-LAT-Trust: explicit Trust lattice point projections — every
+// safety::trust::* tag reachable through a named grant tag.
+template <> struct project<grant::trust_verified>   { using type = safety::trust::Verified; };
+template <> struct project<grant::trust_tested>     { using type = safety::trust::Tested; };
+template <> struct project<grant::trust_unverified> { using type = safety::trust::Unverified; };
+template <> struct project<grant::trust_external>   { using type = safety::trust::External; };
 
 // ── Dim 10 Representation (enum-valued) ───────────────────────────
 template <safety::fn::ReprKind Kind>
@@ -776,6 +806,43 @@ static_assert(std::is_same_v<direct_fixy::safety_fn_t, direct_substrate>,
     "Usage=affine must match the directly-spelled substrate Fn<...> "
     "with UsageMode::Affine.");
 }  // namespace round_trip_2
+
+// FIXY-LAT-Security: every Security lattice point resolves to the
+// matching substrate SecLevel.
+static_assert(detail::resolve::project<grant::as_unclassified>::value
+    == safety::fn::SecLevel::Unclassified,
+    "grant::as_unclassified must project to SecLevel::Unclassified.");
+static_assert(detail::resolve::project<grant::as_public>::value
+    == safety::fn::SecLevel::Public,
+    "grant::as_public must project to SecLevel::Public.");
+static_assert(detail::resolve::project<grant::as_internal>::value
+    == safety::fn::SecLevel::Internal,
+    "grant::as_internal must project to SecLevel::Internal.");
+static_assert(detail::resolve::project<grant::as_classified>::value
+    == safety::fn::SecLevel::Classified,
+    "grant::as_classified must project to SecLevel::Classified.");
+static_assert(detail::resolve::project<grant::as_secret>::value
+    == safety::fn::SecLevel::Secret,
+    "grant::as_secret must project to SecLevel::Secret.");
+
+// FIXY-LAT-Trust: every Trust lattice point resolves to the matching
+// safety::trust::* tag.
+static_assert(std::is_same_v<
+    detail::resolve::project<grant::trust_verified>::type,
+    safety::trust::Verified>,
+    "grant::trust_verified must project to safety::trust::Verified.");
+static_assert(std::is_same_v<
+    detail::resolve::project<grant::trust_tested>::type,
+    safety::trust::Tested>,
+    "grant::trust_tested must project to safety::trust::Tested.");
+static_assert(std::is_same_v<
+    detail::resolve::project<grant::trust_unverified>::type,
+    safety::trust::Unverified>,
+    "grant::trust_unverified must project to safety::trust::Unverified.");
+static_assert(std::is_same_v<
+    detail::resolve::project<grant::trust_external>::type,
+    safety::trust::External>,
+    "grant::trust_external must project to safety::trust::External.");
 
 // 9. mint_fn factory returns the correct concrete type.
 constexpr auto minted = mint_fn<int,
