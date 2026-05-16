@@ -196,6 +196,15 @@ crucible_test(test_fixy_b)
 # misc/16_05_2026_fixy.md §4 Phase C.
 crucible_test(test_fixy_aliases)
 
+# ── FIXY-D — Profile + Theory sentinel TUs ───────────────────────────
+#
+# Pin sketch/release toggle behavior (test_fixy_profile) and the
+# §30.14 Known-Unsoundness corpus seeded with 15 entries
+# (test_fixy_theory).  Acceptance per misc/16_05_2026_fixy.md §4
+# Phase D + §9 R6 (corpus is monotonic-grow-only data).
+crucible_test(test_fixy_profile)
+crucible_test(test_fixy_theory)
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production

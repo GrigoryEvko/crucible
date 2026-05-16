@@ -24,6 +24,13 @@
 //     CRUCIBLE_PRE / CRUCIBLE_POST macros via fixy/Contract.h so
 //     the discipline-surface spelling matches across all axes.
 //
+//   * Phase D: Profile.h + Theory.h — sketch/release profile
+//     toggle (CRUCIBLE_FIXY_SKETCH preprocessor symbol) and the
+//     §30.14 Known-Unsoundness corpus (15 seeded entries:
+//     10 academic + 5 Crucible-audit GAPS-*).  Corpus is data,
+//     monotonically grows; per doc §9 R6 entries are 10-line
+//     additions, never deletions.
+//
 // **Discipline pointer.** Every greenfield Crucible header added after
 // 17 May 2026 composes against `fixy::*` via this umbrella, NOT
 // against raw `safety::fn::Fn<...>`.  See misc/16_05_2026_fixy.md §5
@@ -41,11 +48,13 @@
 #include <crucible/fixy/Fn.h>
 #include <crucible/fixy/Grant.h>
 #include <crucible/fixy/Mach.h>
+#include <crucible/fixy/Profile.h>
 #include <crucible/fixy/Reject.h>
 #include <crucible/fixy/Resolve.h>
 #include <crucible/fixy/Rules.h>
 #include <crucible/fixy/Sess.h>
 #include <crucible/fixy/Stance.h>
+#include <crucible/fixy/Theory.h>
 
 #define CRUCIBLE_FIXY 1
 
@@ -57,5 +66,5 @@
 // Patch: bug fix, doc-comment edit, internal refactor.
 
 #define CRUCIBLE_FIXY_VERSION_MAJOR 0
-#define CRUCIBLE_FIXY_VERSION_MINOR 3  // 0.3.0: Phase A + B + C alias re-exports
+#define CRUCIBLE_FIXY_VERSION_MINOR 4  // 0.4.0: Phase A + B + C + D (Profile + Theory)
 #define CRUCIBLE_FIXY_VERSION_PATCH 0
