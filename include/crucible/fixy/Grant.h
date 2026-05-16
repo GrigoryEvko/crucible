@@ -98,6 +98,8 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/safety/NotInherited.h>
+#include <crucible/safety/witness/IsWitness.h>
+#include <crucible/safety/witness/Witness.h>
 
 #include <concepts>
 #include <cstdint>
@@ -120,8 +122,17 @@ namespace crucible::fixy {
 // attempting to derive from a shipped tag hits `final` at the
 // inheritance site.  An author who needs a new grant tag inherits
 // grant_base DIRECTLY (legitimate; opt-in).
+//
+// FIXY-G9: grant_base carries the default proof-relevance witness type
+// (Asserted<UnnamedRationale>).  Evidenced variants `cg::*_e<W>`
+// override `witness_t` to declare a stronger witness tier.  Inheriting
+// `witness_t` through the base lets the entire grant catalog default
+// to "Asserted" without per-grant edits — only the evidenced wrappers
+// override.
 
-struct grant_base {};
+struct grant_base {
+    using witness_t = ::crucible::safety::witness::DefaultWitness;
+};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Universal acknowledgement: accept_default_strict_for<D> ────────
@@ -511,7 +522,287 @@ struct stale_to final : grant_base {
     static constexpr auto value = TauMax;
 };
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-G9: Evidenced grant variants ──────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Every shipped grant has a parallel `*_e<W>` variant carrying a
+// witness type W.  The base form (`grant::copy`, `grant::reentrant`,
+// ...) inherits `witness_t = DefaultWitness` from grant_base; the
+// evidenced form (`grant::copy_e<Tested<id>>`, ...) overrides
+// `witness_t = W` to declare a stronger proof-relevance tier.
+//
+// The evidenced form is a DISTINCT grant tag (new identity, new
+// final-derivation slot), not a subclass of the base — the base is
+// `final`.  Each evidenced variant re-states the `relaxes` axis so
+// engages_dim_v / IsGrantTag continue to work without change.
+//
+// The macro CRUCIBLE_FIXY_EVIDENCED_VARIANT generates the witness-
+// overriding form for the simplest case (zero-parameter base).
+// Parametric grants (template <auto N> struct sized) get hand-rolled
+// variants below — the macro handles the bulk.
+
+#define CRUCIBLE_FIXY_EVIDENCED_VARIANT(base_name, dim_value)         \
+    template <::crucible::safety::witness::IsWitness W>               \
+    struct base_name##_e final : grant_base {                         \
+        static constexpr dim::DimAxis relaxes = dim_value;            \
+        using witness_t = W;                                          \
+    }
+
+// ── Usage ─────────────────────────────────────────────────────────────
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(affine,           dim::Usage);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(copy,             dim::Usage);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(ghost,            dim::Usage);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(borrow,           dim::Usage);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(capability_usage, dim::Usage);
+
+// ── Security ──────────────────────────────────────────────────────────
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(upgrade_to_secret, dim::Security);
+
+// ── Representation ────────────────────────────────────────────────────
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_c,       dim::Representation);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_packed,  dim::Representation);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_aligned, dim::Representation);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_simd,    dim::Representation);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(repr_atomic,  dim::Representation);
+
+// ── Observability ─────────────────────────────────────────────────────
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(observability_visible, dim::Observability);
+
+// ── Complexity ────────────────────────────────────────────────────────
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(complexity_constant,  dim::Complexity);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(complexity_unbounded, dim::Complexity);
+
+// ── Precision ─────────────────────────────────────────────────────────
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(precision_f32, dim::Precision);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(precision_f64, dim::Precision);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(reassociate,   dim::Precision);
+
+// ── Space ─────────────────────────────────────────────────────────────
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(space_unbounded, dim::Space);
+
+// ── Overflow ──────────────────────────────────────────────────────────
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(overflow_wrap,     dim::Overflow);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(overflow_saturate, dim::Overflow);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(overflow_widen,    dim::Overflow);
+
+// ── Mutation ──────────────────────────────────────────────────────────
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(mutable_in_place,  dim::Mutation);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(append_only,       dim::Mutation);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(monotonic_advance, dim::Mutation);
+
+// ── Reentrancy ────────────────────────────────────────────────────────
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(reentrant, dim::Reentrancy);
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(coroutine, dim::Reentrancy);
+
+// ── Size ──────────────────────────────────────────────────────────────
+CRUCIBLE_FIXY_EVIDENCED_VARIANT(productive, dim::Size);
+
+#undef CRUCIBLE_FIXY_EVIDENCED_VARIANT
+
+// ── Parametric evidenced variants (hand-rolled) ──────────────────────
+
+// Typed-NTTP vendor / recipe / transport / forge phase with witness.
+template <VendorBackend Backend, ::crucible::safety::witness::IsWitness W>
+struct vendor_backend_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Representation;
+    static constexpr VendorBackend value = Backend;
+    using witness_t = W;
+};
+
+template <Tolerance T, ::crucible::safety::witness::IsWitness W>
+struct recipe_tier_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Representation;
+    static constexpr Tolerance value = T;
+    using witness_t = W;
+};
+
+template <TransportTier T, ::crucible::safety::witness::IsWitness W>
+struct transport_tier_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Representation;
+    static constexpr TransportTier value = T;
+    using witness_t = W;
+};
+
+template <ForgePhase P, ::crucible::safety::witness::IsWitness W>
+struct forge_phase_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Provenance;
+    static constexpr ForgePhase value = P;
+    using witness_t = W;
+};
+
+// with<Es...> with witness (variadic effects need their own template).
+template <::crucible::safety::witness::IsWitness W,
+          ::crucible::effects::Effect... Es>
+struct with_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Effect;
+    using witness_t = W;
+    static_assert(sizeof...(Es) > 0,
+        "grant::with_e<W> with empty effect pack is structurally degenerate. "
+        "Use accept_default_strict_for<dim::Effect> for the strict-default case.");
+};
+
+// declassify<Policy> with witness.
+template <typename Policy, ::crucible::safety::witness::IsWitness W>
+struct declassify_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Security;
+    using policy = Policy;
+    using witness_t = W;
+};
+
+// from_source<SourceTag> with witness.
+template <typename SourceTag, ::crucible::safety::witness::IsWitness W>
+struct from_source_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Provenance;
+    using source_tag = SourceTag;
+    using witness_t = W;
+};
+
+// sanitize<TaintClass> with witness.
+template <typename TaintClass, ::crucible::safety::witness::IsWitness W>
+struct sanitize_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Provenance;
+    using taint_class = TaintClass;
+    using witness_t = W;
+};
+
+// trust_assumed_for<TaintClass> with witness.
+template <typename TaintClass, ::crucible::safety::witness::IsWitness W>
+struct trust_assumed_for_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Trust;
+    using taint_class = TaintClass;
+    using witness_t = W;
+};
+
+// lifetime_region<auto RegionTag> with witness.
+template <auto RegionTag, ::crucible::safety::witness::IsWitness W>
+struct lifetime_region_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Lifetime;
+    using witness_t = W;
+};
+
+// refined_with<Pred> with witness.
+template <typename Pred, ::crucible::safety::witness::IsWitness W>
+struct refined_with_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Refinement;
+    using predicate = Pred;
+    using witness_t = W;
+};
+
+// space_bounded<N> with witness.
+template <auto N, ::crucible::safety::witness::IsWitness W>
+struct space_bounded_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Space;
+    static_assert(std::is_integral_v<decltype(N)>,
+        "grant::space_bounded_e<N, W> requires an integral N.");
+    static_assert(N > 0,
+        "grant::space_bounded_e<N, W> requires N > 0.");
+    static constexpr auto value = N;
+    using witness_t = W;
+};
+
+// sized<Depth> with witness.
+template <auto Depth, ::crucible::safety::witness::IsWitness W>
+struct sized_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Size;
+    static_assert(std::is_integral_v<decltype(Depth)>,
+        "grant::sized_e<Depth, W> requires an integral Depth.");
+    static_assert(Depth > 0,
+        "grant::sized_e<Depth, W> requires Depth > 0.");
+    static constexpr auto value = Depth;
+    using witness_t = W;
+};
+
+// version<V> with witness.
+template <std::uint32_t V, ::crucible::safety::witness::IsWitness W>
+struct version_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Version;
+    static constexpr std::uint32_t value = V;
+    using witness_t = W;
+    static_assert(V > 0, "grant::version_e<V, W> requires V > 0.");
+};
+
+// stale_to<TauMax> with witness.
+template <auto TauMax, ::crucible::safety::witness::IsWitness W>
+struct stale_to_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Staleness;
+    static_assert(std::is_integral_v<decltype(TauMax)>,
+        "grant::stale_to_e<TauMax, W> requires an integral TauMax.");
+    static_assert(TauMax > 0,
+        "grant::stale_to_e<TauMax, W> requires TauMax > 0.");
+    static constexpr auto value = TauMax;
+    using witness_t = W;
+};
+
+// typed<T> with witness.
+template <typename T, ::crucible::safety::witness::IsWitness W>
+struct typed_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Type;
+    using type = T;
+    using witness_t = W;
+};
+
+// trust_assumed<auto Rationale> with witness.
+template <auto Rationale, ::crucible::safety::witness::IsWitness W>
+struct trust_assumed_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Trust;
+    using witness_t = W;
+};
+
+// protocol_session<Proto> with witness.
+template <typename Proto, ::crucible::safety::witness::IsWitness W>
+struct protocol_session_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Protocol;
+    using protocol = Proto;
+    using witness_t = W;
+};
+
+// precision_higham<Bound> with witness.
+template <auto Bound, ::crucible::safety::witness::IsWitness W>
+struct precision_higham_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Precision;
+    using witness_t = W;
+};
+
+// complexity_linear<N> / complexity_quadratic<N> with witness.
+template <auto N, ::crucible::safety::witness::IsWitness W>
+struct complexity_linear_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Complexity;
+    static_assert(std::is_integral_v<decltype(N)>,
+        "grant::complexity_linear_e<N, W> requires integral N.");
+    static_assert(N > 0,
+        "grant::complexity_linear_e<N, W> requires N > 0.");
+    static constexpr auto value = N;
+    using witness_t = W;
+};
+
+template <auto N, ::crucible::safety::witness::IsWitness W>
+struct complexity_quadratic_e final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Complexity;
+    static_assert(std::is_integral_v<decltype(N)>,
+        "grant::complexity_quadratic_e<N, W> requires integral N.");
+    static_assert(N > 0,
+        "grant::complexity_quadratic_e<N, W> requires N > 0.");
+    static constexpr auto value = N;
+    using witness_t = W;
+};
+
 }  // namespace grant
+
+// accept_default_strict_for_e<D, W> — strict-ack with witness override.
+// Lives at fixy:: level alongside accept_default_strict_for<D>.
+template <dim::DimAxis D, ::crucible::safety::witness::IsWitness W>
+struct accept_default_strict_for_e final : grant_base {
+    static_assert(dim::is_valid_axis_v<D>,
+        "fixy::accept_default_strict_for_e<D, W> instantiated with a "
+        "DimAxis value outside the 20-enumerator range.");
+    static constexpr dim::DimAxis relaxes = D;
+    static constexpr bool is_explicit_accept = true;
+    using witness_t = W;
+};
+
+static_assert(::crucible::safety::NotInherited<accept_default_strict_for_e<dim::Type,
+    ::crucible::safety::witness::Tested<0>>>);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── IsGrantTag concept — tight discrimination of fixy grants ───────
@@ -585,6 +876,53 @@ static_assert(grant::transport_tier<grant::TransportTier::Tcp>::relaxes
               == dim::Representation);
 static_assert(grant::forge_phase<grant::ForgePhase::Ingest>::relaxes
               == dim::Provenance);
+
+// FIXY-G9: every grant tag carries witness_t.  Bare form defaults to
+// DefaultWitness (Asserted<UnnamedRationale>); evidenced *_e<W> form
+// overrides to the specified W.
+static_assert(std::is_same_v<typename grant::copy::witness_t,
+                             ::crucible::safety::witness::DefaultWitness>);
+static_assert(std::is_same_v<typename grant::reentrant::witness_t,
+                             ::crucible::safety::witness::DefaultWitness>);
+static_assert(std::is_same_v<typename grant::vendor_nv::witness_t,
+                             ::crucible::safety::witness::DefaultWitness>);
+static_assert(std::is_same_v<typename accept_default_strict_for<dim::Type>::witness_t,
+                             ::crucible::safety::witness::DefaultWitness>);
+
+// Evidenced variants override witness_t.
+using TestedW   = ::crucible::safety::witness::Tested<42>;
+using CrossValW = ::crucible::safety::witness::CrossValidated<7>;
+
+static_assert(std::is_same_v<typename grant::copy_e<TestedW>::witness_t, TestedW>);
+static_assert(std::is_same_v<typename grant::reentrant_e<TestedW>::witness_t, TestedW>);
+static_assert(std::is_same_v<typename grant::mutable_in_place_e<CrossValW>::witness_t,
+                             CrossValW>);
+static_assert(std::is_same_v<typename grant::vendor_backend_e<grant::VendorBackend::NV,
+                                                              TestedW>::witness_t,
+                             TestedW>);
+static_assert(std::is_same_v<typename grant::with_e<TestedW,
+                                                    ::crucible::effects::Effect::IO>::witness_t,
+                             TestedW>);
+
+// Evidenced variants preserve relaxes axis.
+static_assert(grant::copy_e<TestedW>::relaxes == dim::Usage);
+static_assert(grant::reentrant_e<TestedW>::relaxes == dim::Reentrancy);
+static_assert(grant::vendor_backend_e<grant::VendorBackend::NV, TestedW>::relaxes
+              == dim::Representation);
+
+// Evidenced variants are IsGrantTag.
+static_assert(IsGrantTag<grant::copy_e<TestedW>>);
+static_assert(IsGrantTag<grant::reentrant_e<TestedW>>);
+static_assert(IsGrantTag<grant::with_e<TestedW, ::crucible::effects::Effect::IO>>);
+
+// Evidenced variants are EBO-collapsible (sizeof == 1 standalone).
+static_assert(sizeof(grant::copy_e<TestedW>) == 1);
+static_assert(sizeof(grant::reentrant_e<TestedW>) == 1);
+static_assert(sizeof(grant::with_e<TestedW, ::crucible::effects::Effect::IO>) == 1);
+
+// Evidenced variants are `final` (cheat-bypass closure).
+static_assert(::crucible::safety::NotInherited<grant::copy_e<TestedW>>);
+static_assert(::crucible::safety::NotInherited<grant::reentrant_e<TestedW>>);
 
 }  // namespace detail
 

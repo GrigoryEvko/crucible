@@ -57,3 +57,6 @@ crucible_fixy_example(example_fixy_mimic_backend_hook)
 # examples/fn/ peer today — Cipher entry points still consume raw
 # safety::* types; when they migrate to fn<>, the contrast fills in.
 crucible_fixy_example(example_fixy_cipher_writer)
+
+# FIXY-G9 — Witness metadata progressive upgrade.
+crucible_fixy_example(example_fixy_witness_evidenced)

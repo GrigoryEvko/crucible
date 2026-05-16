@@ -68,7 +68,13 @@
 //   misc/fixy.md §24.2 collision rule table
 //   safety/CollisionCatalog.h — substrate-side rule tags
 
+#include <crucible/fixy/Dim.h>
+#include <crucible/fixy/Reflect.h>
+#include <crucible/fixy/Witness.h>
 #include <crucible/safety/CollisionCatalog.h>
+#include <crucible/safety/diag/TestRegistry.h>
+#include <crucible/safety/witness/IsWitness.h>
+#include <crucible/safety/witness/Witness.h>
 
 #include <type_traits>
 
@@ -116,5 +122,42 @@ static_assert(std::is_same_v<L003, _collision::L003_BorrowUnscopedSpawn>);
 static_assert(std::is_same_v<M011, _collision::M011_LinearFailNoCleanup>);
 static_assert(std::is_same_v<S010, _collision::S010_StalenessConstantTime>);
 static_assert(std::is_same_v<S011, _collision::S011_CapabilityReplay>);
+
+// ═════════════════════════════════════════════════════════════════════
+// ── R016 — HotPath::Hot residency demands Tested witness floor ─────
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-G9: bindings that flow through the hot-path / hot-residency
+// admission gate must carry at least Tested witness on the Trust and
+// Reentrancy axes.  Asserted-only witness on Trust would admit
+// unaudited bindings to the foreground recording path; Asserted-only
+// on Reentrancy would admit recursive helpers without test coverage.
+//
+// This is the fixy-side companion to substrate's `HotPathViolation`
+// (Category 5).  The substrate fires on tier mismatch (Hot vs Warm vs
+// Cold callee); R016 fires earlier — at the witness check — so a
+// caller never sees a HotPath<Hot, ...> binding constructed from an
+// Asserted-only grant in the first place.
+//
+// `R016_requires_witness_floor_v<F>` is the consumer-side predicate.
+// HotPath admission templates can spell:
+//
+//   template <typename F>
+//       requires rule::R016_requires_witness_floor_v<F>
+//   void admit_hot_path(F&&);
+//
+// to enforce the floor at the call site.
+
+namespace _w = ::crucible::safety::witness;
+
+// Minimum tier per axis under R016.  Tested<sentinel> is the floor;
+// any concretely-numbered Tested<id> or higher tier satisfies.
+template <typename F>
+inline constexpr bool R016_requires_witness_floor_v =
+    ::crucible::fixy::IsFixyFn<F> &&
+    ::crucible::fixy::FnWitnessAtLeast<F, ::crucible::fixy::dim::Trust,
+        _w::Tested<::crucible::safety::diag::UnnamedTestId>> &&
+    ::crucible::fixy::FnWitnessAtLeast<F, ::crucible::fixy::dim::Reentrancy,
+        _w::Tested<::crucible::safety::diag::UnnamedTestId>>;
 
 }  // namespace crucible::fixy::rule

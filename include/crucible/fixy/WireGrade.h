@@ -56,6 +56,8 @@
 #include <crucible/fixy/Grant.h>
 #include <crucible/fixy/Reflect.h>
 #include <crucible/fixy/Reject.h>
+#include <crucible/safety/witness/IsWitness.h>
+#include <crucible/safety/witness/Witness.h>
 
 #include <array>
 #include <cstddef>
@@ -187,6 +189,22 @@ enum class WireOpcode : std::uint16_t {
 
     // ── Observability ─────────────────────────────────────────────
     Observability_Visible        = 0x1400,
+
+    // ─── FIXY-G9: Witness opcodes (0x8000+) ─────────────────────────
+    //
+    // After each grant opcode, the encoder emits ONE witness opcode
+    // naming the grant's witness tier.  Decoders that don't know
+    // about witness opcodes hit `UnknownOpcode` cleanly; decoders that
+    // DO check the witness tier against the binding's declared
+    // `witness_t` for that grant.  Tier-only encoding (4 opcodes) is
+    // sufficient — concrete TestId / CiRunId values are not wire-
+    // material; only the tier matters for floor checks.
+    //
+    // Append-only — opcodes 0x8000-0x8003 are reserved permanently.
+    Witness_Asserted         = 0x8000,
+    Witness_Tested           = 0x8001,
+    Witness_CrossValidated   = 0x8002,
+    Witness_FormallyVerified = 0x8003,
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -200,6 +218,8 @@ enum class WireGradeError : std::uint8_t {
     GradeMismatch     = 4,
     PayloadSizeWrong  = 5,
     TruncatedPayload  = 6,
+    // FIXY-G9: witness opcode missing or below per-binding floor.
+    WitnessFloor      = 7,
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -688,6 +708,376 @@ struct grant_wire_record<grant::precision_higham<Bound>> {
     static consteval std::array<std::uint8_t, 0> payload() noexcept { return {}; }
 };
 
+// ─── FIXY-G9: Evidenced grant variants → same opcode as base ─────────
+//
+// Each evidenced `*_e<W>` variant produces the SAME wire opcode + same
+// payload bytes as its bare counterpart.  The witness opcode appended
+// after the grant record (see wire_encode_impl) carries the W tier.
+
+#define CRUCIBLE_FIXY_WIRE_E_SIMPLE(evid_name, opcode_value)                \
+    template <::crucible::safety::witness::IsWitness W>                     \
+    struct grant_wire_record<grant::evid_name<W>> {                         \
+        static consteval WireOpcode opcode() noexcept {                     \
+            return WireOpcode::opcode_value;                                \
+        }                                                                   \
+        static consteval std::uint16_t payload_size() noexcept { return 0; }\
+        static consteval std::array<std::uint8_t, 0> payload() noexcept     \
+            { return {}; }                                                  \
+    }
+
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(affine_e,                Usage_Affine);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(copy_e,                  Usage_Copy);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(ghost_e,                 Usage_Ghost);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(borrow_e,                Usage_Borrow);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(capability_usage_e,      Usage_Capability);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(upgrade_to_secret_e,     Security_UpgradeSecret);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(repr_c_e,                Repr_C);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(repr_packed_e,           Repr_Packed);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(repr_aligned_e,          Repr_Aligned);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(repr_simd_e,             Repr_Simd);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(repr_atomic_e,           Repr_Atomic);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(observability_visible_e, Observability_Visible);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(complexity_constant_e,   Complexity_Constant);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(complexity_unbounded_e,  Complexity_Unbounded);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(precision_f32_e,         Precision_F32);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(precision_f64_e,         Precision_F64);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(reassociate_e,           Precision_Reassociate);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(space_unbounded_e,       Space_Unbounded);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(overflow_wrap_e,         Overflow_Wrap);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(overflow_saturate_e,     Overflow_Saturate);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(overflow_widen_e,        Overflow_Widen);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(mutable_in_place_e,      Mutation_Mutable);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(append_only_e,           Mutation_AppendOnly);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(monotonic_advance_e,     Mutation_Monotonic);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(reentrant_e,             Reentrancy_Reentrant);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(coroutine_e,             Reentrancy_Coroutine);
+CRUCIBLE_FIXY_WIRE_E_SIMPLE(productive_e,            Size_Productive);
+
+#undef CRUCIBLE_FIXY_WIRE_E_SIMPLE
+
+// Evidenced strict-default ack — forwards to per-dim StrictDefault_*
+// opcode just like its bare counterpart.
+
+template <dim::DimAxis D, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<::crucible::fixy::accept_default_strict_for_e<D, W>> {
+    static consteval WireOpcode opcode() noexcept {
+        return grant_wire_record<::crucible::fixy::accept_default_strict_for<D>>::opcode();
+    }
+    static consteval std::uint16_t payload_size() noexcept { return 0; }
+    static consteval std::array<std::uint8_t, 0> payload() noexcept { return {}; }
+};
+
+// Parametric evidenced wire records — typed-NTTP grants with witness
+// suffix.  Forward to the bare opcode + same payload as base.
+
+template <grant::VendorBackend Backend, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::vendor_backend_e<Backend, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Repr_Vendor; }
+    static consteval std::uint16_t payload_size() noexcept { return 1; }
+    static consteval std::array<std::uint8_t, 1> payload() noexcept {
+        return { static_cast<std::uint8_t>(Backend) };
+    }
+};
+
+template <grant::Tolerance T, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::recipe_tier_e<T, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Repr_Tier; }
+    static consteval std::uint16_t payload_size() noexcept { return 1; }
+    static consteval std::array<std::uint8_t, 1> payload() noexcept {
+        return { static_cast<std::uint8_t>(T) };
+    }
+};
+
+template <grant::TransportTier T, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::transport_tier_e<T, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Repr_Transport; }
+    static consteval std::uint16_t payload_size() noexcept { return 1; }
+    static consteval std::array<std::uint8_t, 1> payload() noexcept {
+        return { static_cast<std::uint8_t>(T) };
+    }
+};
+
+template <grant::ForgePhase P, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::forge_phase_e<P, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Provenance_ForgePhase; }
+    static consteval std::uint16_t payload_size() noexcept { return 1; }
+    static consteval std::array<std::uint8_t, 1> payload() noexcept {
+        return { static_cast<std::uint8_t>(P) };
+    }
+};
+
+template <::crucible::safety::witness::IsWitness W,
+          ::crucible::effects::Effect... Es>
+struct grant_wire_record<grant::with_e<W, Es...>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Effect_With; }
+    static consteval std::uint16_t payload_size() noexcept { return 4; }
+    static consteval std::array<std::uint8_t, 4> payload() noexcept {
+        std::uint32_t bitmap = 0;
+        ((bitmap |= (std::uint32_t{1} << static_cast<unsigned>(Es))), ...);
+        return {
+            static_cast<std::uint8_t>(bitmap & 0xFFu),
+            static_cast<std::uint8_t>((bitmap >> 8) & 0xFFu),
+            static_cast<std::uint8_t>((bitmap >> 16) & 0xFFu),
+            static_cast<std::uint8_t>((bitmap >> 24) & 0xFFu),
+        };
+    }
+};
+
+template <auto N, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::space_bounded_e<N, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Space_Bounded; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t v = static_cast<std::uint64_t>(N);
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((v >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <auto N, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::sized_e<N, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Size_Sized; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t v = static_cast<std::uint64_t>(N);
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((v >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <std::uint32_t V, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::version_e<V, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Version_V; }
+    static consteval std::uint16_t payload_size() noexcept { return 4; }
+    static consteval std::array<std::uint8_t, 4> payload() noexcept {
+        return {
+            static_cast<std::uint8_t>(V & 0xFFu),
+            static_cast<std::uint8_t>((V >> 8) & 0xFFu),
+            static_cast<std::uint8_t>((V >> 16) & 0xFFu),
+            static_cast<std::uint8_t>((V >> 24) & 0xFFu),
+        };
+    }
+};
+
+template <auto N, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::stale_to_e<N, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Staleness_StaleTo; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t v = static_cast<std::uint64_t>(N);
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((v >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <typename T, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::typed_e<T, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Type_Typed; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t h = ::crucible::safety::diag::stable_type_id<T>;
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((h >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <typename Pred, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::refined_with_e<Pred, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Refinement_With; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t h = ::crucible::safety::diag::stable_type_id<Pred>;
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((h >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <typename Proto, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::protocol_session_e<Proto, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Protocol_Session; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t h = ::crucible::safety::diag::stable_type_id<Proto>;
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((h >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <auto RegionTag, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::lifetime_region_e<RegionTag, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Lifetime_Region; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t h = static_cast<std::uint64_t>(
+            ::crucible::safety::diag::stable_type_id<decltype(RegionTag)>);
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((h >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <typename Policy, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::declassify_e<Policy, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Security_Declassify; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t h = ::crucible::safety::diag::stable_type_id<Policy>;
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((h >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <typename SourceTag, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::from_source_e<SourceTag, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Provenance_FromSource; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t h = ::crucible::safety::diag::stable_type_id<SourceTag>;
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((h >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <typename TaintClass, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::sanitize_e<TaintClass, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Provenance_Sanitize; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t h = ::crucible::safety::diag::stable_type_id<TaintClass>;
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((h >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <auto Rationale, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::trust_assumed_e<Rationale, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Trust_Assumed; }
+    static consteval std::uint16_t payload_size() noexcept { return 0; }
+    static consteval std::array<std::uint8_t, 0> payload() noexcept { return {}; }
+};
+
+template <typename TaintClass, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::trust_assumed_for_e<TaintClass, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Trust_AssumedFor; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t h = ::crucible::safety::diag::stable_type_id<TaintClass>;
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((h >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <auto Bound, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::precision_higham_e<Bound, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Precision_Higham; }
+    static consteval std::uint16_t payload_size() noexcept { return 0; }
+    static consteval std::array<std::uint8_t, 0> payload() noexcept { return {}; }
+};
+
+template <auto N, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::complexity_linear_e<N, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Complexity_Linear; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t v = static_cast<std::uint64_t>(N);
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((v >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+template <auto N, ::crucible::safety::witness::IsWitness W>
+struct grant_wire_record<grant::complexity_quadratic_e<N, W>> {
+    static consteval WireOpcode opcode() noexcept { return WireOpcode::Complexity_Quadratic; }
+    static consteval std::uint16_t payload_size() noexcept { return 8; }
+    static consteval std::array<std::uint8_t, 8> payload() noexcept {
+        std::uint64_t v = static_cast<std::uint64_t>(N);
+        std::array<std::uint8_t, 8> out{};
+        for (std::size_t i = 0; i < 8; ++i) {
+            out[i] = static_cast<std::uint8_t>((v >> (i * 8)) & 0xFFu);
+        }
+        return out;
+    }
+};
+
+}  // namespace detail
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-G9: witness tier opcode mapping ───────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+namespace detail {
+
+// Per-witness-type → witness opcode dispatch.  Tier-only — concrete
+// IDs are not wire-material at the grade level.
+template <typename W>
+struct witness_wire_opcode;
+
+template <typename R>
+struct witness_wire_opcode<::crucible::safety::witness::Asserted<R>> {
+    static consteval WireOpcode value() noexcept { return WireOpcode::Witness_Asserted; }
+};
+
+template <auto Id>
+struct witness_wire_opcode<::crucible::safety::witness::Tested<Id>> {
+    static consteval WireOpcode value() noexcept { return WireOpcode::Witness_Tested; }
+};
+
+template <auto Id>
+struct witness_wire_opcode<::crucible::safety::witness::CrossValidated<Id>> {
+    static consteval WireOpcode value() noexcept { return WireOpcode::Witness_CrossValidated; }
+};
+
+template <typename P>
+struct witness_wire_opcode<::crucible::safety::witness::FormallyVerified<P>> {
+    static consteval WireOpcode value() noexcept { return WireOpcode::Witness_FormallyVerified; }
+};
+
+// PlatformBounded — the wire form forwards to the underlying witness
+// tier opcode.  Platform-aware enforcement happens at the consumer's
+// `witness_tier_v` query (which DOES account for active platform),
+// not at the wire layer; the wire byte is purely the declared tier.
+template <typename W, typename... Platforms>
+struct witness_wire_opcode<::crucible::safety::witness::PlatformBounded<W, Platforms...>> {
+    static consteval WireOpcode value() noexcept {
+        return witness_wire_opcode<W>::value();
+    }
+};
+
 }  // namespace detail
 
 // ═════════════════════════════════════════════════════════════════════
@@ -696,7 +1086,10 @@ struct grant_wire_record<grant::precision_higham<Bound>> {
 
 namespace detail {
 
-// Total encoded size: 2 bytes prefix + 20 × (2+2+payload_size).
+// Total encoded size:
+//   2 bytes prefix (opcode_count = 2*N for grants+witness pairs)
+// + N × (4 + grant_payload_size)        // grant record
+// + N × 4                                // witness record (zero payload)
 template <typename F>
 struct wire_size_impl;
 
@@ -705,7 +1098,8 @@ struct wire_size_impl<::crucible::fixy::fn<T, Grants...>> {
     static consteval std::size_t compute() noexcept {
         std::size_t total = 2;  // opcode_count prefix
         ((total += std::size_t{4}
-                 + static_cast<std::size_t>(grant_wire_record<Grants>::payload_size())),
+                 + static_cast<std::size_t>(grant_wire_record<Grants>::payload_size())
+                 + std::size_t{4}),    // witness opcode record (4 bytes, zero payload)
          ...);
         return total;
     }
@@ -742,6 +1136,7 @@ wire_encode_impl(std::span<std::uint8_t> buf) noexcept
 {
     std::size_t offset = 2;
     auto emit = [&]<typename G>() constexpr {
+        // Grant record.
         using R = grant_wire_record<G>;
         write_u16(buf, offset, static_cast<std::uint16_t>(R::opcode()));
         write_u16(buf, offset + 2, R::payload_size());
@@ -751,9 +1146,16 @@ wire_encode_impl(std::span<std::uint8_t> buf) noexcept
             buf[offset + i] = p[i];
         }
         offset += R::payload_size();
+        // FIXY-G9: witness record (4 bytes, zero payload).
+        using W = typename G::witness_t;
+        write_u16(buf, offset,
+            static_cast<std::uint16_t>(witness_wire_opcode<W>::value()));
+        write_u16(buf, offset + 2, 0);
+        offset += 4;
     };
     (emit.template operator()<Grants>(), ...);
-    write_u16(buf, 0, static_cast<std::uint16_t>(sizeof...(Grants)));
+    // Opcode count = 2 * sizeof...(Grants) — grant + witness per pack member.
+    write_u16(buf, 0, static_cast<std::uint16_t>(2 * sizeof...(Grants)));
     return offset;
 }
 
@@ -800,7 +1202,8 @@ wire_decode_impl(std::span<const std::uint8_t> buf) noexcept
         return std::unexpected(WireGradeError::BufferTooSmall);
     }
     const std::uint16_t opcode_count = read_u16(buf, 0);
-    if (opcode_count != static_cast<std::uint16_t>(sizeof...(Grants))) {
+    // FIXY-G9: each grant emits TWO opcodes (grant + witness).
+    if (opcode_count != static_cast<std::uint16_t>(2 * sizeof...(Grants))) {
         return std::unexpected(WireGradeError::BadOpcodeCount);
     }
     std::size_t offset = 2;
@@ -808,6 +1211,7 @@ wire_decode_impl(std::span<const std::uint8_t> buf) noexcept
     bool ok = true;
     auto check = [&]<typename G>() constexpr {
         if (!ok) return;
+        // ── Grant record ───────────────────────────────────────────
         using R = grant_wire_record<G>;
         const std::uint16_t opcode = read_u16(buf, offset);
         const std::uint16_t pls    = read_u16(buf, offset + 2);
@@ -831,6 +1235,31 @@ wire_decode_impl(std::span<const std::uint8_t> buf) noexcept
             }
         }
         offset += R::payload_size();
+
+        // ── Witness record (FIXY-G9) ───────────────────────────────
+        using W = typename G::witness_t;
+        const std::uint16_t w_opcode = read_u16(buf, offset);
+        const std::uint16_t w_pls    = read_u16(buf, offset + 2);
+        const std::uint16_t expected_w =
+            static_cast<std::uint16_t>(witness_wire_opcode<W>::value());
+        if (w_opcode < 0x8000) {
+            // Witness opcode slot occupied by a non-witness opcode —
+            // wire was produced by a pre-G9 encoder OR is corrupt.
+            ok = false;
+            out_err = WireGradeError::WitnessFloor;
+            return;
+        }
+        if (w_opcode != expected_w) {
+            ok = false;
+            out_err = WireGradeError::WitnessFloor;
+            return;
+        }
+        if (w_pls != 0) {
+            ok = false;
+            out_err = WireGradeError::PayloadSizeWrong;
+            return;
+        }
+        offset += 4;
     };
     (check.template operator()<Grants>(), ...);
     if (!ok) return std::unexpected(out_err);
@@ -861,6 +1290,7 @@ wire_grade_error_name(WireGradeError e) noexcept
         case WireGradeError::GradeMismatch:    return "GradeMismatch";
         case WireGradeError::PayloadSizeWrong: return "PayloadSizeWrong";
         case WireGradeError::TruncatedPayload: return "TruncatedPayload";
+        case WireGradeError::WitnessFloor:     return "WitnessFloor";
         default:                                return "<unknown WireGradeError>";
     }
 }

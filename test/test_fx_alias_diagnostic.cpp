@@ -65,15 +65,22 @@ void test_catalog_indices_for_fx_alias_tags() {
     static_assert(diag::category_of_v<diag::DivergenceBudgetViolation>
                   == diag::Category::DivergenceBudgetViolation);
 
-    // StateBudgetViolation at index 24 — the catalog's last entry.
+    // StateBudgetViolation at index 24.
     static_assert(std::is_same_v<
         diag::tag_of_t<diag::Category::StateBudgetViolation>,
         diag::StateBudgetViolation>);
     static_assert(diag::category_of_v<diag::StateBudgetViolation>
                   == diag::Category::StateBudgetViolation);
 
-    EXPECT_TRUE(diag::catalog_size == 25);
-    EXPECT_TRUE(static_cast<std::size_t>(diag::Category::StateBudgetViolation)
+    // InsufficientWitness at index 25 — the catalog's last entry (FIXY-G9).
+    static_assert(std::is_same_v<
+        diag::tag_of_t<diag::Category::InsufficientWitness>,
+        diag::InsufficientWitness>);
+    static_assert(diag::category_of_v<diag::InsufficientWitness>
+                  == diag::Category::InsufficientWitness);
+
+    EXPECT_TRUE(diag::catalog_size == 26);
+    EXPECT_TRUE(static_cast<std::size_t>(diag::Category::InsufficientWitness)
                 == diag::catalog_size - 1);
 }
 

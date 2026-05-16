@@ -704,6 +704,27 @@ struct StateBudgetViolation : tag_base {
         "AllRow includes the context-tag atoms.";
 };
 
+// ── 26. InsufficientWitness (FIXY-G9) ──────────────────────────────
+struct InsufficientWitness : tag_base {
+    static constexpr std::string_view name = "InsufficientWitness";
+    static constexpr std::string_view description =
+        "A binding's proof-relevance witness is below the floor demanded "
+        "by a downstream consumer.  Witness lattice: Asserted ⊑ Tested "
+        "⊑ CrossValidated ⊑ FormallyVerified.  Downstream consumers "
+        "(Cipher hot-tier promotion, Federation peering, AdaptiveScheduler "
+        "hot-path admission) require a minimum witness tier per axis; "
+        "bindings with weaker witness are refused.  See "
+        "safety/witness/Witness.h for the four-tier hierarchy.";
+    static constexpr std::string_view remediation =
+        "Either upgrade the binding's witness tier on the offending "
+        "axis by switching to a `cg::*_e<W>` evidenced grant variant "
+        "with a stronger W (e.g., grant::reentrant → grant::reentrant_e"
+        "<Tested<test_id>>), OR loosen the consumer's witness-floor "
+        "demand if the weaker tier is acceptable for this consumer.  "
+        "Tested<id> references safety/diag/TestRegistry.h entries; "
+        "CrossValidated<id> references safety/diag/CiRunRegistry.h.";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_diagnostic_class_v<T> ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -853,6 +874,7 @@ inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 //   [22] PureFunctionViolation       (FOUND-E18)
 //   [23] DivergenceBudgetViolation   (FOUND-E18)
 //   [24] StateBudgetViolation        (FOUND-E18)
+//   [25] InsufficientWitness         (FIXY-G9)
 
 using Catalog = std::tuple<
     EffectRowMismatch,        //  0
@@ -879,7 +901,8 @@ using Catalog = std::tuple<
     RecipeSpecMismatch,       // 21
     PureFunctionViolation,    // 22
     DivergenceBudgetViolation,// 23
-    StateBudgetViolation      // 24
+    StateBudgetViolation,     // 24
+    InsufficientWitness       // 25
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
@@ -933,6 +956,7 @@ enum class Category : std::uint8_t {
     PureFunctionViolation    = 22,
     DivergenceBudgetViolation= 23,
     StateBudgetViolation     = 24,
+    InsufficientWitness      = 25,
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1077,6 +1101,7 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::PureFunctionViolation:    return PureFunctionViolation::name;
         case Category::DivergenceBudgetViolation:return DivergenceBudgetViolation::name;
         case Category::StateBudgetViolation:     return StateBudgetViolation::name;
+        case Category::InsufficientWitness:      return InsufficientWitness::name;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1108,6 +1133,7 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::PureFunctionViolation:    return PureFunctionViolation::description;
         case Category::DivergenceBudgetViolation:return DivergenceBudgetViolation::description;
         case Category::StateBudgetViolation:     return StateBudgetViolation::description;
+        case Category::InsufficientWitness:      return InsufficientWitness::description;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1139,6 +1165,7 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::PureFunctionViolation:    return PureFunctionViolation::remediation;
         case Category::DivergenceBudgetViolation:return DivergenceBudgetViolation::remediation;
         case Category::StateBudgetViolation:     return StateBudgetViolation::remediation;
+        case Category::InsufficientWitness:      return InsufficientWitness::remediation;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1319,10 +1346,11 @@ static_assert(diagnostic_name_v<user_defined_tag> == "UserDefinedTag");
 // same integer value.  The bijection self-test below asserts both in
 // lock step.
 
-static_assert(catalog_size == 25,
-    "Catalog cardinality drifted from the 25-tag inventory "
-    "(22 wrapper-axis + 3 F* alias) — confirm the new tag was "
-    "added to Catalog AND to Category at the same integer index.");
+static_assert(catalog_size == 26,
+    "Catalog cardinality drifted from the 26-tag inventory "
+    "(22 wrapper-axis + 3 F* alias + 1 witness FIXY-G9) — confirm "
+    "the new tag was added to Catalog AND to Category at the same "
+    "integer index.");
 
 // ─── Catalog ↔ Category bijection ─────────────────────────────────
 //
@@ -1512,7 +1540,7 @@ static_assert(categories_v.size() == catalog_size,
     "categories_v cardinality drifted from catalog_size — both must "
     "track the same source of truth.");
 static_assert(categories_v[0] == Category::EffectRowMismatch);
-static_assert(categories_v[catalog_size - 1] == Category::StateBudgetViolation);
+static_assert(categories_v[catalog_size - 1] == Category::InsufficientWitness);
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool categories_array_matches_enum_impl(
