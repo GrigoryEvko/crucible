@@ -35,6 +35,47 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # first directory opts in via a separate PR).  Reviewers ADD a
 # path here when they want the discipline enforced for new files
 # in that subtree.
+#
+# ── Opt-in criteria (canonical, durable record) ──────────────────
+#
+# A directory qualifies as a FIXY_ONLY opt-in candidate when ALL
+# four conditions hold simultaneously.  These criteria live HERE
+# rather than in a doc because the script is the canonical record
+# of which-dirs-are-policed; the doc drifts, the script does not.
+#
+#   (a) GREENFIELD.  The directory was created AFTER 17 May 2026
+#       (fixy ship date — misc/16_05_2026_fixy.md §5).  Pre-fixy
+#       directories carry pre-fixy code that uses raw safety::*
+#       legitimately; forcing migration creates churn without
+#       discipline gain.
+#
+#   (b) LOW FILE COUNT.  ≤ 5 headers + ≤ 5 sources in the subtree.
+#       Opt-in adds a CI gate; large subtrees turn a discipline
+#       improvement into a many-file refactor with attendant
+#       review/merge friction.
+#
+#   (c) AT-LEAST-ONE REAL VIOLATION.  Running the linter on the
+#       directory BEFORE adding it must surface at least one raw
+#       `safety::fn::Fn<...>` use site (or alias/using evasion).
+#       Opting in a directory that's already fixy-clean is a no-op
+#       — the value of the gate is that it CATCHES a violation,
+#       not that it sits there checking nothing.
+#
+#   (d) AUTHOR CONSENSUS.  The directory's primary author (per
+#       `git log --format='%an' <dir>` top hitter) has acknowledged
+#       the band-3 classification (misc/16_05_2026_fixy.md §5.1).
+#       Code is going to be edited under the discipline; the
+#       authors should know that the discipline applies.
+#
+# When all four hold: add the directory path to FIXY_ONLY_DIRS,
+# fix the violations the linter reports (do NOT add the path and
+# leave the build red — the linter is a gate, not a backlog), and
+# commit both moves as a single PR.
+#
+# As of this script's ship date, NO directory in include/crucible/
+# satisfies (a) ∧ (b) ∧ (c) — fixy/ itself is the only post-fixy
+# header tree, but it's exempt by definition (it IS the substrate
+# the discipline composes against; see EXEMPT_PREFIXES below).
 FIXY_ONLY_DIRS=(
     # examples/fixy           — already uses fixy::fn exclusively;
     #                           leave unlisted because the existing
@@ -82,26 +123,75 @@ is_in_fixy_only_dir() {
 
 # ── Forbidden patterns ──────────────────────────────────────────
 #
-# `safety::fn::Fn<` — direct instantiation of the substrate template.
-# `safety::fn::mint_fn<` / `safety::fn::mint_fn_for<` — substrate
-# mint factories that bypass fixy's IsAccepted gate.
+# (1) Direct qualified use:
+#       safety::fn::Fn<        — direct instantiation
+#       safety::fn::mint_fn<   — substrate token-mint (bypass IsAccepted)
+#       safety::fn::mint_fn_for<
+#
+# (2) Namespace alias evasion:
+#       namespace sf = crucible::safety::fn;
+#       namespace sf = ::crucible::safety::fn;
+#       namespace sf = safety::fn;
+#     Authors who establish such an alias then write `sf::Fn<...>` —
+#     the alias declaration IS the violation; we flag the declaration
+#     site so reviewers fix it before any sf::Fn use appears.
+#
+# (3) `using` declaration evasion:
+#       using crucible::safety::fn::Fn;
+#       using safety::fn::Fn;
+#     Same logic — the using-declaration is the entry point.
+#
+# We use ripgrep's `--pcre2` flag and alternation across the three
+# patterns.  All three patterns are anchored to `safety::fn::` so
+# unrelated code that mentions `safety::` for diagnostics or sources
+# stays clean.
 
-PATTERN='safety::fn::(Fn|mint_fn|mint_fn_for)<'
+PATTERN_DIRECT='safety::fn::(Fn|mint_fn|mint_fn_for)<'
+PATTERN_NSALIAS='namespace\s+\w+\s*=\s*(::)?(crucible::)?safety::fn\s*;'
+PATTERN_USING='using\s+(::)?(crucible::)?safety::fn::(Fn|mint_fn|mint_fn_for)\s*;'
+PATTERN="(${PATTERN_DIRECT})|(${PATTERN_NSALIAS})|(${PATTERN_USING})"
 
 mode="${1:---check}"
 
 if [[ "$mode" == "--self-test" ]]; then
-    # Plant a synthetic match in a tmp file; verify the regex fires.
+    # Plant each evasion in its own synthetic file; verify every
+    # pattern variant fires.  A failing self-test means a ripgrep
+    # version regression OR the regex drifted.
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
-    printf 'auto x = safety::fn::Fn<int, /*grants*/>{};\n' > "$tmp/synthetic.cpp"
 
-    if rg -n --no-heading "$PATTERN" "$tmp/synthetic.cpp" > /dev/null; then
-        printf 'fixy_discipline: self-test OK — pattern fires on synthetic raw substrate use\n'
+    # (1) Direct use
+    printf 'auto x = safety::fn::Fn<int>{};\n' > "$tmp/01_direct.cpp"
+    # (1b) Direct mint
+    printf 'auto y = safety::fn::mint_fn<int>(0);\n' > "$tmp/02_mint.cpp"
+    # (2) Namespace alias (3 spellings)
+    printf 'namespace sf = safety::fn;\n' > "$tmp/03_alias_short.cpp"
+    printf 'namespace sf = crucible::safety::fn;\n' > "$tmp/04_alias_med.cpp"
+    printf 'namespace sf = ::crucible::safety::fn;\n' > "$tmp/05_alias_full.cpp"
+    # (3) Using-declaration
+    printf 'using safety::fn::Fn;\n' > "$tmp/06_using.cpp"
+    printf 'using crucible::safety::fn::mint_fn;\n' > "$tmp/07_using_full.cpp"
+    # (negative) — should NOT fire on safety:: alone (only safety::fn::*)
+    printf 'safety::Linear<int> z;\n' > "$tmp/08_unrelated_safety.cpp"
+
+    fail=0
+    for f in "$tmp"/0[1-7]_*.cpp; do
+        if ! rg -n --no-heading --pcre2 "$PATTERN" "$f" > /dev/null; then
+            printf 'fixy_discipline: self-test FAILED — pattern missed %s\n' \
+                "$(basename "$f")" >&2
+            fail=1
+        fi
+    done
+    if rg -n --no-heading --pcre2 "$PATTERN" "$tmp/08_unrelated_safety.cpp" > /dev/null; then
+        printf 'fixy_discipline: self-test FAILED — pattern fires on unrelated safety:: use\n' >&2
+        fail=1
+    fi
+
+    if [[ "$fail" -eq 0 ]]; then
+        printf 'fixy_discipline: self-test OK — 7 evasion shapes detected, 1 unrelated case spared\n'
         exit 0
     else
-        printf 'fixy_discipline: self-test FAILED — pattern did not match expected raw substrate use\n' >&2
-        printf '  (likely a ripgrep version regression, or the regex was edited without updating the self-test)\n' >&2
+        printf 'fixy_discipline: self-test FAILED — regex drift; review check-fixy-discipline.sh PATTERN_*\n' >&2
         exit 1
     fi
 fi

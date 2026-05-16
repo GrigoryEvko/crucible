@@ -58,6 +58,32 @@
 
 #define CRUCIBLE_FIXY 1
 
+// ─── Ergonomic top-level aliases ────────────────────────────────────
+//
+// Tighten the common consumer path: `fixy::theory_matches<F>()` and
+// `fixy::theory_cite_hash_v<E>` instead of the verbose
+// `fixy::theory::which_pattern_matches<F>()` / `theory::theory_cite_hash_v<E>`.
+// The theory namespace stays the canonical home; these aliases are
+// surface ergonomics for production call sites.
+
+namespace crucible::fixy {
+
+// Short-form alias for the theory matcher.  Returns the first matching
+// corpus entry's cite, or empty string_view when no §30.14 pattern fires.
+template <typename F>
+[[nodiscard]] consteval auto theory_matches() noexcept {
+    return theory::which_pattern_matches<F>();
+}
+
+// Short-form alias for cite-hash federation key contribution.
+template <typename Entry>
+inline constexpr auto theory_cite_hash_v = theory::theory_cite_hash_v<Entry>;
+
+// Short-form alias for corpus cardinality.
+inline constexpr auto theory_corpus_size_v = theory::corpus_size_v;
+
+}  // namespace crucible::fixy
+
 // ─── Version stamp ──────────────────────────────────────────────────
 //
 // Major: load-bearing surface change (new dim, removed dim, stance
@@ -66,5 +92,5 @@
 // Patch: bug fix, doc-comment edit, internal refactor.
 
 #define CRUCIBLE_FIXY_VERSION_MAJOR 0
-#define CRUCIBLE_FIXY_VERSION_MINOR 4  // 0.4.0: Phase A + B + C + D (Profile + Theory)
+#define CRUCIBLE_FIXY_VERSION_MINOR 5  // 0.5.0: theory matcher + cite_hash + strict_fn/sketch_fn pins
 #define CRUCIBLE_FIXY_VERSION_PATCH 0

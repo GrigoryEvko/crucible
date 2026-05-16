@@ -221,8 +221,11 @@ static_assert(BoundCipherWriter::version_v == 1,
 // does NOT match any unsoundness pattern (the corpus's known shapes
 // are M012 / N002 / S010 / S011 / I002 — none of which involve
 // Append-only Mutation).
-namespace ct = crucible::fixy::theory;
-static_assert(ct::which_pattern_matches<
+//
+// Short-form: `cf::theory_matches<F>()` aliases
+// `crucible::fixy::theory::which_pattern_matches<F>()` via the
+// umbrella ergonomic re-export.
+static_assert(cf::theory_matches<
     typename BoundCipherWriter::underlying_fn_t>().empty(),
     "Cipher writer binding must not match any §30.14 corpus entry — "
     "a positive match here would indicate the binding has drifted "
