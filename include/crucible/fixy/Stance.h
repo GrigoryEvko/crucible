@@ -75,6 +75,7 @@
 #include <crucible/fixy/AllStrict.h>
 #include <crucible/fixy/Fn.h>
 #include <crucible/fixy/Grant.h>
+#include <crucible/fixy/Modality.h>
 #include <crucible/fixy/Reject.h>
 
 #include <tuple>
@@ -173,6 +174,22 @@ struct compose {
         "at the author site (split into two compose calls, OR reach "
         "for stance::compose_no_dedup if the last-write-wins intent "
         "is explicit).");
+    // Followup B: stance::compose now enforces R018 (Frame×Declares
+    // consistency) over the NewGrants pack at the compose call site
+    // — BEFORE the final fn<> aggregator runs.  A Frame-modality grant
+    // (e.g., cg::reentrant) added alongside a Declares-modality grant
+    // engaging the same axis is rejected here.  Pre-Followup R018 was
+    // a placeholder that only fired at the final fn<>; post-Followup
+    // R018 catches the inconsistency at the compose call site so the
+    // diagnostic surfaces closer to the author's intent.
+    static_assert(::crucible::fixy::frame_declares_consistency_v<NewGrants...>,
+        "stance::compose<Base, NewGrants...> rejects: the NewGrants "
+        "pack carries a Frame-modality grant and a Declares-modality "
+        "grant engaging the same axis (R018 — modality-class collision).  "
+        "Frame says 'invariant of the value'; Declares says 'binding "
+        "PRODUCES the property'.  The two claims are categorically "
+        "incompatible.  Pick one — keep Frame OR Declares — and resolve "
+        "the intent at the author site.");
     using type = typename detail::compose_fold<Base, NewGrants...>::type;
 };
 

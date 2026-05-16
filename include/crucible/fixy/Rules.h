@@ -202,27 +202,46 @@ struct fn_pack_traits<::crucible::fixy::fn<T, Grants...>> {
     static constexpr std::size_t count_axis_modality_v =
         (static_cast<std::size_t>(grant_axis_modality_v<Grants, Axis, MC>)
             + ... + std::size_t{0});
+
+    // FIXY-G10 Followup A: per-RegionTag aliasing check.  Two Linear-
+    // modality grants engaging different region tags compose cleanly
+    // (CSL frame rule: disjoint permissions); ONLY same-tag pairs are
+    // aliased and rejected.  Delegates to
+    // ::crucible::fixy::same_region_tag_aliased_v over the pack.
+    static constexpr bool same_region_aliased_v =
+        ::crucible::fixy::same_region_tag_aliased_v<Grants...>;
+
+    // FIXY-G10 Followup B: Frame×Declares consistency.  Delegates to
+    // ::crucible::fixy::frame_declares_consistency_v over the pack.
+    // True iff no axis has both Frame and Declares engagements.
+    static constexpr bool frame_declares_ok_v =
+        ::crucible::fixy::frame_declares_consistency_v<Grants...>;
 };
 
 }  // namespace detail
 
-// R017: any binding with two-or-more Linear-modality grants on
-// dim::Lifetime is rejected.
+// R017 (Followup A): a binding is rejected iff two-or-more Linear-
+// modality grants on dim::Lifetime engage the SAME RegionTag NTTP.
+// Different-tag combinations (disjoint permissions per CSL frame rule)
+// now compile cleanly.  Pre-followup R017 over-rejected; post-followup
+// R017 catches exactly the structural alias.
 template <typename F>
 inline constexpr bool R017_no_linear_alias_v =
     ::crucible::fixy::IsFixyFn<F> &&
-    (detail::fn_pack_traits<std::remove_cvref_t<F>>::template
-        count_axis_modality_v<::crucible::fixy::dim::Lifetime,
-                              ::crucible::fixy::ModalityClass::Linear> <= 1);
+    !(detail::fn_pack_traits<std::remove_cvref_t<F>>::same_region_aliased_v);
 
-// R018: a binding cannot have BOTH Frame and Declares on the same
-// dim.  The fn<...> reject-by-default discipline already requires
-// exactly one engaging grant per dim — so R018 is a structural
-// invariant that the discipline maintains.  Surfaced here as a
-// queryable predicate for production tooling that wants to verify it.
+// R018 (Followup B): a binding cannot have BOTH Frame and Declares on
+// the same dim.  Pre-followup R018 was a placeholder that always
+// returned true on well-formed fn<> instantiations (exactly-one
+// engagement per dim is structurally maintained by fn<>'s
+// reject-by-default discipline).  Post-followup R018 delegates to
+// frame_declares_consistency_v, which scans the entire Grants pack —
+// catching cases where a stance::compose intermediate violates the
+// consistency invariant before reaching the final fn<> aggregator.
 template <typename F>
 inline constexpr bool R018_frame_declares_consistency_v =
-    ::crucible::fixy::IsFixyFn<F>;
+    ::crucible::fixy::IsFixyFn<F> &&
+    detail::fn_pack_traits<std::remove_cvref_t<F>>::frame_declares_ok_v;
 
 // FIXY-G10 self-tests are exercised at the production call sites in
 // test_fixy_modality.cpp + the worked example.

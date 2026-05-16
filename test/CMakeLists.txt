@@ -1294,13 +1294,27 @@ crucible_neg_compile_fixy_test(neg_fixy_witness_wire_decode_mismatch
 
 # ── FIXY-G10 — Modality classification discipline fixtures ──────────
 crucible_neg_compile_fixy_test(neg_fixy_rule_R017_linear_alias
-    "R017|Linear|frame rule")
+    "R017|Linear|frame rule|RegionTag")
 crucible_neg_compile_fixy_test(neg_fixy_modality_misclassified
     "ModalityMismatch|Declares|mutable_in_place")
 crucible_neg_compile_fixy_test(neg_fixy_modality_quotient_collision
     "engage the same dim|ModalityMismatch|Quotient|dims_all_distinct")
 crucible_neg_compile_fixy_test(neg_fixy_modality_frame_vs_declares
     "ModalityMismatch|Declares|Frame|same class")
+
+# ── Commit 1 (G9/G10 followups) — 4 new HS14 fixtures ───────────────
+# Followup A: R017 per-RegionTag precision.
+crucible_neg_compile_fixy_test(neg_fixy_rule_R017_same_region_tag_alias
+    "R017|Linear|RegionTag|frame rule")
+# Followup B: R018 teeth on stance::compose paths.
+crucible_neg_compile_fixy_test(neg_fixy_rule_R018_stance_compose_frame_declares
+    "R018|Frame.*Declares|frame_declares_consistency|modality-class collision")
+# Followup C: TestRegistry / CiRunRegistry entries + is_valid_witness_v.
+crucible_neg_compile_fixy_test(neg_fixy_witness_registry_revoked
+    "is_valid_witness|RequiresValidTestedFloor|Revoked|revoked")
+# Followup D: MultiplatformWitness aggregation rejects out-of-pack platforms.
+crucible_neg_compile_fixy_test(neg_fixy_witness_multiplatform_aggregation
+    "claims_on_platform|MultiplatformWitness|RISCV|ClaimsTestedOnPlatform")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound

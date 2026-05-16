@@ -157,6 +157,49 @@ static_assert(cr::R017_no_linear_alias_v<OneLinearFn>,
 static_assert(cr::R018_frame_declares_consistency_v<OneLinearFn>,
     "Single-engagement-per-dim must pass R018.");
 
+// Followup A: two Linear-modality grants on DIFFERENT region tags
+// declare two disjoint Permission tokens — CSL frame rule says they
+// compose cleanly.  Pre-Followup R017 over-rejected this; post-Followup
+// R017 admits it.
+using TwoDisjointRegionsFn = cf::fn<int,
+    cf::accept_default_strict_for<cd::Type>,
+    cf::accept_default_strict_for<cd::Refinement>,
+    cf::accept_default_strict_for<cd::Usage>,
+    cf::accept_default_strict_for<cd::Effect>,
+    cf::accept_default_strict_for<cd::Security>,
+    cf::accept_default_strict_for<cd::Protocol>,
+    cg::lifetime_region<0>,                            // Linear on tag 0
+    cg::lifetime_region<1>,                            // Linear on tag 1 — disjoint
+    cf::accept_default_strict_for<cd::Provenance>,
+    cf::accept_default_strict_for<cd::Trust>,
+    cf::accept_default_strict_for<cd::Representation>,
+    cf::accept_default_strict_for<cd::Observability>,
+    cf::accept_default_strict_for<cd::Complexity>,
+    cf::accept_default_strict_for<cd::Precision>,
+    cf::accept_default_strict_for<cd::Space>,
+    cf::accept_default_strict_for<cd::Overflow>,
+    cf::accept_default_strict_for<cd::Mutation>,
+    cf::accept_default_strict_for<cd::Reentrancy>,
+    cf::accept_default_strict_for<cd::Size>,
+    cf::accept_default_strict_for<cd::Version>,
+    cf::accept_default_strict_for<cd::Staleness>
+>;
+
+static_assert(cr::R017_no_linear_alias_v<TwoDisjointRegionsFn>,
+    "Followup A: two Linear-modality grants on DIFFERENT region tags "
+    "must pass R017 — CSL frame rule allows disjoint permissions to "
+    "compose.");
+
+// Followup A: same-region alias detection at the predicate level.
+static_assert(cf::same_region_tag_aliased_v<
+    cg::lifetime_region<0>, cg::lifetime_region<0>>);
+static_assert(!cf::same_region_tag_aliased_v<
+    cg::lifetime_region<0>, cg::lifetime_region<1>>);
+
+// Followup B: frame_declares_consistency_v on a clean stance.
+static_assert(cf::frame_declares_consistency_v<
+    cg::reentrant, cg::mutable_in_place>);
+
 }  // namespace
 
 int main() {
