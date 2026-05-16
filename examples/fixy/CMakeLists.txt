@@ -7,17 +7,25 @@
 # every dim either relaxed via a `grant::*` tag or explicitly
 # acknowledged-as-strict via `accept_default_strict_for<dim::X>`.
 #
-# Phase B ships ONE worked example:
+# Phase B + E ship FIVE worked examples — one per
+# examples/fn/example_*.cpp:
 #
-#   1. example_custom_kernel  — user-supplied compute kernel, the
-#                               reject-by-default analogue of
-#                               examples/fn/example_custom_kernel.cpp
+#   1. example_fixy_custom_kernel       — user-supplied compute kernel
+#                                         (Phase B / FIXY-B5)
+#   2. example_fixy_custom_optimizer    — Adam optimizer step
+#                                         (Phase E / FIXY-E)
+#   3. example_fixy_cntp_frame          — untrusted wire frame retag
+#                                         (Phase E / FIXY-E)
+#   4. example_fixy_forge_phase         — Forge phase D FUSE
+#                                         (Phase E / FIXY-E)
+#   5. example_fixy_mimic_backend_hook  — Mimic NV SASS emit
+#                                         (Phase E / FIXY-E)
 #
-# Phase C will add the remaining four (optimizer, CNTP frame, Forge
-# phase, Mimic backend hook) using the 8-stance canonical pre-baked
-# packs from fixy/Stance.h so the production surface for greenfield
-# Crucible headers is one `cs::mint_fn_for<cs::BgWorker>(...)` call,
-# not 20 hand-tagged dim engagements.
+# Each example is the reject-by-default analogue of its
+# examples/fn/example_*.cpp peer.  Both forms compile under the
+# project's full warning+contract+reflection matrix; reading them
+# side-by-side surfaces the 20-axis grade vector explicitly (fixy)
+# vs positionally (substrate).
 #
 # Each example is BOTH a build target (compiles under full warning
 # matrix + contracts + reflection — a regression in fixy/Fn.h's
@@ -37,3 +45,7 @@ function(crucible_fixy_example name)
 endfunction()
 
 crucible_fixy_example(example_fixy_custom_kernel)
+crucible_fixy_example(example_fixy_custom_optimizer)
+crucible_fixy_example(example_fixy_cntp_frame)
+crucible_fixy_example(example_fixy_forge_phase)
+crucible_fixy_example(example_fixy_mimic_backend_hook)
