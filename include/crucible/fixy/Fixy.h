@@ -47,6 +47,7 @@
 #include <crucible/fixy/Contract.h>
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
+#include <crucible/fixy/Federation.h>
 #include <crucible/fixy/Flow.h>
 #include <crucible/fixy/Fn.h>
 #include <crucible/fixy/Grant.h>

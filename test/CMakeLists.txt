@@ -237,6 +237,10 @@ set_tests_properties(test_fixy_call_with_perm PROPERTIES LABELS "fixy")
 crucible_test(test_fixy_flow)
 set_tests_properties(test_fixy_flow PROPERTIES LABELS "fixy")
 
+# ── FIXY-G7 — Federation grade-intersection sentinel TU ─────────────
+crucible_test(test_fixy_federation)
+set_tests_properties(test_fixy_federation PROPERTIES LABELS "fixy")
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1263,6 +1267,12 @@ crucible_neg_compile_fixy_test(neg_fixy_flow_provenance_laundering
     "FlowMismatch|FlowOk|provenance|sanitize")
 crucible_neg_compile_fixy_test(neg_fixy_flow_trust_under_federate
     "FlowMismatch|FlowOk|trust")
+
+# ── FIXY-G7 — Federation grade-intersection discipline fixtures ─────
+crucible_neg_compile_fixy_test(neg_fixy_federation_empty_intersection
+    "FederationEmpty|FederationCompatible|no shared")
+crucible_neg_compile_fixy_test(neg_fixy_federation_recipe_tier_disjoint
+    "FederationEmpty|FederationCompatible|disjoint|Vendor")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
