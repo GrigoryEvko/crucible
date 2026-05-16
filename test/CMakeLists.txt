@@ -205,6 +205,14 @@ crucible_test(test_fixy_aliases)
 crucible_test(test_fixy_profile)
 crucible_test(test_fixy_theory)
 
+# ── FIXY-G8 — runtime grade reflection sentinel TU ──────────────────
+#
+# Pin reflect_grade<F>() + stable_grade_hash<F> against 4 worked-example
+# binding shapes (AllStrict, CntpFrame, MimicHook, AllStrictDouble).
+# See include/crucible/fixy/Reflect.h.
+crucible_test(test_fixy_reflect)
+set_tests_properties(test_fixy_reflect PROPERTIES LABELS "fixy")
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1185,6 +1193,12 @@ crucible_neg_compile_fixy_test(neg_fixy_compose_same_dim_twice
     "two NewGrants.*engage the same dim|dims_all_distinct")
 crucible_neg_compile_fixy_test(neg_fixy_mint_extra_conflict
     "two NewGrants.*engage the same dim|dims_all_distinct")
+
+# ── FIXY-G8 — reflect_grade / stable_grade_hash discipline fixtures ──
+crucible_neg_compile_fixy_test(neg_fixy_reflect_grade_non_fn
+    "requires F to be a fixy::fn|IsFixyFn")
+crucible_neg_compile_fixy_test(neg_fixy_stable_grade_hash_requires_engaged
+    "FixyNotEngaged_Staleness")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound

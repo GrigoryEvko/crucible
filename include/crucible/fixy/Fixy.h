@@ -49,6 +49,7 @@
 #include <crucible/fixy/Grant.h>
 #include <crucible/fixy/Mach.h>
 #include <crucible/fixy/Profile.h>
+#include <crucible/fixy/Reflect.h>
 #include <crucible/fixy/Reject.h>
 #include <crucible/fixy/Resolve.h>
 #include <crucible/fixy/Rules.h>
