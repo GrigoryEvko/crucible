@@ -15,10 +15,14 @@
 //
 // Probe inventory:
 //   #1 Specialize EngagedFor concept — concepts are unspecializable
-//   #2 Inheritance-base bypass — documented architectural limit
+//   #2 Inheritance-base bypass — closed by FIXY-A-PLUS-1 (final)
 //   #3 ADL hook on variable templates — vars are not ADL-discoverable
 //   #4 Friend-class circumvention — concepts have no friends
-//   #5 Reading `relaxes2` instead of `relaxes` — pinned by the fold
+//   #5 Reading `relaxes2` instead of `relaxes` — fold pinned to `relaxes`
+//   #6 Hidden-friend grant injection — derived_from is structural
+//   #7 CRTP base loop bypass — CRTP doesn't synthesize grant_base
+//   #8 Alias-template erasure — aliases are transparent
+//   #9 Const-qualified grant must still engage (CVR positive case)
 
 #include <crucible/fixy/Reject.h>
 
@@ -142,23 +146,117 @@ static_assert(!cf::IsAccepted<ProbeFriend>,
 // Cheat 5 — Reading `relaxes2` instead of `relaxes`
 // ═══════════════════════════════════════════════════════════════════
 //
-// Threat: an attacker defines a grant tag with TWO relaxation members
-// hoping the engagement check accidentally reads the wrong one and
-// engages an unintended dim.
+// Threat: an attacker defines a grant-LIKE tag with TWO relaxation
+// members hoping the engagement check accidentally reads the wrong one
+// and engages an unintended dim.
 //
-// Mitigation: the fold reads ONLY `relaxes`, never `relaxes2`.
-// Probe: a tag with `relaxes == dim::Type` and `relaxes2 ==
-// dim::Usage` engages ONLY dim::Type, never dim::Usage.
+// Mitigation: TWO independent closures stack here.
+//
+// (a) FIXY-AUDIT-LEGITGRANT: EngagedFor requires `derived_from<
+//     grant_base>` alongside the `relaxes` field.  A look-alike struct
+//     that omits grant_base derivation engages NO dim, period.
+//
+// (b) The fold reads ONLY `relaxes`, never `relaxes2`.  Even if the
+//     attacker DERIVES from grant_base, they can only engage the dim
+//     named by `relaxes`; `relaxes2` is unreachable.
+//
+// Probe: a derived-from-grant_base struct with `relaxes == dim::Type`
+// and `relaxes2 == dim::Usage` engages ONLY dim::Type (the canonical
+// field), never dim::Usage.  And the prior look-alike form (no
+// grant_base derivation) now engages nothing at all.
 
-struct EvilTwoFieldGrant {
+struct EvilTwoFieldGrant : cf::grant_base {  // legit derivation, hostile fields
     static constexpr cd::DimAxis relaxes  = cd::Type;
     static constexpr cd::DimAxis relaxes2 = cd::Usage;  // hostile field
 };
 
 static_assert(cf::EngagedFor<cd::Type, EvilTwoFieldGrant>,
-    "cheat 5: relaxes correctly read");
+    "cheat 5a: relaxes correctly read (legit grant_base derivation)");
 static_assert(!cf::EngagedFor<cd::Usage, EvilTwoFieldGrant>,
-    "cheat 5: relaxes2 is NOT read — fold pinned to `relaxes`");
+    "cheat 5a: relaxes2 is NOT read — fold pinned to `relaxes`");
+
+// Closure (b): non-derived look-alike engages NOTHING.
+struct LookalikeTwoFieldNoDeriv {
+    static constexpr cd::DimAxis relaxes  = cd::Type;
+    static constexpr cd::DimAxis relaxes2 = cd::Usage;
+};
+static_assert(!cf::EngagedFor<cd::Type, LookalikeTwoFieldNoDeriv>,
+    "cheat 5b: a look-alike without grant_base derivation engages no dim");
+static_assert(!cf::EngagedFor<cd::Usage, LookalikeTwoFieldNoDeriv>,
+    "cheat 5b: a look-alike without grant_base derivation engages no dim");
+
+// ═══════════════════════════════════════════════════════════════════
+// Cheat 6 — Hidden-friend grant injection (FIXY-AUDIT-HIDDEN-FRIEND)
+// ═══════════════════════════════════════════════════════════════════
+//
+// Threat: an attacker hopes to inject grant_base derivation through a
+// hidden-friend ADL hook on a non-grant type.
+//
+// Mitigation: derived_from is a structural check on inheritance, not
+// ADL.  Hidden friends don't participate in `derived_from`.  We pin
+// this with a struct that has hidden friends but doesn't inherit
+// grant_base.
+
+struct WithHiddenFriendButNoBase {
+    static constexpr cd::DimAxis relaxes = cd::Usage;
+    friend bool operator==(WithHiddenFriendButNoBase, WithHiddenFriendButNoBase)
+        noexcept { return true; }  // hidden friend
+};
+static_assert(!cf::EngagedFor<cd::Usage, WithHiddenFriendButNoBase>,
+    "cheat 6: hidden friends do not satisfy derived_from<grant_base>");
+
+// ═══════════════════════════════════════════════════════════════════
+// Cheat 7 — CRTP base loop bypass (FIXY-AUDIT-CRTP)
+// ═══════════════════════════════════════════════════════════════════
+//
+// Threat: hostile user attempts a CRTP pattern to "synthesize" a
+// grant_base derivation without actually inheriting from grant_base.
+// E.g., `template <class Derived> struct crtp_grant { ... };`
+//
+// Mitigation: CRTP introduces no relationship to grant_base — the
+// derived class still has to declare grant_base in its base list.
+
+template <typename Derived>
+struct CrtpGrantBase {
+    static constexpr cd::DimAxis relaxes = cd::Usage;
+};
+struct CrtpDerivedNoGrantBase : CrtpGrantBase<CrtpDerivedNoGrantBase> {};
+
+static_assert(!cf::EngagedFor<cd::Usage, CrtpDerivedNoGrantBase>,
+    "cheat 7: CRTP base does not synthesize grant_base derivation");
+
+// ═══════════════════════════════════════════════════════════════════
+// Cheat 8 — Alias-template erasure (FIXY-AUDIT-ALIAS)
+// ═══════════════════════════════════════════════════════════════════
+//
+// Threat: hide the non-grant nature by routing through alias templates.
+//
+// Mitigation: aliases are transparent; the underlying type still has
+// to satisfy derived_from<grant_base>.  Type aliases for non-grant
+// types still fold to false.
+
+using AliasedNonGrant = LookalikeTwoFieldNoDeriv;
+static_assert(!cf::EngagedFor<cd::Type, AliasedNonGrant>,
+    "cheat 8: alias-template wrapper does not change derived_from check");
+
+// ═══════════════════════════════════════════════════════════════════
+// Cheat 9 — Const-qualified grant must still engage (CVR companion)
+// ═══════════════════════════════════════════════════════════════════
+//
+// Threat (inverse): a cv-qualified legit grant should STILL engage —
+// the cheat-bypass closure must not over-reject.
+//
+// Mitigation: detail::is_legit_grant uses std::remove_cvref_t, so
+// const grant::copy / volatile grant::copy / const& grant::copy all
+// engage as expected.
+
+static_assert(cf::EngagedFor<cd::Usage, const cg::copy>,
+    "cheat 9: const grant must still engage (cv-strip discipline)");
+static_assert(cf::EngagedFor<cd::Usage, volatile cg::copy>,
+    "cheat 9: volatile grant must still engage (cv-strip discipline)");
+// References fold to false per FIXY-AUDIT-CVR (separate closure).
+static_assert(!cf::EngagedFor<cd::Usage, cg::copy&>,
+    "cheat 9: reference does not engage (CVR closure)");
 
 }  // namespace probe
 
@@ -173,8 +271,8 @@ int main() {
     // test/fixy_neg/neg_fixy_inheritance_bypass_attempt.cpp.  No
     // architectural-limit admissions remain in this probe.
     std::fprintf(stderr,
-        "test_fixy_cheat_probe: 5 cheat attempts rejected at compile "
-        "time (0 architectural-limit admissions; cheat #2 closed by "
-        "FIXY-A-PLUS-1)\n");
+        "test_fixy_cheat_probe: 9 cheat attempts rejected at compile "
+        "time (0 architectural-limit admissions; cheats 6-9 closed by "
+        "FIXY-AUDIT-LEGITGRANT/HIDDEN-FRIEND/CRTP/ALIAS/CVR audit)\n");
     return 0;
 }

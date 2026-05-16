@@ -149,20 +149,50 @@ namespace crucible::fixy {
 
 namespace detail {
 
+// A type that "looks like a grant" — has a DimAxis-typed `relaxes`
+// member.  Used as a SFINAE-style filter so non-grant pack members
+// (references, pointers, ints) fold to `false` without substitution
+// failure.
 template <typename T>
 concept has_axis_relaxes = requires {
     { T::relaxes } -> std::convertible_to<dim::DimAxis>;
 };
 
-// Per-member engagement predicate.  For grants (which have a
-// DimAxis-typed `relaxes`) it compares; for everything else
-// (references, pointers, ints, random structs) it folds to false
+// FIXY-AUDIT-LEGITGRANT (cheat-bypass closure): a random user struct
+// declaring `static constexpr DimAxis relaxes = X;` would have engaged
+// IsAccepted via the loose `has_axis_relaxes` check alone — bypassing
+// the discipline that "engagement comes from a grant tag, not a
+// look-alike field".  We now require derived_from<grant_base> alongside
+// the `relaxes` field, mirroring the IsGrantTag concept from Grant.h.
+// Legitimate user-side grant extensions inherit grant_base directly
+// (documented path); accidental look-alikes are rejected.
+//
+// The `final` discipline on every SHIPPED grant tag closes the
+// inheritance-bypass cheat (FIXY-A-PLUS-1).  This additional gate
+// closes the FORGE-VARIANT cheat: a struct with `relaxes` field but
+// NOT derived from grant_base no longer satisfies engagement.
+//
+// CVR discipline (FIXY-AUDIT-CVR companion): cv-qualified grants
+// (const grant::copy, volatile grant::copy) DO engage; references
+// (grant::copy&), pointers (grant::copy*), and arrays do NOT.
+// `std::is_class_v<T>` filters refs/pointers; `std::remove_cv_t<T>`
+// strips cv-quals before the derived_from check.
+template <typename T>
+concept is_legit_grant =
+    std::is_class_v<T>                                             // filters refs/ptrs/arrays/scalars
+    && std::derived_from<std::remove_cv_t<T>, ::crucible::fixy::grant_base>
+    && has_axis_relaxes<std::remove_cv_t<T>>;
+
+// Per-member engagement predicate.  For legitimate grants it compares
+// `relaxes == D`; for everything else (references, pointers, ints,
+// random structs without grant_base derivation) it folds to false
 // without trying to access `T::relaxes`.
 template <typename T, dim::DimAxis D>
 inline constexpr bool engages_dim_v = false;
 
-template <has_axis_relaxes T, dim::DimAxis D>
-inline constexpr bool engages_dim_v<T, D> = (T::relaxes == D);
+template <is_legit_grant T, dim::DimAxis D>
+inline constexpr bool engages_dim_v<T, D> =
+    (std::remove_cvref_t<T>::relaxes == D);
 
 }  // namespace detail
 
