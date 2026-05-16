@@ -225,6 +225,10 @@ set_tests_properties(test_fixy_value_t PROPERTIES LABELS "fixy")
 crucible_test(test_fixy_arg_promote)
 set_tests_properties(test_fixy_arg_promote PROPERTIES LABELS "fixy")
 
+# ── FIXY-G3 — call_with_caps capability-gate sentinel TU ────────────
+crucible_test(test_fixy_call_with_caps)
+set_tests_properties(test_fixy_call_with_caps PROPERTIES LABELS "fixy")
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
@@ -1229,6 +1233,12 @@ crucible_neg_compile_fixy_test(neg_fixy_arg_promote_no_path
     "PromoteImpossible|cannot promote raw argument|ArgPromotable")
 crucible_neg_compile_fixy_test(neg_fixy_arg_promote_violates_refinement
     "PromoteImpossible|cannot promote raw argument|ArgPromotable")
+
+# ── FIXY-G3 — call_with_caps discipline fixtures ────────────────────
+crucible_neg_compile_fixy_test(neg_fixy_call_with_caps_missing_io
+    "caps_cover_v|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_call_with_caps_wrong_source
+    "caps_cover_v|constraints not satisfied|no matching function")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
