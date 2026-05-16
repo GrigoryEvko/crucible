@@ -1149,6 +1149,27 @@ crucible_neg_compile_fixy_test(neg_fixy_nttp_escape_attempt
 crucible_neg_compile_fixy_test(neg_fixy_reference_grant_attempt
     "FixyNotEngaged_Usage")
 
+# FIXY-AUDIT-NTTP-RANGE — value-NTTP grant tags now reject N=0 / V=0
+# degenerate values that previously compiled silently into a federation
+# cache key polluting the discipline.  One fixture per range-checked tag.
+crucible_neg_compile_fixy_test(neg_fixy_version_zero_rejected
+    "requires V > 0")
+crucible_neg_compile_fixy_test(neg_fixy_space_bounded_zero_rejected
+    "requires N > 0")
+crucible_neg_compile_fixy_test(neg_fixy_sized_zero_rejected
+    "requires Depth > 0")
+crucible_neg_compile_fixy_test(neg_fixy_stale_to_zero_rejected
+    "requires TauMax > 0")
+crucible_neg_compile_fixy_test(neg_fixy_complexity_linear_zero_rejected
+    "requires N > 0")
+
+# FIXY-AUDIT-LEGITGRANT — EngagedFor now requires derived_from<grant_base>.
+# A look-alike struct with `relaxes` field but no grant_base derivation
+# is rejected, closing the bypass where any user struct could forge
+# engagement by naming a `relaxes` field.
+crucible_neg_compile_fixy_test(neg_fixy_legit_grant_forge_lookalike
+    "FixyNotEngaged_Usage")
+
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
 # delegated-protocol case at the consteval assertion boundary.
