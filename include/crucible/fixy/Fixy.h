@@ -17,6 +17,13 @@
 //     SecretConsumer, PublicEmit<P>, AsyncEndpoint), 12-rule §6.8
 //     collision catalog re-export.
 //
+//   * Phase C: Sess.h + Mach.h + Contract.h — alias re-exports over
+//     the existing substrate (sessions/Session.h family, safety/
+//     Machine.h, safety/Contract.h Pre/Post macros).  Greenfield
+//     headers use fixy::sess::*, fixy::mach::*, and the
+//     CRUCIBLE_PRE / CRUCIBLE_POST macros via fixy/Contract.h so
+//     the discipline-surface spelling matches across all axes.
+//
 // **Discipline pointer.** Every greenfield Crucible header added after
 // 17 May 2026 composes against `fixy::*` via this umbrella, NOT
 // against raw `safety::fn::Fn<...>`.  See misc/16_05_2026_fixy.md §5
@@ -28,13 +35,16 @@
 // engagement at the macro level.
 
 #include <crucible/fixy/AllStrict.h>
+#include <crucible/fixy/Contract.h>
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Fn.h>
 #include <crucible/fixy/Grant.h>
+#include <crucible/fixy/Mach.h>
 #include <crucible/fixy/Reject.h>
 #include <crucible/fixy/Resolve.h>
 #include <crucible/fixy/Rules.h>
+#include <crucible/fixy/Sess.h>
 #include <crucible/fixy/Stance.h>
 
 #define CRUCIBLE_FIXY 1
@@ -47,5 +57,5 @@
 // Patch: bug fix, doc-comment edit, internal refactor.
 
 #define CRUCIBLE_FIXY_VERSION_MAJOR 0
-#define CRUCIBLE_FIXY_VERSION_MINOR 2  // 0.2.0: Phase A + Phase B shipped
+#define CRUCIBLE_FIXY_VERSION_MINOR 3  // 0.3.0: Phase A + B + C alias re-exports
 #define CRUCIBLE_FIXY_VERSION_PATCH 0

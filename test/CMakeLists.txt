@@ -188,6 +188,14 @@ crucible_test(test_fixy_cheat_probe)
 # and misc/16_05_2026_fixy.md §4.
 crucible_test(test_fixy_b)
 
+# ── FIXY-C — Sess/Mach/Contract alias re-exports identity check ─────
+#
+# Pins fixy::sess::*, fixy::mach::*, and the fixy/Contract.h macro
+# include path produce types identical to their substrate counterparts.
+# See include/crucible/fixy/{Sess,Mach,Contract}.h and
+# misc/16_05_2026_fixy.md §4 Phase C.
+crucible_test(test_fixy_aliases)
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
