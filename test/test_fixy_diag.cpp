@@ -12,6 +12,8 @@
 
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Reject.h>
+#include <crucible/safety/diag/Insights.h>
+#include <crucible/safety/diag/StableName.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -104,6 +106,62 @@ static_assert(std::is_base_of_v<::crucible::safety::diag::tag_base,
                                 cfd::FixyNotEngaged_Type>);
 static_assert(std::is_base_of_v<::crucible::safety::diag::tag_base,
                                 cfd::FixyNotEngaged_Staleness>);
+
+// ── Every tag carries non-empty description (FIXY-A-PLUS-4) ────────
+//
+// `description` is the IDE-hover one-liner used by clangd / JsonEmitter
+// downstream.  Empty descriptions would defeat the diagnostic richness
+// upgrade.
+template <std::size_t I>
+constexpr bool tag_has_nonempty_description() {
+    using Tag = std::tuple_element_t<I, cfd::FixyDiagCatalog>;
+    return !Tag::description.empty();
+}
+
+static_assert(tag_has_nonempty_description<0>());
+static_assert(tag_has_nonempty_description<5>());
+static_assert(tag_has_nonempty_description<10>());
+static_assert(tag_has_nonempty_description<15>());
+static_assert(tag_has_nonempty_description<19>());
+
+// ── insight_provider specializations are populated (FIXY-A-PLUS-4) ──
+//
+// Every FixyNotEngaged_<D> tag has an insight_provider with non-empty
+// why_this_matters + symptom_pattern + correct_example +
+// violating_example.  The substrate's primary template returns empty
+// strings; non-empty here proves our specialization landed.
+namespace sdiag = ::crucible::safety::diag;
+
+template <std::size_t I>
+constexpr bool tag_has_populated_insight() {
+    using Tag    = std::tuple_element_t<I, cfd::FixyDiagCatalog>;
+    using Insight = sdiag::insight_provider<Tag>;
+    return !Insight::why_this_matters.empty()
+        && !Insight::symptom_pattern.empty()
+        && !Insight::correct_example.empty()
+        && !Insight::violating_example.empty()
+        && Insight::severity == sdiag::Severity::Error;
+}
+
+static_assert(tag_has_populated_insight<0>());
+static_assert(tag_has_populated_insight<5>());
+static_assert(tag_has_populated_insight<10>());
+static_assert(tag_has_populated_insight<15>());
+static_assert(tag_has_populated_insight<19>());
+
+// ── stable_name_for_dim integration ────────────────────────────────
+//
+// safety::diag::stable_name_of returns a portable consteval string.
+// For our fixy tags it must contain the tag's identifier — proving
+// federation-cache hashing and JsonEmitter can reach our tags
+// without scraping compiler diagnostics.
+static_assert(cfd::stable_name_for_dim<cd::Usage>.find("FixyNotEngaged_Usage")
+              != std::string_view::npos);
+static_assert(cfd::stable_name_for_dim<cd::Staleness>.find("FixyNotEngaged_Staleness")
+              != std::string_view::npos);
+// Hashes are non-zero (FNV-1a + fmix combine produces non-zero for
+// non-empty inputs).
+static_assert(cfd::stable_type_id_for_dim<cd::Usage> != 0);
 
 }  // namespace
 

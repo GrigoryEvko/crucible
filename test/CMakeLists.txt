@@ -1061,6 +1061,13 @@ crucible_neg_compile_fixy_test(neg_fixy_only_one_grant          "FixyNotEngaged_
 crucible_neg_compile_fixy_test(neg_fixy_partial_19_of_20        "FixyNotEngaged_Reentrancy")
 crucible_neg_compile_fixy_test(neg_fixy_wrong_dim_grant         "FixyNotEngaged_Effect")
 
+# FIXY-A-PLUS-1 — inheritance-bypass closure.  Post-A-PLUS-1 every
+# grant tag is `final`; the pre-A-PLUS-1 architectural-limit cheat
+# ("struct fake : accept_default_strict_for<dim::X> {};") is now a
+# compile error with GCC's `cannot derive from 'final' base` diagnostic.
+crucible_neg_compile_fixy_test(neg_fixy_inheritance_bypass_attempt
+    "cannot derive from .*final.* base")
+
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
 # delegated-protocol case at the consteval assertion boundary.

@@ -93,6 +93,8 @@
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Grant.h>
 #include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/diag/Insights.h>
+#include <crucible/safety/diag/StableName.h>
 
 #include <cstdint>
 #include <meta>
@@ -170,32 +172,26 @@ namespace detail {
 template <typename... Grants>
 struct WhichDimUnengaged {
 private:
+    // Reflection-driven first-failing-dim search (B3 fix).  Replaces
+    // the pre-A-PLUS-3 20-deep `if constexpr` ladder.  Iterates the
+    // 20 enumerators of dim::DimAxis in source order and returns the
+    // first dim D for which EngagedFor<D, Grants...> is false.  When
+    // every dim engages, returns the documented dim::Type sentinel
+    // (guard via `all_engaged` flag before reading `value`).
     [[nodiscard]] static consteval dim::DimAxis compute_first_failing() noexcept {
-        // Per-dim engagement, in enumerator order.  Branch on the
-        // first failure; if every dim engages, return dim::Type as
-        // a sentinel.  The accompanying `all_engaged` flag tells
-        // callers whether `value` is meaningful.
-        if constexpr (!EngagedFor<dim::Type, Grants...>)           return dim::Type;
-        else if constexpr (!EngagedFor<dim::Refinement, Grants...>)     return dim::Refinement;
-        else if constexpr (!EngagedFor<dim::Usage, Grants...>)          return dim::Usage;
-        else if constexpr (!EngagedFor<dim::Effect, Grants...>)         return dim::Effect;
-        else if constexpr (!EngagedFor<dim::Security, Grants...>)       return dim::Security;
-        else if constexpr (!EngagedFor<dim::Protocol, Grants...>)       return dim::Protocol;
-        else if constexpr (!EngagedFor<dim::Lifetime, Grants...>)       return dim::Lifetime;
-        else if constexpr (!EngagedFor<dim::Provenance, Grants...>)     return dim::Provenance;
-        else if constexpr (!EngagedFor<dim::Trust, Grants...>)          return dim::Trust;
-        else if constexpr (!EngagedFor<dim::Representation, Grants...>) return dim::Representation;
-        else if constexpr (!EngagedFor<dim::Observability, Grants...>)  return dim::Observability;
-        else if constexpr (!EngagedFor<dim::Complexity, Grants...>)     return dim::Complexity;
-        else if constexpr (!EngagedFor<dim::Precision, Grants...>)      return dim::Precision;
-        else if constexpr (!EngagedFor<dim::Space, Grants...>)          return dim::Space;
-        else if constexpr (!EngagedFor<dim::Overflow, Grants...>)       return dim::Overflow;
-        else if constexpr (!EngagedFor<dim::Mutation, Grants...>)       return dim::Mutation;
-        else if constexpr (!EngagedFor<dim::Reentrancy, Grants...>)     return dim::Reentrancy;
-        else if constexpr (!EngagedFor<dim::Size, Grants...>)           return dim::Size;
-        else if constexpr (!EngagedFor<dim::Version, Grants...>)        return dim::Version;
-        else if constexpr (!EngagedFor<dim::Staleness, Grants...>)      return dim::Staleness;
-        else return dim::Type;  // sentinel — `all_engaged` will be true
+        static constexpr auto enumerators =
+            std::define_static_array(std::meta::enumerators_of(^^dim::DimAxis));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+        template for (constexpr auto en : enumerators) {
+            // Splice in template-arg position needs parens (GCC 16
+            // reflection gotcha — feedback_gcc16_c26_reflection_gotchas).
+            if constexpr (!EngagedFor<([:en:]), Grants...>) {
+                return [:en:];
+            }
+        }
+#pragma GCC diagnostic pop
+        return dim::Type;  // sentinel — `all_engaged` will be true
     }
 
 public:
@@ -214,26 +210,93 @@ public:
 
 namespace diag {
 
-struct FixyNotEngaged_Type           : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Type"; };
-struct FixyNotEngaged_Refinement     : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Refinement"; };
-struct FixyNotEngaged_Usage          : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Usage"; };
-struct FixyNotEngaged_Effect         : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Effect"; };
-struct FixyNotEngaged_Security       : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Security"; };
-struct FixyNotEngaged_Protocol       : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Protocol"; };
-struct FixyNotEngaged_Lifetime       : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Lifetime"; };
-struct FixyNotEngaged_Provenance     : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Provenance"; };
-struct FixyNotEngaged_Trust          : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Trust"; };
-struct FixyNotEngaged_Representation : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Representation"; };
-struct FixyNotEngaged_Observability  : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Observability"; };
-struct FixyNotEngaged_Complexity     : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Complexity"; };
-struct FixyNotEngaged_Precision      : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Precision"; };
-struct FixyNotEngaged_Space          : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Space"; };
-struct FixyNotEngaged_Overflow       : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Overflow"; };
-struct FixyNotEngaged_Mutation       : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Mutation"; };
-struct FixyNotEngaged_Reentrancy     : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Reentrancy"; };
-struct FixyNotEngaged_Size           : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Size"; };
-struct FixyNotEngaged_Version        : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Version"; };
-struct FixyNotEngaged_Staleness      : ::crucible::safety::diag::tag_base { static constexpr std::string_view name = "FixyNotEngaged_Staleness"; };
+// Every tag carries `name` (literal identity for grep), `description`
+// (one-line rationale for IDE hover), and the canonical
+// safety::diag::tag_base inheritance for Catalog integration.
+// The richer goal/gap/suggestion accessors live in the
+// fixy::diag::insight_for<dim::DimAxis> specializations below.
+
+#define CRUCIBLE_FIXY_DIAG_TAG(DimName, DescText)                              \
+    struct FixyNotEngaged_##DimName : ::crucible::safety::diag::tag_base {     \
+        static constexpr std::string_view name        =                        \
+            "FixyNotEngaged_" #DimName;                                        \
+        static constexpr std::string_view description = DescText;              \
+    }
+
+CRUCIBLE_FIXY_DIAG_TAG(Type,
+    "Author must declare the binding's value type via grant::typed<T> "
+    "OR accept the strict-default sentinel (default_required) via "
+    "accept_default_strict_for<dim::Type>.");
+CRUCIBLE_FIXY_DIAG_TAG(Refinement,
+    "Refinement dim is unengaged.  Choose grant::refined_with<Pred> for "
+    "an explicit predicate or accept_default_strict_for<dim::Refinement> "
+    "for the strict True predicate.");
+CRUCIBLE_FIXY_DIAG_TAG(Usage,
+    "Usage dim is unengaged.  Choose grant::affine/copy/ghost/borrow/"
+    "capability_usage or accept_default_strict_for<dim::Usage> for Linear.");
+CRUCIBLE_FIXY_DIAG_TAG(Effect,
+    "Effect dim is unengaged.  Choose grant::with<Effects...> for "
+    "explicit side effects or accept_default_strict_for<dim::Effect> "
+    "for the empty Tot row.");
+CRUCIBLE_FIXY_DIAG_TAG(Security,
+    "Security dim is unengaged.  Choose grant::declassify<Policy>, "
+    "grant::upgrade_to_secret, or accept_default_strict_for<dim::Security> "
+    "for Classified default.");
+CRUCIBLE_FIXY_DIAG_TAG(Protocol,
+    "Protocol dim is unengaged.  Choose grant::protocol_session<Proto> "
+    "or accept_default_strict_for<dim::Protocol> for proto::None.");
+CRUCIBLE_FIXY_DIAG_TAG(Lifetime,
+    "Lifetime dim is unengaged.  Choose grant::lifetime_region<Tag> "
+    "or accept_default_strict_for<dim::Lifetime> for static lifetime.");
+CRUCIBLE_FIXY_DIAG_TAG(Provenance,
+    "Provenance dim is unengaged.  Choose grant::from_source<Source>, "
+    "grant::sanitize<TaintClass>, or accept_default_strict_for<dim::Provenance> "
+    "for FromInternal default.");
+CRUCIBLE_FIXY_DIAG_TAG(Trust,
+    "Trust dim is unengaged.  Choose grant::trust_assumed<Rationale>, "
+    "grant::trust_assumed_for<TaintClass>, or accept_default_strict_for"
+    "<dim::Trust> for Verified default.");
+CRUCIBLE_FIXY_DIAG_TAG(Representation,
+    "Representation dim is unengaged.  Choose grant::repr_*, "
+    "grant::vendor<V>, grant::tier<R>, or accept_default_strict_for"
+    "<dim::Representation> for Opaque default.");
+CRUCIBLE_FIXY_DIAG_TAG(Observability,
+    "Observability dim is unengaged.  Choose grant::observability_visible "
+    "or accept_default_strict_for<dim::Observability> for opaque (derived "
+    "from Effect row).");
+CRUCIBLE_FIXY_DIAG_TAG(Complexity,
+    "Complexity dim is unengaged.  Choose grant::complexity_constant/"
+    "linear/quadratic/unbounded or accept_default_strict_for<dim::Complexity> "
+    "for Unstated.");
+CRUCIBLE_FIXY_DIAG_TAG(Precision,
+    "Precision dim is unengaged.  Choose grant::precision_f32/f64/"
+    "higham<Bound>/reassociate or accept_default_strict_for<dim::Precision> "
+    "for bit-Exact.");
+CRUCIBLE_FIXY_DIAG_TAG(Space,
+    "Space dim is unengaged.  Choose grant::space_bounded<N>/unbounded "
+    "or accept_default_strict_for<dim::Space> for Zero (stack-only).");
+CRUCIBLE_FIXY_DIAG_TAG(Overflow,
+    "Overflow dim is unengaged.  Choose grant::overflow_wrap/saturate/"
+    "widen or accept_default_strict_for<dim::Overflow> for Trap.");
+CRUCIBLE_FIXY_DIAG_TAG(Mutation,
+    "Mutation dim is unengaged.  Choose grant::mutable_in_place/"
+    "append_only/monotonic_advance or accept_default_strict_for<dim::Mutation> "
+    "for Immutable.");
+CRUCIBLE_FIXY_DIAG_TAG(Reentrancy,
+    "Reentrancy dim is unengaged.  Choose grant::reentrant/coroutine "
+    "or accept_default_strict_for<dim::Reentrancy> for NonReentrant.");
+CRUCIBLE_FIXY_DIAG_TAG(Size,
+    "Size dim is unengaged.  Choose grant::sized<Depth>/productive "
+    "or accept_default_strict_for<dim::Size> for Unstated.");
+CRUCIBLE_FIXY_DIAG_TAG(Version,
+    "Version dim is unengaged.  Choose grant::version<V> for an "
+    "explicit version or accept_default_strict_for<dim::Version> for v=1.");
+CRUCIBLE_FIXY_DIAG_TAG(Staleness,
+    "Staleness dim is unengaged.  Choose grant::stale_to<TauMax> for "
+    "bounded staleness or accept_default_strict_for<dim::Staleness> "
+    "for Fresh (τ=0).");
+
+#undef CRUCIBLE_FIXY_DIAG_TAG
 
 using FixyDiagCatalog = std::tuple<
     FixyNotEngaged_Type,
@@ -294,6 +357,22 @@ template <> struct diag_tag_for<dim::Staleness>      { using type = FixyNotEngag
 template <dim::DimAxis D>
 using diag_tag_for_t = typename diag_tag_for<D>::type;
 
+// ─── stable_name integration (FIXY-A-PLUS-4) ──────────────────────────
+//
+// safety::diag::stable_name_of<T> returns a portable consteval
+// string_view derived from reflection (P2996R13).  fixy diag tags
+// integrate so IDE/clangd tooling, federation-cache hashing, and the
+// JSON emitter (safety/diag/JsonEmitter.h) can address tags by name
+// without scraping compiler diagnostics.
+
+template <dim::DimAxis D>
+inline constexpr std::string_view stable_name_for_dim =
+    ::crucible::safety::diag::stable_name_of<diag_tag_for_t<D>>;
+
+template <dim::DimAxis D>
+inline constexpr std::uint64_t stable_type_id_for_dim =
+    ::crucible::safety::diag::stable_type_id<diag_tag_for_t<D>>;
+
 // ── Reflection-driven coverage assertion ──────────────────────────────
 namespace detail {
 
@@ -324,6 +403,248 @@ static_assert(detail::every_dim_has_diag_tag(),
     "substrate dim was added without coordinated fixy/Reject.h update.");
 
 }  // namespace diag
+
+// ═════════════════════════════════════════════════════════════════════
+// ── insight_provider specializations (FIXY-A-PLUS-4) ───────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Mirrors the safety::diag::insight_provider<Tag> pattern from
+// safety/diag/Insights.h.  Each FixyNotEngaged_<D> tag gets a
+// specialization providing severity + why_this_matters + symptom +
+// correct/violating example.  Downstream tooling
+// (JsonEmitter / clangd / GAPS-093 LSP plugin) addresses these via
+// std::meta reflection on the tag type.
+//
+// MUST be in namespace ::crucible::safety::diag (where the primary
+// template lives) — specializations cannot land in fixy::diag.
+
+}  // namespace crucible::fixy
+
+namespace crucible::safety::diag {
+
+#define CRUCIBLE_FIXY_INSIGHT(DimName, WhyText, SymptomText, CorrectEx, ViolatingEx) \
+    template <>                                                              \
+    struct insight_provider<::crucible::fixy::diag::FixyNotEngaged_##DimName> { \
+        static constexpr Severity         severity           = Severity::Error; \
+        static constexpr std::string_view why_this_matters   = WhyText;      \
+        static constexpr std::string_view symptom_pattern    = SymptomText;  \
+        static constexpr std::string_view correct_example    = CorrectEx;    \
+        static constexpr std::string_view violating_example  = ViolatingEx;  \
+    }
+
+CRUCIBLE_FIXY_INSIGHT(Type,
+    "Fixy's reject-by-default discipline requires every binding to name "
+    "its value type explicitly.  Without engagement on dim::Type, fixy "
+    "refuses to invent a type — the binding has no carrier for the rest "
+    "of the grade vector.",
+    "Surfaces when an author writes `fixy::fn<int> f = ...` expecting "
+    "the int to populate dim::Type implicitly.  Phase B's fixy::fn "
+    "aggregator routes int via grant::typed<int>; the bare fixy::fn<int> "
+    "is rejected because Type isn't engaged via a grant tag.",
+    "fixy::fn<int, grant::typed<int>, accept_default_strict_for<dim::Refinement>, ...>",
+    "fixy::fn<int> f = [](int x){ return x; };  // dim::Type unengaged");
+
+CRUCIBLE_FIXY_INSIGHT(Refinement,
+    "Refinement is the FX dim-2 predicate slot — even if the predicate "
+    "is True (no refinement), the author must acknowledge the choice.  "
+    "Phase B fixy::fn will route grant::refined_with<Pred> into "
+    "safety::Refined<Pred, T> at the substrate layer.",
+    "Author writes accept_default_strict_for<dim::Usage> but forgets "
+    "dim::Refinement.  Common because Refinement-True is the silent "
+    "default in most languages.",
+    "accept_default_strict_for<dim::Refinement>  // True predicate",
+    "// (missing both refined_with<Pred> and accept_default_strict_for<dim::Refinement>)");
+
+CRUCIBLE_FIXY_INSIGHT(Usage,
+    "Usage encodes linearity discipline — Linear/Affine/Copy/Ghost/"
+    "Borrow/Capability.  Default Linear forces exactly-once consumption; "
+    "silent admission would let a careless author dup-consume a linear "
+    "handle without diagnostic.",
+    "Refactoring a value-semantic POD from Linear discipline to Copy "
+    "but forgetting to declare the relaxation.  Or writing a Phase-B "
+    "stance that omits Usage engagement entirely.",
+    "grant::copy  // explicit Copy relaxation",
+    "// no grant::* engaging Usage AND no accept_default_strict_for<dim::Usage>");
+
+CRUCIBLE_FIXY_INSIGHT(Effect,
+    "Effect is the Met(X) row carrier (Tang-Lindley POPL 2026).  A "
+    "function that secretly does IO / Alloc / Bg without declaring the "
+    "row bypasses the Subrow<R, Ctx> check at the consumer site.  Fixy "
+    "rejects the binding before the bug ships.",
+    "Function performs printf / malloc / std::async but the author "
+    "writes a hot-path stance.  The fixy engagement check fires before "
+    "the consumer's Subrow<R, HotCtx> would have rejected at call site.",
+    "grant::with<Effect::IO>  // declares the row",
+    "// no grant::with<...> declaring the actual side effects");
+
+CRUCIBLE_FIXY_INSIGHT(Security,
+    "Security encodes information-flow classification.  Default "
+    "Classified means the value flows only to Classified/Secret sinks "
+    "unless explicitly declassified via a named policy.  Silent "
+    "admission would let Public output silently leak Classified inputs.",
+    "Author writes a function consuming a Classified input and emitting "
+    "a Public output without declaring grant::declassify<Policy>.  The "
+    "engagement check fires before the implicit-flow rule (I002) would "
+    "have rejected.",
+    "grant::declassify<AuditedPolicy>",
+    "// implicit declass via Public return type, no grant::declassify");
+
+CRUCIBLE_FIXY_INSIGHT(Protocol,
+    "Protocol carries session typestate (Honda 1998 / HYC 2008 MPST).  "
+    "Default proto::None means no protocol obligation.  Explicit "
+    "engagement is required even for the None case so reviewers see the "
+    "binding has been audited.",
+    "Adding a binding to a session-typed channel without declaring "
+    "grant::protocol_session<Proto>.  The session-protocol consumer "
+    "rejects later; fixy rejects up-front.",
+    "grant::protocol_session<MyProto>",
+    "// channel-typed binding with no Protocol engagement");
+
+CRUCIBLE_FIXY_INSIGHT(Lifetime,
+    "Lifetime engagement is the gate against dangling-pointer / use-"
+    "after-free bugs.  Default Static is the safe choice; named regions "
+    "(grant::lifetime_region<Tag>) carry the explicit scope identity.",
+    "Returning a pointer/reference into a temporary region without "
+    "declaring the region's named tag.  Common in arena consumers.",
+    "grant::lifetime_region<MyArenaTag>",
+    "// returns view into arena without lifetime_region engagement");
+
+CRUCIBLE_FIXY_INSIGHT(Provenance,
+    "Provenance is the source-tag carrier (Tagged.h source::*).  "
+    "Sanitization is provenance-driven (FromUser → Sanitized) — engaging "
+    "Provenance is what makes XSS/SQLi sanitizer pipelines auditable.",
+    "Network/file/user-input data flowing into Internal-tagged buffers "
+    "without crossing a grant::sanitize<TaintClass> boundary.  The "
+    "engagement check catches the missing sanitizer.",
+    "grant::from_source<source::FromUser> + grant::sanitize<XssClass>",
+    "// network buffer treated as Internal without sanitize");
+
+CRUCIBLE_FIXY_INSIGHT(Trust,
+    "Trust is the verification axis (Verified/Unverified lattice).  "
+    "Default Verified requires explicit relaxation when the binding "
+    "consumes unaudited data.  Engagement is mandatory so review can "
+    "audit the rationale literal.",
+    "Importing third-party data without declaring the trust relaxation.  "
+    "grant::trust_assumed<\"PR-1234-audited\"> carries the audit trail.",
+    "grant::trust_assumed<\"PR-1234-audited\">",
+    "// third-party data consumed at Verified level without rationale");
+
+CRUCIBLE_FIXY_INSIGHT(Representation,
+    "Representation is the storage-layout axis (Opaque/C/Packed/Aligned/"
+    "Simd/Atomic) plus vendor pin / numerical tier.  Engagement makes "
+    "vendor-backend selection auditable at the binding site.",
+    "Mimic per-vendor backend code without grant::vendor<V> + "
+    "grant::tier<R>; cross-vendor numerics CI catches at runtime; fixy "
+    "catches at compile time.",
+    "grant::vendor<nv::Vendor> + grant::tier<BITEXACT_TC>",
+    "// kernel implementation with no vendor pin or recipe tier");
+
+CRUCIBLE_FIXY_INSIGHT(Observability,
+    "Observability is derived from Effect row at the consumer site but "
+    "still requires explicit engagement so the author has read the "
+    "discipline.  Default is opaque (no observable side effects).",
+    "Author declares grant::with<Effect::IO> but forgets the partner "
+    "Observability engagement — the IO emission is invisible to drift "
+    "detectors.",
+    "grant::observability_visible  // when IO is intended to be observed",
+    "// IO emission with no Observability engagement");
+
+CRUCIBLE_FIXY_INSIGHT(Complexity,
+    "Complexity engagement is the cost-annotation axis (O(1)/O(N)/"
+    "O(N^2)/unbounded).  Default Unstated; explicit engagement is the "
+    "review/audit hook for budget-bounded code paths.",
+    "Hot-path loop with no complexity annotation — the engagement check "
+    "fires so the author either commits to Constant/Linear<N> or "
+    "explicitly accepts Unstated.",
+    "grant::complexity_linear<N>",
+    "// O(N^2) loop on hot path with no Complexity engagement");
+
+CRUCIBLE_FIXY_INSIGHT(Precision,
+    "Precision is the FP error-bound axis (Exact/F32/F64/Higham<Bound>).  "
+    "Engagement is the cross-vendor numerics CI gate — recipe pinning "
+    "(BITEXACT_TC etc.) flows from per-binding precision declaration.",
+    "FP-using kernel without grant::precision_higham<Bound> or "
+    "precision_f32/f64 — cross-vendor CI later flags divergence; fixy "
+    "rejects up-front.",
+    "grant::reassociate + grant::precision_higham<0.5>",
+    "// FP loop with no Precision engagement");
+
+CRUCIBLE_FIXY_INSIGHT(Space,
+    "Space is the allocation-bound axis (Zero/Bounded<N>/Unbounded).  "
+    "Default Zero means stack-only; the engagement check is the gate "
+    "against accidental heap allocation in stack-bound contexts.",
+    "Function uses std::vector<T> on a stack-only path; fixy rejects "
+    "before the runtime stack-overflow or unexpected heap touch.",
+    "grant::space_bounded<4096>",
+    "// std::vector<T> use without Space relaxation");
+
+CRUCIBLE_FIXY_INSIGHT(Overflow,
+    "Overflow is the integer-overflow semantic (Trap/Wrap/Saturate/"
+    "Widen).  Default Trap is the safe choice for unaudited arithmetic; "
+    "modular code must declare grant::overflow_wrap.",
+    "Modular-arithmetic counter (sequence numbers, hash mixing) without "
+    "grant::overflow_wrap — Trap semantic causes runtime abort under "
+    "UBSan.",
+    "grant::overflow_wrap  // for wrap-around counters",
+    "// sequence-number arithmetic with no Overflow engagement");
+
+CRUCIBLE_FIXY_INSIGHT(Mutation,
+    "Mutation is the in-place-write discipline (Immutable/Mutable/"
+    "AppendOnly/Monotonic).  Default Immutable is the safe choice; "
+    "in-place mutation must declare the relaxation.",
+    "Function that writes through a reference-to-non-const without "
+    "engaging dim::Mutation — fixy rejects the binding's intent before "
+    "the consumer's aliasing rules fire.",
+    "grant::append_only  // for event-log writers",
+    "// function mutating an arg without Mutation engagement");
+
+CRUCIBLE_FIXY_INSIGHT(Reentrancy,
+    "Reentrancy is the self-call discipline (NonReentrant/Reentrant/"
+    "Coroutine).  Default NonReentrant means self-calls are rejected; "
+    "recursive functions and coroutines must declare.",
+    "Recursive function or coroutine without engagement — fixy rejects "
+    "before the runtime stack-blowup or coroutine-frame allocation "
+    "surprise.",
+    "grant::reentrant  // for recursive helpers",
+    "// recursive helper with no Reentrancy engagement");
+
+CRUCIBLE_FIXY_INSIGHT(Size,
+    "Size is the codata observation-depth axis (Unstated/Sized<N>/"
+    "Productive).  Default Unstated; explicit engagement gates "
+    "productive-stream consumers against infinite-loop bugs.",
+    "Stream consumer without grant::sized<N> or grant::productive — "
+    "fixy rejects so the consumer can't accidentally trigger infinite "
+    "observation.",
+    "grant::sized<1024>  // bounded-depth observation",
+    "// stream consumer with no Size engagement");
+
+CRUCIBLE_FIXY_INSIGHT(Version,
+    "Version is the federation-version axis (FX dim 21).  Default v=1; "
+    "explicit engagement carries the cross-org compatibility signal "
+    "into the binding's federation-cache key.",
+    "Adding a new version of a previously-shipped binding without "
+    "engaging grant::version<V>; downstream federation cache hits the "
+    "old artifact under the same hash.",
+    "grant::version<2>  // new schema-incompatible version",
+    "// new behavior under old version number");
+
+CRUCIBLE_FIXY_INSIGHT(Staleness,
+    "Staleness is the freshness-bound axis (Fresh/Stale<TauMax>).  "
+    "Default Fresh means τ=0 (real-time data); cached/sampled data must "
+    "declare grant::stale_to<TauMax>.",
+    "Reading a cached counter without engaging Staleness — the consumer "
+    "consumes possibly-stale data as if Fresh, breaking SLA bounds.",
+    "grant::stale_to<100>  // τ ≤ 100 ms",
+    "// cached metric consumed as Fresh without stale_to");
+
+#undef CRUCIBLE_FIXY_INSIGHT
+
+}  // namespace crucible::safety::diag
+
+namespace crucible::fixy {
+
+// Re-opened the fixy namespace for the remaining structural definitions
+// after the safety::diag::insight_provider specialization block above.
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Sanity self-tests ──────────────────────────────────────────────

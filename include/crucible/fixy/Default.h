@@ -84,6 +84,17 @@ namespace crucible::fixy::default_strict {
 
 namespace fn = ::crucible::safety::fn;
 
+// ── Named sentinel types (FIXY-A-PLUS-3 B1 fix) ───────────────────────
+//
+// Pre-A-PLUS-3: dim::Type and dim::Observability both exposed
+// `type = void`.  Same sentinel, two different semantics — readers
+// couldn't tell whether `void` meant "author must declare" (Type) or
+// "derived elsewhere" (Observability).  Split into two named sentinel
+// types so a consumer can switch on identity.
+
+struct default_required {};      // dim::Type — author MUST declare via grant::typed<T>
+struct derived_from_effect {};   // dim::Observability — value is a fn of Effect
+
 // ── Primary template — undefined; specialization required ─────────────
 template <dim::DimAxis D>
 struct strict_default_for;
@@ -93,7 +104,7 @@ struct strict_default_for;
 template <>
 struct strict_default_for<dim::Type> {
     static constexpr dim::DimAxis dim_axis = dim::Type;
-    using type = void;  // sentinel; author MUST provide the concrete value type
+    using type = default_required;  // named sentinel (was void)
 };
 
 template <>
@@ -158,9 +169,9 @@ struct strict_default_for<dim::Observability> {
     static constexpr dim::DimAxis dim_axis = dim::Observability;
     // Observability is DERIVED from EffectRow at the consumer site; the
     // strict-default catalog entry exists only so the engagement check
-    // treats it uniformly with the other 19 dims.  No carrier type;
-    // the sentinel type is `void` matching dim::Type's treatment.
-    using type = void;
+    // treats it uniformly with the other 19 dims.  Named sentinel
+    // distinguishes from dim::Type's `default_required` (B1 fix).
+    using type = derived_from_effect;
 };
 
 template <>

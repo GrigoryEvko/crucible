@@ -1,60 +1,77 @@
 #pragma once
 
-// ── crucible::fixy — Grant.h (FIXY-A3a) ────────────────────────────────
+// ── crucible::fixy — Grant.h (FIXY-A3a + FIXY-A-PLUS-1/2) ─────────────
 //
 // The explicit-grant tag library — empty-state phantom tag types that
 // declare a fixy binding's relaxation choices on each dim.  Every tag
-// in this header is a ZERO-STATE struct carrying a single `relaxes`
-// member that names which `fixy::dim::DimAxis` the tag engages.  The
-// fixy/Reject.h `IsAccepted` concept reads the `relaxes` member of
-// every tag in the `Grants...` pack to decide engagement on a per-dim
-// basis.
+// in this header is a ZERO-STATE final struct inheriting the
+// `grant_base` marker; the marker base + `final` keyword TOGETHER
+// close the inheritance-bypass cheat (FIXY-A7 #2 / FIXY-A-PLUS-1) at
+// the substrate level via safety/NotInherited.h.
 //
-// **Phase A scope.**  The minimal catalog needed to write every
-// positive-compile / neg-compile / cheat-probe fixture in FIXY-A5,
-// A6, A7.  The broader relaxation surface (15+ additional tags
-// covering Lifetime / Provenance / Mutation / Reentrancy / Size /
-// Version / Representation / Complexity / Space) lands in Phase B
-// alongside the production Fn aggregator.  For Phase A, every dim
-// MUST be reachable via at least `accept_default_strict_for<D>` —
-// that is the universal acknowledgement tag.
+// **Phase A scope.**  The minimal catalog needed for the FIXY-A5/A6/A7
+// fixtures.  The broader relaxation surface (lifetime regions, stance
+// composition helpers) lands in Phase B alongside the production Fn
+// aggregator.  For Phase A, every dim is reachable via at least
+// `accept_default_strict_for<D>` — the universal acknowledgement tag.
 //
-// **Two grant kinds.**
+// ── Two grant kinds ───────────────────────────────────────────────────
 //
-//   (1) **Explicit-accept tags** — `accept_default_strict_for<D>`.
-//       The author has read the discipline AND chose the substrate's
-//       strict default for dim D.  Engagement: explicit.  Result: D
-//       composes with the strict default from fixy/Default.h.
+//   (1) **Explicit-accept** — `accept_default_strict_for<D>`.  The
+//       author engaged dim D and chose the substrate's strict default
+//       (matched against safety::fn::Fn defaults — see
+//       fixy/Default.h's no-skew gate).
 //
-//   (2) **Relaxation tags** — `grant::copy`, `grant::with<...>`,
-//       `grant::declassify<Policy>`, etc.  The author has read the
-//       discipline AND chose a non-strict grade for dim D, with the
-//       rationale embedded in the tag type's name (or template arg).
-//       Engagement: explicit.  Result: D composes with the relaxed
-//       grade (Phase B Fn aggregator maps the tag to the substrate
-//       Fn template arg).
+//   (2) **Relaxation tags** — `grant::copy`, `grant::with<...>`, etc.
+//       The author engaged dim D and chose a non-strict grade.
 //
 // Both kinds expose the same surface:
 //
-//   `static constexpr dim::DimAxis relaxes = D;`
+//   * `static constexpr dim::DimAxis relaxes = D;`
+//   * inherits `grant_base` (marker for IsGrantTag<>)
+//   * `final` (closes the inheritance-bypass cheat)
 //
-// IsAccepted reads only this field.  Engagement is "any tag in the
-// Grants pack with `relaxes == D` counts D as engaged."  See
-// fixy/Reject.h for the conjunction.
+// ── Inheritance-bypass closure (A1) ───────────────────────────────────
 //
-// **Cheat resistance.**  The engagement check is per-EXACT-type, not
-// inheritance-based — see fixy/Reject.h FIXY-A7 cheat probe.  A user
-// who inherits from `accept_default_strict_for<dim::Usage>` does NOT
-// thereby engage dim::Usage in a `Grants...` pack containing the
-// derived type, because the IsAccepted concept tests `T::relaxes`
-// per-tag-instance, not subobject membership.
+// Phase A's cheat probe #2 documented `struct fake :
+// accept_default_strict_for<dim::Usage> {};` as an architectural
+// limit.  FIXY-A-PLUS-1 closes the door:
+//
+//   * accept_default_strict_for<D> is `final`.  Derivation is a
+//     compile error at the inheritance point with a clear GCC
+//     diagnostic ("cannot derive from 'final' base class").
+//   * Every relaxation tag is `final`.  Same closure.
+//   * IsGrantTag<T> requires std::derived_from<T, grant_base>.  This
+//     rejects random user structs that forge a `relaxes` field
+//     without legitimate substrate provenance.  Authors who DO want
+//     to extend the catalog inherit grant_base directly (legitimate
+//     open extension).
+//
+// Net: the lookalike-via-inheritance attack is structurally blocked;
+// legitimate downstream-extension is preserved.
+//
+// ── Sanitize remap (A2) ───────────────────────────────────────────────
+//
+// `grant::sanitize<TaintClass>` was originally mapped to dim::Trust,
+// but FX §6 treats sanitization as PROVENANCE-driven (FromUser →
+// Sanitized).  FIXY-A-PLUS-2 remaps to dim::Provenance.  A companion
+// tag `grant::trust_assumed_for<TaintClass>` engages dim::Trust for
+// the rare standalone "I assert trust without a sanitizer" case.
+//
+// ── Empty-with rejection (A4) ─────────────────────────────────────────
+//
+// `grant::with<>` (zero effects) is structurally degenerate — equivalent
+// to engaging dim::Effect with the empty row, which IS the strict
+// default.  Authors should use `accept_default_strict_for<dim::Effect>`
+// for that case.  A `static_assert(sizeof...(Es) > 0)` in the body
+// makes the intent explicit.
 //
 // ── Axiom coverage ────────────────────────────────────────────────────
 //
-//   InitSafe   — every tag is an empty struct; no member to leave
-//                uninitialized.
-//   TypeSafe   — `relaxes` is `safety::DimensionAxis` (strong enum);
-//                cross-dim confusion is a compile-time mismatch.
+//   InitSafe   — every tag is an empty struct + empty marker base; no
+//                member to leave uninitialized.
+//   TypeSafe   — `relaxes` is dim::DimAxis (strong enum); inheritance
+//                from grant_base is structural identity.
 //   NullSafe   — zero-state; no pointers.
 //   MemSafe    — zero-state; no resource.
 //   BorrowSafe — pure metadata.
@@ -64,42 +81,64 @@
 //
 // ── Runtime cost ──────────────────────────────────────────────────────
 //
-// Zero.  Every tag has `sizeof == 1` (smallest legal C++ object) but
-// is empty-base-optimizable to 0 bytes when embedded in `Fn<...>` or
-// when held in a tuple alongside non-empty members.
+// Zero.  Empty derived-from-empty stays at sizeof == 1 (smallest
+// legal C++ object) and is EBO-collapsible to 0 bytes when embedded
+// in `Fn<...>` or a tuple alongside non-empty members.
 //
 // ── References ────────────────────────────────────────────────────────
 //
 //   misc/16_05_2026_fixy.md §3.1        — grant tag pattern + stance
 //   misc/fixy.md §24.1                  — per-dim relaxation catalog
+//   safety/NotInherited.h               — concept witness + FinalBy CRTP
 //   fixy/Dim.h                          — dim::DimAxis identity layer
-//   fixy/Reject.h                       — IsAccepted concept consumer
+//   fixy/Reject.h                       — IsGrantTag concept consumer
 
 #include <crucible/effects/Capabilities.h>
 #include <crucible/fixy/Dim.h>
+#include <crucible/safety/NotInherited.h>
 
+#include <concepts>
+#include <cstdint>
 #include <type_traits>
 
 namespace crucible::fixy {
 
 // ═════════════════════════════════════════════════════════════════════
+// ── grant_base — marker for IsGrantTag discrimination ──────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Empty marker base.  Every shipped grant tag inherits this; user-side
+// extensions inherit this to opt in as legitimate grants.  IsGrantTag
+// gates on derivation, which prevents random user structs from
+// satisfying engagement via accidental `relaxes` member.
+//
+// NOT marked final — extension via derivation IS the intended path
+// for downstream grant-catalog growth.  The cheat-bypass closure
+// works because every SHIPPED grant tag IS final; a lookalike
+// attempting to derive from a shipped tag hits `final` at the
+// inheritance site.  An author who needs a new grant tag inherits
+// grant_base DIRECTLY (legitimate; opt-in).
+
+struct grant_base {};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Universal acknowledgement: accept_default_strict_for<D> ────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// One tag covers all 20 dims via a non-type template parameter.  The
-// member `relaxes == D` so the engagement check can match.  This is
-// the load-bearing grant kind: most fixy bindings will reach for it
-// on 14-19 of the 20 dims and use a relaxation tag for the remaining
-// 1-6.  Empty struct (sizeof == 1, EBO-collapsible to 0).
+// One template covers all 20 dims via non-type template parameter.
+// `final` closes the inheritance-bypass cheat (FIXY-A-PLUS-1).
+// EBO-collapsible to 0 bytes when embedded; standalone sizeof == 1.
 
 template <dim::DimAxis D>
-struct accept_default_strict_for {
+struct accept_default_strict_for final : grant_base {
     static constexpr dim::DimAxis relaxes = D;
     static constexpr bool is_explicit_accept = true;
 };
 
-static_assert(std::is_empty_v<accept_default_strict_for<dim::Type>>,
-    "accept_default_strict_for must be zero-state for EBO collapse.");
+static_assert(std::is_empty_v<accept_default_strict_for<dim::Type>>);
+static_assert(::crucible::safety::NotInherited<accept_default_strict_for<dim::Type>>,
+    "accept_default_strict_for<D> must be `final` to close the inheritance-"
+    "bypass cheat (FIXY-A7 #2 / FIXY-A-PLUS-1).");
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Relaxation tags — minimal Phase A catalog ──────────────────────
@@ -109,43 +148,46 @@ namespace grant {
 
 // ── Type (dim::Type) ──────────────────────────────────────────────────
 //
-// `typed<T>` — declares the binding's value type explicitly.  Without
-// this OR `accept_default_strict_for<dim::Type>`, fixy refuses to
-// invent a type for the author.
+// `typed<T>` — declares the binding's value type explicitly.
+// `final` + grant_base discipline.
 template <typename T>
-struct typed {
+struct typed final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Type;
     using type = T;
 };
 
 // ── Refinement (dim::Refinement) ─────────────────────────────────────
-//
-// `refined_with<Pred>` — engages dim::Refinement with a non-True
-// predicate.  Pred must satisfy the Fn::pred convention (static
-// `check(T const&) noexcept -> bool`).  No runtime cost.
 template <typename Pred>
-struct refined_with {
+struct refined_with final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Refinement;
     using predicate = Pred;
 };
 
 // ── Usage (dim::Usage) ────────────────────────────────────────────────
-struct affine     { static constexpr dim::DimAxis relaxes = dim::Usage; };
-struct copy       { static constexpr dim::DimAxis relaxes = dim::Usage; };
-struct ghost      { static constexpr dim::DimAxis relaxes = dim::Usage; };
-struct borrow     { static constexpr dim::DimAxis relaxes = dim::Usage; };
-struct capability { static constexpr dim::DimAxis relaxes = dim::Usage; };
+//
+// Renamed `capability` → `capability_usage` (D2 / FIXY-A-PLUS-2) to
+// disambiguate from `effects::cap::Capability` permission tokens.
+struct affine           final : grant_base { static constexpr dim::DimAxis relaxes = dim::Usage; };
+struct copy             final : grant_base { static constexpr dim::DimAxis relaxes = dim::Usage; };
+struct ghost            final : grant_base { static constexpr dim::DimAxis relaxes = dim::Usage; };
+struct borrow           final : grant_base { static constexpr dim::DimAxis relaxes = dim::Usage; };
+struct capability_usage final : grant_base { static constexpr dim::DimAxis relaxes = dim::Usage; };
 
 // ── Effect (dim::Effect) ──────────────────────────────────────────────
 //
 // `with<Effects...>` opens a multi-effect row.  Engages dim::Effect.
-// The variadic effect pack admits the empty case which is degenerate
-// (engages Effect with an empty row, i.e. the strict default Tot) —
-// the author should use accept_default_strict_for<dim::Effect> for
-// the empty-row case to make intent explicit at the callsite.
+// **A4 fix**: the empty pack `with<>` is structurally degenerate
+// (engages Effect with the empty row, which IS the strict default).
+// The static_assert below forces authors to use
+// `accept_default_strict_for<dim::Effect>` for the empty-row case.
 template <::crucible::effects::Effect... Es>
-struct with {
+struct with final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Effect;
+    static_assert(sizeof...(Es) > 0,
+        "grant::with<> with empty effect pack is structurally degenerate "
+        "(engages Effect with the empty row, which IS the strict default). "
+        "Use accept_default_strict_for<dim::Effect> to make the intent "
+        "explicit at the callsite.");
 };
 
 using with_alloc = with<::crucible::effects::Effect::Alloc>;
@@ -156,196 +198,199 @@ using with_init  = with<::crucible::effects::Effect::Init>;
 using with_test  = with<::crucible::effects::Effect::Test>;
 
 // ── Security (dim::Security) ──────────────────────────────────────────
-//
-// `declassify<Policy>` — relaxes Security from Classified down to
-// Public (or Unclassified) via a named declassification policy.  The
-// Policy type is the audit trail: review reads `Policy` and checks
-// the documented justification matches the call site.
 template <typename Policy>
-struct declassify {
+struct declassify final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Security;
     using policy = Policy;
 };
 
-struct upgrade_to_secret {
+struct upgrade_to_secret final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Security;
 };
 
 // ── Protocol (dim::Protocol) ─────────────────────────────────────────
-//
-// `protocol_session<Proto>` — binds the function to a session-typed
-// protocol.  Phase B will resolve Proto into the substrate's
-// sessions/Session.h type machinery; for Phase A engagement is
-// sufficient.
 template <typename Proto>
-struct protocol_session {
+struct protocol_session final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Protocol;
     using protocol = Proto;
 };
 
 // ── Lifetime (dim::Lifetime) ─────────────────────────────────────────
-//
-// `lifetime_region<auto Tag>` — binds the value's lifetime to a named
-// region.  The auto-typed template arg admits literal-typed tags
-// (e.g., string literal NTTPs) so the audit trail is in the type.
 template <auto RegionTag>
-struct lifetime_region {
+struct lifetime_region final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Lifetime;
 };
 
 // ── Provenance (dim::Provenance) ─────────────────────────────────────
 //
-// `from_source<SourceTag>` — switches Provenance from FromInternal
-// (substrate strict default) to an explicit source.  Common sources
-// include FromUser / FromExternal / FromDb / Sanitized — see
-// safety/Tagged.h source::* family.
+// **A2 fix**: `sanitize<TaintClass>` is now mapped to dim::Provenance
+// (was incorrectly dim::Trust pre-A-PLUS-2).  Sanitization is a
+// provenance-tag change (FromUser → Sanitized).  Per FX §6.
 template <typename SourceTag>
-struct from_source {
+struct from_source final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Provenance;
     using source_tag = SourceTag;
+};
+
+template <typename TaintClass>
+struct sanitize final : grant_base {
+    static constexpr dim::DimAxis relaxes = dim::Provenance;
+    using taint_class = TaintClass;
 };
 
 // ── Trust (dim::Trust) ────────────────────────────────────────────────
 //
 // `trust_assumed<auto Rationale>` — relaxes Trust from Verified to
-// Unverified at the binding level with an embedded rationale literal
-// for audit.  `sanitize<TaintClass>` re-elevates trust by declaring
-// a sanitization stage.
+// Unverified at the binding level with an embedded rationale literal.
+// `trust_assumed_for<TaintClass>` — companion to sanitize<TaintClass>
+// for the rare standalone trust-assumed case (sanitize engages
+// Provenance; trust_assumed_for engages Trust).
 template <auto Rationale>
-struct trust_assumed {
+struct trust_assumed final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Trust;
 };
 
 template <typename TaintClass>
-struct sanitize {
+struct trust_assumed_for final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Trust;
     using taint_class = TaintClass;
 };
 
 // ── Representation (dim::Representation) ─────────────────────────────
-//
-// Substrate `ReprKind` has 6 values (Opaque/C/Packed/Aligned/Simd/
-// Atomic).  Phase A ships one tag per non-default value.
-struct repr_c       { static constexpr dim::DimAxis relaxes = dim::Representation; };
-struct repr_packed  { static constexpr dim::DimAxis relaxes = dim::Representation; };
-struct repr_aligned { static constexpr dim::DimAxis relaxes = dim::Representation; };
-struct repr_simd    { static constexpr dim::DimAxis relaxes = dim::Representation; };
-struct repr_atomic  { static constexpr dim::DimAxis relaxes = dim::Representation; };
+struct repr_c       final : grant_base { static constexpr dim::DimAxis relaxes = dim::Representation; };
+struct repr_packed  final : grant_base { static constexpr dim::DimAxis relaxes = dim::Representation; };
+struct repr_aligned final : grant_base { static constexpr dim::DimAxis relaxes = dim::Representation; };
+struct repr_simd    final : grant_base { static constexpr dim::DimAxis relaxes = dim::Representation; };
+struct repr_atomic  final : grant_base { static constexpr dim::DimAxis relaxes = dim::Representation; };
 
-// `vendor<V>` — sub-classification of Representation: pin Mimic
-// backend by vendor (NV / AM / Intel / ...).  The V parameter is the
-// vendor-tag type (e.g., `mimic::nv::Vendor`).  Engages Representation
-// (Phase B may split into a dedicated Vendor dim if needed).
 template <typename V>
-struct vendor {
+struct vendor final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Representation;
     using vendor_tag = V;
 };
 
-// `tier<RecipeTier>` — pin NumericalRecipe tier (BITEXACT_STRICT /
-// BITEXACT_TC / ORDERED / UNORDERED).  Engages Representation; Phase
-// B's Forge integration may route through a dedicated NumericalTier
-// dim if subsequent design adds one.
 template <typename RecipeTier>
-struct tier {
+struct tier final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Representation;
     using recipe_tier = RecipeTier;
 };
 
 // ── Observability (dim::Observability) ───────────────────────────────
-//
-// Observability is DERIVED from EffectRow at the consumer site, so
-// engaging dim::Effect with `with<...>` implicitly engages
-// Observability.  But Reject.h's IsAccepted requires explicit
-// per-dim engagement — so the author writes one of:
-//   (a) accept_default_strict_for<dim::Observability>
-//   (b) `observability_visible` (declare observable side-effects)
-struct observability_visible {
+struct observability_visible final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Observability;
 };
 
 // ── Complexity (dim::Complexity) ─────────────────────────────────────
-struct complexity_constant  { static constexpr dim::DimAxis relaxes = dim::Complexity; };
-struct complexity_unbounded { static constexpr dim::DimAxis relaxes = dim::Complexity; };
+struct complexity_constant  final : grant_base { static constexpr dim::DimAxis relaxes = dim::Complexity; };
+struct complexity_unbounded final : grant_base { static constexpr dim::DimAxis relaxes = dim::Complexity; };
 
 template <auto N>
-struct complexity_linear {
+struct complexity_linear final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Complexity;
 };
 
 template <auto N>
-struct complexity_quadratic {
+struct complexity_quadratic final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Complexity;
 };
 
 // ── Precision (dim::Precision) ───────────────────────────────────────
-struct precision_f32 { static constexpr dim::DimAxis relaxes = dim::Precision; };
-struct precision_f64 { static constexpr dim::DimAxis relaxes = dim::Precision; };
-struct reassociate   { static constexpr dim::DimAxis relaxes = dim::Precision; };
+struct precision_f32 final : grant_base { static constexpr dim::DimAxis relaxes = dim::Precision; };
+struct precision_f64 final : grant_base { static constexpr dim::DimAxis relaxes = dim::Precision; };
+struct reassociate   final : grant_base { static constexpr dim::DimAxis relaxes = dim::Precision; };
 
 template <auto Bound>
-struct precision_higham {
+struct precision_higham final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Precision;
 };
 
 // ── Space (dim::Space) ───────────────────────────────────────────────
-struct space_unbounded { static constexpr dim::DimAxis relaxes = dim::Space; };
+struct space_unbounded final : grant_base { static constexpr dim::DimAxis relaxes = dim::Space; };
 
 template <auto N>
-struct space_bounded {
+struct space_bounded final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Space;
 };
 
 // ── Overflow (dim::Overflow) ─────────────────────────────────────────
-struct overflow_wrap     { static constexpr dim::DimAxis relaxes = dim::Overflow; };
-struct overflow_saturate { static constexpr dim::DimAxis relaxes = dim::Overflow; };
-struct overflow_widen    { static constexpr dim::DimAxis relaxes = dim::Overflow; };
+struct overflow_wrap     final : grant_base { static constexpr dim::DimAxis relaxes = dim::Overflow; };
+struct overflow_saturate final : grant_base { static constexpr dim::DimAxis relaxes = dim::Overflow; };
+struct overflow_widen    final : grant_base { static constexpr dim::DimAxis relaxes = dim::Overflow; };
 
 // ── Mutation (dim::Mutation) ─────────────────────────────────────────
-struct mutable_in_place   { static constexpr dim::DimAxis relaxes = dim::Mutation; };
-struct append_only        { static constexpr dim::DimAxis relaxes = dim::Mutation; };
-struct monotonic_advance  { static constexpr dim::DimAxis relaxes = dim::Mutation; };
+struct mutable_in_place  final : grant_base { static constexpr dim::DimAxis relaxes = dim::Mutation; };
+struct append_only       final : grant_base { static constexpr dim::DimAxis relaxes = dim::Mutation; };
+struct monotonic_advance final : grant_base { static constexpr dim::DimAxis relaxes = dim::Mutation; };
 
 // ── Reentrancy (dim::Reentrancy) ─────────────────────────────────────
-struct reentrant { static constexpr dim::DimAxis relaxes = dim::Reentrancy; };
-struct coroutine { static constexpr dim::DimAxis relaxes = dim::Reentrancy; };
+struct reentrant final : grant_base { static constexpr dim::DimAxis relaxes = dim::Reentrancy; };
+struct coroutine final : grant_base { static constexpr dim::DimAxis relaxes = dim::Reentrancy; };
 
 // ── Size (dim::Size) ─────────────────────────────────────────────────
-struct productive { static constexpr dim::DimAxis relaxes = dim::Size; };
+struct productive final : grant_base { static constexpr dim::DimAxis relaxes = dim::Size; };
 
 template <auto Depth>
-struct sized {
+struct sized final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Size;
 };
 
 // ── Version (dim::Version) ───────────────────────────────────────────
 template <std::uint32_t V>
-struct version {
+struct version final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Version;
     static constexpr std::uint32_t value = V;
 };
 
 // ── Staleness (dim::Staleness) ───────────────────────────────────────
 template <auto TauMax>
-struct stale_to {
+struct stale_to final : grant_base {
     static constexpr dim::DimAxis relaxes = dim::Staleness;
 };
 
 }  // namespace grant
 
 // ═════════════════════════════════════════════════════════════════════
-// ── Grant concept — structural detection of any fixy grant tag ─────
+// ── IsGrantTag concept — tight discrimination of fixy grants ───────
 // ═════════════════════════════════════════════════════════════════════
 //
-// `IsGrantTag<T>` is true iff T exposes a `static constexpr
-// dim::DimAxis relaxes` member of the substrate enum type.  This is
-// used by Reject.h to validate that every entry in a `Grants...` pack
-// is a real grant tag (not arbitrary garbage), and by examples /
-// docs to inspect packs at compile time.
+// **A5 tighten**: was `requires { T::relaxes; }` which any random
+// struct could satisfy.  Now requires std::derived_from<T, grant_base>
+// AS WELL AS the relaxes member of correct type.  Combined with the
+// `final` discipline above:
+//
+//   - Random user struct with `relaxes` field but NOT derived from
+//     grant_base → rejected by IsGrantTag.
+//   - User struct derived from grant_base → accepted (legitimate
+//     extension path).
+//   - User struct derived from an existing FINAL grant tag → compile
+//     error at the inheritance site (cannot derive from final).
 
 template <typename T>
-concept IsGrantTag = requires {
-    { T::relaxes } -> std::convertible_to<dim::DimAxis>;
-};
+concept IsGrantTag =
+    std::derived_from<std::remove_cvref_t<T>, grant_base> &&
+    requires {
+        { std::remove_cvref_t<T>::relaxes } -> std::convertible_to<dim::DimAxis>;
+    };
+
+// ── Sanity self-tests ────────────────────────────────────────────────
+namespace detail {
+
+static_assert(IsGrantTag<grant::copy>);
+static_assert(IsGrantTag<accept_default_strict_for<dim::Type>>);
+static_assert(IsGrantTag<grant::with_io>);
+static_assert(!IsGrantTag<int>);
+static_assert(!IsGrantTag<grant_base>);  // marker base alone has no relaxes
+
+// EBO-collapse pin
+static_assert(sizeof(grant::copy) == 1);
+static_assert(sizeof(accept_default_strict_for<dim::Type>) == 1);
+
+// NotInherited witness for every shipped grant kind
+static_assert(::crucible::safety::NotInherited<grant::copy>);
+static_assert(::crucible::safety::NotInherited<grant::affine>);
+static_assert(::crucible::safety::NotInherited<grant::with<::crucible::effects::Effect::IO>>);
+static_assert(::crucible::safety::NotInherited<grant::declassify<int>>);
+
+}  // namespace detail
 
 }  // namespace crucible::fixy

@@ -56,30 +56,38 @@ static_assert(!cf::EngagedFor<cd::Usage>,
     "cheat 1: empty pack must not satisfy EngagedFor (fold identity)");
 
 // ═══════════════════════════════════════════════════════════════════
-// Cheat 2 — Inheritance-base bypass
+// Cheat 2 — Inheritance-base bypass (CLOSED post FIXY-A-PLUS-1)
 // ═══════════════════════════════════════════════════════════════════
 //
-// Threat: a derived struct `struct fake : accept_default_strict_for
-// <dim::Usage> {};` inherits `relaxes == dim::Usage` and might
-// satisfy EngagedFor for Usage even though the discipline's intent
-// is for grant tags to be POSITIONAL (only direct grants count).
+// Threat: `struct fake : accept_default_strict_for<dim::Usage> {};`
+// inherits `relaxes == dim::Usage` and forges engagement.
 //
-// Phase A documents this as an architectural trade-off.  The Phase
-// B fixy::fn wrapper will close the door by requiring grant tags be
-// `final` or be a known catalog member.  For Phase A we PROBE the
-// current behavior and DOCUMENT it.
+// Closure (FIXY-A-PLUS-1): every shipped grant tag is now `final`
+// via safety/NotInherited.h.  Derivation hits the `final` keyword
+// at the inheritance site, BEFORE IsAccepted ever sees the type.
+// The "cheat" therefore CANNOT EVEN COMPILE; the witness is in
+// test/fixy_neg/neg_fixy_inheritance_bypass_attempt.cpp.
 //
-// The probe records the current behavior so a future refactor that
-// breaks it fires this gate at build time.
+// This probe pins the closure mechanism: NotInherited<T> witnesses
+// every grant tag.  A regression that removes `final` fires this
+// gate at build time.
 
-struct DerivedAcceptUsage : cf::accept_default_strict_for<cd::Usage> {};
+static_assert(::crucible::safety::NotInherited<cf::accept_default_strict_for<cd::Usage>>,
+    "cheat 2: accept_default_strict_for<D> must be `final` (closes "
+    "inheritance-bypass cheat — FIXY-A-PLUS-1)");
+static_assert(::crucible::safety::NotInherited<cg::copy>,
+    "cheat 2: relaxation tags must be `final`");
+static_assert(::crucible::safety::NotInherited<cg::with<::crucible::effects::Effect::IO>>,
+    "cheat 2: variadic-template tags must be `final`");
 
-// CURRENT behavior: derivation IS visible to EngagedFor (relaxes is
-// inherited as dim::Usage).  This is the documented Phase A limit;
-// Phase B's fixy::fn will reject derived grants explicitly.
-static_assert(cf::EngagedFor<cd::Usage, DerivedAcceptUsage>,
-    "cheat 2 (architectural-limit): inheritance currently visible "
-    "to EngagedFor — Phase B fixy::fn closes this door");
+// A genuine bypass attempt — forge a fixy-LIKE struct from scratch
+// without inheriting grant_base.  IsGrantTag must reject.
+struct ForgedNotDerivedFromBase {
+    static constexpr cd::DimAxis relaxes = cd::Usage;
+};
+static_assert(!cf::IsGrantTag<ForgedNotDerivedFromBase>,
+    "cheat 2 (forge variant): a struct with a `relaxes` field but "
+    "not derived from grant_base must be rejected by IsGrantTag");
 
 // ═══════════════════════════════════════════════════════════════════
 // Cheat 3 — ADL hook on variable templates
