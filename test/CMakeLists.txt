@@ -372,6 +372,17 @@ add_test(NAME refined_pre_subsumption_self_test
           --self-test)
 add_test(NAME refined_pre_subsumption
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.sh)
+# FIXY-F: reject-by-default discipline guard.  Catches raw
+# safety::fn::Fn<...> use in directories that opted into the
+# fixy reject-by-default surface (FIXY_ONLY_DIRS in the script).
+# Self-test mode plants a synthetic match to guard against
+# ripgrep regex drift; production scan fails on real violations.
+add_test(NAME fixy_discipline_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.sh
+          --self-test)
+add_test(NAME fixy_discipline
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.sh
+          --check)
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
