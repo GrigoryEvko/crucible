@@ -180,6 +180,14 @@ crucible_test(test_fixy_engaged)
 crucible_test(test_fixy_diag)
 crucible_test(test_fixy_cheat_probe)
 
+# ── FIXY-B — fn aggregator + Stance + Rules end-to-end integration ──
+#
+# Pins Resolve.h's 19-axis dispatch, fn<>'s two-layer gate
+# (IsAccepted + ValidComposition), Stance.h's 8 canonical aliases,
+# and Rules.h's 12-tag re-export.  See include/crucible/fixy/Fn.h
+# and misc/16_05_2026_fixy.md §4.
+crucible_test(test_fixy_b)
+
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
 # For every fuzzable Decide procedure, the harness runs the production
