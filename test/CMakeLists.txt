@@ -1068,6 +1068,26 @@ crucible_neg_compile_fixy_test(neg_fixy_unengaged_precision      "FixyNotEngaged
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_mutation       "FixyNotEngaged_Mutation")
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_staleness      "FixyNotEngaged_Staleness")
 
+# ── FIXY-CLEAN-B4 — 12 collision-rule neg-compile fixtures ─────────
+#
+# Each fixture instantiates fixy::fn<int, all-strict-pack> after
+# specialising one or more `marks_*` traits on the resolved Fn type,
+# tripping exactly one §6.8 collision rule.  The named static_assert
+# message from CollisionCatalog.h's validate() carries the rule's
+# short code (e.g. "I002:") which the driver greps.
+crucible_neg_compile_fixy_test(neg_fixy_rule_i002 "I002:")
+crucible_neg_compile_fixy_test(neg_fixy_rule_l002 "L002:")
+crucible_neg_compile_fixy_test(neg_fixy_rule_e044 "E044:")
+crucible_neg_compile_fixy_test(neg_fixy_rule_i003 "I003:")
+crucible_neg_compile_fixy_test(neg_fixy_rule_m012 "M012:")
+crucible_neg_compile_fixy_test(neg_fixy_rule_p002 "P002:")
+crucible_neg_compile_fixy_test(neg_fixy_rule_i004 "I004:")
+crucible_neg_compile_fixy_test(neg_fixy_rule_n002 "N002:")
+crucible_neg_compile_fixy_test(neg_fixy_rule_l003 "L003:")
+crucible_neg_compile_fixy_test(neg_fixy_rule_m011 "M011:")
+crucible_neg_compile_fixy_test(neg_fixy_rule_s010 "S010:")
+crucible_neg_compile_fixy_test(neg_fixy_rule_s011 "S011:")
+
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
 # delegated-protocol case at the consteval assertion boundary.
