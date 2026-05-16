@@ -186,6 +186,7 @@ crucible_test(test_decide)
 
 crucible_test(test_fixy_engaged)
 crucible_test(test_fixy_cheat_probe)
+crucible_test(test_fixy_fn)
 
 # ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
 #
