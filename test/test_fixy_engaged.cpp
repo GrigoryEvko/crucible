@@ -64,16 +64,27 @@ static_assert(fixy::IsAccepted<int,
     "Witness 2: PureCopy stance — `copy` engages Usage.");
 
 // Witness 3: IoFunction — Effect relaxation to `with<IO>`.
+//
+// fixy-CR-01 audit follow-up: Theory.h §30.14
+// `classified_io_without_declassify` corpus entry rejects bindings
+// that engage strict-default Security (= Classified) with an IO
+// effect and no declassify.  IoFunction's canonical Security shape
+// is therefore `as_public` (matches fixy::IoFunction stance in
+// fixy/Fn.h).  The witness pins that the substrate-level
+// `as_public + with<IO>` composition is the well-formed
+// fixy/Fn alias of the IoFunction stance.
 static_assert(fixy::IsAccepted<int,
     strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
     gr::with<crucible::effects::Effect::IO>,  // <-- Effect
-    strict<D::Security>, strict<D::Protocol>,
+    gr::as_public,                            // <-- Security
+    strict<D::Protocol>,
     strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
     strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
     strict<D::Size>, strict<D::Version>, strict<D::Staleness>>,
-    "Witness 3: IoFunction stance — `with<IO>` engages Effect.");
+    "Witness 3: IoFunction stance — `with<IO>` engages Effect; "
+    "Security is `as_public` to satisfy fixy-CR-01 corpus.");
 
 // Witness 4: CtCrypto — Effect relaxation + Usage relaxation.
 static_assert(fixy::IsAccepted<int,
