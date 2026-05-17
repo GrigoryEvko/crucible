@@ -556,7 +556,34 @@ public:
     static constexpr safety::fn::ReentrancyMode reentrancy_v = safety_fn_t::reentrancy_v;
     static constexpr std::uint32_t              version_v    = safety_fn_t::version_v;
 
-    // ── Construction ───────────────────────────────────────────────
+    // ── Construction + copy/move discipline (FIXY-AUDIT-A6) ───────
+    //
+    // POLICY: fixy::fn does NOT override Type's copy/move semantics.
+    // Even when `usage_v == UsageMode::Linear`, the wrapper inherits
+    // Type's default copy/move/dtor.  Rationale:
+    //
+    //   • The Linear grade is INFORMATION about how the binding is
+    //     intended to be consumed downstream (Permission discipline,
+    //     session protocols, ownership audit) — not a runtime lifetime
+    //     constraint on the value's storage.  `fixy::fn<int, Linear-
+    //     grants>` must remain copyable because `int` is.
+    //
+    //   • Discipline enforcement is the JOB of `safety::Linear<T>`,
+    //     which IS move-only via deleted copy.  Production code that
+    //     wants the runtime guarantee declares `fixy::fn<safety::
+    //     Linear<T>, Linear-grants>` — the Type is itself move-only,
+    //     and fixy::fn's defaulted copy/move correctly disappears.
+    //
+    //   • Pinning fixy::fn's copy/move to the Linear grade would
+    //     conflate two orthogonal concerns: the wrapper's structural
+    //     copy semantics (driven by Type) and the binding's lifecycle
+    //     contract (driven by the grade).  fixy::fn is a documentation
+    //     + integration layer; lifecycle wrappers compose INTO it.
+    //
+    // Cost-of-violation: none from this policy; the grade is auditable
+    // via `usage_v` and `safety_fn_t::usage_v` at every call site, and
+    // downstream code that consumes a Linear-grade binding can require
+    // `safety::IsLinear<Type>` to refuse non-linear payloads.
     constexpr fn() = default;
 
     explicit constexpr fn(Type v)
