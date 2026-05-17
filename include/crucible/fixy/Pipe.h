@@ -110,4 +110,32 @@ using ::crucible::concurrent::mint_swmr_stage;
 
 using ::crucible::concurrent::mint_substrate_session;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── Compile-time coherence helpers (FIXY-AUDIT-C2) ─────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// The substrate's `mint_pipeline` already runs `CtxFitsPipeline<Ctx,
+// Stages...>` at its requires-clause; that concept folds three facts:
+//
+//   1. IsExecCtx<Ctx>
+//   2. pipeline_chain<Stages...> — adjacent-pair output/input payload
+//      type equality, also gated by IsStage<Stage_i>.
+//   3. pipeline_row_union_t<Stages...> ⊆ Ctx::row_type — the
+//      coordinator's effect row admits every stage's row.
+//
+// Production callers that want to PRE-CHECK the coherence at a
+// non-mint call site (e.g. a generic Pipeline factory parameterized by
+// the stage pack) need access to the chain concept AND the row-union
+// metafunction directly.  Re-export them under fixy::pipe:: so callers
+// who include only the fixy umbrella never have to descend into the
+// concurrent/ tree to spell `concurrent::pipeline_chain<...>`.
+//
+// Both surfaces are pure metafunctions; no runtime cost.
+
+using ::crucible::concurrent::IsStage;
+using ::crucible::concurrent::stages_chain;
+using ::crucible::concurrent::pipeline_chain;
+using ::crucible::concurrent::pipeline_row_union_t;
+using ::crucible::concurrent::CtxFitsPipeline;
+
 }  // namespace crucible::fixy::pipe

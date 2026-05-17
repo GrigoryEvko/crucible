@@ -194,6 +194,7 @@ crucible_test(test_fixy_perm)
 crucible_test(test_fixy_sess)
 crucible_test(test_fixy_sess_phi)
 crucible_test(test_fixy_pipe)
+crucible_test(test_fixy_pipe_chain)  # FIXY-AUDIT-C2
 crucible_test(test_fixy_bridge)
 crucible_test(test_fixy_substr)
 crucible_test(test_fixy_mach_safety)
