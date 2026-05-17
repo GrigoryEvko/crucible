@@ -1112,6 +1112,10 @@ crucible_neg_compile_fixy_test(neg_fixy_unengaged_reentrancy     "FixyNotEngaged
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_size           "FixyNotEngaged_Size")
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_version        "FixyNotEngaged_Version")
 
+# FIXY-AUDIT-D2 — HS14 floor for mint_fn factory.
+crucible_neg_compile_fixy_test(neg_fixy_mint_fn_unengaged_axis   "AllDimsEngaged")
+crucible_neg_compile_fixy_test(neg_fixy_mint_fn_invalid_grant    "AllGrantsWellFormed")
+
 # ── FIXY-CLEAN-B4 — 12 collision-rule neg-compile fixtures ─────────
 #
 # Each fixture instantiates fixy::fn<int, all-strict-pack> after
