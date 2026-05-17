@@ -195,6 +195,7 @@ crucible_test(test_fixy_sess)
 crucible_test(test_fixy_sess_phi)
 crucible_test(test_fixy_sess_patterns)  # FIXY-AUDIT-C6
 crucible_test(test_fixy_sess_mint_removed_diag)  # FIXY-AUDIT-B6
+crucible_test(test_fixy_contract_cipher)  # FIXY-AUDIT-B9
 crucible_test(test_fixy_pipe)
 crucible_test(test_fixy_pipe_chain)  # FIXY-AUDIT-C2
 crucible_test(test_fixy_bridge)
