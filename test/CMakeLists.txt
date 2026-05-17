@@ -1103,6 +1103,14 @@ crucible_neg_compile_fixy_test(neg_fixy_unengaged_complexity     "FixyNotEngaged
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_precision      "FixyNotEngaged_Precision")
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_mutation       "FixyNotEngaged_Mutation")
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_staleness      "FixyNotEngaged_Staleness")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_type           "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_refinement     "FixyNotEngaged_Refinement")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_observability  "FixyNotEngaged_Observability")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_space          "FixyNotEngaged_Space")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_overflow       "FixyNotEngaged_Overflow")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_reentrancy     "FixyNotEngaged_Reentrancy")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_size           "FixyNotEngaged_Size")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_version        "FixyNotEngaged_Version")
 
 # ── FIXY-CLEAN-B4 — 12 collision-rule neg-compile fixtures ─────────
 #
