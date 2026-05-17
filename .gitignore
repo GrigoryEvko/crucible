@@ -2,6 +2,7 @@ build/
 build-*/
 CMakeUserPresets.json
 .prof/
+Testing/
 
 # Editor backup files
 *~
