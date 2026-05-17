@@ -135,4 +135,86 @@ template <typename M, typename NewState>
 inline constexpr bool can_transition_v =
     detail::can_transition_impl<M, NewState, is_machine_v<M>>::value;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── LTL temporal operators (FIXY-AUDIT-B8) — SUBSTRATE GAP ─────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// The misc/16_05_2026_fixy.md design doc considered surfacing linear
+// temporal logic (LTL) operators on Machine state predicates so callers
+// could write specifications like
+//
+//     static_assert(eventually_v<Machine<Disconnected>, Connected>);
+//     static_assert(globally_v<Machine<Authenticated>, has_session_token>);
+//     static_assert(until_v<Machine<Pending>, has_credit, Approved>);
+//
+// at compile time.  The substrate `safety/Machine.h` ships NO such
+// operators today — it exposes only the value-typed carrier plus the
+// `mint_machine` / `transition_to` token mints.  The `can_transition_v`
+// helper above is the closest analogue: it captures the "next-state
+// is reachable" structural fact, which is the LTL Next (X) operator
+// degraded to a single-step type-system predicate.
+//
+// ── Operator-by-operator status ────────────────────────────────────
+//
+//   X p  (Next)         partial — `can_transition_v<M, NewState>`
+//                       projects the substrate's overload-resolution
+//                       gate.  Predicate `p` is NOT carried; callers
+//                       stack a downstream predicate (e.g., a Refined
+//                       wrapper on the NewState's fields) manually.
+//
+//   F p  (Eventually)   absent — would require a reachability fold
+//                       over the transition relation, which is not a
+//                       value-typed property of Machine<State>.  The
+//                       substrate has no transition relation table;
+//                       transitions are scattered free functions
+//                       discovered via overload resolution.
+//
+//   G p  (Globally)     absent — would require enumerating every
+//                       reachable state, which presupposes the
+//                       Eventually fold above.
+//
+//   p U q (Until)       absent — composition of Globally and
+//                       Eventually; depends on both being expressible.
+//
+//   p R q (Release)     absent — dual of Until.
+//
+//   p S q (Since)       absent — past-time dual of Until.
+//
+// ── Workaround for downstream code ─────────────────────────────────
+//
+// Production callers express the LTL fragments they need via chains
+// of `can_transition_v` plus Refined / typestate wrappers on each
+// state's payload:
+//
+//   // "From Pending, eventually we reach Approved" — encode the
+//   //  single intermediate step explicitly:
+//   static_assert(can_transition_v<Machine<Pending>,     Approving>);
+//   static_assert(can_transition_v<Machine<Approving>,   Approved>);
+//
+//   // "In Approved, always has_session_token" — encode via Refined<>
+//   //  on the Approved state's payload, not via a Globally fold.
+//
+// The chain-encoding is verbose but structural: every transition is
+// already discoverable via overload resolution, and every per-state
+// invariant is already discoverable via Refined<>.  LTL would add
+// terseness, not new expressive power, until a substrate transition
+// table lands.
+//
+// ── Deferred work ──────────────────────────────────────────────────
+//
+// LTL operator support is deferred until the substrate ships a value-
+// typed transition table on Machine<State> (a `transition_map_v<State>`
+// non-type template parameter, an explicit `transitions_to<...>`
+// trait, or similar).  Once that lands, `fixy::mach::ltl::next_v`,
+// `eventually_v`, `globally_v`, `until_v`, `release_v`, `since_v`
+// would re-export the substrate primitives under the LTL spelling.
+// No such substrate facility exists today; the absence is structural,
+// not an oversight in the re-export layer.
+//
+// Downstream code MUST NOT roll its own LTL fold over `can_transition_v`
+// chains expecting the substrate to grow the table later — the
+// substrate is deliberately scattered, and the existing predicate
+// composition (Refined per state + `can_transition_v` per step) is
+// the canonical pattern.
+
 }  // namespace crucible::fixy::mach
