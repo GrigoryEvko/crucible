@@ -190,6 +190,7 @@ crucible_test(test_fixy_fn)
 crucible_test(test_fixy_cap)
 crucible_test(test_fixy_perm)
 crucible_test(test_fixy_sess)
+crucible_test(test_fixy_pipe)
 
 # FIXY-LAT-Security + FIXY-LAT-Trust — every SecLevel and every
 # safety::trust::* tag is reachable through one named grant tag.
@@ -1142,6 +1143,16 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_mint_session_deleted
     "is removed|mint_permissioned_session|use of deleted function")
 crucible_neg_compile_fixy_test(neg_fixy_sess_channel_recv_row_drift
     "CtxFitsChannel|CtxFitsPermissionedProtocol|constraints not satisfied|associated constraints are not satisfied")
+
+# ── FIXY-MINT-Pipe — fixy/Pipe.h re-export of Tier-3 composition
+# (mint_endpoint, mint_stage, mint_pipeline, mint_pipeline_dag,
+# mint_stage_from_endpoints, mint_mpmc_stage_from_endpoints,
+# mint_swmr_stage, mint_substrate_session).  Two HS14 fixtures pin
+# the endpoint substrate-fit gate and the pipeline chain gate:
+crucible_neg_compile_fixy_test(neg_fixy_pipe_endpoint_non_bridgeable
+    "IsBridgeableDirection|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_pipe_pipeline_non_stage
+    "CtxFitsPipeline|pipeline_chain|IsStage|constraints not satisfied|associated constraints are not satisfied")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
