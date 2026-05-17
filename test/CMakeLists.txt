@@ -1237,6 +1237,40 @@ crucible_neg_compile_fixy_test(neg_fixy_wrap_appendonly_redundant_writeonce
 crucible_neg_compile_fixy_test(neg_fixy_wrap_timeordered_zero_processes
     "TimeOrdered<T, 0>|forbidden|static assertion|N > 0|N >= 1")
 
+# ── FIXY-ALGEBRA / EFF / DIAG / SOURCE HS14 fixtures ────────────────
+#
+# Phase D surfaces: 2 fixtures per surface area (8 total) pinning
+# distinct concept-rejection classes.
+#
+# Algebra:
+#   _non_lattice  — Lattice concept rejects type with no element_type
+#   _non_graded   — IsGraded rejects bare types
+# Eff:
+#   _subrow_missing            — Subrow rejects when atom is absent
+#   _capability_wrong_source   — CanMintCap rejects Fg → Block
+# Diag:
+#   _non_tag              — is_diagnostic_class_v rejects int
+#   _diagnostic_non_tag   — Diagnostic<int, ...> requires-clause fires
+# Source:
+#   _cross_axis_tagged   — Tagged<T, FromUser> != Tagged<T, Sanitized>
+#   _trust_vs_source     — source::FromUser != trust::Verified
+crucible_neg_compile_fixy_test(neg_fixy_algebra_non_lattice
+    "Lattice|element_type|static assertion|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_algebra_non_graded
+    "IsGraded|static assertion|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_eff_subrow_missing
+    "Subrow|is_subrow|static assertion|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_eff_capability_wrong_source
+    "CanMintCap|static assertion|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_diag_non_tag
+    "is_diagnostic_class_v|static assertion|tag_base|DiagnosticAccessor_NonTag")
+crucible_neg_compile_fixy_test(neg_fixy_diag_diagnostic_non_tag
+    "is_diagnostic_class_v|associated constraints are not satisfied|constraints not satisfied|tag_base")
+crucible_neg_compile_fixy_test(neg_fixy_source_cross_axis_tagged
+    "is_same|static assertion|cross-axis")
+crucible_neg_compile_fixy_test(neg_fixy_source_trust_vs_source
+    "is_same|static assertion|cross-axis")
+
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
 # delegated-protocol case at the consteval assertion boundary.
