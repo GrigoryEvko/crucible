@@ -1129,6 +1129,40 @@ crucible_neg_compile_fixy_test(neg_fixy_mint_fn_invalid_grant    "AllGrantsWellF
 crucible_neg_compile_fixy_test(neg_fixy_fn_class_body_unengaged
     "FixyNotEngaged_<Axis>|requires every DimensionAxis to be engaged")
 
+# ── FIXY-AUDIT-D4 — stance alias HS14 floor ───────────────────────
+#
+# Each of the 8 shipped stance aliases (PureLinear / PureCopy /
+# IoFunction / BgWorker / SecretConsumer / AsyncEndpoint / CtCrypto /
+# PublicEmit) ships >=2 fixtures exercising a Type-axis failure mode.
+# Distinct rejection classes across the family:
+#
+#   *_array         — C array decay
+#   *_void          — void is not an object
+#   *_ref           — lvalue reference
+#   *_rvalue_ref    — rvalue reference
+#   *_const         — top-level const
+#   *_volatile      — top-level volatile
+#   *_function      — bare function type
+#
+# All route through IsAccepted's type-axis check; the substrate's
+# safety::fn::Fn class-body static_assert also fires (named "Fn<...>
+# is malformed"), so the driver greps for "IsAccepted" which is the
+# satisfaction-chain root.
+crucible_neg_compile_fixy_test(neg_fixy_stance_pure_linear_array       "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_pure_linear_void        "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_pure_copy_ref           "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_pure_copy_function      "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_iofunction_const        "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_iofunction_volatile     "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_bgworker_rvalue_ref     "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_bgworker_void           "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_secret_consumer_array   "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_secret_consumer_void    "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_async_endpoint_ref      "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_async_endpoint_array    "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_ctcrypto_void           "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_publicemit_ref          "IsAccepted")
+
 # FIXY-AUDIT-A3 — HS14 floor for UniqueEngagementPerAxis.
 crucible_neg_compile_fixy_test(neg_fixy_duplicate_engagement     "UniqueEngagementPerAxis")
 
