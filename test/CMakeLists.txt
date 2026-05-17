@@ -540,6 +540,23 @@ crucible_test(attack_federation_authority_bypass
 set_tests_properties(attack_federation_authority_bypass PROPERTIES
     LABELS "safety_attack;fixy-CR-04")
 
+# fixy-CR-05 positive-attack regression — proves the V1 splits_into
+# trait is user-extensible.  A malicious downstream TU specializes
+# splits_into<FederatedPeer<OrgA>, FederatedPeer<OrgB>, FederatedPeer<OrgB>>
+# as std::true_type; partial-specialization ranking gives the
+# malicious explicit specialization higher rank than the
+# FederationPermission.h defensive intra-org-only partial.
+# mint_permission_split then converts one legitimate same-org
+# Permission into two cross-org Permissions with no admittance
+# check.  When fixy-M-29 lands (namespace-private or friend-
+# constrained splits_into), the malicious specialization fails to
+# compile and this TU itself reds.  See header doc-block in
+# include/crucible/permissions/FederationPermission.h §fixy-CR-05.
+crucible_test(attack_federation_cross_org_escalation
+              safety_attack/attack_federation_cross_org_escalation.cpp)
+set_tests_properties(attack_federation_cross_org_escalation PROPERTIES
+    LABELS "safety_attack;fixy-CR-05")
+
 crucible_test(test_fx_aliases)
 crucible_test(test_fx_alias_diagnostic)
 crucible_test(test_effect_row_lattice)
@@ -7899,3 +7916,12 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_cross_org_transfer
     "FederatedPeer|cannot convert|cannot bind|no matching function")
 crucible_neg_compile_fixy_test(neg_fixy_federation_handshake_wrong_type
     "FederationHandshake|cannot convert|no matching function")
+
+# fixy-CR-05 — defensive splits_into partial in FederationPermission.h
+# rejects accidental cross-org splits (no malicious user-side
+# specialization in scope).  The binary and N-ary fixtures together
+# satisfy the HS14 ≥2 floor for fixy-CR-05's defensive partial.
+crucible_neg_compile_fixy_test(neg_fixy_federation_cross_org_split
+    "splits_into|requires|static assertion")
+crucible_neg_compile_fixy_test(neg_fixy_federation_cross_org_split_n
+    "splits_into_pack|requires|static assertion")

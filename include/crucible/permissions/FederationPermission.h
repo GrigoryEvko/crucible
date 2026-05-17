@@ -153,6 +153,75 @@
 // regression test must be rewritten as a negative regression AND
 // that the fixy-CR-04 axis of the [[deprecated]] message can be
 // dropped.
+//
+// ── fixy-CR-05 (Hunter 5 C4) — CROSS-ORG SPLIT ESCALATION ──────────
+//
+// `splits_into<Parent, L, R>` in `permissions/Permission.h` is a
+// USER-EXTENSIBLE trait by design — the docstring says
+// "specializations belong in the SAME TU as the tags", but that is
+// a review-only discipline with zero structural machinery enforcing
+// it.  Any downstream TU can write:
+//
+//   namespace crucible::safety {
+//   template <> struct splits_into<
+//       tag::FederatedPeer<OrgA>,
+//       tag::FederatedPeer<OrgB>,
+//       tag::FederatedPeer<OrgB>>
+//       : std::true_type {};
+//   }
+//
+// A full specialization with three concrete types is MORE
+// specialized than any partial specialization we ship in this
+// header (C++ partial-specialization ranking).  Once the malicious
+// specialization is in scope, `mint_permission_split<
+// tag::FederatedPeer<OrgB>, tag::FederatedPeer<OrgB>>(
+// Permission<tag::FederatedPeer<OrgA>>{})` succeeds at the
+// requires-clause and produces a pair of OrgB permissions from a
+// single OrgA permission — total cross-org admittance escalation
+// with no policy check, no federation handshake, no MAC.
+//
+// Defense shipped in V1:
+//
+//   * The partial specialization
+//     `splits_into<tag::FederatedPeer<Org>,
+//                  tag::FederatedPeer<A>, tag::FederatedPeer<B>>`
+//     below explicitly pins federation policy as "intra-org only"
+//     (`A == Org && B == Org`).  This blocks the accidental
+//     same-tag-tree cross-org split: callers who DON'T ship a
+//     malicious explicit specialization but reach `mint_permission_split`
+//     with cross-org template arguments are rejected at the
+//     requires-clause.
+//   * The grep-discoverable policy manifest is now adjacent to the
+//     tag declaration, satisfying the "specializations belong in
+//     the SAME TU as the tags" docstring requirement structurally
+//     rather than by review-only convention.
+//
+// Defense NOT shipped in V1 (deferred to fixy-M-29):
+//
+//   * A malicious EXPLICIT specialization
+//     `splits_into<tag::FederatedPeer<OrgA>,
+//                  tag::FederatedPeer<OrgB>, tag::FederatedPeer<OrgB>>`
+//     (three concrete types) is STILL more specialized than our
+//     partial and wins template-argument matching.  The structural
+//     fix is to make `splits_into` namespace-private or
+//     friend-constrained so that user-side specializations cannot
+//     ride the public name at all.  That is fixy-M-29's scope —
+//     the general `splits_into` enforcement gap.  CR-05 is the
+//     federation-specific weaponization; closing it independently
+//     would still leave the generic gap open for any other
+//     security-critical tag tree (Cipher tier permissions, CSL
+//     producer/consumer endpoints, etc.).
+//
+// A positive-attack regression fixture lives at
+// `test/safety_attack/attack_federation_cross_org_escalation.cpp`.
+// It compiles today, runs today, and asserts that a malicious
+// user-side explicit specialization successfully converts one
+// OrgA permission into two OrgB permissions.  When fixy-M-29 lands
+// (namespace-private or friend-constrained `splits_into`), the
+// malicious specialization fails to compile and this fixture's
+// build itself reds — flagging that the regression must be
+// rewritten as a negative-compile fixture AND that the structural
+// gap behind CR-05 is closed.
 
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Tagged.h>
@@ -185,6 +254,41 @@ struct FederatedPeer {
 };
 
 }  // namespace tag
+
+}  // namespace crucible::permissions
+
+// ── fixy-CR-05 defensive splits_into manifest ──────────────────────
+//
+// Documents federation policy as "intra-org splits only" at the
+// type level, adjacent to the federation tag tree.  Closes the
+// accidental cross-org split (user has not specialized splits_into
+// themselves but reaches mint_permission_split with cross-org
+// template arguments).  Does NOT close the malicious explicit
+// specialization — that requires fixy-M-29's namespace-private or
+// friend-constrained splits_into.  See doc-block above.
+
+namespace crucible::safety {
+
+template <typename Org, typename A, typename B>
+struct splits_into<
+    ::crucible::permissions::tag::FederatedPeer<Org>,
+    ::crucible::permissions::tag::FederatedPeer<A>,
+    ::crucible::permissions::tag::FederatedPeer<B>>
+    : std::bool_constant<std::is_same_v<A, Org>
+                         && std::is_same_v<B, Org>> {};
+
+template <typename Org, typename... Children>
+struct splits_into_pack<
+    ::crucible::permissions::tag::FederatedPeer<Org>,
+    Children...>
+    : std::bool_constant<(
+        std::is_same_v<
+            Children,
+            ::crucible::permissions::tag::FederatedPeer<Org>> && ...)> {};
+
+}  // namespace crucible::safety
+
+namespace crucible::permissions {
 
 template <typename Org>
 using FederatedPeerPermission =
@@ -355,6 +459,39 @@ static_assert(federation_org_id<SelfOrg> != federation_org_id<OtherOrg>);
 static_assert(policy::admit_orgs<SelfOrg>::template admits<SelfOrg>);
 static_assert(!policy::admit_orgs<SelfOrg>::template admits<OtherOrg>);
 static_assert(policy::admit_orgs<SelfOrg, OtherOrg>::template admits<OtherOrg>);
+
+// ── fixy-CR-05 defensive splits_into policy self-test ─────────────
+//
+// Confirms the partial specialization rejects cross-org and accepts
+// intra-org splits.  This is the accidental-cross-org guard; a
+// malicious explicit specialization still wins by being more
+// specialized (see fixy-M-29 follow-up).
+static_assert(::crucible::safety::splits_into_v<
+              tag::FederatedPeer<SelfOrg>,
+              tag::FederatedPeer<SelfOrg>,
+              tag::FederatedPeer<SelfOrg>>,
+              "intra-org split must be admitted");
+static_assert(!::crucible::safety::splits_into_v<
+              tag::FederatedPeer<SelfOrg>,
+              tag::FederatedPeer<OtherOrg>,
+              tag::FederatedPeer<OtherOrg>>,
+              "cross-org split must be rejected by default");
+static_assert(!::crucible::safety::splits_into_v<
+              tag::FederatedPeer<SelfOrg>,
+              tag::FederatedPeer<SelfOrg>,
+              tag::FederatedPeer<OtherOrg>>,
+              "mixed-org split (one child crosses) must be rejected");
+static_assert(::crucible::safety::splits_into_pack_v<
+              tag::FederatedPeer<SelfOrg>,
+              tag::FederatedPeer<SelfOrg>,
+              tag::FederatedPeer<SelfOrg>,
+              tag::FederatedPeer<SelfOrg>>,
+              "intra-org N-ary split must be admitted");
+static_assert(!::crucible::safety::splits_into_pack_v<
+              tag::FederatedPeer<SelfOrg>,
+              tag::FederatedPeer<SelfOrg>,
+              tag::FederatedPeer<OtherOrg>>,
+              "N-ary split with one cross-org child must be rejected");
 
 static_assert(std::is_same_v<
     FederatedPeerPermission<SelfOrg>::tag_type,
