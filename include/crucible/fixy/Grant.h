@@ -296,7 +296,8 @@ template <> struct which_dim<as_secret>
 // ── Dim 6 Protocol relaxations ─────────────────────────────────────
 //
 // `protocol<Proto>` engages Protocol with a session-type or machine
-// state-type.  `fixy/Fn.h`'s `detail::resolve` namespace projects to `safety::fn::Protocol` slot.
+// state-type.  `fixy/Fn.h`'s `detail::resolve` namespace projects
+// to the `safety::fn::Protocol` slot.
 
 template <typename Proto>
 struct protocol final : grant_base {};
@@ -321,7 +322,8 @@ struct which_dim<in_region<RegionTag>>
 //
 // `from_source<Source>` engages Provenance with a substrate source
 // tag (source::FromUser / source::FromDb / source::FromNetwork /
-// etc.).  `fixy/Fn.h`'s `detail::resolve` namespace projects to `safety::fn::source_t`.
+// etc.).  `fixy/Fn.h`'s `detail::resolve` namespace projects to
+// the `safety::fn::source_t` slot.
 
 template <typename Source>
 struct from_source final : grant_base {};
@@ -335,8 +337,8 @@ struct which_dim<from_source<Source>>
 // `trust_assumed<auto Rationale>` engages Trust with a documented
 // rationale string (the rationale is a non-type template parameter
 // — typically a `std::array<char, N>` literal — captured for audit
-// trails but treated opaquely by IsAccepted).  `fixy/Fn.h`'s `detail::resolve` namespace projects to
-// `safety::trust::Assumed`.
+// trails but treated opaquely by IsAccepted).  `fixy/Fn.h`'s
+// `detail::resolve` namespace projects to `safety::trust::Assumed`.
 //
 // Four additional relaxation tags expose the remaining lattice points
 // of safety::trust::* so every named trust level is reachable through
@@ -417,7 +419,8 @@ template <>            struct which_dim<cost_unbounded>     : std::integral_cons
 // ── Dim 14 Precision relaxations ───────────────────────────────────
 //
 // `precision_f32`, `precision_f64`, `precision_higham<Bound>` —
-// `fixy/Fn.h`'s `detail::resolve` namespace projects to `safety::fn::precision::*`.
+// `fixy/Fn.h`'s `detail::resolve` namespace projects to
+// `safety::fn::precision::*`.
 
 struct precision_f32   final : grant_base {};
 struct precision_f64   final : grant_base {};
@@ -485,8 +488,8 @@ template <auto TauMax> struct which_dim<stale_to<TauMax>>
 // ── Dim 2 Refinement relaxations ───────────────────────────────────
 //
 // `refined_with<Pred>` engages Refinement with a predicate type that
-// satisfies the `pred::check` interface.  `fixy/Fn.h`'s `detail::resolve` namespace projects to
-// `Fn<Type, Pred, ...>`.
+// satisfies the `pred::check` interface.  `fixy/Fn.h`'s
+// `detail::resolve` namespace projects to `Fn<Type, Pred, ...>`.
 
 template <typename Pred>
 struct refined_with final : grant_base {};
