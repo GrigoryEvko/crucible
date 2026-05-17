@@ -48,13 +48,38 @@
 //
 // ── Self-test ──────────────────────────────────────────────────────
 //
-// The static_assert below verifies the substrate's enumerator count
-// matches our expectation (20).  If a future P-row adds a 21st axis,
-// this assertion fires and the maintainer is forced to update fixy/
-// Default.h and fixy/Grant.h alongside.
+// Substrate-contract sanity check, NOT a count-pinning drift detector.
+// Per `feedback_gcc16_c26_reflection_gotchas.md §3`, hardcoded enum-
+// count literals (`== 20`, `== 5`) invariably drift when an enumerator
+// is added; the assertion fires every time the substrate intentionally
+// grows, mistaking "substrate intentionally extended" for "fixy mirror
+// needs auditing."  Both sides of the comparison below are now
+// reflection-derived from the same enum, making the assertion
+// tautological under normal operation but catching the structural drift
+// where the substrate's exposed count constant diverges from
+// reflection's view of the same enum.
+//
+// Adding a new DimensionAxis is a deliberately-coordinated change.
+// Each downstream owner ships its OWN per-axis coverage assertion (the
+// load-bearing drift detectors) — this header's assertion is only a
+// substrate-contract sanity check:
+//
+//   safety/DimensionTraits.h:594  — every_dimension_axis_has_name()
+//   safety/DimensionTraits.h:616  — every_dimension_axis_has_tier()
+//   fixy/Default.h:289-298        — per-axis strict_default_for sweep
+//   fixy/Grant.h                  — which_dim<G> + acceptance markers
+//   fixy/Reject.h:432             — fixy_catalog_size == kDimAxisCount
+//                                   (FixyCatalog ↔ DimensionAxis card.)
+//
+// Adding a new TierKind currently has NO fixy-side per-tier consumer
+// (Reject.h dispatches per-axis, not per-tier — verified via grep).
+// The substrate's tier_of_axis switch (DimensionTraits.h:616) is the
+// only consumer that needs updating; substrate's own static_assert
+// fires first in every TU pulling fixy/Dim.h.
 
 #include <crucible/safety/DimensionTraits.h>
 
+#include <meta>
 #include <string_view>
 
 namespace crucible::fixy::dim {
@@ -88,25 +113,50 @@ using safety::DIMENSION_AXIS_COUNT;
 using safety::TIER_KIND_COUNT;
 
 // ═════════════════════════════════════════════════════════════════════
-// ── Self-test — substrate drift detector ──────────────────────────
+// ── Self-test — substrate-contract sanity check ───────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// If the substrate's enumerator count changes, every fixy header that
-// switches on per-dim engagement must be updated alongside.  Pinning
-// the count here forces the build to fail at fixy/Dim.h with a clear
-// message, rather than at some downstream consumer with a cryptic
-// pack-expansion error.
+// Both sides of each comparison derive from the same reflection call
+// on the same enum.  Under normal operation the assertion is
+// tautological — it does NOT fire when the substrate intentionally
+// grows.  The load-bearing drift detectors live in the per-consumer
+// coverage assertions documented in the header preamble above; the
+// canonical one for axis cardinality is `fixy_catalog_size ==
+// kDimAxisCount` at fixy/Reject.h:432, which fires if a new axis is
+// added to safety/DimensionTraits.h without a matching FixyCatalog
+// entry.
+//
+// This assertion catches the structural drift case where the
+// substrate constant is ever defined non-reflectively (manual count,
+// hardcoded literal — feedback_gcc16_c26_reflection_gotchas.md §3) and
+// falls out of sync with reflection.
 
-static_assert(DIMENSION_AXIS_COUNT == 20,
-    "fixy::dim — substrate DimensionAxis enumerator count has drifted "
-    "from the 20-axis taxonomy assumed by Phase A.  Update fixy/Default.h "
-    "(per-dim strict defaults) and fixy/Grant.h (engagement markers) "
-    "alongside safety/DimensionTraits.h's enumerator addition.");
+// NOTE: `^^DimensionAxis` here would resolve to the using-declaration
+// above (line 72 `using safety::DimensionAxis;`) which GCC 16's
+// reflection operator does NOT follow — emits "`^^` cannot be applied
+// to a using-declaration."  Reach through to the substrate enum
+// directly via the fully-qualified `safety::DimensionAxis` path.
 
-static_assert(TIER_KIND_COUNT == 5,
-    "fixy::dim — substrate TierKind enumerator count has drifted from "
-    "the 5-family classification.  fixy/Reject.h's per-Tier dispatch "
-    "must be updated alongside.");
+static_assert(DIMENSION_AXIS_COUNT
+              == std::meta::enumerators_of(^^safety::DimensionAxis).size(),
+    "fixy::dim — substrate DIMENSION_AXIS_COUNT has drifted from the "
+    "reflection-derived enumerator count of safety::DimensionAxis.  "
+    "Either the substrate constant was manually maintained (and forgot "
+    "to bump on enumerator addition) or reflection is reporting a "
+    "different enum than the substrate exposes.  Investigate "
+    "safety/DimensionTraits.h's DIMENSION_AXIS_COUNT definition.");
+
+static_assert(TIER_KIND_COUNT
+              == std::meta::enumerators_of(^^safety::TierKind).size(),
+    "fixy::dim — substrate TIER_KIND_COUNT has drifted from the "
+    "reflection-derived enumerator count of safety::TierKind.  Same "
+    "diagnosis as DIMENSION_AXIS_COUNT above.  Note: there is no "
+    "fixy-side per-tier dispatch (Reject.h dispatches per-axis, NOT "
+    "per-tier — verified via grep); this assertion exists for "
+    "substrate-contract consistency only.  Adding a new TierKind "
+    "requires updating safety/DimensionTraits.h's tier_of_axis switch "
+    "arms (substrate's own static_assert at DimensionTraits.h:616 "
+    "fires first).");
 
 // ─── Per-dim Tier sanity — covered by substrate guard ──────────────
 //
