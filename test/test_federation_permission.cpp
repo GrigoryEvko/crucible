@@ -2,6 +2,13 @@
 #include <crucible/permissions/FederationPermission.h>
 #include <crucible/safety/IsTagged.h>
 
+// fixy-CR-02 — mint_federation_admittance is [[deprecated]] in V1.
+// This test exercises the placeholder verifier knowingly; suppress
+// the deprecation diagnostic at the TU level.  When HACL* lands, the
+// suppression here AND the deprecation tag itself come out together.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include "test_assert.h"
 
 #include <array>
@@ -151,3 +158,5 @@ int main() {
     std::puts("federation_permission: typed admittance + tagged decode OK");
     return 0;
 }
+
+#pragma GCC diagnostic pop

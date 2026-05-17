@@ -22,6 +22,12 @@
 
 #include <crucible/fixy/Source.h>
 
+// fixy-CR-02 — mint_federation_admittance is [[deprecated]]; suppress
+// the diagnostic so it does not interleave with the expected
+// overload-resolution failure regex.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace ff = crucible::fixy::source::federation;
 
 struct NegFederationMissingProof_Org {};
@@ -42,3 +48,5 @@ int main() {
         not_a_permission, handshake);
     return 0;
 }
+
+#pragma GCC diagnostic pop

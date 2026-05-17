@@ -26,6 +26,12 @@
 
 #include <crucible/fixy/Source.h>
 
+// fixy-CR-02 — mint_federation_admittance is [[deprecated]]; suppress
+// the diagnostic so it does not interleave with the expected
+// permission-tag-mismatch regex.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace ff = crucible::fixy::source::federation;
 namespace cs = crucible::safety;
 

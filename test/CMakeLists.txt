@@ -496,6 +496,18 @@ crucible_test(test_cipher_record_event)
 crucible_test(test_background_thread_run_in_row)
 crucible_test(test_computation_cache_federation)
 crucible_test(test_federation_permission)
+
+# fixy-CR-02 positive-attack regression — proves the V1 self-signed
+# federation handshake is forgeable today.  When HACL* lands and the
+# forgery is rejected, this test reddens; that signals the
+# [[deprecated]] tag on mint_federation_admittance + the pragma
+# suppressions in 4 TUs must be removed.  See header doc-block in
+# include/crucible/permissions/FederationPermission.h §fixy-CR-02.
+crucible_test(attack_federation_forgery
+              safety_attack/attack_federation_forgery.cpp)
+set_tests_properties(attack_federation_forgery PROPERTIES
+    LABELS "safety_attack;fixy-CR-02")
+
 crucible_test(test_fx_aliases)
 crucible_test(test_fx_alias_diagnostic)
 crucible_test(test_effect_row_lattice)

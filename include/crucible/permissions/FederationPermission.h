@@ -15,6 +15,37 @@
 // verifier and key-distribution discipline.  This layer pins the type-level
 // authority flow and the deterministic fingerprint contract the verifier must
 // satisfy.
+//
+// ── fixy-CR-02 (Hunter 5 C1) — INSECURE BY DESIGN, INTENTIONALLY ────
+//
+// The current `federation_signature_fingerprint(org_id, peer_key_fp,
+// nonce)` implementation is a pure deterministic mix64 fold of public
+// inputs — no key, no MAC, no asymmetric crypto.  Any caller that
+// knows the three public inputs (and `federation_org_id<Org>` is
+// `consteval`-reachable from anywhere in the program) can compute a
+// valid `self_signature_fingerprint`, mint a forged
+// `FederationHandshake`, and pass it through
+// `mint_federation_admittance` to obtain
+// `Permission<FederatedPeer<Org>>` for ANY organization in the
+// admit-policy.  This is acceptable as a V1-development substitution
+// point — the type-level authority flow + deterministic fingerprint
+// contract are the load-bearing pieces — but the CURRENT verifier is
+// trivially forgeable.
+//
+// The `[[deprecated]]` tag on `mint_federation_admittance` below is
+// the compile-time warning.  Production deployment requires
+// substituting an HACL*-backed verifier (or equivalent) that takes a
+// real per-peer secret key, MACs the handshake, and rejects forged
+// signatures.  Until then, every legitimate caller MUST suppress
+// `-Wdeprecated-declarations` locally via `_Pragma` to acknowledge
+// that they are calling the placeholder.
+//
+// A positive-attack regression fixture lives at
+// `test/safety_attack/attack_federation_forgery.cpp`.  It compiles
+// today, runs today, and asserts that forgery succeeds today.  When
+// HACL* lands, that assertion will fire and the test will fail
+// visibly — flagging that the regression test must be updated AND
+// that the deprecation tag can be removed.
 
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Tagged.h>
@@ -159,7 +190,17 @@ make_self_signed_handshake(
 
 template <typename Org,
           typename Policy = policy::admit_orgs<Org>>
-[[nodiscard]] constexpr std::expected<
+[[nodiscard,
+  deprecated(
+      "fixy-CR-02: self-signed federation handshake is forgeable — the "
+      "current federation_signature_fingerprint is a pure deterministic "
+      "mix64 fold of public values, NOT a cryptographic MAC.  Anyone "
+      "who knows the org_id/peer_key_fp/nonce can mint a forged "
+      "Permission<FederatedPeer<Org>>.  Replace with HACL*-backed "
+      "verifier before production deployment.  Suppress locally via "
+      "_Pragma(\"GCC diagnostic ignored \\\"-Wdeprecated-declarations\\\"\") "
+      "if you are calling this knowingly (tests, V1 development)." )]]
+constexpr std::expected<
     FederatedPeerPermission<Org>,
     AdmittanceError>
 mint_federation_admittance(

@@ -21,6 +21,13 @@
 #include <crucible/fixy/Source.h>
 #include <crucible/permissions/Permission.h>
 
+// fixy-CR-02 — mint_federation_admittance is [[deprecated]] in V1.
+// This TU exercises the placeholder verifier knowingly; suppress
+// the deprecation diagnostic at the TU level.  When HACL* lands, the
+// suppression here AND the deprecation tag itself come out together.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include <type_traits>
 
 namespace ffed   = crucible::fixy::source::federation;
@@ -150,3 +157,5 @@ int main() {
 
     return 0;
 }
+
+#pragma GCC diagnostic pop
