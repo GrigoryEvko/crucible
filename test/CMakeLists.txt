@@ -7660,6 +7660,80 @@ crucible_neg_compile_fixy_test(neg_fixy_algebra_bounded_missing_top
 crucible_neg_compile_fixy_test(neg_fixy_algebra_gw_missing_name
     "GradedWrapper|associated constraints|constraints not satisfied|value_type_name")
 
+# ══════════════════════════════════════════════════════════════════════
+# FIXY-GAP-A — Agent A round 2
+# ══════════════════════════════════════════════════════════════════════
+#
+# Coverage extension shipped during the parallel FIXY-AUDIT sweep.
+# Adds fixy-surface fixtures for the remaining mint factories on
+# Perm.h (share, inherit) and Contract.h (restore, persisted_session),
+# plus widens Is.h concept-gate coverage from 3 to 9 wrappers.
+
+# ── FIXY-MINT-Perm round 2 — share + inherit through fixy::perm ─────
+# Existing perm coverage pins root + fork + split/combine; this round
+# closes the remaining two mints.  Four fixtures across distinct
+# rejection classes:
+#   - share_ctx_row_mismatch — ctx-bound share rejected when
+#     Ctx::row does not admit permission_row<Tag> (NetworkBufferTag
+#     needs IO; HotFgCtx has Row<>).  Pins CtxAdmitsPermission gate.
+#   - share_bare_row_bearing — bare-form share rejected on
+#     row-bearing tag (static_assert permission_row_empty_v<Tag>).
+#   - inherit_without_specialization — fixy-routed equivalent of the
+#     substrate fixture neg_mint_permission_inherit_without_specialization.
+#     Confirms the re-export preserves the inherits_from gate.
+#   - inherit_self_cycle — fixy-routed equivalent of the substrate
+#     fixture neg_mint_permission_inherit_self_cycle.  Confirms the
+#     re-export preserves the no-self-inheritance static_assert.
+crucible_neg_compile_fixy_test(neg_fixy_perm_share_ctx_row_mismatch
+    "CtxAdmitsPermission|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perm_share_bare_row_bearing
+    "permission_row|Row<>|static assertion failed")
+crucible_neg_compile_fixy_test(neg_fixy_perm_inherit_without_specialization
+    "mint_permission_inherit requires inherits_from|static assertion failed")
+crucible_neg_compile_fixy_test(neg_fixy_perm_inherit_self_cycle
+    "mint_permission_inherit forbids circular inheritance|static assertion failed")
+
+# ── FIXY-MINT-Contract round 2 — restore + persisted_session ────────
+# Existing contract coverage pins promote/demote chain-direction; this
+# round closes the remaining two mints.  Four fixtures:
+#   - restore_unmovable — RestorableTier requires move_constructible,
+#     fixy-routed equivalent of neg_cipher_tier_restore_unmovable_payload.
+#   - restore_type_mismatch — cold handle T must match explicit
+#     mint_restore<T>, fixy-routed equivalent of
+#     neg_cipher_tier_restore_wrong_value_type.
+#   - persisted_session_no_ctx — deleted overload with the structured
+#     tag [PersistedSession_CtxRequired]; the bare no-Ctx form.
+#   - persisted_session_no_openview — deleted overload with the
+#     structured tag [PersistedSession_OpenViewRequired]; the
+#     missing-OpenView form.
+crucible_neg_compile_fixy_test(neg_fixy_contract_restore_unmovable
+    "RestorableTier|move_constructible|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_contract_restore_type_mismatch
+    "no matching function|could not convert|Cold")
+crucible_neg_compile_fixy_test(neg_fixy_contract_persisted_session_no_ctx
+    "PersistedSession_CtxRequired|use of deleted function|deleted")
+crucible_neg_compile_fixy_test(neg_fixy_contract_persisted_session_no_openview
+    "PersistedSession_OpenViewRequired|use of deleted function|deleted")
+
+# ── FIXY-IS round 2 — concept-gate coverage extension ───────────────
+# Existing Is.h coverage pins 3 wrappers (Linear, Secret, SessionHandle);
+# this round adds 6 more, covering canonical wrapper-nesting order from
+# CLAUDE.md §XVI (HotPath, DetSafe, Stale, Tagged, Refined, Permission).
+# Each fixture instantiates the IsX concept-as-requires-clause and
+# confirms a plain unrelated type is rejected — alias identity check.
+crucible_neg_compile_fixy_test(neg_fixy_is_tagged_rejects_plain
+    "constraints not satisfied|associated constraints|IsTagged|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_is_refined_rejects_plain
+    "constraints not satisfied|associated constraints|IsRefined|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_is_hotpath_rejects_plain
+    "constraints not satisfied|associated constraints|IsHotPath|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_is_detsafe_rejects_plain
+    "constraints not satisfied|associated constraints|IsDetSafe|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_is_stale_rejects_plain
+    "constraints not satisfied|associated constraints|IsStale|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_is_permission_rejects_plain
+    "constraints not satisfied|associated constraints|IsPermission|no matching function")
+
 # ── FIXY-AUDIT-A3 — resolver totality probe ─────────────────────────
 # The 19-axis Grants→Fn projector (fixy/Fn.h::detail::resolve) is
 # ARCHITECTURALLY TOTAL over all IsGrantTag inputs: every axis has a
