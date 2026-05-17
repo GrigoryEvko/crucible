@@ -3,7 +3,14 @@
 
 #include <utility>
 
-namespace fp = crucible::safety::proto::federation;
+namespace fp  = crucible::safety::proto::federation;
+namespace eff = crucible::effects;
+
+// fixy-CR-13: federation mints require Row<IO, Block> in ctx::row_type.
+using FederationFitCtx = decltype(
+    eff::BgCompileCtx{}.in_row<eff::Row<
+        eff::Effect::Bg, eff::Effect::Alloc,
+        eff::Effect::IO, eff::Effect::Block>>());
 
 struct Key {};
 struct PeerOrg {};
@@ -25,7 +32,7 @@ concept CanSendBeforePull = requires(Handle h) {
 };
 
 using ReceiverHandle = decltype(fp::mint_receiver<PeerOrg, Key>(
-    std::declval<crucible::effects::HotFgCtx const&>(),
+    std::declval<FederationFitCtx const&>(),
     Endpoint{},
     std::declval<Admittance const&>()));
 

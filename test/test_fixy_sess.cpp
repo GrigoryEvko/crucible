@@ -23,6 +23,7 @@ namespace proto = ::crucible::safety::proto;
 namespace fed   = ::crucible::safety::proto::federation;
 namespace perm  = ::crucible::permissions;
 namespace saf   = ::crucible::safety;
+namespace eff   = ::crucible::effects;
 
 // fixy-CR-07: federation session mints now take an Org template
 // parameter and a Permission<FederatedPeer<Org>> admittance witness.
@@ -31,6 +32,24 @@ namespace saf   = ::crucible::safety;
 namespace test_fixy_sess { struct PeerOrg {}; }
 using TestPeerAdmittance =
     saf::Permission<perm::tag::FederatedPeer<test_fixy_sess::PeerOrg>>;
+
+// fixy-CR-13: federation mints require `Row<IO, Block>` in the ctx
+// row.  BgCompileCtx ships with `Row<Bg, Alloc, IO>` — missing Block.
+// Widen via `.in_row<>()` to admit federation (Bg's permitted row
+// includes Block, so the widening is structurally legal).
+using FederationFitCtx = decltype(
+    eff::BgCompileCtx{}.in_row<eff::Row<
+        eff::Effect::Bg, eff::Effect::Alloc,
+        eff::Effect::IO, eff::Effect::Block>>());
+static_assert(fed::CtxFitsFederation<FederationFitCtx>,
+    "Sentinel: federation-widened BgCompileCtx must satisfy "
+    "fixy-CR-13's CtxFitsFederation gate.");
+static_assert(!fed::CtxFitsFederation<eff::BgCompileCtx>,
+    "Sentinel: unwidened BgCompileCtx must NOT satisfy the gate — "
+    "BgCompileCtx ships Row<Bg, Alloc, IO>, missing Block.");
+static_assert(!fed::CtxFitsFederation<eff::HotFgCtx>,
+    "Sentinel: HotFgCtx must NOT satisfy the gate — Fg cap's "
+    "permitted row is Row<>, can never carry IO+Block.");
 
 // ─── 1. Core combinator aliases ───────────────────────────────────
 
@@ -59,11 +78,11 @@ struct KeyTag {};
 static_assert(std::is_same_v<
     decltype(&fsess::federation::mint_sender<test_fixy_sess::PeerOrg,
                                               test_fixy_sess::KeyTag,
-                                              ::crucible::effects::BgCompileCtx,
+                                              FederationFitCtx,
                                               int>),
     decltype(&fed::mint_sender<test_fixy_sess::PeerOrg,
                                 test_fixy_sess::KeyTag,
-                                ::crucible::effects::BgCompileCtx,
+                                FederationFitCtx,
                                 int>)>,
     "fixy::sess::federation::mint_sender must be the substrate function "
     "(name-lookup-only re-export).");
@@ -108,17 +127,17 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(fsess::mint_federation_channel<test_fixy_sess::PeerOrg,
                                              test_fixy_sess::KeyTag,
-                                             ::crucible::effects::BgCompileCtx,
+                                             FederationFitCtx,
                                              int, int>(
-        std::declval<const ::crucible::effects::BgCompileCtx&>(),
+        std::declval<const FederationFitCtx&>(),
         std::declval<int>(),
         std::declval<int>(),
         std::declval<TestPeerAdmittance const&>())),
     decltype(fed::mint_channel<test_fixy_sess::PeerOrg,
                                 test_fixy_sess::KeyTag,
-                                ::crucible::effects::BgCompileCtx,
+                                FederationFitCtx,
                                 int, int>(
-        std::declval<const ::crucible::effects::BgCompileCtx&>(),
+        std::declval<const FederationFitCtx&>(),
         std::declval<int>(),
         std::declval<int>(),
         std::declval<TestPeerAdmittance const&>()))>,
@@ -131,17 +150,17 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(fsess::federation::mint_channel<test_fixy_sess::PeerOrg,
                                               test_fixy_sess::KeyTag,
-                                              ::crucible::effects::BgCompileCtx,
+                                              FederationFitCtx,
                                               int, int>(
-        std::declval<const ::crucible::effects::BgCompileCtx&>(),
+        std::declval<const FederationFitCtx&>(),
         std::declval<int>(),
         std::declval<int>(),
         std::declval<TestPeerAdmittance const&>())),
     decltype(fed::mint_channel<test_fixy_sess::PeerOrg,
                                 test_fixy_sess::KeyTag,
-                                ::crucible::effects::BgCompileCtx,
+                                FederationFitCtx,
                                 int, int>(
-        std::declval<const ::crucible::effects::BgCompileCtx&>(),
+        std::declval<const FederationFitCtx&>(),
         std::declval<int>(),
         std::declval<int>(),
         std::declval<TestPeerAdmittance const&>()))>,

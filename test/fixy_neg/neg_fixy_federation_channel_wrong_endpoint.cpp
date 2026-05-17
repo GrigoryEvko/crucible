@@ -29,6 +29,16 @@
 namespace fsess = crucible::fixy::sess;
 namespace cs    = crucible::safety;
 namespace ff    = crucible::fixy::source::federation;
+namespace eff   = crucible::effects;
+
+// fixy-CR-13: federation mints now also require Row<IO, Block> in
+// ctx::row_type.  This fixture targets the *downstream*
+// SessionResource_NotPinned check, so the surface row gate must pass
+// — widen BgCompileCtx to admit Block via `.in_row<>()`.
+using FederationFitCtx = decltype(
+    eff::BgCompileCtx{}.in_row<eff::Row<
+        eff::Effect::Bg, eff::Effect::Alloc,
+        eff::Effect::IO, eff::Effect::Block>>());
 
 struct NegFedChannelWrongEp_PeerOrg {};
 
@@ -45,10 +55,11 @@ int main() {
     auto admitted = ff::mint_federation_admittance<
         NegFedChannelWrongEp_PeerOrg>(local, handshake);
 
-    // Use the canonical BgCompileCtx so IsExecCtx<Ctx> is satisfied,
-    // forcing the constraint chain to reach the inner
-    // mint_permissioned_session call and fail there.
-    crucible::effects::BgCompileCtx ctx{};
+    // fixy-CR-13: use the widened FederationFitCtx so the surface row
+    // gate (CtxFitsFederation) is satisfied; the constraint chain then
+    // reaches the inner mint_permissioned_session call and fires
+    // SessionResource_NotPinned for the void* endpoints.
+    FederationFitCtx ctx{};
     void* bad_sender = nullptr;
     void* bad_receiver = nullptr;
     auto bad = fsess::mint_federation_channel<

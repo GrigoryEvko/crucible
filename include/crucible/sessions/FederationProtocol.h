@@ -18,8 +18,12 @@
 
 #include <crucible/Types.h>
 #include <crucible/cipher/FederationProtocol.h>
+#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/permissions/FederationPermission.h>
+#include <crucible/safety/Decide.h>
+#include <crucible/safety/diag/RowMismatch.h>
 #include <crucible/sessions/SessionContentAddressed.h>
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/SessionMint.h>
@@ -29,6 +33,48 @@
 #include <utility>
 
 namespace crucible::safety::proto::federation {
+
+// ── fixy-CR-13: federation row gate ────────────────────────────────
+//
+// Federation channels are heavy-weight cross-machine transports: every
+// Send/Recv on a `SenderProto` / `ReceiverProto` / `CoordProto` lowers
+// to a network round-trip that blocks the calling thread on a remote
+// peer.  The natural effect row is `Row<IO, Block>` — IO because the
+// channel touches kernel sockets / NIC queues, Block because Send and
+// Recv synchronously wait for the peer.
+//
+// Pre fixy-CR-13 the four per-role mints (`mint_sender` /
+// `mint_receiver` / `mint_coord` / `mint_channel`) and the fixy-level
+// wrapper `fixy::sess::mint_federation_channel` only required
+// `IsExecCtx<Ctx>` — a `HotFgCtx` (Fg cap, `Row<>` row, hot-path tier)
+// could mint a federation channel cleanly.  That contradicted both the
+// header-doc invariant ("heavy-weight cross-machine transport") and the
+// general row-flow discipline (call-site ctx must admit the row the
+// callee actually executes).
+//
+// `federation_required_row` is the public anchor for the gate.  Adding
+// `requires Subrow<federation_required_row, typename Ctx::row_type>`
+// to every mint structurally rejects Fg / hot-path call sites: Fg's
+// `cap_permitted_row` is `Row<>`, so a Fg-rooted ctx can never widen
+// its row to include `IO`/`Block` via `.in_row<>()` — the Subrow check
+// is unsatisfiable at construction.  Bg-rooted ctx whose row already
+// includes IO can widen to add `Block` (Bg's permitted row is
+// `Row<Bg, Alloc, IO, Block>`) and mint without friction.
+
+using federation_required_row = ::crucible::effects::Row<
+    ::crucible::effects::Effect::IO,
+    ::crucible::effects::Effect::Block>;
+
+// Diagnostic boundary symbol — passed as the `FnPtr` argument to
+// `CRUCIBLE_ROW_MISMATCH_ASSERT` so the user sees a grep-discoverable
+// name in the error message.  Never invoked; address-of only.
+[[noreturn]] inline void federation_mint_boundary() noexcept { std::abort(); }
+
+template <typename Ctx>
+concept CtxFitsFederation =
+    ::crucible::effects::IsExecCtx<Ctx>
+    && ::crucible::effects::Subrow<federation_required_row,
+                                    typename Ctx::row_type>;
 
 struct SenderRole {};
 struct ReceiverRole {};
@@ -144,37 +190,60 @@ inline constexpr bool role_protocol_matches_v =
 
 template <typename Org,
           typename KeyTag = AnyFederationKey,
-          ::crucible::effects::IsExecCtx Ctx,
+          typename Ctx,
           typename SenderEndpoint>
+    requires CtxFitsFederation<Ctx>
 [[nodiscard]] constexpr auto mint_sender(
     Ctx const& ctx,
     SenderEndpoint&& sender_endpoint,
     ::crucible::safety::Permission<
         ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept {
     (void)admittance;
+    using ctx_row = typename Ctx::row_type;
+    using offending =
+        ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;
+    CRUCIBLE_ROW_MISMATCH_ASSERT(
+        (::crucible::decide::row_subset<federation_required_row, ctx_row>()),
+        EffectRowMismatch,
+        &federation_mint_boundary,
+        ctx_row,
+        federation_required_row,
+        offending);
     return ::crucible::safety::proto::mint_permissioned_session<SenderProto<KeyTag>>(
         ctx, std::forward<SenderEndpoint>(sender_endpoint));
 }
 
 template <typename Org,
           typename KeyTag = AnyFederationKey,
-          ::crucible::effects::IsExecCtx Ctx,
+          typename Ctx,
           typename ReceiverEndpoint>
+    requires CtxFitsFederation<Ctx>
 [[nodiscard]] constexpr auto mint_receiver(
     Ctx const& ctx,
     ReceiverEndpoint&& receiver_endpoint,
     ::crucible::safety::Permission<
         ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept {
     (void)admittance;
+    using ctx_row = typename Ctx::row_type;
+    using offending =
+        ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;
+    CRUCIBLE_ROW_MISMATCH_ASSERT(
+        (::crucible::decide::row_subset<federation_required_row, ctx_row>()),
+        EffectRowMismatch,
+        &federation_mint_boundary,
+        ctx_row,
+        federation_required_row,
+        offending);
     return ::crucible::safety::proto::mint_permissioned_session<ReceiverProto<KeyTag>>(
         ctx, std::forward<ReceiverEndpoint>(receiver_endpoint));
 }
 
 template <typename Org,
           typename KeyTag = AnyFederationKey,
-          ::crucible::effects::IsExecCtx Ctx,
+          typename Ctx,
           typename SenderEndpoint,
           typename ReceiverEndpoint>
+    requires CtxFitsFederation<Ctx>
 [[nodiscard]] constexpr auto mint_channel(
     Ctx const& ctx,
     SenderEndpoint&& sender_endpoint,
@@ -191,14 +260,25 @@ template <typename Org,
 
 template <typename Org,
           typename KeyTag = AnyFederationKey,
-          ::crucible::effects::IsExecCtx Ctx,
+          typename Ctx,
           typename CoordEndpoint>
+    requires CtxFitsFederation<Ctx>
 [[nodiscard]] constexpr auto mint_coord(
     Ctx const& ctx,
     CoordEndpoint&& coord_endpoint,
     ::crucible::safety::Permission<
         ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept {
     (void)admittance;
+    using ctx_row = typename Ctx::row_type;
+    using offending =
+        ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;
+    CRUCIBLE_ROW_MISMATCH_ASSERT(
+        (::crucible::decide::row_subset<federation_required_row, ctx_row>()),
+        EffectRowMismatch,
+        &federation_mint_boundary,
+        ctx_row,
+        federation_required_row,
+        offending);
     return ::crucible::safety::proto::mint_permissioned_session<CoordProto<KeyTag>>(
         ctx, std::forward<CoordEndpoint>(coord_endpoint));
 }

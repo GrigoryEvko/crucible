@@ -3,7 +3,16 @@
 
 #include <utility>
 
-namespace fp = crucible::safety::proto::federation;
+namespace fp  = crucible::safety::proto::federation;
+namespace eff = crucible::effects;
+
+// fixy-CR-13: federation mints require Row<IO, Block> in ctx::row_type.
+// Widen BgCompileCtx (which carries Bg + Alloc + IO already) to include
+// Block; Bg cap's permitted row includes Block so the widen compiles.
+using FederationFitCtx = decltype(
+    eff::BgCompileCtx{}.in_row<eff::Row<
+        eff::Effect::Bg, eff::Effect::Alloc,
+        eff::Effect::IO, eff::Effect::Block>>());
 
 struct Key {};
 struct PeerOrg {};
@@ -26,7 +35,7 @@ concept CanRecvBeforeAnnounce = requires(Handle h) {
 };
 
 using SenderHandle = decltype(fp::mint_sender<PeerOrg, Key>(
-    std::declval<crucible::effects::HotFgCtx const&>(),
+    std::declval<FederationFitCtx const&>(),
     Endpoint{},
     std::declval<Admittance const&>()));
 

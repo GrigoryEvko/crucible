@@ -38,7 +38,10 @@
 
 #include <crucible/bridges/CrashTransport.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/diag/RowMismatch.h>
 #include <crucible/sessions/FederationProtocol.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
@@ -294,11 +297,26 @@ using federation::mint_coord;
 // arguments and would win on some call sites.  Explicit alias names
 // keep both surfaces stable and grep-discoverable.
 
+// ── fixy-CR-13: federation row gate at the fixy wrapper ────────────
+//
+// `mint_federation_channel` forwards to the substrate's
+// `federation::mint_channel`, which now requires
+// `CtxFitsFederation<Ctx>` (Row<IO, Block> ⊆ Ctx::row_type).  The
+// requires-clause is re-stated here so the fixy wrapper rejects at the
+// outer boundary — diagnostics fire on the fixy call site, not three
+// levels deep in the substrate.
+//
+// Public anchors re-exported below for grep-discovery.
+
+using ::crucible::safety::proto::federation::federation_required_row;
+using ::crucible::safety::proto::federation::CtxFitsFederation;
+
 template <typename Org,
           typename KeyTag = federation::AnyFederationKey,
-          ::crucible::effects::IsExecCtx Ctx,
+          typename Ctx,
           typename SenderEndpoint,
           typename ReceiverEndpoint>
+    requires ::crucible::safety::proto::federation::CtxFitsFederation<Ctx>
 [[nodiscard]] constexpr auto mint_federation_channel(
     Ctx const& ctx,
     SenderEndpoint&& sender_endpoint,
@@ -306,6 +324,19 @@ template <typename Org,
     ::crucible::safety::Permission<
         ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept
 {
+    using ctx_row = typename Ctx::row_type;
+    using offending = ::crucible::effects::row_difference_t<
+        ::crucible::safety::proto::federation::federation_required_row,
+        ctx_row>;
+    CRUCIBLE_ROW_MISMATCH_ASSERT(
+        (::crucible::decide::row_subset<
+            ::crucible::safety::proto::federation::federation_required_row,
+            ctx_row>()),
+        EffectRowMismatch,
+        &::crucible::safety::proto::federation::federation_mint_boundary,
+        ctx_row,
+        ::crucible::safety::proto::federation::federation_required_row,
+        offending);
     return federation::mint_channel<Org, KeyTag>(
         ctx,
         std::forward<SenderEndpoint>(sender_endpoint),

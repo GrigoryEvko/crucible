@@ -1232,6 +1232,15 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_channel_non_ctx
 crucible_neg_compile_fixy_test(neg_fixy_federation_channel_wrong_endpoint
     "SessionResource_NotPinned")
 
+# fixy-CR-13 — HS14 floor for the CtxFitsFederation row gate at the
+# fixy wrapper boundary.  Two rejection classes: (a) Fg cap empty row
+# (HotFgCtx can't widen — Fg::permitted_row is Row<>), (b) strict
+# subset (BgCompileCtx carries Row<Bg, Alloc, IO> — missing Block).
+crucible_neg_compile_fixy_test(neg_fixy_federation_channel_no_row_fg
+    "CtxFitsFederation|EffectRowMismatch|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_federation_channel_no_row_bg_compile
+    "CtxFitsFederation|EffectRowMismatch|constraints not satisfied|no matching function")
+
 # FIXY-AUDIT-E10 — HS14 floor for fixy::safety::mint_secret re-export.
 # is_constructible_v gate covered with two distinct argument shapes:
 # type-mismatch (int <- const char*) and arity-mismatch (int(a,b,c)).
@@ -6477,6 +6486,15 @@ crucible_neg_compile_test(neg_permission_fork_ctx_no_bg
     "CtxFitsPermissionFork|row_contains|constraints not satisfied")
 crucible_neg_compile_test(neg_permission_fork_child_ctx_mismatch
     "permission_fork_ctx_callables|constraints not satisfied|no matching function")
+
+# fixy-CR-13 — substrate-side HS14 floor for federation::mint_* row
+# admission.  Pairs with the fixy-wrapper-side fixtures in fixy_neg/.
+# Two distinct rejection classes (Fg empty row × BgCompile missing
+# Block), exercising mint_channel + mint_sender entry points.
+crucible_neg_compile_test(neg_federation_mint_no_row_fg
+    "CtxFitsFederation|EffectRowMismatch|constraints not satisfied|no matching function")
+crucible_neg_compile_test(neg_federation_mint_no_row_bg_compile
+    "CtxFitsFederation|EffectRowMismatch|constraints not satisfied|no matching function")
 
 # GAPS-075 — permission rows bind effectful ownership to ExecCtx row
 # admission.  The pure permission APIs stay available for Row<> tags;

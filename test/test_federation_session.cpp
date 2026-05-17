@@ -12,6 +12,16 @@ namespace fp = crucible::safety::proto::federation;
 namespace proto = crucible::safety::proto;
 namespace perm = crucible::permissions;
 namespace saf  = crucible::safety;
+namespace eff  = crucible::effects;
+
+// fixy-CR-13: federation mints require Row<IO, Block> in ctx::row_type.
+// HotFgCtx (Fg cap, empty row) and BgCompileCtx (Bg cap, Row<Bg, Alloc,
+// IO>) both fail the Subrow check.  Widen via .in_row<>() — Bg's
+// permitted row includes Block, so the widening compiles.
+using FederationFitCtx = decltype(
+    eff::BgCompileCtx{}.in_row<eff::Row<
+        eff::Effect::Bg, eff::Effect::Alloc,
+        eff::Effect::IO, eff::Effect::Block>>());
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -67,7 +77,7 @@ static_assert(!fp::role_protocol_matches_v<
 
 int test_sender_receiver_views() {
     std::vector<int> events;
-    crucible::effects::HotFgCtx ctx{};
+    FederationFitCtx ctx{};
     auto admittance = mint_test_admittance();
     auto [sender, receiver] =
         fp::mint_channel<PeerOrg, TraceKey>(
@@ -106,7 +116,7 @@ int test_sender_receiver_views() {
 
 int test_coord_view() {
     std::vector<int> events;
-    crucible::effects::HotFgCtx ctx{};
+    FederationFitCtx ctx{};
     auto admittance = mint_test_admittance();
     auto coord = fp::mint_coord<PeerOrg, TraceKey>(
         ctx, Endpoint{&events}, admittance);
