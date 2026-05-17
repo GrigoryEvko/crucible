@@ -43,6 +43,14 @@
 
 #include <utility>
 
+// fixy-CR-06 follow-up: mint_permission_root<FederatedPeer<...>> is
+// concept-deleted in V1 — seed the OrgA permission via the legitimate
+// admittance channel instead.  Self-signed handshakes are
+// [[deprecated]] in V1 (fixy-CR-02); suppress the diagnostic at the
+// TU level so the splits_into static_assert remains the failing site.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace perm = crucible::permissions;
 namespace saf  = crucible::safety;
 
@@ -53,8 +61,17 @@ struct NegCrossOrgSplit_OrgA {};
 struct NegCrossOrgSplit_OrgB {};
 
 int main() {
-    auto perm_a = saf::mint_permission_root<
-        perm::tag::FederatedPeer<NegCrossOrgSplit_OrgA>>();
+    auto local_cipher =
+        saf::mint_permission_root<perm::tag::LocalCipherTag>();
+    auto handshake =
+        perm::make_self_signed_handshake<NegCrossOrgSplit_OrgA>(
+            /*peer_key_fp=*/0xC0FFEE'C0FFEEULL,
+            /*nonce=*/      0xC1C1'C1C1'C1C1'C1C1ULL);
+    auto admitted = perm::mint_federation_admittance<
+        NegCrossOrgSplit_OrgA,
+        perm::policy::admit_orgs<NegCrossOrgSplit_OrgA>>(
+            local_cipher, handshake);
+    auto perm_a = std::move(*admitted);
 
     // Cross-org split: OrgA → OrgB × OrgB.  Must NOT compile —
     // FederationPermission.h's defensive partial sets splits_into_v
@@ -68,3 +85,5 @@ int main() {
     (void)b2;
     return 0;
 }
+
+#pragma GCC diagnostic pop

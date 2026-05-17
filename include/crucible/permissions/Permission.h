@@ -192,6 +192,11 @@ namespace detail {
 template <typename Tag>
 struct mint_permission_inherit_minter_;
 
+// fixy-CR-06: friend-only helper that mints federation peer Permissions.
+// Definition lives in `permissions/FederationPermission.h`; the only
+// caller in production is `mint_federation_admittance`.
+struct FederationMintAccess;
+
 }  // namespace detail
 
 }  // namespace crucible::permissions
@@ -388,6 +393,13 @@ class [[nodiscard]] Permission {
 
     template <typename T>
     friend struct ::crucible::permissions::detail::mint_permission_inherit_minter_;
+
+    // fixy-CR-06: federation peer Permission minting is routed through
+    // FederationMintAccess — the deleted `mint_permission_root<FederatedPeer<...>>`
+    // overloads in FederationPermission.h close the once-per-program-per-tag
+    // gap.  The only legitimate path to a Permission<FederatedPeer<Org>> is
+    // through `mint_federation_admittance`, which calls into this helper.
+    friend struct ::crucible::permissions::detail::FederationMintAccess;
 
 
     // The Pool's try_upgrade re-emits the parked Permission when the

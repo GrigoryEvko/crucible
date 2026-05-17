@@ -32,6 +32,12 @@
 
 #include <utility>
 
+// fixy-CR-06 follow-up: mint_permission_root<FederatedPeer<...>> is
+// concept-deleted in V1 — seed the OrgA permission via the legitimate
+// admittance channel instead.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace perm = crucible::permissions;
 namespace saf  = crucible::safety;
 
@@ -39,8 +45,17 @@ struct NegCrossOrgSplitN_OrgA {};
 struct NegCrossOrgSplitN_OrgB {};
 
 int main() {
-    auto perm_a = saf::mint_permission_root<
-        perm::tag::FederatedPeer<NegCrossOrgSplitN_OrgA>>();
+    auto local_cipher =
+        saf::mint_permission_root<perm::tag::LocalCipherTag>();
+    auto handshake =
+        perm::make_self_signed_handshake<NegCrossOrgSplitN_OrgA>(
+            /*peer_key_fp=*/0xC0FFEE'C0FFEEULL,
+            /*nonce=*/      0xC1C1'C1C1'C1C1'C1C1ULL);
+    auto admitted = perm::mint_federation_admittance<
+        NegCrossOrgSplitN_OrgA,
+        perm::policy::admit_orgs<NegCrossOrgSplitN_OrgA>>(
+            local_cipher, handshake);
+    auto perm_a = std::move(*admitted);
 
     // N-ary cross-org split: OrgA → OrgA × OrgB × OrgA.  Even one
     // mismatched child (the OrgB in the middle) makes the fold
@@ -55,3 +70,5 @@ int main() {
     (void)children;
     return 0;
 }
+
+#pragma GCC diagnostic pop

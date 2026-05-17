@@ -7925,3 +7925,15 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_cross_org_split
     "splits_into|requires|static assertion")
 crucible_neg_compile_fixy_test(neg_fixy_federation_cross_org_split_n
     "splits_into_pack|requires|static assertion")
+
+# fixy-CR-06 — once-per-program federation root-mint gap closed.
+# Both `mint_permission_root<FederatedPeer<Org>>()` and the ctx-bound
+# `mint_permission_root<FederatedPeer<Org>>(ctx)` overloads in
+# `crucible::safety` are concept-deleted for any tag satisfying
+# `is_federated_peer_tag_v<Tag>`.  The only legitimate path is
+# `mint_federation_admittance<Org, Policy>(local_cipher, handshake)`.
+# The no-ctx and ctx fixtures together satisfy the HS14 ≥2 floor.
+crucible_neg_compile_fixy_test(neg_fixy_federation_root_mint_disallowed
+    "deleted|use of deleted function|mint_permission_root")
+crucible_neg_compile_fixy_test(neg_fixy_federation_root_mint_disallowed_ctx
+    "deleted|use of deleted function|mint_permission_root")

@@ -222,6 +222,57 @@
 // build itself reds — flagging that the regression must be
 // rewritten as a negative-compile fixture AND that the structural
 // gap behind CR-05 is closed.
+//
+// ── fixy-CR-06 (Hunter 5 C5) — ROOT-MINT FORGES FEDERATION ─────────
+//
+// `::crucible::safety::mint_permission_root<Tag>()` is a free-function
+// factory.  It has no once-per-program-per-tag machinery; every TU
+// can call it, and the docstring at the call site says the discipline
+// "is review-only and grep-discoverable".  For ordinary tags the
+// review burden is acceptable: a stray `mint_permission_root<Foo>()`
+// in a random TU shows up under `grep mint_permission_root<` and a
+// reviewer asks "why are you root-minting Foo?".
+//
+// For federation peer tags the same surface is CATASTROPHIC.  Any
+// TU can write
+//
+//   auto perm = ::crucible::safety::mint_permission_root<
+//       ::crucible::permissions::tag::FederatedPeer<AnyOrg>>();
+//
+// and obtain a legitimate `Permission<FederatedPeer<AnyOrg>>` —
+// no admittance policy check, no handshake, no MAC, not even the
+// (forgeable, fixy-CR-02) deterministic-mix64 signature path.
+// Federation peer admittance — the load-bearing security boundary
+// between organizations — is bypassed entirely.  CR-02/CR-03/CR-04
+// at least require the attacker to call `mint_federation_admittance`
+// and exploit the verifier's weaknesses; CR-06 lets the attacker
+// skip the verifier altogether.
+//
+// Defense shipped in V1:
+//
+//   * The two `mint_permission_root<Tag>` overloads in
+//     `::crucible::safety` (no-ctx and ctx-bound) are CONCEPT-DELETED
+//     for any `Tag` matching `is_federated_peer_tag_v<Tag>`.
+//     `Tag = tag::FederatedPeer<Org>` triggers concept ordering
+//     (more-constrained overload wins) and the deleted definition's
+//     reason string fires with a pointer to this section.
+//   * Federation peer minting is routed through
+//     `detail::FederationMintAccess::mint<Org>()`, a non-public helper
+//     that is friended by `Permission<Tag>` and is the ONLY non-deleted
+//     path to `Permission<tag::FederatedPeer<Org>>`.  The helper is
+//     called exclusively from `mint_federation_admittance`, which the
+//     deprecation warning + fixy-CR-02/03/04 doc-blocks already
+//     audit.  Two HS14 neg-compile fixtures lock the deletion into CI
+//     (`neg_fixy_federation_root_mint_disallowed{,_ctx}.cpp`).
+//
+// No positive-attack regression is shipped for CR-06: the structural
+// gap is CLOSED today, not locked open behind a deferred milestone.
+// CI verifies the closure via the neg-compile fixtures.  When the
+// `Defense shipped in V1` paragraph is removed in a future audit
+// (e.g., because the entire `mint_permission_root` surface becomes
+// once-per-program for all tags, subsuming CR-06), the friend
+// declaration in `Permission.h` and the deleted overloads here can
+// be removed in the same change.
 
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Tagged.h>
@@ -289,6 +340,47 @@ struct splits_into_pack<
 }  // namespace crucible::safety
 
 namespace crucible::permissions {
+
+// ── fixy-CR-06 federation-tag trait ────────────────────────────────
+//
+// `is_federated_peer_tag<Tag>` is the structural witness used by the
+// deleted `mint_permission_root` overloads below to recognize
+// federation peer tags and route minting through the admittance
+// channel only.  No user code should specialize this trait — its
+// match set is closed (only `tag::FederatedPeer<Org>` for some Org).
+
+template <typename Tag>
+struct is_federated_peer_tag : std::false_type {};
+
+template <typename Org>
+struct is_federated_peer_tag<tag::FederatedPeer<Org>> : std::true_type {};
+
+template <typename Tag>
+inline constexpr bool is_federated_peer_tag_v =
+    is_federated_peer_tag<Tag>::value;
+
+// ── fixy-CR-06 federation-mint chokepoint ─────────────────────────
+//
+// `FederationMintAccess` is the only non-deleted path to a
+// `Permission<tag::FederatedPeer<Org>>`.  It is friended by
+// `crucible::safety::Permission<Tag>` (see Permission.h), so it can
+// invoke `Permission`'s private default constructor.  Its only
+// caller in production is `mint_federation_admittance` below; any
+// other call site is a CR-06 regression and is grep-discoverable
+// via `FederationMintAccess::mint<`.
+
+namespace detail {
+
+struct FederationMintAccess {
+    template <typename Org>
+    [[nodiscard]] static constexpr
+    ::crucible::safety::Permission<tag::FederatedPeer<Org>>
+    mint() noexcept {
+        return ::crucible::safety::Permission<tag::FederatedPeer<Org>>{};
+    }
+};
+
+}  // namespace detail
 
 template <typename Org>
 using FederatedPeerPermission =
@@ -445,9 +537,49 @@ mint_federation_admittance(
         return std::unexpected(AdmittanceError::BadSignature);
     }
 
-    return ::crucible::safety::mint_permission_root<
-        tag::FederatedPeer<Org>>();
+    return ::crucible::permissions::detail::FederationMintAccess
+        ::template mint<Org>();
 }
+
+}  // namespace crucible::permissions
+
+// ── fixy-CR-06 deleted root-mint overloads ─────────────────────────
+//
+// Concept-ordered `= delete` shadows the generic `mint_permission_root`
+// overloads in `crucible::safety` for any federation peer tag.  The
+// only legitimate path to a `Permission<tag::FederatedPeer<Org>>` is
+// through `mint_federation_admittance`, which calls
+// `detail::FederationMintAccess::mint<Org>()` directly.
+
+namespace crucible::safety {
+
+template <typename Tag>
+    requires ::crucible::permissions::is_federated_peer_tag_v<Tag>
+[[nodiscard]] constexpr Permission<Tag> mint_permission_root() noexcept
+    = delete(
+        "fixy-CR-06: Permission<tag::FederatedPeer<Org>> cannot be minted "
+        "via mint_permission_root.  Federation peer admittance is the "
+        "load-bearing security boundary between organizations — every "
+        "minting must run the admittance policy + handshake + (once "
+        "HACL* lands) MAC check.  Use "
+        "`::crucible::permissions::mint_federation_admittance<Org, "
+        "Policy>(local_cipher, handshake)`.  See fixy-CR-06 section in "
+        "FederationPermission.h for the threat model.");
+
+template <typename Tag, ::crucible::effects::IsExecCtx Ctx>
+    requires ::crucible::permissions::is_federated_peer_tag_v<Tag>
+          && CtxAdmitsPermission<Tag, Ctx>
+[[nodiscard]] constexpr Permission<Tag> mint_permission_root(Ctx const&) noexcept
+    = delete(
+        "fixy-CR-06: Permission<tag::FederatedPeer<Org>> cannot be minted "
+        "via mint_permission_root(ctx) either.  An ExecCtx argument does "
+        "not authorize cross-org admittance; only "
+        "`mint_federation_admittance<Org, Policy>(local_cipher, handshake)` "
+        "does.  See fixy-CR-06 section in FederationPermission.h.");
+
+}  // namespace crucible::safety
+
+namespace crucible::permissions {
 
 namespace detail::federation_permission_self_test {
 
