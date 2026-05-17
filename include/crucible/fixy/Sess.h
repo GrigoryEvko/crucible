@@ -44,6 +44,7 @@
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/SessionPatterns.h>
 
 namespace crucible::fixy::sess {
 
@@ -227,6 +228,52 @@ using federation::mint_coord;
 // above when both are introduced into the same namespace; we leave
 // federation's channel mint reachable via `fixy::sess::federation::mint_channel`
 // to keep the surface unambiguous.
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Verified session patterns (FIXY-AUDIT-C6) ──────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// SessionPatterns.h ships ~24 user-facing protocol aliases under
+// `safety::proto::pattern::*`.  Each alias names a structurally-verified
+// session shape (RequestResponse, Pipeline, Transaction, FanOut/In,
+// MPMC, 2PC, SWIM, Handshake) plus its dual and any crash-aware /
+// delegate-compatible refinement.  Re-export them under
+// `fixy::sess::pattern::` so the fixy surface is structurally complete:
+// production callers spell `fixy::sess::pattern::RequestResponse_Client<Req,
+// Resp>` and the type IS `safety::proto::pattern::RequestResponse_Client`.
+//
+// All 24 baseline aliases ship today.  No new aliases introduced; this
+// is pure name-lookup re-export.  Crash-aware refinements (CrashAware*)
+// + delegate-compatibility contracts live in SessionPatterns.h's self-
+// test section under `pattern::detail::`; those are not user-facing and
+// are NOT re-exported here.
+
+// One namespace alias makes every name in `safety::proto::pattern::*`
+// reachable via `fixy::sess::pattern::*` with identical type identity
+// (verified in the sentinel TU).  Coverage map:
+//
+//   Request/response (6):  RequestResponseOnce_{Client,Server},
+//                          RequestResponse_{Client,Server},
+//                          RequestResponseLoop_{Client,Server}
+//   Pipeline (3):          PipelineSource, PipelineSink, PipelineStage
+//   Transaction (2):       Transaction_{Client,Server}
+//   Fan-out / Fan-in (4):  FanOut, FanIn, Broadcast, ScatterGather
+//   MPMC (2):              MpmcProducer, MpmcConsumer
+//   2PC (2):               TwoPhaseCommit_{Coord,Follower}
+//   SWIM (2):              SwimProbe_{Client,Server}
+//   Handshake (2):         Handshake_{Client,Server}
+//   Contract markers (8):  CrashSafetyVerified/Pending, DelegateCompatible/
+//                          Pending, BaselinePatternNeedsCrashAwareVariant,
+//                          PatternHasNoDelegateBoundaryConstraints,
+//                          PatternCrashSafety, PatternDelegateCompatibility
+//   Predicates (4):        pattern_crash_safety_{verified,pending}_v,
+//                          pattern_delegate_{compatible,pending}_v
+//
+// Crash-aware refinements (CrashAware*) live in the substrate's self-
+// test scope under pattern::detail::pattern_self_test::; they are not
+// user-facing and not re-exported.
+
+namespace pattern = ::crucible::safety::proto::pattern;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test — identity check for the re-export ──────────────────
