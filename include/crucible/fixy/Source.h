@@ -48,6 +48,7 @@
 // lookup directive only; no symbols emitted, no types introduced.
 
 #include <crucible/Types.h>                        // hash_family::*
+#include <crucible/permissions/FederationPermission.h>  // federation::*
 #include <crucible/safety/Secret.h>                // secret_policy::*
 #include <crucible/safety/Tagged.h>                // source::*, trust::*, access::*, version::*, vessel_trust::*
 
@@ -104,6 +105,76 @@ namespace secret_policy = ::crucible::safety::secret_policy;
 namespace hash_family = ::crucible::hash_family;
 
 }  // namespace crucible::fixy::tags
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Federation re-export (FIXY-AUDIT-C9) ───────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// `permissions/FederationPermission.h` is the cross-organization
+// admission boundary for Cipher federation.  It carries:
+//
+//   safety::source::FederatedPeer<Org>          — provenance tag
+//   permissions::tag::FederatedPeer<Org>        — permission tag
+//   permissions::tag::LocalCipherTag            — local-authority tag
+//   permissions::FederatedPeerPermission<Org>   — Permission<tag::FederatedPeer<Org>>
+//   permissions::LocalCipherPermission          — Permission<tag::LocalCipherTag>
+//   permissions::federation_org_id<Org>         — stable type id
+//   permissions::policy::admit_orgs<Orgs...>    — admission policy
+//   permissions::FederationHandshake            — handshake POD
+//   permissions::AdmittanceError                — error enum + name()
+//   permissions::federation_signature_fingerprint(...)
+//   permissions::default_peer_key_fingerprint<Org>()
+//   permissions::make_self_signed_handshake<Org>(...)
+//   permissions::mint_federation_admittance<Org, Policy>(local, hs)
+//
+// Per CLAUDE.md §XXI Universal Mint Pattern: `mint_federation_admittance`
+// is a token mint — derives FederatedPeerPermission<Org> authority from
+// a LocalCipherPermission + a verified handshake.  The re-export
+// preserves the substrate's std::expected error path and the
+// AdmittanceError surface.
+//
+// `safety::source::FederatedPeer<Org>` is the PROVENANCE tag (extends
+// the source axis); it lives in `crucible::safety::source` and is
+// therefore already reachable via the `fixy::tags::source` namespace
+// alias above as `fixy::tags::source::FederatedPeer<Org>`.
+
+namespace crucible::fixy::source::federation {
+
+// ── Permission tags (per-org typed admission) ──────────────────────
+
+using ::crucible::permissions::tag::FederatedPeer;
+using ::crucible::permissions::tag::LocalCipherTag;
+
+// ── Permission carriers ────────────────────────────────────────────
+
+using ::crucible::permissions::FederatedPeerPermission;
+using ::crucible::permissions::LocalCipherPermission;
+
+// ── Identity / policy ──────────────────────────────────────────────
+
+using ::crucible::permissions::federation_org_id;
+
+namespace policy {
+using ::crucible::permissions::policy::admit_orgs;
+}  // namespace policy
+
+// ── Handshake POD + error surface ──────────────────────────────────
+
+using ::crucible::permissions::FederationHandshake;
+using ::crucible::permissions::AdmittanceError;
+using ::crucible::permissions::admittance_error_name;
+
+// ── Signature derivation + helpers ─────────────────────────────────
+
+using ::crucible::permissions::federation_signature_fingerprint;
+using ::crucible::permissions::default_peer_key_fingerprint;
+using ::crucible::permissions::make_self_signed_handshake;
+
+// ── Token mint — Universal Mint Pattern (CLAUDE.md §XXI) ───────────
+
+using ::crucible::permissions::mint_federation_admittance;
+
+}  // namespace crucible::fixy::source::federation
 
 // ── Self-test ──────────────────────────────────────────────────────
 //

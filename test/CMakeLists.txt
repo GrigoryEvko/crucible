@@ -223,6 +223,7 @@ crucible_test(test_fixy_algebra)
 crucible_test(test_fixy_eff)
 crucible_test(test_fixy_diag)
 crucible_test(test_fixy_source)
+crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
 # FIXY-LAT-Security + FIXY-LAT-Trust — every SecLevel and every
 # safety::trust::* tag is reachable through one named grant tag.
