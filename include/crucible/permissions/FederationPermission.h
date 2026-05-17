@@ -46,6 +46,58 @@
 // HACL* lands, that assertion will fire and the test will fail
 // visibly — flagging that the regression test must be updated AND
 // that the deprecation tag can be removed.
+//
+// ── fixy-CR-03 (Hunter 5 C1) — REPLAY UNRESTRICTED, INTENTIONALLY ───
+//
+// Orthogonal to forgery (fixy-CR-02), the substrate has no
+// replay-protection state.  The admittance verifier checks the
+// handshake's structural well-formedness (org match, non-zero peer
+// key, non-zero signature, signature equals the deterministic
+// mix64 fold) but does NOT check:
+//
+//   * Has this `(org_id, peer_key_fp, nonce)` triple been admitted
+//     before?  (No seen-nonce set.)
+//   * Is the handshake within an issuance time window?  (No clock,
+//     no expiry field.)
+//   * Has the peer's key been rotated or revoked?  (No revocation
+//     list; no version-bound binding.)
+//   * Is this handshake bound to a specific Cipher epoch or session
+//     ID?  (Handshake carries no epoch.)
+//
+// Consequence: a single captured `FederationHandshake` admits
+// forever.  An adversary that observes ONE successful admittance
+// (wire sniff, log scrape, sidechannel) can replay the captured
+// triple verbatim to mint `Permission<FederatedPeer<Org>>` every
+// time, even after legitimate key rotation.  The peer cannot
+// "burn" their own nonce — replaying their own handshake from
+// last week works identically.
+//
+// This is acceptable as a V1-development substitution point.
+// Production replay protection requires SOME of:
+//
+//   (a) A per-org `seen_nonces` set persisted in Cipher with GC
+//       (eviction by age + size cap).
+//   (b) An issuance-time field + monotonic clock + bounded skew
+//       window.
+//   (c) Cipher-epoch binding — handshakes admit only for the
+//       Cipher epoch they were minted in.
+//   (d) A challenge-response handshake replacing the unilateral
+//       self-signed POD (most invasive — changes the type surface).
+//
+// (a) is the canonical retrofit and lives behind the same HACL*
+// substitution point as fixy-CR-02 — the verifier becomes a
+// stateful object holding the seen-nonce set, accepts handshakes
+// with cryptographically-fresh nonces, and rejects replays.
+//
+// A positive-attack regression fixture lives at
+// `test/safety_attack/attack_federation_replay.cpp`.  It mints a
+// legitimate handshake, calls `mint_federation_admittance` with
+// that handshake twice (and a third time months later, simulated),
+// and asserts that all three calls succeed today.  When replay
+// protection lands, the second-and-later assertions fire — flagging
+// that the regression test must be updated AND that the
+// replay-protection retrofit is structurally observable from
+// existing tests.
 
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Tagged.h>
@@ -192,12 +244,12 @@ template <typename Org,
           typename Policy = policy::admit_orgs<Org>>
 [[nodiscard,
   deprecated(
-      "fixy-CR-02: self-signed federation handshake is forgeable — the "
-      "current federation_signature_fingerprint is a pure deterministic "
-      "mix64 fold of public values, NOT a cryptographic MAC.  Anyone "
-      "who knows the org_id/peer_key_fp/nonce can mint a forged "
-      "Permission<FederatedPeer<Org>>.  Replace with HACL*-backed "
-      "verifier before production deployment.  Suppress locally via "
+      "fixy-CR-02/CR-03: self-signed federation handshake is both "
+      "forgeable (fixy-CR-02: signature_fingerprint is a deterministic "
+      "mix64 of public values, NOT a MAC) AND replayable (fixy-CR-03: "
+      "no seen-nonce set / no epoch binding / no expiry).  Replace "
+      "with HACL*-backed verifier + stateful seen-nonces store before "
+      "production deployment.  Suppress locally via "
       "_Pragma(\"GCC diagnostic ignored \\\"-Wdeprecated-declarations\\\"\") "
       "if you are calling this knowingly (tests, V1 development)." )]]
 constexpr std::expected<

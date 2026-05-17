@@ -508,6 +508,20 @@ crucible_test(attack_federation_forgery
 set_tests_properties(attack_federation_forgery PROPERTIES
     LABELS "safety_attack;fixy-CR-02")
 
+# fixy-CR-03 positive-attack regression — proves the V1 self-signed
+# federation handshake is REPLAYABLE today.  Orthogonal to forgery:
+# even a legitimate handshake admits indefinitely once observed
+# because the substrate carries no seen-nonce / epoch state.  When
+# replay protection lands (HACL*-backed verifier OR a seen-nonces
+# Cipher store OR Cipher-epoch binding), this test reddens; that
+# signals the fixy-CR-03 axis of the [[deprecated]] message on
+# mint_federation_admittance can be dropped.  See header doc-block in
+# include/crucible/permissions/FederationPermission.h §fixy-CR-03.
+crucible_test(attack_federation_replay
+              safety_attack/attack_federation_replay.cpp)
+set_tests_properties(attack_federation_replay PROPERTIES
+    LABELS "safety_attack;fixy-CR-03")
+
 crucible_test(test_fx_aliases)
 crucible_test(test_fx_alias_diagnostic)
 crucible_test(test_effect_row_lattice)
