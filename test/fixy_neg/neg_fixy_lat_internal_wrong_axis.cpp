@@ -32,7 +32,8 @@ template <typename Tuple> struct rejects_via;
 template <typename... Ts>
 struct rejects_via<std::tuple<Ts...>> {
     static constexpr bool value = !crucible::fixy::IsAcceptedGrants<Ts...>;
-    static constexpr D first_missing = crucible::fixy::first_missing_axis_v<Ts...>;
+    // fixy-H-08: first_missing_axis_v is std::optional<D>.
+    static constexpr auto first_missing = crucible::fixy::first_missing_axis_v<Ts...>;
 };
 
 using Probe = rejects_via<BadPack>;

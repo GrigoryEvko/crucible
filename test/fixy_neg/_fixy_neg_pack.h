@@ -79,7 +79,10 @@ template <typename Tuple> struct rejects_via;
 template <typename... Ts>
 struct rejects_via<std::tuple<Ts...>> {
     static constexpr bool value = !fixy::IsAcceptedGrants<Ts...>;
-    static constexpr D first_missing = fixy::first_missing_axis_v<Ts...>;
+    // fixy-H-08: first_missing_axis_v is now `std::optional<D>`.
+    // optional<D>'s `operator==(const D&)` makes the per-axis
+    // probe comparison below compile unchanged.
+    static constexpr auto first_missing = fixy::first_missing_axis_v<Ts...>;
 };
 
 }  // namespace fixy_neg_detail

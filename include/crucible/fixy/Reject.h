@@ -78,6 +78,7 @@
 #include <concepts>
 #include <cstddef>
 #include <meta>
+#include <optional>
 #include <string_view>
 #include <type_traits>
 
@@ -564,14 +565,21 @@ template <typename... Grants>
 
 // ─── first_missing_axis — diagnostic helper ────────────────────────
 //
-// Returns the DimensionAxis whose engagement is missing, or a
-// sentinel (0xFF) if every axis is engaged.  Used by IsAccepted's
-// failure tag selector.
+// Returns the DimensionAxis whose engagement is missing, wrapped in
+// `std::optional<>`; `std::nullopt` means every axis is engaged.
+// Used by IsAccepted's failure tag selector.
+//
+// fixy-H-08: the prior shape returned `dim::DimensionAxis` directly
+// with `0xFF` as an out-of-band sentinel — a type-system leak (the
+// returned value was NOT a valid DimensionAxis enumerator and the
+// burden of the guard fell on every caller).  Switching to
+// `std::optional<>` makes the "no missing axis" case a first-class
+// type-level distinction.
 
 template <typename... Grants>
-[[nodiscard]] consteval dim::DimensionAxis first_missing_axis() noexcept {
-    constexpr std::size_t kSentinel = 0xFFu;
-    std::size_t result = kSentinel;
+[[nodiscard]] consteval std::optional<dim::DimensionAxis>
+first_missing_axis() noexcept {
+    std::optional<dim::DimensionAxis> result;
     static constexpr auto fm_axes = std::define_static_array(
         std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
 #pragma GCC diagnostic push
@@ -579,12 +587,12 @@ template <typename... Grants>
     template for (constexpr auto en : fm_axes) {
         constexpr auto axis_v = [:en:];
         constexpr bool ok = engaged_for<axis_v, Grants...>();
-        if (!ok && result == kSentinel) {
-            result = static_cast<std::size_t>(axis_v);
+        if (!ok && !result.has_value()) {
+            result = axis_v;
         }
     }
 #pragma GCC diagnostic pop
-    return static_cast<dim::DimensionAxis>(result);
+    return result;
 }
 
 template <typename... Grants>
@@ -644,17 +652,20 @@ template <typename... Grants>
 // ─── first_duplicate_axis — diagnostic helper (fixy-H-02) ──────────
 //
 // Returns the FIRST DimensionAxis whose engagement count exceeds 1,
-// or the sentinel (0xFF) if every axis is engaged at most once.
-// Mirror of first_missing_axis: same DimensionAxis ordering, same
-// sentinel convention, same template-for-over-reflected-enumerators
-// scan.  Used by fixy::fn<>'s branched static_assert to surface a
-// duplicate-engagement diagnostic distinct from the missing-axis
-// case.
+// wrapped in `std::optional<>`; `std::nullopt` means every axis is
+// engaged at most once.  Mirror of first_missing_axis: same
+// DimensionAxis ordering, same `std::optional<>` discipline, same
+// template-for-over-reflected-enumerators scan.  Used by
+// fixy::fn<>'s branched static_assert to surface a duplicate-
+// engagement diagnostic distinct from the missing-axis case.
+//
+// fixy-H-08: see first_missing_axis above — same type-system leak
+// (0xFF cast to DimensionAxis) eliminated the same way.
 
 template <typename... Grants>
-[[nodiscard]] consteval dim::DimensionAxis first_duplicate_axis() noexcept {
-    constexpr std::size_t kSentinel = 0xFFu;
-    std::size_t result = kSentinel;
+[[nodiscard]] consteval std::optional<dim::DimensionAxis>
+first_duplicate_axis() noexcept {
+    std::optional<dim::DimensionAxis> result;
     static constexpr auto fd_axes = std::define_static_array(
         std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
 #pragma GCC diagnostic push
@@ -663,12 +674,12 @@ template <typename... Grants>
         constexpr auto axis_v = [:en:];
         constexpr std::size_t cnt =
             count_engagements_for<axis_v, Grants...>();
-        if (cnt > 1u && result == kSentinel) {
-            result = static_cast<std::size_t>(axis_v);
+        if (cnt > 1u && !result.has_value()) {
+            result = axis_v;
         }
     }
 #pragma GCC diagnostic pop
-    return static_cast<dim::DimensionAxis>(result);
+    return result;
 }
 
 }  // namespace detail::engagement
@@ -840,14 +851,23 @@ inline constexpr bool IsAccepted_v = IsAccepted<Type, Grants...>;
 // ═════════════════════════════════════════════════════════════════════
 //
 // `first_missing_axis_v<Grants...>` returns the DimensionAxis of the
-// FIRST unengaged dim (or a sentinel meaning "every axis engaged").
-// `first_missing_tag_t<Grants...>` aliases the corresponding
-// safety::diag::tag for that axis — usable in a downstream
-// static_assert that wants to surface the FOUND-E01 structured
-// diagnostic.
+// FIRST unengaged dim, wrapped in `std::optional<>`; `std::nullopt`
+// means every axis is engaged.  `first_missing_tag_t<Grants...>`
+// aliases the corresponding safety::diag::tag for that axis —
+// usable in a downstream static_assert that wants to surface the
+// FOUND-E01 structured diagnostic.
+//
+// fixy-H-08: the prior shape returned bare `dim::DimensionAxis`
+// with `0xFF` as an out-of-band sentinel — a type-system leak
+// (the value was NOT a valid enumerator and every caller had to
+// guard before using).  Switching to `std::optional<>` makes the
+// "no missing axis" case a first-class type-level distinction.
+// `optional<T>::operator==(const U&)` lets existing equality-
+// against-axis-enumerator checks (e.g.,
+// `first_missing_axis_v<...> == D::Type`) compile unchanged.
 
 template <typename... Grants>
-inline constexpr dim::DimensionAxis first_missing_axis_v =
+inline constexpr std::optional<dim::DimensionAxis> first_missing_axis_v =
     detail::engagement::first_missing_axis<Grants...>();
 
 template <typename... Grants>
@@ -860,31 +880,36 @@ inline constexpr bool every_axis_engaged_v =
 //   if constexpr (!IsAccepted_v<T, Grants...>) {
 //       static_assert(false,
 //           "fixy: not accepted — see diagnostic tag below");
-//       // tag is fixy::diag::tag_for_axis_t<first_missing_axis_v<Grants...>>
+//       // tag is fixy::diag::tag_for_axis_t<*first_missing_axis_v<Grants...>>
 //   }
+//
+// The `!AllDimsEngaged<Grants...>` requires-clause guarantees the
+// optional is engaged at the point of `*first_missing_axis_v<...>`
+// dereference (fixy-H-08).
 
 template <typename... Grants>
     requires (!AllDimsEngaged<Grants...>)
 using first_missing_tag_t =
-    diag::tag_for_axis_t<first_missing_axis_v<Grants...>>;
+    diag::tag_for_axis_t<*first_missing_axis_v<Grants...>>;
 
 // ─── first_duplicate_axis_v / first_duplicate_tag_t (fixy-H-02) ────
 //
 // Public-surface companions to first_missing_axis_v / first_missing_
 // tag_t.  Surface the FIRST axis that is engaged MORE THAN ONCE and
-// its matching FixyDuplicate_<Axis> diagnostic tag.  The alias is
-// guarded by `!UniqueEngagementPerAxis<Grants...>` so a well-formed
-// pack cannot accidentally instantiate it (the sentinel 0xFF would
-// cast to an out-of-range DimensionAxis enumerator).
+// its matching FixyDuplicate_<Axis> diagnostic tag.  Same
+// `std::optional<DimensionAxis>` shape as first_missing_axis_v
+// (fixy-H-08); `first_duplicate_tag_t<>` is guarded by
+// `!UniqueEngagementPerAxis<Grants...>` so the dereference
+// `*first_duplicate_axis_v<...>` is safe by construction.
 
 template <typename... Grants>
-inline constexpr dim::DimensionAxis first_duplicate_axis_v =
+inline constexpr std::optional<dim::DimensionAxis> first_duplicate_axis_v =
     detail::engagement::first_duplicate_axis<Grants...>();
 
 template <typename... Grants>
     requires (!UniqueEngagementPerAxis<Grants...>)
 using first_duplicate_tag_t =
-    diag::dup_tag_for_axis_t<first_duplicate_axis_v<Grants...>>;
+    diag::dup_tag_for_axis_t<*first_duplicate_axis_v<Grants...>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── fixy-H-03 — Surface diagnostic tags in compiler error trail ────
@@ -925,8 +950,13 @@ struct select_missing_tag { using type = void; };
 
 template <typename... Grants>
 struct select_missing_tag<true, Grants...> {
+    // fixy-H-08: the consteval helper now returns
+    // `std::optional<DimensionAxis>`.  `Failed == true` is the
+    // load-bearing precondition that at least one axis is missing,
+    // so the optional is guaranteed engaged; deref via `.value()`
+    // is constant-expression-valid and self-documenting.
     using type = diag::tag_for_axis_t<
-        detail::engagement::first_missing_axis<Grants...>()>;
+        detail::engagement::first_missing_axis<Grants...>().value()>;
 };
 
 template <bool Failed, typename... Grants>
@@ -934,8 +964,11 @@ struct select_duplicate_tag { using type = void; };
 
 template <typename... Grants>
 struct select_duplicate_tag<true, Grants...> {
+    // fixy-H-08: same `std::optional<>` discipline as
+    // select_missing_tag.  `Failed == true` ↔ at least one axis is
+    // engaged more than once, so the optional is engaged here.
     using type = diag::dup_tag_for_axis_t<
-        detail::engagement::first_duplicate_axis<Grants...>()>;
+        detail::engagement::first_duplicate_axis<Grants...>().value()>;
 };
 
 }  // namespace detail::diagnose
@@ -1185,7 +1218,8 @@ using MinusRefinementPack = std::tuple<
     strict<dim::DimensionAxis::Version>,
     strict<dim::DimensionAxis::Staleness>>;
 
-inline constexpr dim::DimensionAxis first_missing_for_minus_refinement = []() consteval {
+inline constexpr std::optional<dim::DimensionAxis>
+first_missing_for_minus_refinement = []() consteval {
     return [&]<typename... Ts>(std::tuple<Ts...>*) consteval {
         return first_missing_axis_v<Ts...>;
     }(static_cast<MinusRefinementPack*>(nullptr));
@@ -1194,6 +1228,45 @@ inline constexpr dim::DimensionAxis first_missing_for_minus_refinement = []() co
 static_assert(first_missing_for_minus_refinement == dim::DimensionAxis::Refinement,
     "first_missing_axis_v points at Refinement when only that axis "
     "is omitted from an otherwise full strict pack.");
+
+// fixy-H-08 sentinel: a fully engaged 20-axis pack yields `nullopt`
+// — proves the type-system leak (0xFF cast to DimensionAxis) is
+// eliminated.  Reuses MinusRefinementPack minus its omission by
+// re-adding the Refinement strict marker inline.
+
+using AllAxesStrictPack = std::tuple<
+    strict<dim::DimensionAxis::Type>,
+    strict<dim::DimensionAxis::Refinement>,
+    strict<dim::DimensionAxis::Usage>,
+    strict<dim::DimensionAxis::Effect>,
+    strict<dim::DimensionAxis::Security>,
+    strict<dim::DimensionAxis::Protocol>,
+    strict<dim::DimensionAxis::Lifetime>,
+    strict<dim::DimensionAxis::Provenance>,
+    strict<dim::DimensionAxis::Trust>,
+    strict<dim::DimensionAxis::Representation>,
+    strict<dim::DimensionAxis::Observability>,
+    strict<dim::DimensionAxis::Complexity>,
+    strict<dim::DimensionAxis::Precision>,
+    strict<dim::DimensionAxis::Space>,
+    strict<dim::DimensionAxis::Overflow>,
+    strict<dim::DimensionAxis::Mutation>,
+    strict<dim::DimensionAxis::Reentrancy>,
+    strict<dim::DimensionAxis::Size>,
+    strict<dim::DimensionAxis::Version>,
+    strict<dim::DimensionAxis::Staleness>>;
+
+inline constexpr std::optional<dim::DimensionAxis>
+first_missing_for_full_strict_pack = []() consteval {
+    return [&]<typename... Ts>(std::tuple<Ts...>*) consteval {
+        return first_missing_axis_v<Ts...>;
+    }(static_cast<AllAxesStrictPack*>(nullptr));
+}();
+
+static_assert(!first_missing_for_full_strict_pack.has_value(),
+    "first_missing_axis_v on a fully engaged Grants pack must yield "
+    "std::nullopt — fixy-H-08 type-system leak elimination.");
+
 
 }  // namespace detail::reject_self_test
 
