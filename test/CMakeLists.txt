@@ -1332,6 +1332,18 @@ crucible_neg_compile_fixy_test(neg_fixy_bridge_persisted_session_hot_ctx
 crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_nothrow
     "CrashWatched_NoThrow_Rejected|crash-watched|NoThrow")
 
+# ── FIXY-AUDIT-D6 — mint_vigil_mode_bridge HS14 floor.
+#
+# `mint_vigil_mode_bridge(const Vigil&)` is a parameter-typed token
+# mint — the gate is the `const Vigil&` parameter slot.  Two
+# rejection classes:
+#   _non_vigil  — unrelated user struct fails reference binding
+#   _nullptr    — nullptr_t cannot bind to class-typed reference
+crucible_neg_compile_fixy_test(neg_fixy_bridge_vigil_mode_non_vigil
+    "mint_vigil_mode_bridge|invalid initialization|no matching function|cannot bind|could not convert|invalid conversion")
+crucible_neg_compile_fixy_test(neg_fixy_bridge_vigil_mode_nullptr
+    "mint_vigil_mode_bridge|invalid initialization|no matching function|cannot bind|could not convert|invalid conversion")
+
 # ── FIXY-MINT-Substr — fixy/Substr.h re-export of per-substrate
 # session minters (SPSC, SWMR, ChaseLev, MetaLog, ChainEdge, MPMC,
 # CalendarGrid, ShardedCalendarGrid, ShardedGrid).  Two HS14
