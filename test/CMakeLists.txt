@@ -7618,3 +7618,25 @@ crucible_neg_compile_test(neg_decide_valid_span_count_only
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_valid_span_truncation
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# ─────────────────────────────────────────────────────────────────
+# FIXY-GAP-B — Agent B round 2
+# ─────────────────────────────────────────────────────────────────
+#
+# Theory.h §30.14 corpus expansion (G6/G7) — adds two literature-
+# backed unsoundness detectors:
+#
+#   staleness_secret_without_declassify  — Sabelfeld-Sands 2009 /
+#     Andrysco-et-al 2015 stale-replay temporal channel.
+#     Pattern: as_secret + stale_to<N> + no declassify<Policy>.
+#
+#   ghost_runtime_observable             — Filliâtre 1999 / Leino
+#     2010 / Müller-Schwerhoff-Summers 2016 ghost discipline.
+#     Pattern: ghost (Usage) + with<E...> containing Alloc/IO/
+#     Block/Bg.  Distinct from R006 (collision marks_runtime_-
+#     ghost_use) — this catches at type-row level without opt-in.
+#
+# Both detectors reject through NotInTheoryCorpus; the diagnostic
+# regex anchors on the gate name.
+crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret  "NotInTheoryCorpus")
+crucible_neg_compile_fixy_test(neg_fixy_theory_ghost_observable  "NotInTheoryCorpus")

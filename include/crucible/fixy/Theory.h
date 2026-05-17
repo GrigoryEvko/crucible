@@ -5,8 +5,9 @@
 // Phase D of the fixy reimplementation per misc/16_05_2026_fixy.md
 // §4.  This is the LOAD-BEARING reject-by-default surface that closes
 // the FX §30.14 type-theory unsoundness corpus.  Currently ships
-// TWO entries — classified_io_without_declassify and
-// classified_bg_without_declassify — each pairs:
+// FOUR entries — classified_io_without_declassify,
+// classified_bg_without_declassify, staleness_secret_without_declassify,
+// and ghost_runtime_observable — each pairs:
 //
 //   (a) a named pattern detector — a constexpr predicate over
 //       (Type, Grants...) that returns true iff the binding matches
@@ -101,6 +102,42 @@ template <typename G> struct is_bg_effect_grant
 template <effects::Effect... Es>
 struct is_bg_effect_grant<grant::with<Es...>>
     : std::bool_constant<((Es == effects::Effect::Bg) || ...)> {};
+
+// `is_stale_grant<G>` — true iff G is a `grant::stale_to<TauMax>`
+// instantiation (Staleness ≠ Fresh).  Used by the
+// `staleness_secret_without_declassify` corpus entry to detect a
+// classified value reachable through a stale-cache replay channel
+// without a freshness-discharging declassification policy.
+template <typename G> struct is_stale_grant
+    : std::false_type {};
+template <auto TauMax>
+struct is_stale_grant<grant::stale_to<TauMax>>
+    : std::true_type {};
+
+// `is_ghost_grant<G>` — true iff G is the `grant::ghost` Usage tag
+// (Usage = Ghost).  Used by the `ghost_runtime_observable` corpus
+// entry to detect ghost-marked bindings that ALSO request runtime-
+// observable effects (Alloc/IO/Block/Bg).  Ghost code is erased at
+// compile time and MUST NOT request runtime presence.
+template <typename G> struct is_ghost_grant
+    : std::false_type {};
+template <> struct is_ghost_grant<grant::ghost>
+    : std::true_type {};
+
+// `is_observable_effect_grant<G>` — true iff G is `grant::with<...>`
+// and its effect pack contains ANY effect with a runtime observability
+// footprint: Alloc, IO, Block, or Bg.  (Init and Test are compile-
+// time / one-shot tags that ghost code is allowed to coexist with —
+// the discipline only bans runtime presence.)
+template <typename G> struct is_observable_effect_grant
+    : std::false_type {};
+template <effects::Effect... Es>
+struct is_observable_effect_grant<grant::with<Es...>>
+    : std::bool_constant<(
+        ((Es == effects::Effect::Alloc) ||
+         (Es == effects::Effect::IO)    ||
+         (Es == effects::Effect::Block) ||
+         (Es == effects::Effect::Bg))   || ...)> {};
 
 }  // namespace detail
 
@@ -206,6 +243,124 @@ struct classified_bg_without_declassify {
     }
 };
 
+// ── Entry 3: staleness_secret_without_declassify ─────────────────
+//
+// Cite: Sabelfeld-Sands 2009, "Declassification: dimensions and
+// principles" (J. Computer Security); Andrysco-Kohlbrenner-Mowery-
+// Jhala-Lerner-Shacham 2015, "On Subnormal Floating Point and
+// Abnormal Timing" (IEEE S&P) — the timing/freshness adapter.
+//
+// Pattern: a binding engages `as_secret` (or `as_classified`) on
+// Security AND `stale_to<TauMax>` on Staleness (non-Fresh) AND omits
+// any `declassify<Policy>` grant.  This is the canonical stale-replay
+// information-flow channel: a classified value is reachable through a
+// stale-cache replay window of duration TauMax, exposing the value
+// across the replay-window without a freshness-discharging policy.
+//
+// Why distinct from entries 1-2: those catch flow-through-effects
+// (IO / Bg).  This entry catches flow-through-time: even with
+// Effect=Row<> (no syscalls, no scheduling) and Usage=Linear (no
+// aliasing), a non-Fresh Staleness reading admits a temporal channel
+// where the same classified bytes are observable across the
+// replay-window without authorization.  The CT (constant-time)
+// substrate's CtCrypto stance is the production analogue — it pins
+// Staleness to Fresh so a freshness-leak cannot occur.  Bindings that
+// explicitly request stale_to<N> must also document declassify<Policy>
+// authorizing the temporal flow.
+//
+// Remediation: EITHER (a) project Security to a less restrictive
+// level, (b) drop the stale_to<N> grant (Staleness defaults to Fresh),
+// OR (c) interpose `declassify<Policy>` with a named policy
+// authorizing the staleness-window flow.  The substrate's CtCrypto
+// stance is the canonical (b) form (pins Staleness=Fresh).
+
+struct staleness_secret_without_declassify {
+    template <typename Type, typename... Grants>
+    [[nodiscard]] static consteval bool matches() noexcept {
+        const bool has_secret =
+            detail::has_grant_of<detail::is_secret_grant, Grants...>();
+        const bool has_stale =
+            detail::has_grant_of<detail::is_stale_grant, Grants...>();
+        const bool has_declassify =
+            detail::has_grant_of<detail::is_declassify_grant, Grants...>();
+        return has_secret && has_stale && !has_declassify;
+    }
+
+    static constexpr const char* cite() noexcept {
+        return "Sabelfeld-Sands 2009 / Andrysco-et-al 2015 — "
+               "stale-replay information flow: classified value is "
+               "reachable through a non-Fresh Staleness window "
+               "(stale_to<TauMax>) without a declassification "
+               "policy; the replay-window itself encodes a temporal "
+               "channel.  Insert grant::declassify<Policy> OR drop "
+               "the stale_to<N> grant (Staleness defaults to Fresh) "
+               "OR project Security to a less restrictive level.";
+    }
+};
+
+// ── Entry 4: ghost_runtime_observable ────────────────────────────
+//
+// Cite: Filliâtre 1999, "Preuve de programmes impératifs en théorie
+// des types" (Coq Why-tool tradition); Leino 2010, "Dafny: an
+// automatic program verifier for functional correctness"; Müller-
+// Schwerhoff-Summers 2016, "Viper: A Verification Infrastructure
+// for Permission-Based Reasoning" — the ghost-state discipline.
+//
+// Pattern: a binding engages `ghost` on Usage AND `with<E...>` on
+// Effect where E contains at least one runtime-observable effect
+// (Alloc, IO, Block, or Bg).  This breaks the ghost discipline at the
+// type level: ghost values are erased at compile time and MUST NOT
+// drive runtime presence.  A ghost-marked binding that allocates,
+// performs I/O, blocks, or spawns background work is contradictory —
+// the ghost annotation is a lie that compromises the type-erasure
+// invariant.
+//
+// Why distinct from R006 (CollisionCatalog P002 marks_runtime_ghost_use):
+// R006 requires an opt-in trait specialization (the call site
+// specializes `marks_runtime_ghost_use<F>` to true).  This corpus
+// entry detects the pattern purely from the Grants pack — no external
+// trait specialization needed.  R006 catches a runtime-use call site;
+// this entry catches the binding's TYPE-LEVEL effect-row request.
+// Together they form a defense-in-depth: a binding rejected here
+// never reaches the R006 use-site check.
+//
+// Note: Init and Test effects are deliberately EXCLUDED from the
+// observable set.  `Init` is a one-shot construction-time effect that
+// ghost initialization is allowed to coexist with; `Test` is a
+// compile-time / no-runtime effect.  Only Alloc/IO/Block/Bg signal
+// genuine runtime presence.
+//
+// Remediation: EITHER (a) drop the `ghost` Usage marker (the binding
+// has runtime presence by design — Usage should be Linear/Affine/
+// Copy/Borrow), OR (b) drop the runtime-observable effects (genuinely
+// ghost code: no allocation, no I/O, no blocking, no spawning).  No
+// third option — declassify does not apply (this is not a flow
+// problem; it is a ghost-vs-runtime category error).
+
+struct ghost_runtime_observable {
+    template <typename Type, typename... Grants>
+    [[nodiscard]] static consteval bool matches() noexcept {
+        const bool has_ghost =
+            detail::has_grant_of<detail::is_ghost_grant, Grants...>();
+        const bool has_observable =
+            detail::has_grant_of<detail::is_observable_effect_grant,
+                                 Grants...>();
+        return has_ghost && has_observable;
+    }
+
+    static constexpr const char* cite() noexcept {
+        return "Filliâtre 1999 / Leino 2010 / Müller-Schwerhoff-"
+               "Summers 2016 — ghost-state discipline: a binding "
+               "engaging Usage=Ghost AND any runtime-observable "
+               "effect (Alloc / IO / Block / Bg) is contradictory — "
+               "ghost values are erased at compile time and cannot "
+               "drive runtime presence.  Drop the ghost Usage marker "
+               "OR drop the runtime-observable effects.  Declassify "
+               "does not apply (this is a ghost-vs-runtime category "
+               "error, not an information-flow channel).";
+    }
+};
+
 }  // namespace corpus
 
 // ═════════════════════════════════════════════════════════════════════
@@ -219,7 +374,9 @@ struct classified_bg_without_declassify {
 template <typename Type, typename... Grants>
 [[nodiscard]] consteval bool is_in_unsoundness_corpus() noexcept {
     return corpus::classified_io_without_declassify::matches<Type, Grants...>()
-        || corpus::classified_bg_without_declassify::matches<Type, Grants...>();
+        || corpus::classified_bg_without_declassify::matches<Type, Grants...>()
+        || corpus::staleness_secret_without_declassify::matches<Type, Grants...>()
+        || corpus::ghost_runtime_observable::matches<Type, Grants...>();
     // Future entries: || corpus::<next>::matches<Type, Grants...>()
 }
 
