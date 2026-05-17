@@ -18,12 +18,12 @@
 // `static_assert` invariant tying the strict default to
 // `SecLevel::Classified`.
 //
-// Cite: Sabelfeld-Sands 2009 / Andrysco-et-al 2015.  The replay-window
-// itself encodes a temporal information channel; a classified value
-// reachable through a non-Fresh staleness window without a freshness-
-// discharging policy is the canonical timing-channel adapter —
-// independent of whether the Security grant is spelled `as_secret` or
-// `strict<Security>`.
+// Cite: Sabelfeld-Sands 2009 / Hunt-Sands 2008 (fixy-CR-16: Andrysco-
+// 2015 was a misattributed paper about FP timing channels and has been
+// replaced).  A classified value reachable through a non-Fresh
+// staleness window without a freshness-discharging policy is a failed
+// erasure — independent of whether the Security grant is spelled
+// `as_secret` or `strict<Security>`.
 //
 // Reject sequence: IsAcceptedFn → IsAccepted → NotInTheoryCorpus →
 // `!staleness_secret_without_declassify::matches<>()` evaluates false →

@@ -296,9 +296,18 @@ struct classified_bg_without_declassify {
 // ── Entry 3: staleness_secret_without_declassify ─────────────────
 //
 // Cite: Sabelfeld-Sands 2009, "Declassification: dimensions and
-// principles" (J. Computer Security); Andrysco-Kohlbrenner-Mowery-
-// Jhala-Lerner-Shacham 2015, "On Subnormal Floating Point and
-// Abnormal Timing" (IEEE S&P) — the timing/freshness adapter.
+// principles" (J. Computer Security) — the "when" dimension of
+// declassification (temporal release authorization); Hunt-Sands
+// 2008, "Just Forget It — The Semantics and Enforcement of
+// Information Erasure" (POPL) — the dual axis: classified data
+// that should be unobservable after a staleness window expires
+// is a failed erasure policy.  (fixy-CR-16: replaces a prior
+// Andrysco-et-al 2015 attribution that did not back the claim —
+// that paper, "On Subnormal Floating Point and Abnormal Timing"
+// IEEE S&P, is about FP-subnormal timing side channels and has
+// nothing to say about staleness/freshness/replay information
+// flow.  The substantive corpus entry is unchanged; only the
+// supporting citation rotates to the correct paper.)
 //
 // Pattern: a binding engages `as_secret` (or `as_classified`) on
 // Security AND `stale_to<TauMax>` on Staleness (non-Fresh) AND omits
@@ -337,14 +346,15 @@ struct staleness_secret_without_declassify {
     }
 
     static constexpr const char* cite() noexcept {
-        return "Sabelfeld-Sands 2009 / Andrysco-et-al 2015 — "
-               "stale-replay information flow: classified value is "
+        return "Sabelfeld-Sands 2009 / Hunt-Sands 2008 — "
+               "stale-replay as failed erasure: classified value is "
                "reachable through a non-Fresh Staleness window "
                "(stale_to<TauMax>) without a declassification "
-               "policy; the replay-window itself encodes a temporal "
-               "channel.  Insert grant::declassify<Policy> OR drop "
-               "the stale_to<N> grant (Staleness defaults to Fresh) "
-               "OR project Security to a less restrictive level.";
+               "policy; the replay-window keeps observable what an "
+               "erasure policy would require be forgotten.  Insert "
+               "grant::declassify<Policy> OR drop the stale_to<N> "
+               "grant (Staleness defaults to Fresh) OR project "
+               "Security to a less restrictive level.";
     }
 };
 

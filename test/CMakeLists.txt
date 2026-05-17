@@ -7827,7 +7827,10 @@ crucible_neg_compile_test(neg_decide_valid_span_truncation
 # backed unsoundness detectors:
 #
 #   staleness_secret_without_declassify  — Sabelfeld-Sands 2009 /
-#     Andrysco-et-al 2015 stale-replay temporal channel.
+#     Hunt-Sands 2008 stale-replay as failed erasure (fixy-CR-16
+#     replaced an earlier Andrysco-2015 attribution that did not
+#     back the claim; Hunt-Sands 2008 "Just Forget It" formalizes
+#     erasure as the dual axis of staleness).
 #     Pattern: as_secret + stale_to<N> + no declassify<Policy>.
 #
 #   ghost_runtime_observable             — Filliâtre 1999 / Leino

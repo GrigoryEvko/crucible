@@ -7,10 +7,12 @@
 // Fresh) without interposing `declassify<Policy>` to authorize the
 // temporal flow.
 //
-// Cite: Sabelfeld-Sands 2009 / Andrysco-et-al 2015.  The replay-window
-// itself encodes a temporal information channel; a classified value
-// reachable through a non-Fresh staleness window without a freshness-
-// discharging policy is the canonical timing-channel adapter.
+// Cite: Sabelfeld-Sands 2009 / Hunt-Sands 2008 (fixy-CR-16: Andrysco-
+// 2015 was a misattributed paper about FP timing channels and has been
+// replaced).  A classified value reachable through a non-Fresh
+// staleness window without a freshness-discharging policy is a failed
+// erasure: the replay-window keeps observable what Hunt-Sands' erasure
+// semantics would require be forgotten.
 //
 // Distinct from R011/S010 (CollisionCatalog marks_ct opt-in): this
 // catches the pattern at the type level WITHOUT requiring an external
