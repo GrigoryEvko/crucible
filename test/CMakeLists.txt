@@ -1321,6 +1321,36 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_endpoint_non_bridgeable
 crucible_neg_compile_fixy_test(neg_fixy_pipe_pipeline_non_stage
     "CtxFitsPipeline|pipeline_chain|IsStage|constraints not satisfied|associated constraints are not satisfied")
 
+# ── FIXY-AUDIT-D7 — mint_pipeline_dag / mint_mpmc_stage_from_endpoints
+# / mint_swmr_stage HS14 floor.
+#
+# Three ctx-bound mints with multi-conjunct requires-clauses.  Two
+# fixtures per factory pin distinct rejection classes:
+#
+#   mint_pipeline_dag:
+#     _non_graph              — Graph param is not IsStageGraph
+#     _stage_pack_mismatch    — pack size/types disagree with Graph
+#
+#   mint_mpmc_stage_from_endpoints:
+#     _non_endpoint           — variadic pack contains non-Endpoint
+#     _arity_mismatch         — sizeof...(Endpoints) != FnPtr arity
+#
+#   mint_swmr_stage:
+#     _non_consumer_ep        — first param fails IsConsumerEndpoint
+#     _non_writer             — second param fails is_swmr_writer_v
+crucible_neg_compile_fixy_test(neg_fixy_pipe_pipeline_dag_non_graph
+    "CtxFitsPipelineDagMint|CtxFitsPipelineDag|IsStageGraph|pipeline_dag_mint_gate|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_pipe_pipeline_dag_stage_pack_mismatch
+    "CtxFitsPipelineDagMint|stage_pack_type|pipeline_dag_mint_gate|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_pipe_mpmc_stage_non_endpoint
+    "CtxFitsMpmcStageFromEndpoints|mpmc_stage_from_endpoints_gate|StageHandlesMatchEndpointsExtended|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_pipe_mpmc_stage_arity_mismatch
+    "CtxFitsMpmcStageFromEndpoints|mpmc_stage_from_endpoints_gate|arity|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_pipe_swmr_stage_non_consumer_ep
+    "CtxFitsSwmrStageFromEndpoint|swmr_stage_from_endpoint_gate|IsConsumerEndpoint|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_pipe_swmr_stage_non_writer
+    "CtxFitsSwmrStageFromEndpoint|swmr_stage_from_endpoint_gate|is_swmr_writer|constraints not satisfied|associated constraints are not satisfied")
+
 # ── FIXY-MINT-Bridge — fixy/Bridge.h re-export of wrap factories
 # (mint_recording_session, mint_crash_watched_session,
 # mint_persisted_session, mint_recording_endpoint,
