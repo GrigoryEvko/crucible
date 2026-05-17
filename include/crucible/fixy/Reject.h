@@ -563,6 +563,25 @@ template <typename... Grants>
     }
 }
 
+// ─── axis-enumerator splice cache ──────────────────────────────────
+//
+// fixy-H-09: the four per-axis fold helpers below (`first_missing_axis`,
+// `every_axis_engaged`, `every_axis_engaged_at_most_once`, and
+// `first_duplicate_axis`) all need to enumerate every `DimensionAxis`
+// value at consteval.  Materialize the reflected enumerator span ONCE
+// into static constexpr storage and let each helper splice the I-th
+// axis through `axis_at_v<I>` — no per-helper `define_static_array`
+// recomputation, no `template for` body that instantiates
+// `engaged_for<>` for axes past the first match.
+
+inline constexpr auto kAxisEnumerators = std::define_static_array(
+    std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
+
+inline constexpr std::size_t kAxisCount = kAxisEnumerators.size();
+
+template <std::size_t I>
+inline constexpr auto axis_at_v = [:kAxisEnumerators[I]:];
+
 // ─── first_missing_axis — diagnostic helper ────────────────────────
 //
 // Returns the DimensionAxis whose engagement is missing, wrapped in
@@ -575,41 +594,50 @@ template <typename... Grants>
 // burden of the guard fell on every caller).  Switching to
 // `std::optional<>` makes the "no missing axis" case a first-class
 // type-level distinction.
+//
+// fixy-H-09: the prior shape used `template for` which unconditionally
+// instantiated `engaged_for<axis_v, Grants...>()` for ALL 20 axes even
+// after the first miss was observed.  The recursive `if constexpr`
+// form below stops instantiating the engagement check at the first
+// miss — algorithm shape now matches the doc-block claim ("returns
+// the FIRST unengaged axis") and the discarded branches don't bloat
+// the substitution context.
+
+template <std::size_t I, typename... Grants>
+[[nodiscard]] consteval std::optional<dim::DimensionAxis>
+first_missing_axis_impl() noexcept {
+    if constexpr (I >= kAxisCount) {
+        return std::nullopt;
+    } else if constexpr (!engaged_for<axis_at_v<I>, Grants...>()) {
+        return axis_at_v<I>;
+    } else {
+        return first_missing_axis_impl<I + 1, Grants...>();
+    }
+}
 
 template <typename... Grants>
 [[nodiscard]] consteval std::optional<dim::DimensionAxis>
 first_missing_axis() noexcept {
-    std::optional<dim::DimensionAxis> result;
-    static constexpr auto fm_axes = std::define_static_array(
-        std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : fm_axes) {
-        constexpr auto axis_v = [:en:];
-        constexpr bool ok = engaged_for<axis_v, Grants...>();
-        if (!ok && !result.has_value()) {
-            result = axis_v;
-        }
+    return first_missing_axis_impl<0, Grants...>();
+}
+
+// fixy-H-09: recursive short-circuit form — stop instantiating
+// `engaged_for<>` for the remaining axes at the first miss.
+
+template <std::size_t I, typename... Grants>
+[[nodiscard]] consteval bool every_axis_engaged_impl() noexcept {
+    if constexpr (I >= kAxisCount) {
+        return true;
+    } else if constexpr (!engaged_for<axis_at_v<I>, Grants...>()) {
+        return false;
+    } else {
+        return every_axis_engaged_impl<I + 1, Grants...>();
     }
-#pragma GCC diagnostic pop
-    return result;
 }
 
 template <typename... Grants>
 [[nodiscard]] consteval bool every_axis_engaged() noexcept {
-    bool ok = true;
-    static constexpr auto ea_axes = std::define_static_array(
-        std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : ea_axes) {
-        constexpr auto axis_v = [:en:];
-        if (!engaged_for<axis_v, Grants...>()) {
-            ok = false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return ok;
+    return every_axis_engaged_impl<0, Grants...>();
 }
 
 // ─── count_engagements_for — per-axis engagement multiplicity ──────
@@ -632,21 +660,26 @@ template <dim::DimensionAxis D, typename... Grants>
     }
 }
 
+// fixy-H-09: recursive short-circuit form — stop instantiating
+// `count_engagements_for<>` for the remaining axes at the first
+// duplicate engagement.
+
+template <std::size_t I, typename... Grants>
+[[nodiscard]] consteval bool
+every_axis_engaged_at_most_once_impl() noexcept {
+    if constexpr (I >= kAxisCount) {
+        return true;
+    } else if constexpr (count_engagements_for<axis_at_v<I>, Grants...>()
+                         > 1u) {
+        return false;
+    } else {
+        return every_axis_engaged_at_most_once_impl<I + 1, Grants...>();
+    }
+}
+
 template <typename... Grants>
 [[nodiscard]] consteval bool every_axis_engaged_at_most_once() noexcept {
-    bool ok = true;
-    static constexpr auto uniq_axes = std::define_static_array(
-        std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : uniq_axes) {
-        constexpr auto axis_v = [:en:];
-        if (count_engagements_for<axis_v, Grants...>() > 1u) {
-            ok = false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return ok;
+    return every_axis_engaged_at_most_once_impl<0, Grants...>();
 }
 
 // ─── first_duplicate_axis — diagnostic helper (fixy-H-02) ──────────
@@ -662,24 +695,27 @@ template <typename... Grants>
 // fixy-H-08: see first_missing_axis above — same type-system leak
 // (0xFF cast to DimensionAxis) eliminated the same way.
 
+// fixy-H-09: recursive short-circuit form — stop instantiating
+// `count_engagements_for<>` for the remaining axes at the first
+// duplicate.
+
+template <std::size_t I, typename... Grants>
+[[nodiscard]] consteval std::optional<dim::DimensionAxis>
+first_duplicate_axis_impl() noexcept {
+    if constexpr (I >= kAxisCount) {
+        return std::nullopt;
+    } else if constexpr (count_engagements_for<axis_at_v<I>, Grants...>()
+                         > 1u) {
+        return axis_at_v<I>;
+    } else {
+        return first_duplicate_axis_impl<I + 1, Grants...>();
+    }
+}
+
 template <typename... Grants>
 [[nodiscard]] consteval std::optional<dim::DimensionAxis>
 first_duplicate_axis() noexcept {
-    std::optional<dim::DimensionAxis> result;
-    static constexpr auto fd_axes = std::define_static_array(
-        std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : fd_axes) {
-        constexpr auto axis_v = [:en:];
-        constexpr std::size_t cnt =
-            count_engagements_for<axis_v, Grants...>();
-        if (cnt > 1u && !result.has_value()) {
-            result = axis_v;
-        }
-    }
-#pragma GCC diagnostic pop
-    return result;
+    return first_duplicate_axis_impl<0, Grants...>();
 }
 
 }  // namespace detail::engagement
