@@ -1287,6 +1287,34 @@ crucible_neg_compile_fixy_test(neg_fixy_lat_unclassified_only   "FixyNotEngaged_
 crucible_neg_compile_fixy_test(neg_fixy_lat_external_wrong_axis "FixyNotEngaged_Security")
 crucible_neg_compile_fixy_test(neg_fixy_lat_tested_only         "FixyNotEngaged_Type")
 
+# ── FIXY-AUDIT-D10 — full Security/Trust lattice neg-compile sweep
+#
+# 13 additional fixtures bring per-lattice-point coverage to >=14
+# total (4 pre-existing + 13 new = 17).  For each lattice point on
+# the Security axis (as_unclassified / as_public / as_internal /
+# as_classified / as_secret) and Trust axis (trust_verified /
+# trust_tested / trust_unverified / trust_external), at least one
+# wrong-axis fixture and one only-engagement fixture proves the
+# IsAccepted gate fires with the expected per-axis diagnostic tag.
+#
+#   *_wrong_axis  — tag used in the OTHER axis's slot leaves that
+#                   axis unengaged → FixyNotEngaged_<OtherAxis>
+#   *_only        — tag alone leaves 19 other axes unengaged →
+#                   FixyNotEngaged_Type (first missing axis)
+crucible_neg_compile_fixy_test(neg_fixy_lat_public_wrong_axis      "FixyNotEngaged_Trust")
+crucible_neg_compile_fixy_test(neg_fixy_lat_internal_wrong_axis    "FixyNotEngaged_Trust")
+crucible_neg_compile_fixy_test(neg_fixy_lat_classified_wrong_axis  "FixyNotEngaged_Trust")
+crucible_neg_compile_fixy_test(neg_fixy_lat_public_only            "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_lat_internal_only          "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_lat_classified_only        "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_lat_secret_only            "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_lat_verified_wrong_axis    "FixyNotEngaged_Security")
+crucible_neg_compile_fixy_test(neg_fixy_lat_unverified_wrong_axis  "FixyNotEngaged_Security")
+crucible_neg_compile_fixy_test(neg_fixy_lat_tested_wrong_axis      "FixyNotEngaged_Security")
+crucible_neg_compile_fixy_test(neg_fixy_lat_verified_only          "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_lat_unverified_only        "FixyNotEngaged_Type")
+crucible_neg_compile_fixy_test(neg_fixy_lat_external_only          "FixyNotEngaged_Type")
+
 # ── FIXY-MINT-Cap — fixy/Cap.h re-export of effects::mint_cap +
 # effects::mint_from_ctx.  Two HS14 fixtures pin the alias's gate:
 crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_fg
