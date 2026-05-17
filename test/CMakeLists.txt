@@ -1119,6 +1119,9 @@ crucible_neg_compile_fixy_test(neg_fixy_mint_fn_invalid_grant    "AllGrantsWellF
 # FIXY-AUDIT-A3 — HS14 floor for UniqueEngagementPerAxis.
 crucible_neg_compile_fixy_test(neg_fixy_duplicate_engagement     "UniqueEngagementPerAxis")
 
+# FIXY-AUDIT-B1 — HS14 floor for Theory.h §30.14 corpus.
+crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io     "NotInTheoryCorpus")
+
 # ── FIXY-CLEAN-B4 — 12 collision-rule neg-compile fixtures ─────────
 #
 # Each fixture instantiates fixy::fn<int, all-strict-pack> after

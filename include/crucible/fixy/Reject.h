@@ -66,6 +66,7 @@
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Grant.h>
+#include <crucible/fixy/Theory.h>
 #include <crucible/safety/Diagnostic.h>
 
 #include <concepts>
@@ -369,7 +370,8 @@ template <typename T>
 template <typename Type, typename... Grants>
 concept IsAccepted =
        detail::accept::type_is_object_or_function<Type>()
-    && IsAcceptedGrants<Grants...>;
+    && IsAcceptedGrants<Grants...>
+    && theory::NotInTheoryCorpus<Type, Grants...>;
 
 // ─── IsAccepted_v — variable-template form for static_assert sites ─
 
