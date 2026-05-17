@@ -91,70 +91,43 @@ using ::crucible::safety::proto::EpochedDelegate;
 using ::crucible::safety::proto::CheckpointedSession;
 
 // ═════════════════════════════════════════════════════════════════════
-// ── φ-predicate re-exports (FIXY-AUDIT-B5) ─────────────────────────
+// ── φ-predicate re-exports (FIXY-AUDIT-B5, fixy-CR-12) ─────────────
 // ═════════════════════════════════════════════════════════════════════
 //
 // The FX paper §11.18 catalogs seven session-safety levels: safe, df
 // (deadlock-free), term (terminating), nterm (non-terminating live),
-// live, live+ (positive liveness), live++ (precise liveness).  The
-// substrate ships a partial set today: `is_well_formed_v` is the
-// strongest soundness predicate in production use, and the crash-stop
-// family (`is_dual_v`, `is_terminal_state_v`, `is_stop_v`,
-// `is_crash_v`, `is_reliable_v`) covers the orthogonal crash axis.
-// The remaining φ-predicates (true deadlock-freedom, termination
-// proof, positive liveness, precise liveness) live as substrate gaps
-// tracked in Task #346 / #348 / #381 per CLAUDE.md L0 §Safety wrappers.
+// live, live+ (positive liveness), live++ (precise liveness).  Of
+// those, only THREE map honestly to the predicates the substrate
+// proves today:
 //
-// Production callers spelling `fixy::sess::phi_<name>_v<Proto>` get the
-// strongest predicate available today.  When the substrate ships a
-// dedicated predicate per the gap TODOs, the alias here flips to the
-// substrate name with no call-site churn.
+//   safe   → is_well_formed_v       — Honda 1998 binary session
+//                                      well-formedness.  Equivalent
+//                                      to FX phi_safe by definition.
+//   term   → is_terminal_state_v    — terminal-state check on the
+//                                      protocol head.  The closest
+//                                      substrate predicate to FX
+//                                      phi_term, sound but partial.
+//   nterm  → !is_terminal_state_v   — complement of term.
 //
-// Coverage map (substrate → fixy::sess::phi_*):
+// fixy-CR-12 closure: pre-CR-12 this header also re-exported
+// `phi_df_v`, `phi_live_v`, `phi_live_plus_v`, `phi_live_pp_v` — all
+// four ALIASED to `is_well_formed_v` even though well-formedness is
+// strictly weaker than each of those FX-paper properties (a well-
+// formed protocol can still deadlock or starve).  The names lied:
+// callers reading `phi_df_v<Proto>` plausibly believed the predicate
+// witnessed deadlock-freedom, but it accepted protocols that visibly
+// deadlock under any reasonable execution semantics.  CR-12 removes
+// those four aliases entirely — no backwards-compat shim — so the
+// floor `is_well_formed_v` must be spelled out at every call site
+// that wants it.
 //
-//   safe      → is_well_formed_v        — Honda 1998 binary session
-//                                          well-formedness (the
-//                                          strongest predicate today)
-//   df        → is_well_formed_v        — TODO(FIXY-AUDIT-B5-substrate):
-//                                          phi_df awaits a dedicated
-//                                          deadlock-freedom proof from
-//                                          sessions/SessionDeadlockFree.h
-//                                          (Task #346 / GAPS-002).
-//                                          Aliased to is_well_formed_v
-//                                          as the conservative floor.
-//   term      → is_terminal_state_v     — terminal-state check; not the
-//                                          full Honda 1998 termination
-//                                          proof but the closest
-//                                          substrate predicate.
-//                                          TODO(FIXY-AUDIT-B5-substrate):
-//                                          dedicated termination
-//                                          predicate awaits Task #348.
-//   nterm     → !is_terminal_state_v    — complement of term.
-//                                          TODO(FIXY-AUDIT-B5-substrate):
-//                                          dedicated non-termination
-//                                          predicate awaits Task #348.
-//   live      → is_well_formed_v        — TODO(FIXY-AUDIT-B5-substrate):
-//                                          phi_live awaits a coinductive
-//                                          liveness proof (Task #381).
-//   live_plus → is_well_formed_v        — TODO(FIXY-AUDIT-B5-substrate):
-//                                          phi_live_plus awaits the
-//                                          positive-liveness refinement
-//                                          (GPPSY23, Task #381).
-//   live_pp   → is_well_formed_v        — TODO(FIXY-AUDIT-B5-substrate):
-//                                          phi_live_pp awaits the
-//                                          precise-async refinement
-//                                          (PMY25, Task #381).
-//
-// Crash-stop family (BSYZ22 / BHYZ23) re-exported verbatim under
-// `fixy::sess::is_*_v` for production callers that need them
-// alongside the φ-predicate aliases.
+// When the substrate ships dedicated predicates (Task #346 for df,
+// #348 for term/nterm refinement, #381 for live/live_plus/live_pp),
+// re-introduce the φ-predicates here as actual aliases over those
+// substrate names — at which point the names will match the proofs.
 
 template <typename P>
 inline constexpr bool phi_safe_v =
-    ::crucible::safety::proto::is_well_formed_v<P>;
-
-template <typename P>
-inline constexpr bool phi_df_v =
     ::crucible::safety::proto::is_well_formed_v<P>;
 
 template <typename P>
@@ -164,18 +137,6 @@ inline constexpr bool phi_term_v =
 template <typename P>
 inline constexpr bool phi_nterm_v =
     !::crucible::safety::proto::is_terminal_state_v<P>;
-
-template <typename P>
-inline constexpr bool phi_live_v =
-    ::crucible::safety::proto::is_well_formed_v<P>;
-
-template <typename P>
-inline constexpr bool phi_live_plus_v =
-    ::crucible::safety::proto::is_well_formed_v<P>;
-
-template <typename P>
-inline constexpr bool phi_live_pp_v =
-    ::crucible::safety::proto::is_well_formed_v<P>;
 
 // ─── Crash-stop family (BSYZ22 / BHYZ23) ──────────────────────────
 //
