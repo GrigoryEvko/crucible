@@ -193,6 +193,7 @@ crucible_test(test_fixy_sess)
 crucible_test(test_fixy_pipe)
 crucible_test(test_fixy_bridge)
 crucible_test(test_fixy_substr)
+crucible_test(test_fixy_mach_safety)
 
 # FIXY-LAT-Security + FIXY-LAT-Trust — every SecLevel and every
 # safety::trust::* tag is reachable through one named grant tag.
@@ -1175,6 +1176,16 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_wrong_handle
     "cannot convert|no matching function|ProducerHandle|ConsumerHandle")
 crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_wrong_handle
     "cannot convert|no matching function|WriterHandle|ReaderHandle")
+
+# ── FIXY-MINT-Mach + FIXY-MINT-Safety — fixy/Mach.h + fixy/Safety.h
+# re-export of state-machine + safety-wrapper token mints
+# (mint_machine, transition_to, mint_linear, mint_secret, mint_view).
+# Two HS14 fixtures pin the Linear-copy ban and the is_constructible
+# gate via fixy:::
+crucible_neg_compile_fixy_test(neg_fixy_safety_linear_copy
+    "deleted function|move-only|use of deleted function")
+crucible_neg_compile_fixy_test(neg_fixy_mach_construct_unbuildable
+    "is_constructible|constraints not satisfied|associated constraints are not satisfied")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
