@@ -638,19 +638,19 @@ class fn {
         || !fixy_h02_tier3_all_dims_engaged
         || !fixy_h02_tier4_unique_engagement
         || theory::NotInTheoryCorpus<Type, ImplicitTypeMarker, Grants...>;
+    // fixy-H-13: surface the matched corpus entry's cite() text as the
+    // rejection diagnostic via P2741R3 (user-generated static_assert
+    // messages).  `corpus_cite_for_v` returns the FIRST matching
+    // entry's cite — paper, year, pattern explanation, and per-entry
+    // remediation — so the diagnostic literally IS the cite + fix
+    // instructions instead of a generic "see Theory.h's cite() for
+    // the literature reference" pointer that the prior message
+    // contained (and that fixy-H-13 caught as a lie: cite() was
+    // defined but never invoked).  When tier 5 succeeds (no corpus
+    // match), corpus_cite_for_v returns an empty string_view; the
+    // static_assert message is unused in that case.
     static_assert(fixy_h02_tier5_not_in_corpus,
-        "fixy::fn<Type, Grants...> [tier 5: IsAccepted gate / "
-        "NotInTheoryCorpus]: the binding matches a known-"
-        "unsoundness entry in fixy::theory's corpus (see Theory.h's "
-        "§30.14 corpus and the matched entry's cite() for the literature "
-        "reference).  This binding shape is structurally rejected because "
-        "it composes axes in a way documented as unsound — classified IO "
-        "without declassify, classified Bg without declassify, staleness "
-        "secret without declassify, or ghost runtime observability.  "
-        "Either change the binding to remove the unsound composition, or "
-        "if the composition is intentional, narrow the Type/Grants to "
-        "avoid the corpus match (typically by adding a `declassify<Policy>` "
-        "grant with a named, audit-grep'able policy tag).");
+        theory::corpus_cite_for_v<Type, ImplicitTypeMarker, Grants...>);
 
 public:
     using value_type  = Type;

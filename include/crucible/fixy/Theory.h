@@ -51,12 +51,17 @@
 //
 // ── How the gate fires ─────────────────────────────────────────────
 //
-// `IsAcceptedFn<Type, Grants...>` (Reject.h, §IsAccepted full gate)
+// `IsAccepted<Type, Grants...>` (Reject.h, §IsAccepted full gate)
 // composes engagement + well-formedness + uniqueness +
 // `NotInTheoryCorpus<Type, Grants...>` (this header).  A binding
 // that engages every axis correctly STILL fails IsAccepted if its
 // Grants pack matches any §30.14 entry.  The fixy-level diagnostic
-// names which corpus entry matched (paper + year).
+// names which corpus entry matched (paper + year) — the tier-5
+// static_assert at fixy/Fn.h:641 surfaces the matched entry's
+// `cite()` text via `corpus_cite_for_v<Type, Grants...>` (P2741R3
+// user-generated static_assert messages), so the rejection diagnostic
+// literally IS the cite + remediation text rather than a generic
+// "binding in corpus" pointer.
 //
 // ── Discipline ─────────────────────────────────────────────────────
 //
@@ -76,6 +81,7 @@
 #include <crucible/safety/Fn.h>
 
 #include <cstddef>
+#include <string_view>
 #include <type_traits>
 
 namespace crucible::fixy::theory {
@@ -227,7 +233,7 @@ struct classified_io_without_declassify {
         return has_secret && has_io && !has_declassify;
     }
 
-    static constexpr const char* cite() noexcept {
+    static constexpr std::string_view cite() noexcept {
         return "Volpano-Smith-Irvine 1996 / Sabelfeld-Myers 2003 — "
                "implicit information flow: classified value flows out "
                "of the program via I/O without a declassification "
@@ -282,7 +288,7 @@ struct classified_bg_without_declassify {
         return has_secret && has_bg && !has_declassify;
     }
 
-    static constexpr const char* cite() noexcept {
+    static constexpr std::string_view cite() noexcept {
         return "Smith-Volpano 1998 / Sabelfeld-Sands 2000 / "
                "Hedin-Sabelfeld 2012 — concurrent information flow: "
                "classified value crosses into a background-thread "
@@ -345,7 +351,7 @@ struct staleness_secret_without_declassify {
         return has_secret && has_stale && !has_declassify;
     }
 
-    static constexpr const char* cite() noexcept {
+    static constexpr std::string_view cite() noexcept {
         return "Sabelfeld-Sands 2009 / Hunt-Sands 2008 — "
                "stale-replay as failed erasure: classified value is "
                "reachable through a non-Fresh Staleness window "
@@ -417,7 +423,7 @@ struct ghost_runtime_observable {
         return has_ghost && has_observable;
     }
 
-    static constexpr const char* cite() noexcept {
+    static constexpr std::string_view cite() noexcept {
         return "Filliâtre-Gondelman-Paskevich 2014 'The Spirit of "
                "Ghost Code' / Leino 2010 'Dafny' — ghost-state "
                "discipline: a binding engaging Usage=Ghost AND any "
@@ -465,5 +471,52 @@ inline constexpr bool IsInUnsoundnessCorpus_v =
 
 template <typename Type, typename... Grants>
 concept NotInTheoryCorpus = !IsInUnsoundnessCorpus_v<Type, Grants...>;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── corpus_cite_for_v — cite of the first-matching corpus entry ────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Returns the `cite()` text of the FIRST corpus entry whose
+// `matches<Type, Grants...>()` returns true (matching the OR-fold
+// short-circuit semantics of `is_in_unsoundness_corpus`).  Returns an
+// empty `std::string_view` when no entry matches — the rejection
+// path never reaches that case because `NotInTheoryCorpus` accepts
+// the binding.
+//
+// Consumer:
+//   fixy/Fn.h tier-5 `static_assert(fixy_h02_tier5_not_in_corpus, …)`
+//   uses this via P2741R3 (user-generated static_assert messages) to
+//   surface the matched paper + remediation text in the rejection
+//   diagnostic.  Replaces fixy-H-13's documentation lie where
+//   `cite()` was defined but never invoked — the prior tier-5
+//   message said "see Theory.h's matched entry's cite() for the
+//   literature reference," but no mechanism actually surfaced it.
+//
+// Discipline: add new corpus entries to the chain below in the SAME
+// order as the OR fold in `is_in_unsoundness_corpus` (above).  Both
+// short-circuit on first match; keeping the orders aligned preserves
+// the "which entry fired" predictability across both surfaces.
+
+template <typename Type, typename... Grants>
+inline constexpr std::string_view corpus_cite_for_v =
+    []() consteval -> std::string_view {
+        if (corpus::classified_io_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::classified_io_without_declassify::cite();
+        }
+        if (corpus::classified_bg_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::classified_bg_without_declassify::cite();
+        }
+        if (corpus::staleness_secret_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::staleness_secret_without_declassify::cite();
+        }
+        if (corpus::ghost_runtime_observable
+                ::matches<Type, Grants...>()) {
+            return corpus::ghost_runtime_observable::cite();
+        }
+        return std::string_view{};
+    }();
 
 }  // namespace crucible::fixy::theory
