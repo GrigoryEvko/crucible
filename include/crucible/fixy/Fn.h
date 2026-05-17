@@ -469,6 +469,21 @@ using ImplicitTypeMarker =
 
 }  // namespace detail::resolve
 
+// ─── IsAcceptedFn<Type, Grants...> — the wrapper-level accept gate ─
+//
+// FIXY-AUDIT-A8: the wrapper's class-body static_assert and `mint_fn`'s
+// requires-clause both spell `IsAccepted<Type, ImplicitTypeMarker,
+// Grants...>` verbatim.  Factor the ImplicitTypeMarker injection into
+// a single concept so the marker stays a private implementation detail
+// of fixy::fn; if the marker ever changes shape (different injection
+// strategy, multi-axis implicit acceptance, etc.), there is exactly
+// one site to update instead of two.
+template <typename Type, typename... Grants>
+concept IsAcceptedFn = IsAccepted<
+    Type,
+    detail::resolve::ImplicitTypeMarker,
+    Grants...>;
+
 // ═════════════════════════════════════════════════════════════════════
 // ── fixy::fn<Type, Grants...> — the universal integration point ────
 // ═════════════════════════════════════════════════════════════════════
@@ -499,7 +514,7 @@ template <typename Type, typename... Grants>
 class fn {
     using ImplicitTypeMarker = detail::resolve::ImplicitTypeMarker;
 
-    static_assert(IsAccepted<Type, ImplicitTypeMarker, Grants...>,
+    static_assert(IsAcceptedFn<Type, Grants...>,
         "fixy::fn<Type, Grants...> requires every DimensionAxis to be "
         "engaged.  Each unengaged axis surfaces via fixy::diag::"
         "FixyNotEngaged_<Axis> diagnostic tags; see fixy/Reject.h's "
@@ -569,7 +584,7 @@ private:
 // discoverable review surface.
 
 template <typename Type, typename... Grants>
-    requires IsAccepted<Type, detail::resolve::ImplicitTypeMarker, Grants...>
+    requires IsAcceptedFn<Type, Grants...>
 [[nodiscard]] constexpr auto mint_fn(Type v)
     noexcept(std::is_nothrow_move_constructible_v<Type>)
     -> fn<Type, Grants...>
