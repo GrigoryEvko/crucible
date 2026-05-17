@@ -15,6 +15,7 @@
 #include <crucible/fixy/Sess.h>
 
 #include <type_traits>
+#include <utility>
 
 namespace fsess = ::crucible::fixy::sess;
 namespace proto = ::crucible::safety::proto;
@@ -53,6 +54,77 @@ static_assert(std::is_same_v<
                                 int>)>,
     "fixy::sess::federation::mint_sender must be the substrate function "
     "(name-lookup-only re-export).");
+
+// ─── 5. mint_channel namespace-collision discipline (B10) ─────────
+//
+// Two `mint_channel` factories exist in the substrate; fixy::sess
+// exposes them under DISTINCT names to keep both unambiguously
+// callable.  This block witnesses:
+//
+//   (a) fixy::sess::mint_channel is the session-protocol form
+//       (proto::mint_channel, 4 args: ctx_a, ctx_b, res_a, res_b).
+//
+//   (b) fixy::sess::mint_federation_channel is the federation
+//       3-role form (federation::mint_channel, 3 args: ctx,
+//       sender_endpoint, receiver_endpoint) — exposed under an
+//       explicit name rather than shadowing the session-protocol
+//       mint_channel.
+//
+//   (c) The namespace-aliased path fixy::sess::federation::mint_channel
+//       still works for callers who prefer the federation:: spelling.
+
+// The session-protocol mint_channel name resolves to proto::mint_channel.
+// We pick the SendInt protocol used inside SessionMint.h's own tests so
+// the template substitution succeeds without needing a full set of
+// resources at this site.
+static_assert(std::is_same_v<
+    decltype(&fsess::mint_channel<proto::Send<int, proto::End>,
+                                   ::crucible::effects::BgCompileCtx,
+                                   ::crucible::effects::BgCompileCtx,
+                                   int, int>),
+    decltype(&proto::mint_channel<proto::Send<int, proto::End>,
+                                   ::crucible::effects::BgCompileCtx,
+                                   ::crucible::effects::BgCompileCtx,
+                                   int, int>)>,
+    "fixy::sess::mint_channel must be the session-protocol form "
+    "(proto::mint_channel), not federation's.");
+
+// fixy::sess::mint_federation_channel forwards to
+// federation::mint_channel and stays distinct from the session form.
+static_assert(std::is_same_v<
+    decltype(fsess::mint_federation_channel<test_fixy_sess::KeyTag,
+                                             ::crucible::effects::BgCompileCtx,
+                                             int, int>(
+        std::declval<const ::crucible::effects::BgCompileCtx&>(),
+        std::declval<int>(),
+        std::declval<int>())),
+    decltype(fed::mint_channel<test_fixy_sess::KeyTag,
+                                ::crucible::effects::BgCompileCtx,
+                                int, int>(
+        std::declval<const ::crucible::effects::BgCompileCtx&>(),
+        std::declval<int>(),
+        std::declval<int>()))>,
+    "fixy::sess::mint_federation_channel must forward to "
+    "federation::mint_channel with identical return type.");
+
+// The namespace-alias path fixy::sess::federation::mint_channel still
+// resolves — this guards against accidental hiding when later changes
+// touch the using-declaration block.
+static_assert(std::is_same_v<
+    decltype(fsess::federation::mint_channel<test_fixy_sess::KeyTag,
+                                              ::crucible::effects::BgCompileCtx,
+                                              int, int>(
+        std::declval<const ::crucible::effects::BgCompileCtx&>(),
+        std::declval<int>(),
+        std::declval<int>())),
+    decltype(fed::mint_channel<test_fixy_sess::KeyTag,
+                                ::crucible::effects::BgCompileCtx,
+                                int, int>(
+        std::declval<const ::crucible::effects::BgCompileCtx&>(),
+        std::declval<int>(),
+        std::declval<int>()))>,
+    "fixy::sess::federation::mint_channel must remain callable via the "
+    "namespace alias.");
 
 // ─── 4. Runtime sanity ────────────────────────────────────────────
 

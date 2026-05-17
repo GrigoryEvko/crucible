@@ -49,6 +49,7 @@
 
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::fixy::sess {
 
@@ -289,10 +290,63 @@ namespace federation = ::crucible::safety::proto::federation;
 using federation::mint_sender;
 using federation::mint_receiver;
 using federation::mint_coord;
-// Note: federation::mint_channel name-collides with proto::mint_channel
-// above when both are introduced into the same namespace; we leave
-// federation's channel mint reachable via `fixy::sess::federation::mint_channel`
-// to keep the surface unambiguous.
+
+// ── mint_channel name-collision discipline (FIXY-AUDIT-B10) ────────
+//
+// Two `mint_channel` factories live in the substrate:
+//
+//   1. `crucible::safety::proto::mint_channel<Proto>(
+//          ctx_a, ctx_b, res_a, res_b)`
+//      — session-protocol channel mint
+//        (sessions/SessionMint.h:980).  Pairs two resource endpoints
+//        through a dual-typed Proto into a Session<Proto, A> +
+//        Session<dual<Proto>, B> pair under ctx-bound row-admission.
+//        Re-exported above as `fixy::sess::mint_channel` (the primary
+//        spelling — callers see this when they type
+//        `fixy::sess::mint_channel<MyProto>(...)`).
+//
+//   2. `crucible::safety::proto::federation::mint_channel<KeyTag>(
+//          ctx, sender_ep, receiver_ep)`
+//      — federation 3-role channel mint
+//        (sessions/FederationProtocol.h:142).  Pairs a sender and
+//        receiver endpoint through the federation's KeyTag-indexed
+//        Sender/Receiver protocols.  Different parameter shape (1 ctx,
+//        2 endpoints, KeyTag template) from the session-protocol
+//        channel mint above.
+//
+// Introducing BOTH into `fixy::sess::` via plain `using` declarations
+// is a name-lookup collision — C++ overload resolution would try to
+// disambiguate at every call site and produce confusing diagnostics
+// when the wrong template parameter shape is supplied.
+//
+// Resolution: only the session-protocol `mint_channel` is hoisted into
+// `fixy::sess::`.  The federation channel mint stays reachable under
+// the namespace-aliased path `fixy::sess::federation::mint_channel` AND
+// is exposed unambiguously under the explicit alias name
+// `fixy::sess::mint_federation_channel` for discoverability via grep:
+//
+//     fixy::sess::mint_channel<Proto>(ctx_a, ctx_b, ra, rb);
+//     fixy::sess::mint_federation_channel<KeyTag>(ctx, sender, recv);
+//
+// A `using federation::mint_channel;` here would silently shadow the
+// session-protocol form because the federation overload takes fewer
+// arguments and would win on some call sites.  Explicit alias names
+// keep both surfaces stable and grep-discoverable.
+
+template <typename KeyTag = federation::AnyFederationKey,
+          ::crucible::effects::IsExecCtx Ctx,
+          typename SenderEndpoint,
+          typename ReceiverEndpoint>
+[[nodiscard]] constexpr auto mint_federation_channel(
+    Ctx const& ctx,
+    SenderEndpoint&& sender_endpoint,
+    ReceiverEndpoint&& receiver_endpoint) noexcept
+{
+    return federation::mint_channel<KeyTag>(
+        ctx,
+        std::forward<SenderEndpoint>(sender_endpoint),
+        std::forward<ReceiverEndpoint>(receiver_endpoint));
+}
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Verified session patterns (FIXY-AUDIT-C6) ──────────────────────
