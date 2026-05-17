@@ -1144,6 +1144,21 @@ crucible_neg_compile_fixy_test(neg_fixy_publicemit_with_secret
 crucible_neg_compile_fixy_test(neg_fixy_publicemit_unengaged_effect
     "AllDimsEngaged")
 
+# ── FIXY-AUDIT-B11 — Type-axis well-formedness fixtures ───────────
+#
+# IsAccepted's `type_is_object_or_function<Type>` check rejects array,
+# reference, top-level const, top-level volatile, and bare function
+# types.  Each fixture instantiates mint_fn / fixy::fn with the offending
+# Type so the requires-clause fires.  The driver greps for "IsAccepted"
+# — the satisfaction-failure chain names the top-level concept since
+# Type-axis rejection happens inside the IsAccepted body, NOT via a
+# named per-axis diagnostic tag.
+crucible_neg_compile_fixy_test(neg_fixy_fn_type_array      "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_fn_type_ref        "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_fn_type_const      "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_fn_type_volatile   "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_fn_type_function   "IsAccepted")
+
 # ── FIXY-CLEAN-B4 — 12 collision-rule neg-compile fixtures ─────────
 #
 # Each fixture instantiates fixy::fn<int, all-strict-pack> after
