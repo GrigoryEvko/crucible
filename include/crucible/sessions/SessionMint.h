@@ -810,6 +810,32 @@ template <VendorBackend V, class P>
 struct protocol_permissioned_runnable<VendorPinned<V, P>>
     : protocol_permissioned_runnable<P> {};
 
+// fixy-CR-15: empty Select<> / Offer<> / Offer<Sender<R>> are NOT
+// runnable.  Without these explicit specializations, the variadic
+// AND-fold below collapses to `true` for an empty branch pack (the
+// identity of `&&`), which would let `CtxFitsChannel<Select<>, ...>`
+// admit an unrunnable protocol at the channel mint boundary — the
+// `is_empty_choice_v` guard inside mint_session_handle /
+// mint_permissioned_session_with_loc catches it eventually, but
+// only at the inner per-endpoint mint; the outer CtxFitsChannel
+// concept short-circuits earlier and must reject on its own.  These
+// three specializations sit ABOVE the variadic ones in the partial
+// ordering (zero-branch shapes), so they fire for the empty cases
+// while the variadic specs handle ≥1 branches via the recursive
+// AND-fold.  Pairs with fixy-CR-14: CR-14 recurses
+// is_empty_choice<P> through reachable positions for the mint-side
+// static_assert, CR-15 fixes the trait itself at the runnable
+// layer so the empty-choice gate fires at every consumer.
+template <> struct protocol_permissioned_runnable<Select<>>
+    : std::false_type {};
+
+template <> struct protocol_permissioned_runnable<Offer<>>
+    : std::false_type {};
+
+template <class Role>
+struct protocol_permissioned_runnable<Offer<Sender<Role>>>
+    : std::false_type {};
+
 template <class... Branches>
 struct protocol_permissioned_runnable<Select<Branches...>>
     : std::bool_constant<
@@ -1086,6 +1112,26 @@ static_assert(!ProtocolPermissionedRunnable<
     Delegate<SendInt, End>>);
 static_assert( ProtocolPermissionedRunnable<
     Delegate<DelegatedSession<SendInt, EmptyPermSet>, End>>);
+
+// fixy-CR-15: empty Select<> / Offer<> / Offer<Sender<R>> are NOT
+// runnable.  Without the explicit-empty-case specializations added
+// alongside protocol_permissioned_runnable<Select<Branches...>>,
+// the variadic AND-fold collapses to true on the empty branch pack
+// (the identity of `&&`), and CtxFitsChannel<Select<>, ...> admits
+// an unrunnable protocol at channel-mint time.  Witness the gate
+// at the trait level here so a regression in the spec ordering
+// (e.g. swapping the empty cases below the variadic ones) reddens
+// the header sentinel TU at compile time.
+static_assert(!ProtocolPermissionedRunnable<Select<>>);
+static_assert(!ProtocolPermissionedRunnable<Offer<>>);
+namespace fixy_cr15_sender_role_tag { struct Probe {}; }
+static_assert(!ProtocolPermissionedRunnable<
+    Offer<Sender<fixy_cr15_sender_role_tag::Probe>>>);
+// Non-empty cases continue to walk the AND-fold correctly.
+static_assert( ProtocolPermissionedRunnable<Select<End>>);
+static_assert( ProtocolPermissionedRunnable<Offer<End>>);
+static_assert( ProtocolPermissionedRunnable<
+    Offer<Sender<fixy_cr15_sender_role_tag::Probe>, End>>);
 
 using RecvThenReturn = Recv<Transferable<int, WorkPerm>,
                             Send<Returned<int, WorkPerm>, End>>;

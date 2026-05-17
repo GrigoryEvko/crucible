@@ -6295,6 +6295,20 @@ crucible_neg_compile_test(neg_session_empty_in_delegate_inner
 crucible_neg_compile_test(neg_session_empty_in_accept_continuation
     "Empty_Choice_Combinator")
 
+# fixy-CR-15: ProtocolPermissionedRunnable runnable-trait gate on
+# empty Select<> / Offer<> / Offer<Sender<R>> at mint_channel.
+# Three fixtures pin distinct empty-Choice shapes: bare Select<>,
+# bare Offer<>, and Sender-annotated empty Offer.  The trait was
+# previously vacuous-true on empty branch packs (AND-fold identity);
+# CR-15's explicit false_type specializations sit above the variadic
+# ones in partial ordering.
+crucible_neg_compile_test(neg_channel_runnable_empty_select
+    "ProtocolPermissionedRunnable|CtxFitsChannel|constraints not satisfied|no matching function")
+crucible_neg_compile_test(neg_channel_runnable_empty_offer
+    "ProtocolPermissionedRunnable|CtxFitsChannel|constraints not satisfied|no matching function")
+crucible_neg_compile_test(neg_channel_runnable_empty_offer_sender
+    "ProtocolPermissionedRunnable|CtxFitsChannel|constraints not satisfied|no matching function")
+
 # pick<I> / select<I> out-of-range index (#432, #433) — replaces the
 # generic GCC "constraints not satisfied" message with a framework-
 # named [Branch_Index_Out_Of_Range] diagnostic carrying the protocol
