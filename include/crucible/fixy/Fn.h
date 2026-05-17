@@ -320,12 +320,29 @@ struct find_grant_impl<D> {
     using type = grant::accept_default_strict_for<D>;
 };
 
+// FIXY-AUDIT-A1: gate the `which_dim_v<G>` lookup on `IsGrantTag_v<G>`
+// to avoid eager substitution.  The previous std::conditional_t form
+// instantiates BOTH branches; `which_dim_v<G>` for a non-grant G
+// (e.g. someone accidentally seeds the pack with a raw type) is a
+// hard error inside the resolver rather than a clean rejection at
+// IsAccepted.
+//
+// The fix splits into two partial specializations:
+//   (1) primary unconstrained-on-G recursion — skip G as non-matching.
+//   (2) constrained specialization for an actual grant tag whose
+//       which_dim_v equals D — returns G.
+// Constraint partial-ordering picks the more-constrained (2) when G
+// is a real grant on axis D; else (1) recurses without ever touching
+// `which_dim_v<G>`.
 template <dim::DimensionAxis D, typename G, typename... Rest>
 struct find_grant_impl<D, G, Rest...> {
-    using type = std::conditional_t<
-        grant::IsGrantTag_v<G> && grant::which_dim_v<G> == D,
-        G,
-        typename find_grant_impl<D, Rest...>::type>;
+    using type = typename find_grant_impl<D, Rest...>::type;
+};
+
+template <dim::DimensionAxis D, typename G, typename... Rest>
+    requires (grant::IsGrantTag_v<G> && grant::which_dim_v<G> == D)
+struct find_grant_impl<D, G, Rest...> {
+    using type = G;
 };
 
 template <dim::DimensionAxis D, typename... Grants>
