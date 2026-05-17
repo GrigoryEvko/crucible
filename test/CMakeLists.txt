@@ -5721,6 +5721,12 @@ crucible_neg_compile_test(neg_cipher_tier_restore_unmovable_payload
   "RestorableTier|constraints not satisfied|no matching function|associated constraints")
 crucible_neg_compile_test(neg_cipher_tier_restore_wrong_value_type
   "no matching function|could not convert|cannot convert|no viable")
+# fixy-CR-10 fixture: production-shape T (movable, no
+# content_hash_projection specialization) must red at the
+# RestorableHashed gate; pre-CR-10 it compiled silently with the
+# verification check elided for every T != ContentHash.
+crucible_neg_compile_test(neg_cipher_tier_restore_no_hash_projection
+  "RestorableTier|RestorableHashed|content_hash_projection|constraints not satisfied|no matching function|associated constraints")
 
 # ─── FOUND-G51 ResidencyHeat negative-compile fixtures ──────────────
 #
@@ -7857,6 +7863,12 @@ crucible_neg_compile_fixy_test(neg_fixy_contract_restore_unmovable
     "RestorableTier|move_constructible|constraints not satisfied|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_contract_restore_type_mismatch
     "no matching function|could not convert|Cold")
+# fixy-CR-10 fixture: production-shape payload (movable, no
+# content_hash_projection specialization) must red at the
+# RestorableHashed gate when routed through the fixy:: alias —
+# mirrors substrate fixture neg_cipher_tier_restore_no_hash_projection.
+crucible_neg_compile_fixy_test(neg_fixy_contract_restore_no_hash_projection
+    "RestorableTier|RestorableHashed|content_hash_projection|constraints not satisfied|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_contract_persisted_session_no_ctx
     "PersistedSession_CtxRequired|use of deleted function|deleted")
 crucible_neg_compile_fixy_test(neg_fixy_contract_persisted_session_no_openview

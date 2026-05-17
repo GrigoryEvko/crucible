@@ -61,8 +61,55 @@ template <CipherTierTag_v From, CipherTierTag_v To, typename T>
 concept DemotableTier =
     can_demote_tier_v<From, To> && std::move_constructible<T>;
 
+// ── Verification-scope honesty (fixy-CR-10) ─────────────────────────
+//
+// Pre-CR-10, `mint_restore` ran the supplied `content_hash` against
+// `cold_handle.peek()` only inside an `if constexpr (same_as<T,
+// ContentHash>)` branch.  For any T != ContentHash (every production
+// payload — TraceRing buffer, KernelCache entry, weight tensor, ...)
+// the supplied hash was accepted blindly and the cold-to-warm
+// promotion succeeded WITHOUT verifying that the cold blob's bytes
+// actually hashed to the claimed value.
+//
+// The closure is a customization point:
+// `content_hash_projection<T>::project(const T&) -> ContentHash`.
+// Any restorable T MUST specialize this trait (or ship an
+// equivalently-named static accessor).  The built-in specialization
+// for `T = ContentHash` returns the value itself.  mint_restore now
+// gates uniformly on this projection: the cold-payload-projected
+// hash MUST equal the supplied `content_hash` argument, or the mint
+// returns `RestoreError::ContentHashMismatch`.  T types without a
+// projection fail at the `RestorableHashed` concept gate.
+//
+// What the projection cannot replace: BYTE-LEVEL integrity of the
+// cold blob coming off durable storage.  The projection is an
+// in-memory consistency check between the supplied caller-claimed
+// hash and what the cold handle's in-memory representation reports.
+// The byte-level "did the disk lie to us" check belongs in the
+// Phase-5 backend that materializes `ColdTierHandle<T>` from S3/GCS
+// before mint_restore is ever called.  That layer is the byte-hash
+// authority; mint_restore is the post-materialization gate.
+
 template <typename T>
-concept RestorableTier = std::move_constructible<T>;
+struct content_hash_projection;
+
+template <>
+struct content_hash_projection<ContentHash> {
+    [[nodiscard]] static constexpr ContentHash project(
+        const ContentHash& value) noexcept {
+        return value;
+    }
+};
+
+template <typename T>
+concept RestorableHashed = requires(const T& v) {
+    { content_hash_projection<T>::project(v) }
+        -> std::same_as<ContentHash>;
+};
+
+template <typename T>
+concept RestorableTier =
+    std::move_constructible<T> && RestorableHashed<T>;
 
 template <CipherTierTag_v From, CipherTierTag_v To, typename T>
     requires PromotableTier<From, To, T>
@@ -118,14 +165,16 @@ mint_restore(ColdTierHandle<T> cold_handle, ContentHash content_hash)
         return std::unexpected(RestoreError::EmptyContentHash);
     }
 
-    if constexpr (std::same_as<T, ContentHash>) {
-        const ContentHash& cold_hash = cold_handle.peek();
-        if (!static_cast<bool>(cold_hash)) {
-            return std::unexpected(RestoreError::EmptyColdHandle);
-        }
-        if (cold_hash != content_hash) {
-            return std::unexpected(RestoreError::ContentHashMismatch);
-        }
+    // fixy-CR-10: uniform projection — fires for EVERY restorable T,
+    // not only T = ContentHash.  Production payloads must opt in via
+    // `content_hash_projection<T>::project` (see header doc-block).
+    const ContentHash cold_projected =
+        content_hash_projection<T>::project(cold_handle.peek());
+    if (!static_cast<bool>(cold_projected)) {
+        return std::unexpected(RestoreError::EmptyColdHandle);
+    }
+    if (cold_projected != content_hash) {
+        return std::unexpected(RestoreError::ContentHashMismatch);
     }
 
     return mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Warm>(
