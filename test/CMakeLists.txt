@@ -1324,11 +1324,23 @@ crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_ctx_wrong_effect
 
 # ── FIXY-MINT-Perm — fixy/Perm.h re-export of permission token mints
 # (mint_permission_root/split/combine/split_n/combine_n/share/fork/
-# inherit).  Two HS14 fixtures pin the alias's gate:
+# inherit).  Six HS14 fixtures pin the alias's gate — two per frame-rule
+# direction (split/combine binary, split_n/combine_n N-ary) plus the
+# original root + fork ctx fixtures.  Each fixture witnesses a distinct
+# rejection class (CtxAdmitsPermission / CtxFitsPermissionFork /
+# splits_into / splits_into_pack):
 crucible_neg_compile_fixy_test(neg_fixy_perm_root_no_row_admission
     "CtxAdmitsPermission|constraints not satisfied|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_perm_fork_ctx_no_bg
     "CtxFitsPermissionFork|row_contains_v|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perm_split_undeclared
+    "splits_into")
+crucible_neg_compile_fixy_test(neg_fixy_perm_combine_undeclared
+    "splits_into")
+crucible_neg_compile_fixy_test(neg_fixy_perm_split_n_undeclared
+    "splits_into_pack")
+crucible_neg_compile_fixy_test(neg_fixy_perm_combine_n_undeclared
+    "splits_into_pack")
 
 # ── FIXY-MINT-Sess — fixy/Sess.h re-export of session minters
 # (mint_session=deleted, mint_permissioned_session, mint_channel,
