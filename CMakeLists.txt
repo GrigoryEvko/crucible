@@ -355,6 +355,24 @@ else()
   target_compile_definitions(crucible PUBLIC CRUCIBLE_HAVE_BPF=0)
 endif()
 
+# ── fixy::Profile — strict / sketch mode selector ─────────────────
+#
+# Per misc/16_05_2026_fixy.md §82,§132,§347-369 and FIXY-AUDIT-B2.
+# STRICT (default ON) — every fixy:: binding routes through the full
+# `IsAccepted` gate (engagement + grant well-formedness + uniqueness
+# + theory corpus).  SKETCH (`OFF`) — IsAccepted's gate is replaced
+# by an always-true concept so hot-loop migration TUs compile against
+# partially-specified Grants packs.  See include/crucible/fixy/Profile.h
+# for the concept-toggle semantics.
+option(CRUCIBLE_FIXY_STRICT
+  "Build fixy:: in STRICT mode (default).  Set OFF to enable SKETCH mode for hot-loop migration."
+  ON)
+if(CRUCIBLE_FIXY_STRICT)
+  target_compile_definitions(crucible PUBLIC CRUCIBLE_FIXY_STRICT=1)
+else()
+  target_compile_definitions(crucible PUBLIC CRUCIBLE_FIXY_STRICT=0)
+endif()
+
 # `<stacktrace>` (C++23, libstdc++ 16) — used by src/ContractHandler.cpp
 # to emit a 16-frame stack trace on contract violations.  The header
 # pulls symbols from `libstdc++exp.a` (libstdc++'s experimental archive,
