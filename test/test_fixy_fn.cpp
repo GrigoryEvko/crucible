@@ -148,6 +148,20 @@ static_assert(sizeof(fixy::stance::PureCopy<int>)      == sizeof(int));
 static_assert(sizeof(fixy::stance::BgWorker<int>)      == sizeof(int));
 static_assert(sizeof(fixy::stance::AsyncEndpoint<int>) == sizeof(int));
 
+// ─── 8b. mint_fn_for<Stance>(value) — stance-bound convenience ────
+//        (FIXY-AUDIT-A11)
+
+static_assert(std::is_same_v<
+    decltype(fixy::mint_fn_for<fixy::stance::PureLinear>(42)),
+    fixy::stance::PureLinear<int>>,
+    "mint_fn_for<PureLinear>(int) must deduce Type=int and return "
+    "the stance instantiation.");
+
+static_assert(std::is_same_v<
+    decltype(fixy::mint_fn_for<fixy::stance::PureCopy>('a')),
+    fixy::stance::PureCopy<char>>,
+    "mint_fn_for<PureCopy>(char) must deduce Type=char.");
+
 // ─── 9. Runtime witness — mint_fn produces a fixy::fn carrying the
 //        supplied value, and value() retrieves it bit-exactly.
 
@@ -171,6 +185,10 @@ int main() {
 
     fixy::stance::PureCopy<int> v4{17};
     if (v4.value() != 17) return 4;
+
+    // mint_fn_for runtime witness
+    auto v5 = fixy::mint_fn_for<fixy::stance::PureLinear>(23);
+    if (v5.value() != 23) return 5;
 
     return 0;
 }

@@ -592,6 +592,27 @@ template <typename Type, typename... Grants>
     return fn<Type, Grants...>{std::move(v)};
 }
 
+// ─── mint_fn_for<Stance>(value) — stance-bound mint convenience ────
+//
+// FIXY-AUDIT-A11: Universal-Mint-Pattern entry point for stance::*
+// aliases.  `mint_fn_for<stance::PureCopy>(42)` deduces Type from the
+// argument and instantiates the stance with that Type.  The stance's
+// own Grants pack flows through fn<>'s class-body static_assert,
+// preserving the same diagnostic the long-form `mint_fn<int, ...>`
+// would emit; no separate concept gate is needed because the stance
+// IS the gate (`stance::Foo<T>` ≡ `fn<T, gateable-grants...>`).
+//
+// Token-mint flavor (no Ctx).  Cost-of-violation: a stance that fails
+// IsAcceptedFn for the deduced Type fires the same FixyNotEngaged_*
+// diagnostic chain as a direct mint_fn call.
+template <template<typename> class Stance, typename Type>
+[[nodiscard]] constexpr auto mint_fn_for(Type v)
+    noexcept(std::is_nothrow_move_constructible_v<Type>)
+    -> Stance<Type>
+{
+    return Stance<Type>{std::move(v)};
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Stance aliases — production short-hand ─────────────────────────
 // ═════════════════════════════════════════════════════════════════════
