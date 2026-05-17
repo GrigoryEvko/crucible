@@ -7,26 +7,51 @@
 // `IsExecCtx Ctx`.  Passing a plain `int` as the ctx slot fires the
 // constraint-satisfaction failure inside federation::mint_channel.
 //
-// Note: we include only fixy/Sess.h (not FederationProtocol.h) to
-// avoid the GCC 16.1.1 ICE in cp_fold_r on Refined.h via the
-// federation path — fixy/Sess.h re-exports the federation symbols via
-// namespace alias, so the call site resolves without the ICE-triggering
-// transitive include chain.
+// fixy-CR-07: federation mints now also take a
+// `Permission<FederatedPeer<Org>> const&` admittance witness as the
+// final argument.  We bootstrap a legitimate admittance via the
+// production substrate so the call site is syntactically well-formed;
+// the IsExecCtx<Ctx> constraint failure on the first arg is what fires.
+//
+// Note: we include only fixy/Sess.h and fixy/Source.h (NOT
+// FederationPermission.h directly) to avoid the GCC 16.1.1 ICE in
+// cp_fold_r on Refined.h via the federation path — fixy re-exports the
+// federation symbols via namespace alias.
 //
 // Expected diagnostic: "IsExecCtx" — constraint-satisfaction failure
 // from federation::mint_channel's Ctx template parameter.
 
 #include <crucible/fixy/Sess.h>
+#include <crucible/fixy/Source.h>
 
 namespace fsess = crucible::fixy::sess;
+namespace cs    = crucible::safety;
+namespace ff    = crucible::fixy::source::federation;
 
-struct FakeKey {};
+struct NegFedChannelNonCtx_PeerOrg {};
+
+// CR-02/CR-03/CR-04 — mint_federation_admittance is [[deprecated]];
+// suppress the diagnostic so it does not interleave with the expected
+// IsExecCtx regex.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 int main() {
+    auto local = cs::mint_permission_root<ff::LocalCipherTag>();
+    auto handshake = ff::make_self_signed_handshake<
+        NegFedChannelNonCtx_PeerOrg>();
+    auto admitted = ff::mint_federation_admittance<
+        NegFedChannelNonCtx_PeerOrg>(local, handshake);
+
     int not_a_ctx = 0;
-    // Plain int as ctx — fails IsExecCtx constraint.
-    auto bad = fsess::mint_federation_channel<FakeKey>(
-        not_a_ctx, 0, 0);
+    // Plain int as ctx — fails IsExecCtx constraint at template
+    // parameter substitution time; the 4-arg shape is satisfied so
+    // arity-check passes and the constraint check is what surfaces.
+    auto bad = fsess::mint_federation_channel<
+        NegFedChannelNonCtx_PeerOrg>(
+        not_a_ctx, 0, 0, *admitted);
     (void)bad;
     return 0;
 }
+
+#pragma GCC diagnostic pop

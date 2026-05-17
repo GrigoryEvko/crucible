@@ -1,21 +1,45 @@
+#include <crucible/permissions/FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
 #include "test_assert.h"
 
 #include <cstdio>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace fp = crucible::safety::proto::federation;
 namespace proto = crucible::safety::proto;
+namespace perm = crucible::permissions;
+namespace saf  = crucible::safety;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 namespace {
 
 struct TraceKey {};
+struct PeerOrg {};
 
 struct Endpoint {
     std::vector<int>* events = nullptr;
 };
+
+// fixy-CR-07: every per-role mint requires proof of admittance to the
+// remote peer (PeerOrg).  Mint the witness once at the top of each
+// test via the legitimate admittance channel; sessions share it
+// const-ref.
+inline auto mint_test_admittance() noexcept {
+    auto local_cipher =
+        saf::mint_permission_root<perm::tag::LocalCipherTag>();
+    auto handshake = perm::make_self_signed_handshake<PeerOrg>(
+        /*peer_key_fp=*/0xFED'C0DEULL,
+        /*nonce=*/      0xC0FFEEULL);
+    auto admitted = perm::mint_federation_admittance<
+        PeerOrg, perm::policy::admit_orgs<PeerOrg>>(
+            local_cipher, handshake);
+    return std::move(*admitted);
+}
 
 constexpr crucible::KernelCacheKey kKey{
     crucible::ContentHash{0x1111'2222'3333'4444ULL},
@@ -44,8 +68,10 @@ static_assert(!fp::role_protocol_matches_v<
 int test_sender_receiver_views() {
     std::vector<int> events;
     crucible::effects::HotFgCtx ctx{};
+    auto admittance = mint_test_admittance();
     auto [sender, receiver] =
-        fp::mint_channel<TraceKey>(ctx, Endpoint{&events}, Endpoint{&events});
+        fp::mint_channel<PeerOrg, TraceKey>(
+            ctx, Endpoint{&events}, Endpoint{&events}, admittance);
 
     auto send_header = [](Endpoint& ep,
                           fp::HeaderPayload<TraceKey>&&) noexcept {
@@ -81,7 +107,9 @@ int test_sender_receiver_views() {
 int test_coord_view() {
     std::vector<int> events;
     crucible::effects::HotFgCtx ctx{};
-    auto coord = fp::mint_coord<TraceKey>(ctx, Endpoint{&events});
+    auto admittance = mint_test_admittance();
+    auto coord = fp::mint_coord<PeerOrg, TraceKey>(
+        ctx, Endpoint{&events}, admittance);
 
     auto recv_header = [](Endpoint& ep) noexcept -> fp::HeaderPayload<TraceKey> {
         ep.events->push_back(10);
@@ -122,3 +150,5 @@ int main() {
     std::puts("federation_session: projected MPST views OK");
     return 0;
 }
+
+#pragma GCC diagnostic pop

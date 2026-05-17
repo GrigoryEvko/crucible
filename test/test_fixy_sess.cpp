@@ -13,6 +13,7 @@
 // HS14: 2 fixy_neg fixtures live in test/fixy_neg/neg_fixy_sess_*.cpp.
 
 #include <crucible/fixy/Sess.h>
+#include <crucible/permissions/FederationPermission.h>
 
 #include <type_traits>
 #include <utility>
@@ -20,6 +21,16 @@
 namespace fsess = ::crucible::fixy::sess;
 namespace proto = ::crucible::safety::proto;
 namespace fed   = ::crucible::safety::proto::federation;
+namespace perm  = ::crucible::permissions;
+namespace saf   = ::crucible::safety;
+
+// fixy-CR-07: federation session mints now take an Org template
+// parameter and a Permission<FederatedPeer<Org>> admittance witness.
+// This sentinel TU only probes function pointer types, not runtime
+// instantiation, so a forward-declared peer org tag suffices.
+namespace test_fixy_sess { struct PeerOrg {}; }
+using TestPeerAdmittance =
+    saf::Permission<perm::tag::FederatedPeer<test_fixy_sess::PeerOrg>>;
 
 // ─── 1. Core combinator aliases ───────────────────────────────────
 
@@ -46,10 +57,12 @@ struct KeyTag {};
 
 // fixy::sess::federation namespace alias is reachable.
 static_assert(std::is_same_v<
-    decltype(&fsess::federation::mint_sender<test_fixy_sess::KeyTag,
+    decltype(&fsess::federation::mint_sender<test_fixy_sess::PeerOrg,
+                                              test_fixy_sess::KeyTag,
                                               ::crucible::effects::BgCompileCtx,
                                               int>),
-    decltype(&fed::mint_sender<test_fixy_sess::KeyTag,
+    decltype(&fed::mint_sender<test_fixy_sess::PeerOrg,
+                                test_fixy_sess::KeyTag,
                                 ::crucible::effects::BgCompileCtx,
                                 int>)>,
     "fixy::sess::federation::mint_sender must be the substrate function "
@@ -91,19 +104,24 @@ static_assert(std::is_same_v<
 
 // fixy::sess::mint_federation_channel forwards to
 // federation::mint_channel and stays distinct from the session form.
+// fixy-CR-07: federation mints now take Org + admittance witness.
 static_assert(std::is_same_v<
-    decltype(fsess::mint_federation_channel<test_fixy_sess::KeyTag,
+    decltype(fsess::mint_federation_channel<test_fixy_sess::PeerOrg,
+                                             test_fixy_sess::KeyTag,
                                              ::crucible::effects::BgCompileCtx,
                                              int, int>(
         std::declval<const ::crucible::effects::BgCompileCtx&>(),
         std::declval<int>(),
-        std::declval<int>())),
-    decltype(fed::mint_channel<test_fixy_sess::KeyTag,
+        std::declval<int>(),
+        std::declval<TestPeerAdmittance const&>())),
+    decltype(fed::mint_channel<test_fixy_sess::PeerOrg,
+                                test_fixy_sess::KeyTag,
                                 ::crucible::effects::BgCompileCtx,
                                 int, int>(
         std::declval<const ::crucible::effects::BgCompileCtx&>(),
         std::declval<int>(),
-        std::declval<int>()))>,
+        std::declval<int>(),
+        std::declval<TestPeerAdmittance const&>()))>,
     "fixy::sess::mint_federation_channel must forward to "
     "federation::mint_channel with identical return type.");
 
@@ -111,18 +129,22 @@ static_assert(std::is_same_v<
 // resolves — this guards against accidental hiding when later changes
 // touch the using-declaration block.
 static_assert(std::is_same_v<
-    decltype(fsess::federation::mint_channel<test_fixy_sess::KeyTag,
+    decltype(fsess::federation::mint_channel<test_fixy_sess::PeerOrg,
+                                              test_fixy_sess::KeyTag,
                                               ::crucible::effects::BgCompileCtx,
                                               int, int>(
         std::declval<const ::crucible::effects::BgCompileCtx&>(),
         std::declval<int>(),
-        std::declval<int>())),
-    decltype(fed::mint_channel<test_fixy_sess::KeyTag,
+        std::declval<int>(),
+        std::declval<TestPeerAdmittance const&>())),
+    decltype(fed::mint_channel<test_fixy_sess::PeerOrg,
+                                test_fixy_sess::KeyTag,
                                 ::crucible::effects::BgCompileCtx,
                                 int, int>(
         std::declval<const ::crucible::effects::BgCompileCtx&>(),
         std::declval<int>(),
-        std::declval<int>()))>,
+        std::declval<int>(),
+        std::declval<TestPeerAdmittance const&>()))>,
     "fixy::sess::federation::mint_channel must remain callable via the "
     "namespace alias.");
 

@@ -333,19 +333,23 @@ using federation::mint_coord;
 // arguments and would win on some call sites.  Explicit alias names
 // keep both surfaces stable and grep-discoverable.
 
-template <typename KeyTag = federation::AnyFederationKey,
+template <typename Org,
+          typename KeyTag = federation::AnyFederationKey,
           ::crucible::effects::IsExecCtx Ctx,
           typename SenderEndpoint,
           typename ReceiverEndpoint>
 [[nodiscard]] constexpr auto mint_federation_channel(
     Ctx const& ctx,
     SenderEndpoint&& sender_endpoint,
-    ReceiverEndpoint&& receiver_endpoint) noexcept
+    ReceiverEndpoint&& receiver_endpoint,
+    ::crucible::safety::Permission<
+        ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept
 {
-    return federation::mint_channel<KeyTag>(
+    return federation::mint_channel<Org, KeyTag>(
         ctx,
         std::forward<SenderEndpoint>(sender_endpoint),
-        std::forward<ReceiverEndpoint>(receiver_endpoint));
+        std::forward<ReceiverEndpoint>(receiver_endpoint),
+        admittance);
 }
 
 // ═════════════════════════════════════════════════════════════════════

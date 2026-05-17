@@ -7937,3 +7937,20 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_root_mint_disallowed
     "deleted|use of deleted function|mint_permission_root")
 crucible_neg_compile_fixy_test(neg_fixy_federation_root_mint_disallowed_ctx
     "deleted|use of deleted function|mint_permission_root")
+
+# fixy-CR-07 — federation session mints require admittance witness.
+# `mint_sender<Org, KeyTag>(ctx, endpoint, admittance)` (and its
+# receiver / coord / channel siblings in
+# `crucible::safety::proto::federation`) take a
+# `Permission<FederatedPeer<Org>> const&` as the load-bearing soundness
+# rail.  Two distinct failure classes prove the gate:
+#
+#   no_admittance — 3-arg call site (ctx, endpoint) omits the witness;
+#                   arity check refuses (no overload takes 2 args).
+#   wrong_org     — admittance witness is `Permission<FederatedPeer<OrgA>>`
+#                   but the session is minted for `OrgB`; the phantom
+#                   tags do not bind across orgs.
+crucible_neg_compile_fixy_test(neg_fixy_federation_session_no_admittance
+    "no matching function|too few arguments|requires 3 arguments|candidate")
+crucible_neg_compile_fixy_test(neg_fixy_federation_session_wrong_org
+    "FederatedPeer|cannot bind|no known conversion|no matching function")

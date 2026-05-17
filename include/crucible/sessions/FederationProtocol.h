@@ -19,6 +19,7 @@
 #include <crucible/Types.h>
 #include <crucible/cipher/FederationProtocol.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/permissions/FederationPermission.h>
 #include <crucible/sessions/SessionContentAddressed.h>
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/SessionMint.h>
@@ -115,48 +116,89 @@ template <typename Role, typename Proto, typename KeyTag = AnyFederationKey>
 inline constexpr bool role_protocol_matches_v =
     role_protocol_matches<Role, Proto, KeyTag>::value;
 
-template <typename KeyTag = AnyFederationKey,
+// ── fixy-CR-07: per-role admittance witness ────────────────────────
+//
+// Every per-role mint requires a `Permission<tag::FederatedPeer<Org>>`
+// witness — proof that the local Cog was admitted to converse with
+// the remote `Org` peer through `mint_federation_admittance`.  The
+// witness is const-ref (not consumed) because sessions are short-
+// lived; admittance survives across multiple session mints for the
+// same peer.  Without the witness the session protocol would let any
+// caller with any ExecCtx open a federation channel, bypassing the
+// admittance handshake entirely.
+//
+// `Org` is the FIRST template parameter — non-deducible, must be
+// supplied explicitly at every call site:
+//
+//   auto admittance = std::move(*::crucible::permissions::
+//       mint_federation_admittance<OrgB,
+//           policy::admit_orgs<OrgB>>(local_cipher, handshake));
+//   auto sender = federation::mint_sender<OrgB, TraceKey>(
+//       ctx, endpoint, admittance);
+//
+// The witness type carries Org in its tag, so passing a
+// `Permission<FederatedPeer<OrgA>>` to `mint_sender<OrgB, ...>` is a
+// hard type mismatch — closes the cross-org session impersonation
+// gap that paralleled the cross-org permission-split gap closed in
+// fixy-CR-05.
+
+template <typename Org,
+          typename KeyTag = AnyFederationKey,
           ::crucible::effects::IsExecCtx Ctx,
           typename SenderEndpoint>
 [[nodiscard]] constexpr auto mint_sender(
     Ctx const& ctx,
-    SenderEndpoint&& sender_endpoint) noexcept {
+    SenderEndpoint&& sender_endpoint,
+    ::crucible::safety::Permission<
+        ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept {
+    (void)admittance;
     return ::crucible::safety::proto::mint_permissioned_session<SenderProto<KeyTag>>(
         ctx, std::forward<SenderEndpoint>(sender_endpoint));
 }
 
-template <typename KeyTag = AnyFederationKey,
+template <typename Org,
+          typename KeyTag = AnyFederationKey,
           ::crucible::effects::IsExecCtx Ctx,
           typename ReceiverEndpoint>
 [[nodiscard]] constexpr auto mint_receiver(
     Ctx const& ctx,
-    ReceiverEndpoint&& receiver_endpoint) noexcept {
+    ReceiverEndpoint&& receiver_endpoint,
+    ::crucible::safety::Permission<
+        ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept {
+    (void)admittance;
     return ::crucible::safety::proto::mint_permissioned_session<ReceiverProto<KeyTag>>(
         ctx, std::forward<ReceiverEndpoint>(receiver_endpoint));
 }
 
-template <typename KeyTag = AnyFederationKey,
+template <typename Org,
+          typename KeyTag = AnyFederationKey,
           ::crucible::effects::IsExecCtx Ctx,
           typename SenderEndpoint,
           typename ReceiverEndpoint>
 [[nodiscard]] constexpr auto mint_channel(
     Ctx const& ctx,
     SenderEndpoint&& sender_endpoint,
-    ReceiverEndpoint&& receiver_endpoint) noexcept {
+    ReceiverEndpoint&& receiver_endpoint,
+    ::crucible::safety::Permission<
+        ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept {
     return std::pair{
-        mint_sender<KeyTag>(
-            ctx, std::forward<SenderEndpoint>(sender_endpoint)),
-        mint_receiver<KeyTag>(
-            ctx, std::forward<ReceiverEndpoint>(receiver_endpoint)),
+        mint_sender<Org, KeyTag>(
+            ctx, std::forward<SenderEndpoint>(sender_endpoint), admittance),
+        mint_receiver<Org, KeyTag>(
+            ctx, std::forward<ReceiverEndpoint>(receiver_endpoint), admittance),
     };
 }
 
-template <typename KeyTag = AnyFederationKey,
+template <typename Org,
+          typename KeyTag = AnyFederationKey,
           ::crucible::effects::IsExecCtx Ctx,
           typename CoordEndpoint>
 [[nodiscard]] constexpr auto mint_coord(
     Ctx const& ctx,
-    CoordEndpoint&& coord_endpoint) noexcept {
+    CoordEndpoint&& coord_endpoint,
+    ::crucible::safety::Permission<
+        ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept {
+    (void)admittance;
     return ::crucible::safety::proto::mint_permissioned_session<CoordProto<KeyTag>>(
         ctx, std::forward<CoordEndpoint>(coord_endpoint));
 }
