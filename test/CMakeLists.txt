@@ -557,6 +557,33 @@ crucible_test(attack_federation_cross_org_escalation
 set_tests_properties(attack_federation_cross_org_escalation PROPERTIES
     LABELS "safety_attack;fixy-CR-05")
 
+# fixy-CR-09 positive-attack regression — proves the namespace
+# `crucible::fixy::grant` is openable by foreign translation units
+# because C++ has no namespace-scoped specialization access control.
+# The IsGrantTag_v<T> gate (is_base_of_v<grant_base, T> && is_final_v<T>)
+# is the load-bearing defense, NOT the namespace.  When fixy-M-29-
+# equivalent lands (closed-world enum via reflection, namespace-
+# private specialization access, or friend-only which_dim
+# registration), this TU itself fails to compile.  See header doc-
+# block in include/crucible/fixy/Grant.h "Defense-surface honesty
+# (fixy-CR-09)" block.
+crucible_test(attack_fixy_grant_namespace_reopen
+              safety_attack/attack_fixy_grant_namespace_reopen.cpp)
+set_tests_properties(attack_fixy_grant_namespace_reopen PROPERTIES
+    LABELS "safety_attack;fixy-CR-09")
+
+# fixy-CR-09 namespace-purity CI guard — enforces that ONLY
+# include/crucible/fixy/Grant.h opens namespace crucible::fixy::grant
+# (plus excepted attack-regression and cheat-probe TUs carrying the
+# explicit "// fixy-CR-09: known residual gap" acknowledgement
+# comment).  Any other file reopening the namespace fails the build
+# with a diagnostic naming the offending location.
+add_test(NAME fixy_grant_namespace_purity
+         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-grant-namespace-purity.sh
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+set_tests_properties(fixy_grant_namespace_purity PROPERTIES
+    LABELS "safety_attack;ci_guard;fixy-CR-09")
+
 crucible_test(test_fx_aliases)
 crucible_test(test_fx_alias_diagnostic)
 crucible_test(test_effect_row_lattice)

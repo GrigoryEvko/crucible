@@ -162,6 +162,14 @@ namespace cheat_3_transparent_secret_wrapper {
     struct final_wrapper final : gr::grant_base {};
 }
 // Engage which_dim<final_wrapper> for Security:
+// fixy-CR-09: known residual gap — this cheat probe intentionally
+// reopens `namespace crucible::fixy::grant` to demonstrate that the
+// §30.14 corpus is a CLOSED-SET discipline (not a structural one):
+// novel user tags engage which_dim at the resolver layer but do not
+// fire the corpus until added by name.  C++ has no namespace-scoped
+// specialization access control; the namespace-purity CI guard
+// (scripts/check-fixy-grant-namespace-purity.sh) excepts this file
+// because the attack-demonstration intent is documented above.
 namespace crucible::fixy::grant {
     template <>
     struct which_dim<::cheat_3_transparent_secret_wrapper::final_wrapper>

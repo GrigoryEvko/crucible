@@ -80,6 +80,14 @@ namespace cheat_3_foreign_which_dim {
     struct foreign {};  // not a grant — no grant_base, no final
 }
 // Inject a which_dim specialization for the foreign type:
+// fixy-CR-09: known residual gap — this cheat probe intentionally
+// reopens `namespace crucible::fixy::grant` to demonstrate that C++
+// has no namespace-scoped specialization access control.  The
+// `IsGrantTag` gate defends regardless of which_dim's behavior; this
+// reopen is the proof that the gate is the load-bearing defense, not
+// the namespace.  The namespace-purity CI guard
+// (scripts/check-fixy-grant-namespace-purity.sh) excepts this file
+// because the attack-demonstration intent is documented above.
 namespace crucible::fixy::grant {
     template <>
     struct which_dim<::cheat_3_foreign_which_dim::foreign>

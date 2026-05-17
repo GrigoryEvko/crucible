@@ -91,9 +91,48 @@ struct grant_base {
 //
 // Two clauses: (a) inherits grant_base, (b) is final per
 // safety/NotInherited.h discipline.  Inheriting without final would
-// allow a user-defined subclass to inject behavior into IsAccepted,
-// bypassing the fixy:: discipline; the cheat-probe round caches a
-// neg-compile fixture for this exact attempt.
+// allow a user-defined subclass to inject behavior into IsAccepted
+// by extending an already-shipped grant tag; the cheat-probe round
+// caches a neg-compile fixture for this exact attempt.
+//
+// ── Defense-surface honesty (fixy-CR-09) ───────────────────────────
+//
+// The structural recipe — `final` + inherits `grant_base` + has a
+// `which_dim` specialization — is replicable by any user who:
+//
+//   (1) opens `namespace crucible::fixy::grant { ... }`,
+//   (2) defines a `final` struct deriving `grant_base`,
+//   (3) specializes `which_dim<their_type>` from inside the reopened
+//       namespace.
+//
+// The C++ language has no namespace-scoped specialization access
+// control: explicit template specializations of `which_dim` MUST
+// live syntactically inside `crucible::fixy::grant`, and a user that
+// reopens the namespace can register a foreign type as a "valid"
+// grant tag.  The IsGrantTag concept cannot reject this case
+// structurally — it has no type-system handle on namespace identity.
+//
+// Defense in practice:
+//
+//   * Reviewer-visible: every cross-namespace attack must literally
+//     spell `namespace crucible::fixy::grant {` outside Grant.h —
+//     reviewable in any PR.
+//   * CI-greppable: `scripts/check-fixy-grant-namespace-purity.sh`
+//     fails the build if any file other than Grant.h reopens the
+//     namespace to declare a `which_dim` specialization.
+//   * Positive-attack regression: `test/safety_attack/
+//     attack_fixy_grant_namespace_reopen.cpp` demonstrates the
+//     residual gap exists today + documents the closure path (CI
+//     grep + reviewer attention).
+//
+// What `IsGrantTag` DOES enforce:
+//
+//   * No subclass-via-extension of an already-shipped grant tag (the
+//     `final` clause; FIXY-A-PLUS-1 ship + neg fixture).
+//   * No "structural twin" without grant_base (cheat-probe Round 1).
+//   * Missing which_dim specialization → hard error caught at
+//     `engages_dim_one<D, G>` after CR-08 gating (neg fixture
+//     test/fixy_neg/neg_fixy_grant_missing_which_dim.cpp).
 
 template <typename G>
 inline constexpr bool IsGrantTag_v =
