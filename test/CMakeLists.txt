@@ -7692,3 +7692,27 @@ crucible_neg_compile_fixy_test(neg_fixy_grant_missing_which_dim
 # behavior so the eventual rewire cannot regress silently.
 crucible_neg_compile_fixy_test(neg_fixy_profile_active_strict_rejects
     "static assertion failed|FixyNotEngaged|IsAcceptedActive|constraints not satisfied")
+
+# ─────────────────────────────────────────────────────────────────
+# FIXY-GAP-B — Agent B round 2 (B3 — Cap.h rejection-class depth)
+# ─────────────────────────────────────────────────────────────────
+#
+# Existing Cap.h coverage pins 2 fixtures (mint_from_fg /
+# mint_from_ctx_wrong_effect) — BOTH reject on the SECOND clause
+# (row containment) of CanMintCap / CtxCanMint.  This round adds 2
+# more rejecting on the FIRST (structural) clause:
+#   - mint_plain_source — plain int as Source; CanMintCap rejects
+#     on is_cap_type_v<int> == false.  Distinct from mint_from_fg,
+#     which uses a valid Fg cap_type and fails on row.
+#   - mint_from_non_ctx — non-ExecCtx struct passed to
+#     mint_from_ctx; CtxCanMint rejects on IsExecCtx == false.
+#     Distinct from mint_from_ctx_wrong_effect, which uses a valid
+#     HotFgCtx and fails on row.
+#
+# The two-clause structure of CanMintCap / CtxCanMint is now
+# saturated: structural gate × row-containment gate = 2 × 2 = 4
+# rejection cells, one fixture per cell.
+crucible_neg_compile_fixy_test(neg_fixy_cap_mint_plain_source
+    "CanMintCap|is_cap_type|associated constraints|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_non_ctx
+    "CtxCanMint|IsExecCtx|associated constraints|constraints not satisfied")
