@@ -79,6 +79,7 @@
 #include <cstddef>
 #include <meta>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -971,6 +972,83 @@ template <typename... Grants>
     requires (!AllDimsEngaged<Grants...>)
 using first_missing_tag_t =
     diag::tag_for_axis_t<*first_missing_axis_v<Grants...>>;
+
+// ─── first_missing_tag_name_v — fixy-H-15 dynamic-message bridge ──
+//
+// Returns the `std::string_view` NAME of the FixyNotEngaged_<Axis>
+// tag that `first_missing_tag_t<Grants...>` aliases (or an empty
+// string when every axis is engaged).  Carries the resolved tag's
+// `safety::diag::diagnostic_name_v<>` value as a constexpr
+// string_view — usable as a P2741R3 (user-generated) static_assert
+// message so the diagnostic literally contains the failing tag's
+// class name (e.g. "FixyNotEngaged_Effect") instead of a prose
+// pointer at the symbol.
+//
+// fixy-H-15: prior to this helper, `first_missing_tag_t<Grants...>`
+// was dead architectural plumbing — defined and documented but never
+// referenced from production code.  The H-03 mechanism surfaces the
+// tag name in the compiler's instantiation-context trail via
+// `DiagnoseAxisNotEngaged<Tag>`, but the tier-3 static_assert MESSAGE
+// itself remained a static string that only mentioned the helper by
+// name.  Wiring `first_missing_tag_name_v` into the tier-3 P2741R3
+// message makes the tag name LOAD-BEARING in the user-facing
+// diagnostic line.
+//
+// The `if constexpr (AllDimsEngaged<...>)` guard inside the consteval
+// lambda is required: `first_missing_tag_t<Grants...>` has a
+// `requires (!AllDimsEngaged<Grants...>)` clause and is ill-formed
+// when every axis is engaged.  The lambda's `if constexpr` selects
+// only the well-formed branch at each instantiation.
+
+template <typename... Grants>
+inline constexpr std::string_view first_missing_tag_name_v =
+    []() consteval -> std::string_view {
+        if constexpr (AllDimsEngaged<Grants...>) {
+            return std::string_view{};
+        } else {
+            return ::crucible::safety::diag::diagnostic_name_v<
+                first_missing_tag_t<Grants...>>;
+        }
+    }();
+
+// ─── tier3_missing_tag_message_v — fixy-H-15 P2741R3 dynamic message ──
+//
+// Concatenates the tier-3 prose framing with the resolved missing-axis
+// tag name (from `first_missing_tag_name_v`) into a single static-
+// storage `std::string_view`, suitable as a P2741R3 user-generated
+// `static_assert` message argument.  When every axis is engaged the
+// variable evaluates to an empty string_view (the tier-3 assert is
+// satisfied and the message is unused).
+//
+// Routes through `std::define_static_string` (P3491R3, `<meta>`) to
+// promote the consteval-built std::string into static storage so the
+// returned string_view's data pointer remains valid after the
+// consteval lambda returns.  Reject.h already includes <meta> for the
+// reflection-driven engagement fold.
+
+template <typename... Grants>
+inline constexpr std::string_view tier3_missing_tag_message_v =
+    []() consteval -> std::string_view {
+        if constexpr (AllDimsEngaged<Grants...>) {
+            return std::string_view{};
+        } else {
+            constexpr std::string_view tagname =
+                first_missing_tag_name_v<Grants...>;
+            std::string msg;
+            msg += "fixy::fn<Type, Grants...> [tier 3: IsAccepted gate / "
+                   "AllDimsEngaged]: at least one DimensionAxis is NOT "
+                   "engaged by any grant.  Missing-axis diagnostic tag: ";
+            msg.append(tagname.data(), tagname.size());
+            msg += ".  Either add `grant::accept_default_strict_for"
+                   "<dim::DimensionAxis::<Axis>>` to accept the strict "
+                   "default, or supply the appropriate per-axis relaxation "
+                   "tag from fixy::grant::*.  See fixy::first_missing_axis_v"
+                   "<Grants...> for the axis enum and "
+                   "fixy::first_missing_tag_t<Grants...> for the resolved "
+                   "FixyNotEngaged_<Axis> type.";
+            return std::string_view{std::define_static_string(msg)};
+        }
+    }();
 
 // ─── first_duplicate_axis_v / first_duplicate_tag_t (fixy-H-02) ────
 //

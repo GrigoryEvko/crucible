@@ -604,15 +604,19 @@ class fn {
         !fixy_h02_tier1_type_ok
         || !fixy_h02_tier2_grants_well_formed
         || AllDimsEngaged<ImplicitTypeMarker, Grants...>;
+    // fixy-H-15: route through P2741R3 dynamic message so the resolved
+    // FixyNotEngaged_<Axis> tag NAME appears literally in the diagnostic
+    // text (e.g. "Missing-axis diagnostic tag: FixyNotEngaged_Effect").
+    // `tier3_missing_tag_message_v` wraps `first_missing_tag_t<Grants...>`
+    // (the helper documented in Reject.h §"Failure inspection" but
+    // previously dead architectural plumbing) into a `std::string_view`
+    // promoted to static storage via `std::define_static_string`.  When
+    // tier 3 succeeds the variable evaluates to an empty string_view
+    // and the message is unused; the helper's `if constexpr
+    // (AllDimsEngaged<...>)` guard sidesteps the
+    // `requires (!AllDimsEngaged<...>)` clause on `first_missing_tag_t`.
     static_assert(fixy_h02_tier3_all_dims_engaged,
-        "fixy::fn<Type, Grants...> [tier 3: IsAccepted gate / "
-        "AllDimsEngaged]: at least one DimensionAxis is NOT "
-        "engaged by any grant.  See fixy::first_missing_axis_v<Grants...> "
-        "for the specific axis + fixy::first_missing_tag_t<Grants...> "
-        "for the FixyNotEngaged_<Axis> diagnostic tag.  Either add "
-        "`grant::accept_default_strict_for<dim::DimensionAxis::<Axis>>` "
-        "to accept the strict default, or supply the appropriate "
-        "per-axis relaxation tag from fixy::grant::*.");
+        tier3_missing_tag_message_v<ImplicitTypeMarker, Grants...>);
 
     static constexpr bool fixy_h02_tier4_unique_engagement =
         !fixy_h02_tier1_type_ok
