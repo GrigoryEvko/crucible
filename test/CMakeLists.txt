@@ -7790,3 +7790,27 @@ crucible_neg_compile_fixy_test(neg_fixy_cap_mint_plain_source
     "CanMintCap|is_cap_type|associated constraints|constraints not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_non_ctx
     "CtxCanMint|IsExecCtx|associated constraints|constraints not satisfied")
+
+# ── FIXY-FEDERATION round 2 — cross-org isolation + handshake gate ──
+# Existing Source.h federation coverage pins 2 fixtures (wrong_org /
+# missing_proof) — both reject at the mint_federation_admittance
+# call site on the PROOF parameter.  This round adds 2 more covering
+# the consumer-side and handshake-side gates:
+#   - cross_org_transfer — Permission<FederatedPeer<OrgA>> consumed
+#     by a federation operation typed for OrgB.  Tag-mismatch at the
+#     consumer call site (deserialize_federation_entry<OrgB>).  This
+#     is the type-system-level "every org has its own permission
+#     universe" security gate.
+#   - handshake_wrong_type — non-FederationHandshake POD passed in
+#     the handshake slot of mint_federation_admittance.  The substrate
+#     takes the handshake BY VALUE of the exact type; a different
+#     struct type cannot bind even if layout-compatible (C++ has no
+#     structural typing for distinct class types).
+#
+# Together with the 2 existing fixtures: the federation boundary is
+# saturated across both parameter axes (proof × handshake) plus
+# consumer-side tag-mismatch.
+crucible_neg_compile_fixy_test(neg_fixy_federation_cross_org_transfer
+    "FederatedPeer|cannot convert|cannot bind|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_federation_handshake_wrong_type
+    "FederationHandshake|cannot convert|no matching function")
