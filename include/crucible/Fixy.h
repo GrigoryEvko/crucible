@@ -26,7 +26,15 @@
 //                          split / combine / split_n / combine_n /
 //                          share / fork / inherit)
 //   - fixy/Sess.h        — sessions/* protocol combinators + mint
-//                          factories + federation 3-role projection
+//                          factories + federation 3-role projection.
+//                          Note: bare `mint_session<Proto>(ctx, res)`
+//                          is `= delete`d; production code calls
+//                          `mint_permissioned_session<Proto>(ctx, res,
+//                          perms...)` (the empty-PermSet shim covers
+//                          the zero-permission case).  The deleted
+//                          decl is re-exported so stale call sites
+//                          surface the canonical diagnostic via the
+//                          `fixy::` path.
 //   - fixy/Pipe.h        — concurrent/* Tier-3 composition
 //                          (mint_endpoint / mint_stage / mint_pipeline /
 //                          mint_stage_from_endpoints / mint_substrate_session)

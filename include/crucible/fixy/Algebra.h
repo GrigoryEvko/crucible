@@ -166,8 +166,10 @@ using ::crucible::algebra::verify_semiring_axioms_at;
 
 // ── lattices::* — 30 concrete instantiations ──────────────────────
 //
-// Inline alias namespace — every `fixy::algebra::lattices::X` IS
-// `algebra::lattices::X` (template identity preserved).
+// Namespace alias — every `fixy::algebra::lattices::X` IS
+// `algebra::lattices::X` (template identity preserved).  This is a
+// plain (non-inline) namespace alias; there is no inline-namespace
+// promotion of contents into the enclosing scope.
 
 namespace lattices = ::crucible::algebra::lattices;
 
