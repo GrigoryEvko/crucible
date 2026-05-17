@@ -27,9 +27,9 @@
 //   `affine`, `copy`, `ghost`, `with<Es...>`, `declassify<Policy>`,
 //   `vendor_backend<V>`, etc.  Each relaxation tag carries the
 //   per-axis information needed to resolve the underlying `Fn<...>`
-//   instantiation in Phase B (Resolve.h).  Phase A only needs the
-//   tag's identity (which dim it engages with); the resolution
-//   semantics ship in Phase B.
+//   instantiation in `fixy/Fn.h`'s `detail::resolve` namespace.
+//   IsAccepted only needs the tag's identity (which dim it engages
+//   with); the resolution semantics live in `Fn.h`'s resolver.
 //
 // ── Substrate consumed ─────────────────────────────────────────────
 //
@@ -41,8 +41,9 @@
 // ── Substrate added by this header ─────────────────────────────────
 //
 // NONE.  Every relaxation tag is a phantom type carrying parameters
-// that downstream consumers (Resolve.h, Phase B) project onto
-// substrate template arguments.  No new lattice, no new wrapper.
+// that downstream consumers (`fixy/Fn.h`'s `detail::resolve`
+// namespace) project onto substrate template arguments.  No new
+// lattice, no new wrapper.
 //
 // ── Cost ───────────────────────────────────────────────────────────
 //
@@ -162,14 +163,14 @@ inline constexpr dim::DimensionAxis which_dim_v = which_dim<G>::value;
 //
 // `accept_default_strict_for<D>` says: "I have read the discipline
 // for axis D and choose the strict default."  These tags are pure
-// engagement markers; resolution to `Fn<>`'s default is automatic in
-// Phase B (Resolve.h reads `strict_default_for<D>::type` or `::value`).
+// engagement markers; resolution to `Fn<>`'s default is automatic
+// (`fixy/Fn.h`'s `detail::resolve` namespace reads
+// `strict_default_for<D>::type` or `::value`).
 //
 // The Type axis exposes a marker too even though it has no strict
 // default — the marker means "I am binding this function to its own
 // declared type" and is implied automatically by `fixy::fn<Type, ...>`
-// (Phase B will add the implicit Type engagement at the resolver
-// site).
+// via the implicit Type engagement injected at the resolver site.
 
 template <dim::DimensionAxis D>
 struct accept_default_strict_for final : grant_base {};
@@ -188,8 +189,8 @@ struct which_dim<accept_default_strict_for<D>>
 //   3. is empty (parameters live in the template, not as fields)
 //
 // The actual mapping of "what does this tag mean inside Fn<>?" is the
-// job of Resolve.h (Phase B).  Phase A only needs the dim-mapping
-// for the engagement check.
+// job of `fixy/Fn.h`'s `detail::resolve` namespace.  IsAccepted only
+// needs the dim-mapping for the engagement check.
 
 // ── Dim 3 Usage relaxations ────────────────────────────────────────
 struct affine          final : grant_base {};  // Usage = Affine
@@ -210,7 +211,8 @@ template <> struct which_dim<capability_usage> : std::integral_constant<dim::Dim
 //
 // `with<Es...>` engages the Effect axis with an explicit effects::Row
 // of the supplied effects.  The Es pack is `effects::Effect` enum
-// values; Resolve.h projects them into `effects::Row<Es...>`.
+// values; `fixy/Fn.h`'s `detail::resolve` namespace projects them
+// into `effects::Row<Es...>`.
 
 template <effects::Effect... Es>
 struct with final : grant_base {};
@@ -235,9 +237,10 @@ using with_test  = with<effects::Effect::Test>;
 //
 // `declassify<Policy>` engages Security with a named policy tag,
 // projecting to `SecLevel::Public`.  The Policy parameter is
-// captured for audit-trail purposes by Phase A; the policy catalog
-// ships under safety::secret_policy::* and is consumed by Phase B's
-// Resolve.h + the declassification call sites.
+// captured for audit-trail purposes by IsAccepted; the policy catalog
+// ships under safety::secret_policy::* and is consumed by
+// `fixy/Fn.h`'s `detail::resolve` namespace + the declassification
+// call sites.
 //
 // Five more relaxation tags expose the remaining SecLevel lattice
 // points so callers can reach every value of the security lattice
@@ -293,7 +296,7 @@ template <> struct which_dim<as_secret>
 // ── Dim 6 Protocol relaxations ─────────────────────────────────────
 //
 // `protocol<Proto>` engages Protocol with a session-type or machine
-// state-type.  Resolve.h projects to `safety::fn::Protocol` slot.
+// state-type.  `fixy/Fn.h`'s `detail::resolve` namespace projects to `safety::fn::Protocol` slot.
 
 template <typename Proto>
 struct protocol final : grant_base {};
@@ -318,7 +321,7 @@ struct which_dim<in_region<RegionTag>>
 //
 // `from_source<Source>` engages Provenance with a substrate source
 // tag (source::FromUser / source::FromDb / source::FromNetwork /
-// etc.).  Resolve.h projects to `safety::fn::source_t`.
+// etc.).  `fixy/Fn.h`'s `detail::resolve` namespace projects to `safety::fn::source_t`.
 
 template <typename Source>
 struct from_source final : grant_base {};
@@ -332,7 +335,7 @@ struct which_dim<from_source<Source>>
 // `trust_assumed<auto Rationale>` engages Trust with a documented
 // rationale string (the rationale is a non-type template parameter
 // — typically a `std::array<char, N>` literal — captured for audit
-// trails but treated opaquely by IsAccepted).  Resolve.h projects to
+// trails but treated opaquely by IsAccepted).  `fixy/Fn.h`'s `detail::resolve` namespace projects to
 // `safety::trust::Assumed`.
 //
 // Four additional relaxation tags expose the remaining lattice points
@@ -414,7 +417,7 @@ template <>            struct which_dim<cost_unbounded>     : std::integral_cons
 // ── Dim 14 Precision relaxations ───────────────────────────────────
 //
 // `precision_f32`, `precision_f64`, `precision_higham<Bound>` —
-// Resolve.h projects to `safety::fn::precision::*`.
+// `fixy/Fn.h`'s `detail::resolve` namespace projects to `safety::fn::precision::*`.
 
 struct precision_f32   final : grant_base {};
 struct precision_f64   final : grant_base {};
@@ -482,7 +485,7 @@ template <auto TauMax> struct which_dim<stale_to<TauMax>>
 // ── Dim 2 Refinement relaxations ───────────────────────────────────
 //
 // `refined_with<Pred>` engages Refinement with a predicate type that
-// satisfies the `pred::check` interface.  Resolve.h projects to
+// satisfies the `pred::check` interface.  `fixy/Fn.h`'s `detail::resolve` namespace projects to
 // `Fn<Type, Pred, ...>`.
 
 template <typename Pred>
@@ -495,8 +498,9 @@ struct which_dim<refined_with<Pred>>
 // ── Dim 1 Type relaxations ─────────────────────────────────────────
 //
 // The Type axis is caller-supplied via `fixy::fn<Type, Grants...>`'s
-// first template parameter.  Phase B's Resolve.h synthesizes an
-// implicit `accept_default_strict_for<Type>` engagement marker at
+// first template parameter.  `fixy/Fn.h`'s `detail::resolve`
+// namespace synthesizes an implicit
+// `accept_default_strict_for<Type>` engagement marker at
 // `fixy::fn<>` construction time, so callers do NOT need to write
 // the marker.  There is no Type-axis relaxation tag — the Type IS
 // the parameter.

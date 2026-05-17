@@ -53,12 +53,13 @@
 //
 // ── Why this header exists at all ──────────────────────────────────
 //
-// Phase B (fixy/Resolve.h) needs a per-dim metafunction that maps
-// `DimensionAxis::X` to "the value or type that `Fn<>` would carry
-// on axis X if the user wrote `Grant::accept_default_strict_for<X>`".
-// Without this projection, Resolve.h would need to switch on
-// DimensionAxis at every per-axis slot — bloat that defeats the
-// "one source of truth" discipline.
+// `fixy/Fn.h`'s `detail::resolve` namespace needs a per-dim
+// metafunction that maps `DimensionAxis::X` to "the value or type
+// that `Fn<>` would carry on axis X if the user wrote
+// `Grant::accept_default_strict_for<X>`".  Without this projection,
+// the resolver would need to switch on DimensionAxis at every per-
+// axis slot — bloat that defeats the "one source of truth"
+// discipline.
 //
 // ── Axiom coverage ─────────────────────────────────────────────────
 //
@@ -69,8 +70,9 @@
 //
 // ── Runtime cost ───────────────────────────────────────────────────
 //
-// Zero.  All members are constexpr; consumers (Resolve.h) compile to
-// the substrate's default values directly.
+// Zero.  All members are constexpr; consumers (`fixy/Fn.h`'s
+// `detail::resolve` namespace) compile to the substrate's default
+// values directly.
 //
 // ── Self-test ──────────────────────────────────────────────────────
 //
@@ -322,7 +324,8 @@ namespace detail::default_coverage {
 // safety::fn::Fn<int>'s default member types.  If the substrate
 // changes (e.g., Fn<>'s Refinement default becomes something other
 // than pred::True), this fires the regression at fixy/Default.h
-// rather than at an opaque Resolve.h substitution failure.
+// rather than at an opaque resolver substitution failure inside
+// `fixy/Fn.h`'s `detail::resolve` namespace.
 
 [[nodiscard]] consteval bool type_defaults_match_substrate() noexcept {
     using DF = safety::fn::Fn<int>;
