@@ -7833,8 +7833,12 @@ crucible_neg_compile_test(neg_decide_valid_span_truncation
 #     erasure as the dual axis of staleness).
 #     Pattern: as_secret + stale_to<N> + no declassify<Policy>.
 #
-#   ghost_runtime_observable             — Filliâtre 1999 / Leino
-#     2010 / Müller-Schwerhoff-Summers 2016 ghost discipline.
+#   ghost_runtime_observable             — Filliâtre-Gondelman-
+#     Paskevich 2014 "The Spirit of Ghost Code" / Leino 2010
+#     "Dafny" ghost-vs-runtime discipline (fixy-CR-17 replaced an
+#     earlier Müller-Schwerhoff-Summers 2016 "Viper" attribution
+#     that did not back the discipline-formalising claim; FGP 2014
+#     is the canonical reference).
 #     Pattern: ghost (Usage) + with<E...> containing Alloc/IO/
 #     Block/Bg.  Distinct from R006 (collision marks_runtime_-
 #     ghost_use) — this catches at type-row level without opt-in.

@@ -360,11 +360,20 @@ struct staleness_secret_without_declassify {
 
 // ── Entry 4: ghost_runtime_observable ────────────────────────────
 //
-// Cite: Filliâtre 1999, "Preuve de programmes impératifs en théorie
-// des types" (Coq Why-tool tradition); Leino 2010, "Dafny: an
-// automatic program verifier for functional correctness"; Müller-
-// Schwerhoff-Summers 2016, "Viper: A Verification Infrastructure
-// for Permission-Based Reasoning" — the ghost-state discipline.
+// Cite: Filliâtre-Gondelman-Paskevich 2014, "The Spirit of Ghost
+// Code" (CAV / FMSD) — the canonical formal statement of the
+// ghost-vs-runtime discipline: ghost code is erased at compile
+// time and must not influence the observable runtime behaviour of
+// the concrete program.  Leino 2010, "Dafny: an automatic program
+// verifier for functional correctness" — supporting reference, the
+// first working verifier to enforce ghost-vs-concrete separation.
+// Filliâtre 1999, "Preuve de programmes impératifs en théorie des
+// types" — historical Why-tool root from which the 2014 discipline
+// crystallised.  (fixy-CR-17: an earlier Müller-Schwerhoff-Summers
+// 2016 "Viper" attribution was incorrect — Viper is a verification
+// infrastructure that supports ghost code as a syntactic feature
+// but does not formalise the discipline; FGP 2014 is the canonical
+// statement and has been substituted.)
 //
 // Pattern: a binding engages `ghost` on Usage AND `with<E...>` on
 // Effect where E contains at least one runtime-observable effect
@@ -409,9 +418,10 @@ struct ghost_runtime_observable {
     }
 
     static constexpr const char* cite() noexcept {
-        return "Filliâtre 1999 / Leino 2010 / Müller-Schwerhoff-"
-               "Summers 2016 — ghost-state discipline: a binding "
-               "engaging Usage=Ghost AND any runtime-observable "
+        return "Filliâtre-Gondelman-Paskevich 2014 'The Spirit of "
+               "Ghost Code' / Leino 2010 'Dafny' — ghost-state "
+               "discipline: a binding engaging Usage=Ghost AND any "
+               "runtime-observable "
                "effect (Alloc / IO / Block / Bg) is contradictory — "
                "ghost values are erased at compile time and cannot "
                "drive runtime presence.  Drop the ghost Usage marker "

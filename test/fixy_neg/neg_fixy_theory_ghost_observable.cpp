@@ -6,10 +6,17 @@
 // (Usage=Ghost) AND any runtime-observable effect (Alloc / IO / Block
 // / Bg) in `with<E...>`.
 //
-// Cite: Filliâtre 1999 / Leino 2010 / Müller-Schwerhoff-Summers 2016.
-// Ghost values are erased at compile time and MUST NOT request
-// runtime presence; allocating, performing I/O, blocking, or spawning
-// background work from ghost code is structurally contradictory.
+// Cite: Filliâtre-Gondelman-Paskevich 2014 "The Spirit of Ghost
+// Code" (CAV / FMSD — the canonical formal statement of the
+// ghost-vs-runtime discipline) / Leino 2010 "Dafny" (working
+// verifier enforcing ghost-vs-concrete separation).  (fixy-CR-17
+// replaced an earlier Müller-Schwerhoff-Summers 2016 "Viper"
+// attribution: Viper is a verification IL that supports ghost as
+// a syntactic feature but does not formalise the discipline; FGP
+// 2014 is the canonical reference.)  Ghost values are erased at
+// compile time and MUST NOT request runtime presence; allocating,
+// performing I/O, blocking, or spawning background work from
+// ghost code is structurally contradictory.
 //
 // Distinct from R006/P002 (CollisionCatalog marks_runtime_ghost_use):
 // R006 requires an opt-in trait specialization at the use site.  This
