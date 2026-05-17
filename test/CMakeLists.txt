@@ -1144,6 +1144,14 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_channel_non_ctx
 crucible_neg_compile_fixy_test(neg_fixy_federation_channel_wrong_endpoint
     "SessionResource_NotPinned")
 
+# FIXY-AUDIT-E10 — HS14 floor for fixy::safety::mint_secret re-export.
+# is_constructible_v gate covered with two distinct argument shapes:
+# type-mismatch (int <- const char*) and arity-mismatch (int(a,b,c)).
+crucible_neg_compile_fixy_test(neg_fixy_safety_secret_not_constructible
+    "is_constructible_v")
+crucible_neg_compile_fixy_test(neg_fixy_safety_secret_too_many_args
+    "is_constructible_v")
+
 # FIXY-AUDIT-D3 — HS14 floor for fixy::fn class-body static_assert.
 # Distinct from D2 (mint_fn requires-clause): the class-body assert
 # fires inside class-template instantiation, not overload resolution.
