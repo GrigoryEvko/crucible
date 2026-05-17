@@ -331,6 +331,35 @@ struct find_grant_impl<D, G, Rest...> {
 template <dim::DimensionAxis D, typename... Grants>
 using find_grant_t = typename find_grant_impl<D, Grants...>::type;
 
+// ─── declassify<Policy> Policy projection ─────────────────────────
+//
+// FIXY-AUDIT-A2: the Security axis's `declassify<Policy>` grant
+// captures a Policy tag for audit trails, but the substrate's
+// security-lattice slot only sees the post-declassification SecLevel
+// (`Public`).  Without explicit projection the Policy tag is invisible
+// to downstream consumers — they cannot identify which named
+// declassification policy authorized a fixy::fn binding.
+//
+// `find_declassify_policy_t<Grants...>` linearly scans Grants for a
+// `grant::declassify<P>` shape and returns `P`; if no declassify
+// grant appears (Security defaulted, or pinned via `as_*` tag), it
+// returns `void`.  Pattern-match — no `IsGrantTag_v` gate needed since
+// the only matching shape is `grant::declassify<P>` itself.
+template <typename... Grants> struct find_declassify_policy {
+    using type = void;
+};
+template <typename Policy, typename... Rest>
+struct find_declassify_policy<grant::declassify<Policy>, Rest...> {
+    using type = Policy;
+};
+template <typename G, typename... Rest>
+struct find_declassify_policy<G, Rest...>
+    : find_declassify_policy<Rest...> {};
+
+template <typename... Grants>
+using find_declassify_policy_t =
+    typename find_declassify_policy<Grants...>::type;
+
 // ─── Per-axis resolvers ────────────────────────────────────────────
 
 // Type-valued axes
@@ -466,6 +495,13 @@ class fn {
 public:
     using value_type  = Type;
     using safety_fn_t = detail::resolve::resolved_fn_t<Type, Grants...>;
+
+    // ── Declassify policy accessor (FIXY-AUDIT-A2) ────────────────
+    // Resolves to the `Policy` parameter of any `grant::declassify<P>`
+    // grant in the pack, else `void`.  Downstream audit code identifies
+    // which named declassification policy authorized this binding via
+    // `fn<...>::policy_t`.
+    using policy_t = detail::resolve::find_declassify_policy_t<Grants...>;
 
     // ── Per-axis introspection — passthroughs into safety_fn_t ────
     using refinement_t = typename safety_fn_t::refinement_t;

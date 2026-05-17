@@ -105,6 +105,39 @@ static_assert(!std::is_same_v<fixy::rule::R001, fixy::rule::R002>);
 static_assert(!std::is_same_v<fixy::rule::R013, fixy::rule::R017>);
 static_assert(!std::is_same_v<fixy::rule::R019, fixy::rule::R020>);
 
+// ─── 7c. declassify<Policy> policy_t projection (FIXY-AUDIT-A2) ───
+//
+// A binding that omits declassify resolves policy_t to `void`; a
+// binding with declassify<P> exposes P via fn<...>::policy_t.
+
+namespace policy_tags {
+struct AuditTrailPolicy {};
+struct InternalLeakPolicy {};
+}  // namespace policy_tags
+
+// No declassify grant → policy_t == void.
+static_assert(std::is_same_v<
+    typename fixy::stance::PureLinear<int>::policy_t, void>,
+    "PureLinear has no declassify grant — policy_t must be void.");
+
+// With declassify<AuditTrailPolicy> → policy_t exposes the tag.
+using fn_with_audit_policy = fixy::fn<int,
+    strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
+    gr::declassify<policy_tags::AuditTrailPolicy>,
+    strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+    strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+    strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
+    strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+
+static_assert(std::is_same_v<
+    typename fn_with_audit_policy::policy_t,
+    policy_tags::AuditTrailPolicy>,
+    "declassify<AuditTrailPolicy> must surface AuditTrailPolicy via policy_t.");
+static_assert(fn_with_audit_policy::security_v
+    == crucible::safety::fn::SecLevel::Public,
+    "declassify still resolves security_v to Public regardless of Policy.");
+
 // ─── 8. EBO collapse across multiple types ────────────────────────
 
 static_assert(sizeof(fixy::stance::PureLinear<int>)    == sizeof(int));
