@@ -197,6 +197,7 @@ crucible_test(test_fixy_pipe)
 crucible_test(test_fixy_bridge)
 crucible_test(test_fixy_substr)
 crucible_test(test_fixy_mach_safety)
+crucible_test(test_fixy_mach_transitions)  # FIXY-AUDIT-C1
 crucible_test(test_fixy_wrap)
 crucible_test(test_fixy_struct)
 crucible_test(test_fixy_is)
