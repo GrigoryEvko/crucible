@@ -1116,6 +1116,9 @@ crucible_neg_compile_fixy_test(neg_fixy_unengaged_version        "FixyNotEngaged
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_unengaged_axis   "AllDimsEngaged")
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_invalid_grant    "AllGrantsWellFormed")
 
+# FIXY-AUDIT-A3 — HS14 floor for UniqueEngagementPerAxis.
+crucible_neg_compile_fixy_test(neg_fixy_duplicate_engagement     "UniqueEngagementPerAxis")
+
 # ── FIXY-CLEAN-B4 — 12 collision-rule neg-compile fixtures ─────────
 #
 # Each fixture instantiates fixy::fn<int, all-strict-pack> after

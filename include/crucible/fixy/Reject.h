@@ -247,6 +247,40 @@ template <typename... Grants>
     return ok;
 }
 
+// ─── count_engagements_for — per-axis engagement multiplicity ──────
+//
+// FIXY-AUDIT-A3: silent redundant grants on the same axis hide
+// authorial intent ("did I mean to engage twice?") and bypass any
+// future tag-vs-tag disagreement check.  We need an explicit duplicate
+// count so callers cannot accidentally over-engage an axis.
+
+template <dim::DimensionAxis D, typename... Grants>
+[[nodiscard]] consteval std::size_t count_engagements_for() noexcept {
+    if constexpr (sizeof...(Grants) == 0) {
+        return 0;
+    } else {
+        return ((grant::IsGrantTag_v<Grants>
+                 && grant::which_dim_v<Grants> == D ? 1u : 0u) + ...);
+    }
+}
+
+template <typename... Grants>
+[[nodiscard]] consteval bool every_axis_engaged_at_most_once() noexcept {
+    bool ok = true;
+    static constexpr auto uniq_axes = std::define_static_array(
+        std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : uniq_axes) {
+        constexpr auto axis_v = [:en:];
+        if (count_engagements_for<axis_v, Grants...>() > 1u) {
+            ok = false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return ok;
+}
+
 }  // namespace detail::engagement
 
 // ─── EngagedFor<D, Grants...> concept ──────────────────────────────
@@ -265,6 +299,23 @@ template <typename... Grants>
 concept AllGrantsWellFormed =
     detail::engagement::all_grants_well_formed<Grants...>();
 
+// ─── UniqueEngagementPerAxis<Grants...> concept ────────────────────
+//
+// FIXY-AUDIT-A3.  Per-axis engagement count must be ≤ 1.  Duplicates
+// (same axis engaged by multiple grants — even by identical strict
+// markers) signal author confusion and silently lose information
+// under the resolver's "first matching grant wins" rule.  Reject
+// at the gate.
+//
+// Side-benefit: covers FIXY-AUDIT-A7 (ban explicit user-spelling of
+// `accept_default_strict_for<Type>`).  The wrapper injects the Type
+// marker implicitly; a user that also writes it explicitly produces
+// a duplicate on the Type axis, which fires UniqueEngagementPerAxis.
+
+template <typename... Grants>
+concept UniqueEngagementPerAxis =
+    detail::engagement::every_axis_engaged_at_most_once<Grants...>();
+
 // ═════════════════════════════════════════════════════════════════════
 // ── IsAcceptedGrants<Grants...> — the engagement gate ──────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -281,7 +332,8 @@ concept AllGrantsWellFormed =
 template <typename... Grants>
 concept IsAcceptedGrants =
        AllGrantsWellFormed<Grants...>
-    && AllDimsEngaged<Grants...>;
+    && AllDimsEngaged<Grants...>
+    && UniqueEngagementPerAxis<Grants...>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── IsAccepted<Type, Grants...> — the full gate ────────────────────
