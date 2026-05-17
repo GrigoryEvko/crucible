@@ -194,6 +194,7 @@ crucible_test(test_fixy_pipe)
 crucible_test(test_fixy_bridge)
 crucible_test(test_fixy_substr)
 crucible_test(test_fixy_mach_safety)
+crucible_test(test_fixy_umbrella)
 
 # FIXY-LAT-Security + FIXY-LAT-Trust — every SecLevel and every
 # safety::trust::* tag is reachable through one named grant tag.
