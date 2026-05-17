@@ -70,6 +70,72 @@
 
 namespace crucible::fixy::rule {
 
+// ═════════════════════════════════════════════════════════════════════
+// ── Pack-level helpers (FIXY-AUDIT-B7) ─────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Two §6.8 collision rules (L005 / F001) are inherently pack-level —
+// they cannot be evaluated against a single Fn but only against the
+// composition of two-or-more Fns sharing a frame.  The substrate
+// ships these as variable templates under
+// `safety::fn::collision::pack::*`; this section re-exports them
+// under the `fixy::rule::` namespace so production callers can spell
+// the predicate without crossing into the longer substrate name.
+//
+// Substrate authority:
+//   safety::fn::collision::pack::no_linear_region_alias_v<Fs...>
+//     — pairwise check that no two Fs share a `lifetime::In<Tag>`
+//     with `usage_v == Linear`.  Backs R017 / L005.
+//
+//   safety::fn::collision::pack::frame_axis_consistent_v<Fs...>
+//     — Phase B security-seed: every F in the pack agrees on
+//     `security_v`.  Backs R018 / F001.
+//
+//   safety::fn::collision::pack::is_linear_in_region_v<F>
+//     — per-Fn helper used by no_linear_region_alias.  Useful for
+//     downstream metaprograms that want the same predicate.
+//
+//   safety::fn::collision::pack::same_region_tag_v<Tag1, Tag2>
+//     — type-level region-tag identity check (extracted from
+//     `region_tag_of_t<L>` carriers).
+//
+//   safety::fn::collision::pack::region_tag_of_t<L>
+//     — lifetime → region-tag carrier extraction.  Returns void for
+//     non-region lifetimes (lifetime::Static, etc.).
+//
+// ── Cost ───────────────────────────────────────────────────────────
+//
+// Zero.  Every entry is an alias or a variable-template forward.
+
+namespace pack {
+
+// ─── no_linear_region_alias_v — backs R017 / L005 ─────────────────
+template <typename... Fs>
+inline constexpr bool no_linear_region_alias_v =
+    ::crucible::safety::fn::collision::pack::no_linear_region_alias_v<Fs...>;
+
+// ─── frame_axis_consistent_v — backs R018 / F001 ──────────────────
+template <typename... Fs>
+inline constexpr bool frame_axis_consistent_v =
+    ::crucible::safety::fn::collision::pack::frame_axis_consistent_v<Fs...>;
+
+// ─── is_linear_in_region_v — per-Fn helper ────────────────────────
+template <typename F>
+inline constexpr bool is_linear_in_region_v =
+    ::crucible::safety::fn::collision::pack::is_linear_in_region_v<F>;
+
+// ─── same_region_tag_v — type-level tag identity ──────────────────
+template <typename Tag1, typename Tag2>
+inline constexpr bool same_region_tag_v =
+    ::crucible::safety::fn::collision::pack::same_region_tag_v<Tag1, Tag2>;
+
+// ─── region_tag_of_t — lifetime → region-tag carrier ──────────────
+template <typename L>
+using region_tag_of_t =
+    typename ::crucible::safety::fn::collision::pack::region_tag_of<L>::type;
+
+}  // namespace pack
+
 // ─── R001..R020 aliases ───────────────────────────────────────────
 
 using R001 = ::crucible::safety::fn::collision::I002_ClassifiedFailPayload;
