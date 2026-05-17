@@ -1123,6 +1123,12 @@ crucible_neg_compile_fixy_test(neg_fixy_unengaged_version        "FixyNotEngaged
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_unengaged_axis   "AllDimsEngaged")
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_invalid_grant    "AllGrantsWellFormed")
 
+# FIXY-AUDIT-D3 — HS14 floor for fixy::fn class-body static_assert.
+# Distinct from D2 (mint_fn requires-clause): the class-body assert
+# fires inside class-template instantiation, not overload resolution.
+crucible_neg_compile_fixy_test(neg_fixy_fn_class_body_unengaged
+    "FixyNotEngaged_<Axis>|requires every DimensionAxis to be engaged")
+
 # FIXY-AUDIT-A3 — HS14 floor for UniqueEngagementPerAxis.
 crucible_neg_compile_fixy_test(neg_fixy_duplicate_engagement     "UniqueEngagementPerAxis")
 
