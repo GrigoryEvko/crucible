@@ -41,6 +41,35 @@
 //   - fixy/Mach.h        — safety/Machine.h mint_machine + transition_to
 //   - fixy/Safety.h      — safety/* token mints (Linear / Secret /
 //                          ScopedView)
+//   - fixy/Wrap.h        — value-level safety wrappers (Refined /
+//                          SealedRefined / Tagged / Monotonic /
+//                          AppendOnly / Stale / TimeOrdered /
+//                          WriteOnce / WriteOnceNonNull /
+//                          BoundedMonotonic / OrderedAppendOnly /
+//                          AtomicMonotonic — plus Linear / Secret /
+//                          SharedPermission re-exports for one-stop
+//                          `fixy::wrap::` value-wrapping access)
+//
+// ── Phase D (foundation universe re-exports, shipped) ─────────────
+//   - fixy/Algebra.h     — algebra/Graded.h substrate + 30 lattices
+//                          + GradedWrapper concept + Modality enum +
+//                          law-verifier helpers
+//   - fixy/Eff.h         — effects/* Met(X) surface: Row<>,
+//                          Computation<>, Subrow, row_union_t /
+//                          difference_t / intersection_t, F*
+//                          aliases (Pure/Tot/Ghost/Div/ST/All),
+//                          Capability<>, ExecCtx + 5 canonical ctxs,
+//                          21+ Resource budget tags, ConcurrentRow,
+//                          OsUniverse, EffectMask
+//   - fixy/Diag.h        — safety/Diagnostic.h Category + Catalog +
+//                          tag_of_t / category_of_v bijection + 28
+//                          tag classes + stable_name / type_id /
+//                          function_id + canonicalize_pack +
+//                          insight_provider + row_hash_contribution
+//   - fixy/Source.h      — safety/Tagged.h source::* / trust::* /
+//                          access::* / version::* / vessel_trust::*
+//                          phantom tag namespaces + safety/Secret.h
+//                          secret_policy::* + Types.h hash_family::*
 //
 // ── Macro definition ───────────────────────────────────────────────
 //
@@ -64,9 +93,18 @@
 // ── Phase C — substrate alias re-exports ──────────────────────────
 #include <crucible/fixy/Bridge.h>
 #include <crucible/fixy/Cap.h>
+#include <crucible/fixy/Is.h>
 #include <crucible/fixy/Mach.h>
 #include <crucible/fixy/Perm.h>
 #include <crucible/fixy/Pipe.h>
 #include <crucible/fixy/Safety.h>
 #include <crucible/fixy/Sess.h>
+#include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
+#include <crucible/fixy/Wrap.h>
+
+// ── Phase D — foundation universe re-exports ─────────────────────
+#include <crucible/fixy/Algebra.h>
+#include <crucible/fixy/Diag.h>
+#include <crucible/fixy/Eff.h>
+#include <crucible/fixy/Source.h>

@@ -194,6 +194,7 @@ crucible_test(test_fixy_pipe)
 crucible_test(test_fixy_bridge)
 crucible_test(test_fixy_substr)
 crucible_test(test_fixy_mach_safety)
+crucible_test(test_fixy_wrap)
 crucible_test(test_fixy_umbrella)
 
 # FIXY-LAT-Security + FIXY-LAT-Trust — every SecLevel and every
@@ -1187,6 +1188,33 @@ crucible_neg_compile_fixy_test(neg_fixy_safety_linear_copy
     "deleted function|move-only|use of deleted function")
 crucible_neg_compile_fixy_test(neg_fixy_mach_construct_unbuildable
     "is_constructible|constraints not satisfied|associated constraints are not satisfied")
+
+# ── FIXY-WRAP — fixy/Wrap.h re-export of value-level safety wrappers
+# (Linear / Refined / SealedRefined / Tagged / Secret / Monotonic /
+# AppendOnly / Stale / TimeOrdered / SharedPermission + Mutation.h
+# derivatives WriteOnce / WriteOnceNonNull / BoundedMonotonic /
+# OrderedAppendOnly / AtomicMonotonic).  10 HS14 fixtures pin
+# distinct violation classes across the family:
+crucible_neg_compile_fixy_test(neg_fixy_wrap_linear_copy
+    "deleted function|move-only|use of deleted function")
+crucible_neg_compile_fixy_test(neg_fixy_wrap_refined_predicate_fails
+    "contract|not a constant expression|pre|contract_assert")
+crucible_neg_compile_fixy_test(neg_fixy_wrap_sealedrefined_no_into
+    "no member named|has no member|'into'|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_wrap_tagged_mismatch
+    "could not convert|cannot convert|no matching function|invalid conversion|cannot bind")
+crucible_neg_compile_fixy_test(neg_fixy_wrap_monotonic_backward
+    "contract|not a constant expression|pre|contract_assert")
+crucible_neg_compile_fixy_test(neg_fixy_wrap_writeonce_double_set
+    "contract|not a constant expression|pre|contract_assert")
+crucible_neg_compile_fixy_test(neg_fixy_wrap_writeoncenonnull_nonpointer
+    "WriteOnceNonNull_NonPointer_Type|requires a pointer|static assertion")
+crucible_neg_compile_fixy_test(neg_fixy_wrap_bounded_monotonic_overflow
+    "contract|not a constant expression|pre|contract_assert")
+crucible_neg_compile_fixy_test(neg_fixy_wrap_appendonly_redundant_writeonce
+    "AppendOnly<WriteOnce|is redundant|static assertion")
+crucible_neg_compile_fixy_test(neg_fixy_wrap_timeordered_zero_processes
+    "TimeOrdered<T, 0>|forbidden|static assertion|N > 0|N >= 1")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
