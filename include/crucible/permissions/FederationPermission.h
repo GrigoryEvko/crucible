@@ -98,6 +98,61 @@
 // that the regression test must be updated AND that the
 // replay-protection retrofit is structurally observable from
 // existing tests.
+//
+// ── fixy-CR-04 (Hunter 5 C1) — INSUFFICIENT LOCAL AUTHORITY PROOF ──
+//
+// Orthogonal to forgery (fixy-CR-02) and replay (fixy-CR-03), the
+// `local_permission` parameter is taken by const-ref and discarded
+// in the body:
+//
+//   mint_federation_admittance<Org, Policy>(
+//       const LocalCipherPermission& local_permission,  // <-- borrow
+//       FederationHandshake handshake) noexcept {
+//       (void)local_permission;                          // <-- ignored
+//       ...
+//   }
+//
+// The V1 verifier trusts the TYPE of the proof token
+// (`Permission<tag::LocalCipherTag>` IS the authority claim per
+// CLAUDE.md §XXI Universal Mint Pattern) but never inspects the
+// bytes.  The mint therefore accepts:
+//
+//   * A borrowed const-ref obtained through a singleton accessor
+//     by a caller who never minted the permission themselves.
+//   * N independent callers sharing the SAME const-ref.  The Linear
+//     discipline that makes `Permission<Tag>` move-only does NOT
+//     prevent aliasing through `const&`.
+//   * A const-ref passed into a function for a different purpose
+//     (cipher encryption, say) being repurposed for federation
+//     admittance by a deep callee.  Trust-transitivity through
+//     ref-passing escalates the proof's authority beyond what the
+//     ref's owner intended.
+//
+// Combined with fixy-CR-02 (forge a handshake from public inputs)
+// or fixy-CR-03 (replay a captured handshake), an attacker who
+// borrows a const-ref to a LocalCipherPermission anywhere in the
+// program has total federation-admittance authority for every org
+// in the admit-policy.
+//
+// Production fix: the HACL*-backed verifier must INSPECT the local
+// permission's bytes.  Bind a per-cipher secret into the
+// `Permission<LocalCipherTag>`'s storage (real key material, not a
+// tag-only proof) and require the handshake's MAC to be computed
+// against that secret.  After HACL*, the `(void)local_permission`
+// line becomes a real key-extract + MAC-verify; borrowed refs
+// pointing to the wrong cipher's material produce MAC mismatches.
+// Per-org keying makes the bypass even more structurally
+// observable.
+//
+// A positive-attack regression fixture lives at
+// `test/safety_attack/attack_federation_authority_bypass.cpp`.  It
+// compiles today, runs today, and asserts that THREE distinct
+// borrow patterns (singleton-leak, aliased-N-callers, deep-callee
+// trust-transitivity) all succeed today.  When value-based local
+// authority lands, the assertions fire — flagging that the
+// regression test must be rewritten as a negative regression AND
+// that the fixy-CR-04 axis of the [[deprecated]] message can be
+// dropped.
 
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Tagged.h>
@@ -244,12 +299,16 @@ template <typename Org,
           typename Policy = policy::admit_orgs<Org>>
 [[nodiscard,
   deprecated(
-      "fixy-CR-02/CR-03: self-signed federation handshake is both "
-      "forgeable (fixy-CR-02: signature_fingerprint is a deterministic "
-      "mix64 of public values, NOT a MAC) AND replayable (fixy-CR-03: "
-      "no seen-nonce set / no epoch binding / no expiry).  Replace "
-      "with HACL*-backed verifier + stateful seen-nonces store before "
-      "production deployment.  Suppress locally via "
+      "fixy-CR-02/CR-03/CR-04: self-signed federation handshake is "
+      "forgeable (CR-02: signature_fingerprint is a deterministic "
+      "mix64 of public values, NOT a MAC), replayable (CR-03: no "
+      "seen-nonce / no epoch binding / no expiry), AND admits "
+      "borrowed-ref local authority (CR-04: local_permission is "
+      "const-ref + (void)-cast — the verifier never inspects the "
+      "bytes; any const-ref to a Permission<LocalCipherTag> mints).  "
+      "Replace with HACL*-backed verifier (MAC the handshake using "
+      "per-cipher secret material) + stateful seen-nonces store "
+      "before production deployment.  Suppress locally via "
       "_Pragma(\"GCC diagnostic ignored \\\"-Wdeprecated-declarations\\\"\") "
       "if you are calling this knowingly (tests, V1 development)." )]]
 constexpr std::expected<

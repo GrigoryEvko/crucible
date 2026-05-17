@@ -522,6 +522,24 @@ crucible_test(attack_federation_replay
 set_tests_properties(attack_federation_replay PROPERTIES
     LABELS "safety_attack;fixy-CR-03")
 
+# fixy-CR-04 positive-attack regression — proves the V1
+# mint_federation_admittance accepts ANY const-ref to a
+# LocalCipherPermission as proof of local authority, even when
+# the caller borrowed it from a singleton, shares it across N
+# aliased call sites, or received it through trust-transitive
+# ref-passing.  The substrate's `(void)local_permission` body
+# discards the bytes; only the TYPE is checked.  When value-based
+# local authority lands (HACL*-backed MAC with per-cipher secret
+# material in Permission<LocalCipherTag>'s storage), this test
+# reddens; that signals the fixy-CR-04 axis of the [[deprecated]]
+# message on mint_federation_admittance can be dropped.  See
+# header doc-block in
+# include/crucible/permissions/FederationPermission.h §fixy-CR-04.
+crucible_test(attack_federation_authority_bypass
+              safety_attack/attack_federation_authority_bypass.cpp)
+set_tests_properties(attack_federation_authority_bypass PROPERTIES
+    LABELS "safety_attack;fixy-CR-04")
+
 crucible_test(test_fx_aliases)
 crucible_test(test_fx_alias_diagnostic)
 crucible_test(test_effect_row_lattice)
