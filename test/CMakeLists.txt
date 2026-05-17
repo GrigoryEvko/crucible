@@ -7640,3 +7640,55 @@ crucible_neg_compile_test(neg_decide_valid_span_truncation
 # regex anchors on the gate name.
 crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret  "NotInTheoryCorpus")
 crucible_neg_compile_fixy_test(neg_fixy_theory_ghost_observable  "NotInTheoryCorpus")
+
+# ── FIXY-ALGEBRA round 2 — concept-gate fixture depth ───────────────
+# Existing Algebra.h coverage pins 2 fixtures (#1 non_lattice / #2
+# non_graded); this round adds 3 more across distinct rejection
+# classes within the Graded<M, L, T> + Lattice / Semiring / Bounded /
+# GradedWrapper concept lattice:
+#   #3 semiring_missing_zero — Semiring concept rejects a structure
+#     with add/mul/one() but no zero() additive identity.
+#   #4 bounded_missing_top   — BoundedLattice concept rejects a
+#     half-bounded lattice (has bottom(), missing top()).
+#   #5 gw_missing_name       — GradedWrapper concept rejects a
+#     wrapper missing the value_type_name() / lattice_name() consteval
+#     forwarders (CHEAT-3 diagnostic-surface gate).
+crucible_neg_compile_fixy_test(neg_fixy_algebra_semiring_missing_zero
+    "Semiring|associated constraints|constraints not satisfied|zero")
+crucible_neg_compile_fixy_test(neg_fixy_algebra_bounded_missing_top
+    "BoundedLattice|BoundedAboveLattice|associated constraints|constraints not satisfied|top")
+crucible_neg_compile_fixy_test(neg_fixy_algebra_gw_missing_name
+    "GradedWrapper|associated constraints|constraints not satisfied|value_type_name")
+
+# ── FIXY-AUDIT-A3 — resolver totality probe ─────────────────────────
+# The 19-axis Grants→Fn projector (fixy/Fn.h::detail::resolve) is
+# ARCHITECTURALLY TOTAL over all IsGrantTag inputs: every axis has a
+# strict default via accept_default_strict_for<D>, and `find_grant_t`
+# falls back to that marker when no grant engages an axis.  There is
+# NO per-axis projection-rejection class accessible through normal
+# usage — engagement / collision rules are enforced earlier (Reject.h,
+# §6.8 ValidComposition).
+#
+# The one structural rejection that DOES surface is malformed grants:
+# `IsGrantTag` is purely structural (inherits grant_base + final), so a
+# user-authored evil_grant satisfying IsGrantTag but lacking a
+# `which_dim` specialization causes Reject.h's AllDimsEngaged fold to
+# hit the undefined primary template.  This fixture pins that gate:
+crucible_neg_compile_fixy_test(neg_fixy_grant_missing_which_dim
+    "which_dim|incomplete type|no member named .value.|primary template")
+
+# ── FIXY-AUDIT-A4 — Profile.h strict toggle witness ─────────────────
+# `fixy::IsAcceptedActive` aliases `IsAccepted` under STRICT mode and
+# `IsAcceptedSketch` (always-true) under SKETCH.  The default preset
+# pins `CRUCIBLE_FIXY_STRICT=1` (CMakeLists.txt §367-374), so this
+# fixture confirms `IsAcceptedActive` is wired through to the strict
+# gate identically to `IsAccepted`.
+#
+# Architectural finding (round-2 report): `IsAcceptedActive` is shipped
+# but UNCONSUMED today — `fixy::fn`'s class-body static_assert still
+# routes through `IsAcceptedFn` (strict-only).  The B2 ship explicitly
+# defers the production rewire to a follow-up commit (Profile.h
+# §"Scope note (B2 ship)").  The fixture below pins the infrastructure
+# behavior so the eventual rewire cannot regress silently.
+crucible_neg_compile_fixy_test(neg_fixy_profile_active_strict_rejects
+    "static assertion failed|FixyNotEngaged|IsAcceptedActive|constraints not satisfied")
