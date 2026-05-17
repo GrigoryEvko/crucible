@@ -225,6 +225,7 @@ crucible_test(test_fixy_umbrella)
 #   namespaces — pure phantom-type aliases.
 crucible_test(test_fixy_algebra)
 crucible_test(test_fixy_eff)
+crucible_test(test_fixy_eff_alias)  # FIXY-AUDIT-B12 HS14 sentinel
 crucible_test(test_fixy_diag)
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
