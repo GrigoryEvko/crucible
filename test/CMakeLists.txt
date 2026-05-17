@@ -1137,6 +1137,13 @@ crucible_neg_compile_fixy_test(neg_fixy_mint_fn_invalid_grant    "AllGrantsWellF
 crucible_neg_compile_fixy_test(neg_fixy_fn_for_array_type        "IsAccepted")
 crucible_neg_compile_fixy_test(neg_fixy_fn_for_const_type        "IsAccepted")
 
+# FIXY-AUDIT-E10 — HS14 floor for fixy::sess::mint_federation_channel.
+# Surface-level IsExecCtx<Ctx> gate + downstream protocol-shape gate.
+crucible_neg_compile_fixy_test(neg_fixy_federation_channel_non_ctx
+    "IsExecCtx")
+crucible_neg_compile_fixy_test(neg_fixy_federation_channel_wrong_endpoint
+    "SessionResource_NotPinned")
+
 # FIXY-AUDIT-D3 — HS14 floor for fixy::fn class-body static_assert.
 # Distinct from D2 (mint_fn requires-clause): the class-body assert
 # fires inside class-template instantiation, not overload resolution.
