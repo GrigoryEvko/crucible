@@ -1923,7 +1923,12 @@ template <typename Proto,
     static_assert(!is_empty_choice_v<Proto>,
         "crucible::session::diagnostic [Empty_Choice_Combinator]: "
         "mint_permissioned_session<Proto>: cannot construct a runnable "
-        "handle on Select<> or Offer<> with zero branches.");
+        "handle on Proto with a reachable empty Select<> / Offer<> / "
+        "Offer<Sender<R>> (top-level or nested under Send/Recv/Loop/"
+        "branch/Delegate/Accept).  The is_empty_choice trait walks "
+        "recursively (fixy-CR-14) so empty choices anywhere in the "
+        "protocol tree are caught at mint time, not at the eventual "
+        ".pick<I>() / .recv() that hits the dead-end.");
     static_assert(SessionResource<Resource>,
         "crucible::session::diagnostic [SessionResource_NotPinned]: "
         "mint_permissioned_session<Proto, Resource>: Resource fails the "

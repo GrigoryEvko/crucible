@@ -6273,6 +6273,17 @@ crucible_neg_compile_test(neg_crash_event_direct_construction
 crucible_neg_compile_test(neg_session_empty_select
     "Empty_Choice_Combinator")
 
+# fixy-CR-14: HS14 floor for the recursive is_empty_choice walk.
+# Distinct rejection paths: Loop → Recv → empty Select, and Send →
+# empty Offer.  Both protocols pass is_well_formed at the type level
+# (no free Continue, Loop body is well-formed) but the mint now
+# rejects them because a reachable empty choice exists anywhere in
+# the tree.
+crucible_neg_compile_test(neg_session_empty_select_nested_loop
+    "Empty_Choice_Combinator")
+crucible_neg_compile_test(neg_session_empty_offer_nested_send
+    "Empty_Choice_Combinator")
+
 # pick<I> / select<I> out-of-range index (#432, #433) — replaces the
 # generic GCC "constraints not satisfied" message with a framework-
 # named [Branch_Index_Out_Of_Range] diagnostic carrying the protocol

@@ -812,6 +812,38 @@ struct is_well_formed<EpochedAccept<T, K, MinEpoch, MinGeneration>, LoopCtx>
               LoopCtx, MinEpoch, MinGeneration>
       > {};
 
+// ── fixy-CR-14: recursive is_empty_choice ──────────────────────────
+//
+// Delegate/Accept and the Epoched* variants carry BOTH a delegated
+// inner protocol `T` AND a continuation `K`.  An empty choice in
+// either is reachable from the parent handle once the delegate
+// fires: the delegated inner is minted as its own session (so a
+// reachable empty Select<>/Offer<> there leaves the receiver
+// stuck), and the continuation K is mounted on the outer handle
+// itself.  Mirror is_well_formed's "both arms" treatment.
+
+template <typename T, typename K>
+struct is_empty_choice<Delegate<T, K>>
+    : std::bool_constant<is_empty_choice<T>::value
+                          || is_empty_choice<K>::value> {};
+
+template <typename T, typename K>
+struct is_empty_choice<Accept<T, K>>
+    : std::bool_constant<is_empty_choice<T>::value
+                          || is_empty_choice<K>::value> {};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_empty_choice<EpochedDelegate<T, K, MinEpoch, MinGeneration>>
+    : std::bool_constant<is_empty_choice<T>::value
+                          || is_empty_choice<K>::value> {};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_empty_choice<EpochedAccept<T, K, MinEpoch, MinGeneration>>
+    : std::bool_constant<is_empty_choice<T>::value
+                          || is_empty_choice<K>::value> {};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── SessionHandle specialisations ──────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════

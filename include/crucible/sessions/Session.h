@@ -500,22 +500,42 @@ using protocol_inner_t = typename is_vendor_pinned<P>::protocol;
 // But they are NOT runnable protocols.  `SessionHandle<Select<>>` has
 // no branch to pick; `SessionHandle<Offer<>>` cannot receive a valid
 // label from the peer.  Constructing a runnable handle on one would
-// leave the protocol stuck at a dead-end state.
+// leave the protocol stuck at a dead-end state — type system catches
+// the misuse only when the user attempts to `.pick<I>()` / receive
+// the dead label, AFTER mint succeeded.  The mint contract promises
+// the whole protocol was certified at construction, so empty choices
+// reachable from anywhere in the tree must be rejected at mint time.
 //
-// `is_empty_choice_v<P>` detects exactly this shape.  Used by
-// mint_session_handle's static_assert to reject handle instantiation
-// at the runnable boundary while leaving the type-level trait
-// machinery in SessionSubtype.h untouched.  Complements
+// fixy-CR-14: the trait walks RECURSIVELY through every reachable
+// position in the protocol tree:
+//   * Send<T, K> / Recv<T, K>    → K can hide an empty choice
+//   * Loop<Body>                 → Body can hide an empty choice
+//   * Select<Bs...> / Offer<Bs...> → any branch can hide an empty
+//                                   choice (top-level empty kept as
+//                                   primary case)
+//   * Offer<Sender<R>, Bs...>    → same; Sender<R> is a tag, not a
+//                                   branch
+//   * VendorPinned<V, P>         → P can hide an empty choice
+// SessionDelegate.h adds the Delegate/Accept/Epoched* specializations
+// adjacent to those combinators' definitions, mirroring the
+// is_well_formed layering.
+//
+// Used by `mint_session_handle` (Session.h) and
+// `mint_permissioned_session_with_loc` (PermissionedSession.h)'s
+// static_asserts to reject runnable-handle construction on any
+// protocol with a reachable empty choice.  The type-level trait
+// machinery in SessionSubtype.h stays untouched — subtyping still
+// admits `Select<>` as a legitimate minimum operand.  Complements
 // is_well_formed_v, which covers structural illegality (free
 // Continue, Stop outside Crash context, etc.); empty choice is
 // orthogonal — structurally valid at the type level, but unrunnable
-// when reified as a handle.
+// when reified as a handle anywhere in the tree.
 
 template <typename P> struct is_empty_choice : std::false_type {};
 
 // Specialise only on the two empty variants — Select<>/Offer<> with
-// ANY branches are NOT empty, so the primary template's false base
-// applies.
+// ANY branches are NOT empty themselves, so the recursive
+// specializations below handle them.
 template <> struct is_empty_choice<Select<>> : std::true_type {};
 template <> struct is_empty_choice<Offer<>>  : std::true_type {};
 
@@ -526,6 +546,40 @@ template <> struct is_empty_choice<Offer<>>  : std::true_type {};
 // empty-choice guard would miss `Offer<Sender<Role>>`.
 template <typename Role>
 struct is_empty_choice<Offer<Sender<Role>>> : std::true_type {};
+
+// ── Recursive walks (fixy-CR-14) ───────────────────────────────────
+// Send/Recv continuations: empty if the continuation hides one.
+template <typename T, typename K>
+struct is_empty_choice<Send<T, K>> : is_empty_choice<K> {};
+
+template <typename T, typename K>
+struct is_empty_choice<Recv<T, K>> : is_empty_choice<K> {};
+
+// Loop body: empty if the body hides one.
+template <typename Body>
+struct is_empty_choice<Loop<Body>> : is_empty_choice<Body> {};
+
+// Non-empty Select<Bs...>: OR-fold across branches.  The empty case
+// `Select<>` is already covered by the explicit specialization above;
+// this partial spec matches only when there is at least one branch.
+template <typename First, typename... Rest>
+struct is_empty_choice<Select<First, Rest...>>
+    : std::bool_constant<(is_empty_choice<First>::value
+                          || ... || is_empty_choice<Rest>::value)> {};
+
+// Non-empty Offer<Bs...>: OR-fold across branches.
+template <typename First, typename... Rest>
+struct is_empty_choice<Offer<First, Rest...>>
+    : std::bool_constant<(is_empty_choice<First>::value
+                          || ... || is_empty_choice<Rest>::value)> {};
+
+// Sender-annotated Offer with at least one real branch: OR-fold
+// across the real branches.  Sender<Role> is a type-level tag and
+// is not itself a branch — see is_well_formed's symmetric handling.
+template <typename Role, typename First, typename... Rest>
+struct is_empty_choice<Offer<Sender<Role>, First, Rest...>>
+    : std::bool_constant<(is_empty_choice<First>::value
+                          || ... || is_empty_choice<Rest>::value)> {};
 
 template <VendorBackend V, typename P>
 struct is_empty_choice<VendorPinned<V, P>> : is_empty_choice<P> {};
@@ -2341,14 +2395,18 @@ template <typename Proto, typename Resource>
     // construction stays safe.
     static_assert(!is_empty_choice_v<Proto>,
         "crucible::session::diagnostic [Empty_Choice_Combinator]: "
-        "proto: mint_session_handle<Select<>> or mint_session_handle"
-        "<Offer<>> — cannot construct a runnable handle on a choice "
-        "combinator with zero branches.  Select<> has no branch for "
-        ".pick<I>() to select; Offer<> has no label the peer can "
-        "signal.  If you intend a type-level subtyping witness, use "
+        "proto: mint_session_handle<Proto> — Proto contains a "
+        "reachable empty Select<> / Offer<> / Offer<Sender<R>> "
+        "(top-level or nested under Send/Recv/Loop/branch/Delegate/"
+        "Accept).  Cannot construct a runnable handle: Select<> has "
+        "no branch for .pick<I>() to select; Offer<> has no label "
+        "the peer can signal.  The trait walks recursively (fixy-"
+        "CR-14) so nested empties are caught at mint time, not at "
+        "the eventual .pick<I>() / .recv() that hits the dead-end.  "
+        "If you intend a type-level subtyping witness, use "
         "is_subtype_sync_v<...> directly; if you intend a runnable "
-        "handle, add at least one branch (e.g., Select<Send<Stop, "
-        "End>> for an acknowledgement-only selection).");
+        "handle, add at least one branch at every reachable choice "
+        "position (e.g., Select<Send<Stop, End>>).");
 
     static_assert(SessionResource<Resource>,
         "crucible::session::diagnostic [SessionResource_NotPinned]: "
