@@ -70,6 +70,57 @@
 // Self-test block at file end proves the atom catalog is exhaustive,
 // underlying values are pinned, and diagnostic-name emission covers
 // every atom.
+//
+// ── Why no Async / Network / CT atoms (FIXY-AUDIT-B4) ───────────────
+//
+// The fixy stance design considered three additional capability atoms
+// — `Async` (coroutine reentrancy), `Network` (socket IO), and
+// `CT` (constant-time discipline) — and explicitly rejected adding
+// any of them to the Effect enum.  The 6-atom closed set
+// {Alloc, IO, Block, Bg, Init, Test} is the production hot-path
+// effect surface; the rejected three are downstream concerns the hot
+// path does NOT track per-call.
+//
+// Rationale, per axis the concern actually belongs on:
+//
+//   Async (coroutine reentrancy) — already expressed by the fixy
+//     Reentrancy axis (`fixy::stance::AsyncEndpoint` resolves
+//     Reentrancy=Coroutine via `safety::fn::ReentrancyMode`).
+//     Coroutine reentrancy is a CONTROL-FLOW property of how a
+//     function suspends and resumes, NOT a capability the function
+//     exercises — adding `Async` to Effect would conflate the two.
+//     The hot path cannot suspend; the Reentrancy axis already
+//     rejects coroutine bodies at substitution time.
+//
+//   Network (socket IO) — already covered by the existing `IO`
+//     atom plus the `Bg` context (background-thread aggregate that
+//     bundles Alloc + IO + Block).  Distinguishing "file IO" from
+//     "network IO" at the capability level requires per-call
+//     bookkeeping the hot path cannot afford; the runtime's CNT-P
+//     transport layer carries the network-vs-disk distinction
+//     downstream via its own typestate (sessions::, cipher::Tier).
+//     Adding `Network` to Effect would force every IO-bearing
+//     signature to choose between two atoms that the substrate
+//     treats identically at the row-algebra layer.
+//
+//   CT (constant-time crypto) — expressed by the fixy
+//     `stance::CtCrypto` composite stance combining Security=Secret
+//     (via `as_secret`), Effect=Row<> (empty via `with<>` —
+//     constant-time paths MUST NOT exercise IO/Alloc/Block because
+//     any such trip is a timing-observable side channel), and the
+//     `safety::ConstantTime<T>` wrapper for branch-free primitives.
+//     The §30.14 implicit-flow detector enforces the discipline
+//     structurally.  Promoting CT to an Effect atom would imply
+//     constant-time bodies could opt into Alloc/IO/Block — exactly
+//     the discipline the stance forbids.  The empty row is the
+//     correct representation; an explicit CT atom would weaken it.
+//
+// The closed-set assertion in the self-test block below pins the
+// catalog at six.  Adding any of {Async, Network, CT} requires the
+// "Major-version event procedure" ceremony above — bumping
+// CDAG_VERSION, flushing federation caches, re-pinning canonical
+// row_hash values in RowHashFold.h — and would not buy anything the
+// current axis decomposition does not already deliver.
 
 #include <cstdint>
 #include <meta>
