@@ -515,15 +515,90 @@ template <typename Type, typename... Grants>
 class fn {
     using ImplicitTypeMarker = detail::resolve::ImplicitTypeMarker;
 
-    static_assert(IsAcceptedFn<Type, Grants...>,
-        "fixy::fn<Type, Grants...> requires every DimensionAxis to be "
-        "engaged.  Each unengaged axis surfaces via fixy::diag::"
-        "FixyNotEngaged_<Axis> diagnostic tags; see fixy/Reject.h's "
-        "first_missing_axis_v helper for the offending axis.  Either "
-        "add `grant::accept_default_strict_for<dim::DimensionAxis::"
-        "<Axis>>` to the Grants pack to accept the strict default, "
-        "or supply the appropriate per-axis relaxation tag from "
-        "fixy::grant::*.");
+    // fixy-H-02: branched static_assert chain.  Each tier guards the
+    // next via `!prior_failed || this_check`, so only the FIRST failing
+    // tier surfaces its diagnostic message.  Replaces the prior single
+    // static_assert that always said "axis not engaged" even when the
+    // real failure was AllGrantsWellFormed, UniqueEngagementPerAxis,
+    // type_is_object_or_function, or NotInTheoryCorpus.  Each tier
+    // names the specific inspection helper a downstream author should
+    // consult to identify the offending entry/axis.
+
+    static constexpr bool fixy_h02_tier1_type_ok =
+        detail::accept::type_is_object_or_function<Type>();
+    static_assert(fixy_h02_tier1_type_ok,
+        "fixy::fn<Type, Grants...> [tier 1: IsAccepted gate]: Type must be "
+        "a complete object type (non-cv, non-array, non-reference, "
+        "non-function, non-void). "
+        "Cite: fixy::detail::accept::type_is_object_or_function.  "
+        "Wrap function types as pointers or callables (std::function_ref) "
+        "before instantiating fixy::fn.");
+
+    static constexpr bool fixy_h02_tier2_grants_well_formed =
+        !fixy_h02_tier1_type_ok
+        || AllGrantsWellFormed<ImplicitTypeMarker, Grants...>;
+    static_assert(fixy_h02_tier2_grants_well_formed,
+        "fixy::fn<Type, Grants...> [tier 2: IsAccepted gate / "
+        "AllGrantsWellFormed]: Grants pack contains a malformed "
+        "grant (a type that does NOT satisfy fixy::grant::IsGrantTag — "
+        "the entry is not final-class, does not inherit "
+        "fixy::grant::grant_base, or is a non-grant type entirely such "
+        "as `int` or a user struct).  See fixy::diag::FixyMalformedGrant "
+        "for the structured diagnostic tag.  Common cause: copy-paste "
+        "typo, misspelled grant name, or substrate type accidentally "
+        "passed where a grant tag was expected.");
+
+    static constexpr bool fixy_h02_tier3_all_dims_engaged =
+        !fixy_h02_tier1_type_ok
+        || !fixy_h02_tier2_grants_well_formed
+        || AllDimsEngaged<ImplicitTypeMarker, Grants...>;
+    static_assert(fixy_h02_tier3_all_dims_engaged,
+        "fixy::fn<Type, Grants...> [tier 3: IsAccepted gate / "
+        "AllDimsEngaged]: at least one DimensionAxis is NOT "
+        "engaged by any grant.  See fixy::first_missing_axis_v<Grants...> "
+        "for the specific axis + fixy::first_missing_tag_t<Grants...> "
+        "for the FixyNotEngaged_<Axis> diagnostic tag.  Either add "
+        "`grant::accept_default_strict_for<dim::DimensionAxis::<Axis>>` "
+        "to accept the strict default, or supply the appropriate "
+        "per-axis relaxation tag from fixy::grant::*.");
+
+    static constexpr bool fixy_h02_tier4_unique_engagement =
+        !fixy_h02_tier1_type_ok
+        || !fixy_h02_tier2_grants_well_formed
+        || !fixy_h02_tier3_all_dims_engaged
+        || UniqueEngagementPerAxis<ImplicitTypeMarker, Grants...>;
+    static_assert(fixy_h02_tier4_unique_engagement,
+        "fixy::fn<Type, Grants...> [tier 4: IsAccepted gate / "
+        "UniqueEngagementPerAxis]: at least one DimensionAxis is "
+        "engaged MORE THAN ONCE by the Grants pack (FIXY-AUDIT-A3). "
+        "See fixy::first_duplicate_axis_v<Grants...> for the specific "
+        "axis + fixy::first_duplicate_tag_t<Grants...> for the "
+        "FixyDuplicate_<Axis> diagnostic tag.  Remove the redundant "
+        "grant(s).  Note: explicitly writing "
+        "`grant::accept_default_strict_for<dim::DimensionAxis::Type>` "
+        "is FORBIDDEN (FIXY-AUDIT-A7) — fixy::fn implicitly engages "
+        "Type, so the explicit Type marker would trigger a duplicate "
+        "on the Type axis.");
+
+    static constexpr bool fixy_h02_tier5_not_in_corpus =
+        !fixy_h02_tier1_type_ok
+        || !fixy_h02_tier2_grants_well_formed
+        || !fixy_h02_tier3_all_dims_engaged
+        || !fixy_h02_tier4_unique_engagement
+        || theory::NotInTheoryCorpus<Type, ImplicitTypeMarker, Grants...>;
+    static_assert(fixy_h02_tier5_not_in_corpus,
+        "fixy::fn<Type, Grants...> [tier 5: IsAccepted gate / "
+        "NotInTheoryCorpus]: the binding matches a known-"
+        "unsoundness entry in fixy::theory's corpus (see Theory.h's "
+        "§30.14 corpus and the matched entry's cite() for the literature "
+        "reference).  This binding shape is structurally rejected because "
+        "it composes axes in a way documented as unsound — classified IO "
+        "without declassify, classified Bg without declassify, staleness "
+        "secret without declassify, or ghost runtime observability.  "
+        "Either change the binding to remove the unsound composition, or "
+        "if the composition is intentional, narrow the Type/Grants to "
+        "avoid the corpus match (typically by adding a `declassify<Policy>` "
+        "grant with a named, audit-grep'able policy tag).");
 
 public:
     using value_type  = Type;

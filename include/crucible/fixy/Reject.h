@@ -137,6 +137,94 @@ CRUCIBLE_FIXY_NOT_ENGAGED_TAG(Staleness,      "freshness bound τ");
 
 #undef CRUCIBLE_FIXY_NOT_ENGAGED_TAG
 
+// ─── FixyDuplicate_<Axis> tag family — fixy-H-02 ───────────────────
+//
+// Companion to FixyNotEngaged_<Axis>.  Fires when an axis is engaged
+// by MORE THAN ONE grant in the pack (UniqueEngagementPerAxis
+// rejection path).  Distinct from FixyNotEngaged_<Axis> so the
+// diagnostic surface tells the author which failure mode tripped:
+// missing-axis ⇒ "add a grant"; duplicate-axis ⇒ "remove a grant".
+// Per fixy-H-02: the single static_assert in fixy::fn<>'s class body
+// was misleading — it always said "axis not engaged" even when the
+// real failure was UniqueEngagementPerAxis (or AllGrantsWellFormed).
+
+#define CRUCIBLE_FIXY_DUPLICATE_TAG(AxisName, AxisDesc)                            \
+    struct FixyDuplicate_##AxisName final : ::crucible::safety::diag::tag_base {  \
+        static constexpr ::std::string_view name =                                  \
+            "FixyDuplicate_" #AxisName;                                             \
+        static constexpr ::std::string_view description =                           \
+            "Dimension '" #AxisName "' (" AxisDesc ") is engaged by MORE THAN "     \
+            "ONE grant in the binding's Grants pack.  Per misc/16_05_2026_"         \
+            "fixy.md §3, every fixy:: binding MUST engage with every dimension "    \
+            "EXACTLY ONCE — silent redundant grants hide authorial intent and "     \
+            "bypass any future tag-vs-tag disagreement check (FIXY-AUDIT-A3).";     \
+        static constexpr ::std::string_view remediation =                           \
+            "Remove all but one of the grants engaging '" #AxisName "' from the "   \
+            "Grants pack.  Note: explicitly writing `grant::accept_default_"        \
+            "strict_for<dim::DimensionAxis::Type>` is FORBIDDEN because "           \
+            "fixy::fn implicitly engages Type (FIXY-AUDIT-A7) — that explicit "     \
+            "Type marker would trigger a duplicate on the Type axis.  Drop the "    \
+            "explicit Type marker.";                                                \
+    };                                                                              \
+    static_assert(::crucible::safety::diag::is_diagnostic_class_v<                  \
+                      FixyDuplicate_##AxisName>,                                    \
+        "FixyDuplicate_" #AxisName " must inherit safety::diag::tag_base.")
+
+CRUCIBLE_FIXY_DUPLICATE_TAG(Type,           "the function type itself");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Refinement,     "value-level predicate");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Usage,          "linear / affine / copy / ghost");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Effect,         "Bg / IO / Alloc / Block / etc.");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Security,       "Classified / Public / Secret");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Protocol,       "session-type / state machine");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Lifetime,       "Static / In<Region>");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Provenance,     "source provenance tag");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Trust,          "Verified / Tested / Assumed");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Representation, "memory layout discipline");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Observability,  "derived from Effect — accept only");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Complexity,     "O(1) / O(N) / O(N²) classification");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Precision,      "FP error bound");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Space,          "allocation footprint bound");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Overflow,       "Trap / Wrap / Saturate / Widen");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Mutation,       "Immutable / Append / Monotonic / Mutable");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Reentrancy,     "NonReentrant / Reentrant / Coroutine");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Size,           "codata observation depth");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Version,        "schema version number");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Staleness,      "freshness bound τ");
+
+#undef CRUCIBLE_FIXY_DUPLICATE_TAG
+
+// ─── FixyMalformedGrant — AllGrantsWellFormed rejection tag ────────
+//
+// fixy-H-02: single tag covering the "Grants pack contains a non-grant
+// type" failure mode (a Grant that fails fixy::grant::IsGrantTag —
+// either non-final, doesn't inherit grant_base, or is a foreign type
+// reaching the gate by accident).  No per-axis projection because the
+// failure is at the PACK level (the malformed entry is not a grant at
+// all, so it has no axis to project onto).
+struct FixyMalformedGrant final : ::crucible::safety::diag::tag_base {
+    static constexpr ::std::string_view name = "FixyMalformedGrant";
+    static constexpr ::std::string_view description =
+        "The Grants pack contains a type that does NOT satisfy "
+        "fixy::grant::IsGrantTag (the entry is not final-class, does not "
+        "inherit fixy::grant::grant_base, or is a non-grant type entirely "
+        "— e.g. a raw `int`, a user-defined struct, or a substrate type). "
+        "This defends against trait-spec injection: only grants from the "
+        "fixy::grant::* namespace OR `fixy::grant::accept_default_strict_"
+        "for<...>` instantiations may engage the discipline axes.";
+    static constexpr ::std::string_view remediation =
+        "Audit the Grants pack — every entry must be either (a) a tag "
+        "from the fixy::grant::* catalog (e.g. `grant::copy`, `grant::"
+        "ghost`, `grant::with<effects::Effect::IO>`, "
+        "`grant::declassify<Policy>`), or (b) an explicit acceptance "
+        "marker `grant::accept_default_strict_for<dim::DimensionAxis::"
+        "<Axis>>` (except the Type axis — see FIXY-AUDIT-A7).  Substrate "
+        "types reaching this gate are typically the result of a "
+        "copy-paste error, a misspelled grant name, or a typo in the "
+        "`fixy::fn<Type, ...>` parameter list.";
+};
+static_assert(::crucible::safety::diag::is_diagnostic_class_v<FixyMalformedGrant>,
+    "FixyMalformedGrant must inherit safety::diag::tag_base.");
+
 // ─── tag_for_axis<D> — DimensionAxis → diag tag ────────────────────
 //
 // Used by IsAccepted's failure reporter to surface the structured
@@ -167,6 +255,40 @@ template <> struct tag_for_axis<dim::DimensionAxis::Staleness>      { using type
 
 template <dim::DimensionAxis D>
 using tag_for_axis_t = typename tag_for_axis<D>::type;
+
+// ─── dup_tag_for_axis<D> — DimensionAxis → duplicate-engagement tag ─
+//
+// fixy-H-02: companion lookup to tag_for_axis<D>.  Surfaces the
+// FixyDuplicate_<Axis> diagnostic tag when UniqueEngagementPerAxis
+// rejects.  Same 20-entry partial specialization map, separate type
+// family because the failure semantics (missing-vs-duplicate) drives
+// different remediation messages.
+
+template <dim::DimensionAxis D> struct dup_tag_for_axis;
+
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Type>           { using type = FixyDuplicate_Type; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Refinement>     { using type = FixyDuplicate_Refinement; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Usage>          { using type = FixyDuplicate_Usage; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Effect>         { using type = FixyDuplicate_Effect; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Security>       { using type = FixyDuplicate_Security; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Protocol>       { using type = FixyDuplicate_Protocol; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Lifetime>       { using type = FixyDuplicate_Lifetime; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Provenance>     { using type = FixyDuplicate_Provenance; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Trust>          { using type = FixyDuplicate_Trust; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Representation> { using type = FixyDuplicate_Representation; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Observability>  { using type = FixyDuplicate_Observability; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Complexity>     { using type = FixyDuplicate_Complexity; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Precision>      { using type = FixyDuplicate_Precision; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Space>          { using type = FixyDuplicate_Space; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Overflow>       { using type = FixyDuplicate_Overflow; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Mutation>       { using type = FixyDuplicate_Mutation; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Reentrancy>     { using type = FixyDuplicate_Reentrancy; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Size>           { using type = FixyDuplicate_Size; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Version>        { using type = FixyDuplicate_Version; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Staleness>      { using type = FixyDuplicate_Staleness; };
+
+template <dim::DimensionAxis D>
+using dup_tag_for_axis_t = typename dup_tag_for_axis<D>::type;
 
 // ═══════════════════════════════════════════════════════════════════
 // ── FixyCatalog — closed enumeration of fixy diagnostic tags ───────
@@ -509,6 +631,36 @@ template <typename... Grants>
     return ok;
 }
 
+// ─── first_duplicate_axis — diagnostic helper (fixy-H-02) ──────────
+//
+// Returns the FIRST DimensionAxis whose engagement count exceeds 1,
+// or the sentinel (0xFF) if every axis is engaged at most once.
+// Mirror of first_missing_axis: same DimensionAxis ordering, same
+// sentinel convention, same template-for-over-reflected-enumerators
+// scan.  Used by fixy::fn<>'s branched static_assert to surface a
+// duplicate-engagement diagnostic distinct from the missing-axis
+// case.
+
+template <typename... Grants>
+[[nodiscard]] consteval dim::DimensionAxis first_duplicate_axis() noexcept {
+    constexpr std::size_t kSentinel = 0xFFu;
+    std::size_t result = kSentinel;
+    static constexpr auto fd_axes = std::define_static_array(
+        std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : fd_axes) {
+        constexpr auto axis_v = [:en:];
+        constexpr std::size_t cnt =
+            count_engagements_for<axis_v, Grants...>();
+        if (cnt > 1u && result == kSentinel) {
+            result = static_cast<std::size_t>(axis_v);
+        }
+    }
+#pragma GCC diagnostic pop
+    return static_cast<dim::DimensionAxis>(result);
+}
+
 }  // namespace detail::engagement
 
 // ─── EngagedFor<D, Grants...> concept ──────────────────────────────
@@ -637,6 +789,24 @@ template <typename... Grants>
     requires (!AllDimsEngaged<Grants...>)
 using first_missing_tag_t =
     diag::tag_for_axis_t<first_missing_axis_v<Grants...>>;
+
+// ─── first_duplicate_axis_v / first_duplicate_tag_t (fixy-H-02) ────
+//
+// Public-surface companions to first_missing_axis_v / first_missing_
+// tag_t.  Surface the FIRST axis that is engaged MORE THAN ONCE and
+// its matching FixyDuplicate_<Axis> diagnostic tag.  The alias is
+// guarded by `!UniqueEngagementPerAxis<Grants...>` so a well-formed
+// pack cannot accidentally instantiate it (the sentinel 0xFF would
+// cast to an out-of-range DimensionAxis enumerator).
+
+template <typename... Grants>
+inline constexpr dim::DimensionAxis first_duplicate_axis_v =
+    detail::engagement::first_duplicate_axis<Grants...>();
+
+template <typename... Grants>
+    requires (!UniqueEngagementPerAxis<Grants...>)
+using first_duplicate_tag_t =
+    diag::dup_tag_for_axis_t<first_duplicate_axis_v<Grants...>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test — compile-time witnesses ─────────────────────────────

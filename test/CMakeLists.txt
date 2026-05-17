@@ -1295,6 +1295,23 @@ crucible_neg_compile_fixy_test(neg_fixy_stance_publicemit_ref          "IsAccept
 # FIXY-AUDIT-A3 — HS14 floor for UniqueEngagementPerAxis.
 crucible_neg_compile_fixy_test(neg_fixy_duplicate_engagement     "UniqueEngagementPerAxis")
 
+# fixy-H-02 — HS14 floor for the BRANCHED fn<> class-body static_assert
+# chain.  Three fixtures, one per tier-of-interest (tier 2 / 3 / 4).
+# Each pin a distinct rejection diagnostic so the chain's branching is
+# verified — pre-H-02 ALL THREE would have surfaced the same misleading
+# "axis not engaged" message; post-H-02 each tier names its own
+# inspection helper + diagnostic-tag family.
+#
+#   * neg_fixy_fn_static_assert_missing_axis     — tier 3 AllDimsEngaged
+#   * neg_fixy_fn_static_assert_duplicate_axis   — tier 4 UniqueEngagementPerAxis
+#   * neg_fixy_fn_static_assert_malformed_grant  — tier 2 AllGrantsWellFormed
+crucible_neg_compile_fixy_test(neg_fixy_fn_static_assert_missing_axis
+    "first_missing_axis_v|FixyNotEngaged_")
+crucible_neg_compile_fixy_test(neg_fixy_fn_static_assert_duplicate_axis
+    "first_duplicate_axis_v|FixyDuplicate_")
+crucible_neg_compile_fixy_test(neg_fixy_fn_static_assert_malformed_grant
+    "FixyMalformedGrant|AllGrantsWellFormed")
+
 # fixy-CR-08 — HS14 floor for engages_dim_one<D, G> gating.
 #
 # Pre-CR-08 the `engaged_for` and `count_engagements_for` folds
