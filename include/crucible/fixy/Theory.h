@@ -4,7 +4,9 @@
 //
 // Phase D of the fixy reimplementation per misc/16_05_2026_fixy.md
 // §4.  This is the LOAD-BEARING reject-by-default surface that closes
-// the FX §30.14 type-theory unsoundness corpus.  Every entry pairs:
+// the FX §30.14 type-theory unsoundness corpus.  Currently ships
+// TWO entries — classified_io_without_declassify and
+// classified_bg_without_declassify — each pairs:
 //
 //   (a) a named pattern detector — a constexpr predicate over
 //       (Type, Grants...) that returns true iff the binding matches
@@ -89,6 +91,17 @@ template <effects::Effect... Es>
 struct is_io_effect_grant<grant::with<Es...>>
     : std::bool_constant<((Es == effects::Effect::IO) || ...)> {};
 
+// `is_bg_effect_grant<G>` — true iff G is `grant::with<...>` and its
+// effect pack contains `Effect::Bg`.  Used by the
+// `classified_bg_without_declassify` corpus entry to detect a secret
+// value flowing into a background-thread context without
+// declassification.
+template <typename G> struct is_bg_effect_grant
+    : std::false_type {};
+template <effects::Effect... Es>
+struct is_bg_effect_grant<grant::with<Es...>>
+    : std::bool_constant<((Es == effects::Effect::Bg) || ...)> {};
+
 }  // namespace detail
 
 // ═════════════════════════════════════════════════════════════════════
@@ -136,6 +149,63 @@ struct classified_io_without_declassify {
     }
 };
 
+// ── Entry 2: classified_bg_without_declassify ────────────────────
+//
+// Cite: Smith-Volpano 1998, "Secure information flow in a multi-
+// threaded imperative language" (POPL); Sabelfeld-Sands 2000,
+// "Probabilistic noninterference for multi-threaded programs";
+// Hedin-Sabelfeld 2012, "A perspective on information-flow control"
+// (survey §4 — concurrency).
+//
+// Pattern: a binding engages `as_secret` (or `as_classified`) on
+// Security AND `with<..., Bg, ...>` on Effect AND omits any
+// `declassify<Policy>` grant.  This is the canonical concurrent
+// information-flow channel: a classified value crosses into a
+// background-thread context (scheduler-observable) without the
+// audit-trail-discharging declassification.  Classical sequential
+// IFC type systems are UNSOUND under concurrency — the spawn itself
+// is a scheduler-observable event, so spawning behavior that depends
+// on a classified value leaks the value through scheduling timing /
+// thread-interleaving observability.
+//
+// Why this is distinct from entry 1 (classified_io_without_declassify):
+// the IO entry catches data flowing out via I/O syscalls; this entry
+// catches the dual scheduler-side channel where the existence and
+// scheduling of background work itself encodes secret-dependent
+// information.  A binding with `as_secret + with<IO, Bg>` hits BOTH
+// entries; the short-circuiting OR fold reports the first match,
+// but the audit reasoning carries through either way.
+//
+// Remediation: the user must EITHER (a) project Security to a less
+// restrictive level (as_public / as_unclassified), (b) drop the Bg
+// effect (run the work on the foreground thread where its scheduling
+// IS deterministic), OR (c) interpose `declassify<Policy>` with a
+// named policy authorizing the cross-thread flow.  The substrate's
+// SecretConsumer stance is the canonical (c) form.
+
+struct classified_bg_without_declassify {
+    template <typename Type, typename... Grants>
+    [[nodiscard]] static consteval bool matches() noexcept {
+        const bool has_secret =
+            detail::has_grant_of<detail::is_secret_grant, Grants...>();
+        const bool has_bg =
+            detail::has_grant_of<detail::is_bg_effect_grant, Grants...>();
+        const bool has_declassify =
+            detail::has_grant_of<detail::is_declassify_grant, Grants...>();
+        return has_secret && has_bg && !has_declassify;
+    }
+
+    static constexpr const char* cite() noexcept {
+        return "Smith-Volpano 1998 / Sabelfeld-Sands 2000 / "
+               "Hedin-Sabelfeld 2012 — concurrent information flow: "
+               "classified value crosses into a background-thread "
+               "context without a declassification policy; the spawn "
+               "is itself a scheduler-observable event.  Insert "
+               "grant::declassify<Policy> OR drop the Bg effect OR "
+               "project Security to a less restrictive level.";
+    }
+};
+
 }  // namespace corpus
 
 // ═════════════════════════════════════════════════════════════════════
@@ -148,7 +218,8 @@ struct classified_io_without_declassify {
 
 template <typename Type, typename... Grants>
 [[nodiscard]] consteval bool is_in_unsoundness_corpus() noexcept {
-    return corpus::classified_io_without_declassify::matches<Type, Grants...>();
+    return corpus::classified_io_without_declassify::matches<Type, Grants...>()
+        || corpus::classified_bg_without_declassify::matches<Type, Grants...>();
     // Future entries: || corpus::<next>::matches<Type, Grants...>()
 }
 

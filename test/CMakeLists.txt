@@ -1199,6 +1199,7 @@ crucible_neg_compile_fixy_test(neg_fixy_session_handle_non_resource
 
 # FIXY-AUDIT-B1 — HS14 floor for Theory.h §30.14 corpus.
 crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io     "NotInTheoryCorpus")
+crucible_neg_compile_fixy_test(neg_fixy_theory_classified_bg     "NotInTheoryCorpus")
 
 # FIXY-AUDIT-C8 — HS14 floor for FixyCatalog reconciliation surface.
 #
