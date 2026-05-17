@@ -1218,12 +1218,15 @@ crucible_neg_compile_fixy_test(neg_fixy_unengaged_version        "FixyNotEngaged
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_unengaged_axis   "AllDimsEngaged")
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_invalid_grant    "AllGrantsWellFormed")
 
-# FIXY-AUDIT-E10 — HS14 floor for mint_fn_for stance-bound mint.
-# mint_fn_for has no own requires clause; rejection surfaces via the
-# stance's class-body IsAccepted static_assert.  Two fixtures pin
-# distinct Type-axis rejection causes (array decay, const-qualified).
-crucible_neg_compile_fixy_test(neg_fixy_fn_for_array_type        "IsAccepted")
-crucible_neg_compile_fixy_test(neg_fixy_fn_for_const_type        "IsAccepted")
+# FIXY-AUDIT-E10 + fixy-H-01 — HS14 floor for mint_fn_for stance-bound
+# mint.  fixy-H-01 hardened mint_fn_for with explicit requires-clauses
+# (`StanceForUnary` for 1-param stances, `StanceForBinary` for 2-param
+# stances).  Four fixtures pin distinct Type-axis rejection causes per
+# overload (array decay + const-qualified × unary + binary).
+crucible_neg_compile_fixy_test(neg_fixy_fn_for_array_type        "StanceForUnary")
+crucible_neg_compile_fixy_test(neg_fixy_fn_for_const_type        "StanceForUnary")
+crucible_neg_compile_fixy_test(neg_fixy_fn_for_binary_array_type "StanceForBinary")
+crucible_neg_compile_fixy_test(neg_fixy_fn_for_binary_const_type "StanceForBinary")
 
 # FIXY-AUDIT-E10 — HS14 floor for fixy::sess::mint_federation_channel.
 # Surface-level IsExecCtx<Ctx> gate + downstream protocol-shape gate.

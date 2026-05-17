@@ -622,23 +622,82 @@ template <typename Type, typename... Grants>
 
 // ─── mint_fn_for<Stance>(value) — stance-bound mint convenience ────
 //
-// FIXY-AUDIT-A11: Universal-Mint-Pattern entry point for stance::*
-// aliases.  `mint_fn_for<stance::PureCopy>(42)` deduces Type from the
-// argument and instantiates the stance with that Type.  The stance's
-// own Grants pack flows through fn<>'s class-body static_assert,
-// preserving the same diagnostic the long-form `mint_fn<int, ...>`
-// would emit; no separate concept gate is needed because the stance
-// IS the gate (`stance::Foo<T>` ≡ `fn<T, gateable-grants...>`).
+// FIXY-AUDIT-A11 + fixy-H-01: Universal-Mint-Pattern entry point for
+// stance::* aliases.  `mint_fn_for<stance::PureCopy>(42)` deduces Type
+// from the argument and instantiates the stance with that Type.
+//
+// Two overloads, separated by stance arity:
+//
+//   • UNARY  — `template<typename> class Stance` — covers PureLinear /
+//     PureCopy / IoFunction / BgWorker / CtCrypto / AsyncEndpoint.
+//     Call form: `mint_fn_for<stance::PureCopy>(value)`.
+//
+//   • BINARY — `template<typename, typename> class Stance` — covers
+//     `stance::SecretConsumer<Type, Policy>` and
+//     `stance::PublicEmit<Type, Policy>` whose declassify-policy tag is
+//     captured as the second stance parameter.  Policy is non-deducible
+//     so it appears second in the function template list (after Stance,
+//     before Type) to let Type still deduce from the runtime argument.
+//     Call form: `mint_fn_for<stance::SecretConsumer, MyPolicy>(value)`.
+//
+// Per CLAUDE.md §XXI, every mint factory MUST attach a single concept
+// gate.  fixy-H-01 hardened both overloads with `StanceForUnary` /
+// `StanceForBinary` so Type-axis violations (void / array / reference /
+// cv-qualified / function-typed Type) are rejected BEFORE Stance<Type>
+// would instantiate; this names the failure at the function signature
+// rather than parser-level deduction failure or function-parameter
+// declaration ill-formedness.  Engagement-level violations still
+// surface via fn<>'s class-body static_assert chain.
 //
 // Token-mint flavor (no Ctx).  Cost-of-violation: a stance that fails
 // IsAcceptedFn for the deduced Type fires the same FixyNotEngaged_*
 // diagnostic chain as a direct mint_fn call.
+//
+// ── StanceFor* concept gates ─────────────────────────────────────
+namespace detail {
+
+template <typename T>
+concept TypeIsStanceCompatible =
+       !std::is_void_v<T>
+    && !std::is_array_v<T>
+    && !std::is_reference_v<T>
+    && !std::is_const_v<T>
+    && !std::is_volatile_v<T>
+    && !std::is_function_v<T>;
+
+}  // namespace detail
+
 template <template<typename> class Stance, typename Type>
+concept StanceForUnary = detail::TypeIsStanceCompatible<Type>;
+
+template <template<typename, typename> class Stance,
+          typename Type, typename Policy>
+concept StanceForBinary = detail::TypeIsStanceCompatible<Type>;
+
+// ── mint_fn_for — unary stance overload (Type deduced from arg) ──
+template <template<typename> class Stance, typename Type>
+    requires StanceForUnary<Stance, Type>
 [[nodiscard]] constexpr auto mint_fn_for(Type v)
     noexcept(std::is_nothrow_move_constructible_v<Type>)
     -> Stance<Type>
 {
     return Stance<Type>{std::move(v)};
+}
+
+// ── mint_fn_for — binary stance overload (Policy explicit, Type deduced) ──
+//
+// Policy precedes Type in the template-arg list so the call site
+// `mint_fn_for<stance::SecretConsumer, MyPolicy>(42)` lets the compiler
+// deduce Type from the runtime argument while Policy stays explicit
+// (it is a phantom tag with no runtime carrier).
+template <template<typename, typename> class Stance,
+          typename Policy, typename Type>
+    requires StanceForBinary<Stance, Type, Policy>
+[[nodiscard]] constexpr auto mint_fn_for(Type v)
+    noexcept(std::is_nothrow_move_constructible_v<Type>)
+    -> Stance<Type, Policy>
+{
+    return Stance<Type, Policy>{std::move(v)};
 }
 
 // ═════════════════════════════════════════════════════════════════════

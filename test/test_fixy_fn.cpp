@@ -203,6 +203,23 @@ static_assert(std::is_same_v<
     fixy::stance::PureCopy<char>>,
     "mint_fn_for<PureCopy>(char) must deduce Type=char.");
 
+// fixy-H-01: binary stance overload — Policy explicit, Type deduced.
+// Covers stance::SecretConsumer<Type, Policy> + stance::PublicEmit<Type, Policy>
+// that the original unary mint_fn_for could NOT instantiate.
+static_assert(std::is_same_v<
+    decltype(fixy::mint_fn_for<fixy::stance::SecretConsumer,
+                               b3_policy_tags::EmitPolicy>(42)),
+    fixy::stance::SecretConsumer<int, b3_policy_tags::EmitPolicy>>,
+    "mint_fn_for<SecretConsumer, Policy>(int) must deduce Type=int and "
+    "return SecretConsumer<int, Policy>.");
+
+static_assert(std::is_same_v<
+    decltype(fixy::mint_fn_for<fixy::stance::PublicEmit,
+                               b3_policy_tags::EmitPolicy>('z')),
+    fixy::stance::PublicEmit<char, b3_policy_tags::EmitPolicy>>,
+    "mint_fn_for<PublicEmit, Policy>(char) must deduce Type=char and "
+    "return PublicEmit<char, Policy>.");
+
 // ─── 9. Runtime witness — mint_fn produces a fixy::fn carrying the
 //        supplied value, and value() retrieves it bit-exactly.
 

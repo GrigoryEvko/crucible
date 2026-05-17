@@ -1,16 +1,20 @@
-// fixy_neg: mint_fn_for<Stance, const int>(...) rejects via Stance's
-// class-body IsAccepted gate.
+// fixy_neg: mint_fn_for<Stance, const int>(...) rejects via the
+// StanceForUnary concept gate (fixy-H-01).
 //
-// HS14 floor for fixy::mint_fn_for (fixy/Fn.h §A11).  Passing
-// `const int` as the explicit `Type` template parameter instantiates
-// `Stance<const int>`, whose class-body static_assert fires on the
-// Type-axis well-formedness check (`std::is_const_v<const int>` makes
-// the wrapper's copy-assignment silently broken).  Distinct from the
-// array-rejection sibling (decay corruption); both must fire the same
-// IsAccepted-named diagnostic chain.
+// HS14 floor for fixy::mint_fn_for (fixy/Fn.h §A11 + fixy-H-01).
+// Passing `const int` as the explicit `Type` template parameter trips
+// `detail::TypeIsStanceCompatible<const int>` (std::is_const_v) inside
+// the `StanceForUnary` concept; the function template's requires-clause
+// rejects the call BEFORE Stance<const int> would instantiate.  Distinct
+// from the array-rejection sibling (decay corruption); both fire the
+// same StanceForUnary-named diagnostic chain.
 //
-// Expected diagnostic: "IsAccepted" — class-body assertion failure
-// surfaced through Stance<const int> instantiation inside mint_fn_for.
+// Before fixy-H-01 this rejection surfaced one level deeper via fn<>'s
+// class-body IsAccepted static_assert; the requires-clause now names
+// the failure at the function signature, matching CLAUDE.md §XXI.
+//
+// Expected diagnostic: "StanceForUnary" — requires-clause failure at
+// the function signature.
 
 #include <crucible/fixy/Fn.h>
 
