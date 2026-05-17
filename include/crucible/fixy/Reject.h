@@ -809,6 +809,136 @@ using first_duplicate_tag_t =
     diag::dup_tag_for_axis_t<first_duplicate_axis_v<Grants...>>;
 
 // ═════════════════════════════════════════════════════════════════════
+// ── fixy-H-03 — Surface diagnostic tags in compiler error trail ────
+// ═════════════════════════════════════════════════════════════════════
+//
+// H-02 cited first_missing_axis_v / first_duplicate_axis_v / Fixy*
+// tags in static_assert message strings.  But static_assert messages
+// are STRING LITERALS — the compiler does not substitute template
+// parameters into them.  A user reading the error sees the cite text
+// but the SPECIFIC tag class name (e.g. FixyNotEngaged_Effect) never
+// appears in the diagnostic context.
+//
+// H-03 fixes this by instantiating the tag in a templated diagnostic
+// helper whose name surfaces in the compiler instantiation chain.
+// Each Diagnose<Tag> helper has a static_assert in its primary
+// template (fires on any non-void Tag) plus an empty <void>
+// specialization (silent OK sentinel).  fixy::fn<> instantiates
+// Diagnose<lazy_tag_or_void_t<...>> as a class-body member.  When
+// the tier passes, the resolved type is `void` — matches the empty
+// spec, no diagnostic.  When the tier fails, the type resolves to
+// the real Fixy* tag — fires the inner static_assert AND surfaces
+// the tag class name in the compiler's "required from" trail.
+//
+// Tier chaining: each Diagnose only fires if prior tiers passed
+// (avoids cascade diagnostics — a malformed-grant doesn't ALSO
+// trigger missing-axis since AllDimsEngaged is meaningless then).
+
+namespace detail::diagnose {
+
+template <typename T>
+inline constexpr bool always_false_v = false;
+
+// Lazy partial-spec dispatcher — selects void when Failed=false
+// without substituting the (possibly-ill-formed) failure branch.
+
+template <bool Failed, typename... Grants>
+struct select_missing_tag { using type = void; };
+
+template <typename... Grants>
+struct select_missing_tag<true, Grants...> {
+    using type = diag::tag_for_axis_t<
+        detail::engagement::first_missing_axis<Grants...>()>;
+};
+
+template <bool Failed, typename... Grants>
+struct select_duplicate_tag { using type = void; };
+
+template <typename... Grants>
+struct select_duplicate_tag<true, Grants...> {
+    using type = diag::dup_tag_for_axis_t<
+        detail::engagement::first_duplicate_axis<Grants...>()>;
+};
+
+}  // namespace detail::diagnose
+
+// Public tag-or-void evaluators (per-tier guarded).
+//
+// `malformed_grant_or_void_t<Grants...>` resolves to FixyMalformedGrant
+// when AllGrantsWellFormed fails; void otherwise.
+//
+// `missing_tag_or_void_t<Grants...>` resolves to FixyNotEngaged_<Axis>
+// when AllGrantsWellFormed PASSED but AllDimsEngaged failed; void
+// otherwise (tier-2 catches the malformed-grant case first).
+//
+// `duplicate_tag_or_void_t<Grants...>` resolves to FixyDuplicate_<Axis>
+// when tiers 2+3 PASSED but UniqueEngagementPerAxis failed; void
+// otherwise.
+
+template <typename... Grants>
+using malformed_grant_or_void_t = std::conditional_t<
+    AllGrantsWellFormed<Grants...>,
+    void,
+    diag::FixyMalformedGrant>;
+
+template <typename... Grants>
+using missing_tag_or_void_t = typename detail::diagnose::select_missing_tag<
+    AllGrantsWellFormed<Grants...> && !AllDimsEngaged<Grants...>,
+    Grants...>::type;
+
+template <typename... Grants>
+using duplicate_tag_or_void_t = typename detail::diagnose::select_duplicate_tag<
+       AllGrantsWellFormed<Grants...>
+    && AllDimsEngaged<Grants...>
+    && !UniqueEngagementPerAxis<Grants...>,
+    Grants...>::type;
+
+// Diagnose<Tag> helpers — primary template fires static_assert with
+// Tag name in the compiler's instantiation context; <void>
+// specialization is silent OK.
+
+template <typename Tag>
+struct DiagnoseAxisNotEngaged {
+    static_assert(detail::diagnose::always_false_v<Tag>,
+        "fixy::fn<Type, Grants...>: AllDimsEngaged FAILED — the Tag "
+        "template parameter on this DiagnoseAxisNotEngaged<...> "
+        "instantiation names the specific FixyNotEngaged_<Axis> "
+        "diagnostic tag for the offending axis.  Add the matching "
+        "`grant::accept_default_strict_for<dim::DimensionAxis::<Axis>>` "
+        "or a per-axis relaxation tag from fixy::grant::*.");
+};
+
+template <>
+struct DiagnoseAxisNotEngaged<void> {};
+
+template <typename Tag>
+struct DiagnoseAxisDuplicate {
+    static_assert(detail::diagnose::always_false_v<Tag>,
+        "fixy::fn<Type, Grants...>: UniqueEngagementPerAxis FAILED — "
+        "the Tag template parameter on this DiagnoseAxisDuplicate<...> "
+        "instantiation names the specific FixyDuplicate_<Axis> "
+        "diagnostic tag for the duplicated axis.  Remove the redundant "
+        "grant(s) for that axis.");
+};
+
+template <>
+struct DiagnoseAxisDuplicate<void> {};
+
+template <typename Tag>
+struct DiagnoseMalformedGrant {
+    static_assert(detail::diagnose::always_false_v<Tag>,
+        "fixy::fn<Type, Grants...>: AllGrantsWellFormed FAILED — the "
+        "Tag template parameter on this DiagnoseMalformedGrant<...> "
+        "instantiation names FixyMalformedGrant.  The Grants pack "
+        "contains an entry that does NOT satisfy fixy::grant::"
+        "IsGrantTag (not final-class, doesn't inherit grant_base, or "
+        "is a non-grant type entirely such as `int`).");
+};
+
+template <>
+struct DiagnoseMalformedGrant<void> {};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Self-test — compile-time witnesses ─────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //

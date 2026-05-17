@@ -515,6 +515,56 @@ template <typename Type, typename... Grants>
 class fn {
     using ImplicitTypeMarker = detail::resolve::ImplicitTypeMarker;
 
+    // fixy-H-03: surface the per-axis FixyNotEngaged_<Axis>,
+    // FixyDuplicate_<Axis>, and FixyMalformedGrant diagnostic tag
+    // CLASS NAMES in the compiler's instantiation chain.  Placed at
+    // the TOP of the class body — before the H-02 tier static_assert
+    // chain — so the Diagnose<Tag> base-class instantiation fires
+    // its own static_assert FIRST, surfacing the offending Fixy*
+    // tag's class name in the compiler's "required from" trail
+    // BEFORE the H-02 tier static_assert (which would otherwise
+    // halt class-body processing and suppress the Diagnose firing).
+    //
+    // Per-tier guards in malformed_grant_or_void_t /
+    // missing_tag_or_void_t / duplicate_tag_or_void_t ensure each
+    // Diagnose fires only when its tier is the FIRST failing tier
+    // (avoids cascade — a malformed-grant doesn't ALSO surface
+    // missing-axis since AllDimsEngaged is meaningless then).
+    //
+    // OK case: each *_or_void_t resolves to `void`, matches the
+    // empty DiagnoseAxis*/DiagnoseMalformedGrant<void> spec, no
+    // diagnostic fires.  Failure case: resolves to the real Fixy*
+    // tag, instantiates the primary template, fires its inner
+    // static_assert AND surfaces the tag in the instantiation chain.
+
+    using fixy_h03_tier2_diag_tag =
+        malformed_grant_or_void_t<ImplicitTypeMarker, Grants...>;
+    using fixy_h03_tier3_diag_tag =
+        missing_tag_or_void_t<ImplicitTypeMarker, Grants...>;
+    using fixy_h03_tier4_diag_tag =
+        duplicate_tag_or_void_t<ImplicitTypeMarker, Grants...>;
+
+    struct fixy_h03_tier2_diagnose
+        : DiagnoseMalformedGrant<fixy_h03_tier2_diag_tag> {};
+    struct fixy_h03_tier3_diagnose
+        : DiagnoseAxisNotEngaged<fixy_h03_tier3_diag_tag> {};
+    struct fixy_h03_tier4_diagnose
+        : DiagnoseAxisDuplicate<fixy_h03_tier4_diag_tag> {};
+
+    // [temp.inst]/9: member classes of a class template are NOT
+    // implicitly instantiated even if their enclosing template is.
+    // Force instantiation via sizeof so the Diagnose<Tag> primary
+    // template's inner static_assert fires (and surfaces the tag
+    // class name in the compiler's "required from" trail) BEFORE
+    // the H-02 tier static_assert halts class-body processing.
+
+    static_assert(sizeof(fixy_h03_tier2_diagnose) >= 1,
+        "fixy-H-03: force tier-2 DiagnoseMalformedGrant<Tag> instantiation");
+    static_assert(sizeof(fixy_h03_tier3_diagnose) >= 1,
+        "fixy-H-03: force tier-3 DiagnoseAxisNotEngaged<Tag> instantiation");
+    static_assert(sizeof(fixy_h03_tier4_diagnose) >= 1,
+        "fixy-H-03: force tier-4 DiagnoseAxisDuplicate<Tag> instantiation");
+
     // fixy-H-02: branched static_assert chain.  Each tier guards the
     // next via `!prior_failed || this_check`, so only the FIRST failing
     // tier surfaces its diagnostic message.  Replaces the prior single
