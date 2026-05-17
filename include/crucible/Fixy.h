@@ -125,4 +125,5 @@
 #include <crucible/fixy/Algebra.h>
 #include <crucible/fixy/Diag.h>
 #include <crucible/fixy/Eff.h>
+#include <crucible/fixy/Insights.h>
 #include <crucible/fixy/Source.h>

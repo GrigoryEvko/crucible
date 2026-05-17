@@ -229,6 +229,7 @@ crucible_test(test_fixy_eff)
 crucible_test(test_fixy_eff_alias)  # FIXY-AUDIT-B12 HS14 sentinel
 crucible_test(test_fixy_diag)
 crucible_test(test_fixy_diag_catalog)  # FIXY-AUDIT-C8 reconciliation
+crucible_test(test_fixy_insights)      # fixy-H-14 insight_provider sentinel
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
