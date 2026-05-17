@@ -6284,6 +6284,17 @@ crucible_neg_compile_test(neg_session_empty_select_nested_loop
 crucible_neg_compile_test(neg_session_empty_offer_nested_send
     "Empty_Choice_Combinator")
 
+# fixy-CR-14 follow-up: SessionDelegate.h's Delegate/Accept/
+# EpochedDelegate/EpochedAccept is_empty_choice specs.  Two fixtures
+# pin distinct OR arms: Delegate<Select<>, End> exercises the T
+# (delegated-inner) arm; Accept<End, Select<>> exercises the K
+# (continuation) arm.  Together they witness the SessionDelegate.h
+# specs at compile time.
+crucible_neg_compile_test(neg_session_empty_in_delegate_inner
+    "Empty_Choice_Combinator")
+crucible_neg_compile_test(neg_session_empty_in_accept_continuation
+    "Empty_Choice_Combinator")
+
 # pick<I> / select<I> out-of-range index (#432, #433) — replaces the
 # generic GCC "constraints not satisfied" message with a framework-
 # named [Branch_Index_Out_Of_Range] diagnostic carrying the protocol
