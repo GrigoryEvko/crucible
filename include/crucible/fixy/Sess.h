@@ -38,6 +38,7 @@
 
 #include <crucible/bridges/CrashTransport.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/safety/Diagnostic.h>
 #include <crucible/sessions/FederationProtocol.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
@@ -45,6 +46,9 @@
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/SessionPatterns.h>
+
+#include <string_view>
+#include <type_traits>
 
 namespace crucible::fixy::sess {
 
@@ -194,6 +198,65 @@ using ::crucible::safety::proto::RecordingSessionHandle;
 using ::crucible::safety::proto::CrashWatchedHandle;
 
 // ═════════════════════════════════════════════════════════════════════
+// ── FixyMintSessionRemoved — structured deletion diagnostic ────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-AUDIT-B6.  Bare `mint_session<Proto>(...)` was `= delete`d
+// (see sessions/SessionMint.h line 950-961) — production code uses
+// `mint_permissioned_session<Proto>(ctx, resource, perms...)` for
+// both the empty-PermSet shim AND the non-empty form.  The plain
+// `= delete("...")` message that GCC emits is non-classified: it does
+// not participate in `safety::diag::is_diagnostic_class_v` and is not
+// reachable via `safety::diag::diagnostic_name_v<...>`.  This tag
+// provides the structured surface so:
+//
+//   1. `grep FixyMintSessionRemoved` finds every deletion site, the
+//      diagnostic tag, and the reachability test in one query.
+//   2. `safety::diag::diagnostic_name_v<diag::FixyMintSessionRemoved>`
+//      yields the canonical name string for introspection (used by
+//      future tooling that walks structured diagnostics).
+//   3. The tag inherits `safety::diag::tag_base`, so it participates
+//      in `is_diagnostic_class_v` exactly like the 28-entry Catalog
+//      tags AND the per-axis `FixyNotEngaged_*` tags.
+//
+// The tag does NOT enter the closed `safety::diag::Catalog` tuple /
+// `Category` enum (those are foundation-internal, append-only, and
+// touching them is a coordinated change per FOUND-E01 §Extension
+// policy).  It is a fixy-local user-defined tag, identical model to
+// the 20 `FixyNotEngaged_*` tags in fixy/Reject.h.
+
+namespace diag {
+
+struct FixyMintSessionRemoved final
+    : ::crucible::safety::diag::tag_base {
+    static constexpr ::std::string_view name = "FixyMintSessionRemoved";
+    static constexpr ::std::string_view description =
+        "Bare `mint_session<Proto>(ctx, resource)` and "
+        "`mint_session<Proto>(resource)` are `= delete`d in "
+        "sessions/SessionMint.h.  Production code constructs typed "
+        "session handles via `mint_permissioned_session<Proto>(ctx, "
+        "resource, perms...)`, which threads CSL Permission tokens "
+        "through the protocol's position so the local row-flow "
+        "closure check fires per FOUND-C v1.  The bare mint_session "
+        "spelling was structurally unable to carry the permission "
+        "evolution and was removed.";
+    static constexpr ::std::string_view remediation =
+        "Replace the call site with "
+        "`mint_permissioned_session<Proto>(ctx, resource, perms...)`.  "
+        "For protocols that do not transfer wire-level permissions, "
+        "spell the call as "
+        "`mint_permissioned_session<Proto>(ctx, resource)` — the "
+        "perms pack is variadic and the empty-PermSet shim is the "
+        "current default surface (sessions/SessionMint.h:935).";
+};
+
+static_assert(::crucible::safety::diag::is_diagnostic_class_v<
+                  FixyMintSessionRemoved>,
+    "FixyMintSessionRemoved must inherit safety::diag::tag_base.");
+
+}  // namespace diag
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Mint factories (CLAUDE.md §XXI Universal Mint Pattern) ─────────
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -202,7 +265,9 @@ using ::crucible::safety::proto::CrashWatchedHandle;
 // `mint_permissioned_session<Proto>(ctx, resource, perms...)` for
 // both the empty-PermSet shim AND the non-empty form.  The deleted
 // declaration is re-exported so stale call sites surface the
-// canonical diagnostic via the fixy:: path.
+// canonical diagnostic via the fixy:: path.  The structured
+// diagnostic tag for the removal lives at `fixy::sess::diag::
+// FixyMintSessionRemoved` (FIXY-AUDIT-B6).
 
 using ::crucible::safety::proto::mint_session;
 using ::crucible::safety::proto::mint_permissioned_session;

@@ -953,12 +953,14 @@ void mint_session(
     Resource&&,
     std::source_location = std::source_location::current()) noexcept
     = delete("mint_session<Proto>(ctx, resource) is removed; use "
-             "mint_permissioned_session<Proto>(ctx, resource, perms...)");
+             "mint_permissioned_session<Proto>(ctx, resource, perms...) — "
+             "structured diagnostic: fixy::sess::diag::FixyMintSessionRemoved");
 
 template <class Proto, class Resource>
 void mint_session(Resource&&) noexcept
     = delete("mint_session<Proto>(resource) is removed; use "
-             "mint_permissioned_session<Proto>(ctx, resource, perms...)");
+             "mint_permissioned_session<Proto>(ctx, resource, perms...) — "
+             "structured diagnostic: fixy::sess::diag::FixyMintSessionRemoved");
 
 // ── mint_channel<Proto>(ctx_a, ctx_b, resource_a, resource_b) ───────
 //
