@@ -53,6 +53,8 @@
 //
 // Zero.  using-declarations are pure name-lookup directives.
 
+#include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/sessions/CalendarGridSession.h>
 #include <crucible/sessions/ChainEdgeSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>
@@ -70,6 +72,17 @@ namespace crucible::fixy::substr {
 // ═════════════════════════════════════════════════════════════════════
 
 namespace spsc {
+// Protocol type aliases (callers need these to spell out the session
+// handle type at variable / struct-field declaration sites).
+template <typename T>
+using ProducerProto =
+    ::crucible::safety::proto::spsc_session::ProducerProto<T>;
+
+template <typename T>
+using ConsumerProto =
+    ::crucible::safety::proto::spsc_session::ConsumerProto<T>;
+
+// Mint factories.
 using ::crucible::safety::proto::spsc_session::mint_producer_session;
 using ::crucible::safety::proto::spsc_session::mint_consumer_session;
 }  // namespace spsc
@@ -79,6 +92,34 @@ using ::crucible::safety::proto::spsc_session::mint_consumer_session;
 // ═════════════════════════════════════════════════════════════════════
 
 namespace swmr {
+// Protocol type aliases.
+template <typename T>
+using WriterProto =
+    ::crucible::safety::proto::swmr_session::WriterProto<T>;
+
+template <typename T, typename ReaderTag>
+using ReaderProto =
+    ::crucible::safety::proto::swmr_session::ReaderProto<T, ReaderTag>;
+
+template <typename T>
+using WriterRuntimeProto =
+    ::crucible::safety::proto::swmr_session::WriterRuntimeProto<T>;
+
+template <typename T>
+using ReaderRuntimeProto =
+    ::crucible::safety::proto::swmr_session::ReaderRuntimeProto<T>;
+
+// Surface concept.
+template <typename S>
+concept SwmrSessionSurface =
+    ::crucible::safety::proto::swmr_session::SwmrSessionSurface<S>;
+
+// SwmrSession owning aggregate.
+template <typename T, typename WriterTag, typename ReaderTag>
+using SwmrSession =
+    ::crucible::safety::proto::swmr_session::SwmrSession<T, WriterTag, ReaderTag>;
+
+// Mint factories.
 using ::crucible::safety::proto::swmr_session::mint_swmr_writer;
 using ::crucible::safety::proto::swmr_session::mint_swmr_reader;
 using ::crucible::safety::proto::swmr_session::mint_writer_session;
@@ -92,6 +133,21 @@ using ::crucible::safety::proto::swmr_session::mint_reader_runtime_session;
 // ═════════════════════════════════════════════════════════════════════
 
 namespace chaselev {
+// Protocol type aliases.
+template <typename T>
+using OwnerProto =
+    ::crucible::safety::proto::chaselev_session::OwnerProto<T>;
+
+template <typename T, typename ThiefTag>
+using ThiefProto =
+    ::crucible::safety::proto::chaselev_session::ThiefProto<T, ThiefTag>;
+
+// Surface concept.
+template <typename Deque>
+concept ChaseLevSessionSurface =
+    ::crucible::safety::proto::chaselev_session::ChaseLevSessionSurface<Deque>;
+
+// Mint factories.
 using ::crucible::safety::proto::chaselev_session::mint_chaselev_owner;
 using ::crucible::safety::proto::chaselev_session::mint_chaselev_thief;
 using ::crucible::safety::proto::chaselev_session::mint_owner_session;
@@ -103,6 +159,22 @@ using ::crucible::safety::proto::chaselev_session::mint_thief_session;
 // ═════════════════════════════════════════════════════════════════════
 
 namespace metalog {
+// Record type + protocol aliases.
+using MetaLogRecord =
+    ::crucible::safety::proto::metalog_session::MetaLogRecord;
+
+using ProducerProto =
+    ::crucible::safety::proto::metalog_session::ProducerProto;
+
+using ConsumerProto =
+    ::crucible::safety::proto::metalog_session::ConsumerProto;
+
+// Surface concept.
+template <typename Log>
+concept MetaLogSessionSurface =
+    ::crucible::safety::proto::metalog_session::MetaLogSessionSurface<Log>;
+
+// Mint factories.
 using ::crucible::safety::proto::metalog_session::mint_metalog_producer;
 using ::crucible::safety::proto::metalog_session::mint_metalog_consumer;
 using ::crucible::safety::proto::metalog_session::mint_metalog_producer_session;
@@ -114,6 +186,19 @@ using ::crucible::safety::proto::metalog_session::mint_metalog_consumer_session;
 // ═════════════════════════════════════════════════════════════════════
 
 namespace chainedge {
+// Signal type + protocol aliases.
+using Signal = ::crucible::safety::proto::chainedge_session::Signal;
+using SignalerProto =
+    ::crucible::safety::proto::chainedge_session::SignalerProto;
+using WaiterProto =
+    ::crucible::safety::proto::chainedge_session::WaiterProto;
+
+// Surface concept.
+template <typename Edge>
+concept ChainEdgeSessionSurface =
+    ::crucible::safety::proto::chainedge_session::ChainEdgeSessionSurface<Edge>;
+
+// Mint factories.
 using ::crucible::safety::proto::chainedge_session::mint_chainedge_signaler;
 using ::crucible::safety::proto::chainedge_session::mint_chainedge_waiter;
 using ::crucible::safety::proto::chainedge_session::mint_chainedge_signaler_session;
@@ -125,6 +210,21 @@ using ::crucible::safety::proto::chainedge_session::mint_chainedge_waiter_sessio
 // ═════════════════════════════════════════════════════════════════════
 
 namespace mpmc {
+// Protocol type aliases.
+template <typename T>
+using ProducerProto =
+    ::crucible::safety::proto::mpmc_channel_session::ProducerProto<T>;
+
+template <typename T>
+using ConsumerProto =
+    ::crucible::safety::proto::mpmc_channel_session::ConsumerProto<T>;
+
+// Surface concept.
+template <typename Channel>
+concept MpmcChannelSessionSurface =
+    ::crucible::safety::proto::mpmc_channel_session::MpmcChannelSessionSurface<Channel>;
+
+// Mint factories.
 using ::crucible::safety::proto::mpmc_channel_session::mint_mpmc_producer_endpoint;
 using ::crucible::safety::proto::mpmc_channel_session::mint_mpmc_consumer_endpoint;
 using ::crucible::safety::proto::mpmc_channel_session::mint_mpmc_producer_session;
@@ -136,6 +236,21 @@ using ::crucible::safety::proto::mpmc_channel_session::mint_mpmc_consumer_sessio
 // ═════════════════════════════════════════════════════════════════════
 
 namespace calendar_grid {
+// Protocol type aliases.
+template <typename T>
+using ProducerProto =
+    ::crucible::safety::proto::calendar_grid_session::ProducerProto<T>;
+
+template <typename T>
+using ConsumerProto =
+    ::crucible::safety::proto::calendar_grid_session::ConsumerProto<T>;
+
+// Surface concept.
+template <typename Grid>
+concept CalendarGridSessionSurface =
+    ::crucible::safety::proto::calendar_grid_session::CalendarGridSessionSurface<Grid>;
+
+// Mint factories.
 using ::crucible::safety::proto::calendar_grid_session::mint_calendar_grid_producer;
 using ::crucible::safety::proto::calendar_grid_session::mint_calendar_grid_consumer;
 using ::crucible::safety::proto::calendar_grid_session::mint_producer_session;
@@ -147,6 +262,21 @@ using ::crucible::safety::proto::calendar_grid_session::mint_consumer_session;
 // ═════════════════════════════════════════════════════════════════════
 
 namespace sharded_calendar_grid {
+// Protocol type aliases.
+template <typename T>
+using ProducerProto =
+    ::crucible::safety::proto::sharded_calendar_grid_session::ProducerProto<T>;
+
+template <typename T>
+using ConsumerProto =
+    ::crucible::safety::proto::sharded_calendar_grid_session::ConsumerProto<T>;
+
+// Surface concept.
+template <typename Grid>
+concept ShardedCalendarGridSessionSurface =
+    ::crucible::safety::proto::sharded_calendar_grid_session::ShardedCalendarGridSessionSurface<Grid>;
+
+// Mint factories.
 using ::crucible::safety::proto::sharded_calendar_grid_session::mint_sharded_calendar_grid_producer;
 using ::crucible::safety::proto::sharded_calendar_grid_session::mint_sharded_calendar_grid_consumer;
 using ::crucible::safety::proto::sharded_calendar_grid_session::mint_producer_session;
@@ -158,10 +288,56 @@ using ::crucible::safety::proto::sharded_calendar_grid_session::mint_consumer_se
 // ═════════════════════════════════════════════════════════════════════
 
 namespace sharded_grid {
+// Protocol type aliases.
+template <typename T>
+using ProducerProto =
+    ::crucible::safety::proto::sharded_grid_session::ProducerProto<T>;
+
+template <typename T>
+using ConsumerProto =
+    ::crucible::safety::proto::sharded_grid_session::ConsumerProto<T>;
+
+// Surface concept.
+template <typename Grid>
+concept ShardedGridSessionSurface =
+    ::crucible::safety::proto::sharded_grid_session::ShardedGridSessionSurface<Grid>;
+
+// Mint factories.
 using ::crucible::safety::proto::sharded_grid_session::mint_sharded_grid_producer;
 using ::crucible::safety::proto::sharded_grid_session::mint_sharded_grid_consumer;
 using ::crucible::safety::proto::sharded_grid_session::mint_producer_session;
 using ::crucible::safety::proto::sharded_grid_session::mint_consumer_session;
 }  // namespace sharded_grid
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Raw concurrent primitives without a typed-session layer ────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Substrates that ship a `concurrent::Permissioned*` primitive but
+// have not yet been wrapped by a `sessions/*Session.h` typed-session
+// header.  Surfaced under `fixy::substr::concurrent::*` so callers
+// who need the raw substrate (handle-level only, no session protocol)
+// can reach it through the fixy umbrella.
+//
+// MPSC has a primitive (concurrent/PermissionedMpscChannel.h) but no
+// session header yet — when sessions/MpscChannelSession.h ships, a
+// `fixy::substr::mpsc` sub-namespace will join the others above.
+
+namespace concurrent {
+// MPSC channel (multi-producer single-consumer) — raw primitive only.
+template <::crucible::concurrent::RingValue T,
+          std::size_t Capacity,
+          typename UserTag = void>
+using PermissionedMpscChannel =
+    ::crucible::concurrent::PermissionedMpscChannel<T, Capacity, UserTag>;
+
+// Permissioned snapshot (sequence-lock SWMR substrate without a
+// session protocol — SwmrSession layers a typed session on top, but
+// the raw substrate is useful directly for short-lived readers).
+template <::crucible::concurrent::SnapshotValue T,
+          typename UserTag = void>
+using PermissionedSnapshot =
+    ::crucible::concurrent::PermissionedSnapshot<T, UserTag>;
+}  // namespace concurrent
 
 }  // namespace crucible::fixy::substr
