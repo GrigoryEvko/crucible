@@ -37,10 +37,12 @@
 // rewire `fixy::fn`'s class-body `static_assert` to use the toggle —
 // that is the follow-up commit's job, where the production wrappers
 // route through `IsAcceptedActive<Type, Grants...>` (the alias defined
-// below) instead of `IsAcceptedFn` directly.  The split keeps the two
+// below) instead of `IsAccepted` directly.  The split keeps the two
 // changes auditable: B2 introduces the mechanism + CMake glue + the
 // neg-compile sentinel; the integration commit threads the mechanism
-// through the wrapper.
+// through the wrapper.  Post-fixy-H-05, `IsAccepted` is the wrapper-
+// discipline gate (auto-injects the Type-axis marker); the legacy
+// `IsAcceptedFn` alias has been removed.
 //
 // ── CMake wiring ───────────────────────────────────────────────────
 //

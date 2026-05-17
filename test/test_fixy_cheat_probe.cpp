@@ -103,46 +103,49 @@ namespace cheat_3_foreign_which_dim {
 // ─── Cheat 4: Empty pack with non-default Type ─────────────────────
 //
 // The attacker passes a sensible Type but no grants at all, hoping
-// the Type alone would imply engagement on the Type axis.
+// the auto-injected Type marker (per fixy-H-05's wrapper-discipline
+// IsAccepted) would carry the rest of the pack.
 //
-// Defense: IsAccepted requires every dim engaged, including Type.
-// Phase A's resolver doesn't auto-add accept_default_strict_for<Type>
-// — that's a Phase B fn<> convenience.  Direct IsAccepted callers
-// must spell every engagement explicitly.
+// Defense: IsAccepted requires EVERY dim engaged.  The auto-injected
+// ImplicitTypeMarker engages only Type; the remaining 18 axes stay
+// unengaged.  AllDimsEngaged fails the whole concept.
 
 namespace cheat_4_empty_pack_with_type {
     static_assert(!fixy::IsAccepted<int>,
-        "Cheat 4: a non-default Type does not imply engagement; an "
-        "empty Grants pack must still reject.");
+        "Cheat 4: the auto-injected Type marker alone does not "
+        "satisfy IsAccepted — the other 18 axes are still unengaged.");
 }
 
-// ─── Cheat 5: Half-engagement — 10 strict + 10 omitted ─────────────
+// ─── Cheat 5: Half-engagement — 9 strict + 10 omitted ──────────────
 //
-// The attacker engages roughly half the axes, hoping
-// IsAcceptedGrants computes "engaged" via majority rule or
-// short-circuits on the first 10.
+// The attacker engages roughly half the axes (Type via auto-injection
+// + 9 explicit non-Type axes), hoping IsAcceptedGrants computes
+// "engaged" via majority rule or short-circuits on the first 10.
 //
 // Defense: AllDimsEngaged is a conjunction (logical AND) over every
 // dim.  Any unengaged axis fails the whole concept.
 
 namespace cheat_5_half_engagement {
     static_assert(!fixy::IsAccepted<int,
-        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Refinement>, strict<D::Usage>,
         strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
         strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
         strict<D::Representation>>,
-        "Cheat 5: 10-of-20 engagement must reject — the other 10 "
-        "dims are still unengaged.");
+        "Cheat 5: 10-of-20 engagement (Type via injection + 9 "
+        "explicit) must reject — the other 10 dims are still "
+        "unengaged.");
 }
 
 // ─── Sanity counter-witness — the actual full pack accepts ─────────
 //
 // To ensure the cheat probe isn't trivially passing because
-// IsAccepted is broken-shut.
+// IsAccepted is broken-shut.  Under wrapper-discipline IsAccepted,
+// the witness omits strict<D::Type> (auto-injected) and engages the
+// 19 non-Type axes explicitly.
 
 namespace counter_witness_accepts {
     static_assert(fixy::IsAccepted<int,
-        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Refinement>, strict<D::Usage>,
         strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
         strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
         strict<D::Representation>, strict<D::Observability>,

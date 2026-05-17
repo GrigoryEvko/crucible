@@ -752,13 +752,70 @@ template <typename T>
         && !std::is_reference_v<T>;
 }
 
+// fixy-H-05: Canonical home for the implicit Type-axis engagement
+// marker.  Defined here (not in Fn.h's detail::resolve) so the
+// wrapper-discipline `IsAccepted` concept below can reference it
+// without taking a dependency on Fn.h.  Fn.h's
+// `detail::resolve::ImplicitTypeMarker` is an alias of this canonical
+// definition.
+using ImplicitTypeMarker =
+    grant::accept_default_strict_for<dim::DimensionAxis::Type>;
+
 }  // namespace detail::accept
 
+// ═════════════════════════════════════════════════════════════════════
+// ── IsAcceptedDirect<Type, Grants...> — low-level acceptance gate ──
+// ═════════════════════════════════════════════════════════════════════
+//
+// THE LOW-LEVEL FORM.  Callers MUST include the Type-axis engagement
+// marker (`grant::accept_default_strict_for<dim::DimensionAxis::Type>`)
+// in the `Grants...` pack.  This is the concept the wrapper's class
+// body and the H-02/H-03 tier static_assert chain consume internally;
+// production fixy::fn user code does NOT call this directly because
+// FIXY-AUDIT-A7 forbids user-spelling of the Type marker.
+//
+// For production-style "user passes grants for the 19 non-Type axes
+// and the wrapper supplies the Type marker for you" discipline, use
+// `IsAccepted<Type, Grants...>` below (renamed from `IsAcceptedFn`
+// per fixy-H-05; the simpler name denotes the safer, marker-injecting
+// form).
+//
+// The fixy-H-05 rename eliminates the public-name footgun: previously
+// a user grep-ing for "IsAccepted" found the LOW-LEVEL form (named
+// `IsAccepted`) and was tempted to call it directly with raw grants,
+// then hit a confusing "Type axis not engaged" failure.  After H-05,
+// the simpler name `IsAccepted` is the user-facing form that injects
+// the marker; the qualified `IsAcceptedDirect` name signals "you must
+// know what you're doing — this expects a complete pack."
+
 template <typename Type, typename... Grants>
-concept IsAccepted =
+concept IsAcceptedDirect =
        detail::accept::type_is_object_or_function<Type>()
     && IsAcceptedGrants<Grants...>
     && theory::NotInTheoryCorpus<Type, Grants...>;
+
+// ─── IsAcceptedDirect_v — variable-template form ───────────────────
+
+template <typename Type, typename... Grants>
+inline constexpr bool IsAcceptedDirect_v = IsAcceptedDirect<Type, Grants...>;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── IsAccepted<Type, Grants...> — the wrapper-discipline gate ──────
+// ═════════════════════════════════════════════════════════════════════
+//
+// THE USER-FACING FORM.  Auto-injects the implicit Type-axis marker
+// so callers pass grants for the 19 non-Type axes only.  This is what
+// `fn<>`'s `requires`-clause and `mint_fn`'s gate consume; it is also
+// the recommended name for any out-of-tree code writing acceptance
+// constraints (per fixy-H-05).
+//
+// Renamed from `IsAcceptedFn` (which used to live in Fn.h) so the
+// simpler public name denotes the safer behavior; the previous public
+// `IsAccepted` (the low-level form) is now `IsAcceptedDirect` above.
+
+template <typename Type, typename... Grants>
+concept IsAccepted =
+    IsAcceptedDirect<Type, detail::accept::ImplicitTypeMarker, Grants...>;
 
 // ─── IsAccepted_v — variable-template form for static_assert sites ─
 
@@ -992,27 +1049,36 @@ struct apply_tuple;
 template <template <typename...> class Tmpl, typename... Ts>
 struct apply_tuple<Tmpl, std::tuple<Ts...>> { using type = Tmpl<Ts...>; };
 
+// `accepts_pack_v` exercises the LOW-LEVEL `IsAcceptedDirect` form because
+// the test packs (AllStrictPack, CopyForUsagePack, MinusEffectPack)
+// explicitly include `strict<dim::DimensionAxis::Type>`.  Routing them
+// through the wrapper-discipline `IsAccepted` would double-engage the
+// Type axis (via ImplicitTypeMarker injection) and trip the
+// UniqueEngagementPerAxis gate.
 template <typename T, typename Tuple>
 inline constexpr bool accepts_pack_v = []() {
     return [&]<typename... Ts>(std::tuple<Ts...>*) consteval {
-        return IsAccepted<T, Ts...>;
+        return IsAcceptedDirect<T, Ts...>;
     }(static_cast<Tuple*>(nullptr));
 }();
 
 // 1. Empty pack rejects.
+//    `IsAccepted<int>` (wrapper-discipline) auto-injects the Type marker
+//    so the pack has 1 axis engaged but 19 missing → rejects.
 static_assert(!IsAccepted<int>,
-    "Empty Grants pack must reject (no dims engaged).");
+    "Empty Grants pack must reject (only Type engaged via injection).");
 // Witnessed at the dim level too:
 static_assert(!IsAcceptedGrants<>,
     "IsAcceptedGrants<> must reject the empty pack.");
 
-// 2. All-strict pack accepts.
+// 2. All-strict pack accepts (low-level form — pack includes strict<Type>).
 static_assert(accepts_pack_v<int, AllStrictPack>,
     "AllStrict pack must accept — every dim has an engagement marker.");
 
-// 3. Single-relaxation pack rejects (19 dims still unengaged).
+// 3. Single-relaxation pack rejects (under wrapper-discipline IsAccepted,
+//    18 dims still unengaged after auto-injection of Type marker).
 static_assert(!IsAccepted<int, grant::copy>,
-    "Single Usage relaxation must reject — 19 other dims unengaged.");
+    "Single Usage relaxation must reject — 18 other dims unengaged.");
 
 // 4. Replacing Usage's accept-strict with `grant::copy` still accepts.
 using CopyForUsagePack = std::tuple<

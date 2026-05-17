@@ -41,8 +41,13 @@ template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
 
 // Witness 1: PureLinear baseline — every axis accept-strict.
+//
+// fixy-H-05 follow-up: the wrapper-discipline `IsAccepted` auto-injects
+// the Type-axis acceptance marker (per Grant.h's Dim 1 discipline:
+// callers do not write it).  Each witness pack therefore engages only
+// the 19 non-Type axes; the IsAccepted concept supplies Type itself.
 static_assert(fixy::IsAccepted<int,
-    strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+    strict<D::Refinement>, strict<D::Usage>,
     strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
     strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
     strict<D::Representation>, strict<D::Observability>,
@@ -53,7 +58,7 @@ static_assert(fixy::IsAccepted<int,
 
 // Witness 2: PureCopy — Usage relaxation to `copy`.
 static_assert(fixy::IsAccepted<int,
-    strict<D::Type>, strict<D::Refinement>,
+    strict<D::Refinement>,
     gr::copy,  // <-- Usage
     strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
     strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
@@ -74,7 +79,7 @@ static_assert(fixy::IsAccepted<int,
 // `as_public + with<IO>` composition is the well-formed
 // fixy/Fn alias of the IoFunction stance.
 static_assert(fixy::IsAccepted<int,
-    strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+    strict<D::Refinement>, strict<D::Usage>,
     gr::with<crucible::effects::Effect::IO>,  // <-- Effect
     gr::as_public,                            // <-- Security
     strict<D::Protocol>,
@@ -88,7 +93,7 @@ static_assert(fixy::IsAccepted<int,
 
 // Witness 4: CtCrypto — Effect relaxation + Usage relaxation.
 static_assert(fixy::IsAccepted<int,
-    strict<D::Type>, strict<D::Refinement>,
+    strict<D::Refinement>,
     gr::copy,                                          // Usage
     gr::with<crucible::effects::Effect::Block>,         // Effect
     strict<D::Security>, strict<D::Protocol>,
@@ -104,7 +109,7 @@ static_assert(fixy::IsAccepted<int,
 // fact that the accept-strict marker on Security IS the correct
 // engagement when the binding consumes Classified data.
 static_assert(fixy::IsAccepted<int,
-    strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+    strict<D::Refinement>, strict<D::Usage>,
     strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
     strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
     strict<D::Representation>, strict<D::Observability>,
@@ -116,7 +121,6 @@ static_assert(fixy::IsAccepted<int,
 
 // Witness 6: Refinement (Tier F) relaxation via `refined_with`.
 static_assert(fixy::IsAccepted<int,
-    strict<D::Type>,
     gr::refined_with<crucible::safety::fn::pred::True>,  // <-- Refinement
     strict<D::Usage>,
     strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
@@ -130,7 +134,7 @@ static_assert(fixy::IsAccepted<int,
 
 // Witness 7: Lifetime (Tier S) relaxation via `in_region`.
 static_assert(fixy::IsAccepted<int,
-    strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+    strict<D::Refinement>, strict<D::Usage>,
     strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
     gr::in_region<42>,  // <-- Lifetime
     strict<D::Provenance>, strict<D::Trust>,
@@ -142,7 +146,7 @@ static_assert(fixy::IsAccepted<int,
 
 // Witness 8: Version (Tier V) relaxation via `version<N>`.
 static_assert(fixy::IsAccepted<int,
-    strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+    strict<D::Refinement>, strict<D::Usage>,
     strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
     strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
     strict<D::Representation>, strict<D::Observability>,
@@ -154,12 +158,16 @@ static_assert(fixy::IsAccepted<int,
     "Witness 8: Tier-V Version relaxation via version<N>.");
 
 // ─── Negative shape-witness — empty pack rejects ───────────────────
+//
+// Under wrapper-discipline IsAccepted, the empty Grants pack still
+// engages Type (auto-injected) but leaves the other 18 axes
+// unengaged — rejected by AllDimsEngaged.
 static_assert(!fixy::IsAccepted<int>,
-    "Empty Grants pack must reject — no dims engaged.");
+    "Empty Grants pack must reject — only Type engaged via injection.");
 
 // ─── Negative shape-witness — Type=void rejects ────────────────────
 static_assert(!fixy::IsAccepted<void,
-    strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+    strict<D::Refinement>, strict<D::Usage>,
     strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
     strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
     strict<D::Representation>, strict<D::Observability>,

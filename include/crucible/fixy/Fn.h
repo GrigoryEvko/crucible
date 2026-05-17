@@ -470,20 +470,22 @@ using ImplicitTypeMarker =
 
 }  // namespace detail::resolve
 
-// ─── IsAcceptedFn<Type, Grants...> — the wrapper-level accept gate ─
+// ─── IsAcceptedFn — REMOVED, fixy-H-05 ──────────────────────────────
 //
-// FIXY-AUDIT-A8: the wrapper's class-body static_assert and `mint_fn`'s
-// requires-clause both spell `IsAccepted<Type, ImplicitTypeMarker,
-// Grants...>` verbatim.  Factor the ImplicitTypeMarker injection into
-// a single concept so the marker stays a private implementation detail
-// of fixy::fn; if the marker ever changes shape (different injection
-// strategy, multi-axis implicit acceptance, etc.), there is exactly
-// one site to update instead of two.
-template <typename Type, typename... Grants>
-concept IsAcceptedFn = IsAccepted<
-    Type,
-    detail::resolve::ImplicitTypeMarker,
-    Grants...>;
+// FIXY-AUDIT-A8 originally factored an `IsAcceptedFn<Type, Grants...>`
+// alias that injected `detail::resolve::ImplicitTypeMarker` into the
+// substrate's low-level `IsAccepted` concept.  fixy-H-05 inverted the
+// public-name discipline: the SIMPLE name `fixy::IsAccepted<Type,
+// Grants...>` (Reject.h §IsAccepted, wrapper-discipline gate) now
+// auto-injects the marker via its own private `ImplicitTypeMarker`
+// alias.  The QUALIFIED name `fixy::IsAcceptedDirect<Type, Grants...>`
+// remains the low-level form that takes ALL engagement markers
+// explicitly.
+//
+// Consequence: `IsAcceptedFn` is now a trivial restatement of
+// `IsAccepted` and is removed.  Every consumer (fn<>'s class-body
+// requires-clause, `mint_fn`'s requires-clause, `mint_fn_for`) routes
+// through `fixy::IsAccepted` directly.
 
 // ═════════════════════════════════════════════════════════════════════
 // ── fixy::fn<Type, Grants...> — the universal integration point ────
@@ -737,7 +739,7 @@ private:
 // discoverable review surface.
 
 template <typename Type, typename... Grants>
-    requires IsAcceptedFn<Type, Grants...>
+    requires IsAccepted<Type, Grants...>
 [[nodiscard]] constexpr auto mint_fn(Type v)
     noexcept(std::is_nothrow_move_constructible_v<Type>)
     -> fn<Type, Grants...>
@@ -775,7 +777,7 @@ template <typename Type, typename... Grants>
 // surface via fn<>'s class-body static_assert chain.
 //
 // Token-mint flavor (no Ctx).  Cost-of-violation: a stance that fails
-// IsAcceptedFn for the deduced Type fires the same FixyNotEngaged_*
+// IsAccepted for the deduced Type fires the same FixyNotEngaged_*
 // diagnostic chain as a direct mint_fn call.
 //
 // ── StanceFor* concept gates ─────────────────────────────────────

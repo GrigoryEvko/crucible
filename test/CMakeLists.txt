@@ -1312,6 +1312,20 @@ crucible_neg_compile_fixy_test(neg_fixy_fn_static_assert_duplicate_axis
 crucible_neg_compile_fixy_test(neg_fixy_fn_static_assert_malformed_grant
     "FixyMalformedGrant|AllGrantsWellFormed")
 
+# fixy-H-05 — HS14 floor for the wrapper-discipline IsAccepted.
+#
+# Two fixtures pin that the auto-injected ImplicitTypeMarker collides
+# with a user-spelled `strict<D::Type>`, surfacing the duplicate-axis
+# rejection from BOTH the concept-level gate (Reject.h) AND the
+# mint_fn factory's requires-clause (Fn.h).
+#
+#   * neg_fixy_h05_is_accepted_explicit_type_marker — concept-level
+#   * neg_fixy_h05_mint_fn_explicit_type_marker     — mint_fn factory
+crucible_neg_compile_fixy_test(neg_fixy_h05_is_accepted_explicit_type_marker
+    "UniqueEngagementPerAxis|first_duplicate_axis_v|FixyDuplicate_")
+crucible_neg_compile_fixy_test(neg_fixy_h05_mint_fn_explicit_type_marker
+    "IsAccepted|UniqueEngagementPerAxis|FixyDuplicate_")
+
 # fixy-CR-08 — HS14 floor for engages_dim_one<D, G> gating.
 #
 # Pre-CR-08 the `engaged_for` and `count_engagements_for` folds

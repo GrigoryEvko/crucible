@@ -45,7 +45,7 @@ using strict = gr::accept_default_strict_for<Axis>;
 template <typename ExtraGrant>
 inline constexpr bool implicit_flow_pack_rejects =
     !fixy::IsAccepted<int,
-        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Refinement>, strict<D::Usage>,
         gr::with_io,            // Effect = IO
         gr::as_secret,          // Security = Secret
         strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
@@ -59,7 +59,7 @@ inline constexpr bool implicit_flow_pack_rejects =
 // the implicit-flow pair DOES accept.
 namespace counter_witness {
     static_assert(fixy::IsAccepted<int,
-        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Refinement>, strict<D::Usage>,
         strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
         strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
         strict<D::Representation>, strict<D::Observability>,
@@ -251,7 +251,7 @@ namespace cheat_4_rogue_io_trait {
 
 namespace cheat_5_double_security_engagement {
     static_assert(!fixy::IsAccepted<int,
-        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Refinement>, strict<D::Usage>,
         gr::with_io,
         gr::as_secret,      // Security #1
         strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
@@ -285,7 +285,7 @@ namespace cheat_6_declassify_threading {
     // This pack DOES match the corpus (Secret + IO) but the
     // declassify discharges the audit trail — the binding accepts.
     static_assert(fixy::IsAccepted<int,
-        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Refinement>, strict<D::Usage>,
         gr::with_io,
         gr::declassify<AuditPolicy>,    // remediation
         strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
@@ -328,7 +328,7 @@ namespace cheat_7_strict_default_security_bypass {
     // semantically-equivalent explicit-as_secret form rejecting.
     // After the fix, IsAccepted returns FALSE.
     static_assert(!fixy::IsAccepted<int,
-        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Refinement>, strict<D::Usage>,
         gr::with_io,
         strict<D::Security>,   // strict default = Classified
         strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
@@ -342,7 +342,7 @@ namespace cheat_7_strict_default_security_bypass {
 
     // Pack 2: strict-default Security × Bg, NO declassify.
     static_assert(!fixy::IsAccepted<int,
-        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Refinement>, strict<D::Usage>,
         gr::with_bg,
         strict<D::Security>,
         strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
@@ -355,7 +355,7 @@ namespace cheat_7_strict_default_security_bypass {
 
     // Pack 3: strict-default Security × stale_to<N>, NO declassify.
     static_assert(!fixy::IsAccepted<int,
-        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Refinement>, strict<D::Usage>,
         strict<D::Effect>,
         strict<D::Security>,
         strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
