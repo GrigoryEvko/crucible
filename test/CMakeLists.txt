@@ -1271,6 +1271,46 @@ crucible_neg_compile_fixy_test(neg_fixy_source_cross_axis_tagged
 crucible_neg_compile_fixy_test(neg_fixy_source_trust_vs_source
     "is_same|static assertion|cross-axis")
 
+# ── FIXY-STRUCT — fixy/Struct.h re-export of structural wrappers
+# (Pinned / NonMovable / NotInherited / FinalBy / Checked /
+# ConstantTime / Simd / OwnedRegion / Workload).  11 HS14 fixtures
+# pin distinct violation classes across the family:
+crucible_neg_compile_fixy_test(neg_fixy_struct_pinned_copy
+    "deleted function|stable address|use of deleted function")
+crucible_neg_compile_fixy_test(neg_fixy_struct_pinned_move
+    "deleted function|stable address|use of deleted function")
+crucible_neg_compile_fixy_test(neg_fixy_struct_nonmovable_copy
+    "deleted function|exclusive ownership|use of deleted function")
+crucible_neg_compile_fixy_test(neg_fixy_struct_notinherited_non_final
+    "NotInherited_Not_Final|not marked|static assertion")
+crucible_neg_compile_fixy_test(neg_fixy_struct_finalby_subclass
+    "FinalBy_Subclass_Forbidden|private within this context|is private")
+crucible_neg_compile_fixy_test(neg_fixy_struct_checked_signed_shift
+    "constraints not satisfied|associated constraints|std::integral|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_struct_checked_safe_capacity_overflow
+    "Checked_Capacity_Overflow|overflow|static assertion")
+crucible_neg_compile_fixy_test(neg_fixy_struct_ct_signed_select
+    "constraints not satisfied|associated constraints|unsigned_integral|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_struct_ct_signed_is_zero
+    "constraints not satisfied|associated constraints|unsigned_integral|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_struct_simd_detsafe_float
+    "constraints not satisfied|associated constraints|DetSafeSimd|std::integral")
+crucible_neg_compile_fixy_test(neg_fixy_struct_simd_iota_non_vec
+    "value_type|no type named|substitution failure|no matching function|template argument deduction")
+crucible_neg_compile_fixy_test(neg_fixy_struct_owned_region_copy
+    "deleted function|move-only|use of deleted function|Permission")
+crucible_neg_compile_fixy_test(neg_fixy_struct_workload_zero_shards
+    "requires N > 0|static assertion|N > 0|N >= 1")
+
+# ── FIXY-IS — fixy/Is.h concept-gate aliases for safety/Is*.h.
+# 3 HS14 fixtures pin canonical alias-rejects-unrelated cases:
+crucible_neg_compile_fixy_test(neg_fixy_is_linear_rejects_plain
+    "constraints not satisfied|associated constraints|IsLinear|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_is_secret_rejects_plain
+    "constraints not satisfied|associated constraints|IsSecret|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_is_session_handle_rejects_plain
+    "constraints not satisfied|associated constraints|IsSessionHandle|no matching function")
+
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
 # delegated-protocol case at the consteval assertion boundary.
