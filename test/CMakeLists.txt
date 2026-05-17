@@ -186,6 +186,7 @@ crucible_test(test_decide)
 
 crucible_test(test_fixy_engaged)
 crucible_test(test_fixy_cheat_probe)
+crucible_test(test_fixy_cheat_probe_theory)
 crucible_test(test_fixy_fn)
 crucible_test(test_fixy_profile)
 crucible_test(test_fixy_rule_helpers)
