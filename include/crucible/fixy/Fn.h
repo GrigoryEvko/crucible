@@ -55,9 +55,10 @@
 //   stance::PureCopy          — copy usage, otherwise strict
 //   stance::IoFunction        — Effect=IO, otherwise strict
 //   stance::BgWorker          — Effect={Bg, Alloc}, otherwise strict
-//   stance::CtCrypto          — Repr=Atomic, Effect={}, NoBranching
-//   stance::SecretConsumer    — Security=Secret declassification
-//   stance::PublicEmit        — Security=Public emission
+//   stance::CtCrypto          — constant-time path: as_secret + with<>
+//                                (no IO; linear consume of Secret)
+//   stance::SecretConsumer    — Security=Public via declassify<Policy>
+//   stance::PublicEmit        — IO + declassify<Policy> audit trail
 //   stance::AsyncEndpoint     — Reentrancy=Coroutine + Effect={IO}
 //
 // ── Axiom coverage ─────────────────────────────────────────────────
@@ -654,10 +655,10 @@ template <template<typename> class Stance, typename Type>
 //   PureCopy       — copy usage, strict elsewhere
 //   IoFunction     — IO-effecting function, strict elsewhere
 //   BgWorker       — background allocator + IO context
-//   CtCrypto       — constant-time crypto path (Atomic repr, no
-//                    branching, no allocation)
-//   SecretConsumer — declassifies a secret to public
-//   PublicEmit     — emits publicly-observable output
+//   CtCrypto       — constant-time crypto path: as_secret + with<>
+//                    (consumes Secret linearly, NO IO)
+//   SecretConsumer — declassifies a secret to public via declassify
+//   PublicEmit     — IO + declassify<Policy> audit-trail emission
 //   AsyncEndpoint  — coroutine reentrancy + IO
 
 namespace stance {
@@ -770,6 +771,98 @@ using SecretConsumer = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Refinement>,
     detail_stance::strict<dim::DimensionAxis::Usage>,
     detail_stance::strict<dim::DimensionAxis::Effect>,
+    grant::declassify<Policy>,
+    detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>,
+    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>>;
+
+// ── CtCrypto — constant-time crypto path (FIXY-AUDIT-B3) ──────────
+//
+// Constant-time discipline: handles Secret data, performs NO IO (any
+// IO trip would create a timing-observable side channel), and consumes
+// its input linearly (Usage=Linear = the strict default — duplicating
+// a secret defeats the discipline).  Effect row is explicitly empty
+// via `with<>` to pin "no Bg, no Alloc, no IO, no Block" at the type
+// level; Security is pinned to `Secret` via `as_secret`.  The §30.14
+// classified-IO-without-declassify detector does NOT fire — `has_io`
+// is false, so the implicit-flow rule is structurally satisfied.
+//
+// Rationale for axis choices:
+//   - Security = as_secret   pin Secret; the value MUST NOT escape
+//     declassified.
+//   - Effect   = with<>      no Bg/IO/Alloc/Block — pure compute path.
+//     The strict default for Effect IS Row<>; we engage explicitly
+//     via `with<>` to make the constant-time discipline self-
+//     documenting at the signature level rather than relying on the
+//     implicit accept-default marker.
+//   - Usage    = strict (=Linear)   linear consumption.  The strict
+//     default is Linear per safety/Fn.h::usage_v; the engagement
+//     marker pins it explicitly.
+//   - Reentrancy = strict (=NonReentrant)   constant-time paths must
+//     not interleave with themselves; the strict default is
+//     NonReentrant.
+
+template <typename Type>
+using CtCrypto = ::crucible::fixy::fn<Type,
+    detail_stance::strict<dim::DimensionAxis::Refinement>,
+    detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with<>,
+    grant::as_secret,
+    detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>,
+    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>>;
+
+// ── PublicEmit<Policy> — publicly-observable emission (FIXY-AUDIT-B3) ─
+//
+// Public-emission discipline: emits data via IO with an audit-trail-
+// discharging `declassify<Policy>` grant.  The Policy parameter is
+// captured for downstream identification of which named declassification
+// authorized the public emission (greppable via
+// `fn<...>::policy_t`).  The substrate's Security slot resolves to
+// SecLevel::Public per the declassify projection.
+//
+// Why declassify<Policy> rather than as_public:
+//   - `as_public` pins SecLevel::Public but carries NO audit trail.
+//     A grep over `as_public` reveals every public-emission call site
+//     but yields no Policy provenance.
+//   - `declassify<Policy>` carries the Policy tag through the type,
+//     surfaces via `fn<...>::policy_t`, and pins SecLevel::Public.
+//     The audit trail is recoverable at the type level.
+//
+// The §30.14 classified-IO-without-declassify detector does NOT fire
+// — `has_secret=false` (declassify is not in is_secret_grant), so
+// the implicit-flow rule is structurally satisfied regardless of the
+// IO grant.
+
+template <typename Type, typename Policy>
+using PublicEmit = ::crucible::fixy::fn<Type,
+    detail_stance::strict<dim::DimensionAxis::Refinement>,
+    detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with_io,
     grant::declassify<Policy>,
     detail_stance::strict<dim::DimensionAxis::Protocol>,
     detail_stance::strict<dim::DimensionAxis::Lifetime>,

@@ -1123,6 +1123,25 @@ crucible_neg_compile_fixy_test(neg_fixy_duplicate_engagement     "UniqueEngageme
 # FIXY-AUDIT-B1 — HS14 floor for Theory.h §30.14 corpus.
 crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io     "NotInTheoryCorpus")
 
+# FIXY-AUDIT-B3 — HS14 floor for stance::CtCrypto + stance::PublicEmit.
+#
+# CtCrypto pins as_secret + empty Effect row; the §30.14 detector
+# fires when a CtCrypto-shape pack adds IO (classified-IO-without-
+# declassify pattern).  Removing the Security engagement leaves the
+# axis unengaged and fires the engagement gate.
+#
+# PublicEmit pins declassify<Policy> + IO; swapping declassify for
+# as_secret recreates the §30.14 implicit-flow pattern.  Removing
+# Effect engagement leaves the axis unengaged.
+crucible_neg_compile_fixy_test(neg_fixy_ctcrypto_with_io
+    "NotInTheoryCorpus")
+crucible_neg_compile_fixy_test(neg_fixy_ctcrypto_unengaged_security
+    "AllDimsEngaged")
+crucible_neg_compile_fixy_test(neg_fixy_publicemit_with_secret
+    "NotInTheoryCorpus")
+crucible_neg_compile_fixy_test(neg_fixy_publicemit_unengaged_effect
+    "AllDimsEngaged")
+
 # ── FIXY-CLEAN-B4 — 12 collision-rule neg-compile fixtures ─────────
 #
 # Each fixture instantiates fixy::fn<int, all-strict-pack> after

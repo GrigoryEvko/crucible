@@ -138,6 +138,44 @@ static_assert(fn_with_audit_policy::security_v
     == crucible::safety::fn::SecLevel::Public,
     "declassify still resolves security_v to Public regardless of Policy.");
 
+// ─── 7d. CtCrypto + PublicEmit stance witnesses (FIXY-AUDIT-B3) ────
+//
+// CtCrypto: Security pinned to Secret, Effect row empty (no IO), and
+// the §30.14 detector does NOT fire because has_io is false.
+// PublicEmit<Policy>: Security pinned to Public via declassify,
+// Effect=IO, policy_t accessor surfaces the named Policy.
+
+namespace b3_policy_tags {
+struct EmitPolicy {};
+}  // namespace b3_policy_tags
+
+static_assert(fixy::stance::CtCrypto<int>::security_v
+    == crucible::safety::fn::SecLevel::Secret,
+    "stance::CtCrypto must resolve Security to Secret via as_secret.");
+
+static_assert(std::is_same_v<
+    typename fixy::stance::CtCrypto<int>::effect_row_t,
+    crucible::effects::Row<>>,
+    "stance::CtCrypto's Effect row must be empty (no IO).");
+
+static_assert(std::is_same_v<
+    typename fixy::stance::CtCrypto<int>::policy_t, void>,
+    "stance::CtCrypto must have no declassify policy (policy_t == void).");
+
+static_assert(fixy::stance::PublicEmit<int, b3_policy_tags::EmitPolicy>::security_v
+    == crucible::safety::fn::SecLevel::Public,
+    "stance::PublicEmit must resolve Security to Public via declassify.");
+
+static_assert(std::is_same_v<
+    typename fixy::stance::PublicEmit<int, b3_policy_tags::EmitPolicy>::effect_row_t,
+    crucible::effects::Row<crucible::effects::Effect::IO>>,
+    "stance::PublicEmit's Effect row must contain IO.");
+
+static_assert(std::is_same_v<
+    typename fixy::stance::PublicEmit<int, b3_policy_tags::EmitPolicy>::policy_t,
+    b3_policy_tags::EmitPolicy>,
+    "stance::PublicEmit must surface the Policy tag via policy_t.");
+
 // ─── 8. EBO collapse across multiple types ────────────────────────
 
 static_assert(sizeof(fixy::stance::PureLinear<int>)    == sizeof(int));
@@ -147,6 +185,9 @@ static_assert(sizeof(fixy::stance::IoFunction<int>)    == sizeof(int));
 static_assert(sizeof(fixy::stance::PureCopy<int>)      == sizeof(int));
 static_assert(sizeof(fixy::stance::BgWorker<int>)      == sizeof(int));
 static_assert(sizeof(fixy::stance::AsyncEndpoint<int>) == sizeof(int));
+static_assert(sizeof(fixy::stance::CtCrypto<int>)      == sizeof(int));
+static_assert(sizeof(fixy::stance::PublicEmit<int, b3_policy_tags::EmitPolicy>)
+              == sizeof(int));
 
 // ─── 8b. mint_fn_for<Stance>(value) — stance-bound convenience ────
 //        (FIXY-AUDIT-A11)
