@@ -1256,6 +1256,24 @@ crucible_neg_compile_fixy_test(neg_fixy_stance_publicemit_ref          "IsAccept
 # FIXY-AUDIT-A3 — HS14 floor for UniqueEngagementPerAxis.
 crucible_neg_compile_fixy_test(neg_fixy_duplicate_engagement     "UniqueEngagementPerAxis")
 
+# fixy-CR-08 — HS14 floor for engages_dim_one<D, G> gating.
+#
+# Pre-CR-08 the `engaged_for` and `count_engagements_for` folds
+# substituted `grant::which_dim_v<G>` eagerly for every G in the
+# pack — a non-grant G hit the undefined `which_dim` primary template
+# inside the fold rather than failing cleanly at IsAcceptedGrants's
+# AllGrantsWellFormed gate.  The fix routes each G through
+# `detail::engagement::engages_dim_one<D, G>()` which uses
+# `if constexpr (grant::IsGrantTag_v<G>)` to gate the lookup.
+# Both fixtures inject a non-grant member alongside an otherwise-
+# complete strict pack and rely on AllGrantsWellFormed / IsGrantTag
+# to surface the rejection cleanly (NOT a `which_dim` substitution
+# failure deep inside the fold).
+crucible_neg_compile_fixy_test(neg_fixy_engaged_for_non_grant
+    "IsGrantTag|AllGrantsWellFormed|IsAccepted|which_dim|incomplete type")
+crucible_neg_compile_fixy_test(neg_fixy_count_engagements_non_grant
+    "IsGrantTag|AllGrantsWellFormed|IsAccepted|which_dim|incomplete type")
+
 # FIXY-AUDIT-D5 — federation mint HS14 floor.
 #
 # `mint_federation_admittance(const LocalCipherPermission&, FederationHandshake)`

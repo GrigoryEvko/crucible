@@ -377,13 +377,40 @@ static_assert(axis_for_tag_v<FixyNotEngaged_Staleness>
 
 namespace detail::engagement {
 
+// FIXY-AUDIT-CR-08: per-grant engagement probe.
+//
+// The fold form
+//
+//     ((grant::IsGrantTag_v<G> && grant::which_dim_v<G> == D) || ...)
+//
+// substitutes `grant::which_dim_v<G>` for every G in the pack BEFORE
+// the consteval `&&` short-circuit runs.  `which_dim`'s primary
+// template is intentionally left undefined (per-tag specialization
+// only), so a non-grant G in the pack — e.g. a user-defined struct,
+// `int`, or anything reaching `engaged_for` before `IsAccepted` has
+// gated it — produces a hard substitution error inside the fold
+// rather than a clean rejection at the IsAccepted boundary.
+//
+// This was exactly the failure mode FIXY-AUDIT-A1 fixed for
+// `find_grant_impl` (Fn.h:338-347): there, the fix was constraint
+// partial-ordering across two partial specializations.  Folds cannot
+// use that mechanism, so we extract a per-grant helper and use
+// `if constexpr` to gate the `which_dim_v` lookup.
+template <dim::DimensionAxis D, typename G>
+[[nodiscard]] consteval bool engages_dim_one() noexcept {
+    if constexpr (grant::IsGrantTag_v<G>) {
+        return grant::which_dim_v<G> == D;
+    } else {
+        return false;
+    }
+}
+
 template <dim::DimensionAxis D, typename... Grants>
 [[nodiscard]] consteval bool engaged_for() noexcept {
     if constexpr (sizeof...(Grants) == 0) {
         return false;
     } else {
-        return ((grant::IsGrantTag_v<Grants>
-                 && grant::which_dim_v<Grants> == D) || ...);
+        return (engages_dim_one<D, Grants>() || ...);
     }
 }
 
@@ -452,13 +479,16 @@ template <typename... Grants>
 // future tag-vs-tag disagreement check.  We need an explicit duplicate
 // count so callers cannot accidentally over-engage an axis.
 
+// FIXY-AUDIT-CR-08: same eager-substitution hazard as `engaged_for`
+// above — `which_dim_v<G>` would be instantiated for every G in the
+// pack before the consteval `?:` runs.  Route through the gated
+// `engages_dim_one<D, G>()` helper instead.
 template <dim::DimensionAxis D, typename... Grants>
 [[nodiscard]] consteval std::size_t count_engagements_for() noexcept {
     if constexpr (sizeof...(Grants) == 0) {
         return 0;
     } else {
-        return ((grant::IsGrantTag_v<Grants>
-                 && grant::which_dim_v<Grants> == D ? 1u : 0u) + ...);
+        return ((engages_dim_one<D, Grants>() ? 1u : 0u) + ...);
     }
 }
 
