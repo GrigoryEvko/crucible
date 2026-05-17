@@ -227,6 +227,7 @@ crucible_test(test_fixy_algebra)
 crucible_test(test_fixy_eff)
 crucible_test(test_fixy_eff_alias)  # FIXY-AUDIT-B12 HS14 sentinel
 crucible_test(test_fixy_diag)
+crucible_test(test_fixy_diag_catalog)  # FIXY-AUDIT-C8 reconciliation
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -1197,6 +1198,18 @@ crucible_neg_compile_fixy_test(neg_fixy_session_handle_non_resource
 
 # FIXY-AUDIT-B1 — HS14 floor for Theory.h §30.14 corpus.
 crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io     "NotInTheoryCorpus")
+
+# FIXY-AUDIT-C8 — HS14 floor for FixyCatalog reconciliation surface.
+#
+# Two distinct rejection classes for `fixy::diag::is_fixy_diag_v<T>`:
+#   - substrate Catalog tag (must NOT register as fixy diagnostic) —
+#     the closed-set discipline that keeps Catalog ∩ FixyCatalog == ∅
+#   - plain primitive type (catalog membership is NOT just tag_base
+#     inheritance — it requires actual tuple presence)
+crucible_neg_compile_fixy_test(neg_fixy_diag_catalog_substrate_tag
+    "is_fixy_diag_v")
+crucible_neg_compile_fixy_test(neg_fixy_diag_catalog_plain_type
+    "is_fixy_diag_v")
 
 # FIXY-AUDIT-B3 — HS14 floor for stance::CtCrypto + stance::PublicEmit.
 #

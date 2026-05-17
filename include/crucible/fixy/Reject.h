@@ -168,6 +168,203 @@ template <> struct tag_for_axis<dim::DimensionAxis::Staleness>      { using type
 template <dim::DimensionAxis D>
 using tag_for_axis_t = typename tag_for_axis<D>::type;
 
+// ═══════════════════════════════════════════════════════════════════
+// ── FixyCatalog — closed enumeration of fixy diagnostic tags ───────
+// ═══════════════════════════════════════════════════════════════════
+//
+// FIXY-AUDIT-C8 reconciliation surface.  Mirrors the substrate's
+// `safety::diag::Catalog` pattern (one tuple, APPEND-ONLY, indexed in
+// stable order) but lives entirely on the fixy side because per
+// `safety/Diagnostic.h:96-99` user-defined tags MUST NOT enter the
+// substrate's closed Category/Catalog — those are reserved for the
+// foundation's 28 axis violations.  Fixy's twenty `FixyNotEngaged_*`
+// tags still need to be enumerable as a closed set so callers can:
+//
+//   (a) discriminate fixy tags from substrate tags via
+//       `is_fixy_diag_v<T>`;
+//   (b) iterate the fixy tag set at compile time for diagnostic
+//       formatters, federation cache hashing, and reflection-driven
+//       UX layers;
+//   (c) close the bijection `tag_for_axis_t<D>` already opens by
+//       providing the reverse `axis_for_tag_v<Tag>`.
+//
+// The runtime category for fixy diagnostics is `dim::DimensionAxis`
+// itself — every fixy diagnostic IS a "this axis went wrong" claim.
+// We deliberately do NOT mint a separate Category-style enum: that
+// would duplicate the canonical axis universe and force a second
+// APPEND-ONLY discipline that could drift.
+//
+// Discipline (mirrors safety::diag::Catalog):
+//   1. APPEND-ONLY in DimensionAxis enumerator order.
+//   2. Adding a new DimensionAxis enumerator requires (a) the matching
+//      `FixyNotEngaged_<Axis>` tag via `CRUCIBLE_FIXY_NOT_ENGAGED_TAG`
+//      above, (b) the matching `tag_for_axis<>` specialization, (c)
+//      appending here, and (d) the matching `axis_for_tag<>`
+//      specialization below.  The bijection self-test fires if any
+//      step is skipped.
+
+using FixyCatalog = ::std::tuple<
+    FixyNotEngaged_Type,            //  0
+    FixyNotEngaged_Refinement,      //  1
+    FixyNotEngaged_Usage,           //  2
+    FixyNotEngaged_Effect,          //  3
+    FixyNotEngaged_Security,        //  4
+    FixyNotEngaged_Protocol,        //  5
+    FixyNotEngaged_Lifetime,        //  6
+    FixyNotEngaged_Provenance,      //  7
+    FixyNotEngaged_Trust,           //  8
+    FixyNotEngaged_Representation,  //  9
+    FixyNotEngaged_Observability,   // 10
+    FixyNotEngaged_Complexity,      // 11
+    FixyNotEngaged_Precision,       // 12
+    FixyNotEngaged_Space,           // 13
+    FixyNotEngaged_Overflow,        // 14
+    FixyNotEngaged_Mutation,        // 15
+    FixyNotEngaged_Reentrancy,      // 16
+    FixyNotEngaged_Size,            // 17
+    FixyNotEngaged_Version,         // 18
+    FixyNotEngaged_Staleness        // 19
+>;
+
+inline constexpr ::std::size_t fixy_catalog_size =
+    ::std::tuple_size_v<FixyCatalog>;
+
+// ─── is_fixy_diag_v — fixy-tag discriminator ───────────────────────
+//
+// True iff T appears in FixyCatalog.  Lets generic diagnostic
+// machinery route fixy tags through the fixy-side surface and leave
+// substrate Catalog tags to the substrate (the two enumerations are
+// disjoint by design per FOUND-E01).
+//
+// Substrate `safety::diag::HotPathViolation` and friends MUST return
+// false here.
+
+namespace detail::fixy_catalog {
+
+template <typename T, typename Tuple>
+struct in_tuple_impl;
+
+template <typename T, typename... Us>
+struct in_tuple_impl<T, ::std::tuple<Us...>>
+    : ::std::bool_constant<(::std::is_same_v<T, Us> || ...)> {};
+
+}  // namespace detail::fixy_catalog
+
+template <typename T>
+inline constexpr bool is_fixy_diag_v =
+    detail::fixy_catalog::in_tuple_impl<T, FixyCatalog>::value;
+
+// ─── axis_for_tag — reverse lookup (Tag → DimensionAxis) ──────────
+//
+// Closes the bijection with `tag_for_axis<D>` above.  Specialized for
+// every entry in FixyCatalog.  The bijection self-test (below) walks
+// every catalog index and asserts the round-trip holds.
+
+template <typename Tag> struct axis_for_tag;  // primary undefined
+
+template <> struct axis_for_tag<FixyNotEngaged_Type>           { static constexpr auto value = dim::DimensionAxis::Type; };
+template <> struct axis_for_tag<FixyNotEngaged_Refinement>     { static constexpr auto value = dim::DimensionAxis::Refinement; };
+template <> struct axis_for_tag<FixyNotEngaged_Usage>          { static constexpr auto value = dim::DimensionAxis::Usage; };
+template <> struct axis_for_tag<FixyNotEngaged_Effect>         { static constexpr auto value = dim::DimensionAxis::Effect; };
+template <> struct axis_for_tag<FixyNotEngaged_Security>       { static constexpr auto value = dim::DimensionAxis::Security; };
+template <> struct axis_for_tag<FixyNotEngaged_Protocol>       { static constexpr auto value = dim::DimensionAxis::Protocol; };
+template <> struct axis_for_tag<FixyNotEngaged_Lifetime>       { static constexpr auto value = dim::DimensionAxis::Lifetime; };
+template <> struct axis_for_tag<FixyNotEngaged_Provenance>     { static constexpr auto value = dim::DimensionAxis::Provenance; };
+template <> struct axis_for_tag<FixyNotEngaged_Trust>          { static constexpr auto value = dim::DimensionAxis::Trust; };
+template <> struct axis_for_tag<FixyNotEngaged_Representation> { static constexpr auto value = dim::DimensionAxis::Representation; };
+template <> struct axis_for_tag<FixyNotEngaged_Observability>  { static constexpr auto value = dim::DimensionAxis::Observability; };
+template <> struct axis_for_tag<FixyNotEngaged_Complexity>     { static constexpr auto value = dim::DimensionAxis::Complexity; };
+template <> struct axis_for_tag<FixyNotEngaged_Precision>      { static constexpr auto value = dim::DimensionAxis::Precision; };
+template <> struct axis_for_tag<FixyNotEngaged_Space>          { static constexpr auto value = dim::DimensionAxis::Space; };
+template <> struct axis_for_tag<FixyNotEngaged_Overflow>       { static constexpr auto value = dim::DimensionAxis::Overflow; };
+template <> struct axis_for_tag<FixyNotEngaged_Mutation>       { static constexpr auto value = dim::DimensionAxis::Mutation; };
+template <> struct axis_for_tag<FixyNotEngaged_Reentrancy>     { static constexpr auto value = dim::DimensionAxis::Reentrancy; };
+template <> struct axis_for_tag<FixyNotEngaged_Size>           { static constexpr auto value = dim::DimensionAxis::Size; };
+template <> struct axis_for_tag<FixyNotEngaged_Version>        { static constexpr auto value = dim::DimensionAxis::Version; };
+template <> struct axis_for_tag<FixyNotEngaged_Staleness>      { static constexpr auto value = dim::DimensionAxis::Staleness; };
+
+template <typename Tag>
+inline constexpr dim::DimensionAxis axis_for_tag_v = axis_for_tag<Tag>::value;
+
+// ═══════════════════════════════════════════════════════════════════
+// ── Bijection self-test — FixyCatalog ↔ DimensionAxis ──────────────
+// ═══════════════════════════════════════════════════════════════════
+
+namespace detail::fixy_catalog {
+
+// FixyCatalog cardinality must match DimensionAxis cardinality.  If a
+// new DimensionAxis enumerator is added without the matching tag /
+// catalog entry / reverse lookup, this fires first.
+inline constexpr ::std::size_t kDimAxisCount = []() consteval {
+    return ::std::meta::enumerators_of(
+        ^^::crucible::safety::DimensionAxis).size();
+}();
+
+static_assert(fixy_catalog_size == kDimAxisCount,
+    "FixyCatalog cardinality drifted from DimensionAxis cardinality. "
+    "Adding a new DimensionAxis enumerator requires (a) adding the "
+    "matching FixyNotEngaged_<Axis> tag via the macro above, (b) "
+    "appending to FixyCatalog in DimensionAxis order, (c) the matching "
+    "tag_for_axis specialization, and (d) the matching axis_for_tag "
+    "specialization.");
+
+// Round-trip: for every catalog index I, both lookups agree and the
+// catalog ordering follows DimensionAxis value ordering.
+template <::std::size_t I>
+[[nodiscard]] consteval bool catalog_bijection_at() noexcept {
+    using TagAtI = ::std::tuple_element_t<I, FixyCatalog>;
+    constexpr auto axis_v = axis_for_tag_v<TagAtI>;
+    using TagViaForward = tag_for_axis_t<axis_v>;
+    return ::std::is_same_v<TagAtI, TagViaForward>
+        && static_cast<::std::size_t>(axis_v) == I;
+}
+
+template <::std::size_t... Is>
+[[nodiscard]] consteval bool catalog_bijection_holds(
+    ::std::index_sequence<Is...>) noexcept
+{
+    return (catalog_bijection_at<Is>() && ...);
+}
+
+static_assert(
+    catalog_bijection_holds(
+        ::std::make_index_sequence<fixy_catalog_size>{}),
+    "FixyCatalog ordering drifted from DimensionAxis value ordering. "
+    "Each FixyCatalog entry at index I must satisfy "
+    "tag_for_axis_t<static_cast<DimensionAxis>(I)> == entry AND "
+    "axis_for_tag_v<entry> == static_cast<DimensionAxis>(I).");
+
+}  // namespace detail::fixy_catalog
+
+// ─── is_fixy_diag_v / axis_for_tag_v compile-time witnesses ───────
+//
+// These ride next to the catalog definition so a regression in the
+// substrate-vs-fixy discrimination fires at the definition site
+// instead of at a distant call site.
+
+static_assert(is_fixy_diag_v<FixyNotEngaged_Type>,
+    "FixyNotEngaged_Type must be recognized as a fixy diagnostic.");
+static_assert(is_fixy_diag_v<FixyNotEngaged_Staleness>,
+    "FixyNotEngaged_Staleness must be recognized as a fixy diagnostic.");
+static_assert(!is_fixy_diag_v<int>,
+    "Plain primitive types must not register as fixy diagnostics.");
+static_assert(!is_fixy_diag_v<::crucible::safety::diag::tag_base>,
+    "tag_base itself is not a catalog entry — only concrete subclasses "
+    "appear in FixyCatalog.");
+static_assert(!is_fixy_diag_v<::crucible::safety::diag::HotPathViolation>,
+    "Substrate diagnostic tags MUST NOT register as fixy diagnostics. "
+    "The substrate Catalog and FixyCatalog are disjoint by design "
+    "(FOUND-E01 + FIXY-AUDIT-C8 reconciliation).");
+static_assert(!is_fixy_diag_v<::crucible::safety::diag::EffectRowMismatch>,
+    "Substrate diagnostic tags MUST NOT register as fixy diagnostics.");
+
+static_assert(axis_for_tag_v<FixyNotEngaged_Type>
+              == dim::DimensionAxis::Type,
+    "axis_for_tag must invert tag_for_axis at the Type axis.");
+static_assert(axis_for_tag_v<FixyNotEngaged_Staleness>
+              == dim::DimensionAxis::Staleness,
+    "axis_for_tag must invert tag_for_axis at the Staleness axis.");
+
 }  // namespace diag
 
 // ═════════════════════════════════════════════════════════════════════

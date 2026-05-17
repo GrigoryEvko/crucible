@@ -27,6 +27,20 @@
 //   safety/diag/Insights.h     — insight_provider / quality thresholds
 //   safety/diag/RowHashFold.h  — row_hash_contribution / EMPTY_ROW_HASH
 //
+// ── FixyCatalog reconciliation surface ─────────────────────────────
+//
+// Substrate `Catalog` (28 entries) and `Category` enum are CLOSED to
+// the foundation per FOUND-E01.  Fixy's twenty `FixyNotEngaged_*`
+// per-axis diagnostic tags live in a parallel closed enumeration
+// `fixy::diag::FixyCatalog` defined in `fixy/Reject.h` (because the
+// tag classes themselves are defined there).
+//
+// Callers who want the fixy-side catalog enumeration + `is_fixy_diag_v`
+// discriminator + `axis_for_tag_v` reverse lookup include
+// `crucible/fixy/Reject.h` (or the Fixy.h umbrella).  This header
+// stays focused on the substrate re-exports and does not pull the
+// engagement gate machinery in.
+//
 // ── Axiom coverage ─────────────────────────────────────────────────
 //
 //   InitSafe — tag classes are stateless structs; stable_type_id is
