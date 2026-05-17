@@ -189,6 +189,7 @@ crucible_test(test_fixy_cheat_probe)
 crucible_test(test_fixy_fn)
 crucible_test(test_fixy_cap)
 crucible_test(test_fixy_perm)
+crucible_test(test_fixy_sess)
 
 # FIXY-LAT-Security + FIXY-LAT-Trust — every SecLevel and every
 # safety::trust::* tag is reachable through one named grant tag.
@@ -1131,6 +1132,16 @@ crucible_neg_compile_fixy_test(neg_fixy_perm_root_no_row_admission
     "CtxAdmitsPermission|constraints not satisfied|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_perm_fork_ctx_no_bg
     "CtxFitsPermissionFork|row_contains_v|constraints not satisfied|associated constraints are not satisfied")
+
+# ── FIXY-MINT-Sess — fixy/Sess.h re-export of session minters
+# (mint_session=deleted, mint_permissioned_session, mint_channel,
+# mint_session_handle, mint_recording_session, mint_crash_watched_session)
+# plus federation::mint_sender/receiver/coord.  Two HS14 fixtures
+# pin the deleted-overload diagnostic and the channel ctx-fit gate:
+crucible_neg_compile_fixy_test(neg_fixy_sess_mint_session_deleted
+    "is removed|mint_permissioned_session|use of deleted function")
+crucible_neg_compile_fixy_test(neg_fixy_sess_channel_recv_row_drift
+    "CtxFitsChannel|CtxFitsPermissionedProtocol|constraints not satisfied|associated constraints are not satisfied")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
