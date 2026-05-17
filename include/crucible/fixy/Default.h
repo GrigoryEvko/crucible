@@ -176,8 +176,28 @@ struct strict_default_for<dim::DimensionAxis::Observability> {
     // Derived from EffectRow per fixy.md §24.1; the strict default
     // (empty row → no CT discipline) follows from Effect's strict
     // default `Row<>`.  No independent slot in the Fn<...> pack.
+    //
+    // FIXY-AUDIT-A9: expose a `type` alias that pre-resolves to the
+    // Effect axis's strict default.  Without it, consumers reaching
+    // for `strict_default_for<Observability>::type` hit substitution
+    // failure (only `derived_from` was visible).  The alias preserves
+    // the "no independent slot" semantics — the Observability axis is
+    // still NOT a parameter of safety::fn::Fn<...> — but downstream
+    // metaprogramming can name a type without walking `derived_from`.
     using derived_from = strict_default_for<dim::DimensionAxis::Effect>;
+    using type         = typename derived_from::type;
 };
+
+// FIXY-AUDIT-A4: positive static_assert pinning Observability's
+// derived alias to Effect's strict default.  If Effect's default ever
+// drifts (the substrate adds an effect, the Row<>'s identity changes,
+// etc.), this regression fires here at the fixy/Default.h definition
+// site rather than as an opaque substitution failure deep inside a
+// downstream resolver.
+static_assert(std::is_same_v<
+    typename strict_default_for<dim::DimensionAxis::Observability>::type,
+    typename strict_default_for<dim::DimensionAxis::Effect>::type>,
+    "Observability's derived type must round-trip to Effect's strict default.");
 
 template <>
 struct strict_default_for<dim::DimensionAxis::Complexity> {
@@ -281,8 +301,14 @@ namespace detail::default_coverage {
         constexpr bool has_caller    = IsCallerSupplied<axis_v>;
         constexpr bool has_strict    = HasStrictDefault<axis_v>;
         constexpr bool has_derived   = HasDerivedDefault<axis_v>;
+        // FIXY-AUDIT-A9: a derived axis may ALSO expose `type` (pre-
+        // resolved through `derived_from`) — those are not two
+        // independent engagements but a derived axis publishing its
+        // upstream value for downstream consumers.  Count strict as
+        // an independent slot only when no derived marker is present.
+        constexpr int  strict_indep  = (has_strict && !has_derived) ? 1 : 0;
         constexpr int  match_count   = (has_caller ? 1 : 0)
-                                     + (has_strict ? 1 : 0)
+                                     + strict_indep
                                      + (has_derived ? 1 : 0);
         if (match_count != 1) {
             return false;
