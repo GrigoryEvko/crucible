@@ -55,7 +55,6 @@
 
 #include <crucible/safety/DimensionTraits.h>
 
-#include <cstdint>
 #include <string_view>
 
 namespace crucible::fixy::dim {
@@ -109,45 +108,18 @@ static_assert(TIER_KIND_COUNT == 5,
     "the 5-family classification.  fixy/Reject.h's per-Tier dispatch "
     "must be updated alongside.");
 
-// ─── Per-dim Tier sanity — every dim classifies to a known Tier ────
+// ─── Per-dim Tier sanity — covered by substrate guard ──────────────
 //
-// Uses P1306R5 `template for` over reflection-discovered enumerators.
-// If a new enumerator lands and `tier_of_axis` doesn't grow an arm,
-// the inner switch falls through to TierKind{0xFF} and this assertion
-// fires.
-
-namespace detail {
-
-[[nodiscard]] consteval bool every_axis_has_known_tier() noexcept {
-    // Reflect on the substrate-qualified name; GCC 16 rejects ^^ on a
-    // using-declaration (fixy::dim::DimensionAxis is a using-alias),
-    // so we go through ::crucible::safety::DimensionAxis directly.
-    //
-    // `template for` re-declares the induction variable on every
-    // expansion; -Werror=shadow fires on the second iteration.
-    // Suppression follows the substrate pattern from
-    // safety/DimensionTraits.h's every_dimension_axis_has_tier.
-    static constexpr auto dim_known_tier_axes = std::define_static_array(
-        std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : dim_known_tier_axes) {
-        constexpr TierKind t = tier_of_axis([:en:]);
-        if (static_cast<std::uint8_t>(t) >= TIER_KIND_COUNT) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-
-}  // namespace detail
-
-static_assert(detail::every_axis_has_known_tier(),
-    "fixy::dim — at least one DimensionAxis enumerator does not "
-    "classify to a known TierKind via safety::tier_of_axis.  Likely "
-    "cause: a new enumerator was appended to DimensionAxis without "
-    "adding the matching case arm to tier_of_axis's switch.  See "
-    "safety/DimensionTraits.h's extension policy block.");
+// safety/DimensionTraits.h ships `every_dimension_axis_has_tier()` +
+// its own static_assert (line 616 of that header) — both reflect
+// `enumerators_of(^^DimensionAxis)` and reject the
+// `TierKind{0xFF}` fallthrough.  The substrate header is included
+// at line 56 above, so the substrate static_assert fires inside
+// every TU that pulls fixy/Dim.h.  A fixy-side mirror would be dead
+// code (per fixy-H-11): the substrate guard always fires first and
+// catches the same failure mode (new axis without matching arm in
+// tier_of_axis).  Add new axes by editing safety/DimensionTraits.h
+// — the substrate's static_assert then forces the maintainer to
+// extend tier_of_axis's switch arms before the build re-succeeds.
 
 }  // namespace crucible::fixy::dim
