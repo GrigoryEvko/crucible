@@ -1342,6 +1342,20 @@ crucible_neg_compile_fixy_test(neg_fixy_perm_split_n_undeclared
 crucible_neg_compile_fixy_test(neg_fixy_perm_combine_n_undeclared
     "splits_into_pack")
 
+# ── FIXY-MINT-Contract — fixy/Contract.h re-export of Cipher tier
+# migration mints (mint_promote, mint_demote, mint_restore).  HS14
+# floor: two fixtures pin the chain-direction concept gate
+# (PromotableTier / DemotableTier reduce to can_promote_tier_v /
+# can_demote_tier_v, which reduce to tier_replaces() over the
+# CipherTier lattice ordinal: Cold=0 < Warm=1 < Hot=2).  A promotion
+# DOWN the chain (Hot → Cold) and a demotion UP the chain (Cold → Hot)
+# are both structurally invalid; routing through the fixy:: alias must
+# reject identically to the substrate:
+crucible_neg_compile_fixy_test(neg_fixy_contract_promote_wrong_direction
+    "PromotableTier|can_promote_tier|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_contract_demote_wrong_direction
+    "DemotableTier|can_demote_tier|constraints not satisfied|associated constraints are not satisfied")
+
 # ── FIXY-MINT-Sess — fixy/Sess.h re-export of session minters
 # (mint_session=deleted, mint_permissioned_session, mint_channel,
 # mint_session_handle, mint_recording_session, mint_crash_watched_session)
