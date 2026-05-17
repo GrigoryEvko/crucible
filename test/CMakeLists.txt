@@ -1183,6 +1183,17 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_wrong_org
 crucible_neg_compile_fixy_test(neg_fixy_federation_missing_proof
     "mint_federation_admittance|cannot bind|no matching function")
 
+# FIXY-AUDIT-D8 — mint_session_handle HS14 floor.
+#
+# `mint_session_handle<Proto>(resource)` (sessions/Session.h §2252)
+# ships three internal static_asserts: (1) is_well_formed_v<Proto>,
+# (2) !is_empty_choice_v<Proto>, (3) SessionResource<Resource>.
+# Fixtures exercise (1) and (3) — the two most common author errors.
+crucible_neg_compile_fixy_test(neg_fixy_session_handle_malformed_proto
+    "Protocol_Ill_Formed")
+crucible_neg_compile_fixy_test(neg_fixy_session_handle_non_resource
+    "SessionResource_NotPinned")
+
 # FIXY-AUDIT-B1 — HS14 floor for Theory.h §30.14 corpus.
 crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io     "NotInTheoryCorpus")
 
