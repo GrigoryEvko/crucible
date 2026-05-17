@@ -115,9 +115,10 @@ inline constexpr bool fixy_is_strict = (CRUCIBLE_FIXY_STRICT != 0);
 // Always-true concept.  Sketch-mode bindings route through this gate
 // instead of `IsAccepted` so a partially-specified Grants pack does
 // not stop compilation.  The binding STILL goes through the substrate's
-// `safety::fn::ValidComposition` once Resolve.h projects to Fn<...>
-// — sketch mode permissivity applies only to the engagement axis +
-// theory-corpus checks, never to the §6.8 collision rules.
+// `safety::fn::ValidComposition` at `Fn<...>`'s class-body
+// static_assert when `fixy::fn` instantiates `resolved_fn_t` — sketch
+// mode permissivity applies only to the engagement axis + theory-
+// corpus checks, never to the §6.8 collision rules.
 //
 // Production rule of thumb: if a TU compiles green under SKETCH but
 // red under STRICT, the binding has unengaged dims or matches a
@@ -131,11 +132,12 @@ concept IsAcceptedSketch = true;
 // ═════════════════════════════════════════════════════════════════════
 //
 // Aliases to `IsAccepted` under STRICT, `IsAcceptedSketch` under
-// SKETCH.  The next-commit follow-up rewires `fixy::fn`'s class-body
-// `static_assert` from `IsAcceptedFn` to a Profile-aware variant
-// `IsAcceptedActiveFn` that injects the ImplicitTypeMarker and routes
-// through `IsAcceptedActive`.  Until that integration ships, this
-// alias is the infrastructure-only surface.
+// SKETCH.  Post-fixy-H-05, `IsAccepted` is the wrapper-discipline
+// gate that auto-injects the Type-axis marker, so `IsAcceptedActive`
+// inherits the same shape.  The follow-up integration that rewires
+// `fixy::fn`'s class-body static_assert from `IsAccepted` directly
+// to `IsAcceptedActive` is the toggle-routing commit; until that
+// ships, this alias is the infrastructure-only surface.
 //
 // Cost-of-violation: a binding accepted under SKETCH still passes
 // every other static_assert in `safety::fn::Fn<...>`'s class body

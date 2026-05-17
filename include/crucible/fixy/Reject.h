@@ -15,15 +15,21 @@
 //       i.e., the author has read the discipline and made a choice
 //       on every dim
 //
-//   (c) (Phase B hookup) the projected Fn<...> instantiation passes
-//       safety::fn::ValidComposition — the 12 §6.8 collision rules
-//       from safety/CollisionCatalog.h.  Phase A ships the concept
-//       hookup but only fires it when Resolve.h is wired in Phase B;
-//       Phase A consumers exercise the engagement-check path only.
+//   (c) the (Type, Grants...) pair does not match any §30.14
+//       theory-corpus pattern (Theory.h NotInTheoryCorpus).
+//
+// `IsAccepted` is the ENGAGEMENT-LEVEL gate.  §6.8 ValidComposition
+// (the 20 collision rules in safety/CollisionCatalog.h) is enforced
+// ONE LAYER DOWN: `fixy::fn<Type, Grants...>` instantiates
+// `safety::fn::Fn<Type, ...>` whose class-body
+// `static_assert(ValidComposition<Fn>, ...)` (safety/Fn.h §421) fires
+// the rule-specific diagnostic.  Reject.h does NOT route through
+// ValidComposition itself — that would couple this header to the
+// substrate's full Fn<...> resolver and offer no diagnostic the
+// substrate doesn't already surface at wrapper-instantiation time.
 //
 // ── Substrate consumed ─────────────────────────────────────────────
 //
-//   safety/CollisionCatalog.h::ValidComposition<F>   — 12-rule §6.8
 //   safety/Diagnostic.h::tag_base                    — diag-tag base
 //   safety/diag/Insights.h::insight_provider         — per-tag Why/
 //                                                       Symptom/etc.
@@ -714,8 +720,10 @@ concept UniqueEngagementPerAxis =
 //
 // This is the GRANT-LEVEL gate.  The full `IsAccepted<Type, Grants...>`
 // concept (defined below) adds Type-axis validation and the
-// downstream ValidComposition hookup (active in Phase B once Resolve.h
-// is wired).
+// theory-corpus check.  §6.8 ValidComposition is enforced at
+// `safety::fn::Fn<...>`'s class body (safety/Fn.h §421) when
+// `fixy::fn` instantiates the substrate via `resolved_fn_t`; it is
+// NOT a constituent of `IsAccepted`.
 
 template <typename... Grants>
 concept IsAcceptedGrants =
@@ -727,16 +735,21 @@ concept IsAcceptedGrants =
 // ── IsAccepted<Type, Grants...> — the full gate ────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Adds Type-axis well-formedness on top of IsAcceptedGrants.  The
-// Type axis is caller-supplied via fixy::fn<Type, ...>'s first
-// template parameter; the strict-default machinery rejects it as a
-// caller-supplied axis (no relaxation possible — Type IS the
-// parameter).
+// Adds Type-axis well-formedness + theory-corpus check on top of
+// IsAcceptedGrants.  The Type axis is caller-supplied via
+// fixy::fn<Type, ...>'s first template parameter; the strict-default
+// machinery rejects it as a caller-supplied axis (no relaxation
+// possible — Type IS the parameter).
 //
-// Phase B hooks in `safety::fn::ValidComposition` once Resolve.h
-// projects the grants pack to an Fn<...> instantiation.  Phase A
-// only ships the engagement-level gate; the composition gate stays
-// dormant until the projection ships.
+// ValidComposition (§6.8 collision rules) is enforced ONE LAYER DOWN
+// at `safety::fn::Fn<...>`'s class body (safety/Fn.h §421); a binding
+// that passes `IsAccepted` but violates a collision rule fires the
+// substrate's rule-specific diagnostic when `fixy::fn` instantiates
+// `resolved_fn_t`.  `IsAccepted` deliberately does NOT route through
+// ValidComposition because (a) it would couple this header to the
+// substrate's full resolver, and (b) the substrate's class-body
+// check already catches every collision at the same instantiation
+// point that fires `IsAccepted`.
 
 namespace detail::accept {
 
