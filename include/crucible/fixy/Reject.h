@@ -490,12 +490,16 @@ static_assert(axis_for_tag_v<FixyNotEngaged_Staleness>
 }  // namespace diag
 
 // ═════════════════════════════════════════════════════════════════════
-// ── EngagedFor<D, Grants...> — per-axis engagement check ───────────
+// ── engaged_for<D, Grants...>() — per-axis engagement helpers ──────
 // ═════════════════════════════════════════════════════════════════════
 //
-// True iff at least one grant in `Grants...` has
-// `grant::which_dim_v<G> == D`.  Used by `AllDimsEngaged` to fold
-// over every DimensionAxis enumerator.
+// `detail::engagement::engaged_for<D, Grants...>()` is true iff at
+// least one grant in `Grants...` has `grant::which_dim_v<G> == D`.
+// Folded over every DimensionAxis enumerator by `every_axis_engaged`,
+// `first_missing_axis`, and `first_duplicate_axis`.
+//
+// Concept form: AllDimsEngaged is derived from the reflection fold
+// directly — no per-axis public concept ships (fixy-H-04).
 
 namespace detail::engagement {
 
@@ -663,10 +667,14 @@ template <typename... Grants>
 
 }  // namespace detail::engagement
 
-// ─── EngagedFor<D, Grants...> concept ──────────────────────────────
-
-template <dim::DimensionAxis D, typename... Grants>
-concept EngagedFor = detail::engagement::engaged_for<D, Grants...>();
+// fixy-H-04: the public `EngagedFor<D, Grants...>` concept was removed
+// (defined here through 2026-05-18, never consumed by any caller).  The
+// per-axis engagement check lives in `detail::engagement::engaged_for<>()`
+// and is folded over reflection by `every_axis_engaged<>` /
+// `first_missing_axis<>` / `first_duplicate_axis<>` — `AllDimsEngaged`
+// derives from the reflection fold directly, not from a 20-fold
+// conjunction of `EngagedFor` instantiations.  Reintroduce if (and only
+// if) a real consumer needs single-axis constraint expression.
 
 // ─── AllDimsEngaged<Grants...> concept ─────────────────────────────
 
