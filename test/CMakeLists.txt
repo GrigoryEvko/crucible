@@ -192,6 +192,7 @@ crucible_test(test_fixy_perm)
 crucible_test(test_fixy_sess)
 crucible_test(test_fixy_pipe)
 crucible_test(test_fixy_bridge)
+crucible_test(test_fixy_substr)
 
 # FIXY-LAT-Security + FIXY-LAT-Trust — every SecLevel and every
 # safety::trust::* tag is reachable through one named grant tag.
@@ -1165,6 +1166,15 @@ crucible_neg_compile_fixy_test(neg_fixy_bridge_persisted_session_hot_ctx
     "PersistedSession|CipherTier|HotFgCtx|constraints not satisfied|associated constraints are not satisfied|IO|Block")
 crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_nothrow
     "CrashWatched_NoThrow_Rejected|crash-watched|NoThrow")
+
+# ── FIXY-MINT-Substr — fixy/Substr.h re-export of per-substrate
+# session minters (SPSC, SWMR, ChaseLev, MetaLog, ChainEdge, MPMC,
+# CalendarGrid, ShardedCalendarGrid, ShardedGrid).  Two HS14
+# fixtures pin the producer/consumer + writer/reader role gates:
+crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_wrong_handle
+    "cannot convert|no matching function|ProducerHandle|ConsumerHandle")
+crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_wrong_handle
+    "cannot convert|no matching function|WriterHandle|ReaderHandle")
 
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
