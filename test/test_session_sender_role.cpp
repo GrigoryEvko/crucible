@@ -152,12 +152,26 @@ static_assert(std::is_same_v<RewrittenAnn, ExpectedRewrittenAnn>,
     "compose_at_branch on annotated Offer indexes over real branches and preserves Sender<Role>");
 
 // ── dual_of drops the sender tag (2-party dual semantics) ────────
+// fixy-CR-11: the drop breaks involution dual(dual(P)) == P.
+// is_dual_involutive_v reports false on this shape so generic
+// rewriting code can refuse the protocol; full symmetry waits on
+// a `Recipient<Role>` annotation for Select (deferred follow-up).
 
 using AnnDual = dual_of_t<Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>>;
 using ExpectedAnnDual = Select<Send<Msg, End>, Send<Ack, End>>;
 static_assert(std::is_same_v<AnnDual, ExpectedAnnDual>,
     "dual_of<Offer<Sender<Role>, ...>> drops the sender tag — MPST dual "
     "is role-dependent and handled by projection machinery, not 2-party dual");
+static_assert(!is_dual_involutive_v<
+    Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>>,
+    "fixy-CR-11: Sender-annotated Offer is not dual-involutive; "
+    "the trait surfaces the asymmetry to generic code.");
+static_assert(is_dual_involutive_v<Offer<Recv<Msg, End>, Recv<Ack, End>>>,
+    "fixy-CR-11: un-annotated Offer remains dual-involutive.");
+static_assert(is_dual_involutive_v<Send<Msg, End>>,
+    "fixy-CR-11: closed-core protocols are dual-involutive.");
+static_assert(is_dual_involutive_v<Loop<Select<Send<Msg, Continue>, End>>>,
+    "fixy-CR-11: Loop/Select recurses correctly through is_dual_involutive.");
 
 // ── is_empty_choice: annotated-but-empty Offer is still empty ────
 

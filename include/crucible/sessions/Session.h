@@ -47,7 +47,16 @@
 //     dual(Loop<P>)         = Loop<dual(P)>
 //
 // Involution: dual(dual(P)) == P, verified as a framework-level
-// static_assert for every protocol encountered by mint_channel.
+// static_assert for every protocol encountered by mint_channel —
+// MODULO Sender<Role> annotations on Offer<>.  fixy-CR-11 records
+// the residual asymmetry: dual(Offer<Sender<R>, Bs...>) drops the
+// role tag (the dual endpoint's perspective makes the role "us"),
+// so dual(dual(Offer<Sender<R>, Bs...>)) = Offer<Bs...> ≠ source.
+// The `is_dual_involutive_v<P>` trait below identifies protocols
+// for which the law holds without qualification; generic code that
+// requires it MUST gate on the trait, not on well-formedness alone.
+// Restoring full involution requires a `Recipient<Role>` annotation
+// on Select (mirror of Sender on Offer) — deferred follow-up.
 //
 // ─── Recursion semantics — how Loop / Continue actually work ────────
 //
@@ -567,11 +576,19 @@ struct dual_of<Offer<Bs...>> {
     using type = Select<typename dual_of<Bs>::type...>;
 };
 
-// Sender-annotated Offer (#367): dual drops the sender tag and
-// produces a plain Select.  From the DUAL endpoint's perspective
-// the sender of the original Offer is "us" (local role), so the
-// annotation — useful for the Offer-side crash analysis — carries
-// no meaning on the Select-side internal choice.
+// Sender-annotated Offer (#367, fixy-CR-11 residual): dual drops
+// the sender tag and produces a plain Select.  From the DUAL
+// endpoint's perspective the sender of the original Offer is "us"
+// (local role), so the annotation — useful for the Offer-side
+// crash analysis — carries no meaning on the Select-side internal
+// choice.  CONSEQUENCE: involution dual(dual(P)) == P DOES NOT
+// HOLD on this shape — the round-trip strips Sender<Role>.  The
+// `is_dual_involutive_v<P>` trait reports false here so generic
+// code can refuse the protocol.  Restoring involution requires
+// a symmetric `Recipient<Role>` annotation on Select (mirror of
+// Sender on Offer) — that surgery is deferred follow-up because
+// it touches ~10 consumer specializations across SessionContext.h,
+// SessionGrade.h, SessionMint.h, SessionCrash.h.
 template <typename Role, typename... Bs>
 struct dual_of<Offer<Sender<Role>, Bs...>> {
     using type = Select<typename dual_of<Bs>::type...>;
@@ -589,6 +606,60 @@ struct dual_of<VendorPinned<V, P>> {
 
 template <typename P>
 using dual_of_t = typename dual_of<P>::type;
+
+// ═════════════════════════════════════════════════════════════════
+// ── is_dual_involutive_v<P> — partitions protocols by involution
+// ═════════════════════════════════════════════════════════════════
+//
+// fixy-CR-11: `dual_of_t` is involutive on the closed core
+// (Send/Recv/Select/Offer-without-Sender/Loop/Continue/End/
+// VendorPinned) but NOT on `Offer<Sender<Role>, Bs...>` — the
+// dual drops the sender tag, so the round-trip discards data.
+//
+// `is_dual_involutive_v<P>` returns true iff P (and every
+// protocol it transitively contains) is structurally guaranteed
+// to satisfy dual(dual(P)) == P.  Generic code that needs the
+// involution as a precondition (e.g. type-level rewriting that
+// commutes with `dual_of`) MUST gate on this trait, not on
+// `is_well_formed_v<P>`.
+//
+// The trait is conservative: it returns false for any subterm
+// involving a Sender-annotated Offer, even when the outer shape
+// would otherwise be involutive.  That is the right policy — a
+// generic transformation should refuse the whole protocol when
+// any branch is not involutive.
+
+template <typename P>
+struct is_dual_involutive : std::true_type {};
+
+template <typename T, typename R>
+struct is_dual_involutive<Send<T, R>> : is_dual_involutive<R> {};
+
+template <typename T, typename R>
+struct is_dual_involutive<Recv<T, R>> : is_dual_involutive<R> {};
+
+template <typename... Bs>
+struct is_dual_involutive<Select<Bs...>>
+    : std::bool_constant<(is_dual_involutive<Bs>::value && ...)> {};
+
+template <typename... Bs>
+struct is_dual_involutive<Offer<Bs...>>
+    : std::bool_constant<(is_dual_involutive<Bs>::value && ...)> {};
+
+// Sender-annotated Offer is the asymmetric specialization — dual
+// drops the tag, round-trip cannot restore it.  Reports false even
+// when every branch would otherwise be involutive.
+template <typename Role, typename... Bs>
+struct is_dual_involutive<Offer<Sender<Role>, Bs...>> : std::false_type {};
+
+template <typename B>
+struct is_dual_involutive<Loop<B>> : is_dual_involutive<B> {};
+
+template <VendorBackend V, typename P>
+struct is_dual_involutive<VendorPinned<V, P>> : is_dual_involutive<P> {};
+
+template <typename P>
+inline constexpr bool is_dual_involutive_v = is_dual_involutive<P>::value;
 
 // ═════════════════════════════════════════════════════════════════
 // ── is_dual_v / ensure_dual — endpoint-pair duality check (#431)
@@ -2354,12 +2425,39 @@ static_assert(std::is_same_v<dual_of_t<Offer<End, End>>, Select<End, End>>);
 static_assert(std::is_same_v<dual_of_t<Loop<Send<int, Continue>>>,
                               Loop<Recv<int, Continue>>>);
 
-// Duality involution (dual(dual(P)) == P)
+// Duality involution (dual(dual(P)) == P) — holds on the closed
+// core (Sender-free Offer + everything else).
 static_assert(std::is_same_v<dual_of_t<dual_of_t<Send<int, End>>>,
                               Send<int, End>>);
 static_assert(std::is_same_v<
     dual_of_t<dual_of_t<Loop<Select<Send<int, Continue>, End>>>>,
     Loop<Select<Send<int, Continue>, End>>>);
+static_assert(is_dual_involutive_v<Send<int, End>>);
+static_assert(is_dual_involutive_v<Loop<Select<Send<int, Continue>, End>>>);
+static_assert(is_dual_involutive_v<Offer<Send<int, End>, Recv<int, End>>>);
+
+// fixy-CR-11 residual: Sender-annotated Offer does NOT satisfy
+// dual(dual(P)) == P — the dual drops the role tag so the round-
+// trip loses information.  Locked into CI here so any future
+// "fix" that silently restores involution will red this rail.
+namespace fixy_cr_11_involution_asymmetry {
+    struct RoleA {};
+    using Annotated = Offer<Sender<RoleA>, Recv<int, End>>;
+    using RoundTrip = dual_of_t<dual_of_t<Annotated>>;
+    using Stripped  = Offer<Recv<int, End>>;
+    static_assert(!std::is_same_v<RoundTrip, Annotated>,
+        "fixy-CR-11: dual of Sender-annotated Offer drops the role "
+        "tag; involution fails by design (residual gap).");
+    static_assert(std::is_same_v<RoundTrip, Stripped>,
+        "fixy-CR-11: the round-trip produces the un-annotated form "
+        "— locked so a future fix can replace this assertion when "
+        "Recipient<Role> on Select restores symmetry.");
+    static_assert(!is_dual_involutive_v<Annotated>,
+        "fixy-CR-11: is_dual_involutive_v reports false on Sender-"
+        "annotated Offer so generic code can refuse the protocol.");
+    static_assert(is_dual_involutive_v<Stripped>,
+        "fixy-CR-11: un-annotated Offer remains involutive.");
+}
 
 // Composition
 static_assert(std::is_same_v<compose_t<End, Send<int, End>>,
