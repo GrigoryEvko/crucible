@@ -39,6 +39,28 @@
 //
 // Zero.  using-declarations are pure name-lookup directives.
 
+// ── Include discipline (FIXY-AUDIT-C5) ─────────────────────────────
+//
+// All five substrate headers are pulled in directly, per CLAUDE.md
+// §XV "Self-contained. Every header compiles standalone. Add
+// required includes directly; never rely on transitive pull-in."
+//
+// `<crucible/Vigil.h>` is STRUCTURALLY REQUIRED for the
+// `mint_vigil_mode_bridge` re-export below: the substrate signature
+// returns `Vigil::ModeSessionHandle`, a nested type whose definition
+// (`decltype(safety::atomic_session_from_machine<ModeProtocol>(...))`)
+// cannot be named through a forward declaration.  A `class Vigil;`
+// forward decl is insufficient because (a) the return type names a
+// nested member, and (b) the substrate function is `inline` with its
+// body in Vigil.h, so any caller that *invokes* the re-export still
+// needs the complete definition for the call-expression to resolve.
+// Forward-declaring the function with `auto` deduction is also a
+// non-option — `auto` requires the definition for deduction.
+//
+// The four `bridges/*` headers (CrashTransport, EndpointMint,
+// RecordingSessionHandle, SessionPersistence) are each required
+// directly because they declare distinct mint factories surfaced
+// under the fixy::bridge:: namespace — none subsumes another.
 #include <crucible/Vigil.h>
 #include <crucible/bridges/CrashTransport.h>
 #include <crucible/bridges/EndpointMint.h>
