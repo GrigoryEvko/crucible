@@ -1130,6 +1130,13 @@ crucible_neg_compile_fixy_test(neg_fixy_unengaged_version        "FixyNotEngaged
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_unengaged_axis   "AllDimsEngaged")
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_invalid_grant    "AllGrantsWellFormed")
 
+# FIXY-AUDIT-E10 — HS14 floor for mint_fn_for stance-bound mint.
+# mint_fn_for has no own requires clause; rejection surfaces via the
+# stance's class-body IsAccepted static_assert.  Two fixtures pin
+# distinct Type-axis rejection causes (array decay, const-qualified).
+crucible_neg_compile_fixy_test(neg_fixy_fn_for_array_type        "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_fn_for_const_type        "IsAccepted")
+
 # FIXY-AUDIT-D3 — HS14 floor for fixy::fn class-body static_assert.
 # Distinct from D2 (mint_fn requires-clause): the class-body assert
 # fires inside class-template instantiation, not overload resolution.
