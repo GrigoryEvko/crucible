@@ -1223,6 +1223,18 @@ crucible_neg_compile_fixy_test(neg_fixy_session_handle_non_resource
 crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io     "NotInTheoryCorpus")
 crucible_neg_compile_fixy_test(neg_fixy_theory_classified_bg     "NotInTheoryCorpus")
 
+# fixy-CR-01 — strict-default Security bypass closure.
+# Each corpus entry gets a second fixture using `strict<D::Security>`
+# (= accept_default_strict_for<Security>, resolves to Classified) to
+# witness that the §30.14 detection covers BOTH spellings of the
+# Security grant: explicit (as_secret) AND strict-default form.  Before
+# Theory.h's second is_secret_grant specialization, the strict-default
+# form silently bypassed the corpus despite semantic equivalence.
+crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io_strict_default
+    "NotInTheoryCorpus")
+crucible_neg_compile_fixy_test(neg_fixy_theory_classified_bg_strict_default
+    "NotInTheoryCorpus")
+
 # ── FIXY-AUDIT-G4 — stance composition rejection.  Stance aliases are
 # typedefs `fn<Type, ...full pack...>`; they cannot be supplied as
 # grant tags, and a stance's implicit relaxation cannot be supplemented
@@ -7662,6 +7674,13 @@ crucible_neg_compile_test(neg_decide_valid_span_truncation
 # regex anchors on the gate name.
 crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret  "NotInTheoryCorpus")
 crucible_neg_compile_fixy_test(neg_fixy_theory_ghost_observable  "NotInTheoryCorpus")
+
+# fixy-CR-01 — staleness-secret strict-default closure.
+# Second fixture mirroring the classified_io / classified_bg pair
+# above, this time anchored on the staleness_secret_without_declassify
+# corpus entry.  See those fixtures' commentary for the bypass shape.
+crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret_strict_default
+    "NotInTheoryCorpus")
 
 # ── FIXY-ALGEBRA round 2 — concept-gate fixture depth ───────────────
 # Existing Algebra.h coverage pins 2 fixtures (#1 non_lattice / #2

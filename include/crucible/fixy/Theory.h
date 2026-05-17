@@ -21,6 +21,29 @@
 // to the `corpus::` namespace; the closed-set `IsInUnsoundnessCorpus`
 // disjunction picks them up automatically via fold-expression scan.
 //
+// ── Strict-default-Security coverage (fixy-CR-01) ──────────────────
+//
+// The corpus detects Security engagement via `is_secret_grant<G>`, a
+// closed-set predicate that recognizes THREE canonical Security tag
+// shapes:
+//   1. `grant::as_secret`                                 (= Secret)
+//   2. `grant::as_classified`                             (= Classified)
+//   3. `grant::accept_default_strict_for<Security>`       (= Classified
+//                                                            via the
+//                                                            strict-default
+//                                                            projection)
+// Shape #3 is the load-bearing addition closing the fixy-CR-01 bypass:
+// production stances that use `strict<Security>` (the implicit-secret
+// form) are caught by the corpus just like explicit-as_classified
+// bindings.  The invariant `strict_default_for<Security>::value ==
+// SecLevel::Classified` is locked by a static_assert sentinel — if
+// the strict default is ever weakened below Classified, the build
+// breaks and the predicate's coverage needs re-evaluation.
+//
+// Internal-tier IFC (`as_internal + with<IO>`) is OUT OF SCOPE for
+// this corpus entry — see fixy-H-18 for the separate Internal-tier
+// channel discussion.
+//
 // ── Substrate consumed ─────────────────────────────────────────────
 //
 //   fixy/Grant.h — grant tag types (as_secret, declassify, with<>...)
@@ -47,7 +70,10 @@
 // patterns can be marked `[[deprecated]]` with a cite to the
 // substrate-level fix that retired them.
 
+#include <crucible/fixy/Default.h>
+#include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Grant.h>
+#include <crucible/safety/Fn.h>
 
 #include <cstddef>
 #include <type_traits>
@@ -79,6 +105,30 @@ template <> struct is_secret_grant<grant::as_secret>
     : std::true_type {};
 template <> struct is_secret_grant<grant::as_classified>
     : std::true_type {};
+
+// Strict-default-Security form (fixy-CR-01).  The grant
+// `accept_default_strict_for<Security>` is semantically equivalent to
+// an explicit `as_classified` engagement — both resolve to
+// `SecLevel::Classified` via `strict_default_for<Security>::value`.
+// Without this specialization, the production stances
+// `IoFunction<T>` / `BgWorker<T>` / `AsyncEndpoint<T>` (which use
+// `strict<Security> + with_io|with_bg`) silently bypass the §30.14
+// corpus despite being the exact implicit-flow pattern the corpus
+// targets.  The static_assert below locks the invariant: if anyone
+// weakens the strict default below `Classified`, the build breaks
+// (and the predicate's semantic correctness needs re-evaluation).
+template <>
+struct is_secret_grant<grant::accept_default_strict_for<
+        dim::DimensionAxis::Security>>
+    : std::true_type {};
+
+static_assert(
+    strict_default_for<dim::DimensionAxis::Security>::value
+        == ::crucible::safety::fn::SecLevel::Classified,
+    "Theory.h §30.14 invariant: strict_default_for<Security> must "
+    "resolve to SecLevel::Classified.  The strict-default-Security "
+    "form of is_secret_grant relies on this equivalence; weakening "
+    "the strict default would re-open the fixy-CR-01 bypass.");
 
 template <typename G> struct is_declassify_grant
     : std::false_type {};

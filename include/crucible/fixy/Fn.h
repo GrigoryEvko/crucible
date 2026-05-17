@@ -714,13 +714,27 @@ using PureCopy = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>>;
 
-// ── IoFunction — IO effect, strict elsewhere ──────────────────────
+// ── IoFunction — IO effect, public-emit Security, strict elsewhere ─
+//
+// IoFunction emits data via I/O.  Per Theory.h §30.14
+// (classified_io_without_declassify), a binding that engages IO MUST
+// either declassify or pin Security to a non-classified level — the
+// I/O channel is observable and would otherwise leak a classified
+// value.  IoFunction pins `as_public` (= SecLevel::Public) at the
+// stance level: callers whose payload is publicly-observable get
+// IoFunction; callers whose payload is classified-but-audit-trail-
+// authorized for IO use `PublicEmit<T, Policy>` (declassify form).
+//
+// Pre-fixy-CR-01 IoFunction shipped `strict<Security>` (= Classified),
+// which silently bypassed the corpus via the strict-default
+// projection.  The fix pins `as_public` explicitly so the stance
+// matches its documented semantics.
 template <typename Type>
 using IoFunction = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Refinement>,
     detail_stance::strict<dim::DimensionAxis::Usage>,
     grant::with_io,
-    detail_stance::strict<dim::DimensionAxis::Security>,
+    grant::as_public,
     detail_stance::strict<dim::DimensionAxis::Protocol>,
     detail_stance::strict<dim::DimensionAxis::Lifetime>,
     detail_stance::strict<dim::DimensionAxis::Provenance>,
@@ -737,13 +751,25 @@ using IoFunction = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>>;
 
-// ── BgWorker — Bg + Alloc effects (typical bg thread worker) ──────
+// ── BgWorker — Bg + Alloc effects, public Security, strict else ───
+//
+// BgWorker spawns work into a background-thread context.  Per
+// Theory.h §30.14 (classified_bg_without_declassify), the spawn is
+// itself a scheduler-observable event — a classified-value-dependent
+// spawn leaks the value through interleaving timing.  BgWorker pins
+// `as_public` at the stance level: bg workers carry routing /
+// scheduling metadata (non-sensitive by design); workers that
+// process classified payloads use `SecretConsumer<T, Policy>` or
+// compose `declassify<Policy> + with<Bg, Alloc>` explicitly.
+//
+// Pre-fixy-CR-01 BgWorker shipped `strict<Security>`, silently
+// bypassing the corpus.  The fix pins `as_public` explicitly.
 template <typename Type>
 using BgWorker = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Refinement>,
     detail_stance::strict<dim::DimensionAxis::Usage>,
     grant::with<effects::Effect::Bg, effects::Effect::Alloc>,
-    detail_stance::strict<dim::DimensionAxis::Security>,
+    grant::as_public,
     detail_stance::strict<dim::DimensionAxis::Protocol>,
     detail_stance::strict<dim::DimensionAxis::Lifetime>,
     detail_stance::strict<dim::DimensionAxis::Provenance>,
@@ -880,13 +906,22 @@ using PublicEmit = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>>;
 
-// ── AsyncEndpoint — coroutine + IO ────────────────────────────────
+// ── AsyncEndpoint — coroutine + IO + public Security ──────────────
+//
+// AsyncEndpoint is an IO-effecting coroutine.  Same reasoning as
+// IoFunction (Theory.h §30.14): the IO emission requires Security
+// to be public-or-declassified.  Pins `as_public` at the stance
+// level; secret-carrying async endpoints compose `declassify<P>` +
+// `with_io` + `coroutine` explicitly.
+//
+// Pre-fixy-CR-01 AsyncEndpoint shipped `strict<Security>`, silently
+// bypassing the corpus.  The fix pins `as_public` explicitly.
 template <typename Type>
 using AsyncEndpoint = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Refinement>,
     detail_stance::strict<dim::DimensionAxis::Usage>,
     grant::with_io,
-    detail_stance::strict<dim::DimensionAxis::Security>,
+    grant::as_public,
     detail_stance::strict<dim::DimensionAxis::Protocol>,
     detail_stance::strict<dim::DimensionAxis::Lifetime>,
     detail_stance::strict<dim::DimensionAxis::Provenance>,

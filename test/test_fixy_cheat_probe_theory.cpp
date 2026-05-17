@@ -290,11 +290,92 @@ namespace cheat_6_declassify_threading {
         "Secret×IO pattern present.");
 }
 
+// ─── Cheat 7: strict-default Security bypass (closes fixy-CR-01) ───
+//
+// The attacker reasons: "Security defaults to `SecLevel::Classified`
+// per `strict_default_for<Security>::value`.  A binding with NO
+// explicit `as_secret` but with `strict<D::Security>` (=
+// `accept_default_strict_for<Security>`) should resolve to
+// Classified at the value layer — so the §30.14 corpus SHOULD reject
+// it just like an explicit `as_secret` binding.  But the gate is
+// syntactic (`is_secret_grant` matches only the tag SHAPE), so the
+// strict-default form silently bypasses the corpus despite being
+// semantically equivalent."
+//
+// This was a real bypass before fixy-CR-01.  Defense, shipped in
+// Theory.h §30.14: a SECOND `is_secret_grant` specialization for
+// `grant::accept_default_strict_for<DimensionAxis::Security>`,
+// anchored by a `static_assert` invariant tying the strict default
+// to `SecLevel::Classified`.  Both syntactic forms of "Security
+// engages at the Classified tier" now hit the corpus.
+//
+// Witnesses are split between (a) this static_assert and (b) three
+// new neg-compile fixtures in test/fixy_neg/ (one per corpus entry
+// that mentions Security: classified_io / classified_bg /
+// staleness_secret).
+
+namespace cheat_7_strict_default_security_bypass {
+    // Pack 1: strict-default Security × IO, NO declassify.  Before
+    // the fix, IsAccepted would return TRUE here despite the
+    // semantically-equivalent explicit-as_secret form rejecting.
+    // After the fix, IsAccepted returns FALSE.
+    static_assert(!fixy::IsAccepted<int,
+        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        gr::with_io,
+        strict<D::Security>,   // strict default = Classified
+        strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+        strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
+        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+        strict<D::Size>, strict<D::Version>, strict<D::Staleness>>,
+        "Cheat 7 defense witness (classified_io): the corpus now "
+        "rejects strict-default Security × IO without declassify, "
+        "closing the fixy-CR-01 syntactic-vs-semantic bypass.");
+
+    // Pack 2: strict-default Security × Bg, NO declassify.
+    static_assert(!fixy::IsAccepted<int,
+        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        gr::with_bg,
+        strict<D::Security>,
+        strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+        strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
+        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+        strict<D::Size>, strict<D::Version>, strict<D::Staleness>>,
+        "Cheat 7 defense witness (classified_bg): the corpus now "
+        "rejects strict-default Security × Bg without declassify.");
+
+    // Pack 3: strict-default Security × stale_to<N>, NO declassify.
+    static_assert(!fixy::IsAccepted<int,
+        strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Effect>,
+        strict<D::Security>,
+        strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+        strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
+        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+        strict<D::Size>, strict<D::Version>,
+        gr::stale_to<100>>,
+        "Cheat 7 defense witness (staleness_secret): the corpus now "
+        "rejects strict-default Security × stale_to<N> without "
+        "declassify.");
+
+    // No counter-witness for "strict-default + declassify discharges
+    // corpus": `gr::declassify<Policy>` ITSELF engages Security (its
+    // `which_dim_v == Security`), so combining `strict<D::Security>`
+    // with `gr::declassify<Policy>` would double-engage Security and
+    // trip `UniqueEngagementPerAxis` before the corpus is consulted.
+    // Cheat 6's declassify-alone counter-witness already covers the
+    // "Security engaged solely via declassify discharges corpus"
+    // shape — semantically identical to the strict-default form
+    // discharged via declassify.  No new shape to witness here.
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Summary ────────────────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Six adversarial cheats, all rejected (or, in Cheat 3, documented
+// Seven adversarial cheats, all rejected (or, in Cheat 3, documented
 // as an architectural limit of the closed-set corpus discipline).
 //
 //   Cheat 1: rogue declassify specialization        — rejected (IsGrantTag fires)
@@ -303,6 +384,7 @@ namespace cheat_6_declassify_threading {
 //   Cheat 4: rogue IO-effect specialization         — rejected (IsGrantTag fires)
 //   Cheat 5: double-Security engagement             — rejected (UniqueEngagementPerAxis)
 //   Cheat 6: declassify discharges corpus           — counter-witness (binding accepts)
+//   Cheat 7: strict-default Security bypass         — rejected (fixy-CR-01 fix)
 //
 // The closed-set corpus discipline (Theory.h §30.14) is intentional:
 // it targets NAMED canonical implicit-flow shapes from the
@@ -310,6 +392,8 @@ namespace cheat_6_declassify_threading {
 // as_secret would need to be added to is_secret_grant explicitly —
 // this is the documented behavior per the Theory.h doc-block, and
 // the Cheat 3 witness proves the substrate matches the documented
-// behavior.
+// behavior.  fixy-CR-01 (Cheat 7) closed the strict-default Security
+// bypass — both syntactic forms of "Security engages at Classified"
+// now hit the corpus.
 
 int main() { return 0; }
