@@ -1201,6 +1201,16 @@ crucible_neg_compile_fixy_test(neg_fixy_session_handle_non_resource
 crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io     "NotInTheoryCorpus")
 crucible_neg_compile_fixy_test(neg_fixy_theory_classified_bg     "NotInTheoryCorpus")
 
+# ── FIXY-AUDIT-G4 — stance composition rejection.  Stance aliases are
+# typedefs `fn<Type, ...full pack...>`; they cannot be supplied as
+# grant tags, and a stance's implicit relaxation cannot be supplemented
+# with a strict marker on the same axis without colliding on
+# UniqueEngagementPerAxis.  Two fixtures pin both shapes:
+crucible_neg_compile_fixy_test(neg_fixy_relaxation_plus_strict_same_axis
+    "UniqueEngagementPerAxis|IsAcceptedGrants|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_stance_as_grant
+    "AllGrantsWellFormed|IsGrantTag|constraints not satisfied|associated constraints are not satisfied")
+
 # FIXY-AUDIT-C8 — HS14 floor for FixyCatalog reconciliation surface.
 #
 # Two distinct rejection classes for `fixy::diag::is_fixy_diag_v<T>`:
