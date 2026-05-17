@@ -1170,6 +1170,19 @@ crucible_neg_compile_fixy_test(neg_fixy_stance_publicemit_ref          "IsAccept
 # FIXY-AUDIT-A3 — HS14 floor for UniqueEngagementPerAxis.
 crucible_neg_compile_fixy_test(neg_fixy_duplicate_engagement     "UniqueEngagementPerAxis")
 
+# FIXY-AUDIT-D5 — federation mint HS14 floor.
+#
+# `mint_federation_admittance(const LocalCipherPermission&, FederationHandshake)`
+# is a constexpr token mint with a runtime expected<> error surface.
+# The compile-time gates are the parameter types: the proof slot
+# demands a `Permission<tag::LocalCipherTag>` reference, and the
+# handshake slot demands the `FederationHandshake` POD.  Each
+# fixture exercises one of those type-level rejections.
+crucible_neg_compile_fixy_test(neg_fixy_federation_wrong_org
+    "mint_federation_admittance|cannot bind|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_federation_missing_proof
+    "mint_federation_admittance|cannot bind|no matching function")
+
 # FIXY-AUDIT-B1 — HS14 floor for Theory.h §30.14 corpus.
 crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io     "NotInTheoryCorpus")
 
