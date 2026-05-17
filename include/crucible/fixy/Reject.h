@@ -800,17 +800,61 @@ concept IsAcceptedGrants =
 
 namespace detail::accept {
 
+// fixy-H-10: name now matches semantics.  Prior name `type_is_object_or_
+// function` LIED — `std::is_object_v<F>` is FALSE for function types, so
+// the body has always excluded bare functions even though the name read
+// as "accepts objects OR functions."  A reviewer scanning the IsAccepted
+// composition reasonably thought function types were accepted; they
+// weren't.  The new name mirrors the `IsAccepted` / `IsAcceptedGrants` /
+// `IsAcceptedDirect` family and says exactly what the body checks: is
+// T an accepted payload for safety::fn::Fn<T, ...>?
 template <typename T>
-[[nodiscard]] consteval bool type_is_object_or_function() noexcept {
+[[nodiscard]] consteval bool type_is_accepted_payload() noexcept {
     // Mirror of safety/Fn.h's Type constraints:
-    //   - complete object type, non-cv, non-array, non-ref, non-bare-function.
-    // Functions are wrapped as pointers or callables before reaching here.
+    //   - object type (excludes void, references, bare function types),
+    //   - non-cv-qualified (top-level const/volatile silently deletes
+    //     defaulted copy/move-assign on Fn<T, ...>),
+    //   - non-array (Fn(Type v) would decay arrays to pointers — silent
+    //     pointer alias instead of value copy).
+    // Function POINTERS / callables are accepted (they are object types).
+    // Bare function types are not — wrap them as pointers or callables
+    // before instantiating fixy::fn.
     return  std::is_object_v<T>
         && !std::is_const_v<T>
         && !std::is_volatile_v<T>
         && !std::is_array_v<T>
         && !std::is_reference_v<T>;
 }
+
+// fixy-H-10 self-tests: pin the rejection set at the definition site so
+// a future edit that loosens any branch fires immediately.  Function
+// types, void, references, cv-qualifiers, and arrays must all be
+// rejected; scalars, classes, unions, and function POINTERS must be
+// accepted.
+static_assert(type_is_accepted_payload<int>(),
+    "scalars must be accepted payloads.");
+static_assert(type_is_accepted_payload<int*>(),
+    "object pointers must be accepted payloads.");
+static_assert(type_is_accepted_payload<int(*)(int)>(),
+    "function POINTERS are object types — must be accepted (only bare "
+    "function types are rejected).");
+static_assert(!type_is_accepted_payload<int(int)>(),
+    "bare function types must be rejected — wrap as function pointer "
+    "or callable before instantiating fixy::fn.");
+static_assert(!type_is_accepted_payload<void>(),
+    "void must be rejected — Fn<void, ...> has no value-category "
+    "semantics.");
+static_assert(!type_is_accepted_payload<int&>(),
+    "lvalue references must be rejected.");
+static_assert(!type_is_accepted_payload<int&&>(),
+    "rvalue references must be rejected.");
+static_assert(!type_is_accepted_payload<const int>(),
+    "top-level const must be rejected — silently deletes Fn's "
+    "defaulted assignment ops.");
+static_assert(!type_is_accepted_payload<volatile int>(),
+    "top-level volatile must be rejected.");
+static_assert(!type_is_accepted_payload<int[5]>(),
+    "arrays must be rejected — Fn(Type) would decay array to pointer.");
 
 // fixy-H-05: Canonical home for the implicit Type-axis engagement
 // marker.  Defined here (not in Fn.h's detail::resolve) so the
@@ -850,7 +894,7 @@ using ImplicitTypeMarker =
 
 template <typename Type, typename... Grants>
 concept IsAcceptedDirect =
-       detail::accept::type_is_object_or_function<Type>()
+       detail::accept::type_is_accepted_payload<Type>()
     && IsAcceptedGrants<Grants...>
     && theory::NotInTheoryCorpus<Type, Grants...>;
 

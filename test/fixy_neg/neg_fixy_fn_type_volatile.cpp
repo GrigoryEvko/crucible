@@ -2,7 +2,7 @@
 //
 // HS14 floor for FIXY-AUDIT-B11.  Top-level volatile-qualified types
 // fail the Type-axis well-formedness check
-// (`type_is_object_or_function<volatile int>` is false because
+// (`type_is_accepted_payload<volatile int>` is false because
 // `std::is_volatile_v<volatile int>` is true).  Volatile-qualified
 // fields force every access through a memory barrier that the
 // substrate's optimization-relevant aggregator (Fn<...>) does not

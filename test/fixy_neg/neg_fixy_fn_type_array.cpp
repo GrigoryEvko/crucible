@@ -1,7 +1,7 @@
 // fixy_neg: Type=int[4] rejects via IsAccepted's type-axis check.
 //
 // HS14 floor for FIXY-AUDIT-B11.  fixy::fn / mint_fn's IsAccepted gate
-// requires `type_is_object_or_function<Type>` — array types are
+// requires `type_is_accepted_payload<Type>` — array types are
 // excluded because array decay would corrupt the wrapper's copy ctor
 // and break the round-trip with safety::fn::Fn<...>.
 //

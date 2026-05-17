@@ -1427,7 +1427,7 @@ crucible_neg_compile_fixy_test(neg_fixy_publicemit_unengaged_effect
 
 # ── FIXY-AUDIT-B11 — Type-axis well-formedness fixtures ───────────
 #
-# IsAccepted's `type_is_object_or_function<Type>` check rejects array,
+# IsAccepted's `type_is_accepted_payload<Type>` check rejects array,
 # reference, top-level const, top-level volatile, and bare function
 # types.  Each fixture instantiates mint_fn / fixy::fn with the offending
 # Type so the requires-clause fires.  The driver greps for "IsAccepted"

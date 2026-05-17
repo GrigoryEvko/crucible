@@ -1,7 +1,7 @@
 // fixy_neg: stance::PureLinear<void> rejects via Type-axis gate.
 //
 // HS14 floor for FIXY-AUDIT-D4 (PureLinear stance, distinct angle).
-// `void` is not an object type; `type_is_object_or_function<void>`
+// `void` is not an object type; `type_is_accepted_payload<void>`
 // returns false, so IsAccepted rejects.  Distinct failure mode from
 // the array-Type fixture: array decay vs the void-is-not-object
 // rejection class.

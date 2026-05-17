@@ -572,19 +572,19 @@ class fn {
     // tier surfaces its diagnostic message.  Replaces the prior single
     // static_assert that always said "axis not engaged" even when the
     // real failure was AllGrantsWellFormed, UniqueEngagementPerAxis,
-    // type_is_object_or_function, or NotInTheoryCorpus.  Each tier
-    // names the specific inspection helper a downstream author should
-    // consult to identify the offending entry/axis.
+    // type_is_accepted_payload, or NotInTheoryCorpus.  Each tier names
+    // the specific inspection helper a downstream author should consult
+    // to identify the offending entry/axis.
 
     static constexpr bool fixy_h02_tier1_type_ok =
-        detail::accept::type_is_object_or_function<Type>();
+        detail::accept::type_is_accepted_payload<Type>();
     static_assert(fixy_h02_tier1_type_ok,
         "fixy::fn<Type, Grants...> [tier 1: IsAccepted gate]: Type must be "
-        "a complete object type (non-cv, non-array, non-reference, "
-        "non-function, non-void). "
-        "Cite: fixy::detail::accept::type_is_object_or_function.  "
-        "Wrap function types as pointers or callables (std::function_ref) "
-        "before instantiating fixy::fn.");
+        "a non-cv, non-array, non-reference, non-function, non-void "
+        "object type. "
+        "Cite: fixy::detail::accept::type_is_accepted_payload.  "
+        "Wrap bare function types as pointers or callables "
+        "(std::function_ref) before instantiating fixy::fn.");
 
     static constexpr bool fixy_h02_tier2_grants_well_formed =
         !fixy_h02_tier1_type_ok

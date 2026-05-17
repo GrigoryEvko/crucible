@@ -1,7 +1,7 @@
 // fixy_neg: Type=const int rejects via IsAccepted's type-axis check.
 //
 // HS14 floor for FIXY-AUDIT-B11.  Top-level const-qualified types fail
-// the Type-axis well-formedness check (`type_is_object_or_function<
+// the Type-axis well-formedness check (`type_is_accepted_payload<
 // const int>` is false because `std::is_const_v<const int>` is true).
 // Storing a `const int` as the wrapper's field silently deletes the
 // copy-assignment operator and breaks downstream wrappers that depend

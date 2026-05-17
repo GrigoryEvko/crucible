@@ -1,7 +1,7 @@
 // fixy_neg: Type=int& rejects via IsAccepted's type-axis check.
 //
 // HS14 floor for FIXY-AUDIT-B11.  Reference types fail the Type-axis
-// well-formedness check (`type_is_object_or_function<int&>` is false
+// well-formedness check (`type_is_accepted_payload<int&>` is false
 // since `std::is_reference_v<int&>` is true).  Storing a reference as
 // a value-semantic field would force the wrapper to lifetime-extend
 // the referent, which the substrate's Fn<...> aggregator does not

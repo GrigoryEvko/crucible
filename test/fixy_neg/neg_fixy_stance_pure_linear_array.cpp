@@ -3,7 +3,7 @@
 // HS14 floor for FIXY-AUDIT-D4 (PureLinear stance).  PureLinear is
 // the all-strict stance with implicit Linear usage.  Instantiating
 // it with an array Type fires IsAccepted's type-axis check
-// (`type_is_object_or_function<int[5]>` is false — arrays are
+// (`type_is_accepted_payload<int[5]>` is false — arrays are
 // excluded because array-to-pointer decay would corrupt the
 // wrapper's round-trip with safety::fn::Fn).
 //
