@@ -49,6 +49,16 @@
 //                          AtomicMonotonic — plus Linear / Secret /
 //                          SharedPermission re-exports for one-stop
 //                          `fixy::wrap::` value-wrapping access)
+//   - fixy/Struct.h      — structural (non-Graded) safety wrappers
+//                          (Pinned / NonMovable / NotInherited /
+//                          FinalBy / Checked.h primitives /
+//                          ConstantTime / Simd facade / OwnedRegion /
+//                          Workload parallel_for_views family)
+//   - fixy/Is.h          — concept-gate aliases for safety/Is*.h
+//                          (IsLinear / IsRefined / IsTagged / IsSecret /
+//                          IsMonotonic-equivalent recognizers — 32 of
+//                          them — plus IsWitness from
+//                          safety/witness/IsWitness.h)
 //
 // ── Phase D (foundation universe re-exports, shipped) ─────────────
 //   - fixy/Algebra.h     — algebra/Graded.h substrate + 30 lattices

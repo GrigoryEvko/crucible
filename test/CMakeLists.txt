@@ -195,7 +195,28 @@ crucible_test(test_fixy_bridge)
 crucible_test(test_fixy_substr)
 crucible_test(test_fixy_mach_safety)
 crucible_test(test_fixy_wrap)
+crucible_test(test_fixy_struct)
+crucible_test(test_fixy_is)
 crucible_test(test_fixy_umbrella)
+
+# ── FIXY-ALGEBRA / EFF / DIAG / SOURCE — Phase D surfaces ─────────
+#
+# Algebra: Graded<M, L, T> substrate + 30 lattices + GradedWrapper
+#   concept + Modality enum + law verifiers.
+# Eff: full Met(X) surface — Row<>, Computation<>, Subrow,
+#   row_union_t/difference_t/intersection_t, F* aliases (Pure/Tot/
+#   Ghost/Div/ST/All), Capability<>, ExecCtx + 5 canonical ctxs,
+#   21+ Resource budget tags, ConcurrentRow, OsUniverse, EffectMask.
+# Diag: Category + Catalog + tag_of_t / category_of_v bijection +
+#   28 tag classes + stable_name / type_id / function_id +
+#   canonicalize_pack + insight_provider + row_hash_contribution.
+# Source: source::* / trust::* / access::* / version::* /
+#   vessel_trust::* / secret_policy::* / hash_family::* tag
+#   namespaces — pure phantom-type aliases.
+crucible_test(test_fixy_algebra)
+crucible_test(test_fixy_eff)
+crucible_test(test_fixy_diag)
+crucible_test(test_fixy_source)
 
 # FIXY-LAT-Security + FIXY-LAT-Trust — every SecLevel and every
 # safety::trust::* tag is reachable through one named grant tag.
