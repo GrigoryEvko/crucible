@@ -120,7 +120,13 @@
 //                    : std::true_type {};
 //   }
 //
-//   // 2. Mint root at startup (single call per Whole tag):
+//   // 2. Mint a root token for the Whole tag at the authority-origination
+//   //    point.  Each call returns a fresh linear token; the holder owns
+//   //    "the Whole region" for the duration of that token's scope.
+//   //    Multiple call sites per Tag are sound by design (e.g. one mint
+//   //    per slot-publication in KernelCache, one per smoke-test region
+//   //    in OwnedRegion) — linearity at the token-holding scope is the
+//   //    soundness story, NOT mint-cardinality.
 //   auto whole = mint_permission_root<ring_tags::Whole>();
 //
 //   // 3. Split into disjoint subregions:
@@ -140,9 +146,21 @@
 // 1. NEVER store a `Permission<Tag>` in a long-lived data structure
 //    that is shared between threads.  The struct may be aliased and
 //    the type system can't see it; defeats linearity.
-// 2. Mint each root tag exactly once.  No machinery enforces this —
-//    the rule is grep-discoverable (`mint_permission_root<` is the
-//    only construction call).
+// 2. `mint_permission_root<Tag>()` is REENTRANT by design.  Each call
+//    returns a fresh authoritative `Permission<Tag>` token; soundness
+//    rides on the token's MOVE-ONLY linearity at the holding scope,
+//    not on minting being a once-per-program event.  Production
+//    deliberately mints multiple roots per Tag — every KernelCache
+//    slot publish takes a fresh `Permission<KernelCompileTag>`; smoke
+//    tests mint several `Permission<smoke_tag>` for independent
+//    regions; per-iteration arena work mints fresh per-region tokens.
+//    The discipline is grep-discoverable (`mint_permission_root<` =
+//    every authority origination point); review that every call site
+//    is in a trusted module-init / per-region-scoped position.  The
+//    federation peer subset (tag::FederatedPeer<Org>) is the one place
+//    where once-per-org IS enforced — `mint_permission_root` is
+//    compile-rejected and minting is funnelled through
+//    `mint_federation_admittance` per fixy-CR-06.
 // 3. Tag tree splits_into specializations belong in the SAME
 //    translation unit as the tag definitions.  Reviewers should see
 //    the whole region tree in one place.
@@ -531,9 +549,32 @@ constexpr void permission_drop(Permission<Tag>&&) noexcept {
 
 // ── Factories ────────────────────────────────────────────────────────
 
-// Root mint.  Call exactly once per Tag at startup.  No machinery
-// detects double-mint; the call site is grep-discoverable
-// (`mint_permission_root<` matches every minting site).
+// Root mint.  Returns a fresh authoritative `Permission<Tag>` token at
+// the call site.
+//
+// **The contract is "fresh token per call site", NOT "once per program
+// per Tag".**  Production deliberately mints multiple roots for the
+// same Tag — KernelCache::insert mints a fresh `Permission<KernelCompileTag>`
+// per slot publication (MerkleDag.h:1686, 1744); OwnedRegion smoke
+// tests mint three independent `Permission<smoke_tag>` for three
+// regions; BackgroundThread.h mints distinct roots for each of its
+// (start_whole, trace_whole, build_whole, publish_whole) per-iteration
+// pipelines.  Soundness rides on the token's MOVE-ONLY linearity
+// (`Permission<Tag>` deletes copy with reason; -Werror=use-after-move
+// catches double-consume) — NOT on cardinality of mint calls.  Two
+// concurrent `Permission<Tag>` instances are sound iff each is held
+// linearly (no aliasing); the type system guarantees the linearity.
+//
+// What "exactly once" WOULD mean if we enforced it (and what it does
+// mean for the federation peer subset, fixy-CR-06): the call sites
+// that mint a root are the program's CSL frame-rule originations.
+// Reviewers should treat `mint_permission_root<` as a grep-target and
+// confirm each call sits at a legitimate authority origination point
+// (subsystem init, per-region scope, per-publication slot).  The
+// `tag::FederatedPeer<Org>` family is the one Tag space where naive
+// `mint_permission_root` is compile-rejected — federated peer tokens
+// MUST flow through `mint_federation_admittance` (which holds the
+// only friend access).
 //
 // Cost: returns a 1-byte empty token.  Inlined to a no-op.
 template <typename Tag>
