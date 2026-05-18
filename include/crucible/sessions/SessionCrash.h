@@ -42,7 +42,14 @@
 //     compose × Delegate<Stop, K> rules ship in SessionDelegate.h
 //     via the GAPS-048 specialisations: delegate-of-Stop collapses
 //     to Stop rather than entering K.
-//   * is_well_formed<Stop_g<C>, L> = true     any LoopCtx
+//   * is_well_formed<Stop_g<C>, L> = true     any LoopCtx (Stop_g is
+//                                             well-formed at every
+//                                             non-loop-body position;
+//                                             Loop<Stop_g<C>> itself
+//                                             is rejected by the
+//                                             Loop<B> well-formedness
+//                                             check at Session.h —
+//                                             fixy-A2-020)
 //   * is_subtype_sync<Stop_g<C>, U> = true    bottom for non-Stop U
 //   * is_subtype_sync<Stop_g<C1>, Stop_g<C2>> = CrashLattice order
 //   * SessionHandle<Stop_g<C>, Res, LoopCtx>  terminal handle with
@@ -732,6 +739,14 @@ static_assert(is_well_formed_v<Stop>);
 static_assert(is_well_formed_v<Stop_g<CrashClass::NoThrow>>);
 // Stop inside a Loop is well-formed (terminal branch of a choice).
 static_assert(is_well_formed_v<Loop<Select<Send<int, Continue>, Stop>>>);
+// fixy-A2-020: but Stop as the ENTIRE loop body is rejected — the loop
+// can never reach Continue.  The well-formedness check fires at the
+// Loop<B> specialization in Session.h via is_terminal_state<B>, whose
+// Stop_g<C> specialization above makes Stop / Stop_g<C> terminal.
+static_assert(!is_well_formed_v<Loop<Stop>>);
+static_assert(!is_well_formed_v<Loop<Stop_g<CrashClass::NoThrow>>>);
+static_assert(!is_well_formed_v<Loop<Stop_g<CrashClass::Throw>>>);
+static_assert(!is_well_formed_v<Loop<Stop_g<CrashClass::ErrorReturn>>>);
 
 // ─── is_subtype_sync<Stop, U> = true (Stop is the bottom) ─────────
 

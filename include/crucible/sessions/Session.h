@@ -1017,10 +1017,25 @@ using compose_at_branch_t = typename compose_at_branch<P, I, Q>::type;
 // ── is_well_formed<P, LoopCtx> — compile-time soundness check ───
 // ═════════════════════════════════════════════════════════════════
 //
-// Verifies every Continue has an enclosing Loop.  Nothing else can go
-// wrong at the combinator level — Send/Recv always have a continuation,
-// Select/Offer always have at least one branch by type-system well-
-// formedness, End/Loop are unconditionally OK.
+// Verifies that:
+//   1. Every Continue has an enclosing Loop (LoopCtx threading).
+//   2. Every Loop<B>'s body B is not itself a terminal state — a
+//      loop whose body is End or Stop_g<C> can never reach Continue
+//      and so is structurally equivalent to its terminal but
+//      pretends to be a loop (fixy-A2-020).
+//
+// Send/Recv always have a continuation, Select/Offer always have at
+// least one branch by type-system well-formedness, End/Stop_g/Loop
+// are unconditionally OK at non-loop-body positions.
+
+// Forward declaration of is_terminal_state — the primary template's
+// definition follows is_well_formed below, but the Loop<B> body check
+// queries it.  SessionCrash.h specialises is_terminal_state for
+// Stop_g<C>; any TU that wants Loop<Stop_g<C>> rejection MUST
+// transitively include SessionCrash.h so the specialisation is
+// visible at the static_assert / mint site.
+template <typename P>
+struct is_terminal_state;
 
 template <typename P, typename LoopCtx = void>
 struct is_well_formed;
@@ -1061,7 +1076,17 @@ struct is_well_formed<Loop<B>, LoopCtx>
     // Loop<B> introduces itself as the new inner LoopCtx for checking
     // B while preserving any outer context-axis wrappers such as
     // EpochCtx.
-    : is_well_formed<B, session_loop_ctx_rebind_inner_t<LoopCtx, Loop<B>>> {};
+    //
+    // fixy-A2-020: a terminal state as the entire loop body is
+    // structurally a no-op (the body never reaches Continue), so
+    // Loop<End>, Loop<Stop_g<C>>, and Loop<VendorPinned<V, terminal>>
+    // are rejected at the well-formedness gate.  Terminal states as
+    // BRANCH positions inside a Select/Offer body remain accepted
+    // (canonical example: Loop<Select<Send<int, Continue>, Stop>>).
+    : std::bool_constant<
+          !is_terminal_state<B>::value
+          && is_well_formed<B, session_loop_ctx_rebind_inner_t<LoopCtx, Loop<B>>>::value
+      > {};
 
 template <VendorBackend V, typename P, typename LoopCtx>
 struct is_well_formed<VendorPinned<V, P>, LoopCtx>
@@ -2538,6 +2563,12 @@ static_assert(is_well_formed_v<Loop<Select<Send<int, Continue>, End>>>);
 static_assert(!is_well_formed_v<Continue>);             // Continue outside Loop
 static_assert(!is_well_formed_v<Send<int, Continue>>);  // Continue outside Loop
 static_assert(!is_well_formed_v<Select<Continue, End>>);
+
+// fixy-A2-020: Loop bodies must not be entirely terminal — a loop
+// whose body is End/Stop_g/VendorPinned<terminal> has no reachable
+// Continue and is structurally equivalent to its terminal state.
+static_assert(!is_well_formed_v<Loop<End>>);
+static_assert(!is_well_formed_v<Loop<VendorPinned<VendorBackend::CPU, End>>>);
 
 // Nested loops: Continue binds to the INNERMOST enclosing Loop.
 static_assert(is_well_formed_v<Loop<Loop<Send<int, Continue>>>>);

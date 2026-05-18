@@ -1863,6 +1863,17 @@ crucible_neg_compile_session_test(neg_crashwatched_class_lattice_violation
 crucible_neg_compile_session_test(neg_crashwatched_stop_class_mismatch
     "CrashWatched_StopClass_Mismatch")
 
+# fixy-A2-020: HS14 floor for the new `!is_terminal_state<B>` conjunct
+# in the is_well_formed<Loop<B>, LoopCtx> specialization at
+# include/crucible/sessions/Session.h.  Together these two fixtures
+# witness the rejection of `Loop<End>` and `Loop<Stop>` — both
+# semantically equivalent to their terminal body, neither containing
+# a reachable Continue.
+crucible_neg_compile_session_test(neg_loop_body_terminal_end
+    "static assertion failed|Protocol_Ill_Formed|is_well_formed")
+crucible_neg_compile_session_test(neg_loop_body_terminal_stop
+    "static assertion failed|Protocol_Ill_Formed|is_well_formed")
+
 # GAPS-066: NumericalTier Send covariance / Recv contravariance and
 # channel-boundary fixtures.  These pin the compile-time recipe-tier
 # discipline that feeds MIMIC §41: weak producers cannot satisfy strict
