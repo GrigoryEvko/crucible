@@ -85,7 +85,10 @@
 // FOUND-E18 section for the symmetric back-reference.
 
 #include <crucible/effects/Capabilities.h>
+#include <crucible/effects/Computation.h>
 #include <crucible/effects/EffectRow.h>
+#include <crucible/safety/DetSafe.h>
+#include <crucible/safety/Progress.h>
 
 #include <type_traits>
 
@@ -197,6 +200,71 @@ concept IsST    = Subrow<R, STRow>;
 template <typename R>
 concept IsAll   = Subrow<R, AllRow>;
 
+// ── Value-carrying F* type aliases (fixy-A3-019) ───────────────────
+//
+// CLAUDE.md §XVI promises canonical F*-style named compositions that
+// stack the three load-bearing chain wrappers around a payload T:
+//
+//     Pure<T>     ≡  Progress<Terminating,  DetSafe<Pure, Computation<Row<>, T>>>
+//     Tot<E_os, T> ≡  Progress<Terminating,  DetSafe<Pure, Computation<E_os,  T>>>
+//     Div<E_os, T> ≡  Progress<MayDiverge,   DetSafe<Pure, Computation<E_os,  T>>>
+//
+// The substrate-stack reading bottom-up: T is carried as a Computation
+// (binds the row), then DetSafe-pinned to the strongest replay-safety
+// tier (Pure), then Progress-pinned to the requested termination class.
+// All three wrappers are regime-1 Graded EBO collapses — the value-
+// carrying alias costs sizeof(Computation<R, T>) at -O3, byte-equivalent
+// to a bare Computation but with the determinism + termination promise
+// carried in the type.
+//
+// ── Why these three, not more ──────────────────────────────────────
+//
+// The F* effect lattice top-half (Pure / Tot / Ghost ⊑ Div ⊑ ST ⊑ All)
+// has a discrete row component (the `*Row` aliases above) and a
+// discrete progress component (Terminating vs MayDiverge).  Pure / Tot
+// / Div are the three named cells:
+//
+//   Pure :  Row<>     × Terminating
+//   Tot  :  E_os      × Terminating
+//   Div  :  E_os      × MayDiverge
+//
+// ST and All names belong to the ROW aliases (`STRow`, `AllRow`) — the
+// value-carrying form just substitutes E_os = STRow / AllRow into the
+// Tot or Div shape, no new alias needed.  Ghost mirrors Pure at the
+// row level (both ∅) so a separate `Ghost<T>` alias would shadow Pure
+// with the same expansion — explicitly omitted to keep the public
+// surface minimal.
+//
+// ── Naming + qualification discipline ──────────────────────────────
+//
+// `Pure` (template alias, namespace `crucible::effects`) is lexically
+// distinct from `DetSafeTier_v::Pure` (enum value, scoped under
+// `crucible::safety::DetSafeTier_v`).  No collision: the alias appears
+// only in TYPE position, the enum value only in VALUE position.  The
+// expansion uses fully-qualified enum values so the disambiguation is
+// explicit at definition site.
+
+template <typename T>
+using Pure = ::crucible::safety::Progress<
+    ::crucible::safety::ProgressClass_v::Terminating,
+    ::crucible::safety::DetSafe<
+        ::crucible::safety::DetSafeTier_v::Pure,
+        Computation<PureRow, T>>>;
+
+template <typename E_os, typename T>
+using Tot = ::crucible::safety::Progress<
+    ::crucible::safety::ProgressClass_v::Terminating,
+    ::crucible::safety::DetSafe<
+        ::crucible::safety::DetSafeTier_v::Pure,
+        Computation<E_os, T>>>;
+
+template <typename E_os, typename T>
+using Div = ::crucible::safety::Progress<
+    ::crucible::safety::ProgressClass_v::MayDiverge,
+    ::crucible::safety::DetSafe<
+        ::crucible::safety::DetSafeTier_v::Pure,
+        Computation<E_os, T>>>;
+
 // ── Self-test block ────────────────────────────────────────────────
 
 namespace detail::fx_aliases_self_test {
@@ -302,6 +370,53 @@ static_assert(!IsDiv  <STRow>);   static_assert( IsST <STRow>);   static_assert(
 static_assert(!IsPure <AllRow>);  static_assert(!IsTot<AllRow>);  static_assert(!IsGhost<AllRow>);
 static_assert(!IsDiv  <AllRow>);  static_assert(!IsST <AllRow>);  static_assert( IsAll  <AllRow>);
 
+// ── Value-carrying alias structural witness (fixy-A3-019) ──────────
+//
+// The three F*-style value-carrying aliases substrate-decompose to
+// Progress<Class, DetSafe<Pure, Computation<Row, T>>>.  We witness:
+//
+//   (1) Each alias is well-formed for canonical payloads (int, void*,
+//       move-only types) and arbitrary row shapes.
+//   (2) Progress / DetSafe / Computation member-type accessors agree
+//       with the canonical-order docblock.  payload row reads back as
+//       declared.
+//   (3) The regime-1 size promise holds — sizeof(Pure<T>) == sizeof
+//       (Computation<PureRow, T>), no per-grade storage.
+
+// (1) Well-formedness — instantiations compile for representative payloads.
+using PureInt   = Pure<int>;
+using TotIoInt  = Tot<Row<Effect::IO>, int>;
+using DivIoInt  = Div<Row<Effect::IO>, int>;
+using DivAllVp  = Div<AllRow, void*>;
+
+// (2) Member-type accessors agree with the docblock's substrate stack.
+static_assert(std::is_same_v<PureInt::value_type,
+                             ::crucible::safety::DetSafe<
+                                 ::crucible::safety::DetSafeTier_v::Pure,
+                                 Computation<PureRow, int>>>);
+static_assert(PureInt::cls == ::crucible::safety::ProgressClass_v::Terminating);
+static_assert(PureInt::value_type::tier == ::crucible::safety::DetSafeTier_v::Pure);
+static_assert(std::is_same_v<PureInt::value_type::value_type::row_type, PureRow>);
+static_assert(std::is_same_v<PureInt::value_type::value_type::value_type, int>);
+
+static_assert(std::is_same_v<TotIoInt::value_type::value_type::row_type,
+                             Row<Effect::IO>>);
+static_assert(TotIoInt::cls == ::crucible::safety::ProgressClass_v::Terminating);
+
+static_assert(std::is_same_v<DivIoInt::value_type::value_type::row_type,
+                             Row<Effect::IO>>);
+static_assert(DivIoInt::cls == ::crucible::safety::ProgressClass_v::MayDiverge);
+static_assert(DivIoInt::value_type::tier == ::crucible::safety::DetSafeTier_v::Pure);
+
+// (3) Regime-1 layout — the three wrappers EBO-collapse to the
+// underlying Computation's footprint.  This is the substrate's
+// zero-runtime-cost promise made structural.
+static_assert(sizeof(Pure<int>)  == sizeof(Computation<PureRow,        int>));
+static_assert(sizeof(Tot<Row<Effect::IO>, int>)
+              == sizeof(Computation<Row<Effect::IO>, int>));
+static_assert(sizeof(Div<AllRow, void*>)
+              == sizeof(Computation<AllRow,          void*>));
+
 }  // namespace detail::fx_aliases_self_test
 
 // ── Runtime smoke test ──────────────────────────────────────────────
@@ -326,6 +441,24 @@ inline void runtime_smoke_test() noexcept {
     // through templated callers, which is the concrete F* substitution
     // surface this header exposes to the rest of the codebase.
     static_assert(IsPure<PureRow> && IsAll<AllRow>);
+
+    // Value-carrying alias smoke (fixy-A3-019) — default-construct
+    // each alias and read the static class/tier/row accessors at
+    // runtime so any consteval-vs-constexpr accessor regression in
+    // Progress/DetSafe/Computation surfaces alongside the static
+    // assertions, per the runtime-smoke-test discipline (memory
+    // feedback_algebra_runtime_smoke_test_discipline).
+    Pure<int>                         pure_value{};
+    Tot<Row<Effect::IO>, int>         tot_value{};
+    Div<AllRow, void*>                div_value{};
+
+    [[maybe_unused]] auto pure_class = pure_value.cls;
+    [[maybe_unused]] auto tot_tier   = tot_value.peek().tier;
+    [[maybe_unused]] auto div_class  = div_value.cls;
+
+    static_assert(std::is_same_v<decltype(pure_value), Pure<int>>);
+    static_assert(std::is_same_v<decltype(tot_value),  Tot<Row<Effect::IO>, int>>);
+    static_assert(std::is_same_v<decltype(div_value),  Div<AllRow, void*>>);
 }
 
 }  // namespace crucible::effects

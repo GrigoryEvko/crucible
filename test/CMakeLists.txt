@@ -2151,6 +2151,21 @@ crucible_neg_compile_effects_test(neg_os_universe_cardinality_overflow
 crucible_neg_compile_effects_test(neg_os_universe_atom_underlying_widened
     "static assertion failed|static_assert|OsUniverse_Underlying|fixy-A3-018")
 
+# ─── fixy-A3-019: F*-style value-carrying aliases (FxAliases.h) ────
+#
+# CLAUDE.md §XVI canonical surface promises Pure<T> / Tot<E,T> /
+# Div<E,T> as Progress<Class, DetSafe<Pure, Computation<R, T>>>.
+# Two fixtures pin the structural distinctness contract: (1) Pure
+# does NOT collapse with a MayDiverge-pinned stack of the same row;
+# (2) Pure does NOT collapse with Tot when the row gains IO.
+# Without these the F* substitution chain (Pure ⊑ Tot ⊑ Div ⊑ ST ⊑
+# All) can be inverted at call sites — exactly the bug class the
+# value-carrying aliases are designed to close.
+crucible_neg_compile_effects_test(neg_fxalias_pure_collapses_div_terminating
+    "static assertion failed|static_assert|fixy-A3-019")
+crucible_neg_compile_effects_test(neg_fxalias_tot_collapses_pure_on_io_row
+    "static assertion failed|static_assert|fixy-A3-019")
+
 # ─── P1-AUDIT-5 (#856): wrapper-lift + tier-discrimination gates ───
 #
 # Two fixtures: AllocClassFromCtx rejects Unbound (no wrapper
