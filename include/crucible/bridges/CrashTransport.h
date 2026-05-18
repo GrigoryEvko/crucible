@@ -216,6 +216,25 @@ namespace detail { struct WrapCrashReturnAuthorizer; }
 class WrapCrashReturnKey {
     constexpr WrapCrashReturnKey() noexcept = default;
 
+    // fixy-A2-032: deny copy/move so the passkey cannot be aliased
+    // post-mint.  Even after an authorized
+    // `detail::WrapCrashReturnAuthorizer::mint()` produces a prvalue,
+    // no path may duplicate it — this forecloses an attack class where
+    // a key is exfiltrated via lambda capture, template-friend cheat,
+    // or returning by value from a hypothetical friend method.  The
+    // C++17 mandatory copy-elision rule keeps the production paths
+    // intact: `mint()` → prvalue → value parameter (CrashEvent's ctor)
+    // and prvalue → const-ref binding (crash_witness_key's ctor) both
+    // bypass copy/move construction entirely, so this deletion is
+    // defense-in-depth at zero call-site cost.  Companion to fixy-H-25
+    // (PermissionInherit.h) and fixy-A2-021 (the non-template
+    // authorizer routing) — together they make the H-25 closure
+    // structurally unforgeable rather than discipline-only.
+    WrapCrashReturnKey(const WrapCrashReturnKey&) =
+        delete("fixy-A2-032: passkey cannot be copied");
+    WrapCrashReturnKey(WrapCrashReturnKey&&) =
+        delete("fixy-A2-032: passkey cannot be moved");
+
     // Only `detail::WrapCrashReturnAuthorizer::mint()` can produce a
     // key — and that helper is itself only callable from inside
     // `wrap_crash_return` (the authorizer's `mint()` is named and
@@ -224,6 +243,22 @@ class WrapCrashReturnKey {
     // call it without becoming structurally visible).
     friend struct detail::WrapCrashReturnAuthorizer;
 };
+
+// fixy-A2-032: structural guard.  Pre-fix the compiler implicitly
+// synthesized public copy/move ctors on `WrapCrashReturnKey` (an
+// empty class), so `std::is_copy_constructible_v` evaluated true.
+// Post-fix it evaluates false because the copy/move ctors are
+// `= delete`d.  These asserts fire eagerly via `CrashTransport.h`'s
+// pervasive inclusion, locking the non-fungibility property against
+// future regression.
+static_assert(!std::is_copy_constructible_v<WrapCrashReturnKey>,
+              "fixy-A2-032: WrapCrashReturnKey must not be copy-constructible");
+static_assert(!std::is_move_constructible_v<WrapCrashReturnKey>,
+              "fixy-A2-032: WrapCrashReturnKey must not be move-constructible");
+static_assert(!std::is_copy_assignable_v<WrapCrashReturnKey>,
+              "fixy-A2-032: WrapCrashReturnKey must not be copy-assignable");
+static_assert(!std::is_move_assignable_v<WrapCrashReturnKey>,
+              "fixy-A2-032: WrapCrashReturnKey must not be move-assignable");
 
 namespace detail {
 

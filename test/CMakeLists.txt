@@ -8984,3 +8984,14 @@ crucible_neg_compile_bridges_test(neg_wrap_crash_return_key_external_constructio
     "is private within this context|private|WrapCrashReturnKey")
 crucible_neg_compile_bridges_test(neg_crash_event_external_construction
     "is private within this context|private|WrapCrashReturnKey")
+
+# fixy-A2-032 — HS14 floor for the WrapCrashReturnKey non-fungibility
+# property.  Two fixtures witness that the passkey cannot be duplicated
+# even when held by reference: the copy-ctor and move-ctor are both
+# `= delete("fixy-A2-032: ...")`.  C++17 mandatory copy-elision keeps
+# the production path (mint() prvalue → CrashEvent value parameter)
+# intact, so the deletion is defense-in-depth at zero call-site cost.
+crucible_neg_compile_bridges_test(neg_wrap_crash_return_key_copy_construct
+    "use of deleted function|passkey cannot be copied|fixy-A2-032|deleted")
+crucible_neg_compile_bridges_test(neg_wrap_crash_return_key_move_construct
+    "use of deleted function|passkey cannot be moved|fixy-A2-032|deleted")
