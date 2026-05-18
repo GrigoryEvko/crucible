@@ -26,6 +26,33 @@
 //                   the acquire fence and release store run only on
 //                   the signalled path (compile-time-bounded via
 //                   [[likely]]).
+//
+// ── Cache-line isolation (fixy-A1-001) ──────────────────────────────
+//
+// `alignas(64)` at the class level pins every OneShotFlag instance to
+// its own cache line.  The producer side (`signal()` / `signal_throw()`)
+// release-stores `flag_`; the consumer side (`peek()` / `check_and_run()`
+// / `peek_nothrow()`) relaxed/acquire-loads it on the hot path.  Cross-
+// thread MESI traffic must NOT ping-pong against unrelated state in the
+// embedding struct — otherwise every producer write to an adjacent
+// (logically unrelated) field invalidates the consumer's cache line and
+// the relaxed-load that should cost ~1 cycle costs an L3 round-trip
+// instead (~35-50 cycles on the dev hardware, more cross-socket).
+//
+// The discipline used to live at the embed site
+// (BackgroundThread.h:169/215 apply `alignas(64)` to `stop_requested`
+// and `reset_requested`).  Per CLAUDE.md §IX cross-thread-atomic rule,
+// every cross-thread atomic deserves its own line — so we hoist the
+// alignment INTO the class itself.  Every embedder is now cache-line-
+// isolated by construction; existing per-embed `alignas(64)` directives
+// remain valid (a stricter alignment is always honoured) but they are
+// now defensive depth, not the load-bearing rule.
+//
+// Cost: 64 bytes per OneShotFlag (vs 1 for the bare atomic<bool>).
+// Crucible deployments hold O(threads) flags — a handful per pipeline,
+// tens per fleet — so the absolute memory cost is rounding error and
+// the latency-cost-of-false-sharing saved at every relaxed-load is the
+// dominant signal.
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Crash.h>
@@ -37,7 +64,7 @@
 
 namespace crucible::safety {
 
-class OneShotFlag {
+class alignas(64) OneShotFlag {
     std::atomic<bool> flag_{false};
 
 public:
@@ -176,8 +203,16 @@ public:
     }
 };
 
-// Zero-cost: the flag is a single atomic<bool>.
-static_assert(sizeof(OneShotFlag) == sizeof(std::atomic<bool>),
-              "OneShotFlag must not introduce padding beyond its atomic");
+// Cache-line isolation: every OneShotFlag occupies a full cache line
+// so cross-thread signal stores never invalidate adjacent state.
+// alignof claim is the structural guarantee; sizeof follows from the
+// standard rule that sizeof is a multiple of alignof.
+static_assert(alignof(OneShotFlag) >= 64,
+              "OneShotFlag must be cache-line aligned to prevent false "
+              "sharing on the cross-thread signal path (CLAUDE.md §IX).");
+static_assert(sizeof(OneShotFlag) >= 64,
+              "OneShotFlag occupies a full cache line by construction; "
+              "embedders rely on the flag NOT sharing a line with any "
+              "field touched on the consumer's hot path.");
 
 } // namespace crucible::safety
