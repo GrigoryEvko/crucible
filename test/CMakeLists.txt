@@ -2793,6 +2793,18 @@ crucible_neg_compile_test(neg_graded_concept_no_lattice_type
 crucible_neg_compile_test(neg_graded_concept_bare_int
   "constraints not satisfied")
 
+# ─── fixy-A3-014 (#1621): is_graded_specialization_v cv-ref symmetry ──
+#
+# Strict-identity rule must hold under both directions: the substrate
+# trait admits ONLY Graded<M, L, T> (after cv-ref strip).  Lookalike
+# structs and cv-ref-qualified non-Graded types stay rejected.  Paired
+# with the in-header self-test in algebra/GradedTrait.h that pins the
+# positive cv-ref symmetry with IsGraded.
+crucible_neg_compile_test(neg_is_graded_specialization_lookalike
+  "static assertion failed|static_assert|fixy-A3-014")
+crucible_neg_compile_test(neg_is_graded_specialization_cvref_nongraded
+  "static assertion failed|static_assert|fixy-A3-014")
+
 # ─── DimensionTraits Tier-S/V concept gates (Phase 0 P0-3, #1094) ──
 #
 # Two neg-compile fixtures pinning the Tier concept gates exposed

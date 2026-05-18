@@ -144,9 +144,21 @@ struct is_graded_specialization : std::false_type {};
 template <ModalityKind M, typename L, typename T>
 struct is_graded_specialization<Graded<M, L, T>> : std::true_type {};
 
+// fixy-A3-014: cv-ref-strip the variable template so it agrees with
+// Graded.h's `IsGraded` concept and `is_graded_v` family.  Without
+// this strip, `is_graded_specialization_v<Graded<...> const&>` is
+// FALSE while `IsGraded<Graded<...> const&>` is TRUE — concept-family
+// asymmetry across two traits that consumers expect to be equivalent
+// (the `GradedWrapper` concept at line 230 consumes the variable
+// template form; users reaching for the value via either spelling
+// must get the same answer).  Same root pattern as A3-004 (IsExecCtx
+// asymmetry).  Centralizing the strip in the variable template (one
+// place, not duplicated in the trait struct primary) keeps the
+// metafunction-shape stable for anyone using `is_graded_specialization<T>`
+// directly.
 template <typename T>
 inline constexpr bool is_graded_specialization_v =
-    is_graded_specialization<T>::value;
+    is_graded_specialization<std::remove_cvref_t<T>>::value;
 
 // ── graded_modality — extract the ModalityKind value from a Graded ──
 //
@@ -277,5 +289,54 @@ concept GradedWrapper = requires {
 template <typename W>
     requires GradedWrapper<W>
 inline constexpr bool is_graded_wrapper_v<W> = true;
+
+// ── fixy-A3-014: symmetry self-test ────────────────────────────────
+//
+// Pin the cv-ref symmetry between `is_graded_specialization_v` and
+// `IsGraded` at header inclusion.  If a future refactor strips the
+// `std::remove_cvref_t` from either side, this block fails to compile
+// loudly — the regression-pin for the concept-family asymmetry that
+// caused A3-014.
+//
+// Cross-references `::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice`
+// (defined in Lattice.h's self-test block, pulled in transitively
+// through Graded.h's include).
+
+namespace detail::is_graded_specialization_self_test {
+
+using GraderAB = Graded<ModalityKind::Absolute,
+                        ::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice,
+                        bool>;
+
+// Strict-identity positive cases — bare specialization holds.
+static_assert( is_graded_specialization_v<GraderAB>);
+
+// cv-ref symmetry with IsGraded.  All four shapes must AGREE.
+static_assert( is_graded_specialization_v<GraderAB const>);
+static_assert( is_graded_specialization_v<GraderAB&>);
+static_assert( is_graded_specialization_v<GraderAB const&>);
+static_assert( is_graded_specialization_v<GraderAB&&>);
+static_assert( is_graded_specialization_v<GraderAB const&&>);
+
+// Cross-trait symmetry: every shape that IsGraded accepts must also
+// pass is_graded_specialization_v.  Equivalent under cv-ref strip.
+static_assert(IsGraded<GraderAB const&>
+              == is_graded_specialization_v<GraderAB const&>);
+static_assert(IsGraded<GraderAB&&>
+              == is_graded_specialization_v<GraderAB&&>);
+
+// Negative cases — non-Graded types still rejected by both.
+static_assert(!is_graded_specialization_v<int>);
+static_assert(!is_graded_specialization_v<int const&>);
+static_assert(!is_graded_specialization_v<void>);
+static_assert(!is_graded_specialization_v<::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice>);
+
+// Both-rejects symmetry on non-Graded types.
+static_assert(IsGraded<int const&>
+              == is_graded_specialization_v<int const&>);
+static_assert(IsGraded<void>
+              == is_graded_specialization_v<void>);
+
+}  // namespace detail::is_graded_specialization_self_test
 
 }  // namespace crucible::algebra
