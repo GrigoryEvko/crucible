@@ -3,7 +3,7 @@
 //
 // Coverage:
 //   Tier 1: structural — sizeof, copy/move semantics, EBO collapse
-//   Tier 2: factory — lend_read produces ReadView; multiple coexist
+//   Tier 2: factory — mint_read_view produces ReadView; multiple coexist
 //   Tier 3: with_read_view scoped helper (void + non-void return)
 //   Tier 4: composition — ReadView as member via [[no_unique_address]]
 //   Tier 5: composition with mint_permission_fork — read-only side info
@@ -91,11 +91,11 @@ struct EboHost {
 static_assert(sizeof(EboHost) == sizeof(void*),
               "ReadView via [[no_unique_address]] must collapse to 0 bytes");
 
-// ── Tier 2: lend_read factory ────────────────────────────────────
+// ── Tier 2: mint_read_view factory ────────────────────────────────────
 
-void test_lend_read_basic() {
+void test_mint_read_view_basic() {
     auto perm = mint_permission_root<ConfigData>();
-    auto view = lend_read(perm);
+    auto view = mint_read_view(perm);
 
     // ReadView is an empty proof token; nothing observable to check
     // beyond compile-time type identity.
@@ -104,9 +104,9 @@ void test_lend_read_basic() {
 
 void test_multiple_views_coexist() {
     auto perm = mint_permission_root<ConfigData>();
-    auto v1 = lend_read(perm);
-    auto v2 = lend_read(perm);
-    auto v3 = lend_read(perm);
+    auto v1 = mint_read_view(perm);
+    auto v2 = mint_read_view(perm);
+    auto v3 = mint_read_view(perm);
 
     // All three coexist; this is the point of read views.  No
     // refcount, no allocation, no atomic.  Type-system-only.
@@ -182,7 +182,7 @@ void test_handle_composition_zero_cost() {
 
     auto config_perm = mint_permission_root<ConfigData>();
     auto worker_perm = mint_permission_root<WorkerSlice>();
-    auto cv = lend_read(config_perm);
+    auto cv = mint_read_view(config_perm);
 
     WorkerHandle h{std::move(worker_perm), cv};
     (void)h;
@@ -211,7 +211,7 @@ namespace {
 // Permission AND a read-only view of the shared config.
 void test_fork_with_shared_read_view() {
     auto config_perm = mint_permission_root<ConfigData>();
-    const auto cv = lend_read(config_perm);  // copyable; safe to share
+    const auto cv = mint_read_view(config_perm);  // copyable; safe to share
 
     std::atomic<int> left_done{0};
     std::atomic<int> right_done{0};
@@ -259,7 +259,7 @@ int main() {
 
     test_compile_time_properties();  // pure compile-time
 
-    run_test("test_lend_read_basic",            test_lend_read_basic);
+    run_test("test_mint_read_view_basic",            test_mint_read_view_basic);
     run_test("test_multiple_views_coexist",     test_multiple_views_coexist);
     run_test("test_with_read_view_void_body",   test_with_read_view_void_body);
     run_test("test_with_read_view_returning_value",

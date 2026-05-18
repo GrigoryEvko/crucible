@@ -28,13 +28,13 @@
 //
 // ─── Why "lifetime-bound" — and the C++26 enforcement story ─────────
 //
-// `lend_read(Permission<Tag> const& p [[gnu::lifetimebound]]) → ReadView<Tag>`
+// `mint_read_view(Permission<Tag> const& p [[gnu::lifetimebound]]) → ReadView<Tag>`
 //
 // The CRUCIBLE_LIFETIMEBOUND attribute on the parameter tells the
 // compiler "the returned object's lifetime is bound to p's lifetime."
 // When user writes:
 //
-//   auto v = lend_read(make_permission());  // BUG: temporary
+//   auto v = mint_read_view(make_permission());  // BUG: temporary
 //
 // the temporary `make_permission()` is destroyed at the end of the
 // statement, leaving `v` referencing a dead Permission.  Clang
@@ -54,7 +54,7 @@
 // view.  But assignment is deleted with a reason: reassigning a
 // ReadView would silently swap the underlying source identity, hiding
 // the lifetime relationship from review.  If you need to "rebind,"
-// construct a fresh ReadView via lend_read.
+// construct a fresh ReadView via mint_read_view.
 //
 // `operator new` deleted — heap allocation defeats the lifetime
 // contract.  ReadView must live on the stack or as a structured-
@@ -94,7 +94,7 @@ public:
     // The default constructor is public so ReadView can be embedded
     // in containing types (handles, lambdas, structs) via simple
     // [[no_unique_address]] declaration without per-tag friend
-    // boilerplate.  The discipline lives in lend_read being the
+    // boilerplate.  The discipline lives in mint_read_view being the
     // canonical (review-discoverable) mint site; the default-ctor is
     // for composition rather than direct safety enforcement.  The
     // type-level proof comes from the Tag, not from runtime gating.
@@ -106,9 +106,9 @@ public:
 
     // Assignment deleted with reason: reassigning would silently swap
     // the underlying source identity, hiding the lifetime relationship
-    // from review.  Construct a fresh ReadView via lend_read instead.
+    // from review.  Construct a fresh ReadView via mint_read_view instead.
     ReadView& operator=(const ReadView&)
-        = delete("ReadView is single-binding; rebinding hides lifetime relationships — construct a fresh view via lend_read");
+        = delete("ReadView is single-binding; rebinding hides lifetime relationships — construct a fresh view via mint_read_view");
     ReadView& operator=(ReadView&&)
         = delete("ReadView is single-binding; rebinding hides lifetime relationships");
 
@@ -132,27 +132,35 @@ public:
     static void operator delete[](void*, std::align_val_t) = delete;
 };
 
-// ── lend_read — the single chokepoint factory ───────────────────────
+// ── mint_read_view — the single chokepoint factory ──────────────────
+//
+// §XXI Universal Mint Pattern: a cross-tier composition factory that
+// derives a fresh `ReadView<Tag>` token from a parent `Permission<Tag>`.
+// Named `mint_*` so `grep "mint_"` finds every authorization point;
+// the parent Permission is the load-bearing soundness gate (its
+// lifetime bounds the returned view's lifetime via the
+// CRUCIBLE_LIFETIMEBOUND attribute, and its Tag identity is checked
+// at the type-system level).
 //
 // CRUCIBLE_LIFETIMEBOUND on `p` tells the compiler "the returned
 // ReadView's lifetime is bounded by p's."  Under Clang (when added),
 // dangling-reference cases are rejected at compile time:
 //
-//   auto v = lend_read(make_permission());   // -Wdangling-reference
+//   auto v = mint_read_view(make_permission());   // -Wdangling-reference
 //
 // Under GCC 16 the attribute is silently ignored (the macro expands
 // to nothing).  Discipline + review fill the gap until parity lands.
 
 template <typename Tag>
 [[nodiscard]] constexpr ReadView<Tag>
-lend_read(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept {
+mint_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept {
     (void)p;  // observed; ReadView is proof-only
     return ReadView<Tag>{};
 }
 
 // ── with_read_view — RAII scoped-borrow helper ──────────────────────
 //
-// Lends a ReadView, invokes body with the view, releases on return.
+// Mints a ReadView, invokes body with the view, releases on return.
 // Body's signature: R(ReadView<Tag>) where R is anything (incl void).
 // Return value (if any) is forwarded to the caller.
 //
@@ -171,7 +179,7 @@ with_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND, Body&& body)
     noexcept(std::is_nothrow_invocable_v<Body, ReadView<Tag>>)
     -> std::invoke_result_t<Body, ReadView<Tag>>
 {
-    return body(lend_read(p));
+    return body(mint_read_view(p));
 }
 
 // ── Zero-cost guarantees ────────────────────────────────────────────

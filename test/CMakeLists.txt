@@ -2643,6 +2643,16 @@ crucible_neg_compile_test(neg_linear_view_field
   "Type contains a safety::ScopedView<> in some field")
 crucible_neg_compile_test(neg_appendonly_over_writeonce
   "AppendOnly<WriteOnce<T>> is redundant")
+
+# fixy-A1-019 HS14 fixtures for safety::mint_read_view<Tag> — rename
+# of lend_read per §XXI Universal Mint Pattern.  Two distinct
+# mismatch classes:
+#   * parameter-shape gate    (non-Permission argument)
+#   * tag-identity gate       (explicit Tag clashes with deduced)
+crucible_neg_compile_test(neg_mint_read_view_non_permission_arg
+  "could not deduce template argument|cannot convert|no matching function")
+crucible_neg_compile_test(neg_mint_read_view_explicit_tag_mismatch
+  "invalid initialization of reference|could not convert|cannot bind|no matching function")
 crucible_neg_compile_test(neg_sealed_refined_into_call
   "has no member named")
 crucible_neg_compile_test(neg_graded_concept_void_substrate
