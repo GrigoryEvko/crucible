@@ -2094,6 +2094,17 @@ crucible_neg_compile_effects_test(neg_capability_cap_matches_ctx
 crucible_neg_compile_effects_test(neg_capability_extract_bare_thread_atom
     "no matching function for call|constraints not satisfied|extract_bare")
 
+# ─── fixy-A3-012 (#1619): Capability::consume() rvalue-only pin ────
+#
+# consume() is non-const-rvalue-ref-qualified by linearity discipline.
+# Two fixtures lock the qualifier so a future maintainer cannot drop
+# the `&&` (lvalue path) or sneak in a `const &&` overload (const-
+# rvalue path) without the static_asserts in Capability.h firing.
+crucible_neg_compile_effects_test(neg_capability_consume_lvalue
+    "discards qualifiers|ref-qualified|cannot bind|rvalue|no matching")
+crucible_neg_compile_effects_test(neg_capability_consume_const_rvalue
+    "discards qualifiers|ref-qualified|no matching|binding reference")
+
 # ─── P1-AUDIT-5 (#856): wrapper-lift + tier-discrimination gates ───
 #
 # Two fixtures: AllocClassFromCtx rejects Unbound (no wrapper

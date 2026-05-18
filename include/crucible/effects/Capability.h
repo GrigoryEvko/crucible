@@ -139,6 +139,28 @@ public:
     // the actual consumption (move-from leaves the source unusable
     // by linearity discipline); consume() makes the intent
     // grep-visible at the call site.
+    //
+    // ── Why rvalue-ref-qualified (fixy-A3-012) ──────────────────────
+    //
+    // The `&&` qualifier makes consume() callable ONLY on rvalues:
+    // an `auto c = mint_cap<...>(s); c.consume();` lvalue call is a
+    // compile error.  The user must explicitly write
+    // `std::move(c).consume()`, which is the actual consumption point
+    // (the move-from leaves c addressable but in a moved-from state).
+    //
+    // C++'s move semantics do NOT model double-consume in the type
+    // system — calling `std::move(c).consume()` twice in a row
+    // compiles because the moved-from c is still a valid (though
+    // "unspecified") object.  The discipline for catching this is
+    // clang-tidy `bugprone-use-after-move`, which DOES fire on the
+    // second use of a moved-from value.  The CSL-permission family
+    // (see safety/Permission.h) goes further by using move-only
+    // tokens that are never default-constructible OR re-bindable —
+    // for effect-cap discipline, the friend-only construction at the
+    // mint_cap boundary plus the rvalue-only consume qualifier is
+    // the right cost/benefit point.  Pinning the rvalue qualifier
+    // via static_assert below preempts future degradation that would
+    // make consume() reachable from lvalues.
     constexpr void consume() && noexcept {}
 
     // ── Diagnostic ──────────────────────────────────────────────────
@@ -300,6 +322,52 @@ static_assert(!std::is_copy_assignable_v<Capability<Effect::Alloc, Bg>>);
 static_assert( std::is_move_constructible_v<Capability<Effect::Alloc, Bg>>);
 static_assert( std::is_move_assignable_v<Capability<Effect::Alloc, Bg>>);
 static_assert( std::is_nothrow_move_constructible_v<Capability<Effect::Alloc, Bg>>);
+
+// ── consume() rvalue-qualifier pin (fixy-A3-012) ────────────────────
+//
+// `consume()` is rvalue-ref-qualified so callers MUST write
+// `std::move(c).consume()`, making the consumption point grep-
+// visible at the call site.  Pin both discipline rails so a future
+// maintainer dropping the `&&` qualifier is rejected at header
+// inclusion:
+//
+//   (1) consume() must NOT be callable on an lvalue Capability.
+//   (2) consume() MUST be callable on a non-const rvalue.
+//
+// Double-consume of a moved-from value is NOT caught at type level
+// (C++ move semantics admit method calls on moved-from objects).
+// The discipline workhorse for that hazard is clang-tidy's
+// `bugprone-use-after-move`; the substrate-side guard is the
+// friend-only construction of mint_cap (no path to forge a fresh
+// Capability after the consumed one was moved away).  Const-rvalue
+// rejection is implied by the non-const `&&` qualifier and exercised
+// by the `neg_capability_consume_const_rvalue.cpp` fixture.
+//
+// Detection uses the void_t SFINAE pattern instead of requires-
+// expressions: GCC 16.1.1 leaks ref-qualifier mismatch errors out of
+// requires-expression bodies for member-function-pointer-style
+// substitution, hard-erroring instead of SFINAE-returning false.
+// void_t is the canonical SFINAE-friendly detector and works cleanly.
+template <class, class = void>
+struct cap_consume_callable_lvalue : std::false_type {};
+template <class C>
+struct cap_consume_callable_lvalue<C,
+    std::void_t<decltype(std::declval<C&>().consume())>> : std::true_type {};
+
+template <class, class = void>
+struct cap_consume_callable_rvalue : std::false_type {};
+template <class C>
+struct cap_consume_callable_rvalue<C,
+    std::void_t<decltype(std::declval<C>().consume())>> : std::true_type {};
+
+static_assert(!cap_consume_callable_lvalue<Capability<Effect::Alloc, Bg>>::value,
+    "fixy-A3-012: Capability::consume() must NOT be callable on an "
+    "lvalue — discipline says the call site must spell `std::move(c)."
+    "consume()` to make linearity grep-visible.  A maintainer dropping "
+    "the rvalue-ref qualifier would defeat this gate.");
+static_assert( cap_consume_callable_rvalue<Capability<Effect::Alloc, Bg>>::value,
+    "fixy-A3-012: Capability::consume() must be callable on a non-"
+    "const rvalue — this is the canonical consumption path.");
 
 // ── Construction discipline ─────────────────────────────────────────
 //
