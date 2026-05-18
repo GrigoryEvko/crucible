@@ -31,8 +31,16 @@
 //
 // `alignas(64)` at the class level pins every OneShotFlag instance to
 // its own cache line.  The producer side (`signal()` / `signal_throw()`)
-// release-stores `flag_`; the consumer side (`peek()` / `check_and_run()`
-// / `peek_nothrow()`) relaxed/acquire-loads it on the hot path.  Cross-
+// release-stores `flag_`; the consumer side splits by intent — `peek()`
+// is the relaxed-by-design hot-path primitive (callers manually pair
+// with an acquire fence inside their `[[unlikely]]` branch before
+// acting; see bridges/CrashTransport.h for the five-site discipline);
+// `peek_nothrow()` is the safe-by-default acquire-load FOUND-G62
+// Crash<NoThrow,bool> surface that newer consumers can use directly
+// without a manual fence (fixy-A1-006).  `check_and_run()` couples a
+// relaxed test with an acquire fence on the true path and a release-
+// clear, so it is the only synchronizing consume-and-clear primitive.
+// Cross-
 // thread MESI traffic must NOT ping-pong against unrelated state in the
 // embedding struct — otherwise every producer write to an adjacent
 // (logically unrelated) field invalidates the consumer's cache line and
@@ -130,12 +138,27 @@ public:
     // assigns a CrashClass to each call site:
     //
     //   peek_nothrow() → Crash<NoThrow, bool>   — STEADY-STATE consumer.
-    //                    The peek itself is a single relaxed atomic
-    //                    load + branch; it never fails, never throws,
-    //                    never blocks, never aborts.  The recovery
-    //                    branch (when peek returns true) is handled
-    //                    separately at a wider call boundary.  The
-    //                    NoThrow class is the strongest in the
+    //                    A single acquire atomic load + branch; it
+    //                    never fails, never throws, never blocks,
+    //                    never aborts.  The acquire order pairs with
+    //                    the producer's release in signal() / signal_
+    //                    throw(), so any state the producer mutated
+    //                    before signal is visible to a consumer that
+    //                    observed a `true` return WITHOUT requiring an
+    //                    explicit atomic_thread_fence at the call site
+    //                    (safe-by-default; ThreadSafe axiom per
+    //                    CLAUDE.md §II.6, fixy-A1-006 / task #1548).
+    //                    This is the SEMANTIC DIVERGENCE from the
+    //                    lower-level peek() primitive, which stays
+    //                    relaxed-by-design as a hot-path fast-path
+    //                    test that callers manually pair with check_
+    //                    and_run (or an inline acquire fence) before
+    //                    acting on the observed signal — five sites in
+    //                    bridges/CrashTransport.h follow that pattern.
+    //                    peek_nothrow is the FOUND-G62 type-audited
+    //                    surface and gets the stronger order so future
+    //                    consumers can rely on the value directly.
+    //                    The NoThrow class is the strongest in the
     //                    CrashLattice, so this value satisfies any
     //                    consumer-side gate (NoThrow / ErrorReturn /
     //                    Throw / Abort).
@@ -171,11 +194,16 @@ public:
     struct signal_marker { };
 
     // Steady-state consumer pin — peek returns Crash<NoThrow, bool>.
+    // Acquire order (NOT relaxed): pairs with signal()'s release-store
+    // so a `true` return is safe-to-act-on without an explicit fence
+    // at the call site.  Diverges from the lower-level peek() primitive
+    // by design — see the FOUND-G62 doc-block above and the audit in
+    // fixy-A1-006 (#1548) / CLAUDE.md §II.6 ThreadSafe.
     [[nodiscard]] CRUCIBLE_INLINE
     Crash<CrashClass_v::NoThrow, bool>
     peek_nothrow() const noexcept {
         return Crash<CrashClass_v::NoThrow, bool>{
-            flag_.load(std::memory_order_relaxed)};
+            flag_.load(std::memory_order_acquire)};
     }
 
     // Producer-side signal — pins the action class as Throw.  The
