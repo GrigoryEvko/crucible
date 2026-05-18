@@ -8788,3 +8788,12 @@ crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_open_view_re
     "PersistedSession_OpenViewRequired|use of deleted function")
 crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_ctx_row_insufficient
     "constraints not satisfied|CtxAdmits|no matching function")
+
+# fixy-A2-019 — HS14 floor for the renamed mint_atomic_session<Proto>(cell).
+# Two fixtures witness the two-conjunct requires-clause:
+#   AtomicMachineCell<Cell>          — non-cell argument fails the concept
+#   safety::proto::is_well_formed_v<Proto>  — free Continue at top level fails
+crucible_neg_compile_bridges_test(neg_mint_atomic_session_non_atomic_machine_cell
+    "no matching function for call to|constraints not satisfied|AtomicMachineCell")
+crucible_neg_compile_bridges_test(neg_mint_atomic_session_malformed_proto
+    "no matching function for call to|constraints not satisfied|is_well_formed")

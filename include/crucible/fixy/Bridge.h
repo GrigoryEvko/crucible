@@ -48,7 +48,7 @@
 // `<crucible/Vigil.h>` is STRUCTURALLY REQUIRED for the
 // `mint_vigil_mode_bridge` re-export below: the substrate signature
 // returns `Vigil::ModeSessionHandle`, a nested type whose definition
-// (`decltype(safety::atomic_session_from_machine<ModeProtocol>(...))`)
+// (`decltype(safety::mint_atomic_session<ModeProtocol>(...))`)
 // cannot be named through a forward declaration.  A `class Vigil;`
 // forward decl is insufficient because (a) the return type names a
 // nested member, and (b) the substrate function is `inline` with its

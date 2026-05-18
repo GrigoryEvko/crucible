@@ -159,7 +159,7 @@ class Vigil {
     static_assert(sizeof(ModeCell) == sizeof(std::atomic<Mode>));
 
     using ModeSessionHandle = decltype(
-        safety::atomic_session_from_machine<ModeProtocol>(
+        safety::mint_atomic_session<ModeProtocol>(
             std::declval<const ModeCell&>()));
 
     static_assert(std::is_same_v<
@@ -472,7 +472,7 @@ class Vigil {
     [[nodiscard]] bool is_compiled() const noexcept { return mode() == Mode::COMPILED; }
 
     [[nodiscard]] ModeSessionHandle mode_session() const noexcept {
-        return safety::atomic_session_from_machine<ModeProtocol>(mode_);
+        return safety::mint_atomic_session<ModeProtocol>(mode_);
     }
 
     [[nodiscard]] const RegionNode* active_region() const noexcept {

@@ -278,7 +278,7 @@ concept AtomicMachineCell =
 template <typename Proto, typename Cell>
     requires (AtomicMachineCell<Cell>
               && safety::proto::is_well_formed_v<Proto>)
-[[nodiscard]] constexpr auto atomic_session_from_machine(Cell& cell) noexcept
+[[nodiscard]] constexpr auto mint_atomic_session(Cell& cell) noexcept
 {
     return safety::proto::mint_session_handle<Proto>(&cell);
 }

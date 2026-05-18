@@ -48,7 +48,7 @@ int run_atomic_mode_session_lifecycle() {
         };
 
     auto session =
-        crucible::safety::atomic_session_from_machine<
+        crucible::safety::mint_atomic_session<
             crucible::Vigil::ModeProtocol>(cell);
     auto publish_compiled = std::move(session).select_local<0>();
     auto after_compiled = std::move(publish_compiled).send(
