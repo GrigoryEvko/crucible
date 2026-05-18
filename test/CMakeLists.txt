@@ -2105,6 +2105,21 @@ crucible_neg_compile_effects_test(neg_capability_consume_lvalue
 crucible_neg_compile_effects_test(neg_capability_consume_const_rvalue
     "discards qualifiers|ref-qualified|no matching|binding reference")
 
+# ─── fixy-A3-013 (#1620): cap_mint_key passkey-via-passkey pin ─────
+#
+# Capability has no default ctor at any access level — only the
+# passkey ctor `Capability(cap_mint_key)` exists, and cap_mint_key's
+# default ctor is private + friended only to mint_cap.  Two fixtures
+# pin both halves of the gate: (1) default-initializing a Capability
+# fails because no default ctor exists, (2) attempting to forge a
+# cap_mint_key from a non-friended TU fails because its default ctor
+# is private.  Together these foreclose every user-side path to a
+# fresh Capability that bypasses mint_cap's CanMintCap authorization.
+crucible_neg_compile_effects_test(neg_capability_forge_default_ctor
+    "no matching function for call|no default constructor|deleted|no matching")
+crucible_neg_compile_effects_test(neg_capability_forge_via_passkey
+    "is private within this context|private member|private|cap_mint_key")
+
 # ─── P1-AUDIT-5 (#856): wrapper-lift + tier-discrimination gates ───
 #
 # Two fixtures: AllocClassFromCtx rejects Unbound (no wrapper

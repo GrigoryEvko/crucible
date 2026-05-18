@@ -106,20 +106,87 @@ concept CanMintCap = is_cap_type_v<Source>
 
 // ── Capability<Cap, Source> ─────────────────────────────────────────
 
-template <Effect Cap, class Source>
-class [[nodiscard]] Capability {
-    // Default constructor is PRIVATE — only mint_cap<>() can call.
-    constexpr Capability() noexcept = default;
+// Forward-declared so cap_mint_key's friend declaration can name the
+// Capability template before its definition.
+template <Effect Cap, class Source> class Capability;
 
-    // Friendship is intentionally narrow: only the mint factory.
-    // Inheritance / subclassing / SFINAE cannot reach the default
-    // ctor.  The friend declaration matches mint_cap's signature
-    // exactly so substitution failure is structural.
+// ── cap_mint_key: passkey for mint_cap (fixy-A3-013) ────────────────
+//
+// Passkey-via-passkey pattern (per fixy-H-25 precedent, commit cc6012d).
+// Forecloses templated-friend matching brittleness by co-locating the
+// friend declaration with a single-purpose gate class.
+//
+// Previously, Capability's class body held the friend declaration:
+//
+//     template <Effect E, class S>
+//         requires CanMintCap<E, S>
+//     friend constexpr Capability<E, S> mint_cap(S const&) noexcept;
+//
+// If a future audit modifies mint_cap's requires-clause (say, adds
+// `&& !std::is_const_v<S>`), the friend declaration must update in
+// lockstep — otherwise the friendship resolves to a different overload
+// set, the private default ctor becomes unreachable, and every minting
+// site fails to compile with a mysterious "private member" error.
+// Worse, the breakage was hiding inside a 160-line class body where
+// the friend was easy to miss.
+//
+// The passkey-via-passkey shape moves the friendship to this small
+// focused class.  cap_mint_key exists for one reason: gate Capability
+// construction.  A maintainer evolving mint_cap is editorially drawn
+// here because there's nothing else in this class to distract from
+// the syncing duty.  Defense-in-depth: the self-test block exercises
+// `mint_cap<Effect::Alloc>(declval<Bg const&>())` via static_assert —
+// if the friendship silently breaks, the header fails to compile at
+// inclusion time, loudly.
+//
+// Why a passkey at all (vs just removing friendship)?  Capability
+// must remain unforgeable — direct construction from arbitrary TUs
+// MUST fail.  cap_mint_key's private default ctor is the unforgeability
+// gate; Capability's public ctor accepting a cap_mint_key is the
+// type-system handshake that proves "the caller went through mint_cap
+// to get here."
+//
+// Why not `namespace detail`?  C++ friend-name lookup for templated
+// friends introduces a new declaration into the INNERMOST enclosing
+// namespace of the befriending class if no matching declaration is
+// already in that scope ([namespace.memdef]/3).  If cap_mint_key were
+// in `detail::`, `friend ... mint_cap(...)` would create a new
+// `detail::mint_cap` template instead of friending the real
+// `crucible::effects::mint_cap` — silently breaking the gate.
+// Co-locating cap_mint_key in `crucible::effects` (same namespace as
+// mint_cap) avoids that hazard; the `cap_mint_key` naming + private
+// default ctor + single-friend declaration is the unforgeability seal.
+class cap_mint_key {
+    constexpr cap_mint_key() noexcept = default;
+
     template <Effect E, class S>
         requires CanMintCap<E, S>
     friend constexpr Capability<E, S> mint_cap(S const&) noexcept;
+};
 
+template <Effect Cap, class Source>
+class [[nodiscard]] Capability {
 public:
+    // ── Passkey ctor (fixy-A3-013) ──────────────────────────────────
+    //
+    // The ONLY public-API ctor for creating a fresh Capability.  Takes
+    // a cap_mint_key by value as proof-of-authority — and since
+    // cap_mint_key's default ctor is private and only mint_cap is
+    // friended to construct one, this ctor is effectively reachable
+    // only from mint_cap's body.
+    //
+    // Capability itself has no friend declarations.  All construction
+    // authority is delegated to cap_mint_key, which is the focused gate
+    // class.  This forecloses templated-friend matching brittleness:
+    // future evolution of mint_cap's requires-clause must update the
+    // cap_mint_key friend declaration (a single-line edit in a single-
+    // purpose class), not a friend buried inside Capability.
+    //
+    // `explicit` to prevent cap_mint_key → Capability implicit
+    // conversions; the call site must spell `Capability<E,S>{key}`.
+    explicit constexpr Capability(cap_mint_key) noexcept {}
+
+
     // ── Move-only linearity ─────────────────────────────────────────
     Capability(Capability const&)            = delete;
     Capability& operator=(Capability const&) = delete;
@@ -178,7 +245,11 @@ public:
 template <Effect E, class Source>
     requires CanMintCap<E, Source>
 [[nodiscard]] constexpr Capability<E, Source> mint_cap(Source const&) noexcept {
-    return Capability<E, Source>{};  // friend access to private default ctor
+    // fixy-A3-013: construction via cap_mint_key passkey.  mint_cap is
+    // the only function befriended on cap_mint_key's private default
+    // ctor; the key is the proof-of-authority forwarded to
+    // Capability's public ctor.
+    return Capability<E, Source>{cap_mint_key{}};
 }
 
 // ── Recognition trait + concept ─────────────────────────────────────
@@ -371,12 +442,58 @@ static_assert( cap_consume_callable_rvalue<Capability<Effect::Alloc, Bg>>::value
 
 // ── Construction discipline ─────────────────────────────────────────
 //
-// Default-constructibility is FALSE from outside the class — the
-// default ctor is private; only mint_cap<>() reaches it.  Forging
-// a Capability<> via direct instantiation is a compile error.
+// fixy-A3-013 passkey-via-passkey: Capability has NO default ctor at
+// any access level — it was replaced by an explicit ctor taking a
+// cap_mint_key by value.  Forging a Capability<> via direct
+// default instantiation is a compile error.
 static_assert(!std::is_default_constructible_v<Capability<Effect::Alloc, Bg>>);
 static_assert(!std::is_default_constructible_v<Capability<Effect::IO,    Init>>);
 static_assert(!std::is_default_constructible_v<Capability<Effect::Block, Test>>);
+
+// ── Passkey gate (fixy-A3-013) ──────────────────────────────────────
+//
+// (1) Capability<E, S> is constructible from a cap_mint_key — but only
+//     mint_cap can produce a cap_mint_key (its default ctor is private,
+//     friended only to mint_cap).  Both halves below are load-bearing:
+//     drop either and forgeability creeps back in.
+static_assert( std::is_constructible_v<Capability<Effect::Alloc, Bg>, cap_mint_key>);
+static_assert( std::is_constructible_v<Capability<Effect::IO,    Init>, cap_mint_key>);
+static_assert( std::is_constructible_v<Capability<Effect::Block, Test>, cap_mint_key>);
+static_assert(!std::is_default_constructible_v<cap_mint_key>,
+    "fixy-A3-013: cap_mint_key's default ctor must NOT be public — "
+    "only mint_cap is friended to construct one.  If this fails, the "
+    "passkey gate has been silently widened.");
+
+// (2) Capability is NOT constructible from `int{}` / other arbitrary
+//     bag-of-bytes — `explicit` on the cap_mint_key ctor prevents
+//     implicit conversions through the passkey path.
+static_assert(!std::is_constructible_v<Capability<Effect::Alloc, Bg>, int>);
+static_assert(!std::is_convertible_v<cap_mint_key, Capability<Effect::Alloc, Bg>>,
+    "fixy-A3-013: the passkey ctor must be explicit — implicit "
+    "cap_mint_key → Capability conversion would let an `auto x = key;` "
+    "site silently mint a Capability without spelling the construction.");
+
+// (3) Defense-in-depth: exercise friend resolution at header inclusion.
+//     If a future requires-clause evolution desyncs the cap_mint_key
+//     friend declaration from mint_cap's definition, the friendship
+//     resolves to a different overload set, cap_mint_key's private ctor
+//     becomes unreachable from mint_cap's body, and this static_assert
+//     fails to compile loudly (mint_cap's body fails to instantiate).
+//     This is the live mechanical regression-pin — the structural
+//     foreclosure of the templated-friend brittleness.
+static_assert(noexcept(mint_cap<Effect::Alloc>(std::declval<Bg const&>())),
+    "fixy-A3-013: mint_cap<Effect::Alloc>(Bg) must resolve and be "
+    "noexcept.  If this fails, the cap_mint_key friend declaration has "
+    "drifted from mint_cap's signature — re-sync the requires-clause.");
+static_assert(noexcept(mint_cap<Effect::IO>(std::declval<Init const&>())));
+static_assert(noexcept(mint_cap<Effect::Block>(std::declval<Test const&>())));
+
+// (4) cap_mint_key is empty (zero state) — Capability size guarantee
+//     preserved.  An empty key adds no per-cap overhead.
+static_assert(std::is_empty_v<cap_mint_key>);
+static_assert(sizeof(Capability<Effect::Alloc, Bg>) == 1,
+    "fixy-A3-013: passkey ctor must preserve the 1-byte size guarantee "
+    "(cap_mint_key is empty + Capability still has no state members + EBO).");
 
 // ── CanMintCap coverage ─────────────────────────────────────────────
 //
