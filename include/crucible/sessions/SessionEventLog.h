@@ -68,6 +68,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/algebra/lattices/CrashLattice.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
 
@@ -285,6 +286,14 @@ struct CipherEventPayload {
 //   payload_schema.value -> peer_tag
 //   payload_hash.value   -> recovery_path_hash
 //   reason_kind          -> StopReasonKind
+//   pad[0]               -> CrashClass tier (fixy-A2-008)
+//
+// fixy-A2-008: the four-tier crash-class lattice (Abort / Throw /
+// ErrorReturn / NoThrow — algebra/lattices/CrashLattice.h) is the
+// soundness-bearing axis for crash-stop sessions.  Recording must
+// preserve C from Stop_g<C> losslessly so replay can reconstruct
+// which tier was in force.  Encoding it as a single byte in pad[0]
+// keeps the 72-byte layout unchanged.
 //
 // Checkpoint events reuse the same lanes:
 //   payload_schema.value -> checkpoint_id
@@ -321,12 +330,23 @@ struct SessionEvent {
     uint8_t      reason_kind          = 0; // Stop: StopReasonKind; else 0
     uint8_t      pad[5]{};                 // explicit zero-init padding
 
+    // fixy-A2-008: `crash_class` defaults to Abort to preserve source
+    // compatibility with pre-A2-008 callers (the original four-arg
+    // shape).  New call sites that have type-level CrashClass info
+    // (the two RecordingSessionHandle<Stop_g<C>, ...> specializations
+    // and the peer-crash detour in detail::record_crash_stop_) MUST
+    // pass it through so replay can distinguish the four tiers — see
+    // BSYZ22 §3 for why losing the tier silently breaks recovery
+    // semantics (NoThrow rejects CrashWatchedHandle outright per
+    // CrashTransport.h while Abort/Throw require unwind-aware paths).
     [[nodiscard]] static constexpr SessionEvent stop(
         RoleTagId self,
         RoleTagId peer,
         RoleTagId stopped_peer,
         StopReasonKind reason = StopReasonKind::PeerCrashed,
-        RecoveryPathHash recovery_path = {}) noexcept
+        RecoveryPathHash recovery_path = {},
+        ::crucible::algebra::lattices::CrashClass crash_class =
+            ::crucible::algebra::lattices::CrashClass::Abort) noexcept
     {
         return SessionEvent{
             .from_role      = self,
@@ -335,6 +355,8 @@ struct SessionEvent {
             .payload_hash   = PayloadHash{recovery_path.value},
             .op             = SessionOp::Stop,
             .reason_kind    = static_cast<uint8_t>(reason),
+            .pad            = { static_cast<uint8_t>(crash_class),
+                                0, 0, 0, 0 },
         };
     }
 
@@ -535,6 +557,15 @@ struct SessionEvent {
 
     [[nodiscard]] constexpr RecoveryPathHash stop_recovery_path_hash() const noexcept {
         return RecoveryPathHash{payload_hash.value};
+    }
+
+    // fixy-A2-008: full-fidelity accessor for the Stop_g<C> CrashClass
+    // tier preserved in pad[0].  Replay consults `op == Stop` first;
+    // for non-Stop events the byte is zero-initialised (= Abort) and
+    // the accessor is not meaningful.
+    [[nodiscard]] constexpr ::crucible::algebra::lattices::CrashClass
+    stop_crash_class() const noexcept {
+        return static_cast<::crucible::algebra::lattices::CrashClass>(pad[0]);
     }
 
     [[nodiscard]] constexpr CheckpointId checkpoint_id() const noexcept {

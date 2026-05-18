@@ -596,6 +596,134 @@ int run_recording_stop_close_recorded() {
     return 0;
 }
 
+// ── Worked: fixy-A2-008 — CrashClass tier round-trips through Stop ─
+//
+// Before the fix, `SessionEvent::stop()` dropped the protocol's
+// `Stop_g<C>` tier and `RecordingSessionHandle<Stop_g<C>>::close()`
+// emitted an Abort-tagged Stop event regardless of the source tier;
+// `record_crash_stop_` in the CrashWatched detour was wired the same
+// way, so replay could not distinguish the four BSYZ22 crash tiers
+// (Abort ⊑ Throw ⊑ ErrorReturn ⊑ NoThrow).  The fix encodes the tier
+// in `SessionEvent::pad[0]` and threads `C` through every record site.
+//
+// Coverage matrix:
+//   self-closed × {Abort, Throw, ErrorReturn, NoThrow}  — 4 cases
+//   peer-closed × {Abort, Throw, ErrorReturn}            — 3 cases
+// peer-closed × NoThrow is structurally inadmissible: CrashWatched
+// handles reject `CrashClass::NoThrow` at the mint gate per
+// `require_crash_watched_class_admissible_` (no-throw peers don't need
+// a runtime watcher).  That admission is verified separately by the
+// existing neg-compile fixtures; here we only assert the four/three
+// reachable rows of the matrix.
+
+template <CrashClass C>
+int verify_self_closed_stop_tier_one(SessionTagId session_id) {
+    struct StopResource { int sentinel = 0; };
+
+    SessionEventLog log{session_id};
+    auto bare = mint_session_handle<Stop_g<C>>(StopResource{77});
+    auto rec  = mint_recording_session(std::move(bare), log,
+                                       kServer, kClient);
+
+    StopResource resource = std::move(rec).close(
+        StopReasonKind::PeerCrashed,
+        RecoveryPathHash{0xFEEDFACECAFEBEEFULL});
+
+    if (resource.sentinel != 77)                            return 1;
+    if (log.size() != 1)                                    return 2;
+    if (log[0].op != SessionOp::Stop)                       return 3;
+    if (log[0].stop_crash_class() != C)                     return 4;
+    if (log[0].stop_reason_kind() != StopReasonKind::PeerCrashed) return 5;
+    if (log[0].stop_recovery_path_hash().value !=
+        0xFEEDFACECAFEBEEFULL)                              return 6;
+    return 0;
+}
+
+template <CrashClass C>
+int verify_peer_crash_stop_tier_one(SessionTagId session_id) {
+    using P = Send<int, End>;
+
+    std::deque<int> wire;
+    crucible::safety::OneShotFlag flag;
+    SessionEventLog log{session_id};
+    bool transport_invoked = false;
+
+    auto bare    = mint_session_handle<P>(CrashWire{&wire, 555});
+    auto watched = mint_crash_watched_session<CrashPeer, C>(
+        std::move(bare), flag);
+    auto rec     = mint_recording_session(
+        std::move(watched), log, kClient, kServer);
+
+    flag.signal();
+
+    auto result = std::move(rec).send(
+        3,
+        [&](CrashWire& w, int value) noexcept {
+            transport_invoked = true;
+            w.bytes->push_back(value);
+        });
+
+    if (result)                                             return 1;
+    if (transport_invoked)                                  return 2;
+    if (!wire.empty())                                      return 3;
+    if (log.size() != 1)                                    return 4;
+    if (log[0].op != SessionOp::Stop)                       return 5;
+    if (log[0].stop_crash_class() != C)                     return 6;
+    if (log[0].stop_peer_tag() != kServer)                  return 7;
+    if (log[0].stop_reason_kind() != StopReasonKind::PeerCrashed) return 8;
+    return 0;
+}
+
+int run_fixy_a2_008_crash_class_round_trip() {
+    // ── Row 1-4: self-closed × every CrashClass tier ────────────────
+    if (int rc = verify_self_closed_stop_tier_one<CrashClass::Abort>(
+            SessionTagId{8001}); rc != 0)        return 10 + rc;
+    if (int rc = verify_self_closed_stop_tier_one<CrashClass::Throw>(
+            SessionTagId{8002}); rc != 0)        return 20 + rc;
+    if (int rc = verify_self_closed_stop_tier_one<CrashClass::ErrorReturn>(
+            SessionTagId{8003}); rc != 0)        return 30 + rc;
+    if (int rc = verify_self_closed_stop_tier_one<CrashClass::NoThrow>(
+            SessionTagId{8004}); rc != 0)        return 40 + rc;
+
+    // ── Row 5-7: peer-closed × {Abort, Throw, ErrorReturn} ──────────
+    if (int rc = verify_peer_crash_stop_tier_one<CrashClass::Abort>(
+            SessionTagId{8005}); rc != 0)        return 50 + rc;
+    if (int rc = verify_peer_crash_stop_tier_one<CrashClass::Throw>(
+            SessionTagId{8006}); rc != 0)        return 60 + rc;
+    if (int rc = verify_peer_crash_stop_tier_one<CrashClass::ErrorReturn>(
+            SessionTagId{8007}); rc != 0)        return 70 + rc;
+
+    // ── Cross-tier anti-collapse witness ────────────────────────────
+    // Pre-fix behaviour returned Abort on every Stop event regardless
+    // of source tier.  A regression that reverted the fix would make
+    // every row above record Abort and these inequality witnesses
+    // would fire independent of the per-row equality checks.
+    SessionEventLog throw_log{SessionTagId{8101}};
+    {
+        struct R { int s = 0; };
+        auto b = mint_session_handle<Stop_g<CrashClass::Throw>>(R{});
+        auto r = mint_recording_session(std::move(b), throw_log,
+                                        kServer, kClient);
+        (void)std::move(r).close(StopReasonKind::PeerCrashed,
+                                  RecoveryPathHash{});
+    }
+    SessionEventLog noth_log{SessionTagId{8102}};
+    {
+        struct R { int s = 0; };
+        auto b = mint_session_handle<Stop_g<CrashClass::NoThrow>>(R{});
+        auto r = mint_recording_session(std::move(b), noth_log,
+                                        kServer, kClient);
+        (void)std::move(r).close(StopReasonKind::PeerCrashed,
+                                  RecoveryPathHash{});
+    }
+    if (throw_log[0].stop_crash_class() ==
+        noth_log[0].stop_crash_class())                     return 80;
+    if (throw_log[0].stop_crash_class() != CrashClass::Throw)   return 81;
+    if (noth_log[0].stop_crash_class() != CrashClass::NoThrow)  return 82;
+
+    return 0;
+}
+
 // ── Worked: Recording wrapper over CrashWatchedHandle happy path ───
 
 int run_recording_crash_watched_happy_path_records_ops() {
@@ -1322,6 +1450,7 @@ int main() {
     if (int rc = run_offer_branch_recorded();           rc != 0) return 700 + rc;
     if (int rc = run_stop_event_replay_roundtrip();     rc != 0) return 800 + rc;
     if (int rc = run_recording_stop_close_recorded();   rc != 0) return 900 + rc;
+    if (int rc = run_fixy_a2_008_crash_class_round_trip(); rc != 0) return 920 + rc;
     if (int rc = run_recording_crash_watched_happy_path_records_ops(); rc != 0) {
         return 950 + rc;
     }

@@ -160,15 +160,24 @@ template <typename PeerTag, CrashClass C, typename NextHandle>
             std::move(next), log, self_role, peer_role};
 }
 
+// fixy-A2-008: thread the CrashClass tier through the peer-crash detour
+// so replay can distinguish Abort / Throw / ErrorReturn / NoThrow even
+// when the crash is observed via the OneShotFlag, not via a Stop_g<C>
+// terminal.  Every caller is inside a RecordingCrashWatchedHandle
+// specialization where the protocol's tolerated CrashClass `C` is in
+// scope as a template parameter — pass it explicitly.
 constexpr void record_crash_stop_(
     SessionEventLog& log,
     RoleTagId self_role,
-    RoleTagId peer_role)
+    RoleTagId peer_role,
+    ::crucible::algebra::lattices::CrashClass crash_class =
+        ::crucible::algebra::lattices::CrashClass::Abort)
 {
     log.append_event(SessionEvent::stop(
         self_role, peer_role, peer_role,
         StopReasonKind::PeerCrashed,
-        RecoveryPathHash{}));
+        RecoveryPathHash{},
+        crash_class));
 }
 
 }  // namespace detail
@@ -287,8 +296,14 @@ public:
         RecoveryPathHash recovery_path = {}) &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
+        // fixy-A2-008: encode the protocol's CrashClass tier (StopC)
+        // into the Stop event so replay can distinguish the four BSYZ22
+        // tiers.  Falling back to the default Abort would lose the
+        // distinction between NoThrow (rejects CrashWatchedHandle entirely)
+        // and Abort/Throw/ErrorReturn (different recovery families).
         log_->append_event(SessionEvent::stop(
-            self_role_, peer_role_, peer_role_, reason, recovery_path));
+            self_role_, peer_role_, peer_role_, reason, recovery_path,
+            StopC));
         this->mark_consumed_();
         return std::move(inner_).close();
     }
@@ -374,7 +389,7 @@ public:
         using Out = std::expected<WrappedNext, Error>;
 
         if (!result) {
-            detail::record_crash_stop_(*log_, self_role_, peer_role_);
+            detail::record_crash_stop_(*log_, self_role_, peer_role_, C);
             return Out{std::unexpected{std::move(result.error())}};
         }
 
@@ -457,7 +472,7 @@ public:
         using Out = std::expected<std::pair<T, WrappedNext>, Error>;
 
         if (!result) {
-            detail::record_crash_stop_(*log_, self_role_, peer_role_);
+            detail::record_crash_stop_(*log_, self_role_, peer_role_, C);
             return Out{std::unexpected{std::move(result.error())}};
         }
 
@@ -555,7 +570,7 @@ public:
         using Out = std::expected<WrappedNext, Error>;
 
         if (!result) {
-            detail::record_crash_stop_(*log_, self_role_, peer_role_);
+            detail::record_crash_stop_(*log_, self_role_, peer_role_, C);
             return Out{std::unexpected{std::move(result.error())}};
         }
 
@@ -588,7 +603,7 @@ public:
         using Out = std::expected<WrappedNext, Error>;
 
         if (!result) {
-            detail::record_crash_stop_(*log_, self_role_, peer_role_);
+            detail::record_crash_stop_(*log_, self_role_, peer_role_, C);
             return Out{std::unexpected{std::move(result.error())}};
         }
 
@@ -682,7 +697,7 @@ public:
         using Out = std::expected<WrappedNext, Error>;
 
         if (!result) {
-            detail::record_crash_stop_(*log_, self_role_, peer_role_);
+            detail::record_crash_stop_(*log_, self_role_, peer_role_, C);
             return Out{std::unexpected{std::move(result.error())}};
         }
 
@@ -803,8 +818,12 @@ public:
         RecoveryPathHash recovery_path = {}) &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
+        // fixy-A2-008: preserve the bare-handle Stop_g<C> protocol tier
+        // through the Stop event so replay can distinguish Abort / Throw
+        // / ErrorReturn / NoThrow even when no CrashWatchedHandle is
+        // wrapping the session.
         log_->append_event(SessionEvent::stop(
-            self_role_, peer_role_, peer_role_, reason, recovery_path));
+            self_role_, peer_role_, peer_role_, reason, recovery_path, C));
         this->mark_consumed_();
         return std::move(inner_).close();
     }
