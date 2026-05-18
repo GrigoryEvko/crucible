@@ -339,6 +339,55 @@ struct protocol_grade_satisfies<CheckpointedSession<B1, R1>,
 }  // namespace detail::subtype
 
 // ═════════════════════════════════════════════════════════════════════
+// ── is_terminal_state<CheckpointedSession<B, R>> (fixy-A2-029) ─────
+// ═════════════════════════════════════════════════════════════════════
+//
+// `CheckpointedSession<B, R>` represents a handle whose owner will
+// commit to EITHER B (via `.base()`) or R (via `.rollback()`) before
+// closing.  The handle is structurally at a terminal state ONLY when
+// BOTH branches are independently terminal — picking either one then
+// advances to a position the type system already classifies as
+// destructible-without-abandonment (End, Stop_g<C>, or a
+// VendorPinned-wrapped terminal).
+//
+// Pre-fix the primary `is_terminal_state` template (Session.h:1132)
+// answered `false` for every `CheckpointedSession<...>` regardless of
+// branch contents.  That made the SessionHandleBase destructor's
+// abandonment check (Session.h:1699) FALSE-NEGATIVE for the legitimate
+// `CheckpointedSession<End, End>` case: dropping the handle aborted
+// even though both branches were trivially closed.  Worse, the
+// asymmetry meant code that introspects `is_terminal_state_v<P>`
+// (e.g. `is_well_formed<Loop<B>>` at Session.h:1105-1108, which rejects
+// terminal loop bodies under fixy-A2-020) silently disagreed with the
+// branch-conjunction convention used by every OTHER CheckpointedSession
+// trait (is_well_formed, is_empty_choice, is_dual_involutive,
+// is_subtype_sync, all_offers_have_crash_branch — all conjunctive AND
+// folds over base and rollback).
+//
+// Post-fix the trait answers the conjunctive question: "are BOTH
+// branches terminal?".  This:
+//   * Lets `CheckpointedSession<End, End>`, `CheckpointedSession<Stop_g<C>, End>`,
+//     `CheckpointedSession<End, Stop_g<C>>`, and any twin-terminal
+//     combination drop cleanly without abandonment abort.
+//   * Closes the silent admission of `Loop<CheckpointedSession<End, End>>`
+//     (terminal loop body, equivalent to `Loop<End>` which fixy-A2-020
+//     already rejects).
+//   * Recurses through the same trait so VendorPinned-wrapped terminals
+//     (e.g. `CheckpointedSession<VendorPinned<NV, End>, End>`) inherit
+//     correctly via `is_terminal_state<VendorPinned<V, P>>` at
+//     Session.h:1135.
+//
+// The non-terminal cases — `CheckpointedSession<Send<int, End>, End>`,
+// `CheckpointedSession<End, Recv<int, End>>`, etc. — continue to be
+// rejected: at least one branch carries non-trivial protocol work that
+// the handle owes to its peer.
+
+template <typename B, typename R>
+struct is_terminal_state<CheckpointedSession<B, R>>
+    : std::bool_constant<is_terminal_state<B>::value &&
+                         is_terminal_state<R>::value> {};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── all_offers_have_crash_branch<CheckpointedSession<B, R>, Peer> ──
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -564,6 +613,52 @@ using CkptInsideLoop = Loop<CheckpointedSession<
     Send<int, Continue>,
     Send<int, End>>>;
 static_assert(is_well_formed_v<CkptInsideLoop>);
+
+// ─── Terminal-state classification (fixy-A2-029) ──────────────────
+//
+// is_terminal_state<CheckpointedSession<B, R>> = AND-fold over branches.
+// Both base AND rollback must be terminal for the handle to be
+// abandonable without consuming.
+
+// Twin-End: BOTH branches at End → terminal.
+static_assert(is_terminal_state_v<CheckpointedSession<End, End>>);
+
+// Twin-terminal via Stop (delegated through SessionCrash.h's
+// is_terminal_state<Stop_g<C>> specialization).
+static_assert(is_terminal_state_v<CheckpointedSession<Stop, End>>);
+static_assert(is_terminal_state_v<CheckpointedSession<End, Stop>>);
+static_assert(is_terminal_state_v<CheckpointedSession<Stop, Stop>>);
+
+// Mixed-tier crash terminals — Stop_g<Abort> ≠ Stop_g<Throw>, but both
+// are terminal under the Stop_g<C> spec at SessionCrash.h:183.
+static_assert(is_terminal_state_v<CheckpointedSession<
+    Stop_g<CrashClass::Abort>, Stop_g<CrashClass::Throw>>>);
+
+// VendorPinned-wrapped terminal recurses via
+// is_terminal_state<VendorPinned<V, P>> at Session.h:1135.
+static_assert(is_terminal_state_v<CheckpointedSession<
+    VendorPinned<VendorBackend::NV, End>, End>>);
+static_assert(is_terminal_state_v<CheckpointedSession<
+    End, VendorPinned<VendorBackend::AM, Stop>>>);
+
+// Non-terminal base — handle still owes the peer a Send before close.
+static_assert(!is_terminal_state_v<CheckpointedSession<Send<int, End>, End>>);
+// Non-terminal rollback — symmetric.
+static_assert(!is_terminal_state_v<CheckpointedSession<End, Recv<int, End>>>);
+// Both branches carry work.
+static_assert(!is_terminal_state_v<CheckpointedSession<
+    Send<int, End>, Recv<int, End>>>);
+// Choice combinator at either branch is non-terminal — handle still
+// owes a .pick<I>() / .offer().
+static_assert(!is_terminal_state_v<CheckpointedSession<
+    Select<Send<int, End>>, End>>);
+static_assert(!is_terminal_state_v<CheckpointedSession<
+    End, Offer<Recv<int, End>>>>);
+
+// Loop<CheckpointedSession<End, End>> is now ill-formed because the
+// trait correctly classifies the body as terminal — closes the silent
+// admission gap that disagreed with fixy-A2-020's Loop<terminal> ban.
+static_assert(!is_well_formed_v<Loop<CheckpointedSession<End, End>>>);
 
 // ─── Subtyping (product) ──────────────────────────────────────────
 

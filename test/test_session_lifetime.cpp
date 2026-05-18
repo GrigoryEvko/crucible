@@ -40,7 +40,20 @@ static_assert(!is_terminal_state_v<Offer<Recv<int, End>>>);
 static_assert(!is_terminal_state_v<Loop<Send<int, Continue>>>);
 static_assert(!is_terminal_state_v<Delegate<Send<int, End>, End>>);
 static_assert(!is_terminal_state_v<Accept<Send<int, End>, End>>);
-static_assert(!is_terminal_state_v<CheckpointedSession<End, End>>);
+
+// fixy-A2-029: is_terminal_state<CheckpointedSession<B, R>> is the
+// CONJUNCTION of branch-terminality.  Twin-terminal branches mean the
+// handle has no work left to do regardless of which arm is chosen, so
+// abandoning it is safe.  Pre-fix this asserted FALSE and the
+// destructor's abandonment check aborted on a structurally-trivial
+// drop.  Post-fix the parameterised spec at SessionCheckpoint.h fires.
+static_assert( is_terminal_state_v<CheckpointedSession<End, End>>);
+static_assert( is_terminal_state_v<CheckpointedSession<Stop, End>>);
+static_assert( is_terminal_state_v<CheckpointedSession<End, Stop>>);
+static_assert(!is_terminal_state_v<CheckpointedSession<Send<int, End>, End>>);
+static_assert(!is_terminal_state_v<CheckpointedSession<End, Recv<int, End>>>);
+static_assert(!is_terminal_state_v<CheckpointedSession<
+    Send<int, End>, Recv<int, End>>>);
 
 // ── Compile-time: every SessionHandle derives from SessionHandleBase
 
@@ -328,16 +341,47 @@ int run_self_move_preserves_tracker_state() {
     return 0;
 }
 
+// ── Runtime (fixy-A2-029): twin-terminal CheckpointedSession drops ──
+//
+// `SessionHandle<CheckpointedSession<End, End>, ...>` represents a
+// transactional handle whose base AND rollback branches are both
+// trivially closed.  After fixy-A2-029 the destructor's abandonment
+// check must NOT fire — abandoning the handle is safe because neither
+// arm of the choice has remaining work for the peer.
+//
+// Pre-fix this would abort under debug build (and on enforce contracts
+// in release).  Post-fix the handle drops cleanly.  The companion
+// `is_terminal_state_v<CheckpointedSession<Send<int, End>, End>>` is
+// still false (witnessed at compile time above), so a handle whose
+// base branch carries a Send STILL aborts on abandonment — exactly the
+// fall-through-tracker semantics we want.
+
+int run_terminal_twin_checkpoint_drops_clean() {
+    // Both branches at End: handle drops without consuming.
+    { auto h = mint_session_handle<CheckpointedSession<End, End>>(FakeRes{}); (void)h; }
+
+    // Both branches at Stop (delegated through SessionCrash.h's
+    // is_terminal_state<Stop_g<C>> specialization).
+    { auto h = mint_session_handle<CheckpointedSession<Stop, Stop>>(FakeRes{}); (void)h; }
+
+    // Asymmetric End/Stop: still terminal in both arms.
+    { auto h = mint_session_handle<CheckpointedSession<End, Stop>>(FakeRes{}); (void)h; }
+    { auto h = mint_session_handle<CheckpointedSession<Stop, End>>(FakeRes{}); (void)h; }
+
+    return 0;
+}
+
 }  // anonymous namespace
 
 int main() {
-    if (int rc = run_consume_via_close();                  rc != 0) return rc;
-    if (int rc = run_consume_via_chain();                  rc != 0) return rc;
-    if (int rc = run_detach_infinite_loop();               rc != 0) return rc;
-    if (int rc = run_stop_terminal();                      rc != 0) return rc;
-    if (int rc = run_moved_from_safe();                    rc != 0) return rc;
-    if (int rc = run_protocol_name_smoke();                rc != 0) return rc;
-    if (int rc = run_self_move_preserves_tracker_state();  rc != 0) return rc;
-    std::puts("session_lifetime: close + chain + detach + Stop + moved-from + protocol_name + self_move OK");
+    if (int rc = run_consume_via_close();                       rc != 0) return rc;
+    if (int rc = run_consume_via_chain();                       rc != 0) return rc;
+    if (int rc = run_detach_infinite_loop();                    rc != 0) return rc;
+    if (int rc = run_stop_terminal();                           rc != 0) return rc;
+    if (int rc = run_moved_from_safe();                         rc != 0) return rc;
+    if (int rc = run_protocol_name_smoke();                     rc != 0) return rc;
+    if (int rc = run_self_move_preserves_tracker_state();       rc != 0) return rc;
+    if (int rc = run_terminal_twin_checkpoint_drops_clean();    rc != 0) return rc;
+    std::puts("session_lifetime: close + chain + detach + Stop + moved-from + protocol_name + self_move + ckpt-terminal-drop OK");
     return 0;
 }

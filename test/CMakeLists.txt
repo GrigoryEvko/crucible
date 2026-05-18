@@ -8483,6 +8483,37 @@ crucible_neg_compile_session_test(neg_protocol_effect_row_accept_stop_g_narrows_
     "static assertion failed|static assert|fixy-A2-028")
 
 # ─────────────────────────────────────────────────────────────────
+# fixy-A2-029 — is_terminal_state<CheckpointedSession<B, R>> AND-fold
+# ─────────────────────────────────────────────────────────────────
+#
+# Session.h:1132 declares the primary `is_terminal_state<P>` template
+# as `std::bool_constant<std::is_same_v<P, End>>` — End is the only
+# unconditionally-terminal protocol.  Branch-fold combinators carry
+# the responsibility for distributing the trait over their components:
+# `is_terminal_state<VendorPinned<V, P>>` recurses through P
+# (Session.h:1135), `is_terminal_state<Stop_g<C>>` is hard-coded true
+# (SessionCrash.h:183).  Pre-fix `CheckpointedSession<B, R>` had NO
+# specialization — the primary fired and ALL CheckpointedSession<...>
+# uniformly classified as non-terminal regardless of branch contents.
+#
+# fixy-A2-029 ships the parameterised AND-fold:
+#   is_terminal_state<CheckpointedSession<B, R>>
+#       : std::bool_constant<is_terminal_state<B>::value
+#                            && is_terminal_state<R>::value>
+#
+# Twin-terminal cases now drop cleanly; asymmetric cases (one branch
+# carries non-trivial work) remain rejected on abandonment.  The pair
+# of fixtures below witnesses both arms of the AND-fold: fixture #1
+# pins BASE-branch non-terminality (Send<int, End>), fixture #2 pins
+# ROLLBACK-branch non-terminality (Recv<int, End>).  Different inner
+# combinator on each fixture (Send vs Recv) to pin that the rejection
+# is direction-agnostic.
+crucible_neg_compile_session_test(neg_checkpointed_session_terminal_base_nonterminal
+    "static assertion failed|static assert|fixy-A2-029")
+crucible_neg_compile_session_test(neg_checkpointed_session_terminal_rollback_nonterminal
+    "static assertion failed|static assert|fixy-A2-029")
+
+# ─────────────────────────────────────────────────────────────────
 # fixy-A2-003 — is_dual_involutive specialization distribution
 # ─────────────────────────────────────────────────────────────────
 #
