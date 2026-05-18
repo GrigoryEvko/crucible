@@ -100,6 +100,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/bridges/CrashTransport.h>
+#include <crucible/safety/IsSessionHandle.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
@@ -1604,7 +1605,24 @@ public:
 // constructor call written as a free function so the protocol /
 // resource template parameters are deducible at the call site.
 
+// fixy-A2-026: §XXI Universal Mint Pattern — every mint factory MUST
+// carry a single explicit `requires` clause naming the token-validity
+// concept, even when the parameter-type pattern-match already proves
+// it.  The clause is GREP-DISCOVERABLE — `grep "requires.*IsSessionHandle"`
+// surfaces every cross-tier authorization point in one pass.  Without
+// the clause, the gate is invisible to discipline audits.
+//
+// IsSessionHandle<H> is tautologically satisfied here because the
+// parameter type IS a SessionHandle / CrashWatchedHandle specialisation
+// (both inherit from SessionHandleBase).  The clause documents the
+// gate; it does not gate-fence beyond the existing parameter SFINAE.
+// HS14 fixtures (test/bridges_neg/neg_mint_recording_session_*) still
+// trigger via the "no matching function" diagnostic — the requires-
+// clause is additive belt-and-braces, not a replacement.
+
 template <typename Proto, typename Resource, typename LoopCtx>
+    requires ::crucible::safety::extract::IsSessionHandle<
+        SessionHandle<Proto, Resource, LoopCtx>>
 [[nodiscard]] constexpr auto mint_recording_session(
     SessionHandle<Proto, Resource, LoopCtx> inner,
     SessionEventLog& log,
@@ -1617,6 +1635,8 @@ template <typename Proto, typename Resource, typename LoopCtx>
 
 template <typename Proto, typename Resource, typename PeerTag,
           CrashClass C, typename LoopCtx, typename PS>
+    requires ::crucible::safety::extract::IsSessionHandle<
+        CrashWatchedHandle<Proto, Resource, PeerTag, C, LoopCtx, PS>>
 [[nodiscard]] constexpr auto mint_recording_session(
     CrashWatchedHandle<Proto, Resource, PeerTag, C, LoopCtx, PS> inner,
     SessionEventLog& log,

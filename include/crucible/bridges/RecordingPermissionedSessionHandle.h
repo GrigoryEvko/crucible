@@ -696,8 +696,15 @@ public:
 // behavior given Phase 1 scope: the type system rejects unsupported
 // protocols rather than silently dropping them.
 
+// fixy-A2-026: explicit §XXI requires-clause.  Tautologically true
+// because PermissionedSessionHandle<...> inherits from
+// SessionHandleBase via PermissionedSessionHandleImpl; the clause is
+// for grep-discoverability of the cross-tier authorization gate.
+
 template <typename Proto, typename PS,
           typename Resource, typename LoopCtx>
+    requires ::crucible::safety::extract::IsSessionHandle<
+        PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>>
 [[nodiscard]] constexpr auto mint_recording_session(
     PermissionedSessionHandle<Proto, PS, Resource, LoopCtx> inner,
     SessionEventLog& log,

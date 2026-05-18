@@ -135,6 +135,7 @@
 #include <crucible/Platform.h>
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/permissions/PermissionInherit.h>
+#include <crucible/safety/IsSessionHandle.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
@@ -1127,8 +1128,29 @@ public:
 //   test/safety_neg/neg_mint_crash_watched_session_non_handle.cpp
 //   test/safety_neg/neg_mint_crash_watched_session_missing_peer_tag.cpp
 
+// fixy-A2-026: §XXI Universal Mint Pattern — explicit single-concept
+// requires-clause naming IsSessionHandle<H>.  The clause is
+// tautologically satisfied here (both SessionHandle and
+// PermissionedSessionHandle inherit publicly from SessionHandleBase),
+// so it does NOT replace the in-body
+// `require_crash_watched_contract_<Proto, C>()` and
+// `require_crash_survivors_declared_<PeerTag>()` static_asserts —
+// those gate the crash-class / peer-survivor contracts which
+// IsSessionHandle does NOT.  The two layers compose:
+//
+//   1. requires IsSessionHandle<H>  (mint-discipline §XXI gate)
+//      ← grep-discoverable, surfaces every mint factory in one pass.
+//   2. body static_asserts          (crash-contract + survivor gate)
+//      ← specific diagnostics for crash-class / survivor mismatches.
+//
+// HS14 fixtures (test/safety_neg/neg_mint_crash_watched_session_*)
+// continue to fire via parameter-type SFINAE; the requires-clause is
+// additive.
+
 template <typename PeerTag, CrashClass C = CrashClass::Abort,
           typename Proto, typename Resource, typename LoopCtx>
+    requires ::crucible::safety::extract::IsSessionHandle<
+        SessionHandle<Proto, Resource, LoopCtx>>
 [[nodiscard]] constexpr auto mint_crash_watched_session(
     SessionHandle<Proto, Resource, LoopCtx> handle,
     OneShotFlag& flag) noexcept
@@ -1149,6 +1171,8 @@ template <typename PeerTag, CrashClass C = CrashClass::Abort,
 
 template <typename PeerTag, CrashClass C = CrashClass::Abort,
           typename Proto, typename PS, typename Resource, typename LoopCtx>
+    requires ::crucible::safety::extract::IsSessionHandle<
+        PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>>
 [[nodiscard]] constexpr auto mint_crash_watched_session(
     PermissionedSessionHandle<Proto, PS, Resource, LoopCtx> handle,
     OneShotFlag& flag) noexcept
