@@ -286,11 +286,38 @@ public:
     Resource resource;
     [[no_unique_address]] permissions_type permissions;
 
+    // fixy-A2-033: Resource must be nothrow-move-constructible.  The
+    // ctor is `noexcept` and constructs the field via `std::move(r)`,
+    // so a throwing move would call `std::terminate` mid-crash-path —
+    // exactly the wrong place to silently kill the process.  The
+    // static_assert pins the discipline at every CrashEvent
+    // instantiation site, so a Resource that loses noexcept-move
+    // (e.g., a refactor that adds a non-noexcept member) is caught at
+    // compile time instead of at the crash-recovery moment.
+    static_assert(std::is_nothrow_move_constructible_v<Resource>,
+        "fixy-A2-033: CrashEvent Resource must be nothrow-move-"
+        "constructible.  The crash-path is noexcept and a throwing "
+        "move would call std::terminate during recovery.");
+
     // Pass-key-protected ctor.  Direct user construction
     // `CrashEvent<P, R>{r}` cannot compile — the user has no way to
     // mint a `WrapCrashReturnKey`.  The only authorized constructor
     // is `wrap_crash_return`, which is friended on the key class.
-    constexpr CrashEvent(WrapCrashReturnKey, Resource r, permissions_type perms) noexcept
+    //
+    // fixy-A2-033: `Resource&& r` (rvalue-ref) instead of `Resource r`
+    // (by value).  Previously the by-value parameter forced one move
+    // construction at the ctor boundary, on top of the move from
+    // `wrap_crash_return`'s `recovered` parameter and the final move
+    // into the `resource` field — three moves for a path the design
+    // wants fast.  An rvalue-ref binds the caller's xvalue directly,
+    // eliminating the boundary move; the only remaining moves are
+    // (1) caller into `wrap_crash_return::recovered` and (2) `r` into
+    // `resource`.  For a 16 KB Resource at ~5 GB/s memcpy this
+    // recovers ~3 µs per crash event.  Resources that aren't
+    // move-constructible become ill-formed at instantiation per the
+    // `is_nothrow_move_constructible_v` static_assert above — better
+    // diagnostic than the pre-fix silent fall-back to copy.
+    constexpr CrashEvent(WrapCrashReturnKey, Resource&& r, permissions_type perms) noexcept
         : resource{std::move(r)}, permissions{std::move(perms)} {}
 };
 

@@ -6452,6 +6452,25 @@ crucible_neg_compile_test(neg_on_crash_capture_return_value
 crucible_neg_compile_test(neg_on_crash_inspect_moved_from_error
     "void|not a class|incomplete|fixy-A2-030")
 
+# ─────────────────────────────────────────────────────────────────
+# fixy-A2-033 — CrashEvent Resource must be nothrow-move-constructible
+# ─────────────────────────────────────────────────────────────────
+#
+# Pre-fix `CrashEvent(WrapCrashReturnKey, Resource r, ...)` took
+# Resource by value, forcing one extra move at the ctor boundary.
+# Post-fix takes `Resource&& r` and saves one move per crash event
+# (~3µs for a 16KB Resource at 5GB/s memcpy).  The accompanying
+# class-body `static_assert(std::is_nothrow_move_constructible_v<
+# Resource>)` locks the invariant that the field-move-init —
+# called inside CrashEvent's `noexcept` ctor — never throws.
+# Without that assert, a Resource refactor adding a non-noexcept
+# member would silently reintroduce mid-recovery `std::terminate`.
+# This fixture witnesses that the assert fires on a Resource with
+# `noexcept(false)` move ctor — i.e., the static_assert IS load-
+# bearing rather than tautological.
+crucible_neg_compile_test(neg_crash_event_resource_throwing_move
+    "fixy-A2-033|nothrow-move-constructible|static assertion failed|noexcept")
+
 # Empty Select<> / Offer<> at the handle boundary (#364) — type-level
 # uses (Gay-Hole 2005 minimum-subtype rule, SessionSubtype.h's tests)
 # stay legitimate, but constructing a runnable handle is rejected.
