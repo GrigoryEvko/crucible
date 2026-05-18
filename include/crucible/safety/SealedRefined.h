@@ -90,6 +90,7 @@
 #include <crucible/safety/Refined.h>  // for predicate concepts
 
 #include <compare>
+#include <cstdlib>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -240,5 +241,50 @@ template <auto Pred, typename T>
 {
     return SealedRefined<Pred, T>{std::move(value)};
 }
+
+namespace detail::sealed_refined_self_test {
+
+// ── Runtime smoke test ──────────────────────────────────────────────
+//
+// Exercise checked construction / trusted bypass / Refined→Sealed
+// conversion / comparison / mint forwarder.  The discipline is to
+// PROVE absence of destructive `into()` indirectly — the type itself
+// has no such method, so a body that compiles without one is the
+// witness.
+inline void runtime_smoke_test() {
+    int seed = 5;                                            // non-constant
+
+    SealedRefined<positive, int> sp{seed};
+    if (sp.value() != 5) std::abort();
+
+    // Mint forwarder.
+    auto spm = mint_sealed_refined<positive, int>(seed);
+    if (spm.value() != 5) std::abort();
+
+    // Trusted bypass — invariant predicate skipped.
+    int sentinel = -3;
+    SealedRefined<positive, int> tp{sentinel,
+                                    SealedRefined<positive, int>::Trusted{}};
+    if (tp.value() != -3) std::abort();
+
+    // Conversion from Refined — consumes Refined, preserves invariant.
+    Refined<positive, int> r{seed * 2};
+    SealedRefined<positive, int> from_r{std::move(r)};
+    if (from_r.value() != 10) std::abort();
+
+    // Comparison + ordering.
+    SealedRefined<positive, int> sp_eq{seed};
+    if (!(sp == sp_eq)) std::abort();
+    SealedRefined<positive, int> sp_lt{seed - 1};
+    if ((sp_lt <=> sp) != std::strong_ordering::less) std::abort();
+
+    // Copy + move preserve the sealed invariant.
+    SealedRefined<positive, int> sp_copy = sp;
+    if (sp_copy.value() != 5) std::abort();
+    SealedRefined<positive, int> sp_move = std::move(sp_copy);
+    if (sp_move.value() != 5) std::abort();
+}
+
+}  // namespace detail::sealed_refined_self_test
 
 }  // namespace crucible::safety

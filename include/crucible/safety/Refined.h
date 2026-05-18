@@ -55,6 +55,8 @@
 #include <bit>
 #include <compare>
 #include <cstdint>
+#include <cstdlib>
+#include <span>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -523,5 +525,60 @@ struct predicate_implies<InRange<L, H>, BoundedAbove<H>> : std::true_type {};
 template <std::size_t N, std::size_t M>
     requires (N >= M)
 struct predicate_implies<LengthGe<N>, LengthGe<M>> : std::true_type {};
+
+namespace detail::refined_self_test {
+
+// ── Runtime smoke test ──────────────────────────────────────────────
+//
+// Exercise the construction / accessor / consume / comparison /
+// trusted-bypass / mint factory surfaces with non-constant input
+// per feedback_algebra_runtime_smoke_test_discipline.
+inline void runtime_smoke_test() {
+    int seed = 42;                                            // non-constant
+
+    // Checked construction — pre(positive(seed)) must hold.
+    Refined<positive, int> p{seed};
+    if (p.value() != 42) std::abort();
+
+    // Mint forwarder.
+    auto pm = mint_refined<positive, int>(seed);
+    if (pm.value() != 42) std::abort();
+
+    // Trusted-bypass — skip predicate, caller-asserted invariant.
+    int sentinel = -1;  // would fail positive(); Trusted{} admits.
+    Refined<positive, int> tp{sentinel, Refined<positive, int>::Trusted{}};
+    if (tp.value() != -1) std::abort();
+
+    // Comparison.
+    Refined<positive, int> p2{seed};
+    if (!(p == p2)) std::abort();
+    Refined<positive, int> p3{seed + 1};
+    if ((p <=> p3) != std::strong_ordering::less) std::abort();
+
+    // .into() consumes — yields raw int.
+    int extracted = std::move(p).into();
+    if (extracted != 42) std::abort();
+
+    // Parameterised predicates.
+    Refined<bounded_above<128u>, unsigned int> ba{static_cast<unsigned int>(seed)};
+    if (ba.value() != 42u) std::abort();
+
+    Refined<in_range<0, 100>, int> ir{seed};
+    if (ir.value() != 42) std::abort();
+
+    // LengthGe over a span-able container.
+    int arr[3] = {1, 2, 3};
+    std::span<int> sp{arr};
+    Refined<length_ge<1>, std::span<int>> ls{sp};
+    if (ls.value().size() != 3) std::abort();
+
+    // LinearRefined composition — Linear<Refined<P, T>>.
+    LinearRefined<positive, int> lr{Refined<positive, int>{seed}};
+    if (lr.peek().value() != 42) std::abort();
+    int lr_extracted = std::move(lr).consume().into();
+    if (lr_extracted != 42) std::abort();
+}
+
+}  // namespace detail::refined_self_test
 
 } // namespace crucible::safety

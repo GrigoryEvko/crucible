@@ -41,6 +41,7 @@
 #include <crucible/algebra/lattices/ConfLattice.h>
 
 #include <concepts>
+#include <cstdlib>
 #include <cstring>
 #include <memory>      // std::addressof
 #include <string_view>
@@ -308,5 +309,49 @@ template <typename T, typename... Args>
 // Zero-cost guarantee.
 static_assert(sizeof(Secret<int>)               == sizeof(int));
 static_assert(sizeof(Secret<unsigned long long>) == sizeof(unsigned long long));
+
+namespace detail::secret_self_test {
+
+// ── Runtime smoke test ──────────────────────────────────────────────
+//
+// Exercise construction / size() / transform / declassify<Policy> /
+// zeroize / mint_secret per feedback_algebra_runtime_smoke_test_discipline.
+// Critical because Secret routes through Graded::extract() (the
+// Comonad counit) for declassify; that path is distinct from peek()
+// / consume() and a constexpr-vs-runtime divergence would silently
+// classify the wrong bytes.
+inline void runtime_smoke_test() {
+    int seed = 17;                                          // non-constant
+
+    Secret<int> s{seed * 2};
+
+    // Transform — operations on Secret produce Secret.
+    Secret<int> t = std::move(s).transform([](int&& v) { return v + 1; });
+    int declassified = std::move(t).template declassify<secret_policy::AuditedLogging>();
+    if (declassified != 35) std::abort();
+
+    // mint_secret forwarder (in-place ctor path).
+    Secret<int> m = mint_secret<int>(seed);
+    int m_out = std::move(m).template declassify<secret_policy::WireSerialize>();
+    if (m_out != 17) std::abort();
+
+    // Different policy tags admit the same declassification mechanism;
+    // the audit trail differs by grep target.
+    Secret<int> hp{seed};
+    int hp_out = std::move(hp).template declassify<secret_policy::HashForCompare>();
+    if (hp_out != 17) std::abort();
+
+    // zeroize on trivially-copyable T.
+    Secret<unsigned long long> key{0xCAFEBABE12345678ULL};
+    key.zeroize();
+    // Cannot inspect zeroized value without declassifying — but a key
+    // zeroized in-place should compare equal to a freshly-zeroized one.
+    Secret<unsigned long long> zero{0ULL};
+    auto k_out  = std::move(key).template declassify<secret_policy::HashForCompare>();
+    auto z_out  = std::move(zero).template declassify<secret_policy::HashForCompare>();
+    if (k_out != z_out) std::abort();
+}
+
+}  // namespace detail::secret_self_test
 
 } // namespace crucible::safety

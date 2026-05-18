@@ -611,6 +611,7 @@ crucible_test(test_queue_facade)
 crucible_test(test_permission_shared)
 crucible_test(test_fair_permission_shared)
 crucible_test(test_owned_region)
+crucible_test(test_smoke_safety_wrappers)  # fixy-A1-016 — per-header runtime_smoke_test() sentinel
 crucible_test(test_permission_tree_generator)
 crucible_test(test_permission_grid_generator)
 crucible_test(test_read_view)

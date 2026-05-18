@@ -77,6 +77,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdlib>
 #include <span>
 #include <tuple>
 #include <type_traits>
@@ -315,5 +316,76 @@ static_assert(splits_into_pack_v<
     Slice<detail::owned_region_test_tag, 2>,
     Slice<detail::owned_region_test_tag, 3>>,
     "Slice<Parent, 0..N-1> must auto-specialize splits_into_pack");
+
+// ── runtime_smoke_test ──────────────────────────────────────────────
+//
+// Sentinel TU exercises every named op with non-constant input.  The
+// runtime_smoke_test discipline (feedback_algebra_runtime_smoke_test)
+// catches consteval/SFILE/inline-body bugs that pure static_assert
+// tests miss when the header is compiled under project warning flags.
+
+namespace detail::owned_region_self_test {
+
+struct smoke_tag {};
+
+inline void runtime_smoke_test() {
+    int seed = 7;
+    effects::Test test_ctx{};
+    Arena arena{};
+
+    // adopt(arena, count, perm) — single arena bump-pointer alloc + perm.
+    auto perm = mint_permission_root<smoke_tag>();
+    auto region = OwnedRegion<int, smoke_tag>::adopt(
+        test_ctx.alloc, arena, static_cast<std::size_t>(seed + 1),
+        std::move(perm));
+    if (region.size() != 8u) std::abort();
+    if (region.empty()) std::abort();
+    if (region.data() == nullptr) std::abort();
+
+    // Native pointer iteration zero-cost over contiguous bytes.
+    for (std::size_t i = 0; i < region.size(); ++i) {
+        region.data()[i] = static_cast<int>(i) * seed;
+    }
+    int sum = 0;
+    for (int v : region) sum += v;
+    if (sum != (0 + 1 + 2 + 3 + 4 + 5 + 6 + 7) * seed) std::abort();
+
+    // span() + cspan() — zero-indirection views.
+    std::span<int> view = region.span();
+    if (view.size() != 8u) std::abort();
+    if (view.data() != region.data()) std::abort();
+    std::span<int const> cview = region.cspan();
+    if (cview.size() != 8u) std::abort();
+
+    // split_into<N>() && — partition into 4 disjoint slices.
+    auto shards = std::move(region).split_into<4>();
+    auto& s0 = std::get<0>(shards);
+    auto& s1 = std::get<1>(shards);
+    auto& s2 = std::get<2>(shards);
+    auto& s3 = std::get<3>(shards);
+    if (s0.size() != 2u || s1.size() != 2u
+            || s2.size() != 2u || s3.size() != 2u) std::abort();
+    if (s0.data()[0] != 0 || s0.data()[1] != seed) std::abort();
+    if (s3.data()[1] != 7 * seed) std::abort();
+
+    // wrap(base, count, perm) — adopt externally-allocated storage.
+    int storage[3] = {seed, seed + 1, seed + 2};
+    auto wrap_perm = mint_permission_root<smoke_tag>();
+    auto wrapped = OwnedRegion<int, smoke_tag>::wrap(
+        storage, 3u, std::move(wrap_perm));
+    if (wrapped.size() != 3u) std::abort();
+    if (wrapped.data() != storage) std::abort();
+    if (wrapped.data()[2] != seed + 2) std::abort();
+
+    // Empty-region path: count == 0 → nullptr base.
+    auto empty_perm = mint_permission_root<smoke_tag>();
+    auto empty = OwnedRegion<int, smoke_tag>::adopt(
+        test_ctx.alloc, arena, 0u, std::move(empty_perm));
+    if (!empty.empty()) std::abort();
+    if (empty.data() != nullptr) std::abort();
+    if (empty.size() != 0u) std::abort();
+}
+
+}  // namespace detail::owned_region_self_test
 
 }  // namespace crucible::safety

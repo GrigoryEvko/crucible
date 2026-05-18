@@ -52,6 +52,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -1208,6 +1209,95 @@ public:
         return observed > raw ? observed : raw;
     }
 };
+
+namespace detail::mutation_self_test {
+
+// ── Runtime smoke test ──────────────────────────────────────────────
+//
+// Exercise the seven mutation-mode wrappers in turn:
+//   AppendOnly, OrderedAppendOnly, Monotonic, BoundedMonotonic,
+//   WriteOnce, WriteOnceNonNull, AtomicMonotonic.
+// Each path catches a different class of regression:
+//   * AppendOnly's emplace path through Graded::peek_mut() (derived-
+//     grade specialization);
+//   * OrderedAppendOnly's per-emplace KeyFn-monotone check;
+//   * Monotonic's CAS-loop and bump() vs try_advance() contracts;
+//   * BoundedMonotonic's bounded-above guard;
+//   * WriteOnce's single-set + try_set contract;
+//   * WriteOnceNonNull's nullptr-sentinel pointer slot;
+//   * AtomicMonotonic's atomic CAS-loop on a fetch_max-style path.
+inline void runtime_smoke_test() {
+    int seed = 3;                                            // non-constant
+
+    // AppendOnly<T> over default std::vector.
+    AppendOnly<int> ao{};
+    ao.emplace(seed);
+    ao.append(seed + 1);
+    ao.append(seed + 2);
+    if (ao.size() != 3) std::abort();
+    if (ao[0] != 3 || ao[1] != 4 || ao[2] != 5) std::abort();
+    if (ao.front() != 3 || ao.back() != 5) std::abort();
+    if (ao.empty()) std::abort();
+    int sum = 0;
+    for (auto it = ao.begin(); it != ao.end(); ++it) sum += *it;
+    if (sum != 12) std::abort();
+
+    // OrderedAppendOnly — strict monotone via identity KeyFn.
+    OrderedAppendOnly<int> oao{};
+    oao.append(1);
+    oao.append(seed);            // 3 — strictly increasing.
+    oao.append(seed + 4);        // 7
+    if (oao.size() != 3) std::abort();
+    if (oao.back() != 7) std::abort();
+
+    // Monotonic<uint32_t>.
+    const auto useed = static_cast<uint32_t>(seed);  // seed=3 → useed=3u.
+    Monotonic<uint32_t> mono{0};
+    mono.advance(useed);
+    if (mono.get() != 3u) std::abort();
+    if (!mono.try_advance(useed + 5u)) std::abort();
+    if (mono.get() != 8u) std::abort();
+    if (mono.try_advance(2u)) std::abort();   // 2 < 8 -> reject
+    mono.bump();                              // +1, integral T
+    if (mono.get() != 9u) std::abort();
+
+    // BoundedMonotonic — bound + monotone composition.
+    BoundedMonotonic<uint32_t, 128u> bm{0};
+    bm.advance(useed);
+    if (bm.get() != 3u) std::abort();
+    if (!bm.try_advance(64u)) std::abort();
+    if (bm.get() != 64u) std::abort();
+    if (bm.try_advance(200u)) std::abort();   // exceeds bound
+
+    // WriteOnce<T>.
+    WriteOnce<int> wo{};
+    if (wo.has_value()) std::abort();
+    wo.set(seed * 11);
+    if (!wo.has_value()) std::abort();
+    if (wo.get() != 33) std::abort();
+    if (wo.get_assuming_set() != 33) std::abort();
+    if (wo.try_set(99)) std::abort();         // already set -> reject
+
+    // WriteOnceNonNull<T*>.
+    int target = 42;
+    WriteOnceNonNull<int*> wonn{};
+    if (wonn.has_value()) std::abort();
+    wonn.set(&target);
+    if (!wonn.has_value()) std::abort();
+    if (*wonn != 42) std::abort();
+    if (wonn.try_set(&target)) std::abort();  // already set -> reject
+
+    // AtomicMonotonic — CAS-backed atomic, no default ctor.
+    AtomicMonotonic<uint64_t> am{0ULL};
+    am.advance(static_cast<uint64_t>(seed));
+    if (am.get() != 3u) std::abort();
+    if (!am.try_advance(static_cast<uint64_t>(seed + 7))) std::abort();
+    if (am.get() != 10u) std::abort();
+    auto prev = am.bump();                    // returns prev = 10, advances to 11
+    if (prev != 10u || am.get() != 11u) std::abort();
+}
+
+}  // namespace detail::mutation_self_test
 
 } // namespace crucible::safety
 

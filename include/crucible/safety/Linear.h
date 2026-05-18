@@ -55,6 +55,8 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/QttSemiring.h>
 
+#include <cstdlib>
+#include <memory>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -273,5 +275,63 @@ constexpr void drop(Linear<T>&& x)
 static_assert(sizeof(Linear<int>)        == sizeof(int));
 static_assert(sizeof(Linear<void*>)      == sizeof(void*));
 static_assert(sizeof(Linear<long long>)  == sizeof(long long));
+
+namespace detail::linear_self_test {
+
+// ── Runtime smoke test ──────────────────────────────────────────────
+//
+// Exercise every named operation at runtime per
+// feedback_algebra_runtime_smoke_test_discipline.  Catches three
+// classes of consteval/SFINAE bugs that pure static_asserts miss:
+//   1. value-vs-reference forwarding regressions through Graded's
+//      consume/peek/peek_mut delegation;
+//   2. move-only T support (the only_move witness exercises the
+//      in-place constructor's emplace path);
+//   3. swap's noexcept propagation through Graded::swap.
+inline void runtime_smoke_test() {
+    int seed = 41;                       // non-constant
+    Linear<int> a{std::in_place, seed + 1};
+    if (a.peek() != 42) std::abort();
+
+    // peek_mut on lvalue.
+    a.peek_mut() = 100;
+    if (a.peek() != 100) std::abort();
+
+    // Swap two Linears.
+    Linear<int> b{std::in_place, 7};
+    swap(a, b);
+    if (a.peek() != 7 || b.peek() != 100) std::abort();
+
+    // Member swap.
+    a.swap(b);
+    if (a.peek() != 100 || b.peek() != 7) std::abort();
+
+    // Move + consume — rvalue path.
+    Linear<int> c = std::move(a);
+    int extracted = std::move(c).consume();
+    if (extracted != 100) std::abort();
+
+    // mint_linear forwarder.
+    auto m = mint_linear<int>(seed);
+    if (m.peek() != 41) std::abort();
+
+    // Move-only T witness — verifies in-place construction path.
+    struct only_move {
+        only_move(int v) : p{std::make_unique<int>(v)} {}
+        only_move(only_move&&)                 = default;
+        only_move& operator=(only_move&&)      = default;
+        only_move(const only_move&)            = delete;
+        only_move& operator=(const only_move&) = delete;
+        std::unique_ptr<int> p;
+    };
+    Linear<only_move> mo{std::in_place, 123};
+    if (*mo.peek().p != 123) std::abort();
+
+    // drop() consumes without binding the result.
+    Linear<int> to_drop{std::in_place, 999};
+    drop(std::move(to_drop));
+}
+
+}  // namespace detail::linear_self_test
 
 } // namespace crucible::safety

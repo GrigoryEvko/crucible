@@ -60,6 +60,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/TrustLattice.h>
 
+#include <cstdlib>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -410,5 +411,53 @@ template <typename Tag, typename T>
 {
     return Tagged<T, Tag>{std::move(value)};
 }
+
+namespace detail::tagged_self_test {
+
+// ── Runtime smoke test ──────────────────────────────────────────────
+//
+// Exercise value() / value_mut() / retag<>() / into() / mint_tagged
+// forwarder per feedback_algebra_runtime_smoke_test_discipline.
+// Catches Graded::peek_mut() ↔ Tagged::value_mut() forwarding
+// regressions on the RelativeMonad-modality path that pure
+// static_asserts miss.
+inline void runtime_smoke_test() {
+    int seed = 7;                                            // non-constant
+
+    // Construct via direct ctor + mint forwarder.
+    Tagged<int, source::FromUser> u{seed * 6};
+    if (u.value() != 42) std::abort();
+
+    auto um = mint_tagged<source::FromUser, int>(seed * 6);
+    if (um.value() != 42) std::abort();
+
+    // value_mut on lvalue.
+    u.value_mut() = 100;
+    if (u.value() != 100) std::abort();
+
+    // Retag — moves through, keeps payload.
+    Tagged<int, source::Sanitized> s = std::move(u).template retag<source::Sanitized>();
+    if (s.value() != 100) std::abort();
+
+    // .into() consumes — returns raw T.
+    int extracted = std::move(s).into();
+    if (extracted != 100) std::abort();
+
+    // Verified vs Unverified trust tags — distinct types.
+    Tagged<long, trust::Verified>    v{seed * seed};
+    Tagged<long, trust::Unverified>  uv{seed * seed};
+    if (v.value() != uv.value()) std::abort();
+
+    // Version tag with NTTP.
+    Tagged<int, version::V<3>> vt{seed};
+    if (vt.value() != 7) std::abort();
+
+    // Vessel-trust boundary: FromPytorch → Validated.
+    Tagged<int, vessel_trust::FromPytorch> raw{seed};
+    auto validated = std::move(raw).template retag<vessel_trust::Validated>();
+    if (validated.value() != 7) std::abort();
+}
+
+}  // namespace detail::tagged_self_test
 
 } // namespace crucible::safety

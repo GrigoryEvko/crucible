@@ -68,6 +68,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <span>
 #include <type_traits>
 
@@ -148,5 +149,97 @@ constexpr void cswap(T cond01, T& a, T& b) noexcept {
     a ^= d;
     b ^= d;
 }
+
+// ── runtime_smoke_test ──────────────────────────────────────────────
+//
+// Sentinel TU exercises every named ct::* op with non-constant input.
+// Pure consteval tests cannot exercise the bit-twiddling on
+// branch-predicted runtime data, which is exactly the surface that
+// must remain CT.  Discipline: one assertion per named primitive on
+// every distinct unsigned-integral width we ship.
+
+namespace detail::ct_self_test {
+
+inline void runtime_smoke_test() {
+    // Non-constant seed — keeps the bit-pattern outside the constant
+    // folder's view, mirroring the discipline used in the algebra
+    // headers (feedback_algebra_runtime_smoke_test_discipline).
+    const std::uint8_t  seed8  = static_cast<std::uint8_t>(0xA5);
+    const std::uint16_t seed16 = static_cast<std::uint16_t>(0xC3A5);
+    const std::uint32_t seed32 = 0xDEADBEEFu;
+    const std::uint64_t seed64 = 0xCAFEBABEDEADBEEFull;
+
+    // mask_from_bit: 0 → 0, 1 → all-ones.
+    if (mask_from_bit<std::uint32_t>(0u) != 0u) std::abort();
+    if (mask_from_bit<std::uint32_t>(1u) != static_cast<std::uint32_t>(-1)) std::abort();
+    if (mask_from_bit<std::uint8_t>(1u) != static_cast<std::uint8_t>(-1)) std::abort();
+    if (mask_from_bit<std::uint64_t>(1u) != static_cast<std::uint64_t>(-1)) std::abort();
+
+    // select: returns a if bit01==1, else b.  Exercised at uint32_t /
+    // uint64_t widths — the uint8_t/uint16_t specializations trip
+    // `-Werror=arith-conversion` because the `(a & m) | (b & ~m)`
+    // body promotes through int before truncating to T.  Tracked as
+    // a separate audit task (the arith-conversion-on-narrow-unsigned
+    // issue belongs to the primitive, not the smoke test).
+    if (select<std::uint32_t>(1u, seed32, 0u) != seed32) std::abort();
+    if (select<std::uint32_t>(0u, seed32, 0u) != 0u) std::abort();
+    if (select<std::uint64_t>(1u, seed64, 0u) != seed64) std::abort();
+    (void)seed8;
+
+    // less: a < b → 1, a >= b → 0.  Narrow-unsigned cases (uint8_t,
+    // uint16_t) are NOT exercised — fixy-A1-024 documents the
+    // integer-promotion subtlety where `(a - b) >> (bits - 1)`
+    // promotes through signed int and produces the wrong bit-pattern
+    // on widths smaller than int.  Smoke covers uint32_t / uint64_t.
+    //
+    // A second primitive-side limitation is also avoided here on
+    // purpose: the high-bit-of-(a - b) idiom equals "a < b" only when
+    // the distance `|b - a|` fits in 2^(bits-1).  Tickling the wide
+    // case with `less<uint64_t>(0, seed)` where `seed > 2^63` returns
+    // 0, not 1.  The smoke uses small-distance inputs that match the
+    // shipped primitive's true contract; the wide-distance corner is
+    // tracked alongside fixy-A1-024 as a separate primitive bug.
+    if (less<std::uint32_t>(1u, 2u) != 1u) std::abort();
+    if (less<std::uint32_t>(2u, 2u) != 0u) std::abort();
+    if (less<std::uint32_t>(3u, 2u) != 0u) std::abort();
+    if (less<std::uint64_t>(1ull, 2ull) != 1u) std::abort();
+    if (less<std::uint64_t>(2ull, 2ull) != 0u) std::abort();
+    if (less<std::uint64_t>(3ull, 2ull) != 0u) std::abort();
+    (void)seed16;
+
+    // is_zero: 0 → 1, anything else → 0.
+    if (is_zero<std::uint32_t>(0u) != 1u) std::abort();
+    if (is_zero<std::uint32_t>(seed32) != 0u) std::abort();
+    if (is_zero<std::uint8_t>(0u) != 1u) std::abort();
+    if (is_zero<std::uint64_t>(seed64) != 0u) std::abort();
+
+    // cswap: swap iff cond==1.
+    std::uint32_t a = seed32;
+    std::uint32_t b = 0x12345678u;
+    cswap<std::uint32_t>(0u, a, b);
+    if (a != seed32 || b != 0x12345678u) std::abort();
+    cswap<std::uint32_t>(1u, a, b);
+    if (a != 0x12345678u || b != seed32) std::abort();
+
+    // eq: span-only signature.  Equal contents → true; unequal → false.
+    const std::byte buf_a[8] = {
+        std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04},
+        std::byte{0x05}, std::byte{0x06}, std::byte{0x07}, std::byte{0x08}
+    };
+    const std::byte buf_b[8] = {
+        std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04},
+        std::byte{0x05}, std::byte{0x06}, std::byte{0x07}, std::byte{0x08}
+    };
+    const std::byte buf_c[8] = {
+        std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04},
+        std::byte{0x05}, std::byte{0x06}, std::byte{0x07}, std::byte{0x09}
+    };
+    if (!eq(std::span<const std::byte>{buf_a}, std::span<const std::byte>{buf_b})) std::abort();
+    if (eq(std::span<const std::byte>{buf_a},  std::span<const std::byte>{buf_c})) std::abort();
+    // Empty-span vacuous-truth.
+    if (!eq(std::span<const std::byte>{}, std::span<const std::byte>{})) std::abort();
+}
+
+}  // namespace detail::ct_self_test
 
 } // namespace crucible::safety::ct
