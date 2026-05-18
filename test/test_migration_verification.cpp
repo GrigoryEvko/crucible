@@ -2108,7 +2108,10 @@ void runtime_smoke_tagged() {
 
 void runtime_smoke_secret() {
     Secret<int> s{0xCAFE};
-    int v = std::move(s).declassify<struct VerificationPolicy>();
+    // H-24: declassify<Policy> requires Policy to derive from
+    // secret_policy_base.  Use a shipped builtin policy from the
+    // secret_policy:: namespace; ad-hoc local structs are rejected.
+    int v = std::move(s).declassify<secret_policy::AuditedLogging>();
     if (v != 0xCAFE) std::abort();
 }
 

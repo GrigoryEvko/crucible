@@ -6466,6 +6466,27 @@ crucible_neg_compile_test(neg_secret_transform_reference_return
 crucible_neg_compile_test(neg_secret_transform_void_return
     "Capture_Leak_Void_Return")
 
+# H-24: Secret<T>::declassify<Policy>() must reject any Policy that
+# does NOT derive from `secret_policy::secret_policy_base`.  Pre-H-24
+# the `DeclassificationPolicy` concept admitted ANY non-void class
+# type, leaving the `grep "declassify<secret_policy::"` audit
+# trail as a convention rather than a type-system gate.  H-24
+# tightened the concept (via std::derived_from) AND surfaces a
+# named [SecretPolicy_NotInBase] diagnostic at the call site.
+#
+# Two fixtures cover the two clauses of the tightened concept:
+#   #1 — class type but NOT derived from secret_policy_base
+#         (fails `std::derived_from` clause).
+#   #2 — primitive type (int), not a class at all
+#         (fails `std::is_class_v` clause).
+# Per HS14, every new mint factory / gate ships ≥2 neg-compile
+# fixtures.  declassify<Policy>() is a soundness gate; the
+# tightening lands with its negative witnesses.
+crucible_neg_compile_test(neg_secret_declassify_non_policy_class
+    "SecretPolicy_NotInBase|DeclassificationPolicy|constraints not satisfied")
+crucible_neg_compile_test(neg_secret_declassify_non_class_type
+    "SecretPolicy_NotInBase|DeclassificationPolicy|constraints not satisfied")
+
 # Sender-annotated Offer missing its sender's crash branch (#367).
 #
 # [FRAMEWORK-CONTROLLED] Reuses the existing

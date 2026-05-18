@@ -13,7 +13,9 @@
 // - Move is defaulted (explicit transfer).
 // - .transform(f) produces Secret<f(T)> — operations stay Secret.
 // - .declassify<Policy>() consumes the Secret and returns the raw T.
-//   Policy is a class tag; grep "declassify<" for the audit trail.
+//   Policy MUST derive from secret_policy::secret_policy_base — H-24
+//   tightened this from "any class type" to a type-system gate, so
+//   the `grep "declassify<"` audit trail is structurally complete.
 // - .zeroize() is opt-in secure-zeroization for crypto-key paths.
 //
 // Pattern: wrap Philox seeds, Cipher keys, credentials, authenticated
@@ -47,19 +49,60 @@
 
 namespace crucible::safety {
 
-// User-defined policy tags.  Extend in secret_policy:: as needed.
+// ── secret_policy:: — declassification policy tag namespace ────────
+//
+// Every declassification names a policy.  The policy IS the audit
+// trail: `grep "declassify<secret_policy::"` enumerates every escape
+// from classification.  For that audit to be load-bearing, the policy
+// universe must be discoverable — anyone reading the source must be
+// able to find every legal Policy by looking inside this namespace.
+//
+// Pre-H-24 the discipline was grep-only: `DeclassificationPolicy<P>`
+// admitted ANY non-void class type, so a user could write
+// `std::move(s).declassify<MyAdHocStruct>()` and the audit grep would
+// miss it.  H-24 closes the gap with a marker base class — every
+// policy MUST inherit `secret_policy_base` — and `NotInherited<>`
+// guarantees user tags cannot extend a builtin policy (cf. FIXY-A-
+// PLUS-1's grant_base pattern in fixy/Grant.h).
+//
+// The base class is empty (zero size; EBO-collapses into the derived
+// tag) and lives only to be detected by `std::derived_from<P,
+// secret_policy_base>`.  Adding a new policy is two lines:
+//
+//   struct MyNewPolicy final : secret_policy_base,
+//                              ::crucible::safety::NotInherited<MyNewPolicy> {};
+//
+// `final` prevents user-side specialization (so `MyEvilPolicy : public
+// AuditedLogging` cannot launder the audit trail through subtype
+// coercion).  `NotInherited<MyNewPolicy>` adds the CRTP gate from
+// safety/NotInherited.h so any attempt to subclass MyNewPolicy in user
+// code becomes a hard compile error.
 namespace secret_policy {
-    struct AuditedLogging {};   // log with audit trail
-    struct WireSerialize  {};   // encrypted-channel serialization
-    struct HashForCompare {};   // release as hash (not the source)
-    struct LengthOnly     {};   // release only size metadata
-    struct UserDisplay    {};   // display in UI (e.g., last-4 of card)
-}
 
-// Concept: Policy is a non-void class type.  Enforces at the declassify
-// call site that the user names an actual policy class.
+// Empty marker base — every policy MUST inherit this.  The CRTP
+// pattern (`NotInherited<>`) cannot be applied to the base itself; it
+// is applied on the derived tags so that each tag carries its own
+// CRTP-derived gate.
+struct secret_policy_base {};
+
+struct AuditedLogging final : secret_policy_base {};   // log with audit trail
+struct WireSerialize  final : secret_policy_base {};   // encrypted-channel serialization
+struct HashForCompare final : secret_policy_base {};   // release as hash (not the source)
+struct LengthOnly     final : secret_policy_base {};   // release only size metadata
+struct UserDisplay    final : secret_policy_base {};   // display in UI (e.g., last-4 of card)
+
+}  // namespace secret_policy
+
+// Concept: Policy is a class type derived from secret_policy_base.
+// H-24 — pre-tightening this admitted ANY class type, leaving the
+// `secret_policy::*` discipline as a grep-only audit convention.  Now
+// the type system rejects bare ad-hoc structs; every declassification
+// must name a tag from secret_policy::, making the audit trail
+// structurally enforced rather than convention-only.
 template <typename Policy>
-concept DeclassificationPolicy = std::is_class_v<Policy>;
+concept DeclassificationPolicy =
+    std::is_class_v<Policy> &&
+    std::derived_from<Policy, secret_policy::secret_policy_base>;
 
 template <typename T>
 class [[nodiscard]] Secret {
@@ -173,10 +216,30 @@ public:
     // Declassify — consumes the Secret and returns T.  Requires a
     // policy tag; the call site `declassify<SomePolicy>` is the audit
     // trail.  Forwards to Graded::extract() (the Comonad counit).
+    //
+    // H-24 (load-bearing): the `DeclassificationPolicy` requires-clause
+    // gates the template, but GCC's requires-failure diagnostic is
+    // "constraints not satisfied" — terse and undirected.  The
+    // duplicated static_assert below surfaces the named
+    // [SecretPolicy_NotInBase] diagnostic when a non-policy class is
+    // supplied, so the neg-compile harness can pattern-match it
+    // alongside the substrate's auditing convention.
     template <DeclassificationPolicy Policy>
     [[nodiscard]] constexpr T declassify() &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
     {
+        static_assert(
+            std::derived_from<Policy,
+                              ::crucible::safety::secret_policy::secret_policy_base>,
+            "crucible::safety::diagnostic [SecretPolicy_NotInBase]: "
+            "Secret::declassify<Policy>() requires Policy to derive "
+            "from crucible::safety::secret_policy::secret_policy_base. "
+            "Define new policies as `struct MyPolicy final : "
+            "secret_policy_base {};` inside the secret_policy:: "
+            "namespace so `grep \"declassify<secret_policy::\"` "
+            "enumerates every escape from classification.  Ad-hoc "
+            "policy structs anywhere else in the codebase would "
+            "silently bypass the audit trail.");
         return std::move(impl_).extract();
     }
 
