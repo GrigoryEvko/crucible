@@ -53,9 +53,11 @@
 
 #include <crucible/effects/Capabilities.h>
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::effects {
 
@@ -75,6 +77,107 @@ struct Row {
 
 using EmptyRow = Row<>;
 
+// ── canonical_row_t<R> — sort + dedup at the type level (fixy-A3-001) ─
+//
+// Maps any `Row<Es...>` to its UNIQUE sort+dedup representative.  Two
+// rows that differ in atom order OR in duplicate-atom multiplicity
+// canonicalize to the same `Row<sorted-deduped-Es...>`:
+//
+//   canonical_row_t<Row<Effect::Bg, Effect::IO, Effect::Bg>>
+//        == Row<Effect::IO, Effect::Bg>     // sort: IO=1 < Bg=3; dedup: drop second Bg
+//
+//   canonical_row_t<Row<Effect::IO, Effect::Alloc>>
+//        == Row<Effect::Alloc, Effect::IO>  // sort: Alloc=0 < IO=1
+//
+// The canonical form is sort-on-underlying-value to match the row_hash
+// invariant (safety/diag/RowHashFold.h §I02 permutation-invariance).
+// Without this, `row_hash_contribution_v<R>` would be set-semantic but
+// the row TYPE itself would be position-sensitive, leaving two
+// guarantees out of sync (the hash already dedups via
+// `fmix64_fold_unique_sorted` per fixy-H-19; this lifts that property
+// from the value layer to the type layer).
+//
+// Why this matters (fixy-A3-001 cache-coherence class):
+//   `row_union_t<Row<Bg, IO, Bg>, Row<Block>>` pre-fix yielded
+//   `Row<Bg, IO, Bg, Block>` — a 4-pack with a duplicate.  Two
+//   semantically equivalent unions could produce structurally-distinct
+//   `Row<...>` types, and any downstream consumer reasoning by
+//   `std::is_same_v<row_union_t<...>, ...>` (template specialization,
+//   metafunction dispatch, row_size_v as set-cardinality) silently saw
+//   a non-canonical answer.  Post-fix all three set operations apply
+//   `canonical_row_t` to their output and the type-level invariant
+//   matches the hash invariant.
+template <typename R>
+struct canonical_row;
+
+namespace detail {
+
+// Sort+dedup an Effect... pack at consteval, returning a fixed-size
+// std::array + the number of distinct atoms.  N is bounded by the
+// Effect catalog size (≤ 64 per the EffectRowLattice cap) so the
+// O(N²) bubble sort is comfortably cheap at compile time.
+template <Effect... Es>
+[[nodiscard]] consteval auto compute_canonical_effect_pack() noexcept {
+    struct Result {
+        std::array<Effect, sizeof...(Es) == 0 ? 1 : sizeof...(Es)> data{};
+        std::size_t count = 0;
+    };
+    Result r{};
+    if constexpr (sizeof...(Es) == 0) {
+        return r;
+    } else {
+        std::array<Effect, sizeof...(Es)> raw{Es...};
+        using U = std::underlying_type_t<Effect>;
+        // Bubble sort by Effect underlying value.
+        for (std::size_t i = 0; i < raw.size(); ++i) {
+            for (std::size_t j = i + 1; j < raw.size(); ++j) {
+                if (static_cast<U>(raw[j]) < static_cast<U>(raw[i])) {
+                    Effect const tmp = raw[i];
+                    raw[i] = raw[j];
+                    raw[j] = tmp;
+                }
+            }
+        }
+        // Walk-and-dedup into r.data, recording first occurrences only.
+        std::size_t out = 0;
+        for (std::size_t i = 0; i < raw.size(); ++i) {
+            if (i == 0 || raw[i] != raw[i - 1]) {
+                r.data[out++] = raw[i];
+            }
+        }
+        r.count = out;
+        return r;
+    }
+}
+
+template <Effect... Es>
+inline constexpr auto canonical_effect_pack_v =
+    compute_canonical_effect_pack<Es...>();
+
+}  // namespace detail
+
+template <>
+struct canonical_row<Row<>> {
+    using type = Row<>;
+};
+
+template <Effect E0, Effect... Es>
+struct canonical_row<Row<E0, Es...>> {
+private:
+    template <std::size_t... Is>
+    static auto build(std::index_sequence<Is...>)
+        -> Row<detail::canonical_effect_pack_v<E0, Es...>.data[Is]...>;
+
+public:
+    using type = decltype(build(std::make_index_sequence<
+        detail::canonical_effect_pack_v<E0, Es...>.count>{}));
+};
+
+// Canonical form of a row type.  Idempotent: applying it to an
+// already-canonical Row<...> yields the same type.
+template <typename R>
+using canonical_row_t = typename canonical_row<R>::type;
+
 // ── Membership / size traits ────────────────────────────────────────
 
 template <typename R>
@@ -91,17 +194,30 @@ inline constexpr bool row_contains_v<Row<Es...>, E> = ((Es == E) || ...);
 
 // ── Set algebra (METX-2 #474 — bodies shipped) ──────────────────────
 //
-// row_union_t / row_difference_t / row_intersection_t are NOT
-// canonicalized (sort + dedup with stable order) — the Subrow concept
-// is the only consumer that matters and it compares semantically, not
-// structurally.  `row_union_t<Row<A,B>, Row<B,A>>` yields `Row<A,B>`;
-// `row_union_t<Row<B,A>, Row<A,B>>` yields `Row<B,A>`.  Both are
-// Subrow-equal, which is what the substitution principle requires.
+// `row_union_t / row_difference_t / row_intersection_t` ARE
+// canonicalized (sort+dedup by Effect underlying value) since
+// fixy-A3-001 — every output is reified through `canonical_row_t`,
+// so the type-level invariant matches the row_hash invariant
+// (safety/diag/RowHashFold.h §I02 permutation-invariance + set-
+// semantic dedup).  Two semantically equivalent operations yield
+// `std::is_same_v` types:
 //
-// Canonical-form is left as an opt-in trait specialization for any
-// future caller that genuinely needs structural equality (e.g. for
-// reflection-based hashing of effect-row literals).  Default behavior
-// keeps compile-time cost linear in the row size.
+//   row_union_t<Row<A,B>, Row<B,A>>  ==  row_union_t<Row<B,A>, Row<A,B>>
+//                                    ==  Row<sorted(A,B)>
+//
+//   row_union_t<Row<Bg, IO, Bg>, Row<Block>>  ==  Row<IO, Block, Bg>
+//                                                  (IO=1 < Block=2 < Bg=3)
+//
+// `Subrow` remains the semantic-equality concept used at substitution
+// boundaries; the structural equality now agrees with it instead of
+// drifting from it.  Compile-time cost is bounded by N² where N is
+// the row's pack size — N ≤ 64 per the Effect catalog cap.
+//
+// Note: a user-written non-canonical `Row<Es...>` literal (e.g.
+// `Row<Effect::Bg, Effect::IO>` where Bg=3 > IO=1) does NOT auto-
+// canonicalize — only the OUTPUTS of the set-algebra operations do.
+// Apply `canonical_row_t<R>` explicitly if you need a literal turned
+// into canonical form.
 
 namespace detail {
 
@@ -199,14 +315,27 @@ struct row_intersection_impl<Row<E1s...>, R2> {
 
 }  // namespace detail
 
+// fixy-A3-001: all three set-algebra outputs are reified through
+// `canonical_row_t` so duplicate-atom drift in EITHER R1 OR R2 (or
+// inside the per-element keep_or_drop fold for difference/intersection)
+// cannot leak into the result type.  Pre-fix `row_union_t<
+// Row<Bg, IO, Bg>, Row<Block>>` produced `Row<Bg, IO, Bg, Block>` — a
+// non-canonical 4-pack that structurally differed from the
+// semantically-equivalent `Row<IO, Block, Bg>` even though the row
+// hash (RowHashFold.h §I02) folded them to the same value.  Post-fix
+// both expressions yield `Row<IO, Block, Bg>` as a type, and the
+// type-level invariant agrees with the hash invariant.
 template <typename R1, typename R2>
-using row_union_t = typename detail::row_union_recursive<R1, R2>::type;
+using row_union_t = canonical_row_t<
+    typename detail::row_union_recursive<R1, R2>::type>;
 
 template <typename R1, typename R2>
-using row_difference_t = typename detail::row_difference_impl<R1, R2>::type;
+using row_difference_t = canonical_row_t<
+    typename detail::row_difference_impl<R1, R2>::type>;
 
 template <typename R1, typename R2>
-using row_intersection_t = typename detail::row_intersection_impl<R1, R2>::type;
+using row_intersection_t = canonical_row_t<
+    typename detail::row_intersection_impl<R1, R2>::type>;
 
 // ── Subrow concept ──────────────────────────────────────────────────
 //
@@ -263,13 +392,16 @@ static_assert( Subrow<R_empty, R_alloc_io>);
 static_assert( Subrow<R_alloc, R_alloc_io_bg>);
 static_assert(!Subrow<R_alloc_io, R_alloc>);
 
-// ── Set-algebra coverage (METX-2 #474) ──────────────────────────────
+// ── Set-algebra coverage (METX-2 #474 + fixy-A3-001) ────────────────
 //
-// All assertions are EXTENSIONAL — they check membership / sub-row
-// containment, not structural type-equality.  See the design note at
-// the top of the set-algebra block: row order is not canonicalized,
-// so `row_union_t<Row<A,B>, Row<B,A>>` may differ structurally from
-// `row_union_t<Row<B,A>, Row<A,B>>` while remaining Subrow-equal.
+// Most assertions are EXTENSIONAL — they check membership / sub-row
+// containment.  Since fixy-A3-001 the three set-algebra operations
+// ALSO produce canonical (sort+dedup-by-underlying-value) Row types,
+// so several structural `std::is_same_v` invariants now hold in
+// addition to the Subrow semantics — see the canonical_row_t block
+// below.  Pre-fix `row_union_t<Row<A,B>, Row<B,A>>` could differ
+// structurally from `row_union_t<Row<B,A>, Row<A,B>>` while staying
+// Subrow-equal; post-fix the two are `std::is_same_v` equal.
 
 // Identity laws.
 static_assert(std::is_same_v<row_union_t<R_empty, R_empty>, R_empty>);
@@ -340,6 +472,99 @@ static_assert(is_subrow_v<R_alloc_io_bg, R_universe>);
 // Self-difference / intersection corner — A \ A = ∅; A ∩ ∅ = ∅.
 static_assert(row_size_v<row_difference_t<R_universe, R_universe>>      == 0);
 static_assert(row_size_v<row_intersection_t<R_universe, R_empty>>       == 0);
+
+// ── canonical_row_t<R> coverage (fixy-A3-001) ───────────────────────
+//
+// canonical_row_t is sort-on-underlying-value + dedup.  Effect
+// underlying values per Capabilities.h:
+//   Alloc=0  IO=1  Block=2  Bg=3  Init=4  Test=5
+// so sorted order over any pack of these atoms is exactly the
+// declaration order in Capabilities.h.
+
+// Empty pack: canonical_row_t<Row<>> == Row<>.
+static_assert(std::is_same_v<canonical_row_t<Row<>>, Row<>>);
+
+// Singleton: canonical_row_t is a no-op (already sorted, no dupes).
+static_assert(std::is_same_v<
+    canonical_row_t<Row<Effect::Bg>>,
+    Row<Effect::Bg>>);
+
+// Already-sorted, no dupes: canonical_row_t is a no-op (idempotent).
+static_assert(std::is_same_v<
+    canonical_row_t<Row<Effect::Alloc, Effect::IO>>,
+    Row<Effect::Alloc, Effect::IO>>);
+
+// Reversed pair: canonical_row_t sorts to underlying-value order.
+static_assert(std::is_same_v<
+    canonical_row_t<Row<Effect::IO, Effect::Alloc>>,
+    Row<Effect::Alloc, Effect::IO>>);
+
+// Duplicate-atom drift: canonical_row_t collapses to the unique set.
+//
+// `Row<Bg, IO, Bg>` has Bg=3 / IO=1 / Bg=3.  Sort → {1, 3, 3} →
+// {IO, Bg, Bg}.  Dedup → {IO, Bg}.  Final type Row<IO, Bg>.
+static_assert(std::is_same_v<
+    canonical_row_t<Row<Effect::Bg, Effect::IO, Effect::Bg>>,
+    Row<Effect::IO, Effect::Bg>>);
+
+// Triple-replicated atom collapses to singleton.
+static_assert(std::is_same_v<
+    canonical_row_t<Row<Effect::IO, Effect::IO, Effect::IO>>,
+    Row<Effect::IO>>);
+
+// Interleaved duplicates with extra atom: full sort+dedup chain.
+//
+// `Row<Bg, IO, Bg, Block>` — values {3, 1, 3, 2}.  Sort → {1, 2, 3, 3}.
+// Dedup → {1, 2, 3} == {IO, Block, Bg}.
+static_assert(std::is_same_v<
+    canonical_row_t<Row<Effect::Bg, Effect::IO, Effect::Bg, Effect::Block>>,
+    Row<Effect::IO, Effect::Block, Effect::Bg>>);
+
+// canonical_row_t is idempotent.
+using R_canon_once  = canonical_row_t<Row<Effect::Bg, Effect::Alloc, Effect::Bg>>;
+using R_canon_twice = canonical_row_t<R_canon_once>;
+static_assert(std::is_same_v<R_canon_once, R_canon_twice>);
+static_assert(std::is_same_v<R_canon_once, Row<Effect::Alloc, Effect::Bg>>);
+
+// canonical_row_t reduces row_size_v to SET cardinality, matching the
+// row_hash's unique_count_sorted behavior.
+static_assert(row_size_v<canonical_row_t<Row<Effect::Bg, Effect::IO, Effect::Bg>>> == 2);
+static_assert(row_size_v<canonical_row_t<Row<Effect::IO, Effect::IO, Effect::IO>>> == 1);
+static_assert(row_size_v<canonical_row_t<Row<>>> == 0);
+
+// ── Set operations now produce canonical types (fixy-A3-001) ────────
+//
+// Pre-fix invariants asserted only Subrow-equality between
+// equivalent-order constructions; post-fix the type identities hold.
+
+// row_union_t auto-dedups intra-R1 duplicates AND sorts the output.
+static_assert(std::is_same_v<
+    row_union_t<Row<Effect::Bg, Effect::IO, Effect::Bg>, Row<Effect::Block>>,
+    Row<Effect::IO, Effect::Block, Effect::Bg>>);
+
+// row_union_t commutative AT THE TYPE LEVEL (was only Subrow-equal pre-fix).
+static_assert(std::is_same_v<
+    row_union_t<R_alloc, R_io>,
+    row_union_t<R_io, R_alloc>>);
+
+// row_union_t associative AT THE TYPE LEVEL (was only Subrow-equal pre-fix).
+static_assert(std::is_same_v<R_lr_then_bg, R_lr_then_bg_alt>);
+
+// row_difference_t output is canonical (drops dupes inside R1).
+static_assert(std::is_same_v<
+    row_difference_t<Row<Effect::Bg, Effect::IO, Effect::Bg>, Row<Effect::Block>>,
+    Row<Effect::IO, Effect::Bg>>);
+
+// row_intersection_t output is canonical (no order leak from
+// keep_or_drop walk over R1).
+static_assert(std::is_same_v<
+    row_intersection_t<Row<Effect::Bg, Effect::IO>, Row<Effect::IO, Effect::Bg>>,
+    Row<Effect::IO, Effect::Bg>>);
+
+// Reordered inputs to set ops yield the same canonical type.
+static_assert(std::is_same_v<
+    row_union_t<Row<Effect::Test, Effect::Alloc>, Row<Effect::Bg>>,
+    row_union_t<Row<Effect::Bg>, Row<Effect::Alloc, Effect::Test>>>);
 
 }  // namespace detail::effect_row_self_test
 
