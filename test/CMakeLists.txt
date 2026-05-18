@@ -372,6 +372,14 @@ crucible_test(test_algebra_compile)
 crucible_test(test_safety_compile)
 crucible_test(test_migration_verification)
 crucible_test(test_concept_cheat_probe)
+# fixy-A3-021: sentinel TU for the 8 algebra/* + effects/* headers that
+# shipped header-only static_assert coverage of inline bodies.  Each
+# header now exports inline runtime_smoke_test(); this TU calls them
+# from main() under project warning flags, closing the header-only
+# static_assert blind spot.  See
+# feedback_header_only_static_assert_blind_spot.md +
+# feedback_algebra_runtime_smoke_test_discipline.md.
+crucible_test(test_smoke_algebra_effects)
 add_test(NAME trait_guard
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.sh)
 # fixy-A2-014: regression guard for the SessionPersistence.h include-lift.

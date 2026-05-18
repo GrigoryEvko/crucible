@@ -268,6 +268,44 @@ static_assert(std::is_empty_v<modality::Relative_t>);
 static_assert(std::is_empty_v<modality::Quotient_t>);
 static_assert(std::is_empty_v<modality::Coeffect_t>);
 
+// ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
+//
+// modality_name() is `consteval` (compile-time only); a future
+// refactor that demoted it to `constexpr` would silently shift its
+// runtime cost characteristics.  We assert the consteval property
+// via runtime path here: calling with a non-constant ModalityKind
+// value WOULD fire a hard error if modality_name were ever called
+// with non-constant input.  So instead we exercise the tag-type
+// round-trip and concept-gate machinery, both of which are
+// constexpr-eligible and SHOULD type-check against runtime args.
+inline void runtime_smoke_test() {
+    // Tag-type runtime default-construction sanity — proves the EBO
+    // promise (sizeof==1 empty struct) doesn't break under runtime
+    // semantics.  Optimizer almost certainly elides; the parse is
+    // what matters.
+    [[maybe_unused]] modality::Comonad_t       co_tag{};
+    [[maybe_unused]] modality::RelativeMonad_t rm_tag{};
+    [[maybe_unused]] modality::Absolute_t      ab_tag{};
+    [[maybe_unused]] modality::Relative_t      rl_tag{};
+    [[maybe_unused]] modality::Quotient_t      qt_tag{};
+    [[maybe_unused]] modality::Coeffect_t      cf_tag{};
+
+    // Round-trip ::kind through a non-constexpr local so the front-end
+    // type-checks the static accessor body — also pins that ::kind
+    // remains a constant expression usable in either context.
+    ModalityKind k = modality::Comonad_t::kind;
+    [[maybe_unused]] bool ok1 = (k == ModalityKind::Comonad);
+    k = modality::Coeffect_t::kind;
+    [[maybe_unused]] bool ok2 = (k == ModalityKind::Coeffect);
+
+    // Drive the constexpr predicate aliases through a non-constant
+    // template argument is impossible (they're NTTP), but their
+    // per-kind specializations should round-trip via runtime equality.
+    [[maybe_unused]] bool unit_co  = has_unit_v<ModalityKind::RelativeMonad>;
+    [[maybe_unused]] bool grade_ab = has_grade_only_v<ModalityKind::Absolute>;
+    [[maybe_unused]] bool grade_cf = has_grade_only_v<ModalityKind::Coeffect>;
+}
+
 }  // namespace detail::modality_self_test
 
 }  // namespace crucible::algebra

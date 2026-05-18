@@ -337,6 +337,30 @@ static_assert(IsGraded<int const&>
 static_assert(IsGraded<void>
               == is_graded_specialization_v<void>);
 
+// ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
+//
+// Drive the trait machinery through a runtime path so the function-
+// body type-check happens against non-constant arguments.  The traits
+// here are pure consteval/decltype — there's nothing to call at
+// runtime — so we exercise the runtime witness of a Graded specialization
+// instead, proving the static_asserts above run against the SAME types
+// production calls use.  The function is `inline` per the discipline
+// (one-definition rule) and almost certainly elided under -O3.
+inline void runtime_smoke_test() {
+    // Default-construct a Graded specialization at runtime — the
+    // body type-check fires against THIS instantiation, not against
+    // a phantom from static_asserts.
+    GraderAB g{true, true};
+    [[maybe_unused]] bool grade_view = g.grade();
+    [[maybe_unused]] bool value_view = g.peek();
+
+    // Use the cv-ref trait at the runtime call site so the SFINAE
+    // walls instantiated above are exercised through runtime semantics.
+    [[maybe_unused]] bool t1 = is_graded_specialization_v<decltype(g)>;
+    [[maybe_unused]] bool t2 = is_graded_specialization_v<decltype((g))>;  // lvalue ref
+    [[maybe_unused]] bool t3 = is_graded_specialization_v<int>;            // negative
+}
+
 }  // namespace detail::is_graded_specialization_self_test
 
 }  // namespace crucible::algebra

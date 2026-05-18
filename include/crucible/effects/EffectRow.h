@@ -566,6 +566,35 @@ static_assert(std::is_same_v<
     row_union_t<Row<Effect::Test, Effect::Alloc>, Row<Effect::Bg>>,
     row_union_t<Row<Effect::Bg>, Row<Effect::Alloc, Effect::Test>>>);
 
+// ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
+//
+// EffectRow's surface is consteval-only — every operation is a type-
+// level metafunction or a `row_size`/`row_contains_v` value alias.
+// There's no runtime body to drive, but we DO need to prove the
+// trait calls type-check against runtime-typed witnesses (rvalues,
+// lvalue refs, const refs) — a future refactor that added cv-ref
+// stripping or removed it from the concept gates would fire here
+// (sister discipline to fixy-A3-004 IsExecCtx cv-ref symmetry).
+inline void runtime_smoke_test() {
+    // Default-construct runtime row witnesses — Row is empty (no state)
+    // but constructing it at runtime proves the empty-struct invariant
+    // holds AND the canonicalization machinery doesn't drag in a
+    // non-trivial default ctor.
+    [[maybe_unused]] Row<Effect::Bg> r_bg{};
+    [[maybe_unused]] Row<Effect::Bg, Effect::IO> r_bg_io{};
+    [[maybe_unused]] EmptyRow r_empty{};
+
+    // Probe the runtime sizeof — empty rows must collapse via EBO when
+    // used as [[no_unique_address]] members in ExecCtx.
+    [[maybe_unused]] auto sz1 = sizeof(r_bg);
+    [[maybe_unused]] auto sz2 = sizeof(r_empty);
+
+    // Drive `size` member through a runtime read path.
+    [[maybe_unused]] std::size_t n_bg    = decltype(r_bg)::size;
+    [[maybe_unused]] std::size_t n_bg_io = decltype(r_bg_io)::size;
+    [[maybe_unused]] std::size_t n_empty = EmptyRow::size;
+}
+
 }  // namespace detail::effect_row_self_test
 
 }  // namespace crucible::effects

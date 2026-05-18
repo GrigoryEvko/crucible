@@ -585,6 +585,51 @@ static_assert(!ResourceTag<float>);
 static_assert(!ResourceTag<void*>);
 static_assert(!ResourceTag<ResourceKind>);
 
+// ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
+//
+// Drive `resource_kind_name` through every ResourceKind atom with a
+// non-constant argument — closes the same blind spot Capabilities.h
+// closes for Effect.  Pure static_assert coverage never instantiates
+// the function body against a runtime call site, so a future regression
+// that demoted the function to consteval-only would silently pass the
+// header self-test but fail when production code samples it.
+inline void runtime_smoke_test() {
+    // Drive every atom through the runtime path.  Looping is fine
+    // here — the optimizer collapses the immediates anyway under -O3.
+    ResourceKind k = ResourceKind::Sm;
+    [[maybe_unused]] std::string_view n1 = resource_kind_name(k);
+    k = ResourceKind::WarpScheduler;     (void)resource_kind_name(k);
+    k = ResourceKind::RegistersPerWarp;  (void)resource_kind_name(k);
+    k = ResourceKind::Smem;              (void)resource_kind_name(k);
+    k = ResourceKind::L2;                (void)resource_kind_name(k);
+    k = ResourceKind::HbmBytes;          (void)resource_kind_name(k);
+    k = ResourceKind::HbmBw;             (void)resource_kind_name(k);
+    k = ResourceKind::NvlinkBw;          (void)resource_kind_name(k);
+    k = ResourceKind::PcieBw;            (void)resource_kind_name(k);
+    k = ResourceKind::NicQ;               (void)resource_kind_name(k);
+    k = ResourceKind::NicRing;           (void)resource_kind_name(k);
+    k = ResourceKind::NicQp;              (void)resource_kind_name(k);
+    k = ResourceKind::NicCq;              (void)resource_kind_name(k);
+    k = ResourceKind::NicMr;              (void)resource_kind_name(k);
+    k = ResourceKind::SwitchEgressBw;    (void)resource_kind_name(k);
+    k = ResourceKind::SwitchBuffer;      (void)resource_kind_name(k);
+    k = ResourceKind::Tcam;              (void)resource_kind_name(k);
+    k = ResourceKind::CpuCore;           (void)resource_kind_name(k);
+    k = ResourceKind::Llc;                (void)resource_kind_name(k);
+    k = ResourceKind::PowerWatts;        (void)resource_kind_name(k);
+    k = ResourceKind::ThermalCelsius;    (void)resource_kind_name(k);
+    k = ResourceKind::RackPowerKw;       (void)resource_kind_name(k);
+    k = ResourceKind::CarbonGramsPerKwh; (void)resource_kind_name(k);
+
+    // Tag default construction at runtime — every resource::* tag is
+    // an empty struct, but a future change that adds a throwing or
+    // non-trivial default ctor would catch on the parse here.
+    [[maybe_unused]] resource::SmBudget<32> sm{};
+    [[maybe_unused]] resource::HbmBytes<1024> hbm{};
+    [[maybe_unused]] resource::NicQp<8> qp{};
+    [[maybe_unused]] resource::PowerWatts<400> pw{};
+}
+
 }  // namespace detail::resources_self_test
 
 }  // namespace crucible::effects

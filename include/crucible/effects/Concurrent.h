@@ -597,6 +597,28 @@ static_assert(std::is_empty_v<ConcurrentRow<resource::SmBudget<32>>>);
 static_assert(std::is_empty_v<
     ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
 
+// ── Runtime smoke test ─────────────────────────────────────────────
+//
+// Per feedback_algebra_runtime_smoke_test_discipline.md, every
+// algebra/* and effects/* header MUST ship a runtime body that
+// exercises constexpr/consteval functions with non-constant args.
+// Pure static_assert masks consteval/SFINAE/inline-body bugs and
+// the header-only blind spot (see
+// feedback_header_only_static_assert_blind_spot.md) — the sentinel
+// TU test/test_smoke_algebra_effects.cpp invokes this from main()
+// under project warning flags.
+inline void runtime_smoke_test() {
+    ConcurrentRow<> empty{};
+    ConcurrentRow<resource::SmBudget<32>> sm{};
+    ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>> mixed{};
+    [[maybe_unused]] auto empty_size = sizeof(empty);
+    [[maybe_unused]] auto sm_size    = sizeof(sm);
+    [[maybe_unused]] auto mixed_size = sizeof(mixed);
+    [[maybe_unused]] bool is_empty_row = IsConcurrentRow<decltype(empty)>;
+    [[maybe_unused]] bool is_sm_row    = IsConcurrentRow<decltype(sm)>;
+    [[maybe_unused]] bool not_a_row    = IsConcurrentRow<int>;
+}
+
 }  // namespace detail::concurrent_row_self_test
 
 }  // namespace crucible::effects

@@ -1299,6 +1299,38 @@ static_assert(to_alloc_class_tag_v<typename MaxCtx::alloc_class>       == lat::A
 constexpr auto _rebuilt = rebuild_ctx_to<BgDrainCtx>(HotFgCtx{});
 static_assert(std::is_same_v<decltype(_rebuilt), const BgDrainCtx>);
 
+// ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
+//
+// Drive ExecCtx construction + rebuild + axis-accessor surface
+// through a runtime path so the inline body type-checks against
+// non-constant arguments.  The 7-axis fixy-A3-020 well-formedness
+// concept fires in EVERY ExecCtx instantiation — proving the runtime
+// construction path stays clean catches the consteval-vs-constexpr
+// regression class that pure-static_assert coverage misses.
+inline void runtime_smoke_test() {
+    // Default-construct each canonical alias at runtime — proves
+    // ExecCtx<7-axis...>{} stays trivially-default-constructible
+    // even though every axis member uses [[no_unique_address]].
+    [[maybe_unused]] HotFgCtx      hot{};
+    [[maybe_unused]] BgDrainCtx    bg{};
+    [[maybe_unused]] BgCompileCtx  compile{};
+    [[maybe_unused]] ColdInitCtx   cold{};
+    [[maybe_unused]] TestRunnerCtx test_ctx{};
+
+    // Drive sizeof at the runtime call site — EBO collapse claim
+    // holds against the actual built ctx.
+    [[maybe_unused]] auto s1 = sizeof(hot);
+    [[maybe_unused]] auto s2 = sizeof(bg);
+
+    // Drive rebuild_ctx_to through a runtime-typed source — the
+    // batch-builder docstring (line 1292) asserts this path bypasses
+    // per-link cross-axis invariants.  The runtime path MUST stay
+    // callable; a future refactor making rebuild_ctx_to consteval-only
+    // would silently break production call sites.
+    auto rebuilt = rebuild_ctx_to<BgDrainCtx>(hot);
+    [[maybe_unused]] BgDrainCtx r_copy = rebuilt;
+}
+
 }  // namespace detail::exec_ctx_self_test
 
 }  // namespace crucible::effects

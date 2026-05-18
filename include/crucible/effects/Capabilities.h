@@ -654,6 +654,39 @@ static_assert(!std::is_default_constructible_v<Test>,
     "fixy-A3-005: Test default ctor must be private — use "
     "effects::testing::TestWitness::test().");
 
+// ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
+//
+// Drive every constexpr accessor through a NON-constant argument so
+// the front-end type-checks the inline body against runtime semantics
+// — the bug class that pure-static_assert coverage misses.  All work
+// is `inline` (one-definition rule) and almost certainly elided under
+// -O3, but the parse + body type-check is the load-bearing step.
+inline void runtime_smoke_test() {
+    // `e` is intentionally NOT constexpr — drives effect_name() through
+    // the runtime path, exercising the constexpr-not-consteval demotion
+    // that the discipline comment at file head asserts (line 151).
+    Effect e = Effect::Alloc;
+    [[maybe_unused]] std::string_view n1 = effect_name(e);
+    e = Effect::IO;     [[maybe_unused]] std::string_view n2 = effect_name(e);
+    e = Effect::Block;  [[maybe_unused]] std::string_view n3 = effect_name(e);
+    e = Effect::Bg;     [[maybe_unused]] std::string_view n4 = effect_name(e);
+    e = Effect::Init;   [[maybe_unused]] std::string_view n5 = effect_name(e);
+    e = Effect::Test;   [[maybe_unused]] std::string_view n6 = effect_name(e);
+
+    // cap::* tag default construction at runtime — the [[no_unique_address]]
+    // EBO discipline only holds if these ctors are runtime-callable.
+    [[maybe_unused]] cap::Alloc a_tag{};
+    [[maybe_unused]] cap::IO    i_tag{};
+    [[maybe_unused]] cap::Block b_tag{};
+
+    // Bg/Init/Test mint through the testing-witness facade at runtime
+    // — fixy-A3-005 made the direct default ctor private; the witness
+    // is the only sanctioned path and MUST be runtime-callable.
+    [[maybe_unused]] auto bg_ctx   = ::crucible::effects::testing::bg();
+    [[maybe_unused]] auto init_ctx = ::crucible::effects::testing::init();
+    [[maybe_unused]] auto test_ctx = ::crucible::effects::testing::test();
+}
+
 }  // namespace detail::capabilities_self_test
 
 }  // namespace crucible::effects

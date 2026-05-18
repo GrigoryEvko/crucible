@@ -410,6 +410,36 @@ static_assert(verify_semiring_axioms_at<TrivialBoolSemiring>(false, true,  true)
 static_assert(verify_semiring_axioms_at<TrivialBoolSemiring>(true,  false, true));
 static_assert(verify_semiring_axioms_at<TrivialBoolSemiring>(true,  true,  true));
 
+// ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
+//
+// Drive every Lattice operation through a NON-constant argument path.
+// The header doc-block (lines 24-34) asserts the constexpr-not-consteval
+// discipline for every public lattice op — Graded's runtime
+// pre(L::leq(...)) clause MUST be able to call them with non-constant
+// member values.  Pure static_assert testing exercises only the
+// consteval branch; this smoke test pins the runtime branch.
+inline void runtime_smoke_test() {
+    // Drive bottom/top/leq/join/meet through non-constant args.
+    bool x = true;   // NOT constexpr — runtime value
+    bool y = false;  // NOT constexpr — runtime value
+    [[maybe_unused]] bool bot = TrivialBoolLattice::bottom();
+    [[maybe_unused]] bool top = TrivialBoolLattice::top();
+    [[maybe_unused]] bool le  = TrivialBoolLattice::leq(x, y);
+    [[maybe_unused]] bool jo  = TrivialBoolLattice::join(x, y);
+    [[maybe_unused]] bool me  = TrivialBoolLattice::meet(x, y);
+
+    // Drive the lattice-relation helpers through non-constant args.
+    [[maybe_unused]] bool sub = subsumes<TrivialBoolLattice>(y, x);
+    [[maybe_unused]] bool eq  = equivalent<TrivialBoolLattice>(x, x);
+    [[maybe_unused]] bool sl  = strictly_less<TrivialBoolLattice>(y, x);
+
+    // Same for the semiring side.
+    [[maybe_unused]] bool zer = TrivialBoolSemiring::zero();
+    [[maybe_unused]] bool one = TrivialBoolSemiring::one();
+    [[maybe_unused]] bool add = TrivialBoolSemiring::add(x, y);
+    [[maybe_unused]] bool mul = TrivialBoolSemiring::mul(x, y);
+}
+
 }  // namespace detail::lattice_self_test
 
 }  // namespace crucible::algebra
