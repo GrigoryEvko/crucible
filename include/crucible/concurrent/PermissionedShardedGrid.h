@@ -304,7 +304,7 @@ public:
     // factory and hands one to each producer<I>/consumer<J>.
 
     template <std::size_t I>
-    [[nodiscard]] ProducerHandle<I> producer(
+    [[nodiscard]] constexpr ProducerHandle<I> producer(
         safety::Permission<grid_tag::Producer<UserTag, I>>&& perm) noexcept
     {
         static_assert(I < M, "producer<I>(): I must be less than M");
@@ -312,7 +312,7 @@ public:
     }
 
     template <std::size_t J>
-    [[nodiscard]] ConsumerHandle<J> consumer(
+    [[nodiscard]] constexpr ConsumerHandle<J> consumer(
         safety::Permission<grid_tag::Consumer<UserTag, J>>&& perm) noexcept
     {
         static_assert(J < N, "consumer<J>(): J must be less than N");

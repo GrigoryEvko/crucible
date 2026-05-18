@@ -119,12 +119,12 @@ public:
         }
     };
 
-    [[nodiscard]] SignalerHandle
+    [[nodiscard]] constexpr SignalerHandle
     signaler(safety::Permission<signaler_tag>&& perm) noexcept {
         return SignalerHandle{*this, std::move(perm)};
     }
 
-    [[nodiscard]] WaiterHandle
+    [[nodiscard]] constexpr WaiterHandle
     waiter(safety::Permission<waiter_tag>&& perm) noexcept {
         return WaiterHandle{*this, std::move(perm)};
     }

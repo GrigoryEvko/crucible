@@ -64,7 +64,7 @@ concept MetaLogSessionSurface = requires(
 };
 
 template <MetaLogSessionSurface Log>
-[[nodiscard]] auto mint_metalog_producer(
+[[nodiscard]] constexpr auto mint_metalog_producer(
     Log& log,
     ::crucible::safety::Permission<typename Log::producer_tag>&& perm) noexcept
 {
@@ -72,7 +72,7 @@ template <MetaLogSessionSurface Log>
 }
 
 template <MetaLogSessionSurface Log>
-[[nodiscard]] auto mint_metalog_consumer(
+[[nodiscard]] constexpr auto mint_metalog_consumer(
     Log& log,
     ::crucible::safety::Permission<typename Log::consumer_tag>&& perm) noexcept
 {

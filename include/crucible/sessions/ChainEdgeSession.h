@@ -57,7 +57,7 @@ concept ChainEdgeSessionSurface = requires(
 };
 
 template <ChainEdgeSessionSurface Edge>
-[[nodiscard]] auto mint_chainedge_signaler(
+[[nodiscard]] constexpr auto mint_chainedge_signaler(
     Edge& edge,
     ::crucible::safety::Permission<typename Edge::signaler_tag>&& perm) noexcept
 {
@@ -65,7 +65,7 @@ template <ChainEdgeSessionSurface Edge>
 }
 
 template <ChainEdgeSessionSurface Edge>
-[[nodiscard]] auto mint_chainedge_waiter(
+[[nodiscard]] constexpr auto mint_chainedge_waiter(
     Edge& edge,
     ::crucible::safety::Permission<typename Edge::waiter_tag>&& perm) noexcept
 {

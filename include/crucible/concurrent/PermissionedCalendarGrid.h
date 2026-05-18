@@ -415,14 +415,14 @@ public:
     // hands them to producer<P>() and consumer().
 
     template <std::size_t P>
-    [[nodiscard]] ProducerHandle<P> producer(
+    [[nodiscard]] constexpr ProducerHandle<P> producer(
         safety::Permission<producer_tag<P>>&& perm) noexcept
     {
         static_assert(P < NumProducers, "producer<P>: P must be < NumProducers");
         return ProducerHandle<P>{*this, std::move(perm)};
     }
 
-    [[nodiscard]] ConsumerHandle consumer(
+    [[nodiscard]] constexpr ConsumerHandle consumer(
         safety::Permission<consumer_tag>&& perm) noexcept
     {
         return ConsumerHandle{*this, std::move(perm)};

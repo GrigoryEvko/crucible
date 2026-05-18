@@ -300,7 +300,7 @@ public:
     // ── Factories ─────────────────────────────────────────────────
 
     // Owner endpoint — consumes the linear Owner Permission.
-    [[nodiscard]] OwnerHandle owner(safety::Permission<owner_tag>&& perm) noexcept {
+    [[nodiscard]] constexpr OwnerHandle owner(safety::Permission<owner_tag>&& perm) noexcept {
         return OwnerHandle{*this, std::move(perm)};
     }
 

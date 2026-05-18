@@ -51,7 +51,7 @@ concept ShardedCalendarGridSessionSurface =
         std::remove_cvref_t<Grid>>::value;
 
 template <ShardedCalendarGridSessionSurface Grid, std::size_t S>
-[[nodiscard]] auto mint_sharded_calendar_grid_producer(
+[[nodiscard]] constexpr auto mint_sharded_calendar_grid_producer(
     Grid& grid,
     ::crucible::safety::Permission<
         typename Grid::template shard_producer_tag<S>>&& perm) noexcept
@@ -60,7 +60,7 @@ template <ShardedCalendarGridSessionSurface Grid, std::size_t S>
 }
 
 template <ShardedCalendarGridSessionSurface Grid, std::size_t S>
-[[nodiscard]] auto mint_sharded_calendar_grid_consumer(
+[[nodiscard]] constexpr auto mint_sharded_calendar_grid_consumer(
     Grid& grid,
     ::crucible::safety::Permission<
         typename Grid::template shard_consumer_tag<S>>&& perm) noexcept

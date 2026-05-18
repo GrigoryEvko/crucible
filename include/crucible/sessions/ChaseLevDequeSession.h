@@ -83,7 +83,7 @@ concept ChaseLevSessionSurface = requires(
                     typename Deque::ThiefHandle::tag_type>;
 
 template <ChaseLevSessionSurface Deque>
-[[nodiscard]] auto mint_chaselev_owner(
+[[nodiscard]] constexpr auto mint_chaselev_owner(
     Deque& deque,
     ::crucible::safety::Permission<typename Deque::owner_tag>&& perm) noexcept
 {

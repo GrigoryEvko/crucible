@@ -54,7 +54,7 @@ concept ShardedGridSessionSurface =
     is_sharded_grid_session_surface<std::remove_cvref_t<Grid>>::value;
 
 template <ShardedGridSessionSurface Grid, std::size_t I>
-[[nodiscard]] auto mint_sharded_grid_producer(
+[[nodiscard]] constexpr auto mint_sharded_grid_producer(
     Grid& grid,
     ::crucible::safety::Permission<
         ::crucible::concurrent::grid_tag::Producer<
@@ -64,7 +64,7 @@ template <ShardedGridSessionSurface Grid, std::size_t I>
 }
 
 template <ShardedGridSessionSurface Grid, std::size_t J>
-[[nodiscard]] auto mint_sharded_grid_consumer(
+[[nodiscard]] constexpr auto mint_sharded_grid_consumer(
     Grid& grid,
     ::crucible::safety::Permission<
         ::crucible::concurrent::grid_tag::Consumer<

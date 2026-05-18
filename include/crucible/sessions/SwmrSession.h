@@ -154,7 +154,7 @@ public:
         }
     };
 
-    [[nodiscard]] WriterHandle writer(
+    [[nodiscard]] constexpr WriterHandle writer(
         ::crucible::safety::Permission<writer_tag>&& perm) noexcept
     {
         return WriterHandle{*this, std::move(perm)};
@@ -196,7 +196,7 @@ private:
 };
 
 template <SwmrSessionSurface Swmr>
-[[nodiscard]] auto mint_swmr_writer(
+[[nodiscard]] constexpr auto mint_swmr_writer(
     Swmr& session,
     ::crucible::safety::Permission<typename Swmr::writer_tag>&& perm) noexcept
 {

@@ -794,6 +794,17 @@ crucible_test(test_metalog_session)
 # surfaces and the Send<SemaphoreSignal, End> / Recv<...> sessions.
 crucible_test(test_chainedge_session)
 
+# fixy-A2-017 — §XXI constexpr sentinel TU exercising the 12 linear-
+# permission-consume token mint factories across 8 session-substrate
+# headers (chaselev/metalog/swmr/chainedge/calendar/sharded_grid/
+# sharded_calendar).  Each mint is pinned noexcept via static_assert
+# and called with a freshly-minted root Permission; the constexpr
+# chain is structurally witnessed by the substrate factory chain.
+# Pool-mediated factories (thief / swmr_reader) are excluded per §XXI
+# "unless the factory genuinely allocates" — atomic refcount is the
+# same runtime-cost class.
+crucible_test(test_session_substrate_mint_constexpr)
+
 # MpmcChannelSession.h (SEPLOG-H2 / #326) — typed-session facade over
 # PermissionedMpmcChannel (Nikolaev SCQ).  Covers single-producer
 # round-trip, multi-producer × multi-consumer concurrent stream

@@ -307,7 +307,7 @@ public:
     // ── Handle factories (linear; consume the Permission) ──────────
 
     template <std::size_t S>
-    [[nodiscard]] ProducerHandle<S> producer(
+    [[nodiscard]] constexpr ProducerHandle<S> producer(
         safety::Permission<shard_producer_tag<S>>&& perm) noexcept
     {
         static_assert(S < NumShards, "producer<S>: S must be < NumShards");
@@ -315,7 +315,7 @@ public:
     }
 
     template <std::size_t S>
-    [[nodiscard]] ConsumerHandle<S> consumer(
+    [[nodiscard]] constexpr ConsumerHandle<S> consumer(
         safety::Permission<shard_consumer_tag<S>>&& perm) noexcept
     {
         static_assert(S < NumShards, "consumer<S>: S must be < NumShards");

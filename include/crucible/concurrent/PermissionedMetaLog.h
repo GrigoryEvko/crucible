@@ -178,12 +178,12 @@ public:
         }
     };
 
-    [[nodiscard]] ProducerHandle
+    [[nodiscard]] constexpr ProducerHandle
     producer(safety::Permission<producer_tag>&& perm) noexcept {
         return ProducerHandle{log_, std::move(perm)};
     }
 
-    [[nodiscard]] ConsumerHandle
+    [[nodiscard]] constexpr ConsumerHandle
     consumer(safety::Permission<consumer_tag>&& perm) noexcept {
         return ConsumerHandle{log_, std::move(perm)};
     }

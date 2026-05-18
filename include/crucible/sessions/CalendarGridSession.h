@@ -53,7 +53,7 @@ concept CalendarGridSessionSurface =
     is_calendar_grid_session_surface<std::remove_cvref_t<Grid>>::value;
 
 template <CalendarGridSessionSurface Grid, std::size_t P>
-[[nodiscard]] auto mint_calendar_grid_producer(
+[[nodiscard]] constexpr auto mint_calendar_grid_producer(
     Grid& grid,
     ::crucible::safety::Permission<
         ::crucible::concurrent::calendar_tag::Producer<
@@ -63,7 +63,7 @@ template <CalendarGridSessionSurface Grid, std::size_t P>
 }
 
 template <CalendarGridSessionSurface Grid>
-[[nodiscard]] auto mint_calendar_grid_consumer(
+[[nodiscard]] constexpr auto mint_calendar_grid_consumer(
     Grid& grid,
     ::crucible::safety::Permission<
         ::crucible::concurrent::calendar_tag::Consumer<
