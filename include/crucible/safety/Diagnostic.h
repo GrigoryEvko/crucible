@@ -844,6 +844,58 @@ struct HugePageAllocationFailed : tag_base {
         "cannot proceed without a 2-MB-aligned region.";
 };
 
+// ─── PublishOnceDoublePublish (fixy-A1-031) ──────────────────────────
+//
+// handles/PublishOnce<T>::publish(T*) implements first-call-wins
+// publication via a single CAS on the slot from nullptr → ptr.  The
+// single-publisher property is a soundness invariant: a second
+// successful CAS would silently overwrite the published payload, race
+// against readers that have already acquired the prior value, and
+// break the "channel resource handoff is monotone" contract that
+// LazyEstablishedChannel and federation-cache slot publication rely
+// on.  Pre-fix the post-CAS check was a `contract_assert(claimed)`
+// only — under -fcontract-evaluation-semantic=ignore (the hot-path
+// default per CLAUDE.md §V) the assert is elided, so a second
+// publish_ZX caller silently no-ops and downstream observers receive
+// the FIRST published pointer with no signal that a collision
+// occurred.  Post-fix the publish path emits this tag's
+// name/description/remediation via a CRUCIBLE_COLD abort helper
+// before terminating, restoring the soundness gate independent of
+// the contract-evaluation semantic.
+struct PublishOnceDoublePublish : tag_base {
+    static constexpr std::string_view name = "PublishOnceDoublePublish";
+    static constexpr std::string_view description =
+        "handles::PublishOnce<T>::publish(T*) observed a non-nullptr "
+        "value in the slot at the moment of the publish CAS.  The "
+        "channel was already claimed by a prior publisher, and the "
+        "incoming call attempted to overwrite the published payload.  "
+        "PublishOnce is a one-shot publication primitive — exactly one "
+        "publisher across the lifetime of the slot, with arbitrarily "
+        "many observers.  A second publish is a structural soundness "
+        "violation: it (a) silently discards the new payload (CAS "
+        "fails, but the caller's wire contract assumed success), or "
+        "(b) under a weaker primitive would race against readers that "
+        "already acquired the prior value via observe() / try_observe() "
+        "and produce a torn channel state.";
+    static constexpr std::string_view remediation =
+        "Audit the publisher tree feeding this PublishOnce — at most "
+        "one call site must reach the publish path.  Common causes: "
+        "(a) two threads racing to establish the same channel without "
+        "an outer Once/OneShotFlag guard, (b) a retry loop that "
+        "re-enters publish after a transient error instead of failing "
+        "upward, (c) a refactor that introduced a second publisher "
+        "without the original's `if (already_published()) return;` "
+        "early-out.  Permanent fix is structural: front the publish "
+        "site with Once::call_once / OneShotFlag::try_set, or use "
+        "LazyEstablishedChannel::establish (which serializes via the "
+        "Once latch and routes the would-be-second-establisher into "
+        "the wait-for-published-pointer observer path instead).  When "
+        "PublishOnce is used as a federation-cache slot, the upstream "
+        "compile-and-publish pipeline owns the single-publisher "
+        "contract — a second publish indicates a cache-key collision "
+        "or a duplicate compile entry in flight.";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_diagnostic_class_v<T> ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -998,6 +1050,7 @@ inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 //   [27] LinearAliasViolation        (FIXY-G10 R017)
 //   [28] SharedPermissionPoolSaturated (fixy-A1-015)
 //   [29] HugePageAllocationFailed     (fixy-A1-022)
+//   [30] PublishOnceDoublePublish    (fixy-A1-031)
 
 using Catalog = std::tuple<
     EffectRowMismatch,        //  0
@@ -1029,7 +1082,8 @@ using Catalog = std::tuple<
     ModalityMismatch,         // 26
     LinearAliasViolation,     // 27
     SharedPermissionPoolSaturated, // 28
-    HugePageAllocationFailed  // 29
+    HugePageAllocationFailed, // 29
+    PublishOnceDoublePublish  // 30
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
@@ -1088,6 +1142,7 @@ enum class Category : std::uint8_t {
     LinearAliasViolation     = 27,
     SharedPermissionPoolSaturated = 28,
     HugePageAllocationFailed = 29,
+    PublishOnceDoublePublish = 30,
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1239,6 +1294,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
             return SharedPermissionPoolSaturated::name;
         case Category::HugePageAllocationFailed:
             return HugePageAllocationFailed::name;
+        case Category::PublishOnceDoublePublish:
+            return PublishOnceDoublePublish::name;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1277,6 +1334,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
             return SharedPermissionPoolSaturated::description;
         case Category::HugePageAllocationFailed:
             return HugePageAllocationFailed::description;
+        case Category::PublishOnceDoublePublish:
+            return PublishOnceDoublePublish::description;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1315,6 +1374,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
             return SharedPermissionPoolSaturated::remediation;
         case Category::HugePageAllocationFailed:
             return HugePageAllocationFailed::remediation;
+        case Category::PublishOnceDoublePublish:
+            return PublishOnceDoublePublish::remediation;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1489,20 +1550,21 @@ static_assert(diagnostic_name_v<user_defined_tag> == "UserDefinedTag");
 
 // ─── Catalog cardinality matches Category enum cardinality ────────
 //
-// 30 tags shipped in this version (22 wrapper-axis tags from FOUND-E01
+// 31 tags shipped in this version (22 wrapper-axis tags from FOUND-E01
 // + 3 F*-style alias tags from FOUND-E18 + 1 witness FIXY-G9 + 2
 // modality FIXY-G10 + 1 SharedPermissionPool saturation fixy-A1-015 +
-// 1 HugePageBuffer allocation failure fixy-A1-022).
+// 1 HugePageBuffer allocation failure fixy-A1-022 + 1 PublishOnce
+// double-publish fixy-A1-031).
 // Adding a tag bumps both the Catalog tuple size AND requires a
 // Category enumerator at the same integer value.  The bijection
 // self-test below asserts both in lock step.
 
-static_assert(catalog_size == 30,
-    "Catalog cardinality drifted from the 30-tag inventory "
+static_assert(catalog_size == 31,
+    "Catalog cardinality drifted from the 31-tag inventory "
     "(22 wrapper-axis + 3 F* alias + 1 witness FIXY-G9 + 2 modality "
     "FIXY-G10 + 1 SharedPermissionPool fixy-A1-015 + 1 HugePage "
-    "fixy-A1-022) — confirm the new tag was added to Catalog AND to "
-    "Category at the same integer index.");
+    "fixy-A1-022 + 1 PublishOnce fixy-A1-031) — confirm the new tag "
+    "was added to Catalog AND to Category at the same integer index.");
 
 // ─── Catalog ↔ Category bijection ─────────────────────────────────
 //
@@ -1692,7 +1754,7 @@ static_assert(categories_v.size() == catalog_size,
     "categories_v cardinality drifted from catalog_size — both must "
     "track the same source of truth.");
 static_assert(categories_v[0] == Category::EffectRowMismatch);
-static_assert(categories_v[catalog_size - 1] == Category::HugePageAllocationFailed);
+static_assert(categories_v[catalog_size - 1] == Category::PublishOnceDoublePublish);
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool categories_array_matches_enum_impl(

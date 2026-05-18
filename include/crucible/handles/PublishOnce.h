@@ -52,8 +52,9 @@
 //                 its own line).
 //
 //   PublishOnce — `compare_exchange_strong(release)` fires EXACTLY
-//                 ONCE per instance (the CAS gate + contract_assert
-//                 enforces this).  After publication, the slot is
+//                 ONCE per instance (the CAS gate + always-on abort
+//                 helper enforces this; see fixy-A1-031).  After
+//                 publication, the slot is
 //                 read-only forever.  False-sharing cost is bounded
 //                 at O(instances) one-time invalidations — not a
 //                 steady-state problem.  PublishOnce stays at the
@@ -71,12 +72,49 @@
 // signal (PublishSlot), pack the one-shot publication (PublishOnce).
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/Post.h>
 
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <type_traits>
 
 namespace crucible::safety {
+
+// ── publish_once_double_publish_abort_ (fixy-A1-031) ─────────────────
+//
+// Always-on diagnostic path for the PublishOnce::publish double-call
+// soundness violation.  PublishOnce::publish historically gated the
+// single-publisher invariant via `contract_assert(claimed)` on the
+// CAS return value — under -fcontract-evaluation-semantic=ignore
+// (the hot-path default per CLAUDE.md §V), that assert elides and a
+// second successful CAS (or, more precisely, a SECOND publish call
+// whose CAS fails) silently no-ops with the FIRST published pointer
+// remaining visible.  Observers that already acquired the first
+// pointer race against any caller assumption that "publish returned
+// success".  Mechanically replacing the assert with this helper
+// preserves the type-system gate (still single-publisher by class
+// invariant) AND fires the §XII catastrophic-class abort path with
+// a structured diagnostic, independent of the contract-evaluation
+// semantic in the consuming TU.
+//
+// CRUCIBLE_COLD + noinline keep this helper out of the inlined
+// publish() hot path: the failure branch is `[[unlikely]]` and
+// outlined per CLAUDE.md §VIII cold-path-outlining mandate.
+
+[[noreturn]] CRUCIBLE_COLD
+inline void publish_once_double_publish_abort_() noexcept {
+    using Tag = ::crucible::safety::diag::PublishOnceDoublePublish;
+    std::fprintf(stderr,
+        "crucible: fatal: %.*s\n"
+        "  description: %.*s\n"
+        "  remediation: %.*s\n",
+        static_cast<int>(Tag::name.size()),        Tag::name.data(),
+        static_cast<int>(Tag::description.size()), Tag::description.data(),
+        static_cast<int>(Tag::remediation.size()), Tag::remediation.data());
+    std::abort();
+}
 
 template <typename T>
 class CRUCIBLE_OWNER PublishOnce {
@@ -101,25 +139,37 @@ public:
     // Publish.  Caller must hold the sole right to publish on this
     // channel (enforced by convention, since the publisher is the
     // type of code that owns this field).  Second publish fires the
-    // contract: double-publish would let two consumers observe
-    // different values.
+    // always-on diagnostic: double-publish would let two consumers
+    // observe different values.
     //
     // pre(ptr != nullptr) — publishing nullptr is equivalent to
     // "never published" and is always a caller bug.
+    //
+    // fixy-A1-031: the single-publisher invariant is enforced by an
+    // always-on `if (!claimed) [[unlikely]] abort()` rather than a
+    // `contract_assert`.  Under -fcontract-evaluation-semantic=ignore
+    // (the hot-path default per CLAUDE.md §V) `contract_assert` elides
+    // — a SECOND publish call would silently leave the FIRST publisher's
+    // pointer visible.  The always-on abort preserves the soundness
+    // gate independent of the contract-evaluation semantic; the cost
+    // (one predicted-true branch on the CAS bool plus an outlined
+    // CRUCIBLE_COLD helper) is below noise in the success path.
     CRUCIBLE_INLINE void publish(T* ptr) noexcept
         pre (ptr != nullptr)
     {
         T* expected = nullptr;
         // compare_exchange with release on success, relaxed on
         // failure: failure means "already published", which the
-        // contract below converts into a termination.  The relaxed
+        // abort path below converts into a termination.  The relaxed
         // failure load is enough — we don't synchronize with the
         // other publisher, we just detect it.
         const bool claimed = slot_.compare_exchange_strong(
             expected, ptr,
             std::memory_order_release,
             std::memory_order_relaxed);
-        contract_assert(claimed);
+        if (!claimed) [[unlikely]] {
+            publish_once_double_publish_abort_();
+        }
 
         // CONTRACT-PublishOnce-Publish-POST: state-mutation post
         // (CRUCIBLE_POST taxonomy class 1, sibling of CKernelTable
