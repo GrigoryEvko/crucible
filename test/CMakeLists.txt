@@ -6534,6 +6534,22 @@ crucible_neg_compile_test(neg_finalby_subclass_attempt
 crucible_neg_compile_test(neg_linear_copy_attempt
     "move-only")
 
+# ── fixy-A1-004 #1546 — Linear<Permission<Tag>> redundant-stacking ─
+# Linear<T> rejects T = Permission<Tag> / SharedPermission<Tag> via
+# is_already_linear_v<T> static_assert.  Permission is itself a
+# move-only linearity token (CLAUDE.md §XVI); wrapping in Linear<>
+# stacks two disciplines, adds no new bug class, and breaks the
+# §XXI grep discipline by routing Permission synthesis through
+# mint_linear<Permission<Tag>> instead of the canonical
+# mint_permission_root / mint_permission_share factory.
+# Two HS14 fixtures cover both branches of the trait:
+#   #1 exclusive-token  : Linear<Permission<Tag>>
+#   #2 fractional-token : Linear<SharedPermission<Tag>>
+crucible_neg_compile_test(neg_linear_of_permission_redundant
+    "redundant")
+crucible_neg_compile_test(neg_linear_of_shared_permission_redundant
+    "redundant")
+
 # ── A8-P2 #146 — Permission<Tag> linearity enforcement ──────────
 # Foundational CSL frame-rule token (O'Hearn 2007).  Duplicating a
 # Permission<Tag> would create two simultaneous owners of the same

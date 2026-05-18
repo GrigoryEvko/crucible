@@ -61,8 +61,69 @@
 
 namespace crucible::safety {
 
+// ── Forward declarations for Linear<Permission> rejection (fixy-A1-004) ─
+//
+// Permission<Tag> and SharedPermission<Tag> are themselves move-only
+// CSL linearity tokens (sizeof = 1, deleted copy, EBO-collapsible per
+// CLAUDE.md §XVI).  Wrapping them in Linear<> would:
+//   1. Stack two linearity disciplines without adding a new bug class
+//      Linear catches — both already enforce exactly-once via deleted
+//      copy + [[nodiscard]] + use-after-move diagnostic.
+//   2. Break the EBO-collapse path: Permission's stateless 1-byte
+//      footprint relies on direct embedding; nesting inside Linear's
+//      Graded substrate adds a second-pass through the move-only
+//      class hierarchy with no payload.
+//   3. Defeat the §XXI grep discipline — `mint_permission_root<Tag>()`
+//      is the authorization point; `mint_linear<Permission<Tag>>(...)`
+//      would synthesize a fresh authoritative Permission OUTSIDE the
+//      Permission factory family, breaking the single grep target.
+//
+// Forward-declared here (both already live in crucible::safety per
+// permissions/Permission.h:165) so the trait specializations and the
+// class-body static_assert can fire without pulling Permission.h
+// (1345 LOC + transitive ExecCtx infrastructure) into every Linear
+// consumer.  This is the same forward-declare pattern Permission.h
+// itself uses for `class Linear` references.
+template <typename Tag> class Permission;
+template <typename Tag> class SharedPermission;
+
+// is_already_linear<T> — type-system witness that T's value-level
+// discipline already encodes the exactly-once obligation.  Default
+// false_type; specialized for Permission<Tag> and SharedPermission<Tag>.
+// New permission-family tokens that join the canonical mint family
+// (e.g. future ReadView token, FederatedPeerPermission) add their
+// specialization HERE, not as a Linear<> client wrap.
+template <typename T>
+struct is_already_linear : std::false_type {};
+
+template <typename Tag>
+struct is_already_linear<Permission<Tag>> : std::true_type {};
+
+template <typename Tag>
+struct is_already_linear<SharedPermission<Tag>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_already_linear_v = is_already_linear<T>::value;
+
 template <typename T>
 class [[nodiscard]] Linear {
+    // fixy-A1-004: reject Linear<Permission<Tag>> and
+    // Linear<SharedPermission<Tag>>.  CLAUDE.md §XVI:
+    //   "Permission<Tag> IS already linear → wrapping in Linear<Permission>
+    //    is redundant".
+    // The static_assert fires at the class-body instantiation site, so
+    // the diagnostic surfaces at the user's call site (e.g.
+    // `Linear<Permission<MyTag>>{...}`) rather than deep inside the
+    // Graded substrate's later checks.  Single grep target:
+    // grep "is_already_linear" finds every type the rejection covers.
+    static_assert(!is_already_linear_v<T>,
+        "Linear<Permission<Tag>> / Linear<SharedPermission<Tag>> is "
+        "redundant: Permission IS already a move-only linearity token "
+        "(deleted copy, [[nodiscard]], sizeof = 1, EBO-collapsible).  "
+        "Wrapping it in Linear<> stacks two disciplines without adding "
+        "a new bug class and defeats the §XXI mint-grep discipline.  "
+        "Use Permission<Tag> directly; pass via mint_permission_root / "
+        "mint_permission_split / permission_fork (CLAUDE.md §XVI).");
 public:
     using value_type = T;
     // The QTT grade-1 lattice (singleton "exactly one ownership").
