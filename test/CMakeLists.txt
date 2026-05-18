@@ -371,6 +371,15 @@ crucible_test(test_migration_verification)
 crucible_test(test_concept_cheat_probe)
 add_test(NAME trait_guard
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.sh)
+# fixy-A2-014: regression guard for the SessionPersistence.h include-lift.
+# Probes `g++ -H` to verify the bridge header does not transitively pull
+# Cipher.h / MerkleDag.h / Arena.h / FederationProtocol.h / etc.  Without
+# this guard, a future edit re-adding the heavy include would silently
+# reverse the build-time-cost reduction.
+add_test(NAME session_persistence_include_audit
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-session-persistence-include-audit.sh)
+set_tests_properties(session_persistence_include_audit PROPERTIES
+  ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}")
 # CONTRACT-131: contracts-infra adoption regression guard.  --check
 # diffs the live tree against a committed baseline snapshot; counter
 # increases are silent (adoption growth is good), counter decreases
