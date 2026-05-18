@@ -610,6 +610,23 @@ template <typename B, typename PeerTag>
 struct all_offers_have_crash_branch<Loop<B>, PeerTag>
     : all_offers_have_crash_branch<B, PeerTag> {};
 
+// VendorPinned (fixy-A2-012) — transparent wrapper.  Pre-fix, the
+// primary forward-declared template at line 553 had no body, so any
+// VendorPinned<V, P> in the protocol tree triggered a hard
+// use-of-incomplete-type at the static_assert in
+// assert_every_offer_has_crash_branch_for().  Even worse, the trait
+// was queryable in SFINAE contexts where the substitution failure
+// silently produced false-by-default — making the crash-safety
+// verification VACUOUS for every CNTP upper-layer session pinned to
+// a vendor (the canonical production shape per #1167 GAPS-068).
+// Post-fix the trait recurses into the underlying protocol P,
+// matching the convention every other vendor-pin-aware trait
+// follows (is_send / is_recv / is_offer / is_empty_choice /
+// is_well_formed / dual_of / compose — lines 432-1067).
+template <VendorBackend V, typename P, typename PeerTag>
+struct all_offers_have_crash_branch<VendorPinned<V, P>, PeerTag>
+    : all_offers_have_crash_branch<P, PeerTag> {};
+
 }  // namespace detail::crash
 
 // Public surface: boolean predicate + consteval assertion.

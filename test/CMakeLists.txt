@@ -6789,6 +6789,41 @@ crucible_neg_compile_test(neg_session_global_empty_choice
 crucible_neg_compile_test(neg_session_global_empty_choice_nested
     "Choice_Empty_Branches")
 
+# fixy-A2-012 — `all_offers_have_crash_branch<P, PeerTag>` recursion
+# specialisations for VendorPinned (SessionCrash.h) and
+# CheckpointedSession (SessionCheckpoint.h).  Before the fix, the
+# SessionCrash.h primary template was forward-declared only; any of
+# the listed combinators in the protocol tree produced hard
+# substitution failure (or false-by-default under SFINAE), making
+# BSYZ22 crash-safety verification vacuous for every production
+# CNTP vendor-pinned or transactional/checkpointed session.  Four
+# rejection classes spanning two combinators × two depths:
+#   * checkpointed_base_missing    — Offer-defect in BASE branch
+#   * checkpointed_rollback_missing — Offer-defect in ROLLBACK
+#                                      branch (proves AND-fold
+#                                      walks both legs)
+#   * vendorpinned_missing         — root-level vendor-pinned
+#                                      Offer-defect (the canonical
+#                                      CNTP production shape)
+#   * vendorpinned_nested          — Offer-defect buried two levels
+#                                      deep through Send/Recv
+#                                      under VendorPinned (proves
+#                                      transparent recursion at
+#                                      depth)
+# All four fire the framework-controlled [CrashBranch_Missing_In_Tree]
+# diagnostic via assert_every_offer_has_crash_branch_for() (#368).
+# Pairs with `neg_session_crash_branch_tree_missing.cpp` (deep-Offer
+# in plain Offer<> tree) — together they pin the walker against root,
+# nested, vendor-wrapped, and checkpointed shapes.
+crucible_neg_compile_test(neg_session_crash_branch_checkpointed_base_missing
+    "CrashBranch_Missing_In_Tree")
+crucible_neg_compile_test(neg_session_crash_branch_checkpointed_rollback_missing
+    "CrashBranch_Missing_In_Tree")
+crucible_neg_compile_test(neg_session_crash_branch_vendorpinned_missing
+    "CrashBranch_Missing_In_Tree")
+crucible_neg_compile_test(neg_session_crash_branch_vendorpinned_nested
+    "CrashBranch_Missing_In_Tree")
+
 # fixy-A1-008 — strong-type discipline on FederationHandshake fields
 # + federation_signature_fingerprint + make_self_signed_handshake.
 # Three rejection classes:

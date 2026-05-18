@@ -107,6 +107,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionEventLog.h>
 #include <crucible/sessions/SessionSubtype.h>
 
@@ -280,6 +281,48 @@ struct protocol_grade_satisfies<CheckpointedSession<B1, R1>,
       > {};
 
 }  // namespace detail::subtype
+
+// ═════════════════════════════════════════════════════════════════════
+// ── all_offers_have_crash_branch<CheckpointedSession<B, R>, Peer> ──
+// ═════════════════════════════════════════════════════════════════════
+//
+// fixy-A2-012 — without this specialization, the SessionCrash.h
+// primary forward-declared template at line 553 had no body, so any
+// CheckpointedSession<B, R> in the protocol tree triggered a hard
+// use-of-incomplete-type at the static_assert in
+// assert_every_offer_has_crash_branch_for().  When queried in a
+// SFINAE context, the substitution failure silently produced
+// false-by-default, making BSYZ22 crash-safety verification VACUOUS
+// for every transactional/checkpointed session — the canonical
+// shape for Cipher tier-promotion + replay-then-retry workflows.
+//
+// Post-fix the trait distributes the check CONJUNCTIVELY over both
+// branches.  Both base AND rollback paths are reachable at runtime
+// (via base() / rollback() &&-qualified transitions on
+// SessionHandle<CheckpointedSession<...>>), so an unhandled
+// crash-branch in EITHER is a verification defect.  This mirrors
+// the AND-fold convention used for is_well_formed,
+// is_subtype_sync_structural, and is_dual_involutive
+// (CheckpointedSession.h lines 192-269) — every checkpointed
+// invariant is the conjunction of base and rollback invariants.
+//
+// Symmetric to SessionDelegate.h's specializations for
+// Delegate / Accept / EpochedDelegate / EpochedAccept (lines
+// 436-466) and SessionCrash.h's specialization for
+// VendorPinned (lines 612-625), closing out the four
+// non-self-contained-in-SessionCrash.h combinators that hide deep
+// Offer<> nodes from the crash-walker.
+
+namespace detail::crash {
+
+template <typename B, typename R, typename PeerTag>
+struct all_offers_have_crash_branch<CheckpointedSession<B, R>, PeerTag>
+    : std::bool_constant<
+          all_offers_have_crash_branch<B, PeerTag>::value &&
+          all_offers_have_crash_branch<R, PeerTag>::value
+      > {};
+
+}  // namespace detail::crash
 
 // ═════════════════════════════════════════════════════════════════════
 // ── SessionHandle<CheckpointedSession<P, R>, Res, LoopCtx> ─────────
