@@ -189,9 +189,13 @@ class CRUCIBLE_OWNER Cipher {
         // on malformed input — incompatible with -fno-exceptions), so a
         // corrupt HEAD file cleanly falls through to the log fallback.
         const std::string head_path = root + "/HEAD";
-        auto hf = crucible::safety::open_read(head_path.c_str());
+        // fixy-A1-013: open_read returns std::expected<FileHandle,
+        // std::error_code>; a missing HEAD file (ENOENT) is the normal
+        // boot case and falls through to the log-tail fallback below.
+        auto hf_e = crucible::safety::open_read(head_path.c_str());
         bool head_from_file = false;
-        if (hf.is_open()) {
+        if (hf_e && hf_e->is_open()) {
+            auto& hf = *hf_e;
             char buf[32];
             const ssize_t n = ::read(hf.get(), buf, sizeof(buf));
             if (n > 0) {

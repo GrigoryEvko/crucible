@@ -20,6 +20,39 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <expected>
+#include <system_error>
+#include <type_traits>
+
+// ─────────────────────────────────────────────────────────────────────
+// fixy-A1-013 sentinel: pin Handles.h's documented factory return shape
+// to FileHandle.h's actual return shape via the type system.  Pre-fix
+// the umbrella doc lied — claimed `std::expected<T, SyscallError>` while
+// the factories returned a bare FileHandle whose `is_open()` carried
+// the error signal and the real errno was discarded.  Post-fix every
+// open_* factory returns `std::expected<FileHandle, std::error_code>`,
+// and this static_assert wedges that contract into the type system so
+// future drift (e.g. someone "fixing" a build by reverting the factory
+// signature) is caught at the umbrella-test layer.
+// ─────────────────────────────────────────────────────────────────────
+namespace fixy_a1_013 {
+
+using ::crucible::safety::FileHandle;
+using ExpectedFh = std::expected<FileHandle, std::error_code>;
+
+static_assert(std::is_same_v<
+    decltype(::crucible::safety::open_read(static_cast<const char*>(nullptr))),
+    ExpectedFh>);
+static_assert(std::is_same_v<
+    decltype(::crucible::safety::open_write_truncate(
+        static_cast<const char*>(nullptr))),
+    ExpectedFh>);
+static_assert(std::is_same_v<
+    decltype(::crucible::safety::open_write_append(
+        static_cast<const char*>(nullptr))),
+    ExpectedFh>);
+
+}  // namespace fixy_a1_013
 
 namespace {
 

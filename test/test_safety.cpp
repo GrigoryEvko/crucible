@@ -765,10 +765,13 @@ static void test_file_handle() {
         assert(sz == 4);
     }  // dtor closes raw_fd here
 
-    // Read back via open_read + read_full.  Factory returns a FileHandle
-    // whose fd is a brand-new one (different from raw_fd above).
+    // Read back via open_read + read_full.  Factory returns
+    // std::expected<FileHandle, std::error_code> (fixy-A1-013) — error
+    // case carries the POSIX errno via std::system_category().
     {
-        FileHandle r = open_read(path.c_str());
+        auto r_e = open_read(path.c_str());
+        assert(r_e.has_value());
+        FileHandle& r = *r_e;
         assert(r.is_open());
         std::byte rbuf[16]{};
         const ssize_t n = read_full(r, std::span<std::byte>{rbuf, 16});
@@ -779,7 +782,9 @@ static void test_file_handle() {
 
     // Move semantics: moved-from is closed-state.
     {
-        FileHandle a = open_read(path.c_str());
+        auto a_e = open_read(path.c_str());
+        assert(a_e.has_value());
+        FileHandle a = std::move(*a_e);
         assert(a.is_open());
         const int a_fd = a.get();
         FileHandle b = std::move(a);
@@ -790,13 +795,25 @@ static void test_file_handle() {
 
     // Explicit close: lets caller observe the close() return code.
     {
-        FileHandle c = open_read(path.c_str());
+        auto c_e = open_read(path.c_str());
+        assert(c_e.has_value());
+        FileHandle c = std::move(*c_e);
         assert(c.is_open());
         const int rc = c.close_explicit();
         assert(rc == 0);
         assert(!c.is_open());
         // Second explicit close is a no-op (already closed).
         assert(c.close_explicit() == 0);
+    }
+
+    // fixy-A1-013: open_read on non-existent path → std::unexpected with
+    // ENOENT carried through std::system_category().  No more silent
+    // bare-FileHandle-with-is_open()-false pattern.
+    {
+        auto missing_e = open_read("/tmp/crucible_nonexistent_path_XXXXXX_a1_013");
+        assert(!missing_e.has_value());
+        assert(missing_e.error().value() == ENOENT);
+        assert(missing_e.error().category() == std::system_category());
     }
 
     ::unlink(path.c_str());

@@ -38,7 +38,9 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <span>
+#include <system_error>
 #include <utility>
 
 namespace crucible::safety {
@@ -149,21 +151,41 @@ static_assert(sizeof(FileHandle) == sizeof(int),
 // O_CLOEXEC is always set — fd survival across exec() is never wanted
 // in the Crucible runtime; a forgotten fd-leak to a child would be a
 // FD exhaustion bug in production.
+//
+// fixy-A1-013: factories return `std::expected<FileHandle,
+// std::error_code>`.  Per CLAUDE.md §XII, OS-side open() failure is
+// expected-but-rare — the canonical `std::expected` shape — not a
+// contract violation.  Pre-fix the factories returned a bare
+// FileHandle whose `is_open()` was false on failure, with the real
+// errno discarded: callers couldn't tell ENOENT from EACCES from
+// EMFILE.  Now the error_code carries the POSIX errno via
+// `std::system_category()`, callable-on-the-spot via `.message()`.
 
-[[nodiscard]] inline FileHandle open_read(const char* path) noexcept {
-    return FileHandle{::open(path, O_RDONLY | O_CLOEXEC)};
+[[nodiscard]] inline std::expected<FileHandle, std::error_code>
+open_read(const char* path) noexcept {
+    const int fd = ::open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        return std::unexpected{std::error_code{errno, std::system_category()}};
+    }
+    return FileHandle{fd};
 }
 
-[[nodiscard]] inline FileHandle open_write_truncate(
-    const char* path, mode_t mode = 0644) noexcept
-{
-    return FileHandle{::open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode)};
+[[nodiscard]] inline std::expected<FileHandle, std::error_code>
+open_write_truncate(const char* path, mode_t mode = 0644) noexcept {
+    const int fd = ::open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
+    if (fd < 0) {
+        return std::unexpected{std::error_code{errno, std::system_category()}};
+    }
+    return FileHandle{fd};
 }
 
-[[nodiscard]] inline FileHandle open_write_append(
-    const char* path, mode_t mode = 0644) noexcept
-{
-    return FileHandle{::open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, mode)};
+[[nodiscard]] inline std::expected<FileHandle, std::error_code>
+open_write_append(const char* path, mode_t mode = 0644) noexcept {
+    const int fd = ::open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, mode);
+    if (fd < 0) {
+        return std::unexpected{std::error_code{errno, std::system_category()}};
+    }
+    return FileHandle{fd};
 }
 
 // ── I/O helpers ─────────────────────────────────────────────────────
