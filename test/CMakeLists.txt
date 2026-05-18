@@ -7368,8 +7368,16 @@ crucible_neg_compile_session_test(neg_persisted_session_hot_ctx
 crucible_neg_compile_session_test(neg_persisted_session_no_ctx
     "PersistedSession_CtxRequired|use of deleted function")
 
-crucible_neg_compile_session_test(neg_persisted_session_detach_disabled
-    "PersistedSession_DetachDisabled|use of deleted function")
+# fixy-A2-025: PSH detach is no longer deleted — it forwards to inner.detach,
+# records SessionEvent::detach, and flushes the audit log.  The surviving
+# discipline (rvalue-only, typed Reason required) is pinned by the two
+# fixy-A2-025 fixtures below.
+
+crucible_neg_compile_session_test(neg_psh_detach_bare_no_reason
+    "DetachReason_Required|deleted|matching function")
+
+crucible_neg_compile_session_test(neg_psh_detach_untyped_reason
+    "DetachReason|requires|constraint")
 
 crucible_neg_compile_session_test(neg_persisted_session_no_open_view
     "PersistedSession_OpenViewRequired|use of deleted function")

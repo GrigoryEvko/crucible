@@ -263,6 +263,22 @@ enum class CheckpointChoice : uint8_t {
     Rollback = 2,
 };
 
+// fixy-A2-025: kind classifier for SessionOp::Detach.  Mirrors the five
+// well-known detach_reason::* tags so replay can recover *why* the
+// handle was detached without consulting the original source TU.
+// User-defined DetachReason tags (extensions inheriting from
+// detach_reason::tag_base outside the framework) resolve to Unknown=0;
+// the matching `payload_schema` lane (default_schema_hash<Reason>)
+// still identifies the exact type for offline audit.
+enum class DetachReasonKind : uint8_t {
+    Unknown                    = 0,
+    InfiniteLoopProtocol       = 1,  // detach_reason::InfiniteLoopProtocol
+    TransportClosedOutOfBand   = 2,  // detach_reason::TransportClosedOutOfBand
+    TestInstrumentation        = 3,  // detach_reason::TestInstrumentation
+    AsyncCancellation          = 4,  // detach_reason::AsyncCancellation
+    OwnerLifetimeBoundEarlyExit = 5, // detach_reason::OwnerLifetimeBoundEarlyExit
+};
+
 // Cipher uses the same SessionEvent record.  These payload structs
 // name the per-kind interpretation of the two 64-bit lanes and two
 // one-byte control lanes; they do not add storage to SessionEvent.
@@ -389,6 +405,45 @@ struct SessionEvent {
             .payload_hash   = PayloadHash{saved_state.raw()},
             .op             = SessionOp::Checkpoint_Rollback,
             .reason_kind    = static_cast<uint8_t>(CheckpointChoice::Rollback),
+        };
+    }
+
+    // fixy-A2-025: SessionOp::Detach factory.  Records a typed
+    // abandonment of a non-terminal protocol position; replay sees
+    // exactly which DetachReasonKind closed the handle and which
+    // exact reason-tag type (via reason_schema = default_schema_hash
+    // <Reason>) so audit can distinguish e.g. an InfiniteLoopProtocol
+    // detach (clean — protocol is unbounded by design) from a
+    // TransportClosedOutOfBand detach (transport already gone) from
+    // an OwnerLifetimeBoundEarlyExit detach (bridge teardown).
+    //
+    // The factory is invoked by `PersistedSessionHandle::detach()`
+    // (bridges/SessionPersistence.h) — the only audit-tracking
+    // wrapper that needs an audit-visible detach trail.  Plain
+    // `SessionHandleBase::detach()` (Session.h:1641) does NOT call
+    // this — it only marks the consumed tracker; the framework
+    // contract is that handles wrapped by a recording / persisted
+    // bridge get audit entries, plain handles do not.
+    //
+    // self / peer default to RoleTagId{0} because PSH does not
+    // currently track role identity through the bridge chain; the
+    // payload_schema lane carries the Reason type identity which
+    // is the load-bearing audit datum.  When PSH later threads
+    // role information through (similar to RecordingSessionHandle's
+    // self_role_/peer_role_ fields), call sites can supply real
+    // RoleTagId values.
+    [[nodiscard]] static constexpr SessionEvent detach(
+        RoleTagId self,
+        RoleTagId peer,
+        DetachReasonKind reason_kind,
+        SchemaHash reason_schema = {}) noexcept
+    {
+        return SessionEvent{
+            .from_role      = self,
+            .to_role        = peer,
+            .payload_schema = reason_schema,
+            .op             = SessionOp::Detach,
+            .reason_kind    = static_cast<uint8_t>(reason_kind),
         };
     }
 

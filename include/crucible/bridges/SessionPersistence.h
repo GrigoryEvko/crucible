@@ -165,6 +165,43 @@ public:
 template <typename Inner, typename CallerRow>
 class PersistedSessionHandle;
 
+// fixy-A2-025: map a builtin detach_reason::* tag to its
+// SessionEventLog DetachReasonKind enum value.  PSH's templated
+// detach<Reason>() overload (below) calls into this to populate the
+// reason_kind lane of the recorded SessionEvent::Detach.  User-defined
+// Reason types (extensions inheriting from detach_reason::tag_base
+// outside the framework) resolve to Unknown=0; the per-call
+// default_schema_hash<Reason> still identifies the exact type for
+// offline replay.  Lives in SessionPersistence.h (rather than at the
+// detach_reason::* declaration site in Session.h) because this is the
+// sole consumer — SessionEventLog.h declares the kind enum without
+// depending on detach_reason::*, and Session.h declares the tags
+// without depending on the event log.  PSH is the only point at which
+// both worlds need to compose.
+template <typename Reason>
+inline constexpr DetachReasonKind detach_reason_kind_v =
+    DetachReasonKind::Unknown;
+
+template <> inline constexpr DetachReasonKind
+detach_reason_kind_v<detach_reason::InfiniteLoopProtocol> =
+    DetachReasonKind::InfiniteLoopProtocol;
+
+template <> inline constexpr DetachReasonKind
+detach_reason_kind_v<detach_reason::TransportClosedOutOfBand> =
+    DetachReasonKind::TransportClosedOutOfBand;
+
+template <> inline constexpr DetachReasonKind
+detach_reason_kind_v<detach_reason::TestInstrumentation> =
+    DetachReasonKind::TestInstrumentation;
+
+template <> inline constexpr DetachReasonKind
+detach_reason_kind_v<detach_reason::AsyncCancellation> =
+    DetachReasonKind::AsyncCancellation;
+
+template <> inline constexpr DetachReasonKind
+detach_reason_kind_v<detach_reason::OwnerLifetimeBoundEarlyExit> =
+    DetachReasonKind::OwnerLifetimeBoundEarlyExit;
+
 namespace detail {
 
 template <typename T>
@@ -560,15 +597,48 @@ public:
         });
     }
 
+    // fixy-A2-025: PSH detach.  Records a SessionEvent::detach with
+    // the typed reason tag's payload_schema, forwards
+    // `inner.detach(reason_tag)` to mark the inner handle consumed
+    // (the inner's destructor would otherwise abort on abandonment),
+    // then flushes ALL pending audit events to the Cipher cold tier
+    // before the state owner dies.
+    //
+    // Combined with A2-007 (state owns the OpenView reference) and
+    // A2-013 (state destructor flush), a detached PSH cannot lose
+    // its audit trail — every replay sees the exact reason class
+    // that ended the session.  This unblocks the wrap_crash_return
+    // path (bridges/CrashTransport.h:455) which mandates
+    // `inner.detach(reason)`; PSH-wrapping a CrashWatchedHandle now
+    // works without the §XII "deleted-overload" diagnostic.
+    //
+    // The mark_consumed_() call (inherited from SessionHandleBase
+    // via the CRTP self-type) suppresses PSH's own destructor-abort
+    // check; the inner.detach call does the same for the wrapped
+    // RecordingSessionHandle / CrashWatchedHandle / plain
+    // SessionHandle.  Both linearity proofs fire together — neither
+    // wrapper is reusable after this call.
+    //
+    // self / peer are RoleTagId{} (zero sentinels) — PSH does not
+    // currently track role identity through the bridge chain.  The
+    // reason_schema lane (default_schema_hash<Reason>) is the
+    // load-bearing audit datum that distinguishes reason types
+    // (including user-defined DetachReason extensions that resolve
+    // to DetachReasonKind::Unknown).
     template <typename Reason>
-        requires DetachReason<Reason>
-    void detach(Reason) && = delete(
-        "[PersistedSession_DetachDisabled] PersistedSessionHandle does not "
-        "currently support detach().  The underlying RecordingSessionHandle "
-        "must grow a state-owning detach that consumes its wrapped inner "
-        "handle before persisted detach can be sound.  Drive the protocol to "
-        "End/Stop, or use a non-persisted session for intentional "
-        "abandonment.");
+        requires ::crucible::safety::proto::DetachReason<Reason>
+    void detach(Reason reason_tag) && {
+        [[assume(state_ != nullptr)]];
+        this->mark_consumed_();
+        state_->log().record_now(
+            ::crucible::safety::proto::SessionEvent::detach(
+                ::crucible::safety::proto::RoleTagId{},
+                ::crucible::safety::proto::RoleTagId{},
+                ::crucible::safety::proto::detach_reason_kind_v<Reason>,
+                ::crucible::safety::proto::default_schema_hash<Reason>));
+        std::move(inner_).detach(reason_tag);
+        flush_all_or_abort_();
+    }
 
     [[nodiscard]] bool flush() & {
         [[assume(state_ != nullptr)]];
