@@ -6676,6 +6676,17 @@ crucible_neg_compile_test(neg_permission_pointer_tag
 crucible_neg_compile_test(neg_permission_non_empty_tag
     "static assertion failed|PermissionTag|Tag must be an empty non-union class")
 
+# fixy-A1-012 HS14 floor — `Fd` newtype + `FileHandle(int)` ctor reject
+# errno-shaped negatives.  Pre-fix `FileHandle{-9}` (≈ -EBADF) constructed
+# an apparently-closed handle that silently swallowed the real error.
+# Post-fix `CRUCIBLE_PRE(value == -1 || value >= 0)` fires at consteval
+# AND runtime; only the POSIX-shape pattern (closed sentinel or non-
+# negative fd) survives.  Two fixtures cover the two boundary types.
+crucible_neg_compile_test(neg_fd_errno_shaped_negative
+    "non-constant condition|__builtin_trap|contract violation|static assertion")
+crucible_neg_compile_test(neg_file_handle_errno_shaped_negative
+    "non-constant condition|__builtin_trap|contract violation|static assertion")
+
 # fixy-CR-13 — substrate-side HS14 floor for federation::mint_* row
 # admission.  Pairs with the fixy-wrapper-side fixtures in fixy_neg/.
 # Two distinct rejection classes (Fg empty row × BgCompile missing

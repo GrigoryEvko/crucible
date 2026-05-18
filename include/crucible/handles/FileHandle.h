@@ -28,6 +28,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Linear.h>
+#include <crucible/safety/Pre.h>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -42,12 +43,63 @@
 
 namespace crucible::safety {
 
+// ── Fd newtype (fixy-A1-012) ────────────────────────────────────────
+//
+// TypeSafe distinguishes a POSIX file descriptor from any other int.
+// Pre-fix, `FileHandle{int}` accepted arbitrary negative values; a
+// caller mistakenly passing `-EBADF == -9` (an errno encoded as a
+// negative-int sentinel) constructed an apparently-closed FileHandle
+// that silently swallowed the error.  Two layers close the gap:
+//
+//   1. `Fd` newtype — int-sized wrapper.  `Fd{-9}` fires CRUCIBLE_PRE
+//      at construction; only the sentinel `-1` (closed) and the POSIX
+//      non-negative range pass.
+//   2. `FileHandle::FileHandle(int)` ctor also gates on the same
+//      pattern (kept as a backward-compatible boundary).
+//
+// `is_valid_pattern(v) := v == -1 || v >= 0` — the POSIX-fd shape.
+// Anything else is the caller smuggling an errno-shaped value through
+// the fd channel; we abort, not store-and-pretend-closed.
+//
+// sizeof(Fd) == sizeof(int): zero runtime cost.
+
+class [[nodiscard]] Fd {
+    int value_ = -1;
+
+public:
+    constexpr Fd() noexcept = default;  // sentinel: closed/invalid
+
+    explicit constexpr Fd(int value) noexcept : value_{value} {
+        CRUCIBLE_PRE(value == -1 || value >= 0);
+    }
+
+    [[nodiscard]] constexpr int  raw()      const noexcept { return value_; }
+    [[nodiscard]] constexpr bool is_valid() const noexcept { return value_ >= 0; }
+
+    [[nodiscard]] static constexpr Fd invalid() noexcept { return Fd{}; }
+
+    [[nodiscard]] static constexpr bool is_valid_pattern(int v) noexcept {
+        return v == -1 || v >= 0;
+    }
+
+    constexpr auto operator<=>(const Fd&) const noexcept = default;
+};
+
+static_assert(sizeof(Fd) == sizeof(int),
+              "Fd must be a zero-cost int wrapper");
+
 class [[nodiscard]] FileHandle {
     int fd_ = -1;
 
 public:
     FileHandle() noexcept = default;
-    explicit FileHandle(int fd) noexcept : fd_{fd} {}
+    explicit FileHandle(int fd) noexcept : fd_{fd} {
+        // fixy-A1-012: reject errno-shaped negatives (e.g. -EBADF = -9).
+        // Only the sentinel -1 (closed) and non-negative POSIX fds pass.
+        CRUCIBLE_PRE(Fd::is_valid_pattern(fd));
+    }
+
+    explicit FileHandle(Fd fd) noexcept : fd_{fd.raw()} {}
 
     ~FileHandle() noexcept {
         if (fd_ >= 0) { (void)::close(fd_); }
@@ -68,6 +120,12 @@ public:
 
     [[nodiscard]] bool is_open() const noexcept { return fd_ >= 0; }
     [[nodiscard]] int  get()     const noexcept { return fd_; }
+
+    // fixy-A1-012: typed accessor for new code.  `get()` survives for
+    // backward compatibility with read_full/write_full and external
+    // POSIX-int call sites; `fd()` is the §II.2 TypeSafe-aligned form
+    // when handing the descriptor across a Crucible API boundary.
+    [[nodiscard]] Fd fd() const noexcept { return Fd{fd_}; }
 
     // Release the fd without closing — caller takes ownership of cleanup.
     // Useful when handing the fd to a C API that will close it later.
