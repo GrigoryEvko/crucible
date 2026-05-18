@@ -835,8 +835,11 @@ static void test_constant_time() {
     std::byte buf1[4] = {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
     std::byte buf2[4] = {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
     std::byte buf3[4] = {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{9}};
-    assert(eq(buf1, buf2, 4));
-    assert(!eq(buf1, buf3, 4));
+    // fixy-A1-014: span-only ct::eq closes (nullptr,_,n) deref hole.
+    assert(eq(std::span<const std::byte>{buf1},
+              std::span<const std::byte>{buf2}));
+    assert(!eq(std::span<const std::byte>{buf1},
+               std::span<const std::byte>{buf3}));
 
     assert(less<std::uint32_t>(5u, 10u) == 1u);
     assert(less<std::uint32_t>(10u, 5u) == 0u);

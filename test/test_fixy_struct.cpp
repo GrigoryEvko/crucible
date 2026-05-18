@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -159,8 +160,11 @@ int main() {
     const std::byte ba[3] = { std::byte{1}, std::byte{2}, std::byte{3} };
     const std::byte bb[3] = { std::byte{1}, std::byte{2}, std::byte{3} };
     const std::byte bc[3] = { std::byte{1}, std::byte{2}, std::byte{4} };
-    (void)fstr::ct::eq(ba, bb, sizeof(ba));
-    (void)fstr::ct::eq(ba, bc, sizeof(ba));
+    // fixy-A1-014: span-only ct::eq closes the (nullptr,_,n) deref hole.
+    (void)fstr::ct::eq(std::span<const std::byte>{ba},
+                       std::span<const std::byte>{bb});
+    (void)fstr::ct::eq(std::span<const std::byte>{ba},
+                       std::span<const std::byte>{bc});
 
     // Runtime smoke: SIMD iota_v lane order.
     const auto idx = fstr::simd::iota_v<csmd::u64x8>();

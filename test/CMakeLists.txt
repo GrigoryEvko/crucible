@@ -6687,6 +6687,17 @@ crucible_neg_compile_test(neg_fd_errno_shaped_negative
 crucible_neg_compile_test(neg_file_handle_errno_shaped_negative
     "non-constant condition|__builtin_trap|contract violation|static assertion")
 
+# fixy-A1-014 HS14 floor — `ct::eq` is a span-only API and fires
+# CRUCIBLE_PRE on length mismatch.  Pre-fix `(ptr, ptr, size_t)` silently
+# dereferenced null at any non-zero length and swallowed sized
+# asymmetry as `n == 0 → true`.  Post-fix two fixtures pin the two
+# rejection classes: (#1) two non-empty mismatched sizes, (#2) empty
+# vs non-empty (asymmetric edge).
+crucible_neg_compile_test(neg_ct_eq_length_mismatch_consteval
+    "non-constant condition|__builtin_trap|contract violation|static assertion")
+crucible_neg_compile_test(neg_ct_eq_zero_vs_nonempty_consteval
+    "non-constant condition|__builtin_trap|contract violation|static assertion")
+
 # fixy-CR-13 — substrate-side HS14 floor for federation::mint_* row
 # admission.  Pairs with the fixy-wrapper-side fixtures in fixy_neg/.
 # Two distinct rejection classes (Fg empty row × BgCompile missing

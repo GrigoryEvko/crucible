@@ -253,9 +253,9 @@ public:
 template <typename T>
     requires RequiresCT<T>
 [[nodiscard]] bool eq(CTPayload<T> const& a, CTPayload<T> const& b) noexcept {
-    auto ab = a.bytes();
-    auto bb = b.bytes();
-    return crucible::safety::ct::eq(ab.data(), bb.data(), ab.size());
+    // fixy-A1-014: pass spans directly — span-only API closes the
+    // null-deref hole that the legacy `(ptr, ptr, n)` triple opened.
+    return crucible::safety::ct::eq(a.bytes(), b.bytes());
 }
 
 // ═════════════════════════════════════════════════════════════════════

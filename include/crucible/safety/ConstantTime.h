@@ -63,10 +63,12 @@
 // backing data is almost certainly wrong-scoped.
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Pre.h>
 
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <type_traits>
 
 namespace crucible::safety::ct {
@@ -88,15 +90,31 @@ template <std::unsigned_integral T>
     return (a & m) | (b & ~m);
 }
 
-// Constant-time equality of raw byte buffers.  Returns true iff
-// every byte matches.  Time depends only on length n, not on the
-// position of any difference.
-[[nodiscard]] constexpr bool eq(const std::byte* a,
-                                 const std::byte* b,
-                                 std::size_t n) noexcept
+// Constant-time equality of byte buffers.  Returns true iff every
+// byte matches.  Time depends only on the (public) length, not on
+// the position of any difference.
+//
+// fixy-A1-014: span-only signature.  Pre-fix the primitive took bare
+// `(ptr, ptr, size_t)` triples; a caller passing `(nullptr, _, 16)`
+// silently dereferenced null inside the constant-time loop — the
+// LAST line of defense in the crypto path was the most permissive
+// surface.  `std::span<const std::byte>` is structurally non-null at
+// any non-zero length; the zero-length empty-span case is well-
+// defined and returns `true` (the vacuous truth of "every byte
+// matches" on no bytes).
+//
+// Length mismatch is a CALLER BUG, not a recoverable error: every
+// real crypto use-case (auth tag compare, HMAC verify, password
+// equality) has fixed, statically-known lengths.  A length mismatch
+// indicates corruption or a refactor error; we trap, not silently
+// return `false`.  Pre-condition fires at consteval AND runtime via
+// CRUCIBLE_PRE.
+[[nodiscard]] constexpr bool eq(std::span<const std::byte> a,
+                                 std::span<const std::byte> b) noexcept
 {
+    CRUCIBLE_PRE(a.size() == b.size());
     std::byte acc{0};
-    for (std::size_t i = 0; i < n; ++i) {
+    for (std::size_t i = 0; i < a.size(); ++i) {
         acc |= a[i] ^ b[i];
     }
     return acc == std::byte{0};
