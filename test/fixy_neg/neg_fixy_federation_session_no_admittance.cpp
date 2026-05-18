@@ -1,13 +1,14 @@
 // fixy_neg: mint_sender refuses to mint a federation session when the
 // caller omits the FederatedPeer admittance witness.
 //
-// HS14 floor for fixy-CR-07 (the new admittance witness on federation
-// session mints).  Substrate signature is
+// HS14 floor for fixy-CR-07 + fixy-A2-009 (the SharedPermission
+// admittance witness on federation session mints).  Substrate signature
+// is
 //
 //   template <typename Org, typename KeyTag = AnyFederationKey,
 //             IsExecCtx Ctx, typename SenderEndpoint>
 //   auto mint_sender(Ctx const&, SenderEndpoint&&,
-//                    Permission<FederatedPeer<Org>> const& admittance)
+//                    SharedPermission<FederatedPeer<Org>> admittance)
 //
 // Calling with three positional args (ctx, endpoint, /* no admittance */)
 // fires an arity mismatch — there is no overload that takes only

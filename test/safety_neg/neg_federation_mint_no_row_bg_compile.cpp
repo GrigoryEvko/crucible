@@ -20,6 +20,8 @@
 #include <crucible/permissions/FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
+#include <utility>
+
 namespace fp   = ::crucible::safety::proto::federation;
 namespace perm = ::crucible::permissions;
 namespace saf  = ::crucible::safety;
@@ -40,16 +42,19 @@ int main() {
         perm::make_self_signed_handshake<neg_fed_row_bg::PeerOrg>(
             /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFEDCDEULL},
             /*nonce=*/perm::Nonce{0xC0FFEEULL});
-    auto admittance = perm::mint_federation_admittance<
+    auto admitted = perm::mint_federation_admittance<
         neg_fed_row_bg::PeerOrg,
         perm::policy::admit_orgs<neg_fed_row_bg::PeerOrg>>(
             local, handshake);
+    auto pool = fp::mint_federation_pool<neg_fed_row_bg::PeerOrg>(
+        std::move(*admitted));
+    auto guard = pool.lend();
 
     // BgCompileCtx carries Row<Bg, Alloc, IO> — missing Block.
     eff::BgCompileCtx ctx{};
     auto sender = fp::mint_sender<
         neg_fed_row_bg::PeerOrg, neg_fed_row_bg::TraceKey>(
-        ctx, neg_fed_row_bg::Endpoint{}, *admittance);
+        ctx, neg_fed_row_bg::Endpoint{}, guard->token());
     (void)sender;
     return 0;
 }

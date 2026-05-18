@@ -7,11 +7,14 @@
 // `IsExecCtx Ctx`.  Passing a plain `int` as the ctx slot fires the
 // constraint-satisfaction failure inside federation::mint_channel.
 //
-// fixy-CR-07: federation mints now also take a
-// `Permission<FederatedPeer<Org>> const&` admittance witness as the
-// final argument.  We bootstrap a legitimate admittance via the
-// production substrate so the call site is syntactically well-formed;
-// the IsExecCtx<Ctx> constraint failure on the first arg is what fires.
+// fixy-CR-07 + fixy-A2-009: federation mints now also take a
+// `SharedPermission<FederatedPeer<Org>>` admittance witness (by value)
+// as the final argument.  The exclusive `Permission<FederatedPeer<Org>>`
+// parks in a `SharedPermissionPool` once at admission; per-call sites
+// borrow a guard via `lend()` and pass `guard->token()`.  We bootstrap
+// a legitimate admittance + pool here so the call site is syntactically
+// well-formed; the IsExecCtx<Ctx> constraint failure on the first arg
+// is what fires.
 //
 // Note: we include only fixy/Sess.h and fixy/Source.h (NOT
 // FederationPermission.h directly) to avoid the GCC 16.1.1 ICE in
@@ -23,6 +26,8 @@
 
 #include <crucible/fixy/Sess.h>
 #include <crucible/fixy/Source.h>
+
+#include <utility>
 
 namespace fsess = crucible::fixy::sess;
 namespace cs    = crucible::safety;
@@ -42,6 +47,9 @@ int main() {
         NegFedChannelNonCtx_PeerOrg>();
     auto admitted = ff::mint_federation_admittance<
         NegFedChannelNonCtx_PeerOrg>(local, handshake);
+    auto pool = fsess::federation::mint_federation_pool<
+        NegFedChannelNonCtx_PeerOrg>(std::move(*admitted));
+    auto guard = pool.lend();
 
     int not_a_ctx = 0;
     // Plain int as ctx — fails IsExecCtx constraint at template
@@ -49,7 +57,7 @@ int main() {
     // arity-check passes and the constraint check is what surfaces.
     auto bad = fsess::mint_federation_channel<
         NegFedChannelNonCtx_PeerOrg>(
-        not_a_ctx, 0, 0, *admitted);
+        not_a_ctx, 0, 0, guard->token());
     (void)bad;
     return 0;
 }

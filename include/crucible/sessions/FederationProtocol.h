@@ -162,31 +162,56 @@ template <typename Role, typename Proto, typename KeyTag = AnyFederationKey>
 inline constexpr bool role_protocol_matches_v =
     role_protocol_matches<Role, Proto, KeyTag>::value;
 
-// ── fixy-CR-07: per-role admittance witness ────────────────────────
+// ── fixy-A2-009: per-role admittance witness, fractional discipline ─
 //
-// Every per-role mint requires a `Permission<tag::FederatedPeer<Org>>`
-// witness — proof that the local Cog was admitted to converse with
-// the remote `Org` peer through `mint_federation_admittance`.  The
-// witness is const-ref (not consumed) because sessions are short-
-// lived; admittance survives across multiple session mints for the
-// same peer.  Without the witness the session protocol would let any
-// caller with any ExecCtx open a federation channel, bypassing the
-// admittance handshake entirely.
+// Every per-role mint requires a `SharedPermission<tag::FederatedPeer
+// <Org>>` witness — proof that the local Cog was admitted to converse
+// with the remote `Org` peer through `mint_federation_admittance`,
+// AND that an outstanding `SharedPermissionGuard` is keeping the
+// admittance pool's refcount above zero.  The original fixy-CR-07
+// fix took the admittance by `Permission<...> const&`, which defeated
+// CSL linearity: one Permission could be silently re-used across an
+// unbounded number of mints without any structural type-system
+// witness of the share count.  The current encoding splits the
+// pattern into the canonical three-piece fractional-permission shape
+// (CLAUDE.md §IX, Permission.h:863-879):
+//
+//   Permission<FederatedPeer<Org>>             — exclusive, linear.
+//   SharedPermissionPool<FederatedPeer<Org>>   — parks the exclusive;
+//       atomic refcount; lend() bumps it, Guard destructor decrements.
+//   SharedPermissionGuard<FederatedPeer<Org>>  — RAII; live in the
+//       caller's frame for the duration of mint+use.
+//   SharedPermission<FederatedPeer<Org>>       — empty proof token
+//       (sizeof = 1, EBO-collapsible), produced by Guard::token().
 //
 // `Org` is the FIRST template parameter — non-deducible, must be
 // supplied explicitly at every call site:
 //
-//   auto admittance = std::move(*::crucible::permissions::
+//   auto admitted = std::move(*::crucible::permissions::
 //       mint_federation_admittance<OrgB,
 //           policy::admit_orgs<OrgB>>(local_cipher, handshake));
+//   auto pool  = federation::mint_federation_pool<OrgB>(
+//       std::move(admitted));
+//   auto guard = pool.lend();                  // refcount bumped
 //   auto sender = federation::mint_sender<OrgB, TraceKey>(
-//       ctx, endpoint, admittance);
+//       ctx, endpoint, guard->token());        // SharedPermission
 //
 // The witness type carries Org in its tag, so passing a
-// `Permission<FederatedPeer<OrgA>>` to `mint_sender<OrgB, ...>` is a
-// hard type mismatch — closes the cross-org session impersonation
-// gap that paralleled the cross-org permission-split gap closed in
-// fixy-CR-05.
+// `SharedPermission<FederatedPeer<OrgA>>` to `mint_sender<OrgB, ...>`
+// is a hard type mismatch — closes the cross-org session
+// impersonation gap that paralleled the cross-org permission-split
+// gap closed in fixy-CR-05.  The fractional discipline closes the
+// linearity gap reported in fixy-A2-009: the type system now reflects
+// "show admittance once, mint many" by routing the many through the
+// pool's refcount rather than aliasing one Permission.
+
+template <typename Org>
+[[nodiscard]] constexpr auto mint_federation_pool(
+    ::crucible::safety::Permission<
+        ::crucible::permissions::tag::FederatedPeer<Org>>&& admittance) noexcept {
+    return ::crucible::safety::SharedPermissionPool<
+        ::crucible::permissions::tag::FederatedPeer<Org>>{std::move(admittance)};
+}
 
 template <typename Org,
           typename KeyTag = AnyFederationKey,
@@ -196,9 +221,8 @@ template <typename Org,
 [[nodiscard]] constexpr auto mint_sender(
     Ctx const& ctx,
     SenderEndpoint&& sender_endpoint,
-    ::crucible::safety::Permission<
-        ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept {
-    (void)admittance;
+    ::crucible::safety::SharedPermission<
+        ::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {
     using ctx_row = typename Ctx::row_type;
     using offending =
         ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;
@@ -221,9 +245,8 @@ template <typename Org,
 [[nodiscard]] constexpr auto mint_receiver(
     Ctx const& ctx,
     ReceiverEndpoint&& receiver_endpoint,
-    ::crucible::safety::Permission<
-        ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept {
-    (void)admittance;
+    ::crucible::safety::SharedPermission<
+        ::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {
     using ctx_row = typename Ctx::row_type;
     using offending =
         ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;
@@ -248,8 +271,8 @@ template <typename Org,
     Ctx const& ctx,
     SenderEndpoint&& sender_endpoint,
     ReceiverEndpoint&& receiver_endpoint,
-    ::crucible::safety::Permission<
-        ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept {
+    ::crucible::safety::SharedPermission<
+        ::crucible::permissions::tag::FederatedPeer<Org>> admittance) noexcept {
     return std::pair{
         mint_sender<Org, KeyTag>(
             ctx, std::forward<SenderEndpoint>(sender_endpoint), admittance),
@@ -266,9 +289,8 @@ template <typename Org,
 [[nodiscard]] constexpr auto mint_coord(
     Ctx const& ctx,
     CoordEndpoint&& coord_endpoint,
-    ::crucible::safety::Permission<
-        ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept {
-    (void)admittance;
+    ::crucible::safety::SharedPermission<
+        ::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {
     using ctx_row = typename Ctx::row_type;
     using offending =
         ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;

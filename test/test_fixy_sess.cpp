@@ -25,13 +25,16 @@ namespace perm  = ::crucible::permissions;
 namespace saf   = ::crucible::safety;
 namespace eff   = ::crucible::effects;
 
-// fixy-CR-07: federation session mints now take an Org template
-// parameter and a Permission<FederatedPeer<Org>> admittance witness.
-// This sentinel TU only probes function pointer types, not runtime
-// instantiation, so a forward-declared peer org tag suffices.
+// fixy-CR-07 + fixy-A2-009: federation session mints now take an Org
+// template parameter and a `SharedPermission<FederatedPeer<Org>>`
+// admittance witness (by value).  The exclusive `Permission<...>` is
+// parked once in a `SharedPermissionPool`; per-call sites obtain the
+// empty proof token via `pool.lend()->token()`.  This sentinel TU only
+// probes function pointer types, not runtime instantiation, so a
+// forward-declared peer org tag suffices.
 namespace test_fixy_sess { struct PeerOrg {}; }
 using TestPeerAdmittance =
-    saf::Permission<perm::tag::FederatedPeer<test_fixy_sess::PeerOrg>>;
+    saf::SharedPermission<perm::tag::FederatedPeer<test_fixy_sess::PeerOrg>>;
 
 // fixy-CR-13: federation mints require `Row<IO, Block>` in the ctx
 // row.  BgCompileCtx ships with `Row<Bg, Alloc, IO>` — missing Block.
@@ -123,7 +126,8 @@ static_assert(std::is_same_v<
 
 // fixy::sess::mint_federation_channel forwards to
 // federation::mint_channel and stays distinct from the session form.
-// fixy-CR-07: federation mints now take Org + admittance witness.
+// fixy-CR-07 + fixy-A2-009: federation mints now take Org +
+// SharedPermission<FederatedPeer<Org>> admittance witness (by value).
 static_assert(std::is_same_v<
     decltype(fsess::mint_federation_channel<test_fixy_sess::PeerOrg,
                                              test_fixy_sess::KeyTag,
@@ -132,7 +136,7 @@ static_assert(std::is_same_v<
         std::declval<const FederationFitCtx&>(),
         std::declval<int>(),
         std::declval<int>(),
-        std::declval<TestPeerAdmittance const&>())),
+        std::declval<TestPeerAdmittance>())),
     decltype(fed::mint_channel<test_fixy_sess::PeerOrg,
                                 test_fixy_sess::KeyTag,
                                 FederationFitCtx,
@@ -140,7 +144,7 @@ static_assert(std::is_same_v<
         std::declval<const FederationFitCtx&>(),
         std::declval<int>(),
         std::declval<int>(),
-        std::declval<TestPeerAdmittance const&>()))>,
+        std::declval<TestPeerAdmittance>()))>,
     "fixy::sess::mint_federation_channel must forward to "
     "federation::mint_channel with identical return type.");
 
@@ -155,7 +159,7 @@ static_assert(std::is_same_v<
         std::declval<const FederationFitCtx&>(),
         std::declval<int>(),
         std::declval<int>(),
-        std::declval<TestPeerAdmittance const&>())),
+        std::declval<TestPeerAdmittance>())),
     decltype(fed::mint_channel<test_fixy_sess::PeerOrg,
                                 test_fixy_sess::KeyTag,
                                 FederationFitCtx,
@@ -163,7 +167,7 @@ static_assert(std::is_same_v<
         std::declval<const FederationFitCtx&>(),
         std::declval<int>(),
         std::declval<int>(),
-        std::declval<TestPeerAdmittance const&>()))>,
+        std::declval<TestPeerAdmittance>()))>,
     "fixy::sess::federation::mint_channel must remain callable via the "
     "namespace alias.");
 

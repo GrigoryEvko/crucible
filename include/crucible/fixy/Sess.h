@@ -254,6 +254,10 @@ namespace federation = ::crucible::safety::proto::federation;
 using federation::mint_sender;
 using federation::mint_receiver;
 using federation::mint_coord;
+// fixy-A2-009: SharedPermission pool factory for fractional admittance.
+// Exclusive Permission<FederatedPeer<Org>> parks into a pool; per-call
+// sites lend() a guard and pass guard->token() to the per-role mints.
+using federation::mint_federation_pool;
 
 // ── mint_channel name-collision discipline (FIXY-AUDIT-B10) ────────
 //
@@ -321,8 +325,8 @@ template <typename Org,
     Ctx const& ctx,
     SenderEndpoint&& sender_endpoint,
     ReceiverEndpoint&& receiver_endpoint,
-    ::crucible::safety::Permission<
-        ::crucible::permissions::tag::FederatedPeer<Org>> const& admittance) noexcept
+    ::crucible::safety::SharedPermission<
+        ::crucible::permissions::tag::FederatedPeer<Org>> admittance) noexcept
 {
     using ctx_row = typename Ctx::row_type;
     using offending = ::crucible::effects::row_difference_t<

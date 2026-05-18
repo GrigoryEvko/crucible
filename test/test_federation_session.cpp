@@ -35,11 +35,13 @@ struct Endpoint {
     std::vector<int>* events = nullptr;
 };
 
-// fixy-CR-07: every per-role mint requires proof of admittance to the
-// remote peer (PeerOrg).  Mint the witness once at the top of each
-// test via the legitimate admittance channel; sessions share it
-// const-ref.
-inline auto mint_test_admittance() noexcept {
+// fixy-A2-009: every per-role mint requires proof of admittance to the
+// remote peer (PeerOrg).  Mint the exclusive Permission once via the
+// legitimate admittance channel, park it in a SharedPermissionPool, and
+// lend a SharedPermission<FederatedPeer<PeerOrg>> token at each call
+// site.  The token is empty/copyable; the pool refcount keeps the
+// fractional discipline honest.  Cf. CLAUDE.md §IX three-piece pattern.
+inline auto mint_test_admittance_permission() noexcept {
     auto local_cipher =
         saf::mint_permission_root<perm::tag::LocalCipherTag>();
     auto handshake = perm::make_self_signed_handshake<PeerOrg>(
@@ -78,7 +80,11 @@ static_assert(!fp::role_protocol_matches_v<
 int test_sender_receiver_views() {
     std::vector<int> events;
     FederationFitCtx ctx{};
-    auto admittance = mint_test_admittance();
+    auto pool = fp::mint_federation_pool<PeerOrg>(
+        mint_test_admittance_permission());
+    auto guard = pool.lend();
+    assert(guard.has_value());
+    auto admittance = guard->token();
     auto [sender, receiver] =
         fp::mint_channel<PeerOrg, TraceKey>(
             ctx, Endpoint{&events}, Endpoint{&events}, admittance);
@@ -117,7 +123,11 @@ int test_sender_receiver_views() {
 int test_coord_view() {
     std::vector<int> events;
     FederationFitCtx ctx{};
-    auto admittance = mint_test_admittance();
+    auto pool = fp::mint_federation_pool<PeerOrg>(
+        mint_test_admittance_permission());
+    auto guard = pool.lend();
+    assert(guard.has_value());
+    auto admittance = guard->token();
     auto coord = fp::mint_coord<PeerOrg, TraceKey>(
         ctx, Endpoint{&events}, admittance);
 

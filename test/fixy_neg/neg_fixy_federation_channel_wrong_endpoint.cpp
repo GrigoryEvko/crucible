@@ -10,9 +10,11 @@
 // protocol's resource-shape concept gate, so the constraint chain
 // fires at the inner mint_permissioned_session call.
 //
-// fixy-CR-07: federation mints now also take a
-// `Permission<FederatedPeer<Org>> const&` admittance witness; we
-// bootstrap a legitimate admittance so the call is syntactically
+// fixy-CR-07 + fixy-A2-009: federation mints now also take a
+// `SharedPermission<FederatedPeer<Org>>` admittance witness (by value);
+// the exclusive `Permission` parks in a `SharedPermissionPool` once
+// and per-call sites pass `pool.lend()->token()`.  We bootstrap a
+// legitimate admittance + pool so the call is syntactically
 // well-formed and the constraint chain reaches the downstream
 // CtxFitsPermissionedProtocol failure.
 //
@@ -25,6 +27,8 @@
 
 #include <crucible/fixy/Sess.h>
 #include <crucible/fixy/Source.h>
+
+#include <utility>
 
 namespace fsess = crucible::fixy::sess;
 namespace cs    = crucible::safety;
@@ -54,6 +58,9 @@ int main() {
         NegFedChannelWrongEp_PeerOrg>();
     auto admitted = ff::mint_federation_admittance<
         NegFedChannelWrongEp_PeerOrg>(local, handshake);
+    auto pool = fsess::federation::mint_federation_pool<
+        NegFedChannelWrongEp_PeerOrg>(std::move(*admitted));
+    auto guard = pool.lend();
 
     // fixy-CR-13: use the widened FederationFitCtx so the surface row
     // gate (CtxFitsFederation) is satisfied; the constraint chain then
@@ -64,7 +71,7 @@ int main() {
     void* bad_receiver = nullptr;
     auto bad = fsess::mint_federation_channel<
         NegFedChannelWrongEp_PeerOrg>(
-        ctx, bad_sender, bad_receiver, *admitted);
+        ctx, bad_sender, bad_receiver, guard->token());
     (void)bad;
     return 0;
 }

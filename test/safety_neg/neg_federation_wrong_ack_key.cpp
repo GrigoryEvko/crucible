@@ -17,18 +17,19 @@ struct WrongKey {};
 struct PeerOrg {};
 struct Endpoint {};
 
-// fixy-CR-07: federation session mints now take an `Org` first template
-// parameter and a `Permission<FederatedPeer<Org>> const&` admittance
-// witness.  This fixture is a concept probe — admittance threaded via
-// `std::declval` inside `decltype` (compile-time only context).
+// fixy-CR-07 + fixy-A2-009: federation session mints now take an `Org`
+// first template parameter and a `SharedPermission<FederatedPeer<Org>>`
+// admittance witness (by value, copyable empty proof token from a pool
+// guard's `token()`).  This fixture is a concept probe — admittance
+// threaded via `std::declval` inside `decltype` (compile-time only context).
 using Admittance =
-    crucible::safety::Permission<
+    crucible::safety::SharedPermission<
         crucible::permissions::tag::FederatedPeer<PeerOrg>>;
 
 using SenderHandle = decltype(fp::mint_sender<PeerOrg, ExpectedKey>(
     std::declval<FederationFitCtx const&>(),
     Endpoint{},
-    std::declval<Admittance const&>()));
+    std::declval<Admittance>()));
 
 using AfterAnnounce = decltype(
     std::declval<SenderHandle&&>().send(

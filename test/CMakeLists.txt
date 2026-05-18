@@ -6743,6 +6743,19 @@ crucible_neg_compile_test(neg_federation_mint_no_row_fg
 crucible_neg_compile_test(neg_federation_mint_no_row_bg_compile
     "CtxFitsFederation|EffectRowMismatch|constraints not satisfied|no matching function")
 
+# fixy-A2-009 — substrate-side HS14 floor for the SharedPermission
+# fractional-admittance discipline.  Two distinct rejection classes
+# both targeting the per-role mint parameter-type concept:
+#   * raw Permission instead of SharedPermission — Linear move-only
+#     vs copyable empty proof token (no implicit conversion).
+#   * SharedPermission Org mismatch — passing OrgA's token to
+#     mint_sender<OrgB> (cross-org impersonation gap closed at type
+#     level; tag carries Org).
+crucible_neg_compile_test(neg_federation_mint_raw_permission
+    "no matching function|could not convert|cannot convert|invalid initialization|deduction/substitution failed")
+crucible_neg_compile_test(neg_federation_mint_wrong_org_share
+    "no matching function|could not convert|cannot convert|invalid initialization|deduction/substitution failed")
+
 # fixy-A1-008 — strong-type discipline on FederationHandshake fields
 # + federation_signature_fingerprint + make_self_signed_handshake.
 # Three rejection classes:

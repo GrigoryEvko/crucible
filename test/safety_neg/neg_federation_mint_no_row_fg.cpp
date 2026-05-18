@@ -19,6 +19,8 @@
 #include <crucible/permissions/FederationPermission.h>
 #include <crucible/sessions/FederationProtocol.h>
 
+#include <utility>
+
 namespace fp   = ::crucible::safety::proto::federation;
 namespace perm = ::crucible::permissions;
 namespace saf  = ::crucible::safety;
@@ -35,16 +37,21 @@ struct Endpoint {};
 
 int main() {
     // Mint a legitimate admittance so the call site is otherwise
-    // well-formed; only the ctx row gate is what fails.
+    // well-formed; only the ctx row gate is what fails.  Per
+    // fixy-A2-009 federation mints now take a SharedPermission witness;
+    // park the exclusive Permission in a pool and lend a token.
     auto local = saf::mint_permission_root<perm::tag::LocalCipherTag>();
     auto handshake =
         perm::make_self_signed_handshake<neg_fed_row_fg::PeerOrg>(
             /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFEDCDEULL},
             /*nonce=*/perm::Nonce{0xC0FFEEULL});
-    auto admittance = perm::mint_federation_admittance<
+    auto admitted = perm::mint_federation_admittance<
         neg_fed_row_fg::PeerOrg,
         perm::policy::admit_orgs<neg_fed_row_fg::PeerOrg>>(
             local, handshake);
+    auto pool = fp::mint_federation_pool<neg_fed_row_fg::PeerOrg>(
+        std::move(*admitted));
+    auto guard = pool.lend();
 
     eff::HotFgCtx fg{};
     auto channel = fp::mint_channel<
@@ -52,7 +59,7 @@ int main() {
         fg,
         neg_fed_row_fg::Endpoint{},
         neg_fed_row_fg::Endpoint{},
-        *admittance);
+        guard->token());
     (void)channel;
     return 0;
 }

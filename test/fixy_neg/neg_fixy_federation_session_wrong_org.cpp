@@ -3,16 +3,18 @@
 // the Org template parameter on the mint, closing the cross-org
 // session-impersonation gap closed by fixy-CR-07.
 //
-// HS14 floor for fixy-CR-07.  Substrate signature is
+// HS14 floor for fixy-CR-07 + fixy-A2-009.  Substrate signature is
 //
 //   template <typename Org, typename KeyTag = AnyFederationKey,
 //             IsExecCtx Ctx, typename SenderEndpoint>
 //   auto mint_sender(Ctx const&, SenderEndpoint&&,
-//                    Permission<FederatedPeer<Org>> const& admittance)
+//                    SharedPermission<FederatedPeer<Org>> admittance)
 //
-// `Permission<Tag>` is move-only with phantom tag — there is no
-// implicit conversion between Permission<FederatedPeer<OrgA>> and
-// Permission<FederatedPeer<OrgB>>.  Holding an admittance to OrgA does
+// `Permission<Tag>` is move-only with phantom tag — passing a raw
+// `Permission<FederatedPeer<OrgA>>` to `mint_sender<OrgB>` fails the
+// parameter-type concept twice over: (a) Permission has no implicit
+// conversion to SharedPermission, and (b) the OrgA tag cannot bind
+// to the OrgB-typed parameter.  Holding an admittance to OrgA does
 // not authorize a session to OrgB; the type system enforces this at
 // compile time.
 //

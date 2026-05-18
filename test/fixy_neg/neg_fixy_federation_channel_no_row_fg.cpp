@@ -17,6 +17,11 @@
 
 #include <crucible/fixy/Sess.h>
 #include <crucible/permissions/FederationPermission.h>
+#include <crucible/sessions/FederationProtocol.h>
+
+#include <utility>
+
+namespace fp = ::crucible::safety::proto::federation;
 
 namespace fsess = ::crucible::fixy::sess;
 namespace perm  = ::crucible::permissions;
@@ -38,10 +43,13 @@ int main() {
         perm::make_self_signed_handshake<neg_fixy_fed_fg::PeerOrg>(
             /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFEDCDEULL},
             /*nonce=*/perm::Nonce{0xC0FFEEULL});
-    auto admittance = perm::mint_federation_admittance<
+    auto admitted = perm::mint_federation_admittance<
         neg_fixy_fed_fg::PeerOrg,
         perm::policy::admit_orgs<neg_fixy_fed_fg::PeerOrg>>(
             local, handshake);
+    auto pool = fp::mint_federation_pool<neg_fixy_fed_fg::PeerOrg>(
+        std::move(*admitted));
+    auto guard = pool.lend();
 
     eff::HotFgCtx fg{};
     auto channel = fsess::mint_federation_channel<
@@ -49,7 +57,7 @@ int main() {
         fg,
         neg_fixy_fed_fg::Endpoint{},
         neg_fixy_fed_fg::Endpoint{},
-        *admittance);
+        guard->token());
     (void)channel;
     return 0;
 }
