@@ -96,6 +96,7 @@
 
 #include <crucible/effects/Resources.h>
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -447,6 +448,34 @@ template <typename R1, typename R2>
 concept ConcurrentlySchedulable =
     detail::concurrently_schedulable_v<R1, R2>;
 
+// ── Row-level type-erased descriptors (fixy-A3-029) ─────────────────
+//
+// `concurrent_row_descriptors_v<R>` is a `std::array<
+// ResourceTagDescriptor, R::size>` carrying one descriptor per tag in
+// the row, in declaration order.  Consumers (FitsCog diagnostics,
+// federation marshaling, ConcurrentRow runtime smoke output) iterate
+// the array at runtime to access (kind, value, name) per tag without
+// needing the original ResourceTag types.
+//
+// Order is the original `ConcurrentRow<Ts...>` template-argument
+// order — typically catalog order because `concurrent_row_sum_t`
+// normalizes to catalog order, but a hand-rolled ConcurrentRow with
+// mixed-order tags will preserve that order in the descriptor array
+// (this is the documented contract: position-stable projection, not
+// re-sort).
+template <typename R>
+struct concurrent_row_descriptors;
+
+template <ResourceTag... Ts>
+struct concurrent_row_descriptors<ConcurrentRow<Ts...>> {
+    static constexpr std::array<ResourceTagDescriptor, sizeof...(Ts)>
+        value{ ResourceTagDescriptor{Ts::kind, Ts::value, Ts::name}... };
+};
+
+template <typename R>
+inline constexpr auto concurrent_row_descriptors_v =
+    concurrent_row_descriptors<R>::value;
+
 // IsConcurrentRow concept — recognizes the carrier shape.  Useful
 // for downstream generic algorithms (FitsCog) that need to dispatch
 // on "is this a ConcurrentRow?".
@@ -620,6 +649,55 @@ static_assert(IsConcurrentRow<ConcurrentRow<resource::SmBudget<32>>>);
 static_assert(!IsConcurrentRow<int>);
 static_assert(!IsConcurrentRow<resource::SmBudget<32>>);
 
+// ── concurrent_row_descriptors_v pin (fixy-A3-029) ─────────────────
+//
+// Empty row → empty array.  Singleton row → one descriptor with the
+// canonical triple.  Mixed-kind row → position-stable descriptor
+// array preserving template-argument order.
+static_assert(concurrent_row_descriptors_v<ConcurrentRow<>>.size() == 0);
+
+static_assert(
+    concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>>>.size()
+    == 1);
+static_assert(
+    concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>>>[0].kind
+    == ResourceKind::Sm);
+static_assert(
+    concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>>>[0].value
+    == 32);
+
+// Mixed-kind in catalog order — proves SmBudget<32> projects to
+// (Sm, 32) and NicQp<4> projects to (NicQp, 4) at the right
+// positions.
+static_assert(
+    concurrent_row_descriptors_v<
+        ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>.size()
+    == 2);
+static_assert(
+    concurrent_row_descriptors_v<
+        ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>[0].kind
+    == ResourceKind::Sm);
+static_assert(
+    concurrent_row_descriptors_v<
+        ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>[1].kind
+    == ResourceKind::NicQp);
+static_assert(
+    concurrent_row_descriptors_v<
+        ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>[1].value
+    == 4);
+
+// Position stability: a hand-rolled non-canonical row preserves
+// template-argument order in the descriptor array (the contract is
+// "no re-sort").
+static_assert(
+    concurrent_row_descriptors_v<
+        ConcurrentRow<resource::NicQp<4>, resource::SmBudget<32>>>[0].kind
+    == ResourceKind::NicQp);
+static_assert(
+    concurrent_row_descriptors_v<
+        ConcurrentRow<resource::NicQp<4>, resource::SmBudget<32>>>[1].kind
+    == ResourceKind::Sm);
+
 // ── Size invariant ─────────────────────────────────────────────────
 //
 // ConcurrentRow has zero runtime cost (empty struct) like
@@ -649,6 +727,23 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] bool is_empty_row = IsConcurrentRow<decltype(empty)>;
     [[maybe_unused]] bool is_sm_row    = IsConcurrentRow<decltype(sm)>;
     [[maybe_unused]] bool not_a_row    = IsConcurrentRow<int>;
+
+    // fixy-A3-029 — drive concurrent_row_descriptors_v through runtime
+    // iteration with non-constant operations.  Pure static_assert
+    // coverage doesn't exercise the std::array<>'s begin()/end() /
+    // iterator paths against project warning flags; a runtime fold
+    // closes the header-only blind spot.
+    std::uint64_t value_sum = 0;
+    for (auto const& desc :
+         concurrent_row_descriptors_v<decltype(mixed)>) {
+        value_sum += desc.value;
+        // Also touch kind and name so the optimizer doesn't strip
+        // the unused fields and we exercise their accessor paths.
+        if (desc.kind == ResourceKind::Sm) {
+            [[maybe_unused]] auto n = desc.name;
+        }
+    }
+    [[maybe_unused]] auto witness_sum = value_sum;  // SmBudget<32> + NicQp<4> = 36
 }
 
 }  // namespace detail::concurrent_row_self_test

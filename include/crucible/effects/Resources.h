@@ -370,6 +370,55 @@ concept ResourceTag = requires {
     requires IsResourceKind<T::kind>;
 };
 
+// ── Type-erased ResourceTag descriptor (fixy-A3-029) ────────────────
+//
+// Every ResourceTag T exposes the canonical triple
+// (T::kind, T::value, T::name) as static constexpr members — but the
+// triple is only accessible if the caller knows the type at the call
+// site.  Federation row marshaling, FitsCog diagnostic messages, the
+// ConcurrentRow runtime smoke test, and any future audit log that
+// iterates a heterogeneous tag pack all need a runtime VALUE-typed
+// projection that survives type erasure.
+//
+// `ResourceTagDescriptor` is the type erasure target.  `tag_descriptor`
+// projects a ResourceTag (either by type — `tag_descriptor<T>()` — or
+// by value — `tag_descriptor(T{})`) into a single descriptor.  The
+// row-level variant `concurrent_row_descriptors_v<R>` (in
+// effects/Concurrent.h) projects an entire ConcurrentRow into a
+// `std::array` of descriptors in catalog order, ready for hashing,
+// logging, or wire-format serialization.
+//
+//   Axiom coverage: TypeSafe — both forms gate on the ResourceTag
+//                   concept; non-resource types fail at substitution.
+//                   DetSafe — descriptor field order is fixed; same
+//                   tag produces the same descriptor on every TU.
+//                   InitSafe — every field has an NSDMI carrying the
+//                   "absent" sentinel; a default-constructed
+//                   descriptor is well-defined.
+//   Runtime cost:   one structural copy (24-byte aggregate on 64-bit
+//                   ABI).  Optimizer collapses the consteval form to
+//                   immediates under -O3.
+struct ResourceTagDescriptor {
+    ResourceKind  kind  = ResourceKind::Sm;                  // catalog-zero default
+    std::uint64_t value = 0;                                 // "no budget"
+    std::string_view name = std::string_view{"<absent>"};    // diagnostic
+};
+
+template <ResourceTag T>
+[[nodiscard]] constexpr ResourceTagDescriptor tag_descriptor() noexcept {
+    return ResourceTagDescriptor{T::kind, T::value, T::name};
+}
+
+// Overload taking the tag by value — useful when the type is deduced
+// from a function argument (e.g., when iterating a tuple of tags via
+// std::apply).  Cost identical to the type-only form; both fold to
+// the same constexpr expression under -O3.
+template <ResourceTag T>
+[[nodiscard]] constexpr ResourceTagDescriptor
+tag_descriptor(T /*unused*/) noexcept {
+    return tag_descriptor<T>();
+}
+
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::resources_self_test {
 
@@ -585,6 +634,33 @@ static_assert(!ResourceTag<float>);
 static_assert(!ResourceTag<void*>);
 static_assert(!ResourceTag<ResourceKind>);
 
+// ── tag_descriptor pin (fixy-A3-029) ────────────────────────────────
+//
+// Three representative tags cover (a) catalog-zero kind (Sm), (b) a
+// large uint64_t budget (HbmBytes past uint32_t::max), and (c) a
+// last-catalog atom (CarbonGramsPerKwh).  Together they witness that
+// the type-erased descriptor preserves kind, value, and name across
+// the full kind range and the full uint64_t value range.
+static_assert(tag_descriptor<resource::SmBudget<32>>().kind  == ResourceKind::Sm);
+static_assert(tag_descriptor<resource::SmBudget<32>>().value == 32);
+static_assert(tag_descriptor<resource::SmBudget<32>>().name
+              == std::string_view{"SmBudget"});
+
+static_assert(tag_descriptor<resource::HbmBytes<80'000'000'000ULL>>().kind
+              == ResourceKind::HbmBytes);
+static_assert(tag_descriptor<resource::HbmBytes<80'000'000'000ULL>>().value
+              == 80'000'000'000ULL);
+
+static_assert(tag_descriptor<resource::CarbonGramsPerKwh<400>>().kind
+              == ResourceKind::CarbonGramsPerKwh);
+static_assert(tag_descriptor<resource::CarbonGramsPerKwh<400>>().value == 400);
+
+// Default-constructed descriptor has the documented "absent" shape.
+// InitSafe — no field is ever read uninitialized.
+static_assert(ResourceTagDescriptor{}.kind  == ResourceKind::Sm);
+static_assert(ResourceTagDescriptor{}.value == 0);
+static_assert(ResourceTagDescriptor{}.name  == std::string_view{"<absent>"});
+
 // ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
 //
 // Drive `resource_kind_name` through every ResourceKind atom with a
@@ -628,6 +704,17 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] resource::HbmBytes<1024> hbm{};
     [[maybe_unused]] resource::NicQp<8> qp{};
     [[maybe_unused]] resource::PowerWatts<400> pw{};
+
+    // fixy-A3-029 — drive tag_descriptor through both forms with
+    // non-constant arguments.  Per
+    // feedback_algebra_runtime_smoke_test_discipline: a function only
+    // exercised by static_assert can rot silently into consteval-only
+    // shape; a runtime call site keeps the constexpr contract honest.
+    [[maybe_unused]] auto sm_desc  = tag_descriptor<resource::SmBudget<32>>();
+    [[maybe_unused]] auto hbm_desc = tag_descriptor(hbm);
+    [[maybe_unused]] auto qp_desc  = tag_descriptor(qp);
+    [[maybe_unused]] auto pw_desc  = tag_descriptor(pw);
+    [[maybe_unused]] auto blank    = ResourceTagDescriptor{};
 }
 
 }  // namespace detail::resources_self_test
