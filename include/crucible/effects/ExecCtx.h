@@ -201,6 +201,14 @@ namespace ctx_workload {
     // ByteBudget<N> is enough for scheduler cost decisions, but endpoint
     // topology recommendation also needs producer/consumer cardinality
     // and whether one-to-many traffic is latest-value broadcast.
+    //
+    // Bidirectional fan only — producer side AND consumer side both
+    // present.  Producer-only or consumer-only signalling channels
+    // (telemetry emitters with no in-band consumer, audit log readers
+    // with no in-band producer) use ProducerOnlyChannel /
+    // ConsumerOnlyChannel below, so the shape is visible in the type
+    // rather than encoded as a misleading "ChannelBudget<B, P, 1>"
+    // with a phantom one-consumer placeholder.  See fixy-A3-026.
     template <std::size_t Bytes,
               std::size_t Producers,
               std::size_t Consumers,
@@ -210,14 +218,70 @@ namespace ctx_workload {
             "ctx_workload::ChannelBudget requires Bytes > 0; use "
             "ctx_workload::Unspecified when no budget is declared.");
         static_assert(Producers > 0,
-            "ctx_workload::ChannelBudget requires Producers > 0.");
+            "ctx_workload::ChannelBudget requires Producers > 0; use "
+            "ctx_workload::ConsumerOnlyChannel for consumer-only "
+            "fan shapes (audit log readers, sink-side observers).");
         static_assert(Consumers > 0,
-            "ctx_workload::ChannelBudget requires Consumers > 0.");
+            "ctx_workload::ChannelBudget requires Consumers > 0; use "
+            "ctx_workload::ProducerOnlyChannel for producer-only "
+            "fan shapes (telemetry emitters, fire-and-forget signals).");
 
         static constexpr std::size_t bytes = Bytes;
         static constexpr std::size_t producers = Producers;
         static constexpr std::size_t consumers = Consumers;
         static constexpr bool latest_only = LatestOnly;
+    };
+
+    // ProducerOnlyChannel<Bytes, Producers, LatestOnly>: declares a
+    // signalling channel with N producers and no in-band consumer.
+    // Telemetry emitters (perf::Senses → ring-buffer drain), fire-and-
+    // forget broadcast (observe metrics announcement), Plumtree fanout
+    // legs where the local node is a pure source.  Defaults
+    // `LatestOnly = true` because producer-only shapes are almost
+    // always overwrite-latest broadcast — if you need queued history,
+    // use ChannelBudget with an explicit consumer side.
+    //
+    // Consumer-cardinality semantics: downstream topology recommender
+    // treats consumers = 0 as "no in-band sink"; the substrate cannot
+    // pick OneToMany_Latest / OneToOne by reading workload_shape (no
+    // consumer count to dispatch against), so endpoint recommendation
+    // falls back to substrate_topology_v<Substr>.  The producer count
+    // still drives WorkStealing / Fifo / Lifo scheduler-side decisions.
+    template <std::size_t Bytes,
+              std::size_t Producers,
+              bool LatestOnly = true>
+    struct ProducerOnlyChannel {
+        static_assert(Bytes > 0,
+            "ctx_workload::ProducerOnlyChannel requires Bytes > 0; "
+            "use ctx_workload::Unspecified when no budget is declared.");
+        static_assert(Producers > 0,
+            "ctx_workload::ProducerOnlyChannel requires Producers > 0.");
+
+        static constexpr std::size_t bytes = Bytes;
+        static constexpr std::size_t producers = Producers;
+        static constexpr std::size_t consumers = 0;
+        static constexpr bool latest_only = LatestOnly;
+    };
+
+    // ConsumerOnlyChannel<Bytes, Consumers>: declares a signalling
+    // channel with N consumers and no in-band producer.  Audit log
+    // readers (Cipher event-log scrapers), sink-side observers reading
+    // a memory-mapped buffer filled externally, replay-from-disk
+    // consumers.  `LatestOnly` is not exposed because consumer-only
+    // shapes don't admit a producer that could overwrite — every
+    // consumer reads the full historical sequence.
+    template <std::size_t Bytes, std::size_t Consumers>
+    struct ConsumerOnlyChannel {
+        static_assert(Bytes > 0,
+            "ctx_workload::ConsumerOnlyChannel requires Bytes > 0; "
+            "use ctx_workload::Unspecified when no budget is declared.");
+        static_assert(Consumers > 0,
+            "ctx_workload::ConsumerOnlyChannel requires Consumers > 0.");
+
+        static constexpr std::size_t bytes = Bytes;
+        static constexpr std::size_t producers = 0;
+        static constexpr std::size_t consumers = Consumers;
+        static constexpr bool latest_only = false;
     };
 }
 
@@ -296,6 +360,14 @@ template <std::size_t N>     struct is_workload_hint<ctx_workload::ItemBudget<N>
 template <std::size_t Bytes, std::size_t Producers, std::size_t Consumers, bool LatestOnly>
 struct is_workload_hint<
     ctx_workload::ChannelBudget<Bytes, Producers, Consumers, LatestOnly>>
+    : std::true_type {};
+template <std::size_t Bytes, std::size_t Producers, bool LatestOnly>
+struct is_workload_hint<
+    ctx_workload::ProducerOnlyChannel<Bytes, Producers, LatestOnly>>
+    : std::true_type {};
+template <std::size_t Bytes, std::size_t Consumers>
+struct is_workload_hint<
+    ctx_workload::ConsumerOnlyChannel<Bytes, Consumers>>
     : std::true_type {};
 template <class T>           inline constexpr bool is_workload_hint_v = is_workload_hint<T>::value;
 template <class T>           concept IsWorkloadHint = is_workload_hint_v<T>;

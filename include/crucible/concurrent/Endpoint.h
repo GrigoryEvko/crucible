@@ -159,6 +159,47 @@ struct workload_shape<
     static constexpr bool latest_only = LatestOnly;
 };
 
+// fixy-A3-026 — producer-only signalling-channel shape.
+//
+// has_channel_shape stays FALSE because endpoint_recommendation uses
+// it to decide whether to read producers/consumers from the workload
+// hint vs from default_topology_shape<Substr>.  Producer-only shapes
+// have no consumer count to dispatch against, so the recommender must
+// fall back to the substrate's intrinsic topology for the consumer
+// side.  The producer count IS exposed (informational) for scheduler-
+// side decisions (WorkStealing / Fifo / Lifo).
+template <std::size_t Bytes,
+          std::size_t Producers,
+          bool LatestOnly>
+struct workload_shape<
+    ::crucible::effects::ctx_workload::ProducerOnlyChannel<
+        Bytes, Producers, LatestOnly>> {
+    static constexpr bool has_channel_shape = false;
+    static constexpr bool has_bytes = true;
+    static constexpr std::size_t bytes = Bytes;
+    static constexpr std::size_t producers = Producers;
+    static constexpr std::size_t consumers = 0;
+    static constexpr bool latest_only = LatestOnly;
+};
+
+// fixy-A3-026 — consumer-only signalling-channel shape.
+//
+// Symmetric to ProducerOnlyChannel above: has_channel_shape = false
+// so endpoint_recommendation falls back to substrate_topology_v for
+// the producer side, while consumers IS exposed (informational) for
+// fan-in scheduler decisions.
+template <std::size_t Bytes, std::size_t Consumers>
+struct workload_shape<
+    ::crucible::effects::ctx_workload::ConsumerOnlyChannel<
+        Bytes, Consumers>> {
+    static constexpr bool has_channel_shape = false;
+    static constexpr bool has_bytes = true;
+    static constexpr std::size_t bytes = Bytes;
+    static constexpr std::size_t producers = 0;
+    static constexpr std::size_t consumers = Consumers;
+    static constexpr bool latest_only = false;
+};
+
 template <ChannelTopology Topology>
 struct default_topology_shape {
     static constexpr std::size_t producers = 1;

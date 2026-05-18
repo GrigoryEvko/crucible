@@ -2001,6 +2001,24 @@ crucible_neg_compile_effects_test(neg_bits_from_row_non_row
 crucible_neg_compile_effects_test(neg_row_subsumes_bits_non_row
     "associated constraints are not satisfied|constraints not satisfied|no matching|IsEffectRow")
 
+# fixy-A3-026 (#1633): signalling-channel workload-hint shapes.
+# ProducerOnlyChannel<Bytes, Producers, LatestOnly> and
+# ConsumerOnlyChannel<Bytes, Consumers> declare producer-only and
+# consumer-only fan shapes (telemetry emitters, audit log readers).
+# Four fixtures pin all four orthogonal degenerate parameters at the
+# type level — every static_assert in the wrappers is load-bearing,
+# no half-broken impl could silently admit Bytes=0 / Producers=0 /
+# Consumers=0 shapes.  ChannelBudget already pins the bidirectional
+# fan case; these complete the signalling-channel family.
+crucible_neg_compile_effects_test(neg_producer_only_channel_zero_bytes
+    "static assertion failed|Bytes > 0|ProducerOnlyChannel")
+crucible_neg_compile_effects_test(neg_producer_only_channel_zero_producers
+    "static assertion failed|Producers > 0|ProducerOnlyChannel")
+crucible_neg_compile_effects_test(neg_consumer_only_channel_zero_bytes
+    "static assertion failed|Bytes > 0|ConsumerOnlyChannel")
+crucible_neg_compile_effects_test(neg_consumer_only_channel_zero_consumers
+    "static assertion failed|Consumers > 0|ConsumerOnlyChannel")
+
 # fixy-A3-022 (#1629): EffectMask::from_raw rejects unknown bits.
 # The runtime dual of Row<Es...> is now hardened against wire-
 # format bit-poisoning — a peer sending bits outside the
