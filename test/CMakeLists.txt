@@ -1053,6 +1053,18 @@ crucible_test(test_crash_transport)
 crucible_test(test_crash_watched_psh_tsan
   tsan/test_crash_watched_psh_tsan.cpp)
 
+# fixy-A2-031 — CrashWatchedHandle mid-transport TOCTOU witness.
+# Pins the race window between `flag_->peek()` (relaxed) and
+# `inner_.send/recv(transport)` — the existing psh_tsan suite
+# covers flag-set-before-op and concurrent-without-pin paths but
+# never lands the kill strictly BETWEEN peek and transport-return.
+# This test orchestrates barrier atomics so the kill happens
+# deterministically mid-call across recv/send/close heads, with
+# WorkerTag → CoordTag → MasterTag survivor inheritance.  Each
+# scenario runs 50× under default + tsan presets.
+crucible_test(test_crash_watched_recv_toctou_tsan
+  tsan/test_crash_watched_recv_toctou_tsan.cpp)
+
 # AppendOnly session event log + RecordingSessionHandle wrapper
 # (#404, SAFEINT-B15).  Promotes bit-exact-replay discipline from an
 # ad-hoc trace into a typed structure: SessionEventLog (Pinned,
