@@ -483,4 +483,478 @@ static_assert( cheat20_admits,
     "the new defense (likely: relocate the impl trait to a "
     "review-protected namespace, OR tighten scripts/check-trait-injection.sh).");
 
+// ── Round-6 expansion (fixy-A3-024) — 15 wrappers × 2 cheats ────────
+//
+// Mechanical expansion of the NumericalTier (Cheats 19/20) template
+// across every other FOUND-G product wrapper.  Each wrapper gets:
+//   - One LOCKED REJECTION (derived-from-W → !IsW): proves the
+//     partial-spec gate matches the EXACT wrapper template, not
+//     subclasses.  Regression catch: if anyone weakens IsW to
+//     "family match" / "has W typedefs", these fixtures admit and
+//     fail to compile.
+//   - One DOCUMENTED ARCHITECTURAL LIMIT (specialize is_W_impl in
+//     crucible::safety::extract::detail → IsW admits the fake):
+//     identical escape mechanism to Cheats 11/12.  Defense is the
+//     CI grep guard (scripts/check-trait-injection.sh) plus review
+//     discipline; `is_*_impl<` outside the safety/* tree is
+//     rejected.  When the rejection is gained, flip the assertion
+//     to !cheatN_admits and document the new defense.
+//
+// Linear's inheritance probe (CheatLinear_Derived) is the original
+// fixture above; Cheat 21 closes the pair with the trait-injection
+// counterpart.  The full §XVI 16-wrapper canonical-order surface
+// therefore ships 17 wrappers × 2 cheats = 34 probes by
+// construction once this block compiles.
+
+#include <crucible/safety/IsAllocClass.h>
+#include <crucible/safety/IsCipherTier.h>
+#include <crucible/safety/IsConsistency.h>
+#include <crucible/safety/IsCrash.h>
+#include <crucible/safety/IsDetSafe.h>
+#include <crucible/safety/IsHotPath.h>
+#include <crucible/safety/IsMemOrder.h>
+#include <crucible/safety/IsProgress.h>
+#include <crucible/safety/IsRefined.h>
+#include <crucible/safety/IsResidencyHeat.h>
+#include <crucible/safety/IsSecret.h>
+#include <crucible/safety/IsStale.h>
+#include <crucible/safety/IsTagged.h>
+#include <crucible/safety/IsVendor.h>
+#include <crucible/safety/IsWait.h>
+
+// ── Linear (#XVI canonical 14) — closes the trait-injection pair ────
+struct Cheat21_FakeLinearViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_linear_impl<::Cheat21_FakeLinearViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat21_admits =
+    crucible::safety::extract::IsLinear<
+        ::Cheat21_FakeLinearViaTraitInjection>;
+
+// ── HotPath (FOUND-G02) ─────────────────────────────────────────────
+struct Cheat22_DerivedFromHotPath
+    : crucible::safety::HotPath<
+          crucible::safety::HotPathTier_v::Hot, int> {};
+static constexpr bool cheat22_admits =
+    crucible::safety::extract::IsHotPath<Cheat22_DerivedFromHotPath>;
+
+struct Cheat23_FakeHotPathViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_hot_path_impl<::Cheat23_FakeHotPathViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    static constexpr ::crucible::safety::HotPathTier_v tier =
+        ::crucible::safety::HotPathTier_v::Hot;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat23_admits =
+    crucible::safety::extract::IsHotPath<
+        ::Cheat23_FakeHotPathViaTraitInjection>;
+
+// ── DetSafe (FOUND-G03) ─────────────────────────────────────────────
+struct Cheat24_DerivedFromDetSafe
+    : crucible::safety::DetSafe<
+          crucible::safety::DetSafeTier_v::Pure, int> {};
+static constexpr bool cheat24_admits =
+    crucible::safety::extract::IsDetSafe<Cheat24_DerivedFromDetSafe>;
+
+struct Cheat25_FakeDetSafeViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_det_safe_impl<::Cheat25_FakeDetSafeViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    static constexpr ::crucible::safety::DetSafeTier_v tier =
+        ::crucible::safety::DetSafeTier_v::Pure;
+    static constexpr bool has_tier = true;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat25_admits =
+    crucible::safety::extract::IsDetSafe<
+        ::Cheat25_FakeDetSafeViaTraitInjection>;
+
+// ── Refined (FOUND-G04) ─────────────────────────────────────────────
+struct Cheat26_DerivedFromRefined
+    : crucible::safety::Refined<positive_p, int> {
+    using crucible::safety::Refined<positive_p, int>::Refined;
+};
+static constexpr bool cheat26_admits =
+    crucible::safety::extract::IsRefined<Cheat26_DerivedFromRefined>;
+
+struct Cheat27_FakeRefinedViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_refined_impl<::Cheat27_FakeRefinedViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    using predicate_type = decltype(positive_p);
+    static constexpr bool sealed = false;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat27_admits =
+    crucible::safety::extract::IsRefined<
+        ::Cheat27_FakeRefinedViaTraitInjection>;
+
+// ── Tagged (FOUND-G05) ──────────────────────────────────────────────
+struct Cheat28_DerivedFromTagged
+    : crucible::safety::Tagged<int, crucible::safety::source::FromUser> {
+    using crucible::safety::Tagged<int,
+        crucible::safety::source::FromUser>::Tagged;
+};
+static constexpr bool cheat28_admits =
+    crucible::safety::extract::IsTagged<Cheat28_DerivedFromTagged>;
+
+struct Cheat29_FakeTaggedViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_tagged_impl<::Cheat29_FakeTaggedViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    using tag_type = ::crucible::safety::source::FromUser;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat29_admits =
+    crucible::safety::extract::IsTagged<
+        ::Cheat29_FakeTaggedViaTraitInjection>;
+
+// ── Secret (FOUND-G06) ──────────────────────────────────────────────
+struct Cheat30_DerivedFromSecret
+    : crucible::safety::Secret<int> {
+    using crucible::safety::Secret<int>::Secret;
+};
+static constexpr bool cheat30_admits =
+    crucible::safety::extract::IsSecret<Cheat30_DerivedFromSecret>;
+
+struct Cheat31_FakeSecretViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_secret_impl<::Cheat31_FakeSecretViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat31_admits =
+    crucible::safety::extract::IsSecret<
+        ::Cheat31_FakeSecretViaTraitInjection>;
+
+// ── Stale (FOUND-G07) ───────────────────────────────────────────────
+struct Cheat32_DerivedFromStale
+    : crucible::safety::Stale<int> {};
+static constexpr bool cheat32_admits =
+    crucible::safety::extract::IsStale<Cheat32_DerivedFromStale>;
+
+struct Cheat33_FakeStaleViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_stale_impl<::Cheat33_FakeStaleViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat33_admits =
+    crucible::safety::extract::IsStale<
+        ::Cheat33_FakeStaleViaTraitInjection>;
+
+// ── AllocClass (FOUND-G08) ──────────────────────────────────────────
+struct Cheat34_DerivedFromAllocClass
+    : crucible::safety::AllocClass<
+          crucible::safety::AllocClassTag_v::Arena, int> {};
+static constexpr bool cheat34_admits =
+    crucible::safety::extract::IsAllocClass<Cheat34_DerivedFromAllocClass>;
+
+struct Cheat35_FakeAllocClassViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_alloc_class_impl<::Cheat35_FakeAllocClassViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat35_admits =
+    crucible::safety::extract::IsAllocClass<
+        ::Cheat35_FakeAllocClassViaTraitInjection>;
+
+// ── CipherTier (FOUND-G09) ──────────────────────────────────────────
+struct Cheat36_DerivedFromCipherTier
+    : crucible::safety::CipherTier<
+          crucible::safety::CipherTierTag_v::Hot, int> {};
+static constexpr bool cheat36_admits =
+    crucible::safety::extract::IsCipherTier<Cheat36_DerivedFromCipherTier>;
+
+struct Cheat37_FakeCipherTierViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_cipher_tier_impl<::Cheat37_FakeCipherTierViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    static constexpr bool has_tag = true;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat37_admits =
+    crucible::safety::extract::IsCipherTier<
+        ::Cheat37_FakeCipherTierViaTraitInjection>;
+
+// ── MemOrder (FOUND-G10) ────────────────────────────────────────────
+struct Cheat38_DerivedFromMemOrder
+    : crucible::safety::MemOrder<
+          crucible::safety::MemOrderTag_v::AcqRel, int> {};
+static constexpr bool cheat38_admits =
+    crucible::safety::extract::IsMemOrder<Cheat38_DerivedFromMemOrder>;
+
+struct Cheat39_FakeMemOrderViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_mem_order_impl<::Cheat39_FakeMemOrderViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat39_admits =
+    crucible::safety::extract::IsMemOrder<
+        ::Cheat39_FakeMemOrderViaTraitInjection>;
+
+// ── Progress (FOUND-G11) ────────────────────────────────────────────
+struct Cheat40_DerivedFromProgress
+    : crucible::safety::Progress<
+          crucible::safety::ProgressClass_v::Bounded, int> {};
+static constexpr bool cheat40_admits =
+    crucible::safety::extract::IsProgress<Cheat40_DerivedFromProgress>;
+
+struct Cheat41_FakeProgressViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_progress_impl<::Cheat41_FakeProgressViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat41_admits =
+    crucible::safety::extract::IsProgress<
+        ::Cheat41_FakeProgressViaTraitInjection>;
+
+// ── ResidencyHeat (FOUND-G12) ───────────────────────────────────────
+struct Cheat42_DerivedFromResidencyHeat
+    : crucible::safety::ResidencyHeat<
+          crucible::safety::ResidencyHeatTag_v::Hot, int> {};
+static constexpr bool cheat42_admits =
+    crucible::safety::extract::IsResidencyHeat<
+        Cheat42_DerivedFromResidencyHeat>;
+
+struct Cheat43_FakeResidencyHeatViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_residency_heat_impl<::Cheat43_FakeResidencyHeatViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    static constexpr bool has_tag = true;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat43_admits =
+    crucible::safety::extract::IsResidencyHeat<
+        ::Cheat43_FakeResidencyHeatViaTraitInjection>;
+
+// ── Vendor (FOUND-G13) ──────────────────────────────────────────────
+struct Cheat44_DerivedFromVendor
+    : crucible::safety::Vendor<
+          crucible::safety::VendorBackend_v::CPU, int> {};
+static constexpr bool cheat44_admits =
+    crucible::safety::extract::IsVendor<Cheat44_DerivedFromVendor>;
+
+struct Cheat45_FakeVendorViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_vendor_impl<::Cheat45_FakeVendorViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    static constexpr bool has_backend = true;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat45_admits =
+    crucible::safety::extract::IsVendor<
+        ::Cheat45_FakeVendorViaTraitInjection>;
+
+// ── Wait (FOUND-G14) ────────────────────────────────────────────────
+struct Cheat46_DerivedFromWait
+    : crucible::safety::Wait<
+          crucible::safety::WaitStrategy_v::SpinPause, int> {};
+static constexpr bool cheat46_admits =
+    crucible::safety::extract::IsWait<Cheat46_DerivedFromWait>;
+
+struct Cheat47_FakeWaitViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_wait_impl<::Cheat47_FakeWaitViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat47_admits =
+    crucible::safety::extract::IsWait<
+        ::Cheat47_FakeWaitViaTraitInjection>;
+
+// ── Crash (FOUND-G15) ───────────────────────────────────────────────
+struct Cheat48_DerivedFromCrash
+    : crucible::safety::Crash<
+          crucible::safety::CrashClass_v::NoThrow, int> {};
+static constexpr bool cheat48_admits =
+    crucible::safety::extract::IsCrash<Cheat48_DerivedFromCrash>;
+
+struct Cheat49_FakeCrashViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_crash_impl<::Cheat49_FakeCrashViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    static constexpr bool has_class = true;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat49_admits =
+    crucible::safety::extract::IsCrash<
+        ::Cheat49_FakeCrashViaTraitInjection>;
+
+// ── Consistency (FOUND-G16) ─────────────────────────────────────────
+struct Cheat50_DerivedFromConsistency
+    : crucible::safety::Consistency<
+          crucible::safety::Consistency_v::STRONG, int> {};
+static constexpr bool cheat50_admits =
+    crucible::safety::extract::IsConsistency<
+        Cheat50_DerivedFromConsistency>;
+
+struct Cheat51_FakeConsistencyViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_consistency_impl<::Cheat51_FakeConsistencyViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    static constexpr bool has_level = true;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat51_admits =
+    crucible::safety::extract::IsConsistency<
+        ::Cheat51_FakeConsistencyViaTraitInjection>;
+
+// ── Verdicts (Round-6 expansion) ────────────────────────────────────
+//
+// Locked-in REJECTIONS — firing means a regression weakened the
+// detector's partial-spec gate from "exact match" to "family match"
+// (subclass or family member admitted).  Catches future PRs that
+// accidentally permissivize the wrapper-detection trait — code that
+// demands a W-shaped value would otherwise silently accept arbitrary
+// subclasses carrying additional state.
+
+static_assert(!cheat22_admits,
+    "[CHEAT 22 ADMITTED] derived-from-HotPath passed IsHotPath — "
+    "wrapper identity guarantee broken at Substrate/dispatcher/mint boundary.");
+static_assert(!cheat24_admits,
+    "[CHEAT 24 ADMITTED] derived-from-DetSafe passed IsDetSafe.");
+static_assert(!cheat26_admits,
+    "[CHEAT 26 ADMITTED] derived-from-Refined passed IsRefined.");
+static_assert(!cheat28_admits,
+    "[CHEAT 28 ADMITTED] derived-from-Tagged passed IsTagged.");
+static_assert(!cheat30_admits,
+    "[CHEAT 30 ADMITTED] derived-from-Secret passed IsSecret.");
+static_assert(!cheat32_admits,
+    "[CHEAT 32 ADMITTED] derived-from-Stale passed IsStale.");
+static_assert(!cheat34_admits,
+    "[CHEAT 34 ADMITTED] derived-from-AllocClass passed IsAllocClass.");
+static_assert(!cheat36_admits,
+    "[CHEAT 36 ADMITTED] derived-from-CipherTier passed IsCipherTier.");
+static_assert(!cheat38_admits,
+    "[CHEAT 38 ADMITTED] derived-from-MemOrder passed IsMemOrder.");
+static_assert(!cheat40_admits,
+    "[CHEAT 40 ADMITTED] derived-from-Progress passed IsProgress.");
+static_assert(!cheat42_admits,
+    "[CHEAT 42 ADMITTED] derived-from-ResidencyHeat passed IsResidencyHeat.");
+static_assert(!cheat44_admits,
+    "[CHEAT 44 ADMITTED] derived-from-Vendor passed IsVendor.");
+static_assert(!cheat46_admits,
+    "[CHEAT 46 ADMITTED] derived-from-Wait passed IsWait.");
+static_assert(!cheat48_admits,
+    "[CHEAT 48 ADMITTED] derived-from-Crash passed IsCrash.");
+static_assert(!cheat50_admits,
+    "[CHEAT 50 ADMITTED] derived-from-Consistency passed IsConsistency.");
+
+// Documented ARCHITECTURAL LIMITS — firing means the detector
+// gained a defense against trait-spec injection (impl trait moved
+// to a private/inaccessible namespace, OR the CI grep guard rejects
+// this fixture too).  When this triggers, flip the assertion to
+// !cheatN_admits and document the new defense in the verdict block.
+//
+// Same architectural-limit caveat as Cheats 11, 12, 20: no purely-
+// concept-level defense exists against deliberate trait-spec
+// injection in the originating namespace.  Defense is
+// scripts/check-trait-injection.sh + review discipline; this fixture
+// is the canonical exception that the grep guard whitelists.
+
+static_assert( cheat21_admits,
+    "[CHEAT 21 STATUS CHANGED] trait-spec injection on is_linear_impl "
+    "is now REJECTED — flip assertion to !cheat21_admits and document "
+    "the new defense.");
+static_assert( cheat23_admits,
+    "[CHEAT 23 STATUS CHANGED] trait-spec injection on is_hot_path_impl "
+    "is now REJECTED — flip assertion to !cheat23_admits.");
+static_assert( cheat25_admits,
+    "[CHEAT 25 STATUS CHANGED] trait-spec injection on is_det_safe_impl "
+    "is now REJECTED — flip assertion to !cheat25_admits.");
+static_assert( cheat27_admits,
+    "[CHEAT 27 STATUS CHANGED] trait-spec injection on is_refined_impl "
+    "is now REJECTED — flip assertion to !cheat27_admits.");
+static_assert( cheat29_admits,
+    "[CHEAT 29 STATUS CHANGED] trait-spec injection on is_tagged_impl "
+    "is now REJECTED — flip assertion to !cheat29_admits.");
+static_assert( cheat31_admits,
+    "[CHEAT 31 STATUS CHANGED] trait-spec injection on is_secret_impl "
+    "is now REJECTED — flip assertion to !cheat31_admits.");
+static_assert( cheat33_admits,
+    "[CHEAT 33 STATUS CHANGED] trait-spec injection on is_stale_impl "
+    "is now REJECTED — flip assertion to !cheat33_admits.");
+static_assert( cheat35_admits,
+    "[CHEAT 35 STATUS CHANGED] trait-spec injection on is_alloc_class_impl "
+    "is now REJECTED — flip assertion to !cheat35_admits.");
+static_assert( cheat37_admits,
+    "[CHEAT 37 STATUS CHANGED] trait-spec injection on is_cipher_tier_impl "
+    "is now REJECTED — flip assertion to !cheat37_admits.");
+static_assert( cheat39_admits,
+    "[CHEAT 39 STATUS CHANGED] trait-spec injection on is_mem_order_impl "
+    "is now REJECTED — flip assertion to !cheat39_admits.");
+static_assert( cheat41_admits,
+    "[CHEAT 41 STATUS CHANGED] trait-spec injection on is_progress_impl "
+    "is now REJECTED — flip assertion to !cheat41_admits.");
+static_assert( cheat43_admits,
+    "[CHEAT 43 STATUS CHANGED] trait-spec injection on is_residency_heat_impl "
+    "is now REJECTED — flip assertion to !cheat43_admits.");
+static_assert( cheat45_admits,
+    "[CHEAT 45 STATUS CHANGED] trait-spec injection on is_vendor_impl "
+    "is now REJECTED — flip assertion to !cheat45_admits.");
+static_assert( cheat47_admits,
+    "[CHEAT 47 STATUS CHANGED] trait-spec injection on is_wait_impl "
+    "is now REJECTED — flip assertion to !cheat47_admits.");
+static_assert( cheat49_admits,
+    "[CHEAT 49 STATUS CHANGED] trait-spec injection on is_crash_impl "
+    "is now REJECTED — flip assertion to !cheat49_admits.");
+static_assert( cheat51_admits,
+    "[CHEAT 51 STATUS CHANGED] trait-spec injection on is_consistency_impl "
+    "is now REJECTED — flip assertion to !cheat51_admits.");
+
 int main() { return 0; }
