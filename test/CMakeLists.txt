@@ -6550,6 +6550,37 @@ crucible_neg_compile_test(neg_linear_of_permission_redundant
 crucible_neg_compile_test(neg_linear_of_shared_permission_redundant
     "redundant")
 
+# ── fixy-A1-005 #1547 — §XXI mint_tagged/refined/sealed_refined ──
+# CLAUDE.md §XXI Universal Mint Pattern: every cross-tier
+# composition factory is named `mint_<noun>` so `grep "mint_"`
+# finds every authorization point.  Tagged / Refined /
+# SealedRefined construction was previously bypassing §XXI by
+# routing through raw class-template constructors.  Three new
+# factories restore the grep discipline.  Six HS14 neg-compile
+# fixtures cover both concept-gate failure modes per factory:
+#
+#   mint_tagged<Tag, T> — ValidTaggedTag<Tag>:
+#     #1 scalar tag (int) rejection
+#     #2 pointer tag (int*) rejection
+#   mint_refined<Pred, T> — PredicateInvocableOn<Pred, T>:
+#     #1 predicate-arg-mismatch (Pred not invocable on T)
+#     #2 predicate-return-mismatch (void return)
+#   mint_sealed_refined<Pred, T> — PredicateInvocableOn<Pred, T>:
+#     #1 predicate-arg-mismatch (mirrors mint_refined)
+#     #2 predicate-return-mismatch (mirrors mint_refined)
+crucible_neg_compile_test(neg_mint_tagged_scalar_tag_rejected
+    "ValidTaggedTag")
+crucible_neg_compile_test(neg_mint_tagged_pointer_tag_rejected
+    "ValidTaggedTag")
+crucible_neg_compile_test(neg_mint_refined_predicate_arg_mismatch
+    "PredicateInvocableOn")
+crucible_neg_compile_test(neg_mint_refined_predicate_return_mismatch
+    "PredicateInvocableOn")
+crucible_neg_compile_test(neg_mint_sealed_refined_predicate_arg_mismatch
+    "PredicateInvocableOn")
+crucible_neg_compile_test(neg_mint_sealed_refined_predicate_return_mismatch
+    "PredicateInvocableOn")
+
 # ── A8-P2 #146 — Permission<Tag> linearity enforcement ──────────
 # Foundational CSL frame-rule token (O'Hearn 2007).  Duplicating a
 # Permission<Tag> would create two simultaneous owners of the same

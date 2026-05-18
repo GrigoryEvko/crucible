@@ -325,6 +325,45 @@ static_assert(sizeof(Refined<bounded_above<1024u>, int>)   == sizeof(int));
 static_assert(sizeof(Refined<in_range<0, 100>,    int>)   == sizeof(int));
 static_assert(sizeof(Refined<length_ge<1>,        void*>) == sizeof(void*));
 
+// ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
+//
+// `mint_refined<Pred, T>(value)` synthesizes an authoritative
+// `Refined<Pred, T>` at the §XXI grep-discoverable boundary.  Per
+// CLAUDE.md §XXI: every cross-tier composition factory is named
+// `mint_<noun>` so `grep "mint_"` finds every authorization point.
+// Constructing `Refined<Pred, T>{value}` directly bypasses the §XXI
+// grep — production code admitting a value into the refinement
+// type-system MUST route through this factory.
+//
+// HS14 gate: `PredicateInvocableOn<Pred, T>` is the load-bearing
+// soundness check (same concept the class ctor uses).  The concept
+// gates BOTH (a) Pred is callable on `T const&` AND (b) Pred's
+// return type is convertible to bool — so a category-error
+// predicate (wrong argument type) and a return-shape predicate
+// (void / non-bool-convertible) both fail at the concept boundary
+// with a clean diagnostic, not a wall of contract-clause SFINAE.
+// Two HS14 neg-compile fixtures at test/safety_neg/ witness both
+// failure modes:
+//   * predicate-arg-mismatch  — Pred not invocable on T
+//   * predicate-return-mismatch — Pred returns non-bool-convertible
+//
+// Template parameter order: `<Pred, T>` — Pred explicit (an auto-
+// NTTP), T deduced from the argument.  Mirrors the
+// `Refined<Pred, T>` class declaration's NTTP-first convention.
+//
+// Hot-path cost: zero — `[[nodiscard]] constexpr noexcept`, EBO
+// collapses the Graded substrate.  Identical machine code to a
+// raw `Refined<Pred, T>{std::move(value)}` ctor call under -O3,
+// modulo the contract evaluation semantic of the active TU.
+
+template <auto Pred, typename T>
+    requires PredicateInvocableOn<Pred, T>
+[[nodiscard]] constexpr Refined<Pred, T> mint_refined(T value)
+    noexcept(std::is_nothrow_move_constructible_v<T>)
+{
+    return Refined<Pred, T>{std::move(value)};
+}
+
 // ── Common refinement aliases ──────────────────────────────────────
 //
 // Named so they participate in grep/review and don't drift to

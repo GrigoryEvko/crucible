@@ -371,4 +371,44 @@ static_assert(sizeof(Tagged<int,   source::FromUser>)  == sizeof(int));
 static_assert(sizeof(Tagged<void*, trust::Verified>)   == sizeof(void*));
 static_assert(sizeof(Tagged<long,  access::AppendOnly>) == sizeof(long));
 
+// ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
+//
+// `mint_tagged<Tag, T>(value)` synthesizes an authoritative
+// `Tagged<T, Tag>` at the §XXI grep-discoverable boundary.  Per
+// CLAUDE.md §XXI: every cross-tier composition factory is named
+// `mint_<noun>` so `grep "mint_"` finds every authorization point.
+// Constructing `Tagged<T, Tag>{value}` directly bypasses the §XXI
+// grep — production code crossing a trust / provenance / access /
+// version boundary MUST route through this factory.
+//
+// HS14 gate: `ValidTaggedTag<Tag>` is the load-bearing soundness
+// check — Tag MUST be a class type (struct / class).  The
+// conventional phantom-tag shapes in `source::*` / `trust::*` /
+// `access::*` / `version::*` / `vessel_trust::*` above are all
+// empty structs; passing a scalar / pointer / reference / void as
+// the Tag slot is a type-shape category error rejected at the
+// concept boundary with a clean diagnostic.  Two HS14 neg-compile
+// fixtures (scalar-tag, pointer-tag) at test/safety_neg/ witness
+// the gate fires across both non-class-type families.
+//
+// Template parameter order: `<Tag, T>` — Tag explicit (the user-
+// supplied phantom), T deduced from the argument.  Mirrors the
+// `mint_permission_root<Tag>()` convention where the tag is
+// explicit.
+//
+// Hot-path cost: zero — `[[nodiscard]] constexpr noexcept`, EBO
+// collapses the Graded substrate.  Identical machine code to a
+// raw `Tagged<T, Tag>{std::move(value)}` ctor call under -O3.
+
+template <typename Tag>
+concept ValidTaggedTag = std::is_class_v<Tag>;
+
+template <typename Tag, typename T>
+    requires ValidTaggedTag<Tag>
+[[nodiscard]] constexpr Tagged<T, Tag> mint_tagged(T value)
+    noexcept(std::is_nothrow_move_constructible_v<T>)
+{
+    return Tagged<T, Tag>{std::move(value)};
+}
+
 } // namespace crucible::safety

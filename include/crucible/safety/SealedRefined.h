@@ -209,4 +209,36 @@ public:
 static_assert(sizeof(SealedRefined<positive,    int>)   == sizeof(int));
 static_assert(sizeof(SealedRefined<non_null,    void*>) == sizeof(void*));
 
+// ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
+//
+// `mint_sealed_refined<Pred, T>(value)` synthesizes an authoritative
+// `SealedRefined<Pred, T>` at the §XXI grep-discoverable boundary.
+// Per CLAUDE.md §XXI: every cross-tier composition factory is named
+// `mint_<noun>` so `grep "mint_"` finds every authorization point.
+// Constructing `SealedRefined<Pred, T>{value}` directly bypasses
+// the §XXI grep — production code admitting a value into the
+// SEALED refinement type-system MUST route through this factory.
+//
+// HS14 gate: `PredicateInvocableOn<Pred, T>` — same load-bearing
+// concept as `mint_refined` / `Refined`'s ctor / `SealedRefined`'s
+// ctor.  The SealedRefined / Refined distinguishing property
+// (absent destructive `into()`) is structural to the type and is
+// NOT enforced by the mint factory itself; the mint's gate is the
+// shared predicate-invocability check.  Two HS14 neg-compile
+// fixtures at test/safety_neg/ witness both predicate failure
+// modes (arg-mismatch and return-mismatch), mirroring the
+// mint_refined coverage.
+//
+// Template parameter order: `<Pred, T>` — same convention as
+// `mint_refined` and the underlying `SealedRefined<Pred, T>`
+// class.
+
+template <auto Pred, typename T>
+    requires PredicateInvocableOn<Pred, T>
+[[nodiscard]] constexpr SealedRefined<Pred, T> mint_sealed_refined(T value)
+    noexcept(std::is_nothrow_move_constructible_v<T>)
+{
+    return SealedRefined<Pred, T>{std::move(value)};
+}
+
 }  // namespace crucible::safety
