@@ -349,3 +349,16 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "Alloc, IO, Block, or Bg.",
     "grant::as_linear  // or as_affine — drop ghost",
     "fixy::fn<T, grant::ghost, grant::with<effects::Effect::IO>>");
+
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::theory::corpus::internal_io_without_declassify,
+    ::crucible::safety::diag::Severity::Fatal,
+    "Bell-LaPadula 1973 + Volpano-Smith-Irvine 1996 + Sabelfeld-Myers 2003 "
+    "no-write-down: org-internal data (SecLevel::Internal, below the strict "
+    "default Classified but above Public) flows into an I/O sink without "
+    "an audit-discharging declassification policy.  Every non-Public→Public "
+    "crossing requires declassify, not just Classified/Secret tiers.",
+    "Binding engages grant::as_internal on Security AND with<...,IO,...> "
+    "on Effect AND omits any grant::declassify<Policy>.",
+    "grant::declassify<secret_policy::AuthorizedExport>  // org-disclosure",
+    "fixy::fn<T, grant::as_internal, grant::with<effects::Effect::IO>>");

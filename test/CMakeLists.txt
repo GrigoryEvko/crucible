@@ -7905,6 +7905,23 @@ crucible_neg_compile_fixy_test(neg_fixy_theory_ghost_observable
 crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret_strict_default
     "NotInTheoryCorpus|staleness_secret_without_declassify")
 
+# fixy-H-18 — internal_io_without_declassify corpus entry.
+# Two fixtures (HS14 ≥2 floor):
+#   neg_fixy_theory_internal_io          — minimal direct trigger
+#     (as_internal + with_io alone) — anchors the new entry's matches()
+#     against the Internal-tier no-write-down shape.
+#   neg_fixy_theory_internal_io_multi_effect — proves the IO detection
+#     fires when IO is one of several effects in a with<...> pack, not
+#     just standalone — regression-guards is_io_effect_grant's pack-
+#     contains semantics against future accidental narrowing.
+# Both regex on either NotInTheoryCorpus (concept-fail trace) OR the
+# new entry's struct name (corpus_full_diagnostic_v surface) so a
+# diagnostic regression on EITHER surface reddens the build.
+crucible_neg_compile_fixy_test(neg_fixy_theory_internal_io
+    "NotInTheoryCorpus|internal_io_without_declassify")
+crucible_neg_compile_fixy_test(neg_fixy_theory_internal_io_multi_effect
+    "NotInTheoryCorpus|internal_io_without_declassify")
+
 # ── FIXY-ALGEBRA round 2 — concept-gate fixture depth ───────────────
 # Existing Algebra.h coverage pins 2 fixtures (#1 non_lattice / #2
 # non_graded); this round adds 3 more across distinct rejection

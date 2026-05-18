@@ -155,6 +155,23 @@ template <effects::Effect... Es>
 struct is_io_effect_grant<grant::with<Es...>>
     : std::bool_constant<((Es == effects::Effect::IO) || ...)> {};
 
+// `is_internal_grant<G>` — true iff G is the `grant::as_internal`
+// Security-engagement tag.  Used by the
+// `internal_io_without_declassify` corpus entry (fixy-H-18) to detect
+// org-internal data flowing into an I/O sink without an audit-
+// discharging declassification policy.  Distinct from
+// `is_secret_grant`: `as_internal` resolves to `SecLevel::Internal`
+// (= 2), strictly below the strict-default `SecLevel::Classified`
+// (= 3) that `is_secret_grant` matches.  A binding reaches Internal
+// only by explicit `as_internal` — there is no strict-default-form
+// to recognise (the strict-default-Security path resolves to
+// Classified, which is captured by is_secret_grant via the
+// accept_default_strict_for<Security> specialization above).
+template <typename G> struct is_internal_grant
+    : std::false_type {};
+template <> struct is_internal_grant<grant::as_internal>
+    : std::true_type {};
+
 // `is_bg_effect_grant<G>` — true iff G is `grant::with<...>` and its
 // effect pack contains `Effect::Bg`.  Used by the
 // `classified_bg_without_declassify` corpus entry to detect a secret
@@ -481,6 +498,86 @@ struct ghost_runtime_observable {
     }
 };
 
+// ── Entry 5: internal_io_without_declassify ─────────────────────
+//
+// fixy-H-18: the §30.14 corpus covered classified→IO and classified→Bg
+// but missed the symmetric Internal→IO channel.  Internal data
+// (SecLevel::Internal = 2, organization-internal but not regulated-
+// classified) flowing into an I/O sink without an audit-discharging
+// declassification policy is the same Bell-LaPadula "no write down"
+// discipline violation as the Classified→IO case — the consequence
+// scale differs (leaks confidential business data vs. violates
+// classified-data-handling regulations) but the IFC discipline is
+// binary: any non-Public→Public flow requires declassify.
+//
+// Cite: Bell-LaPadula 1973 "Secure Computer Systems: Mathematical
+// Foundations" — the original no-write-down formulation; Volpano-
+// Smith-Irvine 1996 "A sound type system for secure flow analysis"
+// — the type-system encoding of the discipline (its Sec lattice
+// admits any number of intermediate tiers between Public and
+// classified).  Sabelfeld-Myers 2003, "Language-based information-
+// flow security" — the modern survey treats every non-bottom tier
+// crossing as requiring declassification, not just the top.
+//
+// Pattern: a binding engages `as_internal` (SecLevel::Internal) on
+// Security AND `with<..., IO, ...>` on Effect AND omits any
+// `declassify<Policy>` grant.  Internal data is observable to org-
+// internal services but NOT to public sinks; flowing to IO without
+// declassify is an unaudited downgrade.
+//
+// Why distinct from entry 1 (classified_io_without_declassify): that
+// entry catches `as_secret` / `as_classified` / the strict-default
+// Security form (which resolves to Classified).  This entry catches
+// the explicit `as_internal` form — a binding that reaches the
+// Internal tier ONLY via explicit downgrade from the strict default
+// (there is no strict-default-Internal form because the strict
+// default resolves to Classified).  Together they cover every non-
+// Public Security tier's IO-without-declassify pattern.
+//
+// Remediation: EITHER (a) project Security to Public/Unclassified if
+// the data legitimately belongs at a public-observable tier, (b) drop
+// the IO effect (keep the data org-internal — no public emission),
+// OR (c) interpose `declassify<Policy>` with a named policy
+// authorizing the org-internal→public downgrade.  Distinct from the
+// classified-tier remediation: the policy names CAN be lighter-weight
+// (organizational disclosure rather than regulatory declassification)
+// but the audit-trail discipline is identical.
+//
+// Symmetric gap (not addressed here): `as_internal + with<Bg>` is the
+// dual concurrent IFC channel, parallel to entry 2.  A future corpus
+// entry should mirror this gap; for now H-18 ships only the IO
+// variant per the audit task's explicit scope.
+
+struct internal_io_without_declassify {
+    template <typename Type, typename... Grants>
+    [[nodiscard]] static consteval bool matches() noexcept {
+        const bool has_internal =
+            detail::has_grant_of<detail::is_internal_grant, Grants...>();
+        const bool has_io =
+            detail::has_grant_of<detail::is_io_effect_grant, Grants...>();
+        const bool has_declassify =
+            detail::has_grant_of<detail::is_declassify_grant, Grants...>();
+        return has_internal && has_io && !has_declassify;
+    }
+
+    static constexpr std::string_view name() noexcept {
+        return "internal_io_without_declassify";
+    }
+
+    static constexpr std::string_view cite() noexcept {
+        return "Bell-LaPadula 1973 / Volpano-Smith-Irvine 1996 / "
+               "Sabelfeld-Myers 2003 — no-write-down for Internal "
+               "tier: org-internal value flows into an I/O sink "
+               "without a declassification policy.  Internal data is "
+               "below the strict default (Classified) but ABOVE "
+               "Public — every non-Public→Public crossing requires "
+               "audit-trail discharge.  Insert grant::declassify"
+               "<Policy> with a named organizational-disclosure "
+               "policy OR drop the IO effect OR project Security to "
+               "as_public / as_unclassified.";
+    }
+};
+
 }  // namespace corpus
 
 // ═════════════════════════════════════════════════════════════════════
@@ -496,7 +593,8 @@ template <typename Type, typename... Grants>
     return corpus::classified_io_without_declassify::matches<Type, Grants...>()
         || corpus::classified_bg_without_declassify::matches<Type, Grants...>()
         || corpus::staleness_secret_without_declassify::matches<Type, Grants...>()
-        || corpus::ghost_runtime_observable::matches<Type, Grants...>();
+        || corpus::ghost_runtime_observable::matches<Type, Grants...>()
+        || corpus::internal_io_without_declassify::matches<Type, Grants...>();
     // Future entries: || corpus::<next>::matches<Type, Grants...>()
 }
 
@@ -560,6 +658,10 @@ inline constexpr std::string_view corpus_cite_for_v =
                 ::matches<Type, Grants...>()) {
             return corpus::ghost_runtime_observable::cite();
         }
+        if (corpus::internal_io_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::internal_io_without_declassify::cite();
+        }
         return std::string_view{};
     }();
 
@@ -601,6 +703,10 @@ inline constexpr std::string_view corpus_entry_name_for_v =
         if (corpus::ghost_runtime_observable
                 ::matches<Type, Grants...>()) {
             return corpus::ghost_runtime_observable::name();
+        }
+        if (corpus::internal_io_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::internal_io_without_declassify::name();
         }
         return std::string_view{};
     }();

@@ -72,6 +72,7 @@ CRUCIBLE_CHECK_CORPUS_INSIGHT(classified_io_without_declassify);
 CRUCIBLE_CHECK_CORPUS_INSIGHT(classified_bg_without_declassify);
 CRUCIBLE_CHECK_CORPUS_INSIGHT(staleness_secret_without_declassify);
 CRUCIBLE_CHECK_CORPUS_INSIGHT(ghost_runtime_observable);
+CRUCIBLE_CHECK_CORPUS_INSIGHT(internal_io_without_declassify);
 
 #undef CRUCIBLE_CHECK_CORPUS_INSIGHT
 
