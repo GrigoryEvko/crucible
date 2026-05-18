@@ -2359,9 +2359,23 @@ shares, and pool borrows whose `ExecCtx::row_type` admits the tag row.
 - `row_hash_contribution<Secret<T>>`
 - `row_hash_contribution<Linear<T>>`
 
-All 16 entries in the canonical wrapper-nesting order ship `row_hash_contribution` specializations as of 2026-05-05 (`cc11141`). Nested compositions hash differently based on wrapper order — `Stale<Tagged<T>>` and `Tagged<Stale<T>>` produce distinct federation-cache-slot keys. The discipline is regression-tested in `test/test_migration_verification.cpp` nesting-order cells per GAPS-029.
+Plus 10 additional Graded-backed wrappers tracked in `DimensionTraits.h` that ship `row_hash_contribution` but are NOT in the §XVI canonical outer→inner order above — they are "off-tree" extensions (Tier-L Representation / Tier-V Version / cross-cutting dimensions) that contributors stack at the position dictated by their dimension:
 
-`safety/DimensionTraits.h` also pins the wrapper × lattice × modality × tier quadruple for every shipped Graded-backed safety wrapper via `wrapper_dimension<W>`, `wrapper_tier_v<W>`, and `verify_quadruple<W>()` (GAPS-091). `TimeOrdered<T, N, Tag>` is deliberately Tier-L (`Representation`) over `HappensBeforeLattice<N, Tag>`; `EpochVersioned<T>` is deliberately Tier-V (`Version`) over the epoch/generation product lattice.
+- `row_hash_contribution<SealedRefined<Pred, T>>` — Refinement axis, peer to Refined
+- `row_hash_contribution<TimeOrdered<T, N, Tag>>` — Representation (Tier-L), peer to ResidencyHeat
+- `row_hash_contribution<Monotonic<T, Cmp>>` — Mutation axis
+- `row_hash_contribution<AppendOnly<T, Storage>>` — Mutation axis
+- `row_hash_contribution<Consistency<Level, T>>` — Version (Tier-V)
+- `row_hash_contribution<OpaqueLifetime<Scope, T>>` — Lifetime axis
+- `row_hash_contribution<Crash<Class, T>>` — Effect axis
+- `row_hash_contribution<Budgeted<T>>` — Space axis
+- `row_hash_contribution<EpochVersioned<T>>` — Version (Tier-V)
+- `row_hash_contribution<NumaPlacement<T>>` — Representation (Tier-L)
+- `row_hash_contribution<RecipeSpec<T>>` — Precision axis
+
+All 26 entries in `DimensionTraits.h` ship `row_hash_contribution`; the 16 canonical wrappers above plus the 10 off-tree extensions. Nested compositions hash differently based on wrapper order — `Stale<Tagged<T>>` and `Tagged<Stale<T>>` produce distinct federation-cache-slot keys. The discipline is regression-tested in `test/test_migration_verification.cpp` nesting-order cells per GAPS-029.
+
+`safety/DimensionTraits.h` pins the wrapper × lattice × modality × tier quadruple for every shipped Graded-backed safety wrapper via `wrapper_dimension<W>`, `wrapper_tier_v<W>`, and `verify_quadruple<W>()` (GAPS-091). `TimeOrdered<T, N, Tag>` is deliberately Tier-L (`Representation`) over `HappensBeforeLattice<N, Tag>`; `EpochVersioned<T>` is deliberately Tier-V (`Version`) over the epoch/generation product lattice.
 
 ### GCC 16 contracts — implementation gotchas
 
