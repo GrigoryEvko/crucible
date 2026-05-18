@@ -14,6 +14,16 @@
 // CSL frame-rule discipline (linearity, fork-join, fractional
 // sharing).  No second-source mint authority is introduced.
 //
+// ── Cross-reference (fixy-A4-011) ─────────────────────────────────
+//
+// SharedPermission / mint_permission_share are ALSO re-exported via
+// `fixy::wrap::` (the one-stop value-wrapping directory; see Wrap.h
+// "Dual-export discipline" block).  Both paths name the SAME
+// substrate symbol via `using ::crucible::safety::*`; type identity
+// is drift-checked at compile time by `test/test_fixy_umbrella.cpp`
+// (search "fixy-A4-011").  Callers should pick ONE namespace path
+// per TU and stick to it.
+//
 // ── Substrate consumed ─────────────────────────────────────────────
 //
 //   permissions::Permission<Tag>                       — linear token

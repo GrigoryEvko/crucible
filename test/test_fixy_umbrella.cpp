@@ -93,6 +93,30 @@ static_assert(std::is_same_v<
     "fixy-A4-011: fixy::perm::SharedPermission and fixy::wrap::SharedPermission "
     "must resolve to the same substrate symbol.");
 
+// drop(Linear<T>&&) — explicit discard. Dual-exported in safety + wrap.
+static_assert(std::is_same_v<
+    decltype(&fixy::safety::drop<int>),
+    decltype(&fixy::wrap::drop<int>)>,
+    "fixy-A4-011: fixy::safety::drop and fixy::wrap::drop must resolve to "
+    "the same substrate function template.");
+
+// mint_permission_share — non-ctx overload. Dual-exported in perm + wrap.
+// A4_011_TestTag has no permission_row<> specialization so it defaults to
+// Row<>, admitting the non-ctx overload (the ctx-bound overload requires
+// a row-bearing tag).
+static_assert(std::is_same_v<
+    decltype(static_cast<
+        ::crucible::safety::SharedPermission<A4_011_TestTag>(*)(
+            ::crucible::safety::Permission<A4_011_TestTag>&&) noexcept>(
+        &fixy::perm::mint_permission_share<A4_011_TestTag>)),
+    decltype(static_cast<
+        ::crucible::safety::SharedPermission<A4_011_TestTag>(*)(
+            ::crucible::safety::Permission<A4_011_TestTag>&&) noexcept>(
+        &fixy::wrap::mint_permission_share<A4_011_TestTag>))>,
+    "fixy-A4-011: fixy::perm::mint_permission_share and "
+    "fixy::wrap::mint_permission_share must resolve to the same substrate "
+    "function template.");
+
 // Per-namespace reachability checks (compile-only, no instantiation).
 // Each `using namespace` block names a fixy:: sub-namespace.  If the
 // umbrella failed to pull a header, the name would not exist and
