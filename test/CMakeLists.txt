@@ -8450,6 +8450,39 @@ crucible_neg_compile_session_test(neg_compose_epoched_accept_stop_g_missing_bott
     "static assertion failed|static assert|fixy-A2-002")
 
 # ─────────────────────────────────────────────────────────────────
+# fixy-A2-028 — protocol_effect_row bottom-preservation
+# ─────────────────────────────────────────────────────────────────
+#
+# `compose<Delegate<Stop_g<C>, K>, Q> = Stop_g<C>` was already
+# shipped (GAPS-048 + fixy-A2-002) — the carrier collapses to
+# bottom when the delegated channel is crashed at handoff.  But
+# `protocol_effect_row` for the STANDALONE protocol still inherited
+# from the general Delegate / Accept rule and walked K, surfacing
+# K's effect row.  That asymmetry was a ROW NARROWING UNDER
+# COMPOSITION soundness hole: composing the protocol weakened its
+# Ctx admission requirement — a user writing
+# `Delegate<Stop, Recv<Bg-bearing payload>>` claimed Bg admission
+# standalone, but Stop_g<C> after compose admitted from any row.
+#
+# fixy-A2-028 ships bottom-preservation specializations for the
+# row trait so it agrees with compose:
+#
+#   protocol_effect_row<Delegate<Stop_g<C>, K>>       -> Row<>
+#   protocol_effect_row<Accept<Stop_g<C>, K>>         -> Row<>
+#   (EpochedDelegate / EpochedAccept inherit via existing forward.)
+#
+# HS14 floor: two negative-compile fixtures, one per arm, each
+# witnessing the pre-fix narrowing (K's row leaks through the
+# Stop_g<C> carrier) so the post-fix bottom-preservation
+# specialization's victory fails the static_assert.  Different
+# CrashClass (Abort vs Throw) on each fixture pins that the
+# bottom-preservation rule is CrashClass-agnostic.
+crucible_neg_compile_session_test(neg_protocol_effect_row_delegate_stop_g_narrows_k
+    "static assertion failed|static assert|fixy-A2-028")
+crucible_neg_compile_session_test(neg_protocol_effect_row_accept_stop_g_narrows_k
+    "static assertion failed|static assert|fixy-A2-028")
+
+# ─────────────────────────────────────────────────────────────────
 # fixy-A2-003 — is_dual_involutive specialization distribution
 # ─────────────────────────────────────────────────────────────────
 #

@@ -489,12 +489,44 @@ template <class T, class K>
 struct protocol_effect_row<Delegate<T, K>>
     : protocol_effect_row<K> {};
 
+// fixy-A2-028 bottom-preservation: Delegate<Stop_g<C>, K> ALIGNS WITH
+// `compose<Delegate<Stop_g<C>, K>, Q> = Stop_g<C>` (SessionDelegate.h
+// :711-713) — the carrier already crashed at handoff, so K is
+// unreachable.  Without this specialisation, the standalone protocol
+// `Delegate<Stop_g<C>, K>` reports `protocol_effect_row<K>`, but
+// after composing with ANY Q the resulting `Stop_g<C>` reports
+// `Row<>` (SessionRowExtraction.h:390).  That asymmetry is ROW
+// NARROWING UNDER COMPOSITION: a user composing the protocol gets
+// strictly weaker Ctx admission than the original.  Specialising on
+// `T = Stop_g<C>` makes the trait agree with the compose semantics:
+// the carrier is bottom either way, K's effects are unreachable
+// either way, the row is `Row<>` either way.  Bottom-preservation is
+// uniform across compose, subtyping (SessionDelegate.h:809-820), AND
+// the row trait.
+template <CrashClass C, class K>
+struct protocol_effect_row<Delegate<Stop_g<C>, K>> {
+    using type = ::crucible::effects::Row<>;
+};
+
 // Accept<T, K>: symmetric to Delegate.
 template <class T, class K>
 struct protocol_effect_row<Accept<T, K>>
     : protocol_effect_row<K> {};
 
+// fixy-A2-028 bottom-preservation: Accept<Stop_g<C>, K> mirrors the
+// Delegate-side rule for the same reason — the recipient accepted an
+// already-crashed delegated endpoint, so K is unreachable.  Compose
+// (SessionDelegate.h:731-734) and subtyping (A2-002) already enforce
+// bottom-preservation on the Accept arm; the row trait now matches.
+template <CrashClass C, class K>
+struct protocol_effect_row<Accept<Stop_g<C>, K>> {
+    using type = ::crucible::effects::Row<>;
+};
+
 // EpochedDelegate / EpochedAccept: forward to the un-epoched variant.
+// The bottom-preservation specs above propagate transparently — when
+// T = Stop_g<C>, this inherits from `protocol_effect_row<Delegate<
+// Stop_g<C>, K>>` which yields `Row<>`.
 template <class T, class K,
           std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct protocol_effect_row<
@@ -863,6 +895,93 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     protocol_effect_row_t<Stop>,
     eff::Row<>>);
+
+// (g.1) fixy-A2-028 — Delegate<Stop_g<C>, K> with K carrying Bg.
+//       Before the bottom-preservation specialisation the trait
+//       inherited from the general Delegate<T, K> rule and reported
+//       K's effects; after, it agrees with compose's bottom-
+//       preservation and reports Row<>.  Pin BOTH ENDS — the
+//       standalone protocol AND the composed protocol — so the row
+//       no longer narrows across the composition boundary.
+using InnerBgRecv =
+    Recv<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>;
+using DelegateStopWithBg = Delegate<Stop_g<CrashClass::Abort>, InnerBgRecv>;
+
+static_assert(std::is_same_v<
+    protocol_effect_row_t<DelegateStopWithBg>,
+    eff::Row<>>,
+    "fixy-A2-028: Delegate<Stop_g<C>, K> must carry empty row "
+    "(carrier is bottom, K unreachable, aligns with compose rule)");
+
+using DelegateStopComposed =
+    ::crucible::safety::proto::compose_t<DelegateStopWithBg, End>;
+static_assert(std::is_same_v<
+    DelegateStopComposed, Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<
+    protocol_effect_row_t<DelegateStopComposed>,
+    eff::Row<>>,
+    "fixy-A2-028: composing Delegate<Stop_g<C>, K> ⊕ Q yields "
+    "Stop_g<C> with empty row — must match pre-composition row");
+
+static_assert(std::is_same_v<
+    protocol_effect_row_t<DelegateStopWithBg>,
+    protocol_effect_row_t<DelegateStopComposed>>,
+    "fixy-A2-028: NO row narrowing under composition");
+
+// (g.2) Symmetric for Accept-of-Stop.
+using AcceptStopWithBg = Accept<Stop_g<CrashClass::Abort>, InnerBgRecv>;
+static_assert(std::is_same_v<
+    protocol_effect_row_t<AcceptStopWithBg>,
+    eff::Row<>>);
+using AcceptStopComposed =
+    ::crucible::safety::proto::compose_t<AcceptStopWithBg, End>;
+static_assert(std::is_same_v<
+    AcceptStopComposed, Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<
+    protocol_effect_row_t<AcceptStopComposed>,
+    eff::Row<>>);
+static_assert(std::is_same_v<
+    protocol_effect_row_t<AcceptStopWithBg>,
+    protocol_effect_row_t<AcceptStopComposed>>);
+
+// (g.3) Epoched variants inherit through the un-epoched specs —
+//       EpochedDelegate<Stop_g<C>, K, E, G> walks to
+//       Delegate<Stop_g<C>, K>'s bottom-preservation rule and reports
+//       Row<>.  Pin against the compose result.
+using EpochedDelegateStopWithBg =
+    EpochedDelegate<Stop_g<CrashClass::Abort>, InnerBgRecv, 1, 1>;
+static_assert(std::is_same_v<
+    protocol_effect_row_t<EpochedDelegateStopWithBg>,
+    eff::Row<>>);
+using EpochedDelegateStopComposed = ::crucible::safety::proto::compose_t<
+    EpochedDelegateStopWithBg, End>;
+static_assert(std::is_same_v<
+    EpochedDelegateStopComposed, Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<
+    protocol_effect_row_t<EpochedDelegateStopComposed>,
+    eff::Row<>>);
+
+using EpochedAcceptStopWithBg =
+    EpochedAccept<Stop_g<CrashClass::Abort>, InnerBgRecv, 1, 1>;
+static_assert(std::is_same_v<
+    protocol_effect_row_t<EpochedAcceptStopWithBg>,
+    eff::Row<>>);
+using EpochedAcceptStopComposed = ::crucible::safety::proto::compose_t<
+    EpochedAcceptStopWithBg, End>;
+static_assert(std::is_same_v<
+    EpochedAcceptStopComposed, Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<
+    protocol_effect_row_t<EpochedAcceptStopComposed>,
+    eff::Row<>>);
+
+// (g.4) Non-crashed Delegate<T, K> with K carrying Bg STILL reports
+//       K's row — the bottom-preservation rule is narrowly scoped to
+//       T = Stop_g<C>.  This pins that we did not over-collapse.
+using DelegateLiveWithBg = Delegate<End, InnerBgRecv>;
+static_assert(std::is_same_v<
+    protocol_effect_row_t<DelegateLiveWithBg>,
+    eff::Row<eff::Effect::Bg>>,
+    "fixy-A2-028: non-crashed Delegate<T, K> must still walk K");
 
 // (h) The whole point of the gap-closure: a `Send<DelegatedSession,
 //     End>` previously yielded Row<> on the outer Send walker (the
