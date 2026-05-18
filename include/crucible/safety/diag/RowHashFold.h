@@ -177,6 +177,20 @@ inline constexpr std::uint64_t WRAPPER_TAGGED_TAG         = 0x0C00'0000'0000'000
 inline constexpr std::uint64_t WRAPPER_REFINED_TAG        = 0x0D00'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_SECRET_TAG         = 0x0E00'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_LINEAR_TAG         = 0x0F00'0000'0000'0000ULL;
+// ── A3-002: ResourceTag + ConcurrentRow row-hash salts ─────────────
+//
+// ResourceTag and ConcurrentRow live in the OS-effect-row neighborhood
+// but are distinct row-bearing kinds (per-tag value-carrying + per-
+// carrier additive fold).  Without their own high-byte salt every
+// `resource::*<N>` instantiation collides with the primary-template
+// zero contribution, and every `ConcurrentRow<...>` carrier silently
+// folds to the federation cache slot zero — both witnessed by fixy-
+// A3-002.  Salts 0x10 and 0x11 keep the resource family disjoint from
+// the existing 15 canonical-wrapper salts above.  Specializations live
+// in effects/Resources.h and effects/Concurrent.h (per A1-018 "spec
+// next to declaration") and refer back to these constants.
+inline constexpr std::uint64_t WRAPPER_RESOURCE_TAG_TAG   = 0x1000'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_CONCURRENT_ROW_TAG = 0x1100'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by

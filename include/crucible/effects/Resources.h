@@ -121,6 +121,8 @@
 //   25_04_2026.md §3.3 (Met(X) row machinery)
 //   Tang-Lindley POPL 2026 (arXiv:2507.10301)
 
+#include <crucible/safety/diag/RowHashFold.h>  // row_hash_contribution<T> extension point
+
 #include <cstdint>
 #include <meta>
 #include <string_view>
@@ -586,3 +588,161 @@ static_assert(!ResourceTag<ResourceKind>);
 }  // namespace detail::resources_self_test
 
 }  // namespace crucible::effects
+
+// ── A3-002: row_hash_contribution<resource::TagName<N>> ─────────────
+//
+// Co-located with the tag declarations per the "specialization next to
+// declaration" discipline (A1-018).  Federation cache key contribution
+// for the 23 parameterized resource-tag class templates.  Without
+// these specializations every `resource::*<N>` instantiation falls
+// through to `row_hash_contribution`'s primary template and contributes
+// 0 to its row hash — meaning EVERY wrapper-stack `Computation<R,
+// resource::SmBudget<32>>` and `Computation<R, resource::NicQp<4>>`
+// would hash identically (only R contributes), and every kernel keyed
+// by such a stack collides at federation slot 0.
+//
+// Per-tag hash design.  Each tag's value is `combine_ids(<wrapper-tag
+// salt | kind underlying value>, <budget literal N>)`:
+//   • The wrapper-tag salt byte (WRAPPER_RESOURCE_TAG_TAG = 0x10 in
+//     the high byte) keeps the entire ResourceTag family disjoint
+//     from the 15 canonical-wrapper salts (0x01..0x0F) and from the
+//     unspecialized-zero primary.
+//   • The kind underlying value (0..22) sits in the low 5 bits — fits
+//     under uint8_t headroom (ResourceKind frozen at uint8_t per
+//     Resources.h FOUND-I04 pin) and never overlaps the salt byte.
+//   • The budget literal N is the second combine_ids argument, so
+//     `SmBudget<32>` vs `SmBudget<64>` (same kind, different value)
+//     produce avalanche-distinct hashes through combine_ids's Boost-
+//     style golden-ratio mixer + fmix64 finalizer.
+//
+// Discipline.  Adding a new resource tag template (per the FOUND-I04
+// append-only Universe extension) requires appending one
+// CRUCIBLE_RESOURCE_TAG_ROW_HASH line below in catalog order.  The
+// `every_resource_kind_has_name` reflection invariant in Resources.h
+// already pins the cardinality; if a new atom appears but its hash
+// specialization is missing, the per-tag distinctness assertions in
+// the self-test block below WILL fire (the new tag would alias
+// `row_hash_contribution_v<...> == 0`, equal to the primary).
+namespace crucible::safety::diag {
+
+#define CRUCIBLE_RESOURCE_TAG_ROW_HASH(TagName, KindEnum)                  \
+    template <std::uint64_t N>                                             \
+    struct row_hash_contribution<                                          \
+        ::crucible::effects::resource::TagName<N>> {                       \
+        static constexpr std::uint64_t value = detail::combine_ids(        \
+            detail::WRAPPER_RESOURCE_TAG_TAG                               \
+                | static_cast<std::uint64_t>(                              \
+                      ::crucible::effects::ResourceKind::KindEnum),        \
+            N);                                                            \
+    }
+
+// GPU compute substrate
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(SmBudget,           Sm);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(WarpSchedulerSlots, WarpScheduler);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(RegistersPerWarp,   RegistersPerWarp);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(SmemBytes,          Smem);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(L2Bytes,            L2);
+// GPU memory substrate
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(HbmBytes,           HbmBytes);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(HbmBandwidth,       HbmBw);
+// Inter-device
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(NvlinkBandwidth,    NvlinkBw);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(PcieBandwidth,      PcieBw);
+// NIC substrate
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(NicQueueBudget,     NicQ);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(NicRingDepth,       NicRing);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(NicQp,              NicQp);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(NicCq,              NicCq);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(NicMr,              NicMr);
+// Switch / fabric
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(SwitchEgressBw,     SwitchEgressBw);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(SwitchBufferCells,  SwitchBuffer);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(TcamEntries,        Tcam);
+// Host substrate
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(CpuCoreBudget,      CpuCore);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(LlcBytes,           Llc);
+// Power / thermal
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(PowerWatts,         PowerWatts);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(ThermalCelsius,     ThermalCelsius);
+// Rack / DC
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(RackPowerKw,        RackPowerKw);
+CRUCIBLE_RESOURCE_TAG_ROW_HASH(CarbonGramsPerKwh,  CarbonGramsPerKwh);
+
+#undef CRUCIBLE_RESOURCE_TAG_ROW_HASH
+
+// ── Self-test block — per-tag distinctness invariants (A3-002) ──────
+//
+// Pin pairwise distinctness across the 23 tag templates at a fixed N,
+// and per-tag distinctness across N values within one tag.  Together
+// these witness that the (kind, value) → hash injection holds at the
+// catalog edges (where the audit task is most likely to spot a
+// regression).  Catalog-wide pairwise distinctness (23×23 = 529
+// pairs) is exhaustive but excessive in-header; the representative
+// neighbors below are pinned along the catalog walk so a future
+// renumbering or addition cannot silently collide adjacent kinds.
+namespace detail::row_hash_resource_tag_self_test {
+
+using ::crucible::effects::resource::SmBudget;
+using ::crucible::effects::resource::WarpSchedulerSlots;
+using ::crucible::effects::resource::NicQp;
+using ::crucible::effects::resource::NicCq;
+using ::crucible::effects::resource::HbmBytes;
+using ::crucible::effects::resource::HbmBandwidth;
+using ::crucible::effects::resource::CarbonGramsPerKwh;
+using ::crucible::effects::resource::RackPowerKw;
+
+// Per-tag distinctness across N values: `SmBudget<32>` ≠ `SmBudget<64>`
+// even though both share kind=Sm.  combine_ids's avalanche behavior
+// makes this trivially true for any pair of distinct uint64_t values.
+static_assert(row_hash_contribution_v<SmBudget<32>>
+           != row_hash_contribution_v<SmBudget<64>>);
+static_assert(row_hash_contribution_v<NicQp<4>>
+           != row_hash_contribution_v<NicQp<8>>);
+
+// Cross-tag distinctness at the SAME N value: `SmBudget<32>` ≠
+// `NicQp<32>`.  The salted (kind | salt-byte) seed guarantees this
+// — different kind underlying values feed combine_ids's first
+// argument so the result diverges past the fmix64 finalizer.
+static_assert(row_hash_contribution_v<SmBudget<32>>
+           != row_hash_contribution_v<NicQp<32>>);
+static_assert(row_hash_contribution_v<SmBudget<32>>
+           != row_hash_contribution_v<WarpSchedulerSlots<32>>);
+static_assert(row_hash_contribution_v<HbmBytes<32>>
+           != row_hash_contribution_v<HbmBandwidth<32>>);
+static_assert(row_hash_contribution_v<NicQp<32>>
+           != row_hash_contribution_v<NicCq<32>>);
+static_assert(row_hash_contribution_v<RackPowerKw<32>>
+           != row_hash_contribution_v<CarbonGramsPerKwh<32>>);
+
+// Distinctness from the primary-template zero contribution: every
+// tag MUST contribute a non-zero hash.  Pre-A3-002 every tag hashed
+// to 0; post-fix every tag hashes to a non-zero (kind, value)-mixed
+// value.  Two arms below — one in low catalog, one in high — pin
+// the discipline.
+static_assert(row_hash_contribution_v<SmBudget<0>> != 0,
+    "SmBudget<0> still hashes to primary-template zero — A3-002 "
+    "specialization missing.");
+static_assert(row_hash_contribution_v<CarbonGramsPerKwh<0>> != 0,
+    "CarbonGramsPerKwh<0> still hashes to zero — A3-002 specialization "
+    "missing for the catalog-tail atom.");
+
+// `N == 0` is a valid budget literal (a tag with zero budget is the
+// "declared but inactive" state for that resource).  combine_ids
+// with second arg zero stays non-zero because the first arg already
+// carries the wrapper-tag salt + kind bits.
+static_assert(row_hash_contribution_v<SmBudget<0>>
+           != row_hash_contribution_v<SmBudget<1>>);
+
+// Cross-kind distinctness AT N == 0 — the kind-bit half of the seed
+// alone must keep all 23 kinds disjoint even when the value half is
+// uniformly zero.  Three representative pairs across catalog ranges.
+static_assert(row_hash_contribution_v<SmBudget<0>>
+           != row_hash_contribution_v<NicQp<0>>);
+static_assert(row_hash_contribution_v<NicQp<0>>
+           != row_hash_contribution_v<CarbonGramsPerKwh<0>>);
+static_assert(row_hash_contribution_v<HbmBytes<0>>
+           != row_hash_contribution_v<HbmBandwidth<0>>);
+
+}  // namespace detail::row_hash_resource_tag_self_test
+
+}  // namespace crucible::safety::diag

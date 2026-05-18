@@ -600,3 +600,178 @@ static_assert(std::is_empty_v<
 }  // namespace detail::concurrent_row_self_test
 
 }  // namespace crucible::effects
+
+// ── A3-002: row_hash_contribution<ConcurrentRow<Tags...>> ───────────
+//
+// Co-located with the carrier per the "specialization next to
+// declaration" discipline (A1-018).  Federation cache key contribution
+// for the additive resource-budget carrier.  Without this every
+// `ConcurrentRow<...>` instantiation falls through to the primary
+// template and contributes 0; any wrapper-stack that embeds a
+// ConcurrentRow as payload (`Computation<R, ConcurrentRow<...>>`,
+// `Vendor<NV, ConcurrentRow<...>>`, etc.) would fold ConcurrentRow's
+// content out of the federation cache slot identity, causing every
+// ResourceTag-bearing kernel that differs ONLY in its declared
+// budget to collide at the same federation slot.
+//
+// Hash discipline.  ConcurrentRow's semantic-equivalence rule
+// (canonical-vs-non-canonical via `concurrent_row_sum_t`) says two
+// rows are equivalent iff per-kind value sums match.  The hash must
+// agree:
+//
+//   ConcurrentRow<SmBudget<10>, SmBudget<20>>   (non-canonical, sum=30)
+//   ConcurrentRow<SmBudget<30>>                  (canonical, sum=30)
+//
+// must produce IDENTICAL hashes — otherwise canonical-vs-non-canonical
+// drift fragments the federation cache the same way A3-001 fragmented
+// Row<Es...> before its type-level canonicalization landed.  The
+// implementation walks the 23 ResourceKind atoms in catalog order
+// (Sm=0 .. CarbonGramsPerKwh=22), reads each kind's `concurrent_row
+// _value_v` (the per-kind sum across all input tags of that kind),
+// and emits a (kind, sum) hash for non-zero kinds only.  This is the
+// fold over the CANONICAL form's content, not the raw template-arg
+// pack, so the canonical/non-canonical equivalence drops out.
+//
+// Cardinality seed is the count of NON-ZERO kinds — analogous to
+// Row<Es...>'s `unique_count_sorted` set-cardinality seed.  Empty
+// ConcurrentRow yields its own distinct hash (cardinality 0 + the
+// ConcurrentRow wrapper-tag salt) so it does not collide with bare
+// EmptyRow.
+namespace crucible::safety::diag {
+
+template <::crucible::effects::ResourceTag... Tags>
+struct row_hash_contribution<::crucible::effects::ConcurrentRow<Tags...>> {
+    static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
+        using R = ::crucible::effects::ConcurrentRow<Tags...>;
+        using K = ::crucible::effects::ResourceKind;
+        namespace eff = ::crucible::effects;
+        // Per-kind sums in catalog order (Sm=0 .. CarbonGramsPerKwh=22).
+        // Spelled out explicitly to mirror the resource_kind_name()
+        // switch in Resources.h — a new ResourceKind atom requires
+        // adding both arms in lockstep (the cardinality assertion in
+        // Resources.h fires when this list goes stale).
+        constexpr std::array<std::uint64_t, 23> sums{
+            eff::concurrent_row_value_v<K::Sm,                R>,
+            eff::concurrent_row_value_v<K::WarpScheduler,     R>,
+            eff::concurrent_row_value_v<K::RegistersPerWarp,  R>,
+            eff::concurrent_row_value_v<K::Smem,              R>,
+            eff::concurrent_row_value_v<K::L2,                R>,
+            eff::concurrent_row_value_v<K::HbmBytes,          R>,
+            eff::concurrent_row_value_v<K::HbmBw,             R>,
+            eff::concurrent_row_value_v<K::NvlinkBw,          R>,
+            eff::concurrent_row_value_v<K::PcieBw,            R>,
+            eff::concurrent_row_value_v<K::NicQ,              R>,
+            eff::concurrent_row_value_v<K::NicRing,           R>,
+            eff::concurrent_row_value_v<K::NicQp,             R>,
+            eff::concurrent_row_value_v<K::NicCq,             R>,
+            eff::concurrent_row_value_v<K::NicMr,             R>,
+            eff::concurrent_row_value_v<K::SwitchEgressBw,    R>,
+            eff::concurrent_row_value_v<K::SwitchBuffer,      R>,
+            eff::concurrent_row_value_v<K::Tcam,              R>,
+            eff::concurrent_row_value_v<K::CpuCore,           R>,
+            eff::concurrent_row_value_v<K::Llc,               R>,
+            eff::concurrent_row_value_v<K::PowerWatts,        R>,
+            eff::concurrent_row_value_v<K::ThermalCelsius,    R>,
+            eff::concurrent_row_value_v<K::RackPowerKw,       R>,
+            eff::concurrent_row_value_v<K::CarbonGramsPerKwh, R>,
+        };
+        // Semantic cardinality — number of non-zero kinds.
+        std::size_t card = 0;
+        for (std::uint64_t s : sums) {
+            if (s > 0) ++card;
+        }
+        // Seed mixes the ConcurrentRow wrapper-tag salt with the
+        // semantic cardinality.  Empty row yields a hash distinct
+        // from both bare EmptyRow and the primary-template zero.
+        std::uint64_t h = detail::combine_ids(
+            detail::WRAPPER_CONCURRENT_ROW_TAG,
+            static_cast<std::uint64_t>(card));
+        // Fold (kind, sum) for non-zero kinds in catalog order.  Kind
+        // bits are wrapper-tag-salted to keep them distinct from the
+        // sum value space (mirrors the per-tag specialization's
+        // salt | kind layout in Resources.h above).
+        for (std::size_t k = 0; k < sums.size(); ++k) {
+            if (sums[k] > 0) {
+                h = detail::combine_ids(
+                    h,
+                    detail::combine_ids(
+                        detail::WRAPPER_RESOURCE_TAG_TAG
+                            | static_cast<std::uint64_t>(k),
+                        sums[k]));
+            }
+        }
+        return h;
+    }();
+};
+
+// ── Self-test block — ConcurrentRow hash invariants (A3-002) ────────
+namespace detail::row_hash_concurrent_row_self_test {
+
+using ::crucible::effects::ConcurrentRow;
+using ::crucible::effects::EmptyConcurrentRow;
+using ::crucible::effects::resource::SmBudget;
+using ::crucible::effects::resource::NicQp;
+using ::crucible::effects::resource::HbmBytes;
+
+// Empty ConcurrentRow hashes distinctly from the primary-template
+// zero AND from a singleton row — A3-002 fixes the silent collapse.
+static_assert(row_hash_contribution_v<EmptyConcurrentRow> != 0);
+static_assert(row_hash_contribution_v<EmptyConcurrentRow>
+           != row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>);
+
+// Single-kind rows differ from each other.  This is THE structural
+// witness for A3-002's federation cache slot collision claim — pre-
+// fix `ConcurrentRow<SmBudget<32>>` and `ConcurrentRow<NicQp<4>>`
+// both hashed to 0; post-fix they hash distinctly.
+static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>
+           != row_hash_contribution_v<ConcurrentRow<NicQp<4>>>);
+static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>
+           != row_hash_contribution_v<ConcurrentRow<HbmBytes<32>>>);
+
+// Same-kind, different N: the N-value drift propagates into the hash.
+static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>
+           != row_hash_contribution_v<ConcurrentRow<SmBudget<64>>>);
+
+// ── Canonical-vs-non-canonical semantic equivalence ────────────────
+//
+// `ConcurrentRow<SmBudget<10>, SmBudget<20>>` (non-canonical, two
+// tags of kind Sm) is semantically equivalent to
+// `ConcurrentRow<SmBudget<30>>` (canonical, sum already collapsed) —
+// `concurrent_row_value_v<Sm, ...>` returns 30 for both.  The hash
+// MUST agree, otherwise canonical-form drift fragments the cache
+// (the A3-001 hazard surfacing in ConcurrentRow form).
+static_assert(row_hash_contribution_v<
+        ConcurrentRow<SmBudget<10>, SmBudget<20>>>
+           == row_hash_contribution_v<ConcurrentRow<SmBudget<30>>>);
+
+// Three-way same-kind: SmBudget<10> + SmBudget<20> + SmBudget<30> ≡
+// SmBudget<60>.
+static_assert(row_hash_contribution_v<
+        ConcurrentRow<SmBudget<10>, SmBudget<20>, SmBudget<30>>>
+           == row_hash_contribution_v<ConcurrentRow<SmBudget<60>>>);
+
+// ── Order independence ────────────────────────────────────────────
+//
+// `ConcurrentRow<A, B>` and `ConcurrentRow<B, A>` hash identically —
+// the catalog-order walk in the fold above produces the same emit
+// sequence regardless of input pack order.
+static_assert(row_hash_contribution_v<
+        ConcurrentRow<SmBudget<32>, NicQp<4>>>
+           == row_hash_contribution_v<
+        ConcurrentRow<NicQp<4>, SmBudget<32>>>);
+
+// ── Distinctness from a bare ResourceTag ──────────────────────────
+//
+// `ConcurrentRow<SmBudget<32>>` (the carrier with one tag) and bare
+// `SmBudget<32>` (just the tag) MUST hash distinctly — they are
+// semantically different (carrier wraps, tag does not), and the
+// federation cache must distinguish a one-tag carrier from the tag
+// itself or two semantically-different sites would alias.  The
+// ConcurrentRow wrapper-tag salt (WRAPPER_CONCURRENT_ROW_TAG, byte
+// 0x11) keeps the two disjoint regardless of the inner fold result.
+static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>
+           != row_hash_contribution_v<SmBudget<32>>);
+
+}  // namespace detail::row_hash_concurrent_row_self_test
+
+}  // namespace crucible::safety::diag
