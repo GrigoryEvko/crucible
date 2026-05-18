@@ -188,13 +188,27 @@ struct Rec_G {
 // Recursion variable.  Only valid syntactically inside a Rec_G.
 struct Var_G {};
 
-// StopG<Peer> — participant Peer has crashed at this point in the
-// protocol.  Peer's projection is Stop; other roles' projections at
-// this point are End (their protocol has finished by this point in
-// the global type).
-template <typename Peer>
+// StopG<Peer, C> — participant Peer has crashed at this point in the
+// protocol.  Peer's projection is Stop_g<C>; other roles' projections
+// at this point are Stop_g<C> (when they interact with Peer somewhere
+// in RootG) or End (when they don't — they finish cleanly).
+//
+// fixy-A2-001 — the `CrashClass C` NTTP threads BSYZ22's four-tier
+// crash propagation (Abort / Throw / ErrorReturn / NoThrow) from the
+// global type all the way to every projection.  Default is
+// `CrashClass::Abort`, preserving every pre-existing call site
+// (`StopG<Bob>` ≡ `StopG<Bob, CrashClass::Abort>`).  Authors who need
+// to distinguish "best-effort `Throw` peer crashed" from "BITEXACT_TC
+// `Abort` peer crashed" can now spell the crash class at the global
+// level and rely on every Role's local-projection to receive
+// `Stop_g<Throw>` vs `Stop_g<Abort>` accordingly.
+//
+// `CrashClass` is reachable here because `SessionCrash.h` is included
+// above and re-exports it from `algebra::lattices`.
+template <typename Peer, CrashClass C = CrashClass::Abort>
 struct StopG {
     using peer = Peer;
+    static constexpr CrashClass crash_class = C;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -219,7 +233,7 @@ template <typename G> struct is_var_g : std::false_type {};
 template <> struct is_var_g<Var_G> : std::true_type {};
 
 template <typename G> struct is_stop_g : std::false_type {};
-template <typename P> struct is_stop_g<StopG<P>> : std::true_type {};
+template <typename P, CrashClass C> struct is_stop_g<StopG<P, C>> : std::true_type {};
 
 template <typename G> inline constexpr bool is_end_g_v        = is_end_g<G>::value;
 template <typename G> inline constexpr bool is_transmission_v = is_transmission<G>::value;
@@ -332,8 +346,8 @@ struct flat_roles<End_G> { using type = RoleList<>; };
 template <>
 struct flat_roles<Var_G> { using type = RoleList<>; };
 
-template <typename Peer>
-struct flat_roles<StopG<Peer>> { using type = RoleList<Peer>; };
+template <typename Peer, CrashClass C>
+struct flat_roles<StopG<Peer, C>> { using type = RoleList<Peer>; };
 
 template <typename Body>
 struct flat_roles<Rec_G<Body>> {
@@ -523,8 +537,8 @@ struct is_global_well_formed<Rec_G<Body>, RecCtx>
     // Rec_G introduces itself as the new RecCtx for checking Body.
     : is_global_well_formed<Body, Rec_G<Body>> {};
 
-template <typename Peer, typename RecCtx>
-struct is_global_well_formed<StopG<Peer>, RecCtx> : std::true_type {};
+template <typename Peer, CrashClass C, typename RecCtx>
+struct is_global_well_formed<StopG<Peer, C>, RecCtx> : std::true_type {};
 
 template <typename G>
 inline constexpr bool is_global_well_formed_v =
@@ -682,8 +696,8 @@ struct has_interaction_between<End_G, A, B> : std::false_type {};
 template <typename A, typename B>
 struct has_interaction_between<Var_G, A, B> : std::false_type {};
 
-template <typename Peer, typename A, typename B>
-struct has_interaction_between<StopG<Peer>, A, B> : std::false_type {};
+template <typename Peer, CrashClass C, typename A, typename B>
+struct has_interaction_between<StopG<Peer, C>, A, B> : std::false_type {};
 
 // Transmission: matches if {From, To} == {A, B}; recurse into
 // continuation otherwise.
@@ -772,33 +786,46 @@ struct ProjectImpl<Rec_G<Body>, Role, RootG> {
     using type = Loop<typename ProjectImpl<Body, Role, RootG>::type>;
 };
 
-// StopG<Peer> — peer (the crashed role) sees Stop.  Per BSYZ22 §3:
-// the crashed participant's local protocol transitions to Stop.
-template <typename Peer, typename RootG>
-struct ProjectImpl<StopG<Peer>, Peer, RootG> { using type = Stop; };
+// StopG<Peer, C> — peer (the crashed role) sees Stop_g<C>.  Per
+// BSYZ22 §3 the crashed participant's local protocol transitions to a
+// crash-class-tagged terminal; fixy-A2-001 threads the global-level
+// CrashClass NTTP through so peers projecting StopG<P, Throw> see
+// Stop_g<Throw>, not Stop_g<Abort>.  Default C=Abort preserves every
+// pre-existing call site.
+template <typename Peer, CrashClass C, typename RootG>
+struct ProjectImpl<StopG<Peer, C>, Peer, RootG> { using type = Stop_g<C>; };
 
-// StopG<Peer> — non-Peer role.  Per BHYZ23 / BSYZ22 [GR-✂] crash
+// StopG<Peer, C> — non-Peer role.  Per BHYZ23 / BSYZ22 [GR-✂] crash
 // propagation: surviving roles whose protocol intersects with Peer's
-// see crash-induced termination (Stop), not clean termination (End).
+// see crash-induced termination (Stop_g<C>), not clean termination
+// (End).
 //
-// Decision rule (GAPS-001 fix): walk RootG; if Role has any
-// interaction with Peer anywhere in the protocol, project to Stop.
-// Otherwise, Role is a non-participant w.r.t. Peer and projects to End
-// (the role is unaffected by Peer's crash).
+// Decision rule (GAPS-001 fix + fixy-A2-001 refinement): walk RootG;
+// if Role has any interaction with Peer anywhere in the protocol,
+// project to Stop_g<C> threading the global crash class.  Otherwise
+// Role is a non-participant w.r.t. Peer and projects to End (the role
+// is unaffected by Peer's crash — `End` does not carry a CrashClass).
 //
-// Why this matters: previously the rule unconditionally returned End,
-// which encoded "Role's session terminated cleanly" regardless of the
-// crash event — losing crash-safety information silently.  Stop ⩽ T
-// (subtype lattice bottom, per SessionCrash.h:205) means changing End
-// to Stop is a *tightening* of the protocol, not a loosening: any
-// implementation that handled End correctly handles Stop correctly,
-// but an implementation that needs to dispatch crash recovery now
-// gets the type-level signal to do so.
-template <typename Peer, typename Role, typename RootG>
-struct ProjectImpl<StopG<Peer>, Role, RootG> {
+// Why this matters: previously the rule unconditionally returned
+// `End` (GAPS-001 lost crash-safety entirely); the post-GAPS-001 rule
+// returned `Stop` (`Stop_g<Abort>`) regardless of the global type's
+// declared CrashClass.  Either flavor of bug collapsed BSYZ22's
+// four-tier lattice (Abort/Throw/ErrorReturn/NoThrow) to one tier at
+// the projection point, making implementations unable to distinguish
+// "best-effort `Throw` peer crashed" from "BITEXACT_TC `Abort` peer
+// crashed".  fixy-A2-001 routes the CrashClass through the type
+// system end-to-end.
+//
+// Stop_g<C> ⩽ T (subtype lattice bottom, per SessionCrash.h:237) is
+// preserved for any C: changing End to Stop_g<C> is still a
+// *tightening* of the protocol — any implementation that handled End
+// correctly handles Stop_g<C> correctly, but an implementation that
+// dispatches crash recovery now gets the correctly-tagged signal.
+template <typename Peer, CrashClass C, typename Role, typename RootG>
+struct ProjectImpl<StopG<Peer, C>, Role, RootG> {
     using type = std::conditional_t<
         has_interaction_between_v<RootG, Role, Peer>,
-        Stop,
+        Stop_g<C>,
         End>;
 };
 
@@ -1268,6 +1295,79 @@ static_assert(!has_interaction_between_v<G_alice_stops, Carol, Bob>);
 static_assert( has_interaction_between_v<G_carol_unaffected, Bob, Carol>);
 static_assert( has_interaction_between_v<G_carol_unaffected, Alice, Bob>);
 static_assert(!has_interaction_between_v<G_carol_unaffected, Carol, Alice>);
+
+// ─── Projection: StopG with explicit CrashClass (fixy-A2-001) ─────
+//
+// BSYZ22 §3 ships a four-tier CrashClass lattice: Abort > Throw >
+// ErrorReturn > NoThrow (strictness ordering on failure modes).  Prior
+// to fixy-A2-001 the global-level `StopG<Peer>` carried no CrashClass
+// NTTP, so every projection produced `Stop = Stop_g<Abort>` regardless
+// of what tier the protocol author intended — silently collapsing the
+// four-tier lattice to one tier at the projection point.
+//
+// Post-fix, `StopG<Peer, C>` threads `CrashClass C` (default Abort) and
+// every projection (Peer and non-Peer) produces `Stop_g<C>`.  Fixtures
+// below pin every CrashClass × peer-vs-non-peer × interaction-present
+// crossing.
+
+// (1) Peer's own projection threads C — every tier round-trips.
+static_assert(std::is_same_v<
+    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Abort>>, Alice>,
+    Send<Ping, Stop_g<CrashClass::Abort>>>);
+static_assert(std::is_same_v<
+    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Throw>>, Alice>,
+    Send<Ping, Stop_g<CrashClass::Throw>>>);
+static_assert(std::is_same_v<
+    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::ErrorReturn>>, Alice>,
+    Send<Ping, Stop_g<CrashClass::ErrorReturn>>>);
+static_assert(std::is_same_v<
+    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::NoThrow>>, Alice>,
+    Send<Ping, Stop_g<CrashClass::NoThrow>>>);
+
+// (2) Non-Peer-but-interacting role's projection also threads C.
+static_assert(std::is_same_v<
+    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Throw>>, Bob>,
+    Recv<Ping, Stop_g<CrashClass::Throw>>>);
+static_assert(std::is_same_v<
+    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::NoThrow>>, Bob>,
+    Recv<Ping, Stop_g<CrashClass::NoThrow>>>);
+
+// (3) Uninvolved third-party still projects to End regardless of C.
+// (End does not carry a CrashClass — the role is unaffected.)
+using G_carol_uninvolved_throw = Transmission<Bob, Carol, Pong,
+                                  Transmission<Alice, Bob, Ping,
+                                    StopG<Alice, CrashClass::Throw>>>;
+static_assert(std::is_same_v<
+    project_t<G_carol_uninvolved_throw, Carol>,
+    Recv<Pong, End>>);
+
+// (4) Tiers are structurally distinct — fixy-A2-001 closes the
+//     collapse-to-one-tier hole.
+static_assert(!std::is_same_v<Stop_g<CrashClass::Abort>,
+                              Stop_g<CrashClass::Throw>>);
+static_assert(!std::is_same_v<Stop_g<CrashClass::ErrorReturn>,
+                              Stop_g<CrashClass::NoThrow>>);
+
+// (5) Backward compat: bare `StopG<Peer>` (no C) defaults to Abort and
+//     projects identically to `StopG<Peer, CrashClass::Abort>` — every
+//     pre-existing call site sees no behavioural change.
+static_assert(std::is_same_v<
+    project_t<Transmission<Alice, Bob, Ping, StopG<Alice>>, Alice>,
+    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Abort>>, Alice>>);
+static_assert(std::is_same_v<
+    project_t<Transmission<Alice, Bob, Ping, StopG<Alice>>, Bob>,
+    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Abort>>, Bob>>);
+
+// (6) is_stop_g_v continues to recognize the graded variant.
+static_assert( is_stop_g_v<StopG<Alice, CrashClass::Throw>>);
+static_assert( is_stop_g_v<StopG<Alice, CrashClass::NoThrow>>);
+
+// (7) Well-formedness independent of C.
+static_assert(is_global_well_formed_v<StopG<Alice, CrashClass::ErrorReturn>>);
+
+// (8) Roles set independent of C (StopG contributes Peer only).
+static_assert( contains_role_v<Alice, roles_of_t<StopG<Alice, CrashClass::NoThrow>>>);
+static_assert(!contains_role_v<Bob,   roles_of_t<StopG<Alice, CrashClass::NoThrow>>>);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Multiparty (MPST) crash-propagation fixtures (GAPS-001) ────────

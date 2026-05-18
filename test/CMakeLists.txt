@@ -8148,6 +8148,49 @@ crucible_neg_compile_test(neg_reset_in_quiescent_context_braced_init
     "explicit constructor|explicit.*conversion|no matching function|could not convert|cannot convert|not a valid template argument")
 
 # ─────────────────────────────────────────────────────────────────
+# fixy-A2-001 — StopG<Peer, CrashClass C> projection threading
+# ─────────────────────────────────────────────────────────────────
+#
+# Pre-fix, the global-level `StopG<Peer>` carried no CrashClass NTTP,
+# so every projection unconditionally yielded the bare `Stop` alias
+# (= `Stop_g<CrashClass::Abort>`).  The BSYZ22 four-tier crash
+# lattice (Abort > Throw > ErrorReturn > NoThrow) collapsed to a
+# single tier at the projection point — implementations could not
+# distinguish "best-effort `Throw` peer crashed" from "BITEXACT_TC
+# `Abort` peer crashed".  fixy-A2-001 threads `CrashClass C` (default
+# Abort, preserving every pre-existing call site) through:
+#
+#   * StopG<Peer, C> primary template + crash_class accessor
+#   * is_stop_g / flat_roles / is_global_well_formed /
+#     has_interaction_between specializations
+#   * ProjectImpl<StopG<Peer, C>, Peer, RootG>     (Peer's own)
+#   * ProjectImpl<StopG<Peer, C>, Role, RootG>     (interacting peer)
+#
+# These two HS14 fixtures witness the property end-to-end:
+#
+#   * neg_stop_g_crashclass_dropped_in_peer_projection — primary.
+#     Witness: `project_t<StopG<Bob, Throw>, Bob>` produces
+#     `Send<Ping, Stop_g<Throw>>` post-fix, NOT `Send<Ping, Stop>`
+#     (= `Send<Ping, Stop_g<Abort>>`).  Asserting the buggy collapse
+#     to `Stop` fails post-fix; the file no longer compiles.
+#
+#   * neg_stop_g_crashclass_dropped_in_role_projection — companion.
+#     Witness: `project_t<G, Alice>` for an interacting non-Peer
+#     produces `Recv<Ping, Stop_g<Throw>>` post-fix, NOT
+#     `Recv<Ping, Stop>`.  Covers the [GR-✂] crash-propagation arm
+#     (has_interaction_between_v<RootG, Role, Peer> == true).
+#
+# Together the pair pins fixy-A2-001's promise that CrashClass
+# propagates END-TO-END through projection — both on the crashed
+# participant's side AND on every surviving role's side.  Diagnostic
+# family naming is broad to absorb GCC dialect drift in the
+# "static assertion failed" wording.
+crucible_neg_compile_session_test(neg_stop_g_crashclass_dropped_in_peer_projection
+    "static assertion failed|static assert|fixy-A2-001")
+crucible_neg_compile_session_test(neg_stop_g_crashclass_dropped_in_role_projection
+    "static assertion failed|static assert|fixy-A2-001")
+
+# ─────────────────────────────────────────────────────────────────
 # FIXY-GAP-B — Agent B round 2
 # ─────────────────────────────────────────────────────────────────
 #
