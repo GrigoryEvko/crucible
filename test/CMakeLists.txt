@@ -8961,6 +8961,28 @@ crucible_neg_compile_fixy_test(neg_fixy_theory_internal_io
 crucible_neg_compile_fixy_test(neg_fixy_theory_internal_io_multi_effect
     "NotInTheoryCorpus|internal_io_without_declassify")
 
+# fixy-A4-008 — internal_bg_without_declassify corpus entry.
+# Concurrent-channel dual of H-18: Smith-Volpano 1998 + Sabelfeld-
+# Myers 2003 show sequential IFC type systems are UNSOUND under
+# concurrency — a Bg-engaged Internal-tier binding declassifies
+# through scheduler-observable progress / liveness regardless of any
+# explicit I/O.  Two fixtures matching the HS14 ≥2 floor used for the
+# sibling H-18 internal_io pair:
+#   neg_fixy_theory_internal_bg          — minimal direct trigger
+#     (as_internal + with_bg alone) — anchors matches() against the
+#     Internal-tier concurrent no-write-down shape.
+#   neg_fixy_theory_internal_bg_multi_effect — proves the Bg detection
+#     fires when Bg is one of several effects in a with<...> pack, not
+#     just standalone — regression-guards is_bg_effect_grant's pack-
+#     contains semantics against future accidental narrowing.
+# Both regex on either NotInTheoryCorpus (concept-fail trace) OR the
+# new entry's struct name (corpus_full_diagnostic_v surface) so a
+# diagnostic regression on EITHER surface reddens the build.
+crucible_neg_compile_fixy_test(neg_fixy_theory_internal_bg
+    "NotInTheoryCorpus|internal_bg_without_declassify")
+crucible_neg_compile_fixy_test(neg_fixy_theory_internal_bg_multi_effect
+    "NotInTheoryCorpus|internal_bg_without_declassify")
+
 # ── FIXY-ALGEBRA round 2 — concept-gate fixture depth ───────────────
 # Existing Algebra.h coverage pins 2 fixtures (#1 non_lattice / #2
 # non_graded); this round adds 3 more across distinct rejection

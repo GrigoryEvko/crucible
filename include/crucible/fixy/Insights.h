@@ -365,3 +365,21 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "on Effect AND omits any grant::declassify<Policy>.",
     "grant::declassify<secret_policy::AuthorizedExport>  // org-disclosure",
     "fixy::fn<T, grant::as_internal, grant::with<effects::Effect::IO>>");
+
+// fixy-A4-008: concurrent dual of internal_io_without_declassify per
+// the §30.14 corpus 2-by-2 (Security tier {Secret, Internal} × Effect
+// channel {IO, Bg}) closure.  Smith-Volpano 1998 supplies the
+// concurrent-IFC discharge — the spawn itself is a scheduler-
+// observable event, so sequential type systems are unsound under
+// concurrency even when the data-flow IO channel is absent.  cite()
+// sourced directly from corpus::internal_bg_without_declassify::cite()
+// to eliminate the parallel-header citation drift class (same A4-003
+// / A4-004 lesson).
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::theory::corpus::internal_bg_without_declassify,
+    ::crucible::safety::diag::Severity::Fatal,
+    ::crucible::fixy::theory::corpus::internal_bg_without_declassify::cite(),
+    "Binding engages grant::as_internal on Security AND with<...,Bg,...> "
+    "on Effect AND omits any grant::declassify<Policy>.",
+    "grant::declassify<secret_policy::CrossThreadAuthorized>  // cross-thread",
+    "fixy::fn<T, grant::as_internal, grant::with<effects::Effect::Bg>>");

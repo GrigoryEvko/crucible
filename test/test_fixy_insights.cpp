@@ -56,7 +56,7 @@ CRUCIBLE_CHECK_FIXY_INSIGHT(Staleness);
 
 #undef CRUCIBLE_CHECK_FIXY_INSIGHT
 
-// ── 4 §30.14 theory corpus entries ────────────────────────────────
+// ── 6 §30.14 theory corpus entries ────────────────────────────────
 
 #define CRUCIBLE_CHECK_CORPUS_INSIGHT(EntryName)                               \
     static_assert(has_insights_v<                                              \
@@ -73,6 +73,7 @@ CRUCIBLE_CHECK_CORPUS_INSIGHT(classified_bg_without_declassify);
 CRUCIBLE_CHECK_CORPUS_INSIGHT(staleness_secret_without_declassify);
 CRUCIBLE_CHECK_CORPUS_INSIGHT(ghost_runtime_observable);
 CRUCIBLE_CHECK_CORPUS_INSIGHT(internal_io_without_declassify);
+CRUCIBLE_CHECK_CORPUS_INSIGHT(internal_bg_without_declassify);
 
 #undef CRUCIBLE_CHECK_CORPUS_INSIGHT
 
