@@ -7190,6 +7190,19 @@ crucible_neg_compile_session_test(neg_persisted_session_detach_disabled
 crucible_neg_compile_session_test(neg_persisted_session_no_open_view
     "PersistedSession_OpenViewRequired|use of deleted function")
 
+# fixy-A2-006 — PSH overloads of mint_recording_session / mint_persisted_session.
+crucible_neg_compile_session_test(neg_recording_session_psh_delegate_unsupported
+    "incomplete type|no matching|invalid use|too many initializers")
+
+crucible_neg_compile_session_test(neg_recording_session_psh_accept_unsupported
+    "incomplete type|no matching|invalid use|too many initializers")
+
+crucible_neg_compile_session_test(neg_persisted_session_psh_hot_ctx
+    "constraints not satisfied|template constraint failure|associated constraints|CtxAdmits")
+
+crucible_neg_compile_session_test(neg_persisted_session_psh_no_open_view
+    "PersistedSession_OpenViewRequired|use of deleted function")
+
 crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|permission_flow_closes")
 

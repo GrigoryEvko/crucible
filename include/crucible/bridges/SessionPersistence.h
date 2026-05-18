@@ -10,6 +10,7 @@
 // loading without duplicating the session algebra.
 
 #include <crucible/Cipher.h>
+#include <crucible/bridges/RecordingPermissionedSessionHandle.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/safety/IsSessionHandle.h>
@@ -653,6 +654,64 @@ void mint_persisted_session(
     SessionPersistencePolicy = {})
     = delete("[PersistedSession_OpenViewRequired] "
              "mint_persisted_session(ctx, handle, cipher, ...) requires "
+             "Cipher::OpenView at the mint boundary; pass "
+             "cipher.mint_open_view() explicitly.");
+
+// ──────────────────────────────────────────────────────────────────
+// PSH overload — wrap an existing PermissionedSessionHandle in a
+// RecordingPermissionedSessionHandle, then in a PersistedSessionHandle
+// that drains the SessionEventLog to Cipher's cold tier.  Closes
+// fixy-A2-006 — without this overload, permissioned channels
+// (TraceRing, PermissionedSpscChannel, MetaLog, ChainEdge, kernel-cache
+// SWMR, observe broadcast) cannot be audited even though they hold
+// CSL permissions in session-protocol position.
+//
+// §XXI Universal Mint Pattern: Ctx-bound, requires-clause gates Ctx
+// admission for Cipher's persistence-row effect, OpenView required at
+// the mint boundary (the `= delete` companion enforces this), wraps
+// the inner PSH via mint_recording_session's new PSH overload.
+
+template <::crucible::effects::IsExecCtx Ctx,
+          typename Proto,
+          typename PS,
+          typename Resource,
+          typename LoopCtx>
+    requires ::crucible::effects::CtxAdmits<
+        Ctx, Cipher::persist_session_events_required_row>
+[[nodiscard]] auto mint_persisted_session(
+    Ctx const&,
+    PermissionedSessionHandle<Proto, PS, Resource, LoopCtx> inner,
+    Cipher& cipher,
+    Cipher::OpenView const& view,
+    SessionTagId session,
+    RoleTagId self,
+    RoleTagId peer,
+    SessionPersistencePolicy policy = {})
+{
+    using CallerRow = typename Ctx::row_type;
+    auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
+        cipher, view, session, policy);
+    auto recording = mint_recording_session(
+        std::move(inner), state->log(), self, peer);
+    return PersistedSessionHandle<decltype(recording), CallerRow>{
+        std::move(recording), std::move(state)};
+}
+
+template <::crucible::effects::IsExecCtx Ctx,
+          typename Proto,
+          typename PS,
+          typename Resource,
+          typename LoopCtx>
+void mint_persisted_session(
+    Ctx const&,
+    PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>,
+    Cipher&,
+    SessionTagId,
+    RoleTagId,
+    RoleTagId,
+    SessionPersistencePolicy = {})
+    = delete("[PersistedSession_OpenViewRequired] "
+             "mint_persisted_session(ctx, psh, cipher, ...) requires "
              "Cipher::OpenView at the mint boundary; pass "
              "cipher.mint_open_view() explicitly.");
 

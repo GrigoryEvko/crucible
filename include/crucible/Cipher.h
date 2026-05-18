@@ -1076,7 +1076,7 @@ class CRUCIBLE_OWNER Cipher {
     using LogEntry = safety::proto::SessionEvent;
 
     static_assert(std::is_same_v<LogEntry, safety::proto::SessionEvent>);
-    static_assert(sizeof(LogEntry) == 56);
+    static_assert(sizeof(LogEntry) == 72);
     static_assert(std::is_trivially_copyable_v<LogEntry>);
 
     struct CachedObjectBytes {
