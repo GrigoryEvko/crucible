@@ -126,7 +126,13 @@ public:
     }
 
 private:
-    T* ptr_;
+    // NSDMI for InitSafe axiom defense-in-depth.  The default ctor is
+    // deleted (line below), and every reachable ctor explicitly
+    // initializes ptr_, so this NSDMI never fires through the public
+    // API.  Its purpose is to guarantee that ANY future ctor refactor
+    // or layout-aggregate path leaves ptr_ in a deterministic
+    // nullptr state rather than UB (CLAUDE.md §II axiom 1).
+    T* ptr_ = nullptr;
 
     struct from_raw_tag_t {};
     constexpr BorrowedRef(from_raw_tag_t, T* p) noexcept : ptr_{p} {}
