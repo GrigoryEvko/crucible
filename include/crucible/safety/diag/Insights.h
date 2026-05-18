@@ -973,6 +973,229 @@ struct insight_provider<RecipeSpecMismatch> {
         "compile(RecipeSpec<RELAXED, KAHAN, Kernel>{node});  // wrong axes";
 };
 
+// ── PureFunctionViolation (fixy-A3-007) ────────────────────────────
+//
+// F* PURE class (FxAliases.h IsPure / IsTot / IsGhost): empty row.
+// Any Effect atom in the function's row is structurally rejected.
+// Distinct from EffectRowMismatch — this fence is the F* lattice
+// bottom; EffectRowMismatch is an arbitrary caller-imposed row.
+template <>
+struct insight_provider<PureFunctionViolation> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "The F* effect lattice (FxAliases.h, Tang-Lindley POPL 2026) "
+        "anchors at PURE — the empty row — as its bottom.  Pure / Tot / "
+        "Ghost functions promise NO observable effects: no Alloc, no IO, "
+        "no Block, no Bg / Init / Test context tags.  Admitting any "
+        "Effect atom turns a pure projection into a stateful operation "
+        "that downstream callers (KernelCache content-addressing, "
+        "deterministic replay, MAP-Elites cost-model fingerprinting) "
+        "cannot consume — the cache key becomes invalidated by the "
+        "function's hidden side effects, breaking the bit_exact_replay_"
+        "invariant CI test in subtle ways.  See CLAUDE.md §L2 KernelCache "
+        "content-addressing and §III.8 DetSafe axiom.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces after adding 'just one debug line' (printf, fprintf, "
+        "std::cout) to a function declared Pure<T>, Tot<E, T>, or "
+        "Ghost<R, T>.  Or after a refactor that adds arena allocation "
+        "to a previously-pointer-free pure helper.  The diagnostic "
+        "names the function's required-empty-row contract and the "
+        "atom that violates it (typically IO or Alloc).  The remediation "
+        "is to lift the function up the F* lattice — Pure → Div → ST → "
+        "All — to the strictest predicate the body actually needs.";
+    static constexpr std::string_view correct_example =
+        "Pure<uint64_t> compute_hash(Tagged<uint64_t, kind> k);  // empty row";
+    static constexpr std::string_view violating_example =
+        "Pure<uint64_t> compute_hash(...) { fprintf(stderr, ...); ... }  // IO";
+};
+
+// ── DivergenceBudgetViolation (fixy-A3-007) ────────────────────────
+//
+// F* DIV class (FxAliases.h IsDiv): Row<Block>.  Admits non-termination
+// (potentially-divergent loop) but NOT Alloc or IO.  In F* the lattice
+// is Pure ⊑ Div ⊑ ST — to use state effects, lift to IsST.
+template <>
+struct insight_provider<DivergenceBudgetViolation> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "The F* DIV effect class (FxAliases.h Div<T>) extends PURE only "
+        "with potential-non-termination (Block) — NOT with state mutation "
+        "or external observable effects.  This narrow widening is "
+        "load-bearing for fixed-point iterators, convergence loops, and "
+        "LoopNode bodies that must terminate eventually but cannot be "
+        "proved to do so structurally.  Admitting Alloc or IO turns a "
+        "divergent-but-pure operation into a stateful one; in F* such a "
+        "function must lift to ST or higher.  Without the fence, a "
+        "Cipher event-recorder that quietly grows to call malloc per "
+        "iteration breaks deterministic replay across heap-layout "
+        "variations.  See CLAUDE.md §L7 LoopNode semantics.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces in fixed-point or DEQ-style convergence loops when "
+        "the body grows a scratchpad allocation across iterations.  Or "
+        "when a 'log progress' fprintf is added inside a Div<T>-declared "
+        "loop body.  The diagnostic names the function's DivRow = "
+        "Row<Block> requirement and the offending atom (Alloc or IO).  "
+        "Remediation: lift the declaration to IsST (admits Block + "
+        "Alloc + IO) or eliminate the allocation by reusing a "
+        "caller-provided arena via a Pure helper signature.";
+    static constexpr std::string_view correct_example =
+        "Div<int> fixed_point(int x);  // Block only — terminates eventually";
+    static constexpr std::string_view violating_example =
+        "Div<int> fixed_point(int x) { void* p = std::malloc(64); ... }  // Alloc";
+};
+
+// ── StateBudgetViolation (fixy-A3-007) ─────────────────────────────
+//
+// F* ST class (FxAliases.h IsST): Row<Block, Alloc, IO>.  Admits state
+// mutation and divergence but NOT context-bound capabilities (Bg /
+// Init / Test).  Context tags encode dispatch position; only IsAll's
+// AllRow admits them structurally.
+template <>
+struct insight_provider<StateBudgetViolation> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "The F* ST effect class (FxAliases.h ST<T>) extends DIV with "
+        "state effects (Alloc + IO) — admitting malloc, file handles, "
+        "kernel ioctls — but NOT with context capabilities (Bg / Init / "
+        "Test).  Context tags are NOT state effects; they encode WHERE "
+        "the function runs (bg-thread-only, startup-only, test-harness-"
+        "only).  Mixing a Bg cap-tag parameter into an IsST signature "
+        "weakens the F* substitution principle: every IsPure caller can "
+        "invoke IsST, but the Bg cap-tag would silently bypass the "
+        "permission discipline that gates background-thread admission.  "
+        "Use IsAll for functions that genuinely need context tags.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces when a function is being lifted out of pure-functional "
+        "code into stateful code and the author reaches for IsST<T> as "
+        "'the catch-all', then realizes the function also takes an "
+        "effects::Bg / Init / Test parameter for context-bound dispatch.  "
+        "The diagnostic names the function's STRow = Row<Block, Alloc, "
+        "IO> requirement and the context-tag atom that violates it.  "
+        "Remediation: lift to IsAll (admits AllRow including context "
+        "atoms), OR remove the cap-tag parameter if the function is "
+        "genuinely state-only and the context is caller-provided.";
+    static constexpr std::string_view correct_example =
+        "ST<int> stateful_compute(int x);  // Alloc + IO, no context tag";
+    static constexpr std::string_view violating_example =
+        "ST<int> stateful_compute(eff::Bg bg, int x);  // Bg cap → rejected";
+};
+
+// ── InsufficientWitness (fixy-A3-007 / FIXY-G9) ────────────────────
+//
+// Witness lattice: Asserted ⊑ Tested ⊑ CrossValidated ⊑
+// FormallyVerified.  Downstream consumers (Cipher hot-tier promotion,
+// Federation peering, AdaptiveScheduler hot-path admission) demand a
+// minimum witness tier per axis; bindings with weaker witness refused.
+template <>
+struct insight_provider<InsufficientWitness> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "The witness lattice (safety/witness/Witness.h, FIXY-G9) encodes "
+        "proof-relevance per axis: Asserted (developer claim) ⊑ Tested "
+        "(unit-test-witnessed) ⊑ CrossValidated (CI-witnessed across "
+        "vendors / configurations) ⊑ FormallyVerified (machine-checked "
+        "by the verify preset's small SMT solver).  Production consumers "
+        "encode their evidence floor: Cipher's hot-tier promotion will "
+        "not admit a binding whose KernelCache content-hash equivalence "
+        "claim is merely Asserted — replay determinism demands at least "
+        "CrossValidated, witnessed by the cross-vendor numerics CI "
+        "(MIMIC.md §41).  Without the fence, untested kernels would "
+        "graduate to hot-tier and silently corrupt replay logs.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces during production refactors that try to promote a "
+        "developer-only sketch into a Cipher-cached / federation-shared "
+        "binding without first adding a test that registers the proof.  "
+        "The diagnostic names the consumer's floor (e.g., 'requires "
+        "Tested<test_id>') and the binding's actual witness (Asserted "
+        "by default).  Remediation: either upgrade the grant to a "
+        "*_e<W> evidenced variant pointing at a real test_id, or "
+        "lower the consumer's witness-floor demand if Asserted is "
+        "actually acceptable for this consumption.";
+    static constexpr std::string_view correct_example =
+        "auto g = grant::reentrant_e<Tested<test_kernel_xxx>>();  // tier ≥ Tested";
+    static constexpr std::string_view violating_example =
+        "auto g = grant::reentrant();  // Asserted only — rejected by Tested floor";
+};
+
+// ── ModalityMismatch (fixy-A3-007 / FIXY-G10) ──────────────────────
+//
+// Two grants engaging the same fixy dim with incompatible modality
+// classes — typically Frame ∥ Declares on the same axis (R018), or
+// two Quotient grants naming different equivalence-class
+// representatives (Version<3> vs Version<5>).
+template <>
+struct insight_provider<ModalityMismatch> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "The modality taxonomy (fixy/Modality.h, FIXY-G10) classifies "
+        "grants by their categorical role: Frame (invariant of the "
+        "value), Declares (witness-producing — the binding establishes "
+        "the property), Requires (caller-side refinement the binding "
+        "demands), Linear (one-shot consume-and-produce resource "
+        "transfer), Quotient (equivalence-class membership).  Two "
+        "grants on the same axis cannot mix Frame with Declares — the "
+        "invariant claim contradicts the witness-producing claim, and "
+        "neither downstream consumer (audit logger, federation cache "
+        "router) can disambiguate which is authoritative.  Without "
+        "the fence, conflicting claims would silently mis-route "
+        "Cipher entries across federation peers.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces when an author adds a grant pack mixing 'this is "
+        "invariant' (Frame) with 'this binding establishes the "
+        "invariant' (Declares) on the same axis — typically from "
+        "copy-pasting two related fn<> declarations.  Or when two "
+        "Quotient grants accidentally name different class "
+        "representatives (Version<3> on the implementation side, "
+        "Version<5> on the export side).  Remediation: audit the pack, "
+        "pick ONE modality class per axis matching the intended "
+        "semantics, and ensure Quotient grants name the same "
+        "equivalence-class representative across the binding.";
+    static constexpr std::string_view correct_example =
+        "fixy::fn<int, grant::frame<X>, grant::declares<Y>>  // distinct axes";
+    static constexpr std::string_view violating_example =
+        "fixy::fn<int, grant::frame<X>, grant::declares<X>>  // R018 same axis";
+};
+
+// ── LinearAliasViolation (fixy-A3-007 / FIXY-G10 R017) ─────────────
+//
+// Two Linear-modality grants on the same Permission tag in a single
+// binding's pack.  Linear modality encodes one-shot consume-and-
+// produce — two Linear grants on the same tag means two parallel
+// consumers of the same exclusive permission, a CSL frame-rule
+// violation.  R017 fires before R013 because it catches the binding-
+// shape error earlier than the call-site rule.
+template <>
+struct insight_provider<LinearAliasViolation> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "CSL frame discipline (O'Hearn 2007; CLAUDE.md §IX permission "
+        "discipline) demands that every Permission<Tag> has exactly "
+        "one consumer — sharing requires SharedPermission via the "
+        "fractional-permission pool, NOT duplicated Linear grants.  "
+        "Two Linear-modality grants on the same tag in a binding's "
+        "pack would let two call sites simultaneously claim exclusive "
+        "ownership of the same resource — the canonical aliased-"
+        "mutation footgun.  Catching it as a binding-shape error "
+        "(R017) at the fn<> declaration is strictly stronger than "
+        "catching it at the call site (R013) because the binding "
+        "shape persists across every invocation; one binding-shape "
+        "fix protects every caller.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces when a function genuinely needs to consume two "
+        "exclusive permissions but the author accidentally tagged "
+        "both with the SAME tag (copy-paste from a single-permission "
+        "ancestor).  The diagnostic names the duplicated tag and the "
+        "two Linear grants competing for it.  Remediation: either "
+        "distinguish the tags (Permission<Tag1> vs Permission<Tag2>) "
+        "if the resources are genuinely distinct, OR switch one Linear "
+        "grant to a SharedPermission borrow via SharedPermissionPool"
+        "<Tag>::lend() if the resources should share read access.";
+    static constexpr std::string_view correct_example =
+        "fixy::fn<int, lifetime_region<Tag1>, lifetime_region<Tag2>>  // distinct";
+    static constexpr std::string_view violating_example =
+        "fixy::fn<int, lifetime_region<Tag>, lifetime_region<Tag>>  // R017 alias";
+};
+
 // ── WaitStrategyViolation ──────────────────────────────────────────
 template <>
 struct insight_provider<WaitStrategyViolation> {
