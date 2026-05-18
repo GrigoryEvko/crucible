@@ -900,8 +900,13 @@ static void test_not_inherited() {
 // ═══════════════════════════════════════════════════════════════════
 
 static void test_publish_slot() {
-    static_assert(sizeof(PublishSlot<int>) == sizeof(std::atomic<int*>),
-                  "PublishSlot<T> must be layout-equivalent to atomic<T*>");
+    static_assert(alignof(PublishSlot<int>) >= 64,
+                  "PublishSlot<T> must be cache-line aligned: publish/"
+                  "exchange traffic invalidates the consumer's line every "
+                  "iteration, so the slot must NOT share a line with "
+                  "unrelated state in the embedder (fixy-A1-002).");
+    static_assert(sizeof(PublishSlot<int>) >= 64,
+                  "PublishSlot<T> occupies a full cache line by design.");
     static_assert(!std::is_copy_constructible_v<PublishSlot<int>>,
                   "PublishSlot<T> is the identity of a publication cell");
     static_assert(!std::is_move_constructible_v<PublishSlot<int>>,

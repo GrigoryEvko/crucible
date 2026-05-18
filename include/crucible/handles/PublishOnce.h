@@ -34,6 +34,41 @@
 // null→value at most once; use PublishSlot when each publication is a
 // replaceable notification and the storage owner keeps old values
 // alive independently.
+//
+// ── Cache-line isolation discipline (fixy-A1-002) ──────────────────
+//
+// The two types have DIFFERENT false-sharing exposure:
+//
+//   PublishSlot — `store(release)` and `exchange(acq_rel)` fire
+//                 REPEATEDLY across the channel's lifetime.  Every
+//                 publish invalidates the consumer's cached line; if
+//                 the slot shares a line with unrelated state in its
+//                 embedder, that state suffers an L3 round-trip on
+//                 every publish.  This is the steady-state false-
+//                 sharing case — cost O(publications × consumers).
+//                 PublishSlot ships with `alignas(64)` so every
+//                 instance lives on its own cache line, per
+//                 CLAUDE.md §IX (every cross-thread atomic deserves
+//                 its own line).
+//
+//   PublishOnce — `compare_exchange_strong(release)` fires EXACTLY
+//                 ONCE per instance (the CAS gate + contract_assert
+//                 enforces this).  After publication, the slot is
+//                 read-only forever.  False-sharing cost is bounded
+//                 at O(instances) one-time invalidations — not a
+//                 steady-state problem.  PublishOnce stays at the
+//                 atomic-pointer's natural alignment so dense
+//                 embedders keep packing — notably RegionNode is
+//                 layout-locked to 80B at MerkleDag.h:770 and a DAG
+//                 holds thousands of them.  Embedders that need
+//                 cache-line isolation for their PublishOnce field
+//                 (e.g. when adjacent fields ARE written cross-
+//                 thread at high frequency) apply `alignas(64)` at
+//                 the embed site.
+//
+// The differentiation honours both the false-sharing physics and the
+// density-vs-isolation trade-off: cache-line-isolate the truly hot
+// signal (PublishSlot), pack the one-shot publication (PublishOnce).
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Post.h>
@@ -127,15 +162,23 @@ public:
     }
 };
 
-// Zero-cost: one aligned atomic pointer is identical to a bare
-// std::atomic<T*> field plus the publish-once discipline encoded in
-// the type system.
+// Zero-cost density: one aligned atomic pointer is identical to a
+// bare std::atomic<T*> field plus the publish-once discipline encoded
+// in the type system.  Unlike PublishSlot, this class does NOT pad to
+// a cache line — the publish-once CAS gate bounds false-sharing cost
+// at O(instances) one-time invalidations, and dense embedders
+// (RegionNode is layout-locked to 80B at MerkleDag.h:770) rely on
+// this footprint.  See the class doc-block for the differentiation.
 static_assert(sizeof(PublishOnce<int>)  == sizeof(std::atomic<int*>));
 static_assert(sizeof(PublishOnce<void>) == sizeof(std::atomic<void*>));
 
 template <typename T>
-class CRUCIBLE_OWNER PublishSlot {
-    alignas(alignof(std::atomic<T*>)) std::atomic<T*> slot_{nullptr};
+class CRUCIBLE_OWNER alignas(64) PublishSlot {
+    // Slot is at offset 0 of a cache-line-aligned class, so it
+    // inherits the 64-byte alignment.  The publish/exchange path
+    // fires repeatedly cross-thread; class-level alignas(64) keeps
+    // it isolated from any unrelated state in the embedder.
+    std::atomic<T*> slot_{nullptr};
 
 public:
     constexpr PublishSlot() noexcept = default;
@@ -165,7 +208,16 @@ public:
     }
 };
 
-static_assert(sizeof(PublishSlot<int>)  == sizeof(std::atomic<int*>));
-static_assert(sizeof(PublishSlot<void>) == sizeof(std::atomic<void*>));
+// PublishSlot occupies a full cache line by construction (fixy-A1-002).
+// alignof claim is the structural guarantee; sizeof follows from the
+// standard rule that sizeof is a multiple of alignof.
+static_assert(alignof(PublishSlot<int>)  >= 64,
+              "PublishSlot must be cache-line aligned: repeated publish/"
+              "exchange traffic invalidates the consumer's cached line "
+              "every iteration, so the slot must NOT share a line with "
+              "unrelated embedder state (CLAUDE.md §IX).");
+static_assert(alignof(PublishSlot<void>) >= 64);
+static_assert(sizeof(PublishSlot<int>)   >= 64);
+static_assert(sizeof(PublishSlot<void>)  >= 64);
 
 } // namespace crucible::safety
