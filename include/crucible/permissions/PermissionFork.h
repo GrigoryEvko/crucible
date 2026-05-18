@@ -118,10 +118,46 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdlib>
 #include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+
+// ── fixy-A1-010: honor noexcept against std::jthread's throwing ctor ──
+//
+// `mint_permission_fork` (below) is declared `noexcept` because it
+// is the user-facing structured-concurrency primitive — callers
+// chain CSL-typed handoffs through it and must know it cannot
+// propagate exceptions.  Internally it spawns `std::jthread`s
+// whose constructors are NOT `noexcept`: under the hood pthread_
+// create can fail with EAGAIN / ENOMEM / EINVAL and libstdc++
+// throws `std::system_error`.
+//
+// Two failure modes are possible if we did nothing:
+//
+//   * `-fno-exceptions` set: libstdc++ rewrites the throw to
+//     `_GLIBCXX_THROW_OR_ABORT` → `std::abort`.  Noexcept honored,
+//     Crucible's resource-fails-abort policy honored.
+//   * `-fexceptions` set: `std::system_error` propagates to the
+//     noexcept boundary and the runtime calls `std::terminate`.
+//     Noexcept technically honored (terminate IS a noexcept end
+//     state), but the failure differs from Crucible's `std::abort`
+//     contract and bypasses any `crucible_abort()` flushing logic.
+//
+// We do not rely on the build flag.  `permission_fork_spawn_`
+// (below) wraps the `std::jthread`-constructing array initializer in a
+// `try` / `catch (...)` and converts any caught exception into
+// `std::abort()`.  The catch is a no-op under `-fno-exceptions`
+// (the throw was already rewritten), and a defensive abort under
+// `-fexceptions`.  The noexcept declaration is honored at the
+// source level, not at the build-flag level.
+//
+// The catch must be `(...)` rather than `(std::system_error const&)`
+// because under future libstdc++ versions or non-libstdc++ runtimes
+// the exception type may change; the contract is "any exception
+// from std::jthread construction becomes std::abort", not
+// specifically "std::system_error".
 
 namespace crucible::safety {
 
@@ -190,6 +226,14 @@ template <typename Ctx>
 //
 // Implemented as a fold over std::index_sequence so we can handle
 // arbitrary N at compile time without recursion.
+//
+// Noexcept contract: std::jthread's ctor is NOT noexcept (it wraps
+// pthread_create, which can fail with EAGAIN/ENOMEM/EINVAL).  The
+// brace-init below is wrapped in try / catch (...) -> std::abort()
+// so the noexcept claim holds at the source level regardless of
+// whether the build mode is -fno-exceptions (libstdc++ pre-rewrites
+// the throw) or -fexceptions (our catch fires).  See the top-of-
+// file doc block for the full rationale (fixy-A1-010).
 
 template <typename Ctx, typename Children, typename Callables, std::size_t... Is>
 void permission_fork_spawn_(Ctx const& ctx,
@@ -205,17 +249,41 @@ void permission_fork_spawn_(Ctx const& ctx,
     // The array's destructor joins all jthreads when the function
     // returns, by reverse-of-construction order (which doesn't matter
     // for correctness — all bodies must complete before we return).
-    [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {
-        std::jthread{
-            [child_perm = std::move(std::get<Is>(std::forward<Children>(children))),
-             callable   = std::move(std::get<Is>(std::forward<Callables>(callables))),
-             child_ctx  = ctx]
-            (std::stop_token) mutable noexcept {
-                callable(std::move(child_perm), child_ctx);
-            }
-        }...
-    };
-    // ~std::array runs here, joining each jthread.
+    //
+    // fixy-A1-010: `std::jthread`'s ctor is not noexcept (pthread_
+    // create can fail with EAGAIN/ENOMEM/EINVAL).  Under
+    // `-fexceptions` that throws `std::system_error` past our
+    // noexcept boundary into `std::terminate`; under
+    // `-fno-exceptions` libstdc++ pre-rewrites the throw to
+    // `_GLIBCXX_THROW_OR_ABORT` → `std::abort`.  We make the
+    // failure mode source-level deterministic by wrapping the
+    // brace-init in a `try`/`catch (...)` that converts ANY
+    // exception to `std::abort`, matching Crucible's
+    // resource-failure-aborts policy on every build mode.
+#if defined(__cpp_exceptions)
+    try {
+#endif
+        [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {
+            std::jthread{
+                [child_perm = std::move(std::get<Is>(std::forward<Children>(children))),
+                 callable   = std::move(std::get<Is>(std::forward<Callables>(callables))),
+                 child_ctx  = ctx]
+                (std::stop_token) mutable noexcept {
+                    callable(std::move(child_perm), child_ctx);
+                }
+            }...
+        };
+        // ~std::array runs here, joining each jthread.
+#if defined(__cpp_exceptions)
+    } catch (...) {
+        // pthread_create failed (EAGAIN / ENOMEM / EINVAL).  The
+        // catch-all is intentional: under future libstdc++ versions
+        // or non-libstdc++ runtimes the exception type may change;
+        // the contract is "any failure from std::jthread construction
+        // becomes std::abort", not specifically "std::system_error".
+        std::abort();
+    }
+#endif
 }
 
 template <typename Ctx, typename Children, typename Callables, std::size_t... Is>
