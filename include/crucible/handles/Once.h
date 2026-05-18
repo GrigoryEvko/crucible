@@ -252,15 +252,36 @@ class Lazy : Pinned<Lazy<T>> {
     alignas(T) unsigned char storage_[sizeof(T)]{};
     Once once_{};
 
-    // Internal reach-through: cast cascade static_cast<T*>(
-    // static_cast<void*>(&storage_)) is the §III-clean equivalent of
-    // reinterpret_cast<T*> — reaches through void* without invoking
-    // pointer-type-pun UB.
+    // Internal reach-through: §III-clean cast cascade
+    // `static_cast<T*>(static_cast<void*>(&storage_))` reaches through
+    // void* without invoking reinterpret_cast.  Wrapped in
+    // `std::launder` (fixy-A1-023): post-placement-new, the bytes at
+    // `&storage_` host an object of type T whose lifetime started at
+    // the `::new (&storage_) T(...)` call site inside get_or_init().
+    // `std::launder` is the C++17/23-canonical optimizer barrier that
+    // formally re-establishes that aliasing fact for the optimizer,
+    // which is otherwise free to assume the original unsigned-char
+    // array is still in lifetime under -O3 + strict aliasing.  Sibling
+    // pattern in `concurrent/AdaptiveScheduler.h` lines 188/191/196.
+    //
+    // Why not `std::start_lifetime_as<T>` (CLAUDE.md §II MemSafe entry):
+    // start_lifetime_as implicitly CREATES a T at the byte address — it
+    // is the right tool for IMPLICIT-LIFETIME T accessed without
+    // placement-new (the AtomicSnapshot/memcpy pattern in
+    // `concurrent/AtomicSnapshot.h` lines 310/341).  Lazy<T> supports
+    // arbitrary T (including non-trivial types whose dtor must be
+    // called from `~Lazy()`); calling start_lifetime_as<T> here would
+    // re-create the T, leaving the placement-new'd object's lifetime
+    // wrong and the destructor's `->~T()` racing a fresh implicit T.
+    // The distinction is documented at the cite site for future
+    // refactor-safety.
     [[nodiscard]] T* storage_ptr_() noexcept {
-        return static_cast<T*>(static_cast<void*>(&storage_));
+        return std::launder(
+            static_cast<T*>(static_cast<void*>(&storage_)));
     }
     [[nodiscard]] const T* storage_ptr_() const noexcept {
-        return static_cast<const T*>(static_cast<const void*>(&storage_));
+        return std::launder(
+            static_cast<const T*>(static_cast<const void*>(&storage_)));
     }
 
 public:
