@@ -127,7 +127,9 @@ struct can_transition_impl<M, NewState, true>
     : std::bool_constant<
           std::is_move_constructible_v<
               typename std::remove_cvref_t<M>::state_type>
-       && std::is_move_constructible_v<NewState>> {};
+       && std::is_move_constructible_v<NewState>
+       && ::crucible::safety::machine_transition_v<
+              typename std::remove_cvref_t<M>::state_type, NewState>> {};
 
 }  // namespace detail
 

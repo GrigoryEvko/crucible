@@ -34,6 +34,10 @@ struct Connected {
     explicit Connected(int f) noexcept : fd{f} {}
 };
 
+// fixy-H-21: opt-in transition relation per CRUCIBLE_ALLOW_MACHINE_TRANSITION.
+CRUCIBLE_ALLOW_MACHINE_TRANSITION(Disconnected, Connecting)
+CRUCIBLE_ALLOW_MACHINE_TRANSITION(Connecting,   Connected)
+
 // ─── 1. state_of_t projection ─────────────────────────────────────
 
 static_assert(std::is_same_v<fmach::state_of_t<saf::Machine<Disconnected>>,

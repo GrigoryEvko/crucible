@@ -1652,6 +1652,10 @@ crucible_neg_compile_fixy_test(neg_fixy_mach_construct_unbuildable
     "is_constructible|constraints not satisfied|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_mach_too_many_args
     "is_constructible|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_mach_transition_unspecialized
+    "MachineTransition|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_mach_transition_wrong_direction
+    "MachineTransition|constraints not satisfied|associated constraints are not satisfied")
 
 # ── FIXY-WRAP — fixy/Wrap.h re-export of value-level safety wrappers
 # (Linear / Refined / SealedRefined / Tagged / Secret / Monotonic /

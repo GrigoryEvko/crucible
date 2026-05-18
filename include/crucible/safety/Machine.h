@@ -37,6 +37,49 @@
 
 namespace crucible::safety {
 
+// ── machine_transition<From, To> — opt-in transition relation ─────
+//
+// fixy-H-21: until this trait was added, `transition_to<NewState>(
+// Machine<OldState>&&, NewState)` accepted ANY state-pair, so a
+// producer could write `transition_to<Disconnected>(authenticated)`
+// and the type system silently allowed the rollback.  The substrate
+// now requires an explicit per-state-pair opt-in: callers ship a
+// specialization stating "this transition is legal", and the gate
+// fires at the call site otherwise.
+//
+// Discipline:
+//   * Primary defaults to std::false_type — unspecified pairs reject.
+//   * Diagonal `machine_transition<S, S>` is true by default — same-
+//     state moves replace the payload without changing the conceptual
+//     state and are universally legal (production callers use them to
+//     update counters / refresh fields).
+//   * Production callers ship one `CRUCIBLE_ALLOW_MACHINE_TRANSITION(
+//     From, To)` per allowed edge, ideally right next to the state
+//     struct declarations so the transition graph is locally readable.
+//
+// The trait is a CLOSED data-flow boundary in the §XXI sense: every
+// `transition_to` call's authority derives from one specialization
+// hit.  A grep for `machine_transition<` enumerates the entire
+// transition relation across the codebase.
+template <typename From, typename To>
+struct machine_transition : std::false_type {};
+
+// Diagonal — same-state move is always allowed (payload update,
+// not a conceptual transition).
+template <typename S>
+struct machine_transition<S, S> : std::true_type {};
+
+template <typename From, typename To>
+inline constexpr bool machine_transition_v =
+    machine_transition<From, To>::value;
+
+// MachineTransition<From, To> — concept gate for `transition_to`'s
+// requires-clause.  Pure trait alias; lifts the bool into the concept
+// namespace so the error message reads "MachineTransition<A, B> was
+// not satisfied" rather than the noisier static_assert chain.
+template <typename From, typename To>
+concept MachineTransition = machine_transition_v<From, To>;
+
 template <typename State>
 class [[nodiscard]] Machine {
     State state_;
@@ -102,7 +145,14 @@ template <typename State, typename... Args>
 // Helper for the common transition pattern: consume old Machine,
 // return new Machine with a constructed state.  Useful when the
 // transition performs no additional work beyond state replacement.
+//
+// fixy-H-21: requires-clause gates the transition on the opt-in
+// `machine_transition<OldState, NewState>` relation.  Pairs without
+// a specialization are rejected at the call site; the diagnostic
+// names `MachineTransition<OldState, NewState>` so the failing edge
+// is immediately readable.
 template <typename NewState, typename OldState>
+    requires MachineTransition<OldState, NewState>
 [[nodiscard]] constexpr Machine<NewState> transition_to(
     Machine<OldState>&& m, NewState s)
     noexcept(std::is_nothrow_move_constructible_v<NewState>
@@ -117,3 +167,12 @@ static_assert(sizeof(Machine<int>)   == sizeof(int));
 static_assert(sizeof(Machine<void*>) == sizeof(void*));
 
 } // namespace crucible::safety
+
+// CRUCIBLE_ALLOW_MACHINE_TRANSITION(From, To) — convenience for
+// adjacent declarations to the state structs.  Expands to the
+// canonical `machine_transition<From, To>` specialization.  Must
+// appear at namespace scope.
+#define CRUCIBLE_ALLOW_MACHINE_TRANSITION(From, To)                       \
+    namespace crucible::safety {                                          \
+        template <> struct machine_transition<From, To> : std::true_type{};\
+    }
