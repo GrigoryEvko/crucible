@@ -84,6 +84,46 @@ struct OsUniverse {
     // EffectRowLattice.h asserts cardinality <= 64.
     static constexpr std::size_t cardinality = effect_count;
 
+    // ── Carrier-width pins (fixy-A3-018) ────────────────────────────
+    //
+    // EffectRowLattice carries row bitmasks in `std::uint64_t`
+    // (RowHashFold.h:184-186 / EffectRowLattice.h documents the
+    // "≤ 64 atoms by axiom" invariant).  Per FOUND-I04 append-only
+    // Universe extension, new atoms can land at the next free
+    // underlying value — but if a 65th atom is added at value ≥ 64,
+    // `bit_position(atom)` produces a shift past the carrier width
+    // and the row encoding silently overflows.  Same root cause as
+    // A3-011's pin in Capabilities.h, but on the descriptor side.
+    //
+    // Two pins enforce the invariant at the type-system boundary:
+    //
+    //   1. `cardinality <= 64` — caps the number of atoms.
+    //   2. `underlying_type_t<atom_t> == uint8_t` — pins the atom
+    //      encoding so a future `enum class Effect : uint16_t`
+    //      widening doesn't silently expand the bit range without
+    //      explicit attention.
+    //
+    // Both fire at compile time; the discipline scales to every
+    // future per-axis Universe (DetSafeUniverse, HotPathUniverse,
+    // ...) following the same pattern.
+    static_assert(cardinality <= 64,
+        "[OsUniverse_Overflow] fixy-A3-018: OsUniverse cardinality "
+        "exceeds EffectRowLattice's uint64_t bitmask carrier width. "
+        "FOUND-I04 append-only Universe extension landed atom #65 — "
+        "either widen the carrier to uint128_t (touches every "
+        "row_hash / row_descriptor consumer) or split the Universe "
+        "into multiple disjoint Universes (preferred, follows the "
+        "per-axis Universe roadmap in FOUND-G).");
+
+    static_assert(
+        std::is_same_v<std::underlying_type_t<atom_t>, std::uint8_t>,
+        "[OsUniverse_Underlying] fixy-A3-018: OsUniverse::atom_t "
+        "underlying type changed away from uint8_t — bit_position "
+        "casts through uint8_t and a wider underlying type silently "
+        "expands the encodable bit range past the carrier width "
+        "without bumping `cardinality`.  Audit every bit_position / "
+        "row_descriptor consumer before changing this pin.");
+
     // The value-level lattice instance — bounded distributive lattice
     // over `std::uint64_t` bitmasks, satisfying Lattice +
     // BoundedLattice + the Birkhoff distributivity witness.  See

@@ -2137,6 +2137,20 @@ crucible_neg_compile_effects_test(neg_capability_throwing_nsdmi_noexcept_pin
 crucible_neg_compile_effects_test(neg_capability_throwing_nsdmi_trait_pin
     "static assertion failed|static_assert|fixy-A3-015")
 
+# ─── fixy-A3-018 (#1625): OsUniverse carrier-width pins ────────────
+#
+# OsUniverse.h ships TWO pins guarding the uint64_t bitmask carrier:
+# (1) cardinality ≤ 64; (2) atom_t underlying type == uint8_t.  Both
+# fire at the descriptor site, foreclosing FOUND-I04 append-only
+# Universe extension landing a 65th atom or widening atom_t silently.
+# The fixtures witness the REJECTION side: a synthetic Universe with
+# cardinality = 65 trips (1); a synthetic Universe with uint16_t
+# underlying trips (2).  Sister pin to A3-011 (Capabilities.h side).
+crucible_neg_compile_effects_test(neg_os_universe_cardinality_overflow
+    "static assertion failed|static_assert|OsUniverse_Overflow|fixy-A3-018")
+crucible_neg_compile_effects_test(neg_os_universe_atom_underlying_widened
+    "static assertion failed|static_assert|OsUniverse_Underlying|fixy-A3-018")
+
 # ─── P1-AUDIT-5 (#856): wrapper-lift + tier-discrimination gates ───
 #
 # Two fixtures: AllocClassFromCtx rejects Unbound (no wrapper
