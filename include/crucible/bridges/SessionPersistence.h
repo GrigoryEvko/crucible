@@ -46,7 +46,7 @@ class SessionPersistenceState {
     // view ties the persistence lifecycle to the caller's mint-time proof.
     // ScopedView is a phantom-typed Carrier const* — copyable, layout-flat,
     // 8 bytes, no heap.  Cipher outlives this state by ctor-param contract.
-    Cipher::OpenView view_;
+    CipherOpenView view_;
     SessionEventLog log_;
     std::size_t flushed_count_ = 0;
     SessionPersistencePolicy policy_{};
@@ -54,14 +54,14 @@ class SessionPersistenceState {
 
 public:
     using caller_row = CallerRow;
-    using required_row = Cipher::persist_session_events_required_row;
+    using required_row = CipherSessionEventPersistenceRow;
 
     static_assert(::crucible::effects::Subrow<required_row, CallerRow>,
         "SessionPersistenceState<CallerRow>: CallerRow must contain "
         "IO + Block because persistence writes Cipher files.");
 
     SessionPersistenceState(Cipher& cipher,
-                            Cipher::OpenView const& view,
+                            CipherOpenView const& view,
                             SessionTagId session,
                             SessionPersistencePolicy policy) noexcept
         : cipher_{cipher},
@@ -587,11 +587,11 @@ public:
 
     template <::crucible::effects::IsExecCtx Ctx>
         requires ::crucible::effects::CtxAdmits<
-            Ctx, Cipher::persist_session_events_required_row>
+            Ctx, CipherSessionEventPersistenceRow>
     [[nodiscard]] static std::vector<SessionEvent> replay(
         Ctx const&,
         Cipher& cipher,
-        Cipher::OpenView const& view,
+        CipherOpenView const& view,
         SessionTagId session,
         StepId from_step = {})
     {
@@ -603,11 +603,11 @@ template <typename Proto,
           ::crucible::effects::IsExecCtx Ctx,
           typename Resource>
     requires ::crucible::effects::CtxAdmits<
-        Ctx, Cipher::persist_session_events_required_row>
+        Ctx, CipherSessionEventPersistenceRow>
 [[nodiscard]] auto mint_persisted_session(
     Ctx const&,
     Cipher& cipher,
-    Cipher::OpenView const& view,
+    CipherOpenView const& view,
     Resource&& resource,
     SessionTagId session,
     RoleTagId self,
@@ -627,7 +627,7 @@ template <typename Proto,
 template <typename Proto, typename Resource>
 void mint_persisted_session(
     Cipher&,
-    Cipher::OpenView const&,
+    CipherOpenView const&,
     Resource&&,
     SessionTagId,
     RoleTagId,
@@ -649,7 +649,7 @@ void mint_persisted_session(
     RoleTagId,
     SessionPersistencePolicy = {})
     = delete("[PersistedSession_OpenViewRequired] "
-             "mint_persisted_session<Proto> requires Cipher::OpenView at "
+             "mint_persisted_session<Proto> requires CipherOpenView at "
              "the mint boundary; pass cipher.mint_open_view() explicitly.");
 
 template <::crucible::effects::IsExecCtx Ctx,
@@ -657,12 +657,12 @@ template <::crucible::effects::IsExecCtx Ctx,
           typename Resource,
           typename LoopCtx>
     requires ::crucible::effects::CtxAdmits<
-        Ctx, Cipher::persist_session_events_required_row>
+        Ctx, CipherSessionEventPersistenceRow>
 [[nodiscard]] auto mint_persisted_session(
     Ctx const&,
     SessionHandle<Proto, Resource, LoopCtx> inner,
     Cipher& cipher,
-    Cipher::OpenView const& view,
+    CipherOpenView const& view,
     SessionTagId session,
     RoleTagId self,
     RoleTagId peer,
@@ -691,7 +691,7 @@ void mint_persisted_session(
     SessionPersistencePolicy = {})
     = delete("[PersistedSession_OpenViewRequired] "
              "mint_persisted_session(ctx, handle, cipher, ...) requires "
-             "Cipher::OpenView at the mint boundary; pass "
+             "CipherOpenView at the mint boundary; pass "
              "cipher.mint_open_view() explicitly.");
 
 // ──────────────────────────────────────────────────────────────────
@@ -714,12 +714,12 @@ template <::crucible::effects::IsExecCtx Ctx,
           typename Resource,
           typename LoopCtx>
     requires ::crucible::effects::CtxAdmits<
-        Ctx, Cipher::persist_session_events_required_row>
+        Ctx, CipherSessionEventPersistenceRow>
 [[nodiscard]] auto mint_persisted_session(
     Ctx const&,
     PermissionedSessionHandle<Proto, PS, Resource, LoopCtx> inner,
     Cipher& cipher,
-    Cipher::OpenView const& view,
+    CipherOpenView const& view,
     SessionTagId session,
     RoleTagId self,
     RoleTagId peer,
@@ -749,7 +749,7 @@ void mint_persisted_session(
     SessionPersistencePolicy = {})
     = delete("[PersistedSession_OpenViewRequired] "
              "mint_persisted_session(ctx, psh, cipher, ...) requires "
-             "Cipher::OpenView at the mint boundary; pass "
+             "CipherOpenView at the mint boundary; pass "
              "cipher.mint_open_view() explicitly.");
 
 }  // namespace crucible::safety::proto

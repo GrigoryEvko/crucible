@@ -32,6 +32,7 @@
 #include <crucible/Serialize.h>
 #include <crucible/cipher/CipherTierPromotion.h>
 #include <crucible/cipher/FederationProtocol.h>
+#include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/effects/EffectRow.h>           // FOUND-I09
 #include <crucible/handles/FileHandle.h>
 #include <crucible/safety/diag/RowHashFold.h>
@@ -123,9 +124,12 @@ content_addressed_payload(const T* value) noexcept {
 // ── Cipher state tag ────────────────────────────────────────────────
 // Open denotes: open() has run, objects/ exists, root_ is non-empty.
 // Closed is implicit (no tag) — the negation of is_open().
-namespace cipher_state {
-    struct Open {};
-}
+//
+// fixy-A2-014: cipher_state::Open is defined in
+// <crucible/cipher/SessionPersistenceSurface.h> (included above) so
+// the SessionPersistence bridge can name CipherOpenView without
+// pulling the full Cipher.h transitive set.  The forward-friendly
+// definition lives there; this comment is the breadcrumb.
 
 class CRUCIBLE_OWNER Cipher {
  public:
@@ -139,10 +143,12 @@ class CRUCIBLE_OWNER Cipher {
         cipher::LoadedContentAddressedPayload<RegionNode>;
     using SessionEvent = safety::proto::SessionEvent;
 
+    // fixy-A2-014: alias the namespace-scope row alias from
+    // SessionPersistenceSurface.h.  Lifting the typedef out lets
+    // SessionPersistence.h reference the row without dragging the
+    // full Cipher.h transitive set in.
     using persist_session_events_required_row =
-        ::crucible::effects::Row<
-            ::crucible::effects::Effect::IO,
-            ::crucible::effects::Effect::Block>;
+        ::crucible::CipherSessionEventPersistenceRow;
 
     inline static constexpr RowHash SESSION_EVENT_FEDERATION_ROW_HASH{
         ::crucible::safety::diag::row_hash_contribution_v<
@@ -227,7 +233,11 @@ class CRUCIBLE_OWNER Cipher {
     // ── Open-state query + view minting ─────────────────────────────
     [[nodiscard]] bool is_open() const noexcept { return root_.has_value(); }
 
-    using OpenView = crucible::safety::ScopedView<Cipher, cipher_state::Open>;
+    // fixy-A2-014: alias the namespace-scope ScopedView alias from
+    // SessionPersistenceSurface.h for backwards-compatible call sites
+    // (`auto view = cipher.mint_open_view();` resolves OpenView via
+    // class-scope name lookup unchanged).
+    using OpenView = ::crucible::CipherOpenView;
 
     [[nodiscard]] OpenView mint_open_view() const noexcept
         pre (is_open())
