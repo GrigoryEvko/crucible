@@ -179,7 +179,64 @@ template <typename R>
 using canonical_row_t = typename canonical_row<R>::type;
 
 // ── Membership / size traits ────────────────────────────────────────
+//
+// THREE CARDINALITY LENSES — fixy-A3-031.  The substrate carries three
+// related-but-distinct notions of "how big is row R", and a careless
+// reader can pick the wrong one:
+//
+//   1. PACK SIZE      — positional count, includes duplicates and
+//                       preserves declaration order.  Source of truth:
+//                       `Row<Es...>::size = sizeof...(Es)`.  For
+//                       `Row<Effect::Bg, Effect::IO, Effect::Bg>` this
+//                       is 3.  This is what the bare `row_size_v<R>`
+//                       returns; kept as-is for backwards compatibility.
+//
+//   2. UNIQUE SIZE    — set cardinality after sort+dedup via
+//                       `canonical_row_t<R>`.  For the same row above
+//                       this is 2 (Bg, IO).  Matches the set-semantic
+//                       notion of "how many distinct effects does this
+//                       row mention".  All set-algebra outputs
+//                       (`row_union_t`, `row_difference_t`,
+//                       `row_intersection_t`) ARE canonical, so for
+//                       them PACK SIZE == UNIQUE SIZE; only directly-
+//                       written `Row<Es...>` literals can differ.
+//
+//   3. HASH SIZE      — internal count used by
+//                       `row_hash_contribution<Row<Es...>>` after
+//                       `fmix64_fold_unique_sorted` (fixy-H-19).  Equal
+//                       to UNIQUE SIZE by construction — the hash IS
+//                       set-semantic, regardless of how the row was
+//                       spelled.  Not exposed as a trait because it is
+//                       indistinguishable from UNIQUE SIZE; documented
+//                       here so readers don't reach for a third trait
+//                       that doesn't exist.
+//
+// USAGE GUIDANCE:
+//   - Replay determinism / signature equality / structural matching:
+//     use `row_pack_size_v<R>`.  Two `Row<...>` types with the SAME
+//     pack agree; differently-ordered literals disagree.
+//   - Set-semantic predicates / "is row empty as a set", subrow tests,
+//     federation cache slot reasoning: use `row_unique_size_v<R>`.
+//   - Bare `row_size_v<R>` aliases PACK SIZE.  New code should prefer
+//     the explicit name (`row_pack_size_v` or `row_unique_size_v`);
+//     existing sites are untouched.
 
+// Raw pack count — positional, includes duplicates, respects order.
+// `row_pack_size_v<Row<A, B, A>> == 3`.  Backward-compatible alias
+// for `R::size`; do not change without auditing every static_assert
+// that compares it.
+template <typename R>
+inline constexpr std::size_t row_pack_size_v = R::size;
+
+// Set cardinality — sort+dedup'd count.  Matches the hash invariant.
+// `row_unique_size_v<Row<A, B, A>> == 2` (assuming A != B).
+template <typename R>
+inline constexpr std::size_t row_unique_size_v =
+    row_pack_size_v<canonical_row_t<R>>;
+
+// Legacy / bare alias for `row_pack_size_v`.  Many production sites
+// already read this; the rename to `row_pack_size_v` is a clarity
+// affordance, not a deprecation.
 template <typename R>
 inline constexpr std::size_t row_size_v = R::size;
 
@@ -531,6 +588,46 @@ static_assert(std::is_same_v<R_canon_once, Row<Effect::Alloc, Effect::Bg>>);
 static_assert(row_size_v<canonical_row_t<Row<Effect::Bg, Effect::IO, Effect::Bg>>> == 2);
 static_assert(row_size_v<canonical_row_t<Row<Effect::IO, Effect::IO, Effect::IO>>> == 1);
 static_assert(row_size_v<canonical_row_t<Row<>>> == 0);
+
+// ── fixy-A3-031: three cardinality lenses pinned by witnesses ──────
+//
+// Witness all three lenses on a single non-canonical literal so a
+// future reader can copy-paste the pattern at any production call
+// site that mixes pack-level matching with set-level reasoning.
+namespace effect_row_a3_031_witness {
+
+// A non-canonical literal: positions (Bg=3, IO=1, Bg=3) deliberately
+// in declaration order so PACK SIZE = 3, but UNIQUE SIZE = 2 because
+// Bg repeats.
+using R_dup = Row<Effect::Bg, Effect::IO, Effect::Bg>;
+
+// LENS 1 — pack size: positional count, includes duplicate Bg.
+static_assert(row_pack_size_v<R_dup> == 3);
+static_assert(row_size_v<R_dup>      == 3);  // legacy alias for pack
+
+// LENS 2 — unique size: set cardinality, dedups Bg.
+static_assert(row_unique_size_v<R_dup> == 2);
+
+// LENS 3 — hash size: indistinguishable from UNIQUE SIZE by design;
+// no separate trait, but the doc-block above names it so readers
+// don't go looking for one.  Spot-check the agreement by routing
+// through canonical_row_t (the hash internally does the same):
+static_assert(row_pack_size_v<canonical_row_t<R_dup>>
+            == row_unique_size_v<R_dup>);
+
+// On canonical rows the three lenses agree.  Set-algebra outputs are
+// canonical (fixy-A3-001), so production sites pass through this
+// equality automatically.
+using R_canon = canonical_row_t<R_dup>;
+static_assert(row_pack_size_v<R_canon>   == 2);
+static_assert(row_unique_size_v<R_canon> == 2);
+
+// Empty row: all three lenses are 0.
+static_assert(row_pack_size_v<Row<>>   == 0);
+static_assert(row_unique_size_v<Row<>> == 0);
+static_assert(row_size_v<Row<>>        == 0);
+
+}  // namespace effect_row_a3_031_witness
 
 // ── Set operations now produce canonical types (fixy-A3-001) ────────
 //
