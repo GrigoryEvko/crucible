@@ -61,6 +61,10 @@
 // RecordingSessionHandle, SessionPersistence) are each required
 // directly because they declare distinct mint factories surfaced
 // under the fixy::bridge:: namespace — none subsumes another.
+// fixy-A2-014: SessionPersistence.h no longer transitively pulls Cipher.h;
+// fixy::bridge:: re-exports mint_persisted_session and its companions,
+// so the umbrella restores the convenience pull.
+#include <crucible/Cipher.h>
 #include <crucible/Vigil.h>
 #include <crucible/bridges/CrashTransport.h>
 #include <crucible/bridges/EndpointMint.h>

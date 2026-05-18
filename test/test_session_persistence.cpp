@@ -1,3 +1,7 @@
+// fixy-A2-014: SessionPersistence.h no longer pulls Cipher.h; this TU
+// constructs Cipher::open + calls Cipher methods, so it needs the
+// complete class.
+#include <crucible/Cipher.h>
 #include <crucible/bridges/SessionPersistence.h>
 
 #include "test_assert.h"

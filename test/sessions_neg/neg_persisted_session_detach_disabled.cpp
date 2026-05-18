@@ -6,6 +6,7 @@
 // abandonment at compile time instead of leaving a debug-only abort
 // path.
 
+#include <crucible/Cipher.h>  // fixy-A2-014: explicit; SessionPersistence.h no longer pulls Cipher.h
 #include <crucible/bridges/SessionPersistence.h>
 
 namespace proto = crucible::safety::proto;

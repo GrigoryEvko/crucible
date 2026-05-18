@@ -9,9 +9,22 @@
 // RecordingSessionHandle; this header adds durability and replay
 // loading without duplicating the session algebra.
 
-#include <crucible/Cipher.h>
+// fixy-A2-014: SessionPersistence.h pulled the full <crucible/Cipher.h>
+// transitive set (~30 sub-includes — Arena, MerkleDag, MetaLog,
+// FederationProtocol, FileHandle, the Decide/Tagged/Mutation safety
+// stack).  The bridge's actual touch on Cipher is FIVE items —
+// CipherOpenView, CipherSessionEventPersistenceRow, the forward decl
+// of class Cipher, and three template-dependent method calls on a
+// Cipher& reference.  SessionPersistenceSurface.h carries the forward
+// decl + the two namespace-scope aliases so this header parses without
+// pulling the heavy Cipher transitive.  Consumers that actually
+// instantiate PersistedSessionHandle methods (every TU that calls
+// .close/.send/.recv/.flush on the handle, or constructs a Cipher) must
+// `#include <crucible/Cipher.h>` themselves — the template method
+// bodies need a complete Cipher at instantiation time.
 #include <crucible/bridges/RecordingPermissionedSessionHandle.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/safety/IsSessionHandle.h>
 

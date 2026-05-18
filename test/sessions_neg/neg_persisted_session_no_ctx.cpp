@@ -4,6 +4,7 @@
 // the compile-time IO+Block authority for Cipher persistence; a
 // context-free spelling would bypass the row fence.
 
+#include <crucible/Cipher.h>  // fixy-A2-014: explicit; SessionPersistence.h no longer pulls Cipher.h
 #include <crucible/bridges/SessionPersistence.h>
 
 namespace proto = crucible::safety::proto;

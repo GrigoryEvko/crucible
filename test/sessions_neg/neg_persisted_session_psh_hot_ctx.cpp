@@ -15,6 +15,7 @@
 //   "constraints not satisfied" / "template constraint failure" /
 //   "associated constraints" / "CtxAdmits".
 
+#include <crucible/Cipher.h>  // fixy-A2-014: explicit; SessionPersistence.h no longer pulls Cipher.h
 #include <crucible/bridges/SessionPersistence.h>
 #include <crucible/sessions/SessionMint.h>
 

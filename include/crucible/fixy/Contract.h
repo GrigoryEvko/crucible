@@ -81,6 +81,11 @@
 // their substrate definitions (textually included from
 // safety/Contract.h).
 
+// fixy-A2-014: SessionPersistence.h no longer transitively pulls Cipher.h;
+// fixy/Contract.h ships Cipher migration aliases (CipherTier, mint_promote)
+// that need the complete class for static_assert checks.  Restore the
+// pull at the umbrella so consumers see no surface change.
+#include <crucible/Cipher.h>
 #include <crucible/bridges/SessionPersistence.h>
 #include <crucible/cipher/CipherTierPromotion.h>
 #include <crucible/safety/Contract.h>

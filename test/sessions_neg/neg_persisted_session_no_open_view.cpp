@@ -4,6 +4,7 @@
 // the mint boundary.  A bare Cipher& does not carry the Open-state
 // proof needed before the bridge stores a long-lived Cipher reference.
 
+#include <crucible/Cipher.h>  // fixy-A2-014: explicit; SessionPersistence.h no longer pulls Cipher.h
 #include <crucible/bridges/SessionPersistence.h>
 
 namespace proto = crucible::safety::proto;

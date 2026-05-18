@@ -4,6 +4,7 @@
 // context must admit Row<IO, Block>.  HotFgCtx is Row<> and must not
 // be able to construct a persistence bridge.
 
+#include <crucible/Cipher.h>  // fixy-A2-014: explicit; SessionPersistence.h no longer pulls Cipher.h
 #include <crucible/bridges/SessionPersistence.h>
 
 namespace proto = crucible::safety::proto;
