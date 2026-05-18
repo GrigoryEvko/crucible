@@ -204,6 +204,10 @@ public:
     // not a mint itself.  Reviewers grepping `mint_session_handle<`
     // see every session-token origination including the LEC path.
 
+    void establish(Resource* r) noexcept {
+        resource_.publish(r);
+    }
+
     // ── Observe ──────────────────────────────────────────────────────
     //
     // Returns:
