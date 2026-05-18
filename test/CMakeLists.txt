@@ -8808,3 +8808,14 @@ crucible_neg_compile_bridges_test(neg_mint_atomic_session_non_atomic_machine_cel
     "no matching function for call to|constraints not satisfied|AtomicMachineCell")
 crucible_neg_compile_bridges_test(neg_mint_atomic_session_malformed_proto
     "no matching function for call to|constraints not satisfied|is_well_formed")
+
+# fixy-A2-021 — HS14 floor for the WrapCrashReturnKey pass-key idiom.
+# Two fixtures witness that external code cannot mint or use the key:
+#   neg_wrap_crash_return_key_external_construction — bare `Key{}` rejected
+#   neg_crash_event_external_construction          — `CrashEvent<P,R>{}` rejected
+# The non-template `detail::WrapCrashReturnAuthorizer` friend is immune to
+# parameter-pack drift on `wrap_crash_return` (template-friend brittleness).
+crucible_neg_compile_bridges_test(neg_wrap_crash_return_key_external_construction
+    "is private within this context|private|WrapCrashReturnKey")
+crucible_neg_compile_bridges_test(neg_crash_event_external_construction
+    "is private within this context|private|WrapCrashReturnKey")

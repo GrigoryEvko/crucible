@@ -196,17 +196,46 @@ template <typename PeerTag,
 // The pass-key idiom: an empty type whose ctor is private, with the
 // only friend being the helper that's authorized to construct CrashEvent.
 // Anyone else attempting to spell `CrashEvent<P, R>{key, r}` cannot
-// produce a `key` of type `WrapCrashReturnKey` to begin with.  This
-// sidesteps the template-friend signature-matching subtleties that
-// arise when friending a function template directly.
+// produce a `key` of type `WrapCrashReturnKey` to begin with.
+//
+// fixy-A2-021: the friend MUST NOT be the variadic
+// `wrap_crash_return` function template directly.  Template-friend
+// signature matching is parameter-order brittle on GCC 16 — any
+// future evolution that touches `wrap_crash_return`'s template
+// parameter list or function parameter list (a `std::source_location
+// loc = std::source_location::current()` is the standard idiom in
+// this codebase, see mint_session_handle at sessions/Session.h) would
+// silently de-friend the helper and surface as
+// "WrapCrashReturnKey's default ctor is private" at distant
+// CrashEvent construction sites.  The fix routes minting through a
+// non-template authorizer struct in `detail::` — friendship matches
+// by class identity, immune to parameter-pack drift.
+namespace detail { struct WrapCrashReturnAuthorizer; }
+
 class WrapCrashReturnKey {
     constexpr WrapCrashReturnKey() noexcept = default;
 
-    // Only the wrap_crash_return helper can mint a key.
-    template <typename PeerTag2, typename InnerHandle2,
-              typename Resource2, typename Reason2>
-    friend constexpr auto wrap_crash_return(InnerHandle2&&, Reason2, Resource2) noexcept;
+    // Only `detail::WrapCrashReturnAuthorizer::mint()` can produce a
+    // key — and that helper is itself only callable from inside
+    // `wrap_crash_return` (the authorizer's `mint()` is named and
+    // located by deliberate design so call-site grep ("authorizer")
+    // finds every minting site in one pass; out-of-tree code cannot
+    // call it without becoming structurally visible).
+    friend struct detail::WrapCrashReturnAuthorizer;
 };
+
+namespace detail {
+
+// fixy-A2-021: the sole authorized mint path for WrapCrashReturnKey.
+// Non-template by design so the friend declaration above matches by
+// class identity rather than parameter-pack signature.
+struct WrapCrashReturnAuthorizer {
+    [[nodiscard]] static constexpr WrapCrashReturnKey mint() noexcept {
+        return WrapCrashReturnKey{};
+    }
+};
+
+}  // namespace detail
 
 template <typename PeerTag, typename Resource, typename... SurvivorTags>
 class CrashEvent {
@@ -424,28 +453,26 @@ template <typename PeerTag,
     // is a tag from `detach_reason::*`; mismatched / missing tags
     // produce the named diagnostic from #376.
     std::move(inner).detach(reason_tag);
-    // Mint a WrapCrashReturnKey (only this function can — its private
-    // ctor is friended on this template) and pass it to CrashEvent's
-    // pass-key-protected ctor.  Direct user `CrashEvent<P, R>{r}`
-    // construction outside this body cannot mint a key, so the
-    // unexpected-without-detach pattern from #400 is now a compile
-    // error rather than a runtime abort.
+    // fixy-A2-021: mint via the non-template authorizer.  This routing
+    // is immune to parameter-order drift (the prior implementation
+    // friended `wrap_crash_return` directly, which would silently
+    // de-friend on any future template-parameter-list evolution).
     detail::require_crash_survivors_declared_<PeerTag>();
 
     // H-25: mint a `crash_witness_key` as proof-of-death.  Its public
-    // ctor takes a WrapCrashReturnKey; WrapCrashReturnKey's own default
-    // ctor is private and friended only on wrap_crash_return, so this
-    // is the ONLY call site that can mint the witness.  We've already
+    // ctor takes a WrapCrashReturnKey; the only authorized way to
+    // produce one is `detail::WrapCrashReturnAuthorizer::mint()`,
+    // which this body has class-scope friend access to.  We've already
     // executed `inner.detach(reason_tag)` above, which is the dynamic
     // death witness the key represents (a `detach_reason::*` tag from
     // the bridge layer).
     return std::unexpected{
         detail::crash_event_for_t<PeerTag, Resource>{
-            WrapCrashReturnKey{},
+            detail::WrapCrashReturnAuthorizer::mint(),
             std::move(recovered),
             ::crucible::permissions::mint_permission_inherit<PeerTag>(
                 ::crucible::permissions::crash_witness_key{
-                    WrapCrashReturnKey{}})}};
+                    detail::WrapCrashReturnAuthorizer::mint()})}};
 }
 
 // ═════════════════════════════════════════════════════════════════════
