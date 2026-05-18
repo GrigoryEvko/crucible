@@ -2001,6 +2001,19 @@ crucible_neg_compile_effects_test(neg_bits_from_row_non_row
 crucible_neg_compile_effects_test(neg_row_subsumes_bits_non_row
     "associated constraints are not satisfied|constraints not satisfied|no matching|IsEffectRow")
 
+# fixy-A3-022 (#1629): EffectMask::from_raw rejects unknown bits.
+# The runtime dual of Row<Es...> is now hardened against wire-
+# format bit-poisoning — a peer sending bits outside the
+# `(1u << effect_count) - 1` valid mask trips CRUCIBLE_PRE at
+# consteval (__builtin_trap poisoning the constant expression).
+# Two fixtures pin orthogonal bug classes — single-bit poison
+# (0x80) catches mask-on-read impls; multi-bit poison (0xC0)
+# catches half-broken / parity-based fence impls.
+crucible_neg_compile_effects_test(neg_effect_mask_from_raw_single_high_bit
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-constexpr function|non-constexpr")
+crucible_neg_compile_effects_test(neg_effect_mask_from_raw_high_bits
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-constexpr function|non-constexpr")
+
 # FOUND-H03-AUDIT-2 (#838): non-Row R rejection in ComputationGraded.
 # Witnesses that effect_row_to_at_t<NotARow> hard-errors at the alias
 # instantiation point — the helper's primary template is undefined on

@@ -73,6 +73,7 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>     // provides existing IsEffectRow concept
+#include <crucible/safety/Pre.h>          // CRUCIBLE_PRE — fires at consteval + runtime
 
 #include <bit>
 #include <cstdint>
@@ -116,7 +117,24 @@ public:
     ~EffectMask()                                      = default;
 
     // Explicit raw escape — for deserialization paths or interop.
+    //
+    // Wire-format hardening (fixy-A3-022): rejects unknown bits that
+    // would otherwise leak silently through `from_raw` and round-trip
+    // back out via `raw()`.  The Effect enum has exactly `effect_count`
+    // atoms (currently 6: Alloc=0 .. Test=5), and `(1u << effect_count)
+    // - 1` is therefore the FULL valid-bit mask.  Any bit at position
+    // ≥ effect_count corresponds to no Effect atom and is poison
+    // injected by a malicious or buggy peer.  CRUCIBLE_PRE fires at
+    // both consteval (poisons the surrounding constant evaluation via
+    // __builtin_trap) and at runtime in debug builds (routed through
+    // crucible::detail::contract_failed).  NDEBUG release builds emit
+    // an `[[assume]]` hint to the optimizer with zero per-call cost.
     [[nodiscard]] static constexpr EffectMask from_raw(underlying_type b) noexcept {
+        constexpr underlying_type valid_mask =
+            static_cast<underlying_type>(
+                (underlying_type{1} << effect_count) - underlying_type{1});
+        CRUCIBLE_PRE((b & static_cast<underlying_type>(~valid_mask))
+                     == underlying_type{0});
         return EffectMask{from_raw_tag_t{}, b};
     }
 
@@ -268,6 +286,16 @@ static_assert(bits_from_row<Row<Effect::Bg, Effect::Alloc>>()
 
 // from_raw round-trip.
 static_assert(EffectMask::from_raw(0x0B).raw() == 0x0B);
+
+// fixy-A3-022: from_raw rejects unknown bits.  Valid-bit pattern is
+// `(1u << effect_count) - 1` = `0x3F` for the 6-atom Effect enum
+// (Alloc=0..Test=5).  All-valid-bits is accepted; the neg-compile
+// fixtures in test/effects_neg/ witness that poisoned inputs fire
+// the CRUCIBLE_PRE precondition at consteval.
+static_assert(EffectMask::from_raw(0x3F).raw() == 0x3F);          // all 6 atoms
+static_assert(EffectMask::from_raw(0x00).raw() == 0x00);          // empty
+static_assert(EffectMask::from_raw(0x20).raw() == 0x20);          // Test only (bit 5)
+static_assert(EffectMask::from_raw(0x01).raw() == 0x01);          // Alloc only (bit 0)
 
 // row_subsumes_bits — drift-detection semantics.
 [[nodiscard]] consteval bool drift_detection() noexcept {
