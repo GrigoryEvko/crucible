@@ -204,7 +204,25 @@ static_assert(Semiring<lattices::StalenessSemiring>);
 static_assert(ModalityKind::Absolute      == ::crucible::algebra::ModalityKind::Absolute);
 static_assert(ModalityKind::Comonad       == ::crucible::algebra::ModalityKind::Comonad);
 static_assert(ModalityKind::RelativeMonad == ::crucible::algebra::ModalityKind::RelativeMonad);
-static_assert(modality_kind_count == 6,
-    "fixy::algebra::modality_kind_count must match the substrate's six-enumerator catalog");
+
+// fixy-A4-012: substrate-cross-check.  Mirrors fixy/Dim.h:140-147 — the
+// canonical post-fixy-H-12 pattern.  The literal `== 6` tripwire lives
+// at the substrate (algebra/Modality.h:170) where it forces a developer
+// adding a 7th modality to update modality_name()'s switch arms.  This
+// fixy-side check catches the SEPARATE structural-drift case where the
+// substrate constant is ever redefined non-reflectively (manual count,
+// hardcoded literal — feedback_gcc16_c26_reflection_gotchas.md §3) and
+// falls out of sync with the enum's reflection-derived cardinality.
+// Both sides of the comparison derive from the same enum, so under
+// normal operation this assertion is tautological — adding a new
+// modality enumerator bumps both sides together.
+static_assert(modality_kind_count
+              == std::meta::enumerators_of(^^::crucible::algebra::ModalityKind).size(),
+    "fixy::algebra — substrate algebra::modality_kind_count has drifted "
+    "from the reflection-derived enumerator count of algebra::ModalityKind.  "
+    "Either the substrate constant was manually maintained (and forgot to "
+    "bump on enumerator addition) or reflection is reporting a different "
+    "enum than the substrate exposes.  Investigate algebra/Modality.h:74 — "
+    "it MUST remain `std::meta::enumerators_of(^^ModalityKind).size()`.");
 
 }  // namespace crucible::fixy::algebra::self_test
