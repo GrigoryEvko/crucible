@@ -8191,6 +8191,60 @@ crucible_neg_compile_session_test(neg_stop_g_crashclass_dropped_in_role_projecti
     "static assertion failed|static assert|fixy-A2-001")
 
 # ─────────────────────────────────────────────────────────────────
+# fixy-A2-002 — Accept-of-Stop_g<C> composition bottom-preservation
+# ─────────────────────────────────────────────────────────────────
+#
+# Pre-fix, SessionDelegate.h shipped four bottom-preservation compose
+# rules on the Delegate side (Delegate<Stop_g<C>, K> and
+# EpochedDelegate<Stop_g<C>, K, E, G>, plus the End-substitution
+# reverse direction for each) but the Accept-side parallels were
+# missing — the general `compose<Accept<T, K>, Q>` and
+# `compose<EpochedAccept<T, K, E, G>, Q>` rules fired even when T was
+# `Stop_g<C>`, producing structurally wrong types like
+# `Accept<Stop_g<Throw>, compose_t<...>>` (claiming the recipient
+# still advances K past an already-crashed delegated endpoint).
+#
+# The asymmetry broke a load-bearing algebraic property:
+# `dual_of(Delegate<T, K>) = Accept<T, dual(K)>`, so duality and
+# composition stopped commuting on the Accept arm — a property the
+# framework documents at Session.h:730-732.
+#
+# fixy-A2-002 ships four symmetric Accept-side specializations:
+#
+#   * compose<Accept<Stop_g<C>, K>, Q>             -> Stop_g<C>
+#   * compose<End, Accept<Stop_g<C>, K>>           -> Stop_g<C>
+#   * compose<EpochedAccept<Stop_g<C>, K, E, G>, Q> -> Stop_g<C>
+#   * compose<End, EpochedAccept<Stop_g<C>, K, E, G>> -> Stop_g<C>
+#
+# These two HS14 fixtures witness the property on BOTH Accept shapes:
+#
+#   * neg_compose_accept_stop_g_missing_bottom — primary.
+#     Witness: `compose_t<Accept<Stop_g<Throw>, K>, Q>` pre-fix
+#     produces `Accept<Stop_g<Throw>, compose_t<K, Q>>` (general
+#     specialization fires).  Post-fix the new bottom-preservation
+#     rule wins partial-ordering and the type collapses to
+#     `Stop_g<Throw>`; the static_assert fires and the file no longer
+#     compiles.
+#
+#   * neg_compose_epoched_accept_stop_g_missing_bottom — companion.
+#     Witness: `compose_t<EpochedAccept<Stop_g<Throw>, K, 5, 3>, Q>`
+#     pre-fix produces
+#     `EpochedAccept<Stop_g<Throw>, compose_t<K, Q>, 5, 3>` —
+#     phantom-preserving the MinEpoch/MinGen NTTPs on a crashed
+#     channel.  Post-fix the bottom-preservation rule wins, drops the
+#     epoch/generation NTTPs, and produces `Stop_g<Throw>`; the
+#     static_assert fires.
+#
+# Together the pair pins fixy-A2-002's promise that BOTH Accept
+# shapes collapse to Stop_g<C> under composition — restoring the
+# duality identity end-to-end across the plain and Epoched paths.
+# Diagnostic family naming matches the fixy-A2-001 pattern.
+crucible_neg_compile_session_test(neg_compose_accept_stop_g_missing_bottom
+    "static assertion failed|static assert|fixy-A2-002")
+crucible_neg_compile_session_test(neg_compose_epoched_accept_stop_g_missing_bottom
+    "static assertion failed|static assert|fixy-A2-002")
+
+# ─────────────────────────────────────────────────────────────────
 # FIXY-GAP-B — Agent B round 2
 # ─────────────────────────────────────────────────────────────────
 #

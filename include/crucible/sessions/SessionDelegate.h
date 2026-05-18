@@ -631,6 +631,20 @@ struct dual_of<EpochedAccept<T, K, MinEpoch, MinGeneration>> {
 // point: compose<End, Delegate<Stop, K>> = Stop.  Existing recursive
 // compose rules then produce Q;;Stop for every structured Q without
 // introducing an ambiguous cross-shape partial specialisation.
+//
+// fixy-A2-002 — the Accept-side parallels (Accept<Stop_g<C>, K> and
+// EpochedAccept<Stop_g<C>, K, E, G>) collapse to Stop_g<C> symmetric
+// to the Delegate side.  A recipient that accepted an already-crashed
+// delegated endpoint cannot run K's continuation: the carrier channel
+// is bottom, so composing any Q onto K is unreachable — composition
+// must short-circuit to Stop_g<C>.  Without this rule, the general
+// Accept specialisation produced Accept<Stop_g<C>, compose<K, Q>>
+// (claiming the recipient still advances past the crashed handoff)
+// AND the duality identity dual(compose<Delegate<...>, Q>) ==
+// compose<dual<Delegate<...>>, dual(Q)> silently broke on the Accept
+// arm.  See `is_subtype_sync_structural<Accept<Stop_g<C>, K>, K>`
+// (below) for the matching subtype rule that mirrors the Delegate-side
+// bottom-preservation.
 
 template <typename T, typename K, typename Q>
 struct compose<Delegate<T, K>, Q> {
@@ -650,6 +664,30 @@ struct compose<End, Delegate<Stop_g<C>, K>> {
 template <typename T, typename K, typename Q>
 struct compose<Accept<T, K>, Q> {
     using type = Accept<T, typename compose<K, Q>::type>;
+};
+
+// fixy-A2-002 — Accept-of-Stop_g<C> composition bottom-preserved.
+// Symmetric to compose<Delegate<Stop_g<C>, K>, Q>: the recipient
+// receives an already-crashed delegated endpoint, so K is unreachable
+// and compose must short-circuit to Stop_g<C>.  Default delegates to
+// `compose<Stop_g<C>, Q>` (SessionCrash.h:197) which produces Stop_g<C>
+// for any Q.
+template <CrashClass C, typename K, typename Q>
+struct compose<Accept<Stop_g<C>, K>, Q> {
+    using type = typename compose<Stop_g<C>, Q>::type;
+};
+
+// fixy-A2-002 — right-substitution termination for Accept<Stop_g<C>, K>.
+// Mirrors compose<End, Delegate<Stop_g<C>, K>> = Stop_g<C>: structured
+// Q;;Accept<Stop_g<C>, K> walks Q's recursion until the End leaf, which
+// resolves here to Stop_g<C>.  Without this, the primary compose<End, Q>
+// rule would return Accept<Stop_g<C>, K> as the leaf — semantically
+// "send completes, then the crashed handoff is still ahead" — which
+// contradicts the carrier-side bottom-preservation already shipped for
+// Delegate.
+template <CrashClass C, typename K>
+struct compose<End, Accept<Stop_g<C>, K>> {
+    using type = Stop_g<C>;
 };
 
 template <typename T, typename K, typename Q,
@@ -682,6 +720,24 @@ struct compose<EpochedAccept<T, K, MinEpoch, MinGeneration>, Q> {
         typename compose<K, Q>::type,
         MinEpoch,
         MinGeneration>;
+};
+
+// fixy-A2-002 — EpochedAccept-of-Stop_g<C> composition bottom-preserved
+// (symmetric to compose<EpochedDelegate<Stop_g<C>, ...>, Q>).  MinEpoch
+// and MinGeneration are dropped because the result is Stop_g<C>: a
+// crashed channel has no epoch/generation discipline left to enforce.
+template <CrashClass C, typename K, typename Q,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct compose<EpochedAccept<Stop_g<C>, K, MinEpoch, MinGeneration>, Q> {
+    using type = typename compose<Stop_g<C>, Q>::type;
+};
+
+// fixy-A2-002 — right-substitution termination for EpochedAccept<...>.
+// Mirrors compose<End, EpochedDelegate<Stop_g<C>, ...>> = Stop_g<C>.
+template <CrashClass C, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct compose<End, EpochedAccept<Stop_g<C>, K, MinEpoch, MinGeneration>> {
+    using type = Stop_g<C>;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1510,6 +1566,90 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     compose_t<Delegate<Stop, Send<int, End>>, Stop>,
     Stop>);
+
+// ─── Accept<Stop_g<C>, K> composition (fixy-A2-002) ──────────────
+//
+// Symmetric to compose<Delegate<Stop_g<C>, K>, Q>: a recipient that
+// accepted an already-crashed endpoint cannot enter K — composition
+// short-circuits to Stop_g<C>.  Pre-fix the general Accept<T, K>
+// specialization produced Accept<Stop_g<C>, compose<K, Q>>; post-fix
+// the bottom-preserving rule fires.
+
+// Plain Accept<Stop, K> bottom-collapse (default Abort tier).
+static_assert(std::is_same_v<
+    compose_t<Accept<Stop, Send<int, End>>, Recv<Ack, End>>,
+    Stop>);
+
+// All four CrashClass tiers round-trip through Accept-side compose.
+static_assert(std::is_same_v<
+    compose_t<Accept<Stop_g<CrashClass::Abort>, Send<int, End>>,
+              Recv<Ack, End>>,
+    Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<
+    compose_t<Accept<Stop_g<CrashClass::Throw>, Send<int, End>>,
+              Recv<Ack, End>>,
+    Stop_g<CrashClass::Throw>>);
+static_assert(std::is_same_v<
+    compose_t<Accept<Stop_g<CrashClass::ErrorReturn>, Send<int, End>>,
+              Recv<Ack, End>>,
+    Stop_g<CrashClass::ErrorReturn>>);
+static_assert(std::is_same_v<
+    compose_t<Accept<Stop_g<CrashClass::NoThrow>, Send<int, End>>,
+              Recv<Ack, End>>,
+    Stop_g<CrashClass::NoThrow>>);
+
+// Right-side Accept<Stop, K> sequenced as Q;;Stop_g<C> via the
+// End-substitution rule.
+using ComposeThenAcceptStop =
+    compose_t<Send<int, End>, Accept<Stop, Recv<Ack, End>>>;
+static_assert(std::is_same_v<ComposeThenAcceptStop, Send<int, Stop>>);
+static_assert(is_well_formed_v<ComposeThenAcceptStop>);
+
+using ComposeThenAcceptStopG =
+    compose_t<Send<int, End>,
+              Accept<Stop_g<CrashClass::NoThrow>, Recv<Ack, End>>>;
+static_assert(std::is_same_v<
+    ComposeThenAcceptStopG,
+    Send<int, Stop_g<CrashClass::NoThrow>>>);
+static_assert(is_well_formed_v<ComposeThenAcceptStopG>);
+
+// Stop on either side stays Stop (analogous to the Delegate-side
+// pair above).
+static_assert(std::is_same_v<
+    compose_t<Stop, Accept<Stop, Recv<Ack, End>>>,
+    Stop>);
+static_assert(std::is_same_v<
+    compose_t<Accept<Stop, Send<int, End>>, Stop>,
+    Stop>);
+
+// EpochedAccept<Stop_g<C>, K, E, G> bottom-collapse — mirrors
+// EpochedDelegate-of-Stop_g.  Epoch/Generation are dropped because the
+// result is Stop_g<C>: a crashed channel has no epoch discipline.
+static_assert(std::is_same_v<
+    compose_t<EpochedAccept<Stop_g<CrashClass::Throw>, End, 5, 3>,
+              Recv<Ack, End>>,
+    Stop_g<CrashClass::Throw>>);
+static_assert(std::is_same_v<
+    compose_t<EpochedAccept<Stop_g<CrashClass::Abort>, Send<int, End>, 7, 2>,
+              Recv<Ack, End>>,
+    Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<
+    compose_t<Send<int, End>,
+              EpochedAccept<Stop_g<CrashClass::ErrorReturn>, End, 5, 3>>,
+    Send<int, Stop_g<CrashClass::ErrorReturn>>>);
+
+// Duality coherence: dual(compose<Delegate<Stop_g<C>, K>, Q>) ≡
+// compose<dual<Delegate<Stop_g<C>, K>>, dual<Q>>.
+// Pre-fix, the Accept-side compose did NOT collapse to bottom, so
+// dual(compose<Delegate<Stop_g<C>, K>, Q>) == dual(Stop_g<C>) but
+// compose<dual<Delegate<...>>, dual<Q>> == Accept<Stop_g<C>, compose<...>>
+// — duality and composition stopped commuting.  Post-fix the identity
+// holds (Stop_g<C> is self-dual; both sides reduce to Stop_g<C>).
+static_assert(std::is_same_v<
+    dual_of_t<compose_t<Delegate<Stop_g<CrashClass::Throw>, End>,
+                        Send<int, End>>>,
+    compose_t<dual_of_t<Delegate<Stop_g<CrashClass::Throw>, End>>,
+              dual_of_t<Send<int, End>>>>);
 
 // Subtype rule: delegate-of-Stop is no more demanding than K.
 static_assert(is_subtype_sync_v<
