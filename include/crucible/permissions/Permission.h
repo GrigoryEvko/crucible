@@ -211,9 +211,6 @@ struct NetworkBufferTag {};
 
 }  // namespace tag
 
-template <typename DeadTag, typename... SurvivorTags>
-[[nodiscard]] constexpr auto mint_permission_inherit() noexcept;
-
 namespace detail {
 
 template <typename Tag>
@@ -475,13 +472,13 @@ class [[nodiscard]] Permission {
     friend struct ::crucible::safety::detail::ForkRebuildAccess;
 
     // Permission-inheritance recovery path for crash-stop sessions.
-    // The factory is constrained by permissions::inherits_from and is
-    // the only non-root mint path that can re-issue survivor tokens
-    // after the previous holder is structurally dead.
-    template <typename DeadTag, typename... SurvivorTags>
-    friend constexpr auto
-    ::crucible::permissions::mint_permission_inherit() noexcept;
-
+    // Permission construction goes through `mint_permission_inherit_minter_`
+    // (friended below).  The public factory `mint_permission_inherit`
+    // (declared in PermissionInherit.h) calls into the minter via the
+    // closed `mint_permission_inherit_key` passkey, so this class does
+    // not need to friend the factory itself — only the minter that
+    // actually constructs `Permission<Tag>{}`.  See fixy-A1-029 for the
+    // forward-declaration cleanup that consolidated the surface.
     template <typename T>
     friend struct ::crucible::permissions::detail::mint_permission_inherit_minter_;
 

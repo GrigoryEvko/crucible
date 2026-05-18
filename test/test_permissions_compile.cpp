@@ -218,6 +218,25 @@ void test_mint_permission_inherit_compile() {
     static_assert(std::is_same_v<
         ChainedTuple,
         std::tuple<::crucible::safety::Permission<InheritMasterTag>>>);
+
+    // fixy-A1-029: the §XXI signature-clarity refactor exposes
+    // `mint_permission_inherit_t<DeadTag, SurvivorTags...>` as the
+    // public-API name for the survivor-tuple type.  Pin the alias to
+    // each `decltype(...)` form so a future refactor that breaks the
+    // identity (e.g. accidentally promoting `survivors_t<DeadTag>` to
+    // a non-inheritance_list shape) reddens here too.
+    static_assert(std::is_same_v<
+        pi::mint_permission_inherit_t<InheritWorkerTag, InheritCoordTag>,
+        ExplicitTuple>);
+    static_assert(std::is_same_v<
+        pi::mint_permission_inherit_t<InheritWorkerTag>,
+        RegistryTuple>);
+    static_assert(std::is_same_v<
+        pi::mint_permission_inherit_t<InheritCoordTag>,
+        ChainedTuple>);
+    static_assert(std::is_same_v<
+        pi::mint_permission_inherit_t<InheritWorkerTag, InheritCoordTag>,
+        std::tuple<::crucible::safety::Permission<InheritCoordTag>>>);
 }
 void test_permissions_umbrella() {}
 void test_perm_set_compile()     {}

@@ -4,10 +4,13 @@
 // rejects when a SurvivorTag is not registered in
 // survivor_registry<DeadTag>.
 //
-// Violation: inherits_from defaults to false; opt-in is per-tag.
-// Routing through `fixy::perm::mint_permission_inherit` must reject
-// identically to the substrate fixture
-// `neg_mint_permission_inherit_without_specialization`.
+// fixy-A1-029: the §XXI signature-clarity refactor moved the
+// inherits_from gate into `detail::validated_perm_tuple<>`,
+// instantiated by the `mint_permission_inherit_t<...>` alias.
+// Because H-25 added a `crash_witness_key` parameter, the call-site
+// form short-circuits overload resolution before the alias is
+// instantiated — so we route through the alias directly to force the
+// static_assert in validated_perm_tuple.
 //
 // Expected diagnostic: mint_permission_inherit requires inherits_from
 // / static_assert failure.
@@ -21,13 +24,17 @@ struct SurvivorTag {};
 
 }  // namespace neg_fixy_perm_inherit_without_specialization
 
-int main() {
-    namespace tags  = neg_fixy_perm_inherit_without_specialization;
-    namespace fperm = ::crucible::fixy::perm;
+namespace fperm = ::crucible::fixy::perm;
 
-    // Should FAIL: inherits_from<DeadTag, SurvivorTag>::value is
-    // false (no specialization of survivor_registry).
-    [[maybe_unused]] auto bad = fperm::mint_permission_inherit<
-        tags::DeadTag, tags::SurvivorTag>();
+// Forces validated_perm_tuple<DeadTag, list<SurvivorTag>> to
+// instantiate through the fixy:: re-export of
+// mint_permission_inherit_t.  inherits_from<DeadTag, SurvivorTag>
+// defaults to false → triggers the third static_assert.
+using BadType = fperm::mint_permission_inherit_t<
+    neg_fixy_perm_inherit_without_specialization::DeadTag,
+    neg_fixy_perm_inherit_without_specialization::SurvivorTag>;
+static_cast<void>(sizeof(BadType));
+
+int main() {
     return 0;
 }

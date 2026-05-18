@@ -92,7 +92,14 @@ using ::crucible::safety::mint_permission_fork;
 // mint_permission_inherit<DeadTag, SurvivorTags...>() promotes the
 // survivor tokens after a crash-stop event renders the previous
 // holder structurally dead.  Constrained by inherits_from.
+//
+// fixy-A1-029: the §XXI signature-clarity refactor exposes
+// `mint_permission_inherit_t<DeadTag, SurvivorTags...>` as the
+// concrete return-type alias.  Re-exported here so fixy-routed
+// callers / neg-compile fixtures can name the alias without
+// descending into the substrate header.
 
 using ::crucible::permissions::mint_permission_inherit;
+using ::crucible::permissions::mint_permission_inherit_t;
 
 }  // namespace crucible::fixy::perm

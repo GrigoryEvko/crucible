@@ -187,18 +187,9 @@ struct inherit_from_list;
 
 template <typename DeadTag, typename... SurvivorTags>
 struct inherit_from_list<DeadTag, inheritance_list<SurvivorTags...>> {
-    [[nodiscard]] static constexpr auto mint() noexcept {
-        static_assert(sizeof...(SurvivorTags) > 0,
-            "mint_permission_inherit requires at least one survivor tag. "
-            "Specialize survivor_registry<DeadTag> or pass explicit "
-            "SurvivorTags.");
-        static_assert((!std::is_same_v<DeadTag, SurvivorTags> && ...),
-            "mint_permission_inherit forbids circular inheritance: "
-            "DeadTag cannot inherit to itself.");
-        static_assert((inherits_from<DeadTag, SurvivorTags>::value && ...),
-            "mint_permission_inherit requires inherits_from<DeadTag, "
-            "SurvivorTag> to be true for every survivor.");
-
+    [[nodiscard]] static constexpr
+        std::tuple<::crucible::safety::Permission<SurvivorTags>...>
+    mint() noexcept {
         return std::tuple<::crucible::safety::Permission<SurvivorTags>...>{
             mint_permission_inherit_minter_<SurvivorTags>::mint(
                 mint_permission_inherit_key{})...
@@ -206,16 +197,85 @@ struct inherit_from_list<DeadTag, inheritance_list<SurvivorTags...>> {
     }
 };
 
+template <typename DeadTag, typename... SurvivorTags>
+using mint_permission_inherit_list_t = std::conditional_t<
+    sizeof...(SurvivorTags) == 0,
+    survivors_t<DeadTag>,
+    inheritance_list<SurvivorTags...>>;
+
+// validated_perm_tuple — §XXI single-concept gate for mint_permission_inherit.
+//
+// Fires its three static_asserts at SIGNATURE-instantiation time (when
+// the trailing return type alias is computed), BEFORE overload
+// resolution checks the witness count.  Mechanism:
+//
+//   mint_permission_inherit<DeadTag, SurvivorTags...>(crash_witness_key)
+//      └─ trailing return type = mint_permission_inherit_t<...>
+//             └─ validated_perm_tuple<DeadTag, effective_list>::type
+//                    └─ static_asserts: non-empty, no self-cycle,
+//                       every survivor inherits_from<DeadTag>
+//
+// Pre-A1-029 these asserts lived inside `inherit_from_list::mint()` and
+// fired only when the function BODY was instantiated.  With trailing-
+// return-type the body is no longer instantiated during overload
+// resolution — so the asserts moved up here to keep firing on the same
+// failure shapes (without_specialization, self_cycle).
+template <typename DeadTag, typename List>
+struct validated_perm_tuple;
+
+template <typename DeadTag, typename... Survivors>
+struct validated_perm_tuple<DeadTag, inheritance_list<Survivors...>> {
+    static_assert(sizeof...(Survivors) > 0,
+        "mint_permission_inherit requires at least one survivor tag. "
+        "Specialize survivor_registry<DeadTag> or pass explicit "
+        "SurvivorTags.");
+    static_assert((!std::is_same_v<DeadTag, Survivors> && ...),
+        "mint_permission_inherit forbids circular inheritance: "
+        "DeadTag cannot inherit to itself.");
+    static_assert((inherits_from<DeadTag, Survivors>::value && ...),
+        "mint_permission_inherit requires inherits_from<DeadTag, "
+        "SurvivorTag> to be true for every survivor.");
+
+    using type = std::tuple<::crucible::safety::Permission<Survivors>...>;
+};
+
 }  // namespace detail
+
+// §XXI Universal Mint Pattern — concrete-return-type alias.
+//
+// `mint_permission_inherit_t<DeadTag, SurvivorTags...>` is the public
+// surface answer to "what tuple does the factory return?" — the
+// signature no longer hides it behind `auto`.  Empty-SurvivorTags pack
+// expands through `survivors_t<DeadTag>` (the manual registry); a non-
+// empty pack uses the listed tags verbatim.
+//
+// Identity (verified by test/test_permissions_compile.cpp sentinel TU):
+//   mint_permission_inherit_t<D>          ≡ std::tuple<Permission<Sᵢ>...>
+//                                            where survivors_t<D> = list<Sᵢ...>
+//   mint_permission_inherit_t<D, A, B>    ≡ std::tuple<Permission<A>,
+//                                                       Permission<B>>
+//
+// Matches the §XXI table's "Returns" column convention.
+template <typename DeadTag, typename... SurvivorTags>
+using mint_permission_inherit_t = typename detail::validated_perm_tuple<
+    DeadTag,
+    detail::mint_permission_inherit_list_t<
+        DeadTag, SurvivorTags...>>::type;
 
 // H-25: the trailing `crash_witness_key` parameter is the proof-of-death
 // passkey.  Only bridges::wrap_crash_return can mint one, so direct user
 // callers cannot reach this function: passing `crash_witness_key{}`
 // from arbitrary scope fails (private ctor, unfriended).  See key class
 // doc above for the full flow rationale.
+//
+// §XXI signature-clarity: trailing return type names the concrete tuple
+// shape so a caller reading the declaration knows the survivor count
+// and per-tag Permission<...> instances without descending into the
+// body or the `inherit_from_list::mint()` helper.
 template <typename DeadTag, typename... SurvivorTags>
-[[nodiscard]] constexpr auto mint_permission_inherit(
-    crash_witness_key) noexcept
+[[nodiscard]] constexpr
+    mint_permission_inherit_t<DeadTag, SurvivorTags...>
+mint_permission_inherit(crash_witness_key) noexcept
 {
     if constexpr (sizeof...(SurvivorTags) == 0) {
         return detail::inherit_from_list<DeadTag, survivors_t<DeadTag>>::mint();
@@ -236,6 +296,7 @@ using ::crucible::permissions::inheritance_list_empty_v;
 using ::crucible::permissions::inherits_from;
 using ::crucible::permissions::inherits_from_v;
 using ::crucible::permissions::mint_permission_inherit;
+using ::crucible::permissions::mint_permission_inherit_t;
 using ::crucible::permissions::survivor_registry;
 using ::crucible::permissions::survivors_t;
 
