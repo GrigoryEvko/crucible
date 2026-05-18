@@ -8245,6 +8245,73 @@ crucible_neg_compile_session_test(neg_compose_epoched_accept_stop_g_missing_bott
     "static assertion failed|static assert|fixy-A2-002")
 
 # ─────────────────────────────────────────────────────────────────
+# fixy-A2-003 — is_dual_involutive specialization distribution
+# ─────────────────────────────────────────────────────────────────
+#
+# Session.h:687 declares the primary template
+# `is_dual_involutive<P> : std::true_type` so every unspecialized P
+# classifies as involutive by default.  The trait-distribution
+# convention is that each combinator's home header owns the
+# specializations for its own types (Send/Recv/Select/Offer/Loop/
+# VendorPinned at Session.h:689-713, fixy-CR-11's Sender-annotated
+# Offer at Session.h:706-707).  Pre-fix Delegate / Accept /
+# EpochedDelegate / EpochedAccept / CheckpointedSession / Stop_g
+# all relied on the primary template's silent-true default — a
+# bug because `is_dual_involutive` MUST distribute over the
+# component protocols (conservative T ∧ K conjunction matching
+# Session.h:680-684's policy on Sender-annotated Offer).  Without
+# the specializations, `Delegate<Offer<Sender<R>, ...>, End>`
+# silently passed `refines_self_and_double_dual_v`
+# (SessionPatterns.h:944-1007) — admitting a protocol that drops
+# the role tag through the duality round-trip, the exact algebraic
+# flaw fixy-CR-11 records.
+#
+# fixy-A2-003 ships five new specializations distributed to home
+# headers:
+#
+#   SessionDelegate.h:
+#     * is_dual_involutive<Delegate<T, K>>
+#     * is_dual_involutive<Accept<T, K>>
+#     * is_dual_involutive<EpochedDelegate<T, K, E, G>>
+#     * is_dual_involutive<EpochedAccept<T, K, E, G>>
+#       — all bool_constant<is_dual_involutive<T> &&
+#                           is_dual_involutive<K>>
+#
+#   SessionCheckpoint.h:
+#     * is_dual_involutive<CheckpointedSession<B, R>>
+#       — bool_constant<is_dual_involutive<B> &&
+#                       is_dual_involutive<R>>
+#
+#   SessionCrash.h:
+#     * is_dual_involutive<Stop_g<C>>
+#       — std::true_type (Stop_g is self-dual, definitionally
+#         involutive — explicit specialization for discoverability)
+#
+# HS14 floor: the pair `neg_is_dual_involutive_{delegate,
+# checkpointed}_wraps_sender_offer.cpp` witnesses the pre-fix
+# BUGGY classification by asserting the wrapping combinator is
+# classified as involutive when it wraps `Offer<Sender<RoleA>,
+# ...>` (which itself is non-involutive per fixy-CR-11).  Pre-fix
+# the primary fires and the static_assert holds; post-fix the new
+# specialization fires, the conjunction returns false, and the
+# static_assert fires — both files fail to compile.
+#
+# Together the pair pins fixy-A2-003's promise that EVERY non-
+# spec'd combinator distributes is_dual_involutive over its
+# component protocols, closing the silent-true-for-unspecialized
+# hole that admitted Sender-Offer-wrapped non-involutive protocols
+# past the refines_self_and_double_dual_v gate.  Stop_g is covered
+# by positive sentinel only (its specialization preserves the
+# primary's behavior); the Delegate-family and CheckpointedSession
+# negatives are sufficient HS14 coverage because Accept /
+# EpochedDelegate / EpochedAccept share the same structural shape
+# (`<T, K, ...>` with T ∧ K conjunction) as Delegate.
+crucible_neg_compile_session_test(neg_is_dual_involutive_delegate_wraps_sender_offer
+    "static assertion failed|static assert|fixy-A2-003")
+crucible_neg_compile_session_test(neg_is_dual_involutive_checkpointed_wraps_sender_offer
+    "static assertion failed|static assert|fixy-A2-003")
+
+# ─────────────────────────────────────────────────────────────────
 # FIXY-GAP-B — Agent B round 2
 # ─────────────────────────────────────────────────────────────────
 #

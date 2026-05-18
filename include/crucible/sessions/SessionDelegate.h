@@ -617,6 +617,62 @@ struct dual_of<EpochedAccept<T, K, MinEpoch, MinGeneration>> {
 };
 
 // ═════════════════════════════════════════════════════════════════════
+// ── is_dual_involutive specializations for Delegate / Accept /
+//    EpochedDelegate / EpochedAccept (fixy-A2-003) ─────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// fixy-A2-003 — without these specializations, the primary template
+// at Session.h:687 (`is_dual_involutive<P> : std::true_type`) would
+// silently report TRUE for any Delegate/Accept/Epoched* shape, even
+// when the inner T or continuation K contains a Sender-annotated
+// Offer (which is the canonical non-involutive shape per fixy-CR-11).
+// Generic code that gates on `is_dual_involutive_v<P>` — e.g.,
+// SessionPatterns.h `refines_self_and_double_dual_v`, dual-commuting
+// rewrites — would then admit a non-involutive protocol and produce
+// wrong types under the round-trip.
+//
+// Soundness: dual_of distributes through Delegate/Accept while
+// keeping T verbatim (the delegated endpoint's protocol is
+// transferred as-is, per SessionDelegate.h:585-587).  Therefore
+// `dual(dual(Delegate<T, K>)) = Delegate<T, dual(dual(K)))` which
+// equals `Delegate<T, K>` iff K is dual-involutive.  However, T is
+// itself a transferable session-handle protocol the recipient will
+// USE — generic rewrites that dualise downstream of the handoff need
+// T to also be involutive for the round-trip to be sound end-to-end.
+// We therefore take the conservative conjunction T ∧ K, matching the
+// "false for any subterm involving Sender-annotated Offer" policy
+// documented at Session.h:680-684.
+//
+// Pattern mirrors Session.h's existing Send / Recv conjunctive
+// propagation (lines 689-693): `is_dual_involutive<Send<T, R>>` only
+// checks R because T is a payload type (not a session), but
+// Delegate/Accept's T IS a session, so we check both.
+
+template <typename T, typename K>
+struct is_dual_involutive<Delegate<T, K>>
+    : std::bool_constant<is_dual_involutive<T>::value &&
+                         is_dual_involutive<K>::value> {};
+
+template <typename T, typename K>
+struct is_dual_involutive<Accept<T, K>>
+    : std::bool_constant<is_dual_involutive<T>::value &&
+                         is_dual_involutive<K>::value> {};
+
+// MinEpoch / MinGeneration are NTTPs and do not contribute to
+// involution — only the carried session protocols T and K do.
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_dual_involutive<EpochedDelegate<T, K, MinEpoch, MinGeneration>>
+    : std::bool_constant<is_dual_involutive<T>::value &&
+                         is_dual_involutive<K>::value> {};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_dual_involutive<EpochedAccept<T, K, MinEpoch, MinGeneration>>
+    : std::bool_constant<is_dual_involutive<T>::value &&
+                         is_dual_involutive<K>::value> {};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Sequential composition ─────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -1655,6 +1711,42 @@ static_assert(std::is_same_v<
 static_assert(is_subtype_sync_v<
     Delegate<Stop, Send<int, End>>,
     Send<int, End>>);
+
+// ── is_dual_involutive distribution (fixy-A2-003) ─────────────────
+//
+// Delegate / Accept / EpochedDelegate / EpochedAccept must
+// distribute is_dual_involutive over their component protocols.
+// Pure cases over involutive sub-protocols (Send/Recv/End/Select/
+// Offer-without-Sender) report TRUE; Sender-Offer-wrapping cases
+// (fixy-CR-11 non-involution) report FALSE.
+
+// Pure involutive cases — every combinator reports TRUE when both T
+// and K are themselves involutive.
+static_assert(is_dual_involutive_v<Delegate<Send<int, End>, End>>);
+static_assert(is_dual_involutive_v<Accept<Send<int, End>, End>>);
+static_assert(is_dual_involutive_v<EpochedDelegate<Send<int, End>, End, 5, 3>>);
+static_assert(is_dual_involutive_v<EpochedAccept<Send<int, End>, End, 5, 3>>);
+
+// Sender-Offer non-involution propagates through T (the delegated
+// channel itself).  Each combinator's conjunction reports FALSE.
+namespace fixy_a2_003_sender_offer_inner_T {
+    struct RoleA {};
+    using NonInvolutiveT = Offer<Sender<RoleA>, Recv<int, End>>;
+    static_assert(!is_dual_involutive_v<NonInvolutiveT>);
+    static_assert(!is_dual_involutive_v<Delegate<NonInvolutiveT, End>>);
+    static_assert(!is_dual_involutive_v<Accept<NonInvolutiveT, End>>);
+    static_assert(!is_dual_involutive_v<EpochedDelegate<NonInvolutiveT, End, 5, 3>>);
+    static_assert(!is_dual_involutive_v<EpochedAccept<NonInvolutiveT, End, 5, 3>>);
+}
+
+// Non-involution also propagates through K (the continuation), since
+// the Conservative T ∧ K conjunction sees BOTH components.
+namespace fixy_a2_003_sender_offer_inner_K {
+    struct RoleA {};
+    using NonInvolutiveK = Offer<Sender<RoleA>, Recv<int, End>>;
+    static_assert(!is_dual_involutive_v<Delegate<Send<int, End>, NonInvolutiveK>>);
+    static_assert(!is_dual_involutive_v<Accept<Send<int, End>, NonInvolutiveK>>);
+}
 
 // ── Well-formedness ────────────────────────────────────────────────
 

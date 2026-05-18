@@ -171,6 +171,29 @@ struct dual_of<CheckpointedSession<B, R>> {
 };
 
 // ═════════════════════════════════════════════════════════════════════
+// ── is_dual_involutive<CheckpointedSession<B, R>> (fixy-A2-003) ────
+// ═════════════════════════════════════════════════════════════════════
+//
+// fixy-A2-003 — without this specialization, the primary template at
+// Session.h:687 would silently report TRUE for any CheckpointedSession
+// shape, even when B or R contains a Sender-annotated Offer (which is
+// the canonical non-involutive shape per fixy-CR-11).  Since dual_of
+// distributes through both branches independently (above),
+// `dual(dual(CheckpointedSession<B, R>)) =
+//  CheckpointedSession<dual(dual(B)), dual(dual(R))>` equals the
+// original iff BOTH branches are dual-involutive.
+//
+// Generic code that gates on `is_dual_involutive_v<P>` — e.g.,
+// SessionPatterns.h `refines_self_and_double_dual_v`, dual-commuting
+// rewrites — would otherwise admit a Checkpoint-wrapped non-involutive
+// protocol and produce wrong types under the round-trip.
+
+template <typename B, typename R>
+struct is_dual_involutive<CheckpointedSession<B, R>>
+    : std::bool_constant<is_dual_involutive<B>::value &&
+                         is_dual_involutive<R>::value> {};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── compose<CheckpointedSession<P, R>, Q> ──────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -474,6 +497,29 @@ static_assert(std::is_same_v<
 
 // Involution through nesting.
 static_assert(std::is_same_v<dual_of_t<dual_of_t<NestedCkpt>>, NestedCkpt>);
+
+// fixy-A2-003 — is_dual_involutive distributes over BOTH branches.
+// CheckpointedSession is involutive iff both B and R are involutive;
+// Sender-Offer in EITHER branch propagates non-involution to the
+// composite (the conservative B ∧ R conjunction matches
+// Session.h:680-684's policy on Sender-annotated Offer).
+namespace fixy_a2_003_is_dual_involutive_checkpointed {
+    struct RoleA {};
+    using InvolutiveBoth =
+        CheckpointedSession<Send<int, End>, Recv<int, End>>;
+    static_assert(is_dual_involutive_v<InvolutiveBoth>);
+
+    using NonInvBase =
+        CheckpointedSession<Offer<Sender<RoleA>, Recv<int, End>>, End>;
+    static_assert(!is_dual_involutive_v<NonInvBase>);
+
+    using NonInvRecovery =
+        CheckpointedSession<End, Offer<Sender<RoleA>, Recv<int, End>>>;
+    static_assert(!is_dual_involutive_v<NonInvRecovery>);
+
+    using NestedCkptInvolutive = CheckpointedSession<NestedCkpt, End>;
+    static_assert(is_dual_involutive_v<NestedCkptInvolutive>);
+}
 
 }  // namespace detail::checkpoint_self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS

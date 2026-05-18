@@ -186,6 +186,26 @@ template <CrashClass C>
 struct dual_of<Stop_g<C>> { using type = Stop_g<C>; };
 
 // ═════════════════════════════════════════════════════════════════════
+// ── fixy-A2-003: is_dual_involutive<Stop_g<C>> ═════════════════════
+// ═════════════════════════════════════════════════════════════════════
+//
+// Stop_g<C> is self-dual (line 186 above): `dual_of<Stop_g<C>>::type ==
+// Stop_g<C>`, so `dual_of<dual_of<Stop_g<C>>>::type == Stop_g<C>`
+// definitionally — involution holds without further reasoning.  Pinning
+// the property at Stop_g's home header matches the trait-distribution
+// convention (Send/Recv/End at Session.h; Delegate/Accept at
+// SessionDelegate.h; CheckpointedSession at SessionCheckpoint.h) and
+// closes the silent-true-for-unspecialized hole that the primary
+// template at Session.h:686 admits: without this specialization the
+// primary fires and returns std::true_type for ALL `Stop_g<C>` tiers,
+// which happens to be correct here — but consumers that audit
+// "explicit specialization exists" for diagnostic completeness see a
+// gap.  The explicit specialization documents the soundness.
+
+template <CrashClass C>
+struct is_dual_involutive<Stop_g<C>> : std::true_type {};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── compose<Stop, Q> = Stop (bottom preserved) ─────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -844,6 +864,17 @@ static_assert(is_well_formed_v<CrashHandledServer>);
 using ClientOffer = typename CrashHandledClient::next;
 static_assert(has_crash_branch_for_peer_v<ClientOffer, Alice>);
 static_assert(!has_crash_branch_for_peer_v<ClientOffer, Bob>);
+
+// fixy-A2-003 — Stop_g<C> is self-dual (line 186 above), so
+// dual(dual(Stop_g<C>)) ≡ Stop_g<C> for every CrashClass tier.
+// The explicit specialization at line 206 reports true_type;
+// positive sentinels lock the property at the home header.
+static_assert(is_dual_involutive_v<Stop_g<CrashClass::Abort>>);
+static_assert(is_dual_involutive_v<Stop_g<CrashClass::Throw>>);
+static_assert(is_dual_involutive_v<Stop_g<CrashClass::ErrorReturn>>);
+static_assert(is_dual_involutive_v<Stop_g<CrashClass::NoThrow>>);
+// Default Stop alias (= Stop_g<CrashClass::Abort>) round-trips.
+static_assert(is_dual_involutive_v<Stop>);
 
 }  // namespace detail::crash::crash_self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS
