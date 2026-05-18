@@ -642,19 +642,24 @@ class fn {
         || !fixy_h02_tier3_all_dims_engaged
         || !fixy_h02_tier4_unique_engagement
         || theory::NotInTheoryCorpus<Type, ImplicitTypeMarker, Grants...>;
-    // fixy-H-13: surface the matched corpus entry's cite() text as the
-    // rejection diagnostic via P2741R3 (user-generated static_assert
-    // messages).  `corpus_cite_for_v` returns the FIRST matching
-    // entry's cite — paper, year, pattern explanation, and per-entry
-    // remediation — so the diagnostic literally IS the cite + fix
-    // instructions instead of a generic "see Theory.h's cite() for
-    // the literature reference" pointer that the prior message
-    // contained (and that fixy-H-13 caught as a lie: cite() was
-    // defined but never invoked).  When tier 5 succeeds (no corpus
-    // match), corpus_cite_for_v returns an empty string_view; the
-    // static_assert message is unused in that case.
+    // fixy-H-13 + fixy-H-16: surface BOTH the matched corpus entry's
+    // struct name AND its `cite()` text in the rejection diagnostic
+    // via P2741R3 (user-generated static_assert messages).
+    // `corpus_full_diagnostic_v` concatenates "matched corpus entry:
+    // <name> — <cite>" into static storage via P3491R3
+    // `std::define_static_string`.  H-13 gave us the cite — paper,
+    // year, pattern explanation, and per-entry remediation — so the
+    // diagnostic identifies the literature reference.  H-16 adds the
+    // entry's struct name — so a maintainer who sees the diagnostic
+    // can grep Theory.h for the matched entry directly.  Together the
+    // doc-block claim at Theory.h §IsAccepted-composition ("names
+    // which corpus entry matched (paper + year)") is supported by
+    // code: name() supplies the entry identifier, cite() supplies the
+    // paper + year + remediation prose.  When tier 5 succeeds (no
+    // corpus match), corpus_full_diagnostic_v returns an empty
+    // string_view; the static_assert message is unused in that case.
     static_assert(fixy_h02_tier5_not_in_corpus,
-        theory::corpus_cite_for_v<Type, ImplicitTypeMarker, Grants...>);
+        theory::corpus_full_diagnostic_v<Type, ImplicitTypeMarker, Grants...>);
 
 public:
     using value_type  = Type;

@@ -1370,8 +1370,16 @@ crucible_neg_compile_fixy_test(neg_fixy_session_handle_non_resource
     "SessionResource_NotPinned")
 
 # FIXY-AUDIT-B1 — HS14 floor for Theory.h §30.14 corpus.
-crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io     "NotInTheoryCorpus")
-crucible_neg_compile_fixy_test(neg_fixy_theory_classified_bg     "NotInTheoryCorpus")
+# fixy-H-16: the tier-5 rejection diagnostic must literally name the
+# matched corpus entry (struct identifier) AND surface the paper +
+# year + remediation prose from cite().  Regex anchors require BOTH
+# the concept-fail "NotInTheoryCorpus" trace AND the entry name —
+# proves the doc-block §IsAccepted-composition claim ("names which
+# corpus entry matched") is honored in code.
+crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io
+    "NotInTheoryCorpus|classified_io_without_declassify")
+crucible_neg_compile_fixy_test(neg_fixy_theory_classified_bg
+    "NotInTheoryCorpus|classified_bg_without_declassify")
 
 # fixy-CR-01 — strict-default Security bypass closure.
 # Each corpus entry gets a second fixture using `strict<D::Security>`
@@ -1381,9 +1389,9 @@ crucible_neg_compile_fixy_test(neg_fixy_theory_classified_bg     "NotInTheoryCor
 # Theory.h's second is_secret_grant specialization, the strict-default
 # form silently bypassed the corpus despite semantic equivalence.
 crucible_neg_compile_fixy_test(neg_fixy_theory_classified_io_strict_default
-    "NotInTheoryCorpus")
+    "NotInTheoryCorpus|classified_io_without_declassify")
 crucible_neg_compile_fixy_test(neg_fixy_theory_classified_bg_strict_default
-    "NotInTheoryCorpus")
+    "NotInTheoryCorpus|classified_bg_without_declassify")
 
 # ── FIXY-AUDIT-G4 — stance composition rejection.  Stance aliases are
 # typedefs `fn<Type, ...full pack...>`; they cannot be supplied as
@@ -7878,17 +7886,21 @@ crucible_neg_compile_test(neg_decide_valid_span_truncation
 #     Block/Bg.  Distinct from R006 (collision marks_runtime_-
 #     ghost_use) — this catches at type-row level without opt-in.
 #
-# Both detectors reject through NotInTheoryCorpus; the diagnostic
-# regex anchors on the gate name.
-crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret  "NotInTheoryCorpus")
-crucible_neg_compile_fixy_test(neg_fixy_theory_ghost_observable  "NotInTheoryCorpus")
+# Both detectors reject through NotInTheoryCorpus; fixy-H-16 added
+# the matched-entry struct name to the diagnostic surface — regex
+# requires BOTH the concept-fail trace AND the entry identifier so a
+# weakened diagnostic immediately reddens the build.
+crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret
+    "NotInTheoryCorpus|staleness_secret_without_declassify")
+crucible_neg_compile_fixy_test(neg_fixy_theory_ghost_observable
+    "NotInTheoryCorpus|ghost_runtime_observable")
 
 # fixy-CR-01 — staleness-secret strict-default closure.
 # Second fixture mirroring the classified_io / classified_bg pair
 # above, this time anchored on the staleness_secret_without_declassify
 # corpus entry.  See those fixtures' commentary for the bypass shape.
 crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret_strict_default
-    "NotInTheoryCorpus")
+    "NotInTheoryCorpus|staleness_secret_without_declassify")
 
 # ── FIXY-ALGEBRA round 2 — concept-gate fixture depth ───────────────
 # Existing Algebra.h coverage pins 2 fixtures (#1 non_lattice / #2

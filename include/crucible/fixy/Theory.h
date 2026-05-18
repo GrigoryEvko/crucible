@@ -56,11 +56,16 @@
 // `NotInTheoryCorpus<Type, Grants...>` (this header).  A binding
 // that engages every axis correctly STILL fails IsAccepted if its
 // Grants pack matches any §30.14 entry.  The fixy-level diagnostic
-// names which corpus entry matched (paper + year) — the tier-5
-// static_assert at fixy/Fn.h:641 surfaces the matched entry's
-// `cite()` text via `corpus_cite_for_v<Type, Grants...>` (P2741R3
-// user-generated static_assert messages), so the rejection diagnostic
-// literally IS the cite + remediation text rather than a generic
+// names which corpus entry matched (struct name + paper + year) —
+// the tier-5 static_assert at fixy/Fn.h:641 surfaces the matched
+// entry's `name()` (e.g. `classified_io_without_declassify` —
+// fixy-H-16) AND its `cite()` text (e.g. "Volpano-Smith-Irvine
+// 1996 / Sabelfeld-Myers 2003 — …" — fixy-H-13) via
+// `corpus_full_diagnostic_v<Type, Grants...>`, assembled into
+// static storage by P3491R3 `std::define_static_string` and
+// emitted via P2741R3 user-generated static_assert messages.  The
+// rejection diagnostic literally IS "matched corpus entry: <name>
+// — <cite + remediation>" rather than a generic
 // "binding in corpus" pointer.
 //
 // ── Discipline ─────────────────────────────────────────────────────
@@ -81,6 +86,8 @@
 #include <crucible/safety/Fn.h>
 
 #include <cstddef>
+#include <meta>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -233,6 +240,10 @@ struct classified_io_without_declassify {
         return has_secret && has_io && !has_declassify;
     }
 
+    static constexpr std::string_view name() noexcept {
+        return "classified_io_without_declassify";
+    }
+
     static constexpr std::string_view cite() noexcept {
         return "Volpano-Smith-Irvine 1996 / Sabelfeld-Myers 2003 — "
                "implicit information flow: classified value flows out "
@@ -286,6 +297,10 @@ struct classified_bg_without_declassify {
         const bool has_declassify =
             detail::has_grant_of<detail::is_declassify_grant, Grants...>();
         return has_secret && has_bg && !has_declassify;
+    }
+
+    static constexpr std::string_view name() noexcept {
+        return "classified_bg_without_declassify";
     }
 
     static constexpr std::string_view cite() noexcept {
@@ -349,6 +364,10 @@ struct staleness_secret_without_declassify {
         const bool has_declassify =
             detail::has_grant_of<detail::is_declassify_grant, Grants...>();
         return has_secret && has_stale && !has_declassify;
+    }
+
+    static constexpr std::string_view name() noexcept {
+        return "staleness_secret_without_declassify";
     }
 
     static constexpr std::string_view cite() noexcept {
@@ -421,6 +440,10 @@ struct ghost_runtime_observable {
             detail::has_grant_of<detail::is_observable_effect_grant,
                                  Grants...>();
         return has_ghost && has_observable;
+    }
+
+    static constexpr std::string_view name() noexcept {
+        return "ghost_runtime_observable";
     }
 
     static constexpr std::string_view cite() noexcept {
@@ -517,6 +540,91 @@ inline constexpr std::string_view corpus_cite_for_v =
             return corpus::ghost_runtime_observable::cite();
         }
         return std::string_view{};
+    }();
+
+// ═════════════════════════════════════════════════════════════════════
+// ── corpus_entry_name_for_v — struct name of first-matching entry ──
+// ═════════════════════════════════════════════════════════════════════
+//
+// fixy-H-16: Theory.h's §IsAccepted-composition doc-block claims the
+// rejection diagnostic "names which corpus entry matched (paper +
+// year)".  After fixy-H-13 the cite() text surfaces paper + year via
+// `corpus_cite_for_v`, but the corpus ENTRY identifier (the struct
+// name a maintainer would grep Theory.h for) was NOT in the
+// diagnostic.  This parallel variable returns the matched entry's
+// `name()` — e.g. "classified_io_without_declassify" — so the next
+// helper `corpus_full_diagnostic_v` can emit both halves of the
+// "entry: <name> — <cite>" surface and make the doc-block literally
+// true.
+//
+// Discipline: keep the if-chain ORDER identical to
+// `is_in_unsoundness_corpus` and `corpus_cite_for_v`; the three
+// variables must short-circuit on the same entry for the same Grants
+// pack so the rejection diagnostic is internally consistent.
+
+template <typename Type, typename... Grants>
+inline constexpr std::string_view corpus_entry_name_for_v =
+    []() consteval -> std::string_view {
+        if (corpus::classified_io_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::classified_io_without_declassify::name();
+        }
+        if (corpus::classified_bg_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::classified_bg_without_declassify::name();
+        }
+        if (corpus::staleness_secret_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::staleness_secret_without_declassify::name();
+        }
+        if (corpus::ghost_runtime_observable
+                ::matches<Type, Grants...>()) {
+            return corpus::ghost_runtime_observable::name();
+        }
+        return std::string_view{};
+    }();
+
+// ═════════════════════════════════════════════════════════════════════
+// ── corpus_full_diagnostic_v — combined name + cite for tier-5 ─────
+// ═════════════════════════════════════════════════════════════════════
+//
+// fixy-H-16 (cont.): assemble the full rejection diagnostic text by
+// concatenating "matched corpus entry: <name> — <cite>" into static
+// storage via P3491R3 `std::define_static_string`.  Returns an empty
+// `std::string_view` when no entry matches — the rejection path never
+// reaches that case because `NotInTheoryCorpus` accepts the binding.
+//
+// Consumer:
+//   fixy/Fn.h tier-5 `static_assert(fixy_h02_tier5_not_in_corpus, …)`
+//   uses this via P2741R3 so the diagnostic text literally identifies
+//   the matched §30.14 corpus entry by struct name (so a maintainer
+//   can grep Theory.h directly) AND by paper + year + remediation
+//   prose (so a reader knows which literature the rule cites).
+//
+// The doc-block at lines 58-64 of this header claims the diagnostic
+// "names which corpus entry matched (paper + year)".  After this
+// helper lands, the claim is supported in code: the entry's struct
+// name is surfaced via `name()` and the paper+year via `cite()`.
+
+template <typename Type, typename... Grants>
+inline constexpr std::string_view corpus_full_diagnostic_v =
+    []() consteval -> std::string_view {
+        constexpr std::string_view entry_name =
+            corpus_entry_name_for_v<Type, Grants...>;
+        constexpr std::string_view cite_text =
+            corpus_cite_for_v<Type, Grants...>;
+        if constexpr (entry_name.empty()) {
+            // No corpus match — tier-5 succeeds; message unused.
+            return std::string_view{};
+        } else {
+            std::string msg;
+            msg += "fixy::fn<Type, Grants...> [tier 5: NotInTheoryCorpus]: "
+                   "binding matches §30.14 unsoundness corpus entry: ";
+            msg.append(entry_name.data(), entry_name.size());
+            msg += ".  ";
+            msg.append(cite_text.data(), cite_text.size());
+            return std::string_view{std::define_static_string(msg)};
+        }
     }();
 
 }  // namespace crucible::fixy::theory
