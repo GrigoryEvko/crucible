@@ -25,6 +25,6 @@ using Witness = fixy::fn<TypeP002,
     strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
     strict<D::Space>,      strict<D::Overflow>, strict<D::Mutation>,
     strict<D::Reentrancy>, strict<D::Size>,     strict<D::Version>,
-    strict<D::Staleness>>;
+    strict<D::Staleness>, strict<D::Synchronization>>;
 
 int main() { return static_cast<int>(sizeof(Witness)); }

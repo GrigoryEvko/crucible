@@ -42,7 +42,7 @@ template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
 
 int main() {
-    // 19-axis pack engaging:
+    // 20-axis pack engaging:
     //   Security  = strict<D::Security>  (Classified — strict default)
     //   Staleness = stale_to<100>        (replay window of 100 units)
     //   NO declassify<Policy> grant in the pack
@@ -53,7 +53,7 @@ int main() {
         strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-        strict<D::Size>, strict<D::Version>,
+        strict<D::Size>, strict<D::Version>, strict<D::Synchronization>,
         gr::stale_to<100>>(42);                 // Staleness ≠ Fresh
     (void)bad;
     return 0;

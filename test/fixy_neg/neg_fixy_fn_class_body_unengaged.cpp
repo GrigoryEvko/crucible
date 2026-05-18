@@ -36,7 +36,7 @@ using BadFn = fixy::fn<int,
     strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>;
 
 // Force class-body completion: a member-of-incomplete-type check would
 // not be enough; the static_assert in the class body fires only on

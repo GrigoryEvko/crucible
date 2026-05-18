@@ -250,6 +250,21 @@ struct strict_default_for<dim::DimensionAxis::Staleness> {
     using type = safety::fn::stale::Fresh;
 };
 
+// FIXY-AUDIT-A3-008: Synchronization (dim 20, Crucible extension
+// 2026-05-18) is a WRAPPER-ONLY axis — safety::Wait<Strategy, T> and
+// safety::MemOrder<Tag, T> hold the sync discipline at the value site,
+// not as an Fn<...> aggregator slot.  No Fn<int> alias to round-trip
+// against (see `type_defaults_match_substrate` below — Synchronization
+// is deliberately absent from that check, parallel to Observability).
+// The strict default is `safety::fn::sync::Unconstrained` — meaning
+// "the binding makes no claim about wait strategy / memory order at
+// this scope; if any value flowing through is wrapped, its wrapper
+// carries the discipline."
+template <>
+struct strict_default_for<dim::DimensionAxis::Synchronization> {
+    using type = safety::fn::sync::Unconstrained;
+};
+
 // ─── has_strict_default — predicate concept ────────────────────────
 //
 // True iff a specialization exists for D AND it exposes either `type`

@@ -20,6 +20,6 @@ using Witness = fixy::fn<TypeM012,
     strict<D::Space>,      strict<D::Overflow>,
     gr::mut_monotonic,                          // Mutation = Monotonic
     strict<D::Reentrancy>, strict<D::Size>,     strict<D::Version>,
-    strict<D::Staleness>>;
+    strict<D::Staleness>, strict<D::Synchronization>>;
 
 int main() { return static_cast<int>(sizeof(Witness)); }

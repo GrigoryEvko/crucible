@@ -142,6 +142,8 @@ CRUCIBLE_FIXY_NOT_ENGAGED_TAG(Reentrancy,     "NonReentrant / Reentrant / Corout
 CRUCIBLE_FIXY_NOT_ENGAGED_TAG(Size,           "codata observation depth");
 CRUCIBLE_FIXY_NOT_ENGAGED_TAG(Version,        "schema version number");
 CRUCIBLE_FIXY_NOT_ENGAGED_TAG(Staleness,      "freshness bound τ");
+CRUCIBLE_FIXY_NOT_ENGAGED_TAG(Synchronization,
+    "wait-strategy / memory-order discipline (safety::Wait / safety::MemOrder)");
 
 #undef CRUCIBLE_FIXY_NOT_ENGAGED_TAG
 
@@ -198,6 +200,8 @@ CRUCIBLE_FIXY_DUPLICATE_TAG(Reentrancy,     "NonReentrant / Reentrant / Coroutin
 CRUCIBLE_FIXY_DUPLICATE_TAG(Size,           "codata observation depth");
 CRUCIBLE_FIXY_DUPLICATE_TAG(Version,        "schema version number");
 CRUCIBLE_FIXY_DUPLICATE_TAG(Staleness,      "freshness bound τ");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Synchronization,
+    "wait-strategy / memory-order discipline (safety::Wait / safety::MemOrder)");
 
 #undef CRUCIBLE_FIXY_DUPLICATE_TAG
 
@@ -260,6 +264,7 @@ template <> struct tag_for_axis<dim::DimensionAxis::Reentrancy>     { using type
 template <> struct tag_for_axis<dim::DimensionAxis::Size>           { using type = FixyNotEngaged_Size; };
 template <> struct tag_for_axis<dim::DimensionAxis::Version>        { using type = FixyNotEngaged_Version; };
 template <> struct tag_for_axis<dim::DimensionAxis::Staleness>      { using type = FixyNotEngaged_Staleness; };
+template <> struct tag_for_axis<dim::DimensionAxis::Synchronization> { using type = FixyNotEngaged_Synchronization; };
 
 template <dim::DimensionAxis D>
 using tag_for_axis_t = typename tag_for_axis<D>::type;
@@ -294,6 +299,7 @@ template <> struct dup_tag_for_axis<dim::DimensionAxis::Reentrancy>     { using 
 template <> struct dup_tag_for_axis<dim::DimensionAxis::Size>           { using type = FixyDuplicate_Size; };
 template <> struct dup_tag_for_axis<dim::DimensionAxis::Version>        { using type = FixyDuplicate_Version; };
 template <> struct dup_tag_for_axis<dim::DimensionAxis::Staleness>      { using type = FixyDuplicate_Staleness; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Synchronization> { using type = FixyDuplicate_Synchronization; };
 
 template <dim::DimensionAxis D>
 using dup_tag_for_axis_t = typename dup_tag_for_axis<D>::type;
@@ -353,7 +359,8 @@ using FixyCatalog = ::std::tuple<
     FixyNotEngaged_Reentrancy,      // 16
     FixyNotEngaged_Size,            // 17
     FixyNotEngaged_Version,         // 18
-    FixyNotEngaged_Staleness        // 19
+    FixyNotEngaged_Staleness,       // 19
+    FixyNotEngaged_Synchronization  // 20  (fixy-A3-008, 2026-05-18)
 >;
 
 inline constexpr ::std::size_t fixy_catalog_size =
@@ -412,6 +419,7 @@ template <> struct axis_for_tag<FixyNotEngaged_Reentrancy>     { static constexp
 template <> struct axis_for_tag<FixyNotEngaged_Size>           { static constexpr auto value = dim::DimensionAxis::Size; };
 template <> struct axis_for_tag<FixyNotEngaged_Version>        { static constexpr auto value = dim::DimensionAxis::Version; };
 template <> struct axis_for_tag<FixyNotEngaged_Staleness>      { static constexpr auto value = dim::DimensionAxis::Staleness; };
+template <> struct axis_for_tag<FixyNotEngaged_Synchronization> { static constexpr auto value = dim::DimensionAxis::Synchronization; };
 
 template <typename Tag>
 inline constexpr dim::DimensionAxis axis_for_tag_v = axis_for_tag<Tag>::value;
@@ -1224,7 +1232,7 @@ namespace detail::reject_self_test {
 template <dim::DimensionAxis D>
 using strict = grant::accept_default_strict_for<D>;
 
-// All 20 axes accepted-strict.
+// All 21 axes accepted-strict.
 using AllStrictPack = std::tuple<
     strict<dim::DimensionAxis::Type>,
     strict<dim::DimensionAxis::Refinement>,
@@ -1245,7 +1253,8 @@ using AllStrictPack = std::tuple<
     strict<dim::DimensionAxis::Reentrancy>,
     strict<dim::DimensionAxis::Size>,
     strict<dim::DimensionAxis::Version>,
-    strict<dim::DimensionAxis::Staleness>>;
+    strict<dim::DimensionAxis::Staleness>,
+    strict<dim::DimensionAxis::Synchronization>>;
 
 // Apply Grants pack from a tuple to a template — helper.
 template <template <typename...> class Tmpl, typename Tuple>
@@ -1268,7 +1277,7 @@ inline constexpr bool accepts_pack_v = []() {
 
 // 1. Empty pack rejects.
 //    `IsAccepted<int>` (wrapper-discipline) auto-injects the Type marker
-//    so the pack has 1 axis engaged but 19 missing → rejects.
+//    so the pack has 1 axis engaged but 20 missing → rejects.
 static_assert(!IsAccepted<int>,
     "Empty Grants pack must reject (only Type engaged via injection).");
 // Witnessed at the dim level too:
@@ -1280,9 +1289,9 @@ static_assert(accepts_pack_v<int, AllStrictPack>,
     "AllStrict pack must accept — every dim has an engagement marker.");
 
 // 3. Single-relaxation pack rejects (under wrapper-discipline IsAccepted,
-//    18 dims still unengaged after auto-injection of Type marker).
+//    19 dims still unengaged after auto-injection of Type marker).
 static_assert(!IsAccepted<int, grant::copy>,
-    "Single Usage relaxation must reject — 18 other dims unengaged.");
+    "Single Usage relaxation must reject — 19 other dims unengaged.");
 
 // 4. Replacing Usage's accept-strict with `grant::copy` still accepts.
 using CopyForUsagePack = std::tuple<
@@ -1305,7 +1314,8 @@ using CopyForUsagePack = std::tuple<
     strict<dim::DimensionAxis::Reentrancy>,
     strict<dim::DimensionAxis::Size>,
     strict<dim::DimensionAxis::Version>,
-    strict<dim::DimensionAxis::Staleness>>;
+    strict<dim::DimensionAxis::Staleness>,
+    strict<dim::DimensionAxis::Synchronization>>;
 
 static_assert(accepts_pack_v<int, CopyForUsagePack>,
     "Replacing accept-strict<Usage> with `grant::copy` must still "
@@ -1333,7 +1343,8 @@ using MinusEffectPack = std::tuple<
     strict<dim::DimensionAxis::Reentrancy>,
     strict<dim::DimensionAxis::Size>,
     strict<dim::DimensionAxis::Version>,
-    strict<dim::DimensionAxis::Staleness>>;
+    strict<dim::DimensionAxis::Staleness>,
+    strict<dim::DimensionAxis::Synchronization>>;
 
 static_assert(!accepts_pack_v<int, MinusEffectPack>,
     "Removing accept-strict<Effect> without replacement must reject.");
@@ -1374,7 +1385,8 @@ using MinusRefinementPack = std::tuple<
     strict<dim::DimensionAxis::Reentrancy>,
     strict<dim::DimensionAxis::Size>,
     strict<dim::DimensionAxis::Version>,
-    strict<dim::DimensionAxis::Staleness>>;
+    strict<dim::DimensionAxis::Staleness>,
+    strict<dim::DimensionAxis::Synchronization>>;
 
 inline constexpr std::optional<dim::DimensionAxis>
 first_missing_for_minus_refinement = []() consteval {
@@ -1412,7 +1424,8 @@ using AllAxesStrictPack = std::tuple<
     strict<dim::DimensionAxis::Reentrancy>,
     strict<dim::DimensionAxis::Size>,
     strict<dim::DimensionAxis::Version>,
-    strict<dim::DimensionAxis::Staleness>>;
+    strict<dim::DimensionAxis::Staleness>,
+    strict<dim::DimensionAxis::Synchronization>>;
 
 inline constexpr std::optional<dim::DimensionAxis>
 first_missing_for_full_strict_pack = []() consteval {

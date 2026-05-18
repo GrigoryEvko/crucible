@@ -188,6 +188,18 @@ enum class DimensionAxis : std::uint8_t {
     Size           = 17,  // S  (FX dim 20)
     Version        = 18,  // V  (FX dim 21)
     Staleness      = 19,  // S  (FX dim 22)
+    // Synchronization (fixy-A3-008) — added 2026-05-18 to host
+    // safety::Wait (SpinPause/Sleep/Futex strategy) and
+    // safety::MemOrder (Relaxed/Acquire/Release/SeqCst) wrappers,
+    // both previously misclassified on dim 16 Reentrancy.  The
+    // Reentrancy axis tracks call-graph self-call (`rec`/`with
+    // Reentrant`); Wait + MemOrder are synchronization-discipline
+    // annotations whose semantics do not overlap with reentrancy.
+    // Tier S with par=join (strictest-wins) reading; no Fn<>
+    // aggregator slot (the wrappers compose at use-sites, not via
+    // Fn parameter aggregation — parallel to dim 11 Observability
+    // which is also derived rather than Fn-aggregated).
+    Synchronization = 20, // S  (Crucible extension, 2026-05-18)
 };
 
 inline constexpr std::size_t DIMENSION_AXIS_COUNT =
@@ -215,6 +227,7 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::Size:           return "Size";
         case DimensionAxis::Version:        return "Version";
         case DimensionAxis::Staleness:      return "Staleness";
+        case DimensionAxis::Synchronization: return "Synchronization";
         default:                            return std::string_view{"<unknown DimensionAxis>"};
     }
 }
@@ -255,6 +268,7 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::Reentrancy:
         case DimensionAxis::Size:
         case DimensionAxis::Staleness:
+        case DimensionAxis::Synchronization:
             return TierKind::Semiring;
 
         default:
@@ -467,13 +481,20 @@ template <AllocClassTag_v Tag, typename T>
 struct wrapper_dimension<AllocClass<Tag, T>>
     : std::integral_constant<DimensionAxis, DimensionAxis::Space> {};
 
+// fixy-A3-008 (2026-05-18): Wait + MemOrder reclassified from
+// dim 16 Reentrancy to dim 20 Synchronization.  Reentrancy tracks
+// call-graph self-call ("rec" / "with Reentrant"); Wait tracks
+// waiting-strategy choice (SpinPause / Sleep / Futex) and MemOrder
+// tracks C++ memory-order discipline (Relaxed / Acquire / Release
+// / SeqCst).  Both are concurrency-coordination axes — neither
+// touches reentrancy semantics.  Tier preserved at Semiring (S).
 template <WaitStrategy_v Strategy, typename T>
 struct wrapper_dimension<Wait<Strategy, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Reentrancy> {};
+    : std::integral_constant<DimensionAxis, DimensionAxis::Synchronization> {};
 
 template <MemOrderTag_v Tag, typename T>
 struct wrapper_dimension<MemOrder<Tag, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Reentrancy> {};
+    : std::integral_constant<DimensionAxis, DimensionAxis::Synchronization> {};
 
 template <ProgressClass_v Class, typename T>
 struct wrapper_dimension<Progress<Class, T>>
@@ -554,9 +575,10 @@ namespace detail::dimension_traits_self_test {
 static_assert(TIER_KIND_COUNT == 5,
     "TierKind catalog diverged from fixy.md §24.1 Tier S/L/T/F/V (5); "
     "if intentional, update fixy.md and this constant together.");
-static_assert(DIMENSION_AXIS_COUNT == 20,
-    "DimensionAxis catalog diverged from fixy.md §24.1 (20 dims after "
-    "dropping FX dim 12 Clock Domain and dim 17 FP Order); if "
+static_assert(DIMENSION_AXIS_COUNT == 21,
+    "DimensionAxis catalog diverged from fixy.md §24.1 (21 dims: FX's "
+    "22 minus dim 12 Clock Domain and dim 17 FP Order, plus the Crucible "
+    "Synchronization extension added 2026-05-18 for Wait + MemOrder); if "
     "intentional, update fixy.md §24.1 + §24.14 and this constant.");
 
 // ── Reflection-driven name coverage (TierKind) ─────────────────────
@@ -632,8 +654,9 @@ static_assert(every_dimension_axis_has_tier(),
     return n;
 }
 
-static_assert(count_dims_in_tier(TierKind::Semiring)     == 15,
-    "fixy.md §24.1 declares 15 Tier-S dimensions; tier_of_axis disagrees.");
+static_assert(count_dims_in_tier(TierKind::Semiring)     == 16,
+    "fixy.md §24.1 declares 16 Tier-S dimensions (15 FX-inherited + "
+    "Synchronization added 2026-05-18 per fixy-A3-008); tier_of_axis disagrees.");
 static_assert(count_dims_in_tier(TierKind::Lattice)      == 1,
     "fixy.md §24.1 declares 1 Tier-L dimension (Representation); "
     "tier_of_axis disagrees.");

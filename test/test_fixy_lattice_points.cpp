@@ -47,7 +47,7 @@ using fn_t = fixy::fn<int,
     strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>;
 static_assert(fn_t::security_v == crucible::safety::fn::SecLevel::Unclassified,
     "as_unclassified must resolve Security to SecLevel::Unclassified.");
 }  // namespace lat_sec_unclassified
@@ -60,7 +60,7 @@ using fn_t = fixy::fn<int,
     strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>;
 static_assert(fn_t::security_v == crucible::safety::fn::SecLevel::Public,
     "as_public must resolve Security to SecLevel::Public.");
 }  // namespace lat_sec_public
@@ -73,7 +73,7 @@ using fn_t = fixy::fn<int,
     strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>;
 static_assert(fn_t::security_v == crucible::safety::fn::SecLevel::Internal,
     "as_internal must resolve Security to SecLevel::Internal.");
 }  // namespace lat_sec_internal
@@ -86,7 +86,7 @@ using fn_t = fixy::fn<int,
     strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>;
 static_assert(fn_t::security_v == crucible::safety::fn::SecLevel::Classified,
     "as_classified must resolve Security to SecLevel::Classified — "
     "matching the substrate strict default.");
@@ -100,7 +100,7 @@ using fn_t = fixy::fn<int,
     strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>;
 static_assert(fn_t::security_v == crucible::safety::fn::SecLevel::Secret,
     "as_secret must resolve Security to SecLevel::Secret.");
 }  // namespace lat_sec_secret
@@ -116,7 +116,7 @@ using fn_t = fixy::fn<int,
     strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>;
 static_assert(std::is_same_v<typename fn_t::trust_t,
                              crucible::safety::trust::Verified>,
     "trust_verified must resolve Trust to safety::trust::Verified.");
@@ -131,7 +131,7 @@ using fn_t = fixy::fn<int,
     strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>;
 static_assert(std::is_same_v<typename fn_t::trust_t,
                              crucible::safety::trust::Tested>,
     "trust_tested must resolve Trust to safety::trust::Tested.");
@@ -146,7 +146,7 @@ using fn_t = fixy::fn<int,
     strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>;
 static_assert(std::is_same_v<typename fn_t::trust_t,
                              crucible::safety::trust::Unverified>,
     "trust_unverified must resolve Trust to safety::trust::Unverified.");
@@ -161,7 +161,7 @@ using fn_t = fixy::fn<int,
     strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>;
 static_assert(std::is_same_v<typename fn_t::trust_t,
                              crucible::safety::trust::External>,
     "trust_external must resolve Trust to safety::trust::External.");
@@ -178,7 +178,7 @@ using fn_t = fixy::fn<int,
     strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>;
 static_assert(fn_t::security_v == crucible::safety::fn::SecLevel::Secret,
     "Cross-axis: as_secret + trust_external still pins Security to Secret.");
 static_assert(std::is_same_v<typename fn_t::trust_t,

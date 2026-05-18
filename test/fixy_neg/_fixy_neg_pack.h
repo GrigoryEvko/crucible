@@ -47,7 +47,8 @@ using PackWithout = std::tuple<
     std::conditional_t<Omit == D::Reentrancy,     void, strict<D::Reentrancy>>,
     std::conditional_t<Omit == D::Size,           void, strict<D::Size>>,
     std::conditional_t<Omit == D::Version,        void, strict<D::Version>>,
-    std::conditional_t<Omit == D::Staleness,      void, strict<D::Staleness>>>;
+    std::conditional_t<Omit == D::Staleness,      void, strict<D::Staleness>>,
+    std::conditional_t<Omit == D::Synchronization, void, strict<D::Synchronization>>>;
 
 // Filter `void`s out of the pack; the resulting tuple is what we
 // hand to IsAcceptedGrants.

@@ -267,6 +267,28 @@ namespace stale {
     template <auto TauMax> struct Stale {};
 }
 
+// ── Dim 23 Synchronization (Tier-S, Crucible extension 2026-05-18) ─
+//
+// Wrapper-only axis — there is NO Fn<...> template-parameter slot for
+// it.  safety::Wait<Strategy, T> and safety::MemOrder<Tag, T> wrap a
+// value with its waiting-strategy or C++ memory-order discipline at
+// the call site; Fn<...> never aggregates them, because the choice is
+// per-value, not per-binding.  The sole reason this namespace exists
+// is so fixy/Default.h can give the Synchronization axis a `type`
+// alias that satisfies the `every_axis_resolves` reflection-driven
+// coverage check.
+//
+// `Unconstrained` IS the strict default — the binding makes no claim
+// about Wait strategy or memory-order discipline.  A binding that
+// wants to enforce SpinPause / SeqCst / etc. wraps the relevant value
+// in safety::Wait or safety::MemOrder at the call site; the fixy::fn
+// engagement marker for this axis is therefore `accept_default_strict
+// _for<DimensionAxis::Synchronization>` — i.e., "I'm not claiming any
+// wrapper here; the wrapper, if any, lives on the value itself."
+namespace sync {
+    struct Unconstrained {};   // default — no sync wrapper claim at binding scope
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── ValidComposition concept gate (Phase 0 P0-2) ───────────────────
 // ═════════════════════════════════════════════════════════════════════

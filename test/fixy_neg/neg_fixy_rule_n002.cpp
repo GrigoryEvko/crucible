@@ -23,6 +23,6 @@ using Witness = fixy::fn<TypeN002,
     gr::overflow_wrap,                          // Overflow = Wrap
     strict<D::Mutation>,
     strict<D::Reentrancy>, strict<D::Size>,     strict<D::Version>,
-    strict<D::Staleness>>;
+    strict<D::Staleness>, strict<D::Synchronization>>;
 
 int main() { return static_cast<int>(sizeof(Witness)); }

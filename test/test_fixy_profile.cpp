@@ -58,14 +58,16 @@ static_assert(fixy::IsAcceptedActive<int>,
 #endif
 
 // All-strict pack accepts under both modes.
+// IsAcceptedActive (= IsAccepted under STRICT) auto-injects the Type
+// marker so the user pack must NOT include strict<D::Type> explicitly.
 static_assert(fixy::IsAcceptedActive<int,
-    strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
+    strict<D::Refinement>, strict<D::Usage>,
     strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
     strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
     strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>>,
-    "An all-strict 20-axis pack must accept under both modes.");
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>>,
+    "An all-strict 21-axis pack must accept under both modes.");
 
 int main() { return 0; }
