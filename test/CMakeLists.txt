@@ -1202,6 +1202,32 @@ function(crucible_neg_compile_topology_test name expected_diag)
     LABELS "topology_neg")
 endfunction()
 
+# fixy-A2-016 — HS14 floor for the six bridges/* mint factories that
+# previously had zero negative-compile coverage:
+#   mint_recording_session(SessionHandle, ...)
+#   mint_recording_session(CrashWatchedHandle, ...)
+#   mint_recording_endpoint(Endpoint&&, ...)
+#   mint_crash_watched_endpoint<PeerTag>(Endpoint&&, ...)
+#   mint_persisted_session(ctx, cipher, view, resource, ...)
+#   mint_persisted_session(ctx, SessionHandle, cipher, view, ...)
+# Each factory's requires-clause / parameter-shape gate is witnessed
+# by ≥2 fixtures probing distinct mismatch classes (non-handle input,
+# wrong companion-type, missing template arg, deleted overload via
+# `= delete("reason")`, ctx-row admission failure).
+function(crucible_neg_compile_bridges_test name expected_diag)
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/bridges_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/bridges_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
+  set_tests_properties(${name} PROPERTIES
+    LABELS "bridges_neg")
+endfunction()
+
 # ── FIXY-CLEAN Phase A — neg-compile fixture harness ────────────────
 #
 # 12 per-axis engagement-gap fixtures live in test/fixy_neg/.  Each
@@ -8721,3 +8747,33 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_session_no_admittance
     "no matching function|too few arguments|requires 3 arguments|candidate")
 crucible_neg_compile_fixy_test(neg_fixy_federation_session_wrong_org
     "FederatedPeer|cannot bind|no known conversion|no matching function")
+
+# fixy-A2-016 — 12 negative-compile fixtures across 6 bridges/* mint
+# factories (≥2 per factory).  Each fixture's expected diagnostic
+# regex is wide enough to tolerate GCC phrasing drift across patch
+# levels but specific enough to fail when the underlying gate goes
+# missing.  Driver: scripts/neg_compile_driver.py.
+crucible_neg_compile_bridges_test(neg_mint_recording_session_non_handle
+    "no matching function for call to|could not match")
+crucible_neg_compile_bridges_test(neg_mint_recording_session_wrong_log_type
+    "no matching function for call to|cannot bind|could not convert")
+crucible_neg_compile_bridges_test(neg_mint_recording_session_crash_watched_non_handle
+    "no matching function for call to|could not match")
+crucible_neg_compile_bridges_test(neg_mint_recording_session_crash_watched_wrong_log_type
+    "no matching function for call to|could not match|could not convert")
+crucible_neg_compile_bridges_test(neg_mint_recording_endpoint_non_endpoint
+    "no matching function for call to|could not match|cannot bind rvalue")
+crucible_neg_compile_bridges_test(neg_mint_recording_endpoint_wrong_log_type
+    "no matching function for call to|could not match|template argument deduction")
+crucible_neg_compile_bridges_test(neg_mint_crash_watched_endpoint_non_endpoint
+    "no matching function for call to|could not match|cannot bind rvalue")
+crucible_neg_compile_bridges_test(neg_mint_crash_watched_endpoint_missing_peer_tag
+    "no matching function for call to|couldn't infer|could not deduce|PeerTag")
+crucible_neg_compile_bridges_test(neg_mint_persisted_session_ctx_required
+    "PersistedSession_CtxRequired|use of deleted function")
+crucible_neg_compile_bridges_test(neg_mint_persisted_session_ctx_row_insufficient
+    "constraints not satisfied|CtxAdmits|no matching function")
+crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_open_view_required
+    "PersistedSession_OpenViewRequired|use of deleted function")
+crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_ctx_row_insufficient
+    "constraints not satisfied|CtxAdmits|no matching function")
