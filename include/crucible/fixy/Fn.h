@@ -903,7 +903,8 @@ using PureLinear = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Size>,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>>;
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
 
 // ── PureCopy — copy usage, strict elsewhere ───────────────────────
 template <typename Type>
@@ -927,7 +928,8 @@ using PureCopy = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Size>,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>>;
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
 
 // ── IoFunction — IO effect, public-emit Security, strict elsewhere ─
 //
@@ -965,7 +967,8 @@ using IoFunction = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Size>,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>>;
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
 
 // ── BgWorker — Bg + Alloc effects, public Security, strict else ───
 //
@@ -1001,7 +1004,8 @@ using BgWorker = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Size>,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>>;
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
 
 // ── SecretConsumer — declassifies a secret value ──────────────────
 //
@@ -1030,7 +1034,8 @@ using SecretConsumer = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Size>,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>>;
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
 
 // ── CtCrypto — constant-time crypto path (FIXY-AUDIT-B3) ──────────
 //
@@ -1079,7 +1084,8 @@ using CtCrypto = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Size>,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>>;
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
 
 // ── PublicEmit<Policy> — publicly-observable emission (FIXY-AUDIT-B3) ─
 //
@@ -1124,7 +1130,8 @@ using PublicEmit = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Size>,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>>;
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
 
 // ── AsyncEndpoint — coroutine + IO + public Security ──────────────
 //
@@ -1157,7 +1164,8 @@ using AsyncEndpoint = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Size>,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>>;
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
 
 }  // namespace stance
 
@@ -1245,7 +1253,8 @@ using direct_fixy = ::crucible::fixy::fn<int,
     grant::accept_default_strict_for<dim::DimensionAxis::Size>,
     grant::accept_default_strict_for<dim::DimensionAxis::Version>,
     grant::accept_default_strict_for<dim::DimensionAxis::Staleness>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>>;
+    grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>,
+    grant::accept_default_strict_for<dim::DimensionAxis::Regime>>;
 
 using direct_substrate = safety::fn::Fn<int,
     safety::fn::pred::True,
@@ -1331,7 +1340,8 @@ constexpr auto minted = mint_fn<int,
     grant::accept_default_strict_for<dim::DimensionAxis::Size>,
     grant::accept_default_strict_for<dim::DimensionAxis::Version>,
     grant::accept_default_strict_for<dim::DimensionAxis::Staleness>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>>(42);
+    grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>,
+    grant::accept_default_strict_for<dim::DimensionAxis::Regime>>(42);
 static_assert(minted.value() == 42,
     "mint_fn must construct fixy::fn carrying the supplied value.");
 

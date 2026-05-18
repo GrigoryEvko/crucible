@@ -233,6 +233,7 @@ crucible_test(test_fixy_diag_catalog)  # FIXY-AUDIT-C8 reconciliation
 crucible_test(test_fixy_insights)      # fixy-H-14 insight_provider sentinel
 crucible_test(test_fixy_a3_007_insights)  # fixy-A3-007 substrate-tag insight closure
 crucible_test(test_fixy_a3_008_synchronization)  # fixy-A3-008 Wait + MemOrder → Synchronization
+crucible_test(test_fixy_a3_009_regime)  # fixy-A3-009 HotPath → Regime (Progress stays on Complexity)
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -1295,6 +1296,7 @@ crucible_neg_compile_fixy_test(neg_fixy_unengaged_reentrancy     "FixyNotEngaged
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_size           "FixyNotEngaged_Size")
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_version        "FixyNotEngaged_Version")
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_synchronization "FixyNotEngaged_Synchronization")
+crucible_neg_compile_fixy_test(neg_fixy_unengaged_regime         "FixyNotEngaged_Regime")
 
 # FIXY-AUDIT-D2 — HS14 floor for mint_fn factory.
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_unengaged_axis   "AllDimsEngaged")

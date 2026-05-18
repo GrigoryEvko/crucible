@@ -289,6 +289,27 @@ namespace sync {
     struct Unconstrained {};   // default — no sync wrapper claim at binding scope
 }
 
+// ── Dim 24 Regime (Tier-S, Crucible extension 2026-05-18) ──────────
+//
+// Wrapper-only axis — there is NO Fn<...> template-parameter slot for
+// it.  safety::HotPath<Tier, T> wraps a value with its operating-
+// regime tier (Hot / Warm / Cold) at the call site; Fn<...> never
+// aggregates it, because the choice is per-value, not per-binding.
+// The sole reason this namespace exists is so fixy/Default.h can give
+// the Regime axis a `type` alias that satisfies the `every_axis_
+// resolves` reflection-driven coverage check.
+//
+// `Unconstrained` IS the strict default — the binding makes no claim
+// about operating regime.  A binding that wants to enforce Hot / Warm
+// / Cold wraps the relevant value in safety::HotPath at the call site;
+// the fixy::fn engagement marker for this axis is therefore
+// `accept_default_strict_for<DimensionAxis::Regime>` — i.e., "I'm not
+// claiming any wrapper here; the wrapper, if any, lives on the value
+// itself."
+namespace regime {
+    struct Unconstrained {};   // default — no regime wrapper claim at binding scope
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── ValidComposition concept gate (Phase 0 P0-2) ───────────────────
 // ═════════════════════════════════════════════════════════════════════

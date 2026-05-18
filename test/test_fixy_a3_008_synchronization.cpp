@@ -88,10 +88,11 @@ static_assert(cs::verify_quadruple<MoRelaxed>(),
 static_assert(cs::verify_quadruple<MoSeqCst>(),
     "fixy-A3-008: GAPS-091 verify_quadruple<MemOrder<SeqCst>> must hold.");
 
-// ── Catalog cardinality — Synchronization grew the axis count to 21.
-static_assert(cs::DIMENSION_AXIS_COUNT == 21,
-    "fixy-A3-008: DimensionAxis catalog must equal 21 (20 FX-derived + "
-    "Synchronization extension added 2026-05-18).");
+// ── Catalog cardinality — Synchronization grew the axis count by one.
+// (Total was 21 at A3-008 landing; subsequent A3-009 added Regime → 22.)
+static_assert(cs::DIMENSION_AXIS_COUNT >= 21,
+    "fixy-A3-008: DimensionAxis catalog must include Synchronization "
+    "(at least 21 axes; further extensions are additive).");
 
 // ── Synchronization carries a non-empty, non-sentinel name.
 static_assert(cs::dimension_axis_name(cs::DimensionAxis::Synchronization)

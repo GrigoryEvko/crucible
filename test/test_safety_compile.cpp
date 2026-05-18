@@ -93,7 +93,7 @@ namespace fn = crucible::safety::fn;
 namespace dimension_traits_compile_probe {
 
 static_assert(cs::TIER_KIND_COUNT == 5);
-static_assert(cs::DIMENSION_AXIS_COUNT == 21);  // fixy-A3-008: +Synchronization (2026-05-18)
+static_assert(cs::DIMENSION_AXIS_COUNT == 22);  // fixy-A3-009: +Regime (2026-05-18)
 
 [[nodiscard]] consteval bool every_tier_kind_has_name() noexcept {
     static constexpr auto enumerators =
@@ -154,7 +154,7 @@ static_assert(cs::DIMENSION_AXIS_COUNT == 21);  // fixy-A3-008: +Synchronization
 static_assert(every_tier_kind_has_name());
 static_assert(every_dimension_axis_has_name());
 static_assert(every_dimension_axis_has_tier());
-static_assert(count_dims_in_tier(cs::TierKind::Semiring) == 16);  // fixy-A3-008: +Synchronization (2026-05-18)
+static_assert(count_dims_in_tier(cs::TierKind::Semiring) == 17);  // fixy-A3-009: +Regime (2026-05-18)
 static_assert(count_dims_in_tier(cs::TierKind::Lattice) == 1);
 static_assert(count_dims_in_tier(cs::TierKind::Typestate) == 1);
 static_assert(count_dims_in_tier(cs::TierKind::Foundational) == 2);

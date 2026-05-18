@@ -265,6 +265,21 @@ struct strict_default_for<dim::DimensionAxis::Synchronization> {
     using type = safety::fn::sync::Unconstrained;
 };
 
+// FIXY-AUDIT-A3-009: Regime (dim 21, Crucible extension 2026-05-18) is
+// a WRAPPER-ONLY axis — safety::HotPath<Tier, T> holds the operating-
+// regime tier (Hot / Warm / Cold) at the value site, not as an Fn<...>
+// aggregator slot.  No Fn<int> alias to round-trip against (parallel
+// to Observability and Synchronization).  The strict default is
+// `safety::fn::regime::Unconstrained` — meaning "the binding makes no
+// claim about operating regime at this scope; the wrapper, if any,
+// lives on the value itself."  HotPath defaults to Cold per its
+// substrate, so Unconstrained at the binding level means "use the
+// value's wrapper grade, or Cold-by-default if unwrapped."
+template <>
+struct strict_default_for<dim::DimensionAxis::Regime> {
+    using type = safety::fn::regime::Unconstrained;
+};
+
 // ─── has_strict_default — predicate concept ────────────────────────
 //
 // True iff a specialization exists for D AND it exposes either `type`

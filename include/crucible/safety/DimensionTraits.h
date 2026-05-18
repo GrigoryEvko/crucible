@@ -200,6 +200,17 @@ enum class DimensionAxis : std::uint8_t {
     // Fn parameter aggregation — parallel to dim 11 Observability
     // which is also derived rather than Fn-aggregated).
     Synchronization = 20, // S  (Crucible extension, 2026-05-18)
+    // Regime (fixy-A3-009) — added 2026-05-18 to host
+    // safety::HotPath (Hot/Warm/Cold tier) wrappers, previously
+    // misclassified on dim 13 Complexity.  Complexity tracks
+    // asymptotic / termination-class bounds (which Progress
+    // legitimately occupies — Terminating / Productive /
+    // Possibly_Diverging); HotPath tracks *operating regime* —
+    // where in the latency-budget hierarchy a function lives.
+    // Tier S with par=join (hottest-wins; Hot ⊕ Warm = Hot).  No
+    // Fn<> aggregator slot — HotPath composes at use-sites, like
+    // Observability and Synchronization.
+    Regime          = 21, // S  (Crucible extension, 2026-05-18)
 };
 
 inline constexpr std::size_t DIMENSION_AXIS_COUNT =
@@ -228,6 +239,7 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::Version:        return "Version";
         case DimensionAxis::Staleness:      return "Staleness";
         case DimensionAxis::Synchronization: return "Synchronization";
+        case DimensionAxis::Regime:         return "Regime";
         default:                            return std::string_view{"<unknown DimensionAxis>"};
     }
 }
@@ -269,6 +281,7 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::Size:
         case DimensionAxis::Staleness:
         case DimensionAxis::Synchronization:
+        case DimensionAxis::Regime:
             return TierKind::Semiring;
 
         default:
@@ -453,9 +466,18 @@ template <typename T, template <typename...> class Storage>
 struct wrapper_dimension<AppendOnly<T, Storage>>
     : std::integral_constant<DimensionAxis, DimensionAxis::Mutation> {};
 
+// fixy-A3-009 (2026-05-18): HotPath reclassified from dim 13
+// Complexity to dim 21 Regime.  Complexity tracks asymptotic /
+// termination-class bounds (where Progress legitimately lives:
+// Terminating / Productive / Possibly_Diverging); HotPath tracks
+// *operating regime* — where in the latency budget a function
+// lives (Hot / Warm / Cold).  Neither axis subsumes the other:
+// a Cold-regime function can still be Terminating, and a Hot-
+// regime function can still be Possibly_Diverging (and is then
+// a bug in the Hot path that must be caught by other gates).
 template <HotPathTier_v Tier, typename T>
 struct wrapper_dimension<HotPath<Tier, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Complexity> {};
+    : std::integral_constant<DimensionAxis, DimensionAxis::Regime> {};
 
 template <DetSafeTier_v Tier, typename T>
 struct wrapper_dimension<DetSafe<Tier, T>>
@@ -575,11 +597,12 @@ namespace detail::dimension_traits_self_test {
 static_assert(TIER_KIND_COUNT == 5,
     "TierKind catalog diverged from fixy.md §24.1 Tier S/L/T/F/V (5); "
     "if intentional, update fixy.md and this constant together.");
-static_assert(DIMENSION_AXIS_COUNT == 21,
-    "DimensionAxis catalog diverged from fixy.md §24.1 (21 dims: FX's "
+static_assert(DIMENSION_AXIS_COUNT == 22,
+    "DimensionAxis catalog diverged from fixy.md §24.1 (22 dims: FX's "
     "22 minus dim 12 Clock Domain and dim 17 FP Order, plus the Crucible "
-    "Synchronization extension added 2026-05-18 for Wait + MemOrder); if "
-    "intentional, update fixy.md §24.1 + §24.14 and this constant.");
+    "Synchronization extension added 2026-05-18 for Wait + MemOrder, plus "
+    "the Crucible Regime extension added 2026-05-18 for HotPath); if "
+    "intentional, update fixy.md §24.1 + §24.14 + §24.15 and this constant.");
 
 // ── Reflection-driven name coverage (TierKind) ─────────────────────
 [[nodiscard]] consteval bool every_tier_kind_has_name() noexcept {
@@ -654,9 +677,10 @@ static_assert(every_dimension_axis_has_tier(),
     return n;
 }
 
-static_assert(count_dims_in_tier(TierKind::Semiring)     == 16,
-    "fixy.md §24.1 declares 16 Tier-S dimensions (15 FX-inherited + "
-    "Synchronization added 2026-05-18 per fixy-A3-008); tier_of_axis disagrees.");
+static_assert(count_dims_in_tier(TierKind::Semiring)     == 17,
+    "fixy.md §24.1 declares 17 Tier-S dimensions (15 FX-inherited + "
+    "Synchronization 2026-05-18 per fixy-A3-008 + Regime 2026-05-18 per "
+    "fixy-A3-009); tier_of_axis disagrees.");
 static_assert(count_dims_in_tier(TierKind::Lattice)      == 1,
     "fixy.md §24.1 declares 1 Tier-L dimension (Representation); "
     "tier_of_axis disagrees.");

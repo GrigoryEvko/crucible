@@ -31,11 +31,11 @@ namespace fx = crucible::fixy;
 
 // ─── 1. Cardinality ───────────────────────────────────────────────
 
-static_assert(fd::fixy_catalog_size == 21,
-    "FixyCatalog must enumerate exactly 21 entries — one per "
+static_assert(fd::fixy_catalog_size == 22,
+    "FixyCatalog must enumerate exactly 22 entries — one per "
     "DimensionAxis enumerator.");
 
-static_assert(std::tuple_size_v<fd::FixyCatalog> == 21);
+static_assert(std::tuple_size_v<fd::FixyCatalog> == 22);
 
 // ─── 2. is_fixy_diag_v on every catalog entry ─────────────────────
 
@@ -60,6 +60,7 @@ static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_Size>);
 static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_Version>);
 static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_Staleness>);
 static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_Synchronization>);
+static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_Regime>);
 
 // ─── 3. is_fixy_diag_v rejects non-catalog types ──────────────────
 
@@ -92,6 +93,8 @@ static_assert(fd::axis_for_tag_v<fd::FixyNotEngaged_Security>
               == fx::dim::DimensionAxis::Security);
 static_assert(fd::axis_for_tag_v<fd::FixyNotEngaged_Staleness>
               == fx::dim::DimensionAxis::Staleness);
+static_assert(fd::axis_for_tag_v<fd::FixyNotEngaged_Regime>
+              == fx::dim::DimensionAxis::Regime);
 
 // ─── 6. Round-trip via reflection over every DimensionAxis ────────
 //
@@ -134,6 +137,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     std::tuple_element_t<20, fd::FixyCatalog>,
     fd::FixyNotEngaged_Synchronization>);
+static_assert(std::is_same_v<
+    std::tuple_element_t<21, fd::FixyCatalog>,
+    fd::FixyNotEngaged_Regime>);
 
 // ─── 8. Substrate accessors still work on fixy tags ───────────────
 //
