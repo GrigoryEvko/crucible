@@ -36,6 +36,17 @@ struct SessionPersistencePolicy {
 template <typename CallerRow>
 class SessionPersistenceState {
     Cipher& cipher_;
+    // fixy-A2-007: store the caller's OpenView so flush_all uses the
+    // mint-time witness, not a fresh view minted at flush time.  Before
+    // the fix the ctor accepted OpenView const& and discarded it; flush_all
+    // then called cipher_.mint_open_view() afresh.  That hid a stale-view
+    // hazard: if the Cipher closed between mint and first flush, the
+    // mint_open_view() pre(is_open()) gate would abort instead of failing
+    // at the call site that owes the persistence guarantee.  Storing the
+    // view ties the persistence lifecycle to the caller's mint-time proof.
+    // ScopedView is a phantom-typed Carrier const* — copyable, layout-flat,
+    // 8 bytes, no heap.  Cipher outlives this state by ctor-param contract.
+    Cipher::OpenView view_;
     SessionEventLog log_;
     std::size_t flushed_count_ = 0;
     SessionPersistencePolicy policy_{};
@@ -50,10 +61,11 @@ public:
         "IO + Block because persistence writes Cipher files.");
 
     SessionPersistenceState(Cipher& cipher,
-                            Cipher::OpenView const&,
+                            Cipher::OpenView const& view,
                             SessionTagId session,
                             SessionPersistencePolicy policy) noexcept
         : cipher_{cipher},
+          view_{view},
           log_{session},
           policy_{policy},
           last_flush_{std::chrono::steady_clock::now()} {}
@@ -100,9 +112,11 @@ public:
 
         const SessionEvent* first = &log_[flushed_count_];
         const auto events = std::span<const SessionEvent>{first, pending};
-        auto view = cipher_.mint_open_view();
+        // fixy-A2-007: use the stored mint-time view, not a fresh one.
+        // The caller already proved the Cipher was Open at mint; this
+        // honors that proof for every flush of this state's lifetime.
         const ContentHash hash =
-            cipher_.template persist_session_events<CallerRow>(view, events);
+            cipher_.template persist_session_events<CallerRow>(view_, events);
         if (hash) {
             flushed_count_ = log_.size();
             last_flush_ = std::chrono::steady_clock::now();
