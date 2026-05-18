@@ -6662,6 +6662,20 @@ crucible_neg_compile_test(neg_permission_fork_rebuild_free_function_call
 crucible_neg_compile_test(neg_permission_fork_rebuild_key_private_ctor
     "is private within this context|constructor is private|cannot access private")
 
+# fixy-A1-011 HS14 floor — Permission<Tag>'s primary template gates
+# `Tag` through the `PermissionTag` concept (empty non-union class
+# type).  Three distinct rejected shapes mirror the three failure
+# modes of the pre-fix surface: primitives, pointer-to-class, and
+# stateful structs.  Pre-fix all three compiled silently, carrying
+# zero CSL guarantee; post-fix the class-body static_assert fires
+# with `PermissionTag` named in the diagnostic.
+crucible_neg_compile_test(neg_permission_non_class_tag
+    "static assertion failed|PermissionTag|Tag must be an empty non-union class")
+crucible_neg_compile_test(neg_permission_pointer_tag
+    "static assertion failed|PermissionTag|Tag must be an empty non-union class")
+crucible_neg_compile_test(neg_permission_non_empty_tag
+    "static assertion failed|PermissionTag|Tag must be an empty non-union class")
+
 # fixy-CR-13 — substrate-side HS14 floor for federation::mint_* row
 # admission.  Pairs with the fixy-wrapper-side fixtures in fixy_neg/.
 # Two distinct rejection classes (Fg empty row × BgCompile missing

@@ -164,6 +164,30 @@
 
 namespace crucible::safety {
 
+// ── PermissionTag concept (fixy-A1-011) ──────────────────────────────
+//
+// CSL frame-rule discipline: Permission<Tag>'s Tag is a PHANTOM-TYPE
+// label naming a memory region.  Pre-fixy-A1-011, the primary
+// template was unconstrained — `Permission<int>`, `Permission<int*>`,
+// `Permission<std::string>` all compiled silently.  Worthless tokens,
+// because none of them line up with the rest of the system: the
+// `splits_into` specialization for the *intended* Tag won't match
+// `Tag*`, the `SharedPermissionPool` template-instantiation key is
+// different, and every CSL discipline check silently fails to apply.
+//
+// `PermissionTag` is the structural shape every legitimate Tag has:
+// an empty, non-union class type (typedef-only members are still
+// "empty" by [class]/4).  Pointers, references, primitives, enums,
+// unions, and stateful classes are rejected at the class-template
+// constraint.  Federation tags `tag::FederatedPeer<Org>` carry only a
+// `using org_type = Org;` typedef and so remain admissible.
+//
+// The concept is grep-discoverable; every reject site fires a single
+// requires-clause diagnostic naming `PermissionTag<Tag>`.
+
+template <typename T>
+concept PermissionTag = std::is_class_v<T> && std::is_empty_v<T>;
+
 template <typename Tag>
 class Permission;
 
@@ -328,9 +352,26 @@ struct permission_row<::crucible::permissions::tag::NetworkBufferTag> {
 // Phantom-typed linear token.  Tag is never instantiated; only its
 // identity matters.  The token itself carries no data — it is proof,
 // not payload.
+//
+// Tag is gated by `PermissionTag<Tag>` (fixy-A1-011): Tag MUST be an
+// empty non-union class type.  The gate is enforced via class-body
+// `static_assert` rather than a primary-template `requires` clause —
+// the latter would force every forward declaration of `Permission`
+// (e.g. `safety/Linear.h`'s lightweight forward decl that supports
+// `is_already_linear<Permission<Tag>>` without pulling all of
+// Permission.h) to carry the same constraint, complicating the
+// forward-declare-and-specialize pattern that's load-bearing for
+// transitive-include hygiene.  The static_assert fires whenever
+// `Permission<Tag>` is instantiated, which is exactly what we want.
 
 template <typename Tag>
 class [[nodiscard]] Permission {
+    static_assert(PermissionTag<Tag>,
+        "Permission<Tag>: Tag must be an empty non-union class type "
+        "(see PermissionTag concept above).  Pointers, references, "
+        "primitives, enums, unions, and stateful classes are rejected. "
+        "Per CSL convention, Tag is a phantom-type marker — typically "
+        "an empty struct in a `tag::` namespace.");
     // Empty — sizeof is the empty-class minimum (1 byte).  Marking
     // the field [[no_unique_address]] in containing types collapses
     // it to 0 bytes via EBO.

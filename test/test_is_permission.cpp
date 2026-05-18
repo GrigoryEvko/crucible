@@ -224,11 +224,35 @@ void test_cross_wrapper_tag_agreement() {
         extract::shared_permission_tag_t<SP_y>>);
 }
 
-void test_primitive_tag_positive() {
-    // Tag is open over the partial spec — non-class tag types resolve.
-    using P_int = ::crucible::safety::Permission<int>;
-    static_assert(extract::is_permission_v<P_int>);
-    static_assert(std::is_same_v<extract::permission_tag_t<P_int>, int>);
+void test_primitive_tag_rejected() {
+    // fixy-A1-011: Permission<Tag>'s primary template now class-body-
+    // static_asserts on `PermissionTag<Tag>` (empty non-union class
+    // type).  Pre-fixy-A1-011 this test instantiated `Permission<int>`
+    // and asserted the trait still reported it as a Permission — that
+    // instantiation no longer compiles.  Three negative-compile
+    // fixtures cover the rejected shapes end-to-end:
+    //     test/safety_neg/neg_permission_non_class_tag.cpp     (int)
+    //     test/safety_neg/neg_permission_pointer_tag.cpp       (T*)
+    //     test/safety_neg/neg_permission_non_empty_tag.cpp     (stateful)
+    // What this sentinel verifies in-process is the gating concept
+    // itself: PermissionTag rejects every shape the static_assert
+    // rejects.  If the concept ever drifts, the neg-compile fixtures
+    // stop catching the regression — this is the upstream firewall.
+    static_assert(!::crucible::safety::PermissionTag<int>);
+    static_assert(!::crucible::safety::PermissionTag<int*>);
+    static_assert(!::crucible::safety::PermissionTag<int&>);
+    static_assert(!::crucible::safety::PermissionTag<void>);
+    enum            test_enum_tag : int   { test_enum_value = 0 };
+    enum class      test_enum_class_tag   { value = 0 };
+    union           test_union_tag        { int a; double b; };
+    struct          test_stateful_tag     { int payload = 0; };
+    static_assert(!::crucible::safety::PermissionTag<test_enum_tag>);
+    static_assert(!::crucible::safety::PermissionTag<test_enum_class_tag>);
+    static_assert(!::crucible::safety::PermissionTag<test_union_tag>);
+    static_assert(!::crucible::safety::PermissionTag<test_stateful_tag>);
+    // Positive: every legitimate Tag must still satisfy the concept.
+    static_assert(::crucible::safety::PermissionTag<test_tag_x>);
+    static_assert(::crucible::safety::PermissionTag<test_tag_y>);
 }
 
 void test_nested_wrapper_rejection() {
@@ -331,7 +355,7 @@ int main() {
     run_test("test_distinct_tags_are_distinguished",
                                                     test_distinct_tags_are_distinguished);
     run_test("test_cross_wrapper_tag_agreement",    test_cross_wrapper_tag_agreement);
-    run_test("test_primitive_tag_positive",         test_primitive_tag_positive);
+    run_test("test_primitive_tag_rejected",         test_primitive_tag_rejected);
     run_test("test_nested_wrapper_rejection",       test_nested_wrapper_rejection);
     run_test("test_array_and_function_type_rejection",
                                                     test_array_and_function_type_rejection);
