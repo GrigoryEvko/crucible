@@ -192,16 +192,29 @@ void test_mint_permission_inherit_compile() {
     static_assert(!pi::inherits_from_v<
         InheritWorkerTag, InheritNonInheritingTag>);
 
+    // H-25: the public `mint_permission_inherit<...>()` factory now
+    // requires a `crash_witness_key` parameter — a passkey that ONLY
+    // `bridges::wrap_crash_return` can mint (private ctor, friend-gated).
+    // So this TU cannot CALL the factory directly.  But we can still
+    // assert its RETURN TYPE in an unevaluated context via `declval`,
+    // which materializes a hypothetical key without constructing one.
+    // The neg-compile fixtures (neg_permission_inherit_no_witness*) prove
+    // that ACTUAL invocation without a witness is rejected; this TU
+    // proves the type-level survivor-tuple shape is correct.
     using ExplicitTuple = decltype(
-        pi::mint_permission_inherit<InheritWorkerTag, InheritCoordTag>());
+        pi::mint_permission_inherit<InheritWorkerTag, InheritCoordTag>(
+            std::declval<pi::crash_witness_key>()));
     using RegistryTuple = decltype(
-        pi::mint_permission_inherit<InheritWorkerTag>());
+        pi::mint_permission_inherit<InheritWorkerTag>(
+            std::declval<pi::crash_witness_key>()));
     static_assert(std::is_same_v<
         ExplicitTuple,
         std::tuple<::crucible::safety::Permission<InheritCoordTag>>>);
     static_assert(std::is_same_v<ExplicitTuple, RegistryTuple>);
 
-    using ChainedTuple = decltype(pi::mint_permission_inherit<InheritCoordTag>());
+    using ChainedTuple = decltype(
+        pi::mint_permission_inherit<InheritCoordTag>(
+            std::declval<pi::crash_witness_key>()));
     static_assert(std::is_same_v<
         ChainedTuple,
         std::tuple<::crucible::safety::Permission<InheritMasterTag>>>);

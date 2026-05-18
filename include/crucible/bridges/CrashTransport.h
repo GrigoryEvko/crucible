@@ -432,11 +432,20 @@ template <typename PeerTag,
     // error rather than a runtime abort.
     detail::require_crash_survivors_declared_<PeerTag>();
 
+    // H-25: mint a `crash_witness_key` as proof-of-death.  Its public
+    // ctor takes a WrapCrashReturnKey; WrapCrashReturnKey's own default
+    // ctor is private and friended only on wrap_crash_return, so this
+    // is the ONLY call site that can mint the witness.  We've already
+    // executed `inner.detach(reason_tag)` above, which is the dynamic
+    // death witness the key represents (a `detach_reason::*` tag from
+    // the bridge layer).
     return std::unexpected{
         detail::crash_event_for_t<PeerTag, Resource>{
             WrapCrashReturnKey{},
             std::move(recovered),
-            ::crucible::permissions::mint_permission_inherit<PeerTag>()}};
+            ::crucible::permissions::mint_permission_inherit<PeerTag>(
+                ::crucible::permissions::crash_witness_key{
+                    WrapCrashReturnKey{}})}};
 }
 
 // ═════════════════════════════════════════════════════════════════════

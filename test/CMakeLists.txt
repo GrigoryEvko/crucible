@@ -6580,6 +6580,17 @@ crucible_neg_compile_test(neg_mint_permission_inherit_without_specialization
 crucible_neg_compile_test(neg_mint_permission_inherit_self_cycle
     "mint_permission_inherit forbids circular inheritance")
 
+# fixy-H-25 — mint_permission_inherit<DeadTag, SurvivorTags...>() must require
+# a crash_witness_key, the proof-of-death passkey mintable only by
+# bridges::wrap_crash_return.  Two fixtures cover the two failure modes:
+#   #1 — call the factory with no witness (parameter-count rejected).
+#   #2 — try to construct crash_witness_key directly (default ctor deleted;
+#        WrapCrashReturnKey passkey requires private-ctor access).
+crucible_neg_compile_test(neg_permission_inherit_no_witness
+    "too few arguments|no matching function|mint_permission_inherit")
+crucible_neg_compile_test(neg_permission_inherit_forge_witness
+    "use of deleted function|no matching function|is private|crash_witness_key")
+
 # GAPS-073 — permission_fork is now a ctx-bound mint.  These fixtures
 # pin the three load-bearing gates: ctx-aware callables must provide a
 # Ctx, foreground rows cannot authorize Effect::Bg, and spawned child
