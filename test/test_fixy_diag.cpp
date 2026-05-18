@@ -33,7 +33,7 @@ static_assert(fd::Category::LinearityViolation     == cd::Category::LinearityVio
 static_assert(fd::Category::LinearAliasViolation   == cd::Category::LinearAliasViolation);
 
 static_assert(fd::catalog_size == cd::catalog_size);
-static_assert(fd::catalog_size == 29);
+static_assert(fd::catalog_size == 30);
 
 static_assert(std::is_same_v<fd::Catalog, cd::Catalog>);
 

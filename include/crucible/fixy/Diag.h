@@ -4,7 +4,7 @@
 //
 // Phase D re-export per misc/16_05_2026_fixy.md.  Surfaces the
 // classified-diagnostic substrate — `Category` enum, `tag_base`,
-// the 28-entry `Catalog` tuple, bidirectional `tag_of_t` /
+// the 30-entry `Catalog` tuple, bidirectional `tag_of_t` /
 // `category_of_v` map, `Diagnostic<DiagnosticClass, Ctx...>`
 // wrapper, stable-name introspection (`stable_name_of`,
 // `stable_type_id`, `stable_function_id`, `canonicalize_pack`),
@@ -219,9 +219,9 @@ static_assert(Category::EffectRowMismatch ==
 static_assert(Category::LinearAliasViolation ==
               ::crucible::safety::diag::Category::LinearAliasViolation);
 
-// catalog_size frozen at 29 — bumps require coordinated Catalog +
+// catalog_size frozen at 30 — bumps require coordinated Catalog +
 // Category + Diagnostic.h append-only edits.
-static_assert(catalog_size == 29,
+static_assert(catalog_size == 30,
     "fixy::diag::catalog_size must match safety::diag::catalog_size");
 
 // Tag-class identity.

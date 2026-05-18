@@ -21,10 +21,12 @@
 // HugePageBuffer owns the allocation lifetime.
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Diagnostic.h>
 #include <crucible/warden/Registry.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <new>
 #include <span>
@@ -33,6 +35,37 @@
 #include <utility>
 
 namespace crucible::safety {
+
+// ── Diagnostic helper for HugePageBuffer allocation failure (fixy-A1-022) ─
+//
+// Pre-fix `allocate()` aborted silently when std::aligned_alloc returned
+// nullptr.  The new helper emits the catalogued tag's name/description/
+// remediation to stderr first, along with the requested byte count and
+// alignment, so an operator inspecting the core dump has a breadcrumb
+// pointing at /proc/sys/vm/nr_hugepages.  `[[gnu::cold, gnu::noinline]]`
+// keeps the helper out of the hot instruction-cache footprint of
+// `allocate()`; the helper is only reachable on the genuinely
+// catastrophic path.
+//
+// Header-only `inline` to satisfy ODR across translation units that
+// include HugePageBuffer.h; the helper has no template parameters
+// because the diagnostic is fixed.
+
+[[noreturn]] CRUCIBLE_COLD
+inline void huge_page_allocation_failed_abort_(std::size_t alloc_bytes,
+                                               std::size_t alignment) noexcept {
+    using Tag = diag::HugePageAllocationFailed;
+    std::fprintf(stderr,
+        "crucible: fatal contract violation: %.*s\n"
+        "  description: %.*s\n"
+        "  remediation: %.*s\n"
+        "  context: aligned_alloc(alignment=%zu, bytes=%zu) returned nullptr\n",
+        static_cast<int>(Tag::name.size()),         Tag::name.data(),
+        static_cast<int>(Tag::description.size()),  Tag::description.data(),
+        static_cast<int>(Tag::remediation.size()),  Tag::remediation.data(),
+        alignment, alloc_bytes);
+    std::abort();
+}
 
 template <typename T>
 class [[nodiscard]] HugePageBuffer {
@@ -56,7 +89,13 @@ public:
         const size_type raw_bytes = count * sizeof(T);
         const size_type alloc_bytes = ::crucible::warden::round_up_huge(raw_bytes);
         void* raw = std::aligned_alloc(huge_page_bytes, alloc_bytes);
-        if (!raw) [[unlikely]] std::abort();
+        if (!raw) [[unlikely]] {
+            // fixy-A1-022: emit catalogued diagnostic before aborting so
+            // the operator inspecting the core dump has a breadcrumb
+            // pointing at HugePageAllocationFailed.  Reaching this site
+            // is fatal for the SPSC backings of TraceRing / MetaLog.
+            huge_page_allocation_failed_abort_(alloc_bytes, huge_page_bytes);
+        }
         return HugePageBuffer{static_cast<T*>(raw), count, alloc_bytes};
     }
 

@@ -804,6 +804,46 @@ struct SharedPermissionPoolSaturated : tag_base {
         "EXCLUSIVE_OUT_BIT for lock-free upgrade signaling.";
 };
 
+// ─── HugePageAllocationFailed (fixy-A1-022) ──────────────────────────
+//
+// safety/HugePageBuffer<T>::allocate(n) drives std::aligned_alloc with
+// a 2-MB alignment and a round_up_huge(n*sizeof(T)) byte count.  When
+// the kernel cannot satisfy the request (insufficient hugepage pool,
+// fragmented address space, ulimit exhaustion) aligned_alloc returns
+// nullptr.  Pre-fix the saturation site called std::abort() with no
+// diagnostic, leaving an operator with a core dump and no breadcrumb
+// pointing at /proc/sys/vm/nr_hugepages.  Post-fix the abort path
+// emits this tag's name/description/remediation before terminating.
+struct HugePageAllocationFailed : tag_base {
+    static constexpr std::string_view name = "HugePageAllocationFailed";
+    static constexpr std::string_view description =
+        "safety::HugePageBuffer<T>::allocate(count) observed a null "
+        "return from std::aligned_alloc(huge_page_bytes, "
+        "round_up_huge(count * sizeof(T))).  The kernel could not "
+        "satisfy a 2-MB-aligned heap allocation — typical causes are "
+        "(a) the transparent-hugepage pool is depleted (nr_hugepages "
+        "exhausted under sustained hot-region pressure), (b) the "
+        "process address space is fragmented enough that no aligned "
+        "extent of the requested size exists, or (c) RLIMIT_AS / "
+        "cgroup memory.max has been hit.  Reaching this site is "
+        "fatal for the SPSC buffers (TraceRing / MetaLog) that back "
+        "Crucible's foreground recording pipeline — bootstrap cannot "
+        "complete without them.";
+    static constexpr std::string_view remediation =
+        "Audit /proc/sys/vm/nr_hugepages and /proc/meminfo:HugePages_Free "
+        "on the host.  Raise the reservation if persistent demand "
+        "exceeds the kernel's current pool, or fall back to the "
+        "non-hugepage allocation path at a higher boundary.  For "
+        "containerized workloads verify that memory.max admits the "
+        "requested allocation AND that the hugepage cgroup controller "
+        "(if enabled) does not zero the per-cgroup reservation.  At "
+        "the architectural level: callers that can tolerate small "
+        "pages with TLB pressure should consume HugePageBuffer via "
+        "try_allocate (returning std::expected) — this abort path is "
+        "reserved for the foundational SPSC backings that genuinely "
+        "cannot proceed without a 2-MB-aligned region.";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_diagnostic_class_v<T> ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -957,6 +997,7 @@ inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 //   [26] ModalityMismatch            (FIXY-G10)
 //   [27] LinearAliasViolation        (FIXY-G10 R017)
 //   [28] SharedPermissionPoolSaturated (fixy-A1-015)
+//   [29] HugePageAllocationFailed     (fixy-A1-022)
 
 using Catalog = std::tuple<
     EffectRowMismatch,        //  0
@@ -987,7 +1028,8 @@ using Catalog = std::tuple<
     InsufficientWitness,      // 25
     ModalityMismatch,         // 26
     LinearAliasViolation,     // 27
-    SharedPermissionPoolSaturated // 28
+    SharedPermissionPoolSaturated, // 28
+    HugePageAllocationFailed  // 29
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
@@ -1045,6 +1087,7 @@ enum class Category : std::uint8_t {
     ModalityMismatch         = 26,
     LinearAliasViolation     = 27,
     SharedPermissionPoolSaturated = 28,
+    HugePageAllocationFailed = 29,
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1194,6 +1237,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::LinearAliasViolation:     return LinearAliasViolation::name;
         case Category::SharedPermissionPoolSaturated:
             return SharedPermissionPoolSaturated::name;
+        case Category::HugePageAllocationFailed:
+            return HugePageAllocationFailed::name;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1230,6 +1275,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::LinearAliasViolation:     return LinearAliasViolation::description;
         case Category::SharedPermissionPoolSaturated:
             return SharedPermissionPoolSaturated::description;
+        case Category::HugePageAllocationFailed:
+            return HugePageAllocationFailed::description;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1266,6 +1313,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::LinearAliasViolation:     return LinearAliasViolation::remediation;
         case Category::SharedPermissionPoolSaturated:
             return SharedPermissionPoolSaturated::remediation;
+        case Category::HugePageAllocationFailed:
+            return HugePageAllocationFailed::remediation;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1440,19 +1489,20 @@ static_assert(diagnostic_name_v<user_defined_tag> == "UserDefinedTag");
 
 // ─── Catalog cardinality matches Category enum cardinality ────────
 //
-// 29 tags shipped in this version (22 wrapper-axis tags from FOUND-E01
+// 30 tags shipped in this version (22 wrapper-axis tags from FOUND-E01
 // + 3 F*-style alias tags from FOUND-E18 + 1 witness FIXY-G9 + 2
-// modality FIXY-G10 + 1 SharedPermissionPool saturation fixy-A1-015).
+// modality FIXY-G10 + 1 SharedPermissionPool saturation fixy-A1-015 +
+// 1 HugePageBuffer allocation failure fixy-A1-022).
 // Adding a tag bumps both the Catalog tuple size AND requires a
 // Category enumerator at the same integer value.  The bijection
 // self-test below asserts both in lock step.
 
-static_assert(catalog_size == 29,
-    "Catalog cardinality drifted from the 29-tag inventory "
+static_assert(catalog_size == 30,
+    "Catalog cardinality drifted from the 30-tag inventory "
     "(22 wrapper-axis + 3 F* alias + 1 witness FIXY-G9 + 2 modality "
-    "FIXY-G10 + 1 SharedPermissionPool fixy-A1-015) — confirm the "
-    "new tag was added to Catalog AND to Category at the same "
-    "integer index.");
+    "FIXY-G10 + 1 SharedPermissionPool fixy-A1-015 + 1 HugePage "
+    "fixy-A1-022) — confirm the new tag was added to Catalog AND to "
+    "Category at the same integer index.");
 
 // ─── Catalog ↔ Category bijection ─────────────────────────────────
 //
@@ -1642,7 +1692,7 @@ static_assert(categories_v.size() == catalog_size,
     "categories_v cardinality drifted from catalog_size — both must "
     "track the same source of truth.");
 static_assert(categories_v[0] == Category::EffectRowMismatch);
-static_assert(categories_v[catalog_size - 1] == Category::SharedPermissionPoolSaturated);
+static_assert(categories_v[catalog_size - 1] == Category::HugePageAllocationFailed);
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool categories_array_matches_enum_impl(
