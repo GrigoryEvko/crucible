@@ -31,18 +31,23 @@
 //   build green under `default` preset while the discipline harness
 //   (CI matrix) verifies the strict variant on the same source.
 //
-// ── Scope note (B2 ship) ───────────────────────────────────────────
+// ── Integration status (fixy-A4-001 sweep, 2026-05-18) ────────────
 //
-// This header ships the PROFILE TOGGLE INFRASTRUCTURE.  It does NOT
-// rewire `fixy::fn`'s class-body `static_assert` to use the toggle —
-// that is the follow-up commit's job, where the production wrappers
-// route through `IsAcceptedActive<Type, Grants...>` (the alias defined
-// below) instead of `IsAccepted` directly.  The split keeps the two
-// changes auditable: B2 introduces the mechanism + CMake glue + the
-// neg-compile sentinel; the integration commit threads the mechanism
-// through the wrapper.  Post-fixy-H-05, `IsAccepted` is the wrapper-
-// discipline gate (auto-injects the Type-axis marker); the legacy
-// `IsAcceptedFn` alias has been removed.
+// This header ships the PROFILE TOGGLE INFRASTRUCTURE AND its wrapper
+// integration is now live.  `fixy/Fn.h` consumes `IsAcceptedActive`
+// at the `mint_fn` requires-clause, and the class-body 5-tier
+// `static_assert` chain short-circuits tier 3 (AllDimsEngaged) and
+// tier 5 (NotInTheoryCorpus) under `!fixy_is_strict`.  Tiers 1
+// (Type validity), 2 (grant well-formedness), and 4 (unique
+// engagement / §6.8 collision rules) stay strict in BOTH modes —
+// sketch mode relaxes the engagement axis + theory-corpus checks
+// only, never the collision-correctness floor.
+//
+// Post-fixy-H-05, `IsAccepted` is the wrapper-discipline gate
+// (auto-injects the Type-axis marker); the legacy `IsAcceptedFn`
+// alias has been removed.  Sentinel TU `test/test_fixy_umbrella_reach`
+// witnesses both the Profile.h reach via `<crucible/Fixy.h>` and the
+// toggle-bound `IsAcceptedActive` routing through `mint_fn`.
 //
 // ── CMake wiring ───────────────────────────────────────────────────
 //
@@ -134,10 +139,10 @@ concept IsAcceptedSketch = true;
 // Aliases to `IsAccepted` under STRICT, `IsAcceptedSketch` under
 // SKETCH.  Post-fixy-H-05, `IsAccepted` is the wrapper-discipline
 // gate that auto-injects the Type-axis marker, so `IsAcceptedActive`
-// inherits the same shape.  The follow-up integration that rewires
-// `fixy::fn`'s class-body static_assert from `IsAccepted` directly
-// to `IsAcceptedActive` is the toggle-routing commit; until that
-// ships, this alias is the infrastructure-only surface.
+// inherits the same shape.  `fixy/Fn.h::mint_fn`'s requires-clause
+// consumes this alias; the class-body tier 3 + tier 5 asserts
+// short-circuit under `!fixy_is_strict` (see Fn.h for the exact
+// fixy_h02_tier{3,5}_* preconditions).
 //
 // Cost-of-violation: a binding accepted under SKETCH still passes
 // every other static_assert in `safety::fn::Fn<...>`'s class body

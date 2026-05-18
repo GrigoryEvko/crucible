@@ -209,6 +209,7 @@ crucible_test(test_fixy_wrap)
 crucible_test(test_fixy_struct)
 crucible_test(test_fixy_is)
 crucible_test(test_fixy_umbrella)
+crucible_test(test_fixy_umbrella_reach)  # fixy-A4-001 + fixy-A4-002
 
 # ── FIXY-ALGEBRA / EFF / DIAG / SOURCE — Phase D surfaces ─────────
 #

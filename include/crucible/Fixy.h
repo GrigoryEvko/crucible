@@ -14,6 +14,11 @@
 //   - fixy/Grant.h       — grant::* engagement + relaxation tags
 //   - fixy/Reject.h      — IsAccepted concept + FixyNotEngaged_<Axis>
 //                          diagnostic tag tree
+//   - fixy/Profile.h     — IsAcceptedActive + fixy_is_strict toggle
+//                          (CRUCIBLE_FIXY_STRICT — strict vs sketch
+//                          mode selector; routes fixy::fn through
+//                          IsAccepted (strict) or IsAcceptedSketch
+//                          (always-true, hot-loop migration mode))
 //   - fixy/Rules.h       — R001..R020 collision rule aliases
 //
 // ── Phase B (Fn aggregator, shipped) ───────────────────────────────
@@ -42,6 +47,11 @@
 //                          (mint_recording_session, mint_crash_watched_session,
 //                          mint_persisted_session, endpoint variants,
 //                          mint_vigil_mode_bridge)
+//   - fixy/Contract.h    — safety/Contract.h CRUCIBLE_PRE/POST macros
+//                          + Cipher tier-migration mints under
+//                          fixy::contract::cipher::* (mint_promote,
+//                          mint_demote, mint_restore, EpochedDelegate,
+//                          mint_persisted_session)
 //   - fixy/Substr.h      — per-substrate session mints
 //                          (SPSC / SWMR / ChaseLev / MetaLog / ChainEdge /
 //                          MPMC / CalendarGrid / ShardedCalendarGrid /
@@ -103,6 +113,7 @@
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Grant.h>
 #include <crucible/fixy/Reject.h>
+#include <crucible/fixy/Profile.h>
 #include <crucible/fixy/Rules.h>
 
 // ── Phase B — Fn aggregator ───────────────────────────────────────
@@ -111,6 +122,7 @@
 // ── Phase C — substrate alias re-exports ──────────────────────────
 #include <crucible/fixy/Bridge.h>
 #include <crucible/fixy/Cap.h>
+#include <crucible/fixy/Contract.h>
 #include <crucible/fixy/Is.h>
 #include <crucible/fixy/Mach.h>
 #include <crucible/fixy/Perm.h>

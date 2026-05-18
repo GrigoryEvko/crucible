@@ -96,6 +96,7 @@
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Grant.h>
+#include <crucible/fixy/Profile.h>
 #include <crucible/fixy/Reject.h>
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/Tagged.h>
@@ -600,10 +601,20 @@ class fn {
         "typo, misspelled grant name, or substrate type accidentally "
         "passed where a grant tag was expected.");
 
+    // Sketch mode (CRUCIBLE_FIXY_STRICT=0) relaxes the engagement
+    // axis per Profile.h's contract: "sketch mode permissivity applies
+    // only to the engagement axis + theory-corpus checks, never to
+    // the §6.8 collision rules."  Tier 3 is the engagement check;
+    // appending `|| !fixy_is_strict` short-circuits the assert under
+    // sketch.  Tiers 1 (Type validity), 2 (grant well-formedness),
+    // and 4 (unique engagement / collision rule) stay strict in both
+    // modes — sketch mode does NOT bypass correctness, only relaxes
+    // the "every axis must be engaged" rule for in-progress migrations.
     static constexpr bool fixy_h02_tier3_all_dims_engaged =
         !fixy_h02_tier1_type_ok
         || !fixy_h02_tier2_grants_well_formed
-        || AllDimsEngaged<ImplicitTypeMarker, Grants...>;
+        || AllDimsEngaged<ImplicitTypeMarker, Grants...>
+        || !fixy_is_strict;
     // fixy-H-15: route through P2741R3 dynamic message so the resolved
     // FixyNotEngaged_<Axis> tag NAME appears literally in the diagnostic
     // text (e.g. "Missing-axis diagnostic tag: FixyNotEngaged_Effect").
@@ -636,12 +647,19 @@ class fn {
         "Type, so the explicit Type marker would trigger a duplicate "
         "on the Type axis.");
 
+    // Tier 5 is the §30.14 corpus check.  Profile.h documents the
+    // sketch-mode relaxation as "engagement axis + theory-corpus
+    // checks" — both relax under !fixy_is_strict.  Tiers 1/2/4 stay
+    // strict in both modes because they enforce the §6.8 collision
+    // rules (a non-negotiable correctness floor) and basic input
+    // shape (Type validity, grant well-formedness).
     static constexpr bool fixy_h02_tier5_not_in_corpus =
         !fixy_h02_tier1_type_ok
         || !fixy_h02_tier2_grants_well_formed
         || !fixy_h02_tier3_all_dims_engaged
         || !fixy_h02_tier4_unique_engagement
-        || theory::NotInTheoryCorpus<Type, ImplicitTypeMarker, Grants...>;
+        || theory::NotInTheoryCorpus<Type, ImplicitTypeMarker, Grants...>
+        || !fixy_is_strict;
     // fixy-H-13 + fixy-H-16: surface BOTH the matched corpus entry's
     // struct name AND its `cite()` text in the rejection diagnostic
     // via P2741R3 (user-generated static_assert messages).
@@ -748,7 +766,7 @@ private:
 // discoverable review surface.
 
 template <typename Type, typename... Grants>
-    requires IsAccepted<Type, Grants...>
+    requires IsAcceptedActive<Type, Grants...>
 [[nodiscard]] constexpr auto mint_fn(Type v)
     noexcept(std::is_nothrow_move_constructible_v<Type>)
     -> fn<Type, Grants...>
