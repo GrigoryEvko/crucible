@@ -2892,6 +2892,27 @@ crucible_neg_compile_test(neg_graded_inject_on_comonad
 crucible_neg_compile_test(neg_refined_predicate_not_invocable
   "constraints not satisfied|PredicateInvocableOn")
 
+# fixy-A3-006 — Quotient + Coeffect modality discipline.
+#
+# Modality.h ships six ModalityKind values; extract/inject are gated
+# on Comonad and RelativeMonad respectively.  Quotient (FIXY-G10,
+# equivalence-class membership) and Coeffect (FIXY-G11, resource
+# semiring) are functional via the generic peek/grade/weaken/compose
+# operations but MUST NOT admit the co/unit operations — Quotient has
+# no canonical representative projection, Coeffect has no zero-cost
+# unit (zero is the semiring zero, recovered via L::bottom() not via
+# a structural unit).  These four fixtures pin the rejection contract;
+# future Graded refactors that loosen the requires-clauses would red
+# these fixtures and require explicit Modality-table revision.
+crucible_neg_compile_test(neg_graded_extract_on_quotient
+  "constraints not satisfied|ComonadModality")
+crucible_neg_compile_test(neg_graded_extract_on_coeffect
+  "constraints not satisfied|ComonadModality")
+crucible_neg_compile_test(neg_graded_inject_on_quotient
+  "constraints not satisfied|RelativeMonadModality")
+crucible_neg_compile_test(neg_graded_inject_on_coeffect
+  "constraints not satisfied|RelativeMonadModality")
+
 # WRAP-Types-1 (#1067) — ElementBytes::value_ wraps Refined<bounded_above<16>,
 # uint8_t>; constructing ElementBytes{17} in constexpr context drives the
 # bounded_above<16>(17) pre-clause through constant evaluation.  The contract

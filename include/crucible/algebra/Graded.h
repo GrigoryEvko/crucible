@@ -121,11 +121,58 @@
 namespace crucible::algebra {
 
 // ── Graded class template ───────────────────────────────────────────
+// ── Modality × operation matrix (fixy-A3-006) ───────────────────────
+//
+// Modality.h ships SIX ModalityKind values; this primary template
+// admits all six (IsModality<M> gate).  Not every operation is
+// admitted on every modality — the matrix below records which member
+// functions are concept-gated to which modalities:
+//
+//   Operation       | Comonad | RelMonad | Absolute | Relative | Quotient | Coeffect
+//   ----------------+---------+----------+----------+----------+----------+----------
+//   peek/consume    |    ✓    |    ✓     |    ✓     |    ✓     |    ✓     |    ✓
+//   grade           |    ✓    |    ✓     |    ✓     |    ✓     |    ✓     |    ✓
+//   weaken / compose|    ✓    |    ✓     |    ✓     |    ✓     |    ✓     |    ✓
+//   peek_mut / swap | empty-grade ONLY  |    ✓     | empty-grade ONLY                  ★
+//   extract (counit)|    ✓    |    ✗     |    ✗     |    ✗     |    ✗     |    ✗      ★
+//   inject (unit)   |    ✗    |    ✓     |    ✗     |    ✗     |    ✗     |    ✗      ★
+//
+//   ★ peek_mut/swap admit Absolute unconditionally OR any modality
+//     whose grade_type is std::is_empty_v (the principle is "mutation
+//     can't violate the grade").  See discussion above peek_mut.
+//   ★ extract is gated on ComonadModality — only Secret<T>'s Comonad-
+//     form admits the counit (declassify).
+//   ★ inject is gated on RelativeMonadModality — only Tagged<T,
+//     Source>'s RelativeMonad-form admits the unit (retag-from-src).
+//
+// Quotient (FIXY-G10, equivalence-class membership) and Coeffect
+// (FIXY-G11, resource-consumption semiring) are FULLY USABLE via the
+// generic operations.  They are CORRECTLY excluded from extract /
+// inject (those operations require co/unit structure that neither
+// modality possesses — Quotient's grade is a representative of an
+// equivalence class, Coeffect's grade is a polynomial cost).
+//
+// Negative-compile fixtures pin the extract/inject rejection contract
+// for Quotient and Coeffect (HS14 mandate):
+//   test/safety_neg/neg_graded_extract_on_quotient.cpp
+//   test/safety_neg/neg_graded_extract_on_coeffect.cpp
+//   test/safety_neg/neg_graded_inject_on_quotient.cpp
+//   test/safety_neg/neg_graded_inject_on_coeffect.cpp
+//
+// Future Graded refactors that admit extract/inject for additional
+// modalities MUST update both this matrix AND the corresponding
+// requires-clauses AND the neg-compile fixtures (which would then
+// fail and pin the new contract).
+
 template <ModalityKind M, Lattice L, typename T>
 class [[nodiscard]] Graded {
     static_assert(IsModality<M>,
         "Graded<M, L, T>: M must be one of Comonad / RelativeMonad / "
-        "Absolute / Relative.  See algebra/Modality.h.");
+        "Absolute / Relative / Quotient / Coeffect.  See "
+        "algebra/Modality.h.  Quotient and Coeffect use the generic "
+        "peek / grade / weaken / compose / consume / peek_mut-on-"
+        "empty-grade operations; extract and inject remain gated on "
+        "Comonad and RelativeMonad respectively.");
 
 public:
     // ── Public type aliases ─────────────────────────────────────────
