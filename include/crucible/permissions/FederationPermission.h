@@ -389,9 +389,103 @@ using FederatedPeerPermission =
 using LocalCipherPermission =
     ::crucible::safety::Permission<tag::LocalCipherTag>;
 
+// ── fixy-A1-008 federation strong-hash semantic types ─────────────
+//
+// TypeSafe axiom (CLAUDE.md §II.2) requires every semantic value
+// carry a strong type.  Four uint64_t-backed handshake fields —
+// org_id, peer_key_fingerprint, nonce, self_signature_fingerprint —
+// are SEMANTIC and trivially swappable at positional call sites.
+// `OrgId`, `PeerKeyFingerprint`, `Nonce`, `SignatureFingerprint`
+// wrap them as `CRUCIBLE_STRONG_HASH`-shaped newtypes: explicit
+// constructor, no implicit conversion, defaulted spaceship, no
+// arithmetic — exact same machinery as `SchemaHash` etc. in
+// `Types.h`.  Cross-type assignment becomes a compile error;
+// param-swap on `federation_signature_fingerprint(...)` and
+// `make_self_signed_handshake(...)` is closed at the type system.
+//
+// Layout: each is `sizeof(uint64_t) == 8`, trivially copyable; the
+// four-field FederationHandshake preserves its 32-byte size and
+// trivial-copyability — serialization invariants untouched.
+//
+// The macro `CRUCIBLE_STRONG_HASH` in Types.h is `#undef`'d at its
+// end of scope by design (it's a Types.h-internal helper), so we
+// expand the same shape here for the federation-domain types.
+
+struct OrgId {
+private:
+    std::uint64_t v;
+public:
+    constexpr OrgId() noexcept : v(0) {}
+    constexpr explicit OrgId(std::uint64_t val) noexcept : v(val) {}
+    [[nodiscard]] static constexpr OrgId from_raw(std::uint64_t val) noexcept {
+        return OrgId{val};
+    }
+    [[nodiscard]] constexpr std::uint64_t raw() const noexcept { return v; }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return v != 0;
+    }
+    constexpr auto operator<=>(const OrgId&) const noexcept = default;
+};
+static_assert(sizeof(OrgId) == sizeof(std::uint64_t));
+static_assert(std::is_trivially_copyable_v<OrgId>);
+
+struct PeerKeyFingerprint {
+private:
+    std::uint64_t v;
+public:
+    constexpr PeerKeyFingerprint() noexcept : v(0) {}
+    constexpr explicit PeerKeyFingerprint(std::uint64_t val) noexcept : v(val) {}
+    [[nodiscard]] static constexpr PeerKeyFingerprint from_raw(std::uint64_t val) noexcept {
+        return PeerKeyFingerprint{val};
+    }
+    [[nodiscard]] constexpr std::uint64_t raw() const noexcept { return v; }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return v != 0;
+    }
+    constexpr auto operator<=>(const PeerKeyFingerprint&) const noexcept = default;
+};
+static_assert(sizeof(PeerKeyFingerprint) == sizeof(std::uint64_t));
+static_assert(std::is_trivially_copyable_v<PeerKeyFingerprint>);
+
+struct Nonce {
+private:
+    std::uint64_t v;
+public:
+    constexpr Nonce() noexcept : v(0) {}
+    constexpr explicit Nonce(std::uint64_t val) noexcept : v(val) {}
+    [[nodiscard]] static constexpr Nonce from_raw(std::uint64_t val) noexcept {
+        return Nonce{val};
+    }
+    [[nodiscard]] constexpr std::uint64_t raw() const noexcept { return v; }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return v != 0;
+    }
+    constexpr auto operator<=>(const Nonce&) const noexcept = default;
+};
+static_assert(sizeof(Nonce) == sizeof(std::uint64_t));
+static_assert(std::is_trivially_copyable_v<Nonce>);
+
+struct SignatureFingerprint {
+private:
+    std::uint64_t v;
+public:
+    constexpr SignatureFingerprint() noexcept : v(0) {}
+    constexpr explicit SignatureFingerprint(std::uint64_t val) noexcept : v(val) {}
+    [[nodiscard]] static constexpr SignatureFingerprint from_raw(std::uint64_t val) noexcept {
+        return SignatureFingerprint{val};
+    }
+    [[nodiscard]] constexpr std::uint64_t raw() const noexcept { return v; }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return v != 0;
+    }
+    constexpr auto operator<=>(const SignatureFingerprint&) const noexcept = default;
+};
+static_assert(sizeof(SignatureFingerprint) == sizeof(std::uint64_t));
+static_assert(std::is_trivially_copyable_v<SignatureFingerprint>);
+
 template <typename Org>
-inline constexpr std::uint64_t federation_org_id =
-    ::crucible::safety::diag::stable_type_id<Org>;
+inline constexpr OrgId federation_org_id =
+    OrgId{::crucible::safety::diag::stable_type_id<Org>};
 
 namespace policy {
 
@@ -405,10 +499,10 @@ struct admit_orgs {
 }  // namespace policy
 
 struct FederationHandshake {
-    std::uint64_t org_id = 0;
-    std::uint64_t peer_key_fingerprint = 0;
-    std::uint64_t nonce = 0;
-    std::uint64_t self_signature_fingerprint = 0;
+    OrgId                org_id{};
+    PeerKeyFingerprint   peer_key_fingerprint{};
+    Nonce                nonce{};
+    SignatureFingerprint self_signature_fingerprint{};
 };
 
 static_assert(std::is_trivially_copyable_v<FederationHandshake>);
@@ -455,32 +549,35 @@ namespace detail {
 
 }  // namespace detail
 
-[[nodiscard]] constexpr std::uint64_t federation_signature_fingerprint(
-    std::uint64_t org_id,
-    std::uint64_t peer_key_fingerprint,
-    std::uint64_t nonce) noexcept
+[[nodiscard]] constexpr SignatureFingerprint federation_signature_fingerprint(
+    OrgId              org_id,
+    PeerKeyFingerprint peer_key_fingerprint,
+    Nonce              nonce) noexcept
 {
     constexpr std::uint64_t kDomain = 0xCFED'AD11'0000'0001ULL;
-    return detail::combine_runtime_ids(
-        detail::combine_runtime_ids(kDomain, org_id),
-        detail::combine_runtime_ids(peer_key_fingerprint, nonce));
+    return SignatureFingerprint{
+        detail::combine_runtime_ids(
+            detail::combine_runtime_ids(kDomain, org_id.raw()),
+            detail::combine_runtime_ids(
+                peer_key_fingerprint.raw(), nonce.raw())) };
 }
 
 template <typename Org>
-[[nodiscard]] constexpr std::uint64_t default_peer_key_fingerprint() noexcept {
-    return detail::combine_runtime_ids(
-        federation_org_id<Org>,
-        0xCFED'9EED'0000'0001ULL);
+[[nodiscard]] constexpr PeerKeyFingerprint default_peer_key_fingerprint() noexcept {
+    return PeerKeyFingerprint{
+        detail::combine_runtime_ids(
+            federation_org_id<Org>.raw(),
+            0xCFED'9EED'0000'0001ULL) };
 }
 
 template <typename Org>
 [[nodiscard]] constexpr FederationHandshake
 make_self_signed_handshake(
-    std::uint64_t peer_key_fingerprint =
+    PeerKeyFingerprint peer_key_fingerprint =
         default_peer_key_fingerprint<Org>(),
-    std::uint64_t nonce = 0) noexcept
+    Nonce nonce = Nonce{0}) noexcept
 {
-    const std::uint64_t org_id = federation_org_id<Org>;
+    const OrgId org_id = federation_org_id<Org>;
     return FederationHandshake{
         .org_id = org_id,
         .peer_key_fingerprint = peer_key_fingerprint,
@@ -523,10 +620,10 @@ mint_federation_admittance(
     if (handshake.org_id != federation_org_id<Org>) {
         return std::unexpected(AdmittanceError::OrgMismatch);
     }
-    if (handshake.peer_key_fingerprint == 0) {
+    if (!handshake.peer_key_fingerprint) {
         return std::unexpected(AdmittanceError::MissingPeerKey);
     }
-    if (handshake.self_signature_fingerprint == 0) {
+    if (!handshake.self_signature_fingerprint) {
         return std::unexpected(AdmittanceError::MissingSignature);
     }
     if (handshake.self_signature_fingerprint
@@ -586,7 +683,7 @@ namespace detail::federation_permission_self_test {
 struct SelfOrg {};
 struct OtherOrg {};
 
-static_assert(federation_org_id<SelfOrg> != 0);
+static_assert(static_cast<bool>(federation_org_id<SelfOrg>));
 static_assert(federation_org_id<SelfOrg> != federation_org_id<OtherOrg>);
 static_assert(policy::admit_orgs<SelfOrg>::template admits<SelfOrg>);
 static_assert(!policy::admit_orgs<SelfOrg>::template admits<OtherOrg>);
@@ -630,12 +727,15 @@ static_assert(std::is_same_v<
     tag::FederatedPeer<SelfOrg>>);
 
 constexpr FederationHandshake kSelfHandshake =
-    make_self_signed_handshake<SelfOrg>(123, 456);
+    make_self_signed_handshake<SelfOrg>(
+        PeerKeyFingerprint{123}, Nonce{456});
 static_assert(kSelfHandshake.org_id == federation_org_id<SelfOrg>);
-static_assert(kSelfHandshake.peer_key_fingerprint == 123);
+static_assert(kSelfHandshake.peer_key_fingerprint == PeerKeyFingerprint{123});
 static_assert(kSelfHandshake.self_signature_fingerprint
               == federation_signature_fingerprint(
-                  federation_org_id<SelfOrg>, 123, 456));
+                  federation_org_id<SelfOrg>,
+                  PeerKeyFingerprint{123},
+                  Nonce{456}));
 
 }  // namespace detail::federation_permission_self_test
 

@@ -43,8 +43,8 @@ inline auto mint_test_admittance() noexcept {
     auto local_cipher =
         saf::mint_permission_root<perm::tag::LocalCipherTag>();
     auto handshake = perm::make_self_signed_handshake<PeerOrg>(
-        /*peer_key_fp=*/0xFED'C0DEULL,
-        /*nonce=*/      0xC0FFEEULL);
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFED'C0DEULL},
+        /*nonce=*/      perm::Nonce{0xC0FFEEULL});
     auto admitted = perm::mint_federation_admittance<
         PeerOrg, perm::policy::admit_orgs<PeerOrg>>(
             local_cipher, handshake);

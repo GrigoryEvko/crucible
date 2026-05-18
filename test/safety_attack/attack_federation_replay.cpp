@@ -101,10 +101,10 @@ const perm::LocalCipherPermission& local_cipher_permission() {
 // the same bytes are reused without re-deriving from the
 // constructor.
 struct CapturedHandshake {
-    std::uint64_t org_id;
-    std::uint64_t peer_key_fingerprint;
-    std::uint64_t nonce;
-    std::uint64_t self_signature_fingerprint;
+    perm::OrgId               org_id;
+    perm::PeerKeyFingerprint  peer_key_fingerprint;
+    perm::Nonce               nonce;
+    perm::SignatureFingerprint self_signature_fingerprint;
 };
 
 static_assert(sizeof(CapturedHandshake) == sizeof(perm::FederationHandshake),
@@ -134,8 +134,8 @@ int test_replay_succeeds_indefinitely() {
     // ── Step 1: legitimate peer mints a fresh handshake ───────────
     const auto fresh_hs =
         perm::make_self_signed_handshake<VictimOrgPeer>(
-            /*peer_key_fingerprint=*/0xC0FFEE'B0BADD'BEEFULL,
-            /*nonce=*/                0xDEAD'BEEF'CAFE'F00DULL);
+            /*peer_key_fingerprint=*/perm::PeerKeyFingerprint{0xC0FFEE'B0BADD'BEEFULL},
+            /*nonce=*/                perm::Nonce{0xDEAD'BEEF'CAFE'F00DULL});
 
     // Attacker captures the handshake bytes off the wire.
     const auto captured = sniff_handshake(fresh_hs);
@@ -170,8 +170,8 @@ int test_replay_succeeds_indefinitely() {
     // ORIGINAL captured handshake — still succeeds.
     const auto interleave_hs =
         perm::make_self_signed_handshake<OrgInterleave>(
-            /*peer_key_fingerprint=*/0x1234'5678'9ABC'DEF0ULL,
-            /*nonce=*/                0xFEED'FACE'BABE'B00BULL);
+            /*peer_key_fingerprint=*/perm::PeerKeyFingerprint{0x1234'5678'9ABC'DEF0ULL},
+            /*nonce=*/                perm::Nonce{0xFEED'FACE'BABE'B00BULL});
     auto interleave_admit = perm::mint_federation_admittance<
         OrgInterleave, AllowAllThree>(
             local_cipher_permission(), interleave_hs);
@@ -193,9 +193,11 @@ int test_fresh_handshakes_still_admit() {
     // the vulnerability is specifically the absence of replay
     // rejection — the substrate's positive path is well-defined.
     const auto fresh_a = perm::make_self_signed_handshake<VictimOrgPeer>(
-        /*peer_key_fp=*/0xAAAA, /*nonce=*/0x1111);
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xAAAA},
+        /*nonce=*/perm::Nonce{0x1111});
     const auto fresh_b = perm::make_self_signed_handshake<VictimOrgPeer>(
-        /*peer_key_fp=*/0xAAAA, /*nonce=*/0x2222);  // different nonce
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xAAAA},
+        /*nonce=*/perm::Nonce{0x2222});  // different nonce
     assert(fresh_a.nonce != fresh_b.nonce);
     assert(fresh_a.self_signature_fingerprint
            != fresh_b.self_signature_fingerprint);  // signature is
@@ -220,10 +222,11 @@ int test_replay_with_zeroed_nonce_still_rejected() {
     // structural integrity — the replay vulnerability is narrow to
     // well-formed-but-stale handshakes.
     auto fresh = perm::make_self_signed_handshake<VictimOrgPeer>(
-        /*peer_key_fp=*/0xCAFE, /*nonce=*/0xBABE);
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xCAFE},
+        /*nonce=*/perm::Nonce{0xBABE});
 
     auto zeroed_key = fresh;
-    zeroed_key.peer_key_fingerprint = 0;
+    zeroed_key.peer_key_fingerprint = perm::PeerKeyFingerprint{};
     auto admit_zeroed = perm::mint_federation_admittance<
         VictimOrgPeer, AllowSelfAndPeer>(
             local_cipher_permission(), zeroed_key);

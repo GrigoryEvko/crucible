@@ -33,7 +33,7 @@ inline void f_payload(int) noexcept {}
 using RowIO = eff::Row<eff::Effect::IO>;
 using AllowSelfAndPeer = perm::policy::admit_orgs<OrgSelf, OrgPeer>;
 
-static_assert(perm::federation_org_id<OrgSelf> != 0);
+static_assert(static_cast<bool>(perm::federation_org_id<OrgSelf>));
 static_assert(perm::federation_org_id<OrgSelf>
               != perm::federation_org_id<OrgPeer>);
 static_assert(AllowSelfAndPeer::template admits<OrgSelf>);
@@ -52,7 +52,8 @@ const perm::LocalCipherPermission& local_cipher_permission() {
 
 int test_admittance_success() {
     const auto handshake =
-        perm::make_self_signed_handshake<OrgPeer>(0xA11CE, 7);
+        perm::make_self_signed_handshake<OrgPeer>(
+            perm::PeerKeyFingerprint{0xA11CE}, perm::Nonce{7});
     auto admitted =
         perm::mint_federation_admittance<OrgPeer, AllowSelfAndPeer>(
             local_cipher_permission(), handshake);
@@ -62,12 +63,14 @@ int test_admittance_success() {
 
 int test_admittance_rejections() {
     const auto good =
-        perm::make_self_signed_handshake<OrgPeer>(0xB0B, 9);
+        perm::make_self_signed_handshake<OrgPeer>(
+            perm::PeerKeyFingerprint{0xB0B}, perm::Nonce{9});
 
     auto not_allowed =
         perm::mint_federation_admittance<OrgBlocked, AllowSelfAndPeer>(
             local_cipher_permission(),
-            perm::make_self_signed_handshake<OrgBlocked>(0xCAFE, 1));
+            perm::make_self_signed_handshake<OrgBlocked>(
+                perm::PeerKeyFingerprint{0xCAFE}, perm::Nonce{1}));
     assert(!not_allowed.has_value());
     assert(not_allowed.error() == perm::AdmittanceError::OrgNotAllowed);
 
@@ -78,7 +81,7 @@ int test_admittance_rejections() {
     assert(wrong_org.error() == perm::AdmittanceError::OrgMismatch);
 
     auto missing_key = good;
-    missing_key.peer_key_fingerprint = 0;
+    missing_key.peer_key_fingerprint = perm::PeerKeyFingerprint{};
     auto missing_key_result =
         perm::mint_federation_admittance<OrgPeer, AllowSelfAndPeer>(
             local_cipher_permission(), missing_key);
@@ -87,7 +90,7 @@ int test_admittance_rejections() {
            == perm::AdmittanceError::MissingPeerKey);
 
     auto missing_sig = good;
-    missing_sig.self_signature_fingerprint = 0;
+    missing_sig.self_signature_fingerprint = perm::SignatureFingerprint{};
     auto missing_sig_result =
         perm::mint_federation_admittance<OrgPeer, AllowSelfAndPeer>(
             local_cipher_permission(), missing_sig);
@@ -96,7 +99,8 @@ int test_admittance_rejections() {
            == perm::AdmittanceError::MissingSignature);
 
     auto bad_sig = good;
-    bad_sig.self_signature_fingerprint ^= 0x55AA;
+    bad_sig.self_signature_fingerprint = perm::SignatureFingerprint{
+        bad_sig.self_signature_fingerprint.raw() ^ 0x55AAu };
     auto bad_sig_result =
         perm::mint_federation_admittance<OrgPeer, AllowSelfAndPeer>(
             local_cipher_permission(), bad_sig);
@@ -117,7 +121,8 @@ int test_permissioned_deserialize_tags_payload() {
     auto admitted =
         perm::mint_federation_admittance<OrgPeer, AllowSelfAndPeer>(
             local_cipher_permission(),
-            perm::make_self_signed_handshake<OrgPeer>(0xF00D, 11));
+            perm::make_self_signed_handshake<OrgPeer>(
+                perm::PeerKeyFingerprint{0xF00D}, perm::Nonce{11}));
     assert(admitted.has_value());
 
     auto tagged_view = fed::deserialize_federation_entry(

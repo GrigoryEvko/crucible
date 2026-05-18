@@ -130,10 +130,10 @@ const perm::LocalCipherPermission& local_cipher_permission() {
 //          tagged as having come from VictimOrgPeer.
 
 [[nodiscard]] perm::FederationHandshake
-forge_handshake_for_peer(std::uint64_t attacker_nonce,
-                         std::uint64_t attacker_peer_key_fp)
+forge_handshake_for_peer(perm::Nonce attacker_nonce,
+                         perm::PeerKeyFingerprint attacker_peer_key_fp)
 {
-    const std::uint64_t victim_peer_org_id =
+    const perm::OrgId victim_peer_org_id =
         perm::federation_org_id<VictimOrgPeer>;
 
     return perm::FederationHandshake{
@@ -151,8 +151,8 @@ forge_handshake_for_peer(std::uint64_t attacker_nonce,
 int test_attacker_mints_forged_peer_permission() {
     // The forgery — every input is public, attacker-chosen.
     const auto forged_hs = forge_handshake_for_peer(
-        /*attacker_nonce=*/0xDEAD'BEEFu,
-        /*attacker_peer_key_fp=*/0xCAFE'BABEu);
+        /*attacker_nonce=*/perm::Nonce{0xDEAD'BEEFu},
+        /*attacker_peer_key_fp=*/perm::PeerKeyFingerprint{0xCAFE'BABEu});
 
     auto forged =
         perm::mint_federation_admittance<VictimOrgPeer,
@@ -183,8 +183,8 @@ int test_attacker_round_trips_federation_cache_entry() {
 
     // ... then mints a forged peer permission for VictimOrgPeer.
     const auto forged_hs = forge_handshake_for_peer(
-        /*attacker_nonce=*/0xF00D'1234u,
-        /*attacker_peer_key_fp=*/0x9876'5432u);
+        /*attacker_nonce=*/perm::Nonce{0xF00D'1234u},
+        /*attacker_peer_key_fp=*/perm::PeerKeyFingerprint{0x9876'5432u});
     auto forged =
         perm::mint_federation_admittance<VictimOrgPeer,
                                          VictimAdmitPolicy>(
@@ -234,7 +234,8 @@ int test_admit_policy_still_filters_unlisted_orgs() {
                                          VictimAdmitPolicy>(
             local_cipher_permission(),
             perm::make_self_signed_handshake<OrgOutsidePolicy>(
-                /*peer_key_fingerprint=*/0xABCDu, /*nonce=*/0));
+                /*peer_key_fingerprint=*/perm::PeerKeyFingerprint{0xABCDu},
+                /*nonce=*/perm::Nonce{0}));
     assert(!forged_outside.has_value());
     assert(forged_outside.error()
            == perm::AdmittanceError::OrgNotAllowed);

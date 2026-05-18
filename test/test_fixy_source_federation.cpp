@@ -100,18 +100,22 @@ static_assert(sizeof(ffed::FederationHandshake) == 32,
 // ─── 5. Compile-time handshake construction ───────────────────────
 
 constexpr auto kSelfHandshake =
-    ffed::make_self_signed_handshake<SelfOrg>(0xCAFEBABEu, 0xDEADBEEFu);
+    ffed::make_self_signed_handshake<SelfOrg>(
+        ffed::PeerKeyFingerprint{0xCAFEBABEu},
+        ffed::Nonce{0xDEADBEEFu});
 
 static_assert(kSelfHandshake.org_id == ffed::federation_org_id<SelfOrg>,
     "Generated handshake's org_id must match federation_org_id<SelfOrg>.");
 
-static_assert(kSelfHandshake.peer_key_fingerprint == 0xCAFEBABEu,
+static_assert(kSelfHandshake.peer_key_fingerprint
+              == ffed::PeerKeyFingerprint{0xCAFEBABEu},
     "Generated handshake's peer_key_fingerprint must round-trip.");
 
 static_assert(kSelfHandshake.self_signature_fingerprint
               == ffed::federation_signature_fingerprint(
                      ffed::federation_org_id<SelfOrg>,
-                     0xCAFEBABEu, 0xDEADBEEFu),
+                     ffed::PeerKeyFingerprint{0xCAFEBABEu},
+                     ffed::Nonce{0xDEADBEEFu}),
     "Handshake signature must equal signature_fingerprint over the "
     "(org_id, peer_key_fingerprint, nonce) triple.");
 

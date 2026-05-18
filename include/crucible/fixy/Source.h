@@ -154,6 +154,19 @@ using ::crucible::permissions::LocalCipherPermission;
 
 using ::crucible::permissions::federation_org_id;
 
+// ── fixy-A1-008 strong-hash semantic types ─────────────────────────
+//
+// `OrgId` / `PeerKeyFingerprint` / `Nonce` / `SignatureFingerprint`
+// are the TypeSafe newtypes that replace the bare uint64_t fields of
+// `FederationHandshake`.  Re-exported here so fixy users construct
+// handshakes without leaving the `fixy::source::federation`
+// namespace.
+
+using ::crucible::permissions::OrgId;
+using ::crucible::permissions::PeerKeyFingerprint;
+using ::crucible::permissions::Nonce;
+using ::crucible::permissions::SignatureFingerprint;
+
 namespace policy {
 using ::crucible::permissions::policy::admit_orgs;
 }  // namespace policy

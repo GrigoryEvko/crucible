@@ -6659,6 +6659,23 @@ crucible_neg_compile_test(neg_federation_mint_no_row_fg
 crucible_neg_compile_test(neg_federation_mint_no_row_bg_compile
     "CtxFitsFederation|EffectRowMismatch|constraints not satisfied|no matching function")
 
+# fixy-A1-008 — strong-type discipline on FederationHandshake fields
+# + federation_signature_fingerprint + make_self_signed_handshake.
+# Three rejection classes:
+#   * _org_id_swap — wrong-position cross-domain arg in
+#     federation_signature_fingerprint (OrgId ↔ PeerKeyFingerprint).
+#   * _passed_nonce_as_peer_key — wrong-position cross-domain arg in
+#     make_self_signed_handshake (Nonce ↔ PeerKeyFingerprint).
+#   * _swapped_org_id_and_nonce — raw-int literal + cross-domain field
+#     assignment on FederationHandshake POD (closes the per-field
+#     param-swap class).
+crucible_neg_compile_test(neg_federation_org_id_swap
+    "could not convert|cannot convert|no matching function|conversion from|no known conversion")
+crucible_neg_compile_test(neg_federation_passed_nonce_as_peer_key
+    "could not convert|cannot convert|no matching function|conversion from|no known conversion")
+crucible_neg_compile_test(neg_federation_make_self_signed_with_swapped_org_id_and_nonce
+    "could not convert|cannot convert|no matching function|conversion from|no known conversion")
+
 # GAPS-075 — permission rows bind effectful ownership to ExecCtx row
 # admission.  The pure permission APIs stay available for Row<> tags;
 # row-bearing tags must flow through a ctx that admits their effect row.

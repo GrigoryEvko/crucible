@@ -24,8 +24,8 @@ int main() {
     auto local_cipher =
         saf::mint_permission_root<perm::tag::LocalCipherTag>();
     auto handshake = perm::make_self_signed_handshake<OrgA>(
-        /*peer_key_fp=*/0xDEAD'BEEFULL,
-        /*nonce=*/      0xFEED'C0DEULL);
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xDEAD'BEEFULL},
+        /*nonce=*/      perm::Nonce{0xFEED'C0DEULL});
     auto admitted = perm::mint_federation_admittance<
         OrgA, perm::policy::admit_orgs<OrgA>>(local_cipher, handshake);
     auto permission = std::move(*admitted);

@@ -143,8 +143,8 @@ int attack_mint_via_borrowed_authority() {
     // composition).  org_id is reachable via consteval
     // federation_org_id<Org> from any TU.
     auto forged_hs = perm::make_self_signed_handshake<EveOrgTarget>(
-        /*peer_key_fp=*/0xEAEAEAEAEAEAEAEAULL,
-        /*nonce=*/      0xEBEBEBEBEBEBEBEBULL);
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xEAEAEAEAEAEAEAEAULL},
+        /*nonce=*/      perm::Nonce{0xEBEBEBEBEBEBEBEBULL});
 
     // Step 3: mint federation admittance using the BORROWED ref.
     // The substrate (void)-discards local_permission so it never
@@ -177,11 +177,14 @@ int attack_multiple_aliased_borrows() {
     // All three refs point to the same `static const auto` inside
     // Module A.  The substrate cannot tell them apart.
     auto hs1 = perm::make_self_signed_handshake<EveOrgTarget>(
-        0xA1A1A1A1A1A1A1A1ULL, 0x1111111111111111ULL);
+        perm::PeerKeyFingerprint{0xA1A1A1A1A1A1A1A1ULL},
+        perm::Nonce{0x1111111111111111ULL});
     auto hs2 = perm::make_self_signed_handshake<EveOrgTarget>(
-        0xB2B2B2B2B2B2B2B2ULL, 0x2222222222222222ULL);
+        perm::PeerKeyFingerprint{0xB2B2B2B2B2B2B2B2ULL},
+        perm::Nonce{0x2222222222222222ULL});
     auto hs3 = perm::make_self_signed_handshake<EveOrgTarget>(
-        0xC3C3C3C3C3C3C3C3ULL, 0x3333333333333333ULL);
+        perm::PeerKeyFingerprint{0xC3C3C3C3C3C3C3C3ULL},
+        perm::Nonce{0x3333333333333333ULL});
 
     auto admit_1 = perm::mint_federation_admittance<
         EveOrgTarget, EvesPolicy>(shared_ref_1, hs1);
@@ -211,7 +214,8 @@ int deep_callee_abuses_received_ref(
     // for cipher encryption" from "ref passed for federation
     // admittance".
     auto repurposed_hs = perm::make_self_signed_handshake<EveOrgTarget>(
-        0xABBAABBAABBAABBAULL, 0xACDCACDCACDCACDCULL);
+        perm::PeerKeyFingerprint{0xABBAABBAABBAABBAULL},
+        perm::Nonce{0xACDCACDCACDCACDCULL});
     auto admitted = perm::mint_federation_admittance<
         EveOrgTarget, EvesPolicy>(trusted_ref, repurposed_hs);
     assert(admitted.has_value());

@@ -39,8 +39,8 @@ int main() {
     auto local = saf::mint_permission_root<perm::tag::LocalCipherTag>();
     auto handshake =
         perm::make_self_signed_handshake<neg_fed_row_fg::PeerOrg>(
-            /*peer_key_fp=*/0xFEDCDEULL,
-            /*nonce=*/0xC0FFEEULL);
+            /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFEDCDEULL},
+            /*nonce=*/perm::Nonce{0xC0FFEEULL});
     auto admittance = perm::mint_federation_admittance<
         neg_fed_row_fg::PeerOrg,
         perm::policy::admit_orgs<neg_fed_row_fg::PeerOrg>>(

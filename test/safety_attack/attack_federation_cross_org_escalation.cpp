@@ -179,8 +179,8 @@ obtain_legitimate_orga_permission() {
     auto local_cipher =
         saf::mint_permission_root<perm::tag::LocalCipherTag>();
     auto handshake = perm::make_self_signed_handshake<AttackerOrgA>(
-        /*peer_key_fp=*/0xC0FFEE'C0FFEEULL,
-        /*nonce=*/      0xC1C1'C1C1'C1C1'C1C1ULL);
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xC0FFEE'C0FFEEULL},
+        /*nonce=*/      perm::Nonce{0xC1C1'C1C1'C1C1'C1C1ULL});
 
     auto admitted = perm::mint_federation_admittance<
         AttackerOrgA, AttackerPolicy>(local_cipher, handshake);
