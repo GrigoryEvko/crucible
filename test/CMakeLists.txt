@@ -7285,6 +7285,42 @@ crucible_neg_compile_test(neg_pre_macro_setonce_set_double
 crucible_neg_compile_test(neg_pre_macro_setonce_reset_unset
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 
+# ─── fixy-A1-007 Phase 2 — safety/Mutation.h CRUCIBLE_PRE witnesses ──
+#
+# Six HS14 fixtures pinning the body-CRUCIBLE_PRE migration of 12
+# this->-member pre clauses in safety/Mutation.h across five wrapper
+# families (WriteOnce, WriteOnceNonNull, Monotonic, BoundedMonotonic,
+# OrderedAppendOnly, AtomicMonotonic).  WriteOnceNonNull's predicate
+# shape is already witnessed by the SetOnce trio above (same nullptr-
+# sentinel + ptr_ pattern); Phase 2 adds witnesses for the NEW
+# distinct mismatch classes:
+#
+#   * neg_pre_macro_writeonce_set_twice — optional<T>::has_value()
+#     member-fn-on-member predicate (double-set setter path).
+#   * neg_pre_macro_writeonce_get_unset — same predicate but on const
+#     accessor path (read-before-set).
+#   * neg_pre_macro_monotonic_advance_backward — lattice_type::leq
+#     NESTED-member-function predicate.
+#   * neg_pre_macro_monotonic_bump_at_max — member-fn vs static
+#     numeric_limits sentinel.
+#   * neg_pre_macro_bounded_monotonic_bump_at_max — two-level
+#     nested-wrapper member-fn-on-member chain.
+#   * neg_pre_macro_ordered_appendonly_backward_key — DISJUNCTION
+#     with member-fn-on-member subexpressions plus stateless functor
+#     calls (KeyFn{}/Cmp{}) — most complex predicate shape in the file.
+crucible_neg_compile_test(neg_pre_macro_writeonce_set_twice
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_pre_macro_writeonce_get_unset
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_pre_macro_monotonic_advance_backward
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_pre_macro_monotonic_bump_at_max
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_pre_macro_bounded_monotonic_bump_at_max
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_pre_macro_ordered_appendonly_backward_key
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
 # ─── crucible::decide::* predicate library — HS14 fixtures ──────────
 #
 # CONTRACT-030: HS14 fixture pair pinning that decide::no_overflow_mul

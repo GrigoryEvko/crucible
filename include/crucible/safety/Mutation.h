@@ -45,6 +45,7 @@
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Post.h>
+#include <crucible/safety/Pre.h>
 
 #include <atomic>
 #include <chrono>
@@ -295,9 +296,11 @@ public:
     // fires via std::terminate under enforce; collapses to [[assume]]
     // under ignore.  KeyFn/Cmp are stateless — this idiom matches
     // Monotonic::advance's `pre(!Cmp{}(new, old))`.
+    // fixy-A1-007: this->-member pre (references inner_) migrated to
+    // body CRUCIBLE_PRE.
     void append(T item)
-        pre(inner_.empty() || !Cmp{}(KeyFn{}(item), KeyFn{}(inner_.back())))
     {
+        CRUCIBLE_PRE(inner_.empty() || !Cmp{}(KeyFn{}(item), KeyFn{}(inner_.back())));
         inner_.append(std::move(item));
     }
 
@@ -411,10 +414,11 @@ public:
     // backward.  The precondition uses lattice_type::leq for
     // algebraic clarity — `lattice_type::leq(current, new_value)` is
     // exactly `!Cmp{}(new_value, current)`, the original predicate.
+    // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE.
     constexpr void advance(T new_value)
         noexcept(std::is_nothrow_move_constructible_v<T>)
-        pre(lattice_type::leq(impl_.peek(), new_value))
     {
+        CRUCIBLE_PRE(lattice_type::leq(impl_.peek(), new_value));
         // Reassign impl_ via the specialization's single-arg ctor.
         // Storage is one cell; one move suffices to bring both the
         // value-view (peek) and the grade-view (grade) to new_value.
@@ -436,10 +440,11 @@ public:
     // catches wraparound (the only way an integral counter can
     // violate monotonicity is overflow).  Equivalent to
     // advance(get() + 1).
+    // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE.
     constexpr void bump() noexcept
         requires std::integral<T>
-        pre(impl_.peek() != std::numeric_limits<T>::max())
     {
+        CRUCIBLE_PRE(impl_.peek() != std::numeric_limits<T>::max());
         // CONTRACT-Monotonic-Bump-POST: state-mutation post (CRUCIBLE_POST
         // taxonomy class 1).  Capturing prior is free for std::integral<T>
         // (the requires-clause restricts T to integers — copy is one MOV).
@@ -558,10 +563,11 @@ public:
     // Integral bump — advance by one, guarded by the bound.  Mirrors
     // Monotonic::bump but uses the type's Max rather than the domain
     // type's numeric_limits::max.
+    // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE.
     constexpr void bump() noexcept
         requires std::integral<T>
-        pre(inner_.get() < T(Max))
     {
+        CRUCIBLE_PRE(inner_.get() < T(Max));
         inner_.advance(static_cast<T>(inner_.get() + T{1}));
     }
 };
@@ -593,9 +599,12 @@ public:
     WriteOnce& operator=(WriteOnce&&)      = default;
 
     // Set exactly once.  Contract-checks that value has not been set.
+    // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE —
+    // closes the GCC 16.1.1 §13.6 foldable-body consteval-bypass on
+    // member-access predicates (cf. feedback_crucible_pre_post_macros).
     constexpr void set(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
-        pre(!value_.has_value())
     {
+        CRUCIBLE_PRE(!value_.has_value());
         value_.emplace(std::move(v));
         // CONTRACT-WriteOnce-Set-POST: state-mutation post (CRUCIBLE_POST
         // taxonomy class 1).  The body's emplace() unconditionally
@@ -640,9 +649,10 @@ public:
     }
 
     // Read the set value.  Contract-fails if not yet set.
+    // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE.
     [[nodiscard]] constexpr const T& get() const noexcept
-        pre(value_.has_value())
     {
+        CRUCIBLE_PRE(value_.has_value());
         return *value_;
     }
 
@@ -719,10 +729,12 @@ public:
     // Set exactly once.  Contract fires on double-set (ptr_ already
     // non-null) and on null input (publishing null is indistinguishable
     // from "never set" in the sentinel model — always a caller bug).
+    // fixy-A1-007: param + this->-member pres migrated to body
+    // CRUCIBLE_PRE (clause-shape uniformity with double-set rail).
     constexpr void set(T* p) noexcept
-        pre (p != nullptr)
-        pre (ptr_ == nullptr)
     {
+        CRUCIBLE_PRE(p != nullptr);
+        CRUCIBLE_PRE(ptr_ == nullptr);
         ptr_ = p;
         // CONTRACT-WriteOnceNonNull-Set-POST: state-mutation post.
         // Tighter than WriteOnce::set's `value_.has_value()` because
@@ -767,9 +779,10 @@ public:
     }
 
     // Read the set pointer.  Contract fires if not yet set.
+    // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE.
     [[nodiscard]] constexpr T* get() const noexcept
-        pre (ptr_ != nullptr)
     {
+        CRUCIBLE_PRE(ptr_ != nullptr);
         return ptr_;
     }
 
@@ -787,19 +800,20 @@ public:
     // letting `WriteOnceNonNull<void*>` still satisfy other member
     // uses (get, has_value) without triggering "forming reference to
     // void" at class-instantiation time.
+    // fixy-A1-007: this->-member pres migrated to body CRUCIBLE_PRE.
     template <typename U = T>
         requires (!std::is_void_v<U>)
     [[nodiscard]] constexpr U& operator*() const noexcept
-        pre (ptr_ != nullptr)
     {
+        CRUCIBLE_PRE(ptr_ != nullptr);
         return *ptr_;
     }
 
     template <typename U = T>
         requires (!std::is_void_v<U>)
     [[nodiscard]] constexpr U* operator->() const noexcept
-        pre (ptr_ != nullptr)
     {
+        CRUCIBLE_PRE(ptr_ != nullptr);
         return ptr_;
     }
 };
@@ -939,9 +953,15 @@ public:
     }
 
     // Strict advance: contract fires if new_value would go backward.
+    // fixy-A1-007: this->-member pre (references value_) migrated to
+    // body CRUCIBLE_PRE for clause-shape uniformity with the rest of
+    // the file.  AtomicMonotonic is not constexpr (atomic ops are
+    // not consteval), so the consteval-bypass class doesn't apply
+    // here — but routing through CRUCIBLE_PRE preserves runtime
+    // diagnostic discipline and matches every other this->-member pre.
     void advance(T new_value) noexcept
-        pre (Cmp{}(value_.load(std::memory_order_acquire), new_value))
     {
+        CRUCIBLE_PRE(Cmp{}(value_.load(std::memory_order_acquire), new_value));
         value_.store(new_value, std::memory_order_release);
     }
 
@@ -1033,10 +1053,11 @@ public:
     // contract fires under enforce semantic if the new value would
     // step backward in Cmp's direction.  For unconditional stores
     // (reset, initialization), use reset_under_quiescence instead.
+    // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE.
     void store(T new_value,
                std::memory_order order = std::memory_order_release) noexcept
-        pre (Cmp{}(value_.load(std::memory_order_acquire), new_value))
     {
+        CRUCIBLE_PRE(Cmp{}(value_.load(std::memory_order_acquire), new_value));
         value_.store(new_value, order);
     }
 
