@@ -55,6 +55,7 @@
 
 #include <crucible/concurrent/PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/sessions/CalendarGridSession.h>
 #include <crucible/sessions/ChainEdgeSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>
@@ -339,5 +340,13 @@ template <::crucible::concurrent::SnapshotValue T,
 using PermissionedSnapshot =
     ::crucible::concurrent::PermissionedSnapshot<T, UserTag>;
 }  // namespace concurrent
+
+// ── fixy-A4-005: mint_substrate_session — the generic substrate→session
+// bridge.  Lives in `concurrent::` (Tier-2→3 bridge per §XXI); the
+// canonical home in fixy/ is here in `substr::` next to every per-
+// substrate sub-namespace's own `mint_*_session` family.  Also exposed
+// at `fixy::pipe::mint_substrate_session` for now (grace window — Pipe.h
+// shipped first); future audit removes the Pipe.h re-export.
+using ::crucible::concurrent::mint_substrate_session;
 
 }  // namespace crucible::fixy::substr

@@ -49,6 +49,7 @@
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/SessionPatterns.h>
+#include <crucible/sessions/SessionView.h>
 
 #include <string_view>
 #include <type_traits>
@@ -240,6 +241,15 @@ using ::crucible::safety::proto::mint_channel;
 using ::crucible::safety::proto::mint_session_handle;
 using ::crucible::safety::proto::mint_recording_session;
 using ::crucible::safety::proto::mint_crash_watched_session;
+// fixy-A4-006: SessionView is the load-bearing handle-to-view bridge
+// (CLAUDE.md §I structural-wrappers list); its mint factory must be
+// reachable through `fixy::sess::` like every other session mint.  The
+// companion probe concept `can_mint_session_view<H, Tag>` lives in
+// `sessions/SessionView.h`'s `detail::sv_self_test::` namespace (test-
+// only); it is intentionally not re-exported here.  Callers asking
+// "can I view this handle?" use `requires { mint_session_view<Tag>(h); }`
+// at the call site (the standard §XXI mint-probe idiom).
+using ::crucible::safety::proto::mint_session_view;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Federation 3-role projection (FederationProtocol.h) ────────────

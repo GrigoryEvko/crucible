@@ -137,5 +137,13 @@ using ::crucible::concurrent::stages_chain;
 using ::crucible::concurrent::pipeline_chain;
 using ::crucible::concurrent::pipeline_row_union_t;
 using ::crucible::concurrent::CtxFitsPipeline;
+// fixy-A4-007: per-stage gate is symmetric to per-pipeline — both must
+// reach fixy::pipe::.  `CtxFitsStage<&body, Ctx>` is the actual §XXI
+// requires-clause that `mint_stage` fires on; without re-export here a
+// generic Pipeline factory parameterized by a single stage shape can't
+// grep-discover the gate.  `CtxFitsStageFromEndpoints` is the Tier-2→3
+// bridge variant used by `mint_stage_from_endpoints`.
+using ::crucible::concurrent::CtxFitsStage;
+using ::crucible::concurrent::CtxFitsStageFromEndpoints;
 
 }  // namespace crucible::fixy::pipe
