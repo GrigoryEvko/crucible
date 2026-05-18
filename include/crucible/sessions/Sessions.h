@@ -23,8 +23,14 @@
 //   SessionCT.h             — ConstantTime crypto-payload sessions
 //   SessionEventLog.h       — AppendOnly typed event log
 //   FederationProtocol.h    — MPST facade for Cipher federation
+//   SessionMint.h           — ctx-bound mint_permissioned_session<Proto>
+//                              and mint_channel<Proto>(ctxA, ctxB, rA, rB)
+//                              (CLAUDE.md §XXI Tier-2 mint hub).
 //   SessionPayloadSubsort.h — Tagged/Refined subsort axioms
 //   SessionPermPayloads.h   — Transferable/Borrowed/Returned markers
+//   SessionRowExtraction.h  — payload_row<T> / payload_row_t<T>
+//                              recursive row projection — every
+//                              ctx-admission walk reads this.
 //   SessionPatterns.h       — RequestResponse, Pipeline, FanOut/FanIn, ...
 //   SessionDiagnostic.h     — manifest-bug classification tags
 //   SessionView.h           — non-consuming protocol introspection
@@ -36,6 +42,10 @@
 //   MetaLogSession.h        — typed-session wrapper for
 //                              PermissionedMetaLog over the production
 //                              TensorMeta side-channel.
+//   MpmcChannelSession.h    — typed-session facade for
+//                              PermissionedMpmcChannel: ProducerProto<T>
+//                              / ConsumerProto<T> + mint_mpmc_producer_session
+//                              / mint_mpmc_consumer_session.
 //   ChainEdgeSession.h      — one-shot semaphore signal/wait session
 //                              facade over PermissionedChainEdge.
 //   SwmrSession.h           — typed-session facade for SWMR latest-
@@ -71,9 +81,11 @@
 #include <crucible/sessions/FederationProtocol.h>
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/SessionPatterns.h>
 #include <crucible/sessions/SessionPayloadSubsort.h>
 #include <crucible/sessions/SessionPermPayloads.h>
+#include <crucible/sessions/SessionRowExtraction.h>
 #include <crucible/sessions/SessionQueue.h>
 #include <crucible/sessions/SessionGrade.h>
 #include <crucible/sessions/SessionSubtype.h>
@@ -81,6 +93,7 @@
 #include <crucible/sessions/SessionView.h>
 #include <crucible/sessions/SpscSession.h>
 #include <crucible/sessions/MetaLogSession.h>
+#include <crucible/sessions/MpmcChannelSession.h>
 #include <crucible/sessions/ChainEdgeSession.h>
 #include <crucible/sessions/SwmrSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>

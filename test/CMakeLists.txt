@@ -423,6 +423,10 @@ add_test(NAME refined_pre_subsumption
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
+# fixy-A2-015 sentinel: <crucible/sessions/Sessions.h> umbrella must
+# expose mint_permissioned_session, payload_row_t, and the
+# MpmcChannelSession surface.  Pre-fix this TU fails to compile.
+crucible_test(test_sessions_umbrella_surface)
 crucible_test(test_bridges_compile)
 crucible_test(test_effects_compile)
 crucible_test(test_resources)
