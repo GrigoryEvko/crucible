@@ -7256,6 +7256,35 @@ crucible_neg_compile_test(neg_pre_macro_consteval_struct_cptr
 crucible_neg_compile_test(neg_post_macro_consteval_struct_field
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 
+# ─── fixy-A1-007 — handles/Once.h SetOnce CRUCIBLE_PRE witnesses ────
+#
+# Three HS14 fixtures pinning the body-CRUCIBLE_PRE migration of
+# SetOnce<T>::set and SetOnce<T>::reset (handles/Once.h).  The vanilla
+# P2900 `pre(ptr_ == nullptr)` / `pre(has_value())` form references
+# class members through implicit `this->` — the canonical consteval-
+# bypass shape on GCC 16.1.1 for foldable-body functions.
+#
+# Distinct mismatch classes (HS14 mandate ≥2 per gate; we ship 3):
+#   * neg_pre_macro_setonce_set_null_param — parameter-side null
+#     check.  Easy case (vanilla pre handles it correctly), included
+#     for clause-shape uniformity and as the baseline witness.
+#   * neg_pre_macro_setonce_set_double — this->-member double-set
+#     check.  THE load-bearing fixture: vanilla pre silently bypasses
+#     this exact shape; CRUCIBLE_PRE must fire.
+#   * neg_pre_macro_setonce_reset_unset — this->-member-FUNCTION
+#     lifecycle-reset check.  The harder consteval-bypass class
+#     because the predicate goes through member-function call
+#     resolution before reaching the foldable body.
+#
+# See memory feedback_gcc16_c26_contract_gotchas + feedback_crucible_
+# pre_post_macros for the full diagnosis of the bypass class.
+crucible_neg_compile_test(neg_pre_macro_setonce_set_null_param
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_pre_macro_setonce_set_double
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_pre_macro_setonce_reset_unset
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
 # ─── crucible::decide::* predicate library — HS14 fixtures ──────────
 #
 # CONTRACT-030: HS14 fixture pair pinning that decide::no_overflow_mul

@@ -35,6 +35,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Post.h>
+#include <crucible/safety/Pre.h>
 
 #include <atomic>
 #include <type_traits>
@@ -70,10 +71,22 @@ public:
     // Set exactly once.  Contract fires on double-set and on null
     // input (null is reserved as the unset sentinel; publishing null
     // is always a caller bug).
-    CRUCIBLE_INLINE void set(T* p) noexcept
-        pre (p != nullptr)
-        pre (ptr_ == nullptr)
+    //
+    // constexpr-eligible so HS14 negative-compile fixtures can witness
+    // CRUCIBLE_PRE consteval-fire under static_assert (fixy-A1-007).
+    CRUCIBLE_INLINE constexpr void set(T* p) noexcept
     {
+        // fixy-A1-007: pre clauses migrated from P2900 form to body-
+        // CRUCIBLE_PRE.  The first clause references the parameter `p`;
+        // the second references the class member `ptr_` through
+        // implicit `this->`.  GCC 16.1.1 silently bypasses the second
+        // shape at consteval for foldable bodies; the patched g++-16p
+        // closes the bypass but the macro form fires identically
+        // across both compilers (feedback_gcc16_c26_contract_gotchas
+        // + feedback_crucible_pre_post_macros).  Pairs with the
+        // existing CRUCIBLE_POST below per the dual-side discipline.
+        CRUCIBLE_PRE(p != nullptr);
+        CRUCIBLE_PRE(ptr_ == nullptr);
         ptr_ = p;
         // CONTRACT-SetOnce-Set-POST: state-mutation post.  Sibling of
         // CONTRACT-WriteOnceNonNull-Set-POST (safety/Mutation.h, commit
@@ -89,7 +102,7 @@ public:
 
     // Try-set — returns true iff this was the first non-null set.
     // Unlike set(), accepts null input as a no-op (returns false).
-    [[nodiscard]] CRUCIBLE_INLINE bool try_set(T* p) noexcept {
+    [[nodiscard]] CRUCIBLE_INLINE constexpr bool try_set(T* p) noexcept {
         // Refactored to single-return so the post fires on every path.
         // Semantics preserved: claim iff slot was empty AND p is non-
         // null.  Null input and double-set both yield claimed=false.
@@ -106,17 +119,23 @@ public:
         return claimed;
     }
 
-    [[nodiscard]] CRUCIBLE_INLINE T* get() const noexcept { return ptr_; }
-    [[nodiscard]] CRUCIBLE_INLINE bool has_value() const noexcept { return ptr_ != nullptr; }
-    [[nodiscard]] CRUCIBLE_INLINE explicit operator bool() const noexcept { return ptr_ != nullptr; }
+    [[nodiscard]] CRUCIBLE_INLINE constexpr T* get() const noexcept { return ptr_; }
+    [[nodiscard]] CRUCIBLE_INLINE constexpr bool has_value() const noexcept { return ptr_ != nullptr; }
+    [[nodiscard]] CRUCIBLE_INLINE constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
     // Reset to unset state.  Use only when the lifecycle explicitly
     // permits re-setting (e.g. test fixtures, quiescent reconfig).
     // contract_assert on has_value() so accidental reset of an unset
     // slot — which masks a missed initialization — trips.
-    void reset() noexcept
-        pre (has_value())
+    //
+    // constexpr-eligible per the same fixy-A1-007 rationale as set().
+    constexpr void reset() noexcept
     {
+        // fixy-A1-007: pre clause migrated to body-CRUCIBLE_PRE.
+        // `has_value()` is a member function accessing `ptr_` through
+        // implicit `this->`, the canonical consteval-bypass shape on
+        // GCC 16.1.1.  Pairs with the existing CRUCIBLE_POST below.
+        CRUCIBLE_PRE(has_value());
         ptr_ = nullptr;
         // CONTRACT-SetOnce-Reset-POST: lifecycle-reset post (CRUCIBLE_POST
         // taxonomy class 3).  After reset() returns, the slot must be
