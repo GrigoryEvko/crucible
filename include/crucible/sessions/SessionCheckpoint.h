@@ -639,7 +639,7 @@ static_assert(is_terminal_state_v<CheckpointedSession<
 static_assert(is_terminal_state_v<CheckpointedSession<
     VendorPinned<VendorBackend::NV, End>, End>>);
 static_assert(is_terminal_state_v<CheckpointedSession<
-    End, VendorPinned<VendorBackend::AM, Stop>>>);
+    End, VendorPinned<VendorBackend::AMD, Stop>>>);
 
 // Non-terminal base — handle still owes the peer a Send before close.
 static_assert(!is_terminal_state_v<CheckpointedSession<Send<int, End>, End>>);
