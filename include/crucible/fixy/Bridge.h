@@ -29,15 +29,48 @@
 //   TypeSafe — using-declarations preserve the substrate's concept
 //              gates (IsSessionHandle, PeerTag deduction, etc.).
 //   NullSafe — wrapped handles inherit substrate's pointer discipline.
-//   MemSafe  — bridges are pure-wrappers; no heap.
+//   MemSafe  — allocation discipline differs per minter (see below);
+//              every alloc is owned via RAII whose destructor runs.
 //   BorrowSafe — wrap algebra preserves linearity of inner handle.
 //   ThreadSafe — log/flag pointers obey substrate's atomic discipline.
-//   LeakSafe — wrappers' destructor runs inner handle's destructor.
+//   LeakSafe — wrappers' destructor runs inner handle's destructor;
+//              for the allocating minter (mint_persisted_session)
+//              this transitively closes the SessionPersistenceState
+//              owned via std::unique_ptr.
 //   DetSafe  — bit-exact composition; pure wrap.
+//
+// ── Allocation discipline (fixy-A4-010) ───────────────────────────
+//
+// Three classes of mint behavior in this header — `grep make_unique`
+// in bridges/SessionPersistence.h returns the canonical heap sites:
+//
+//   1. Pure-wrap minters (zero heap, EBO-collapsible):
+//      mint_recording_session, mint_crash_watched_session,
+//      mint_recording_endpoint, mint_crash_watched_endpoint,
+//      mint_vigil_mode_bridge.
+//      Compose handles via using-declarations + struct-by-value;
+//      sizeof(result) == sizeof(inner) + O(byte) for the wrap tag.
+//
+//   2. Allocating minter (one heap alloc per mint, RAII-owned):
+//      mint_persisted_session.
+//      Performs `std::make_unique<SessionPersistenceState<CallerRow>>`
+//      at the mint boundary (bridges/SessionPersistence.h:701/755/812)
+//      because the persistence state owns a SessionEventLog drain ring
+//      whose lifetime must exceed the inner RecordingSessionHandle's.
+//      The unique_ptr is moved into PersistedSessionHandle; the
+//      handle's destructor runs the state's destructor (flush + close).
+//      MemSafe via LeakSafe-RAII, NOT via "no heap".
+//
+// Hot-path callers (per-op record / per-op recv) MUST use class 1.
+// Class 2 is a Cipher cold-tier roll-forward mint — appropriate at
+// session-establish time, not in the per-message loop.
 //
 // ── Cost ───────────────────────────────────────────────────────────
 //
-// Zero.  using-declarations are pure name-lookup directives.
+// Class 1: zero. using-declarations are pure name-lookup directives.
+// Class 2: one heap alloc per mint_persisted_session call (plus
+//          whatever SessionPersistenceState's ctor does — typically
+//          one ring-buffer allocation + Cipher::OpenView capture).
 
 // ── Include discipline (FIXY-AUDIT-C5) ─────────────────────────────
 //
