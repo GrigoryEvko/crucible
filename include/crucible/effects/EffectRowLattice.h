@@ -79,6 +79,7 @@
 #include <crucible/effects/EffectRow.h>
 
 #include <cstdint>
+#include <meta>
 #include <string_view>
 #include <type_traits>
 
@@ -98,6 +99,43 @@ static_assert(effect_count <= 64,
     "EffectRowLattice carrier is uint64_t — extend to a wider carrier "
     "(uint128 / std::bitset<effect_count>) before adding a 65th Effect "
     "atom.  See 28_04_2026_effects.md §8.5.3 (append-only Universe).");
+
+// ── Per-atom underlying-value guard (fixy-A3-011) ───────────────────
+//
+// `effect_count <= 64` above guards *cardinality* — the number of atoms
+// must fit in a 64-bit bitmask.  It does NOT guard the per-atom
+// underlying value, which is what feeds the `EL{1} << static_cast<
+// std::uint8_t>(Atom)` shift at At<...>::value below.  A maintainer
+// breaking the append-only Universe discipline by spelling
+// `Effect::Refute = 100` would pass the cardinality check (7 atoms is
+// well under 64) yet trigger `1ULL << 100` — undefined behavior the
+// moment any At<Effect::Refute> instantiation appears.
+//
+// This reflection-driven check enumerates every Effect atom and asserts
+// its underlying value is < 64, catching per-atom drift before it can
+// reach the bit-shift.  Adding a new atom at the next free position
+// (6, 7, 8, ...) per FOUND-I04 keeps it inside the guard window.
+[[nodiscard]] consteval bool every_effect_underlying_lt_64() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^Effect));
+    // -Wshadow false-positive on template for induction variable.
+    // See feedback_gcc16_c26_reflection_gotchas memory rule.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        if (static_cast<std::uint64_t>([:en:]) >= 64) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_effect_underlying_lt_64(),
+    "fixy-A3-011: at least one Effect atom has an underlying value "
+    ">= 64 — the EffectRowLattice::At<...>::value bit-shift "
+    "`1ULL << static_cast<std::uint8_t>(Atom)` would be undefined.  "
+    "Restore append-only Universe values (next free position) or "
+    "follow the major-version migration ceremony per FOUND-I04.");
 
 // ── EffectRowLattice ───────────────────────────────────────────────
 
