@@ -6401,6 +6401,45 @@ crucible_neg_compile_test(neg_session_detach_no_reason
 crucible_neg_compile_test(neg_crash_event_direct_construction
     "WrapCrashReturnKey")
 
+# ─────────────────────────────────────────────────────────────────
+# fixy-A2-030 — on_crash returns void to prevent moved-from inspection
+# ─────────────────────────────────────────────────────────────────
+#
+# Pre-fix `proto::on_crash(Expected&& result, CrashHandler&& handler)`
+# returned `Expected&&` AFTER moving out `result.error()` into the
+# handler.  The returned Expected silently carried a moved-from
+# error.  A caller writing:
+#
+#   auto leftover = on_crash(result, [](auto){});  // moved-from
+#   if (!leftover) read(leftover.error());          // UB
+#
+# or chaining inline:
+#
+#   on_crash(result, [](auto){}).error()            // moved-from inline
+#
+# read undefined data: unique_ptr → nullptr, trivially-moved struct
+# → zero bytes, partially-moved struct → undefined per-field.  The
+# footgun was invisible at the type level — the same `Expected&&`
+# return carried both pre-handler (well-formed error) and
+# post-handler (moved-from error) data with no structural
+# distinction.
+#
+# fixy-A2-030 changes `on_crash` to return `void`.  Inspection
+# becomes a compile error structurally:
+#   * variable capture: `auto x = on_crash(...);` — void can't
+#     deduce auto
+#   * chained access:   `on_crash(...).error()` — void has no members
+#
+# The pair of fixtures below witnesses both rejection paths:
+# fixture #1 pins the variable-capture failure mode, fixture #2 pins
+# the chained-member-access failure mode.  Together they pin that
+# fixy-A2-030's contract holds against BOTH common moved-from
+# inspection idioms.
+crucible_neg_compile_test(neg_on_crash_capture_return_value
+    "void|incomplete type|cannot|fixy-A2-030")
+crucible_neg_compile_test(neg_on_crash_inspect_moved_from_error
+    "void|not a class|incomplete|fixy-A2-030")
+
 # Empty Select<> / Offer<> at the handle boundary (#364) — type-level
 # uses (Gay-Hole 2005 minimum-subtype rule, SessionSubtype.h's tests)
 # stay legitimate, but constructing a runnable handle is rejected.

@@ -1185,21 +1185,60 @@ template <typename PeerTag, CrashClass C = CrashClass::Abort,
 }
 
 // ═════════════════════════════════════════════════════════════════════
-// ── Stop-aware unwrap helper ───────────────────────────────────────
+// ── Stop-aware unwrap helper (fixy-A2-030) ─────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
 // Convenience for the common caller pattern: try a session op, fall
 // through to crash recovery on the unexpected branch.  The recovery
-// callback receives the survivor-aware CrashEvent by value and is
-// expected to return whatever the caller's downstream code needs
-// (usually a re-establishment outcome or a typed error to propagate
-// further up).
+// callback receives the survivor-aware CrashEvent BY VALUE and IS
+// expected to perform whatever downstream recovery the caller needs
+// (re-establishment, typed-error propagation, audit-log emission).
 //
-//     auto outcome = on_crash(std::move(h).send(msg, tx),
-//         [](detail::crash_event_for_t<PeerTag, R> ev) { ...recover... });
+// ── Returns void.  See fixy-A2-030. ────────────────────────────────
+//
+// Pre-fix this helper returned the input `Expected` after moving out
+// `result.error()` into the handler.  The returned Expected then
+// carried a MOVED-FROM error: a caller who inspected `result.error()`
+// or chained `.transform_error()` post-call silently read undefined
+// data (CrashEvent with moved-out Resource — nullptr for unique_ptr,
+// zero-bytes for trivially-moved structs).  The footgun was
+// indistinguishable at the type level: nothing structurally prevented
+// the inspection.
+//
+// Post-fix the helper returns `void`.  Inspection of the original
+// `Expected` AFTER on_crash returns is the caller's responsibility:
+// the caller MUST keep their own non-discarded handle on `result`
+// BEFORE calling on_crash if they want to inspect the success arm.
+// The Expected is intentionally an rvalue-bindable parameter — the
+// crash arm consumes the error into the handler, so post-call reads
+// would be moved-from regardless.
+//
+// Idiomatic usage (post-fix):
+//
+//     auto result = std::move(h).send(msg, tx);
+//     on_crash(result, [](detail::crash_event_for_t<PeerTag, R> ev) {
+//         ...recover...
+//     });
+//     if (result) {
+//         // Success arm — `result` is still live; use *result.
+//     }
+//     // Error arm: handler ran, result.error() is moved-from.
+//     // DO NOT read result.error() here.
+//
+// For callers that want a chaining value, write the dispatch
+// explicitly:
+//
+//     auto outcome = result
+//         ? std::move(*result)
+//         : make_recovered_outcome(std::move(result.error()));
+//
+// HS14 fixtures witness the post-fix discipline by demonstrating that
+// a previously-compilable inspection pattern (capturing the helper's
+// return and dereferencing it) now produces a clean type error
+// (void is not assignable, void has no members).
 
 template <typename Expected, typename CrashHandler>
-[[nodiscard]] constexpr auto on_crash(Expected&& result, CrashHandler&& handler)
+constexpr void on_crash(Expected&& result, CrashHandler&& handler)
     noexcept(std::is_nothrow_invocable_v<
                 CrashHandler&&,
                 typename std::remove_cvref_t<Expected>::error_type>)
@@ -1208,11 +1247,9 @@ template <typename Expected, typename CrashHandler>
     static_assert(CrashEventMatchesSurvivors<Error>,
         "CrashEvent survivor list must match survivors_t<PeerTag>.");
 
-    if (result) {
-        return std::forward<Expected>(result);
+    if (!result) {
+        std::forward<CrashHandler>(handler)(std::move(result.error()));
     }
-    std::forward<CrashHandler>(handler)(std::move(result.error()));
-    return std::forward<Expected>(result);
 }
 
 }  // namespace crucible::safety::proto
