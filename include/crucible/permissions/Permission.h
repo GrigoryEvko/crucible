@@ -208,6 +208,38 @@ template <typename Tag> class SharedPermission;
 template <typename Tag> class SharedPermissionGuard;
 template <typename Tag> class SharedPermissionPool;
 
+// ── Forward declarations for fork-rebuild passkey (fixy-A1-009) ─────
+//
+// `ForkRebuildKey` is the passkey type that guards
+// `Permission<T>`-rebuild after structured-join.  Its default
+// constructor is private; only the structured-join primitives
+// (mint_permission_fork in permissions/PermissionFork.h and
+// OwnedRegion<T, Tag>::rebuild_parent_ in safety/OwnedRegion.h) are
+// friended to construct it.  `ForkRebuildAccess::rebuild<T>(key)` is
+// the only path to a post-join Permission<T> — the doc-comment "NOT
+// a public API; users must go through mint_permission_fork" is now
+// enforced at the type-system level.
+template <typename T, typename Tag> class OwnedRegion;
+
+namespace detail {
+    class ForkRebuildKey;
+    struct ForkRebuildAccess;
+
+    // ── Helper used by mint_permission_fork to rebuild the parent ─────
+    //
+    // `mint_permission_fork` carries a load-bearing `requires` clause
+    // that we do NOT want to replicate inside `ForkRebuildKey`'s friend
+    // list — friend declarations of constrained function templates must
+    // match the constraint exactly, and propagating the constraint here
+    // would couple `Permission.h` to every dependency of the fork
+    // metafunctions.  Instead we route the post-join rebuild through
+    // this constraint-free helper.  `ForkRebuildKey` friends ONLY this
+    // helper; `mint_permission_fork` is its sole caller.
+    template <typename Parent>
+    [[nodiscard]] constexpr Permission<Parent>
+    rebuild_parent_after_fork_() noexcept;
+}  // namespace detail
+
 // ── splits_into trait ────────────────────────────────────────────────
 //
 // Declarative manifest of valid splits.  Specialize per region tree:
@@ -380,8 +412,12 @@ class [[nodiscard]] Permission {
 
     // PermissionFork rebuilds the parent Permission after children
     // have been consumed by their callables.  See safety/PermissionFork.h.
-    template <typename T>
-    friend constexpr Permission<T> permission_fork_rebuild_() noexcept;
+    // fixy-A1-009: rebuild surface is gated by passkey
+    // `detail::ForkRebuildKey` whose default constructor is private and
+    // only friended by the structured-join primitives.  Permission<T>
+    // friends the access struct so it can call the private default
+    // constructor; the soundness gate is the passkey, not this friend.
+    friend struct ::crucible::safety::detail::ForkRebuildAccess;
 
     // Permission-inheritance recovery path for crash-stop sessions.
     // The factory is constrained by permissions::inherits_from and is
@@ -646,26 +682,76 @@ mint_permission_combine_n(
 
 // ── Internal: rebuild helper for PermissionFork ──────────────────────
 //
-// Friend of Permission so safety/PermissionFork.h can reconstruct the
-// parent Permission after all children have been consumed by their
-// callables (and the jthreads have joined).  Per the discipline note
-// in the header doc, the rebuild is justified by the structural-join
-// invariant: every child callable consumed its child Permission inside
-// its body; the jthread destructor in PermissionFork joined the worker
-// before returning; no Permission<Child_i> for any i remains live; so
-// the parent region is again exclusively available to the joining
-// scope and a fresh Permission<Parent> can be issued.
+// fixy-A1-009.  The pre-fix shape was a public free function
+// `permission_fork_rebuild_<T>()` whose doc-comment said "NOT a public
+// API; users must go through mint_permission_fork." but compiled
+// silently from any TU.  This forged a non-CSL Permission<T> at any
+// call site by exploiting Permission<T>'s friend list.
 //
-// When child handles OWN their Permission via [[no_unique_address]]
-// (the canonical pattern in concurrent/Queue.h), the consumption is
-// structural: the handle's destructor at the end of the lambda body
-// destructs the embedded Permission.
+// The post-fix shape: `detail::ForkRebuildAccess::rebuild<T>(key)`
+// where `key` is a `detail::ForkRebuildKey` whose default constructor
+// is private and friended ONLY by the legitimate structured-join
+// primitives:
+//   * `safety::mint_permission_fork(...)` in
+//     permissions/PermissionFork.h (parent rebuild after jthread join)
+//   * `safety::OwnedRegion<T, Tag>::rebuild_parent_(...)` in
+//     safety/OwnedRegion.h (parent OwnedRegion rebuild after
+//     parallel_for_views / parallel_reduce_views / parallel_apply_pair)
 //
-// NOT a public API; users must go through mint_permission_fork.
-template <typename T>
-[[nodiscard]] constexpr Permission<T> permission_fork_rebuild_() noexcept {
-    return Permission<T>{};
+// Any other call site that tries to construct `ForkRebuildKey{}` is a
+// compile error — the private default constructor is unreachable.
+//
+// Soundness as before: every child callable consumed its child
+// Permission inside its body; the jthread destructor in PermissionFork
+// joined the worker before returning; no Permission<Child_i> for any
+// i remains live; so the parent region is again exclusively available
+// to the joining scope and a fresh Permission<Parent> can be issued.
+
+namespace detail {
+
+class ForkRebuildKey {
+private:
+    constexpr ForkRebuildKey() noexcept = default;
+
+    // Sole friend: detail::rebuild_parent_after_fork_ (this file).
+    //
+    // The helper is called from `mint_permission_fork` (in
+    // permissions/PermissionFork.h) AFTER its child callables have all
+    // joined, AND from `OwnedRegion<T, Tag>::rebuild_parent_` (in
+    // safety/OwnedRegion.h) after a `parallel_for_views`-style fan-in.
+    // Friending the helper instead of those two consumers directly
+    // (a) keeps this header free of the fork's `requires`-clause
+    // dependencies and (b) collapses the friend graph to a single
+    // chokepoint that is trivial to audit.
+    template <typename UParent>
+    friend constexpr Permission<UParent>
+    rebuild_parent_after_fork_() noexcept;
+};
+
+struct ForkRebuildAccess {
+    // Sole rebuild surface.  The `ForkRebuildKey` parameter is a
+    // compile-time chokepoint: only the two friends above can mint
+    // the key; everyone else gets "constructor is private" on the
+    // attempt to instantiate `ForkRebuildKey{}`.
+    template <typename T>
+    [[nodiscard]] static constexpr Permission<T>
+    rebuild(ForkRebuildKey) noexcept {
+        return Permission<T>{};
+    }
+};
+
+// Definition of the rebuild helper.  This is the ONE callable
+// `mint_permission_fork` invokes after structured-join; it constructs
+// the `ForkRebuildKey` (legitimately, because the helper is friended)
+// and hands it to `ForkRebuildAccess::rebuild`.  Constraint-free by
+// design — see comment on the forward declaration above.
+template <typename Parent>
+[[nodiscard]] constexpr Permission<Parent>
+rebuild_parent_after_fork_() noexcept {
+    return ForkRebuildAccess::rebuild<Parent>(ForkRebuildKey{});
 }
+
+}  // namespace detail
 
 // ─────────────────────────────────────────────────────────────────────
 // ── Fractional permissions (Bornat-Calcagno-O'Hearn 2005) ──────────

@@ -311,7 +311,13 @@ template <typename... Children, typename Ctx, typename Parent, typename... Calla
     // exclusive in the caller's scope.  See discipline note in
     // safety/Permission.h about why this is sound under the
     // linearity/no-exceptions invariants.
-    return permission_fork_rebuild_<Parent>();
+    //
+    // fixy-A1-009: rebuild is now passkey-gated.  The helper
+    // `detail::rebuild_parent_after_fork_<Parent>()` is the single
+    // public entrypoint to a fresh `Permission<Parent>` after
+    // structured-join — the previously-public free function
+    // `permission_fork_rebuild_` was removed.
+    return detail::rebuild_parent_after_fork_<Parent>();
 }
 
 }  // namespace crucible::safety

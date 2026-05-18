@@ -110,9 +110,19 @@ class [[nodiscard]] OwnedRegion {
     // reconstruct the parent OwnedRegion after worker join.  The
     // helper rebuild_parent_ takes a (base, count) pair plus a
     // freshly-rebuilt Permission and constructs the OwnedRegion.
+    //
+    // fixy-A1-009: rebuild is passkey-gated.  OwnedRegion is friended
+    // by `detail::ForkRebuildKey` (declared in
+    // permissions/Permission.h), so this template is one of the two
+    // places that can legitimately produce a post-join
+    // `Permission<Parent>` — it goes through
+    // `detail::rebuild_parent_after_fork_<Parent>()`, which is itself
+    // friended by `ForkRebuildKey`.
     template <typename Parent>
     static OwnedRegion<T, Parent> rebuild_parent_(T* base, std::size_t count) noexcept {
-        return OwnedRegion<T, Parent>{base, count, permission_fork_rebuild_<Parent>()};
+        return OwnedRegion<T, Parent>{
+            base, count,
+            ::crucible::safety::detail::rebuild_parent_after_fork_<Parent>()};
     }
 
     // Friend the Workload primitives so they may rebuild parents.

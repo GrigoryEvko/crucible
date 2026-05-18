@@ -6650,6 +6650,18 @@ crucible_neg_compile_test(neg_permission_fork_ctx_no_bg
 crucible_neg_compile_test(neg_permission_fork_child_ctx_mismatch
     "permission_fork_ctx_callables|constraints not satisfied|no matching function")
 
+# fixy-A1-009 — `permission_fork_rebuild_<T>()` is no longer a public
+# free function.  Post-join `Permission<T>` rebuild now routes through
+# `detail::ForkRebuildAccess::rebuild<T>(ForkRebuildKey{})`, where
+# `ForkRebuildKey`'s default ctor is private and `rebuild_parent_after_fork_`
+# is the sole friend.  Two distinct mismatch classes:
+#   #1: legacy free-function name is gone — name lookup fails.
+#   #2: user-side construction of `ForkRebuildKey{}` hits the private ctor.
+crucible_neg_compile_test(neg_permission_fork_rebuild_free_function_call
+    "has not been declared|was not declared|no member named|not a member of")
+crucible_neg_compile_test(neg_permission_fork_rebuild_key_private_ctor
+    "is private within this context|constructor is private|cannot access private")
+
 # fixy-CR-13 — substrate-side HS14 floor for federation::mint_* row
 # admission.  Pairs with the fixy-wrapper-side fixtures in fixy_neg/.
 # Two distinct rejection classes (Fg empty row × BgCompile missing
