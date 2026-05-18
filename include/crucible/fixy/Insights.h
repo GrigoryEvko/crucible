@@ -326,25 +326,28 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "grant::declassify<secret_policy::CrossThreadAuthorized>",
     "fixy::fn<T, as_secret, grant::with<effects::Effect::Bg>>  // no declassify");
 
+// fixy-A4-004: why_this_matters sourced directly from corpus::cite() to
+// eliminate the parallel-header citation drift class (Theory.h hardened
+// under fixy-H-17 to demote SS09; this Insights.h surface previously
+// shipped only the demoted survey cite).
 CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::theory::corpus::staleness_secret_without_declassify,
     ::crucible::safety::diag::Severity::Fatal,
-    "Sabelfeld-Sands 2009 (information-flow under cache/replay channels): "
-    "a classified value reachable through a stale-cache replay channel "
-    "without a freshness-discharging declassification policy.  Stale "
-    "reads encode time-aliased secret values; declassify or refresh.",
+    ::crucible::fixy::theory::corpus::staleness_secret_without_declassify::cite(),
     "Binding engages as_secret/as_classified on Security AND grant::stale_to<τ> "
     "on Staleness AND omits any grant::declassify<Policy>.",
     "grant::declassify<secret_policy::FreshnessDischarged>",
     "fixy::fn<T, as_secret, grant::stale_to<100>>  // no declassify");
 
+// fixy-A4-003: why_this_matters sourced directly from corpus::cite() to
+// eliminate the parallel-header citation drift class (Theory.h corrected
+// under fixy-CR-17 to attribute ghost-state discipline to Filliâtre-
+// Gondelman-Paskevich 2014 / Leino 2010, replacing a fabricated MSS-2016
+// attribution that this Insights.h surface previously shipped).
 CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::theory::corpus::ghost_runtime_observable,
     ::crucible::safety::diag::Severity::Fatal,
-    "Müller-Schwerhoff-Summers 2016 (ghost-state discipline): ghost-marked "
-    "bindings (Usage = Ghost) must be erased at compile time and MUST NOT "
-    "request runtime-observable effects (Alloc/IO/Block/Bg).  Runtime "
-    "presence of a ghost binding breaks the erasure contract.",
+    ::crucible::fixy::theory::corpus::ghost_runtime_observable::cite(),
     "Binding engages grant::ghost on Usage AND grant::with<...> contains "
     "Alloc, IO, Block, or Bg.",
     "grant::as_linear  // or as_affine — drop ghost",
