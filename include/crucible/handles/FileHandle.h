@@ -3,9 +3,12 @@
 // ── crucible::safety::FileHandle ────────────────────────────────────
 //
 // RAII posix file-descriptor wrapper.  Move-only; destructor closes
-// the fd.  Factories return FileHandle; callers check .is_open().
-// Errors flow through negative-errno return codes, matching posix
-// conventions (no exceptions — -fno-exceptions is the project default).
+// the fd.  Factories return std::expected<FileHandle, std::error_code>
+// (fixy-A1-013), and the I/O helpers (read_full / write_full /
+// file_size) return std::expected<T, std::error_code> per §XII —
+// fixy-A1-030 retired the legacy "negative result encodes errno"
+// sentinel overload that conflicted with §X TypeSafe (negative
+// off_t aliases real EOF reads and zero-byte writes).
 //
 //   Axiom coverage: MemSafe, LeakSafe (code_guide §II).
 //   Runtime cost:   sizeof(FileHandle) == sizeof(int); one syscall on
@@ -190,51 +193,76 @@ open_write_append(const char* path, mode_t mode = 0644) noexcept {
 
 // ── I/O helpers ─────────────────────────────────────────────────────
 //
-// Read-all / write-all loops that survive EINTR.  Return bytes-read
-// (read_full) or 0-on-success/negative-errno (write_full).  Inline
-// so the hot-path compiles to a tight loop with no call overhead.
+// Read-all / write-all / fstat loops that survive EINTR.  Per CLAUDE.md
+// §XII the expected-but-rare failure shape (closed fd, EIO, ENOSPC,
+// fstat denied) returns std::expected<T, std::error_code> with the
+// POSIX errno wrapped in std::system_category().  Pre-fix the
+// signatures returned ssize_t/int/off_t with negative-result-encodes-
+// errno: that sentinel collided with real ssize_t-positive bytes-read
+// values on 32-bit builds where ssize_t was 32-bit signed, and made
+// callers branch on `n < 0` while still risking implicit conversion
+// to size_t (-EBADF would convert to a huge size).  std::expected
+// closes the gap structurally — there is no positive ssize_t value
+// that aliases an errno, and the success type is now size_t directly.
+//
+// Inline so the hot-path compiles to a tight loop with no call
+// overhead.  Cost: one branch on .has_value() at the call site
+// (~1 ns, predictable on the success path).
 
-[[nodiscard]] inline ssize_t read_full(
-    const FileHandle& h, std::span<std::byte> buf) noexcept
-{
-    if (!h.is_open()) return -EBADF;
-    size_t total = 0;
+[[nodiscard]] inline std::expected<std::size_t, std::error_code>
+read_full(const FileHandle& h, std::span<std::byte> buf) noexcept {
+    if (!h.is_open()) {
+        return std::unexpected{
+            std::error_code{EBADF, std::system_category()}};
+    }
+    std::size_t total = 0;
     while (total < buf.size()) {
-        ssize_t n = ::read(h.get(),
-                           buf.data() + total,
-                           buf.size() - total);
+        const ssize_t n = ::read(h.get(),
+                                 buf.data() + total,
+                                 buf.size() - total);
         if (n == 0) break;            // EOF
         if (n < 0) {
             if (errno == EINTR) continue;
-            return -errno;
+            return std::unexpected{
+                std::error_code{errno, std::system_category()}};
         }
-        total += static_cast<size_t>(n);
+        total += static_cast<std::size_t>(n);
     }
-    return static_cast<ssize_t>(total);
+    return total;
 }
 
-[[nodiscard]] inline int write_full(
-    const FileHandle& h, std::span<const std::byte> buf) noexcept
-{
-    if (!h.is_open()) return -EBADF;
-    size_t total = 0;
+[[nodiscard]] inline std::expected<void, std::error_code>
+write_full(const FileHandle& h, std::span<const std::byte> buf) noexcept {
+    if (!h.is_open()) {
+        return std::unexpected{
+            std::error_code{EBADF, std::system_category()}};
+    }
+    std::size_t total = 0;
     while (total < buf.size()) {
-        ssize_t n = ::write(h.get(),
-                            buf.data() + total,
-                            buf.size() - total);
+        const ssize_t n = ::write(h.get(),
+                                  buf.data() + total,
+                                  buf.size() - total);
         if (n < 0) {
             if (errno == EINTR) continue;
-            return -errno;
+            return std::unexpected{
+                std::error_code{errno, std::system_category()}};
         }
-        total += static_cast<size_t>(n);
+        total += static_cast<std::size_t>(n);
     }
-    return 0;
+    return {};
 }
 
-[[nodiscard]] inline off_t file_size(const FileHandle& h) noexcept {
-    if (!h.is_open()) return -EBADF;
+[[nodiscard]] inline std::expected<off_t, std::error_code>
+file_size(const FileHandle& h) noexcept {
+    if (!h.is_open()) {
+        return std::unexpected{
+            std::error_code{EBADF, std::system_category()}};
+    }
     struct stat st;
-    if (::fstat(h.get(), &st) < 0) return -errno;
+    if (::fstat(h.get(), &st) < 0) {
+        return std::unexpected{
+            std::error_code{errno, std::system_category()}};
+    }
     return st.st_size;
 }
 

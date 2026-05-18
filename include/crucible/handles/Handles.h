@@ -6,10 +6,13 @@
 //   Fd                      — strong-typed POSIX fd (fixy-A1-012)
 //   FileHandle              — move-only RAII fd; factories return
 //                             std::expected<FileHandle, std::error_code>
-//                             (fixy-A1-013); read_full/write_full/file_size
-//                             still return ssize_t/int/off_t with negative-
-//                             errno encoding (slated for std::expected
-//                             promotion under fixy-A1-030)
+//                             (fixy-A1-013); read_full / write_full /
+//                             file_size also return std::expected<...,
+//                             std::error_code> (fixy-A1-030) — the
+//                             legacy negative-encodes-errno overload is
+//                             retired, removing the §X TypeSafe gap
+//                             where a real EOF read aliased with an
+//                             errno-shaped negative sentinel.
 //   Once / Lazy<T>          — first-call-wins single init
 //   OneShotFlag             — single-bit release/acquire publication
 //   PublishOnce<T>          — one-shot async channel-resource publication

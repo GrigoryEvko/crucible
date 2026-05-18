@@ -753,29 +753,35 @@ static void test_file_handle() {
         assert(h.is_open());
         assert(h.get() == raw_fd);
 
-        // write_full with all-or-nothing semantics.
+        // write_full with all-or-nothing semantics.  fixy-A1-030
+        // promoted the return shape to std::expected<void,
+        // std::error_code> — success is the empty value, errors
+        // carry the POSIX errno via std::system_category().
         const std::byte buf[] = {
             std::byte{'A'}, std::byte{'B'}, std::byte{'C'}, std::byte{'\n'}
         };
-        const int wrc = write_full(h, std::span<const std::byte>{buf, 4});
-        assert(wrc == 0);
+        const auto wrc = write_full(h, std::span<const std::byte>{buf, 4});
+        assert(wrc.has_value());
 
-        // fstat via file_size — we wrote 4 bytes.
+        // fstat via file_size — we wrote 4 bytes.  fixy-A1-030:
+        // std::expected<off_t, std::error_code>.
         const auto sz = file_size(h);
-        assert(sz == 4);
+        assert(sz.has_value());
+        assert(*sz == 4);
     }  // dtor closes raw_fd here
 
-    // Read back via open_read + read_full.  Factory returns
-    // std::expected<FileHandle, std::error_code> (fixy-A1-013) — error
-    // case carries the POSIX errno via std::system_category().
+    // Read back via open_read + read_full.  Both factories return
+    // std::expected<T, std::error_code> (fixy-A1-013 + A1-030) — the
+    // error case carries the POSIX errno via std::system_category().
     {
         auto r_e = open_read(path.c_str());
         assert(r_e.has_value());
         FileHandle& r = *r_e;
         assert(r.is_open());
         std::byte rbuf[16]{};
-        const ssize_t n = read_full(r, std::span<std::byte>{rbuf, 16});
-        assert(n == 4);
+        const auto n_e = read_full(r, std::span<std::byte>{rbuf, 16});
+        assert(n_e.has_value());
+        assert(*n_e == 4);
         assert(rbuf[0] == std::byte{'A'});
         assert(rbuf[3] == std::byte{'\n'});
     }
@@ -814,6 +820,30 @@ static void test_file_handle() {
         assert(!missing_e.has_value());
         assert(missing_e.error().value() == ENOENT);
         assert(missing_e.error().category() == std::system_category());
+    }
+
+    // fixy-A1-030: I/O helpers on a closed FileHandle now report EBADF
+    // through std::expected — the pre-fix `return -EBADF` ssize_t
+    // overload aliased with a real bytes-read result on platforms
+    // where ssize_t was 32-bit signed.
+    {
+        FileHandle closed{};
+        assert(!closed.is_open());
+
+        std::byte rbuf[1]{};
+        const auto r_err = read_full(closed, std::span<std::byte>{rbuf, 1});
+        assert(!r_err.has_value());
+        assert(r_err.error().value() == EBADF);
+        assert(r_err.error().category() == std::system_category());
+
+        const std::byte wbuf[1] = { std::byte{0} };
+        const auto w_err = write_full(closed, std::span<const std::byte>{wbuf, 1});
+        assert(!w_err.has_value());
+        assert(w_err.error().value() == EBADF);
+
+        const auto sz_err = file_size(closed);
+        assert(!sz_err.has_value());
+        assert(sz_err.error().value() == EBADF);
     }
 
     ::unlink(path.c_str());
