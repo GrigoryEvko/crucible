@@ -95,14 +95,32 @@ template <typename Tag> class SharedPermission;
 // New permission-family tokens that join the canonical mint family
 // (e.g. future ReadView token, FederatedPeerPermission) add their
 // specialization HERE, not as a Linear<> client wrap.
+//
+// fixy-A1-028 (#1565 / fixy-L-01 #1517): the public trait
+// `is_already_linear<T>` strips cv-qualification before checking
+// the impl table.  Without this, `Linear<const Permission<Tag>>`
+// and `Linear<volatile Permission<Tag>>` slip past the class-body
+// static_assert (partial-specialization match fails on cv-qualified
+// T), producing the documented-rejected-but-compiles drift CLAUDE.md
+// §XVI calls out.  remove_cvref_t also collapses `Permission<Tag>&`
+// and `Permission<Tag>&&` to the bare specialization so reference-
+// to-permission slip-throughs are closed in the same step.
+namespace detail {
+
 template <typename T>
-struct is_already_linear : std::false_type {};
+struct is_already_linear_impl : std::false_type {};
 
 template <typename Tag>
-struct is_already_linear<Permission<Tag>> : std::true_type {};
+struct is_already_linear_impl<Permission<Tag>> : std::true_type {};
 
 template <typename Tag>
-struct is_already_linear<SharedPermission<Tag>> : std::true_type {};
+struct is_already_linear_impl<SharedPermission<Tag>> : std::true_type {};
+
+}  // namespace detail
+
+template <typename T>
+struct is_already_linear
+    : detail::is_already_linear_impl<std::remove_cvref_t<T>> {};
 
 template <typename T>
 inline constexpr bool is_already_linear_v = is_already_linear<T>::value;

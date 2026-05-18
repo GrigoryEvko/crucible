@@ -6574,6 +6574,17 @@ crucible_neg_compile_test(neg_linear_of_permission_redundant
     "redundant")
 crucible_neg_compile_test(neg_linear_of_shared_permission_redundant
     "redundant")
+# fixy-A1-028 #1565 / fixy-L-01 #1517 — close doc-vs-code drift:
+# the original A1-004 trait specialization matched bare
+# Permission<Tag> / SharedPermission<Tag> exactly, so cv-qualified
+# variants slipped past static_assert.  Public trait now strips via
+# remove_cvref_t.  Two additional HS14 fixtures cover the 2-D
+# closure (Permission × const-qualified ⊕ SharedPermission ×
+# volatile-qualified) — distinct mismatch classes per HS14 floor.
+crucible_neg_compile_test(neg_linear_of_const_permission_redundant
+    "redundant")
+crucible_neg_compile_test(neg_linear_of_volatile_permission_redundant
+    "redundant")
 
 # ── fixy-A1-005 #1547 — §XXI mint_tagged/refined/sealed_refined ──
 # CLAUDE.md §XXI Universal Mint Pattern: every cross-tier
