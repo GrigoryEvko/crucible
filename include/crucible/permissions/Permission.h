@@ -277,6 +277,17 @@ namespace detail {
 // mint_permission_split<L, R>(Permission<In>&&) requires
 // splits_into<In, L, R>::value.  Same trait constrains
 // mint_permission_combine<In>(Permission<L>&&, Permission<R>&&).
+//
+// fixy-A1-018: C++ has no native orphan-rule, so a foreign TU could in
+// principle specialize splits_into<ForeignTag, A, B> and forge cross-
+// region authority.  The CSL frame discipline (CLAUDE.md §IX, §XVI)
+// requires the manifest to live in the SAME TU as the parent tag's
+// declaration.  scripts/check-splits-into-orphan.sh — wired into CTest
+// as `splits_into_orphan_purity` — enforces that discipline at build
+// time: specializations outside the blessed authoring locations
+// (include/crucible/permissions/, include/crucible/concurrent/,
+// safety/Permission{Tree,Grid}Generator.h, test/**) fail the build
+// with a diagnostic naming the offending location.
 
 template <typename Parent, typename L, typename R>
 struct splits_into : std::false_type {};

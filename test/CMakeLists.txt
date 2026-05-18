@@ -586,6 +586,20 @@ add_test(NAME fixy_grant_namespace_purity
 set_tests_properties(fixy_grant_namespace_purity PROPERTIES
     LABELS "safety_attack;ci_guard;fixy-CR-09")
 
+# fixy-A1-018 splits_into orphan-specialization guard — enforces that
+# `splits_into<Parent, L, R>` and `splits_into_pack<Parent, Children...>`
+# specializations live ONLY in the blessed authoring locations
+# (include/crucible/permissions/, include/crucible/concurrent/,
+# safety/Permission{Tree,Grid}Generator.h, and test/**).  C++ has no
+# native orphan-rule; this script fills the gap at build time so a
+# foreign TU cannot forge cross-region authority by declaring an
+# arbitrary split for a foreign tag (CLAUDE.md §IX, §XVI).
+add_test(NAME splits_into_orphan_purity
+         COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-splits-into-orphan.sh
+         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+set_tests_properties(splits_into_orphan_purity PROPERTIES
+    LABELS "safety_attack;ci_guard;fixy-A1-018")
+
 crucible_test(test_fx_aliases)
 crucible_test(test_fx_alias_diagnostic)
 crucible_test(test_effect_row_lattice)
