@@ -311,6 +311,52 @@ static_assert(cd::row_hash_contribution_v<Secret<BgCarrier>>
 static_assert(cd::row_hash_contribution_v<Linear<BgCarrier>>
            != cd::row_hash_contribution_v<BgCarrier>);
 
+// ── A3-003 — 11 Graded-bearing wrappers (DimensionTraits.h Tier S/L/T/F/V) ──
+//
+// Every wrapper in the wrapper_dimension<W> registry contributes its
+// own salt to row_hash.  Without the per-wrapper specialization the
+// primary template's default `value = 0` lets semantically different
+// wrappers alias into the same federation cache slot.  Pin one cell
+// per wrapper so a regression in row_hash_contribution loses to the
+// per-wrapper assertion, not to a coarse "nesting order broke" test.
+
+static_assert(cd::row_hash_contribution_v<SealedRefined<positive_local, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<TimeOrdered<BgCarrier, 4>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<Monotonic<std::uint64_t>>
+           != cd::row_hash_contribution_v<std::uint64_t>);
+static_assert(cd::row_hash_contribution_v<AppendOnly<int>>
+           != cd::row_hash_contribution_v<int>);
+static_assert(cd::row_hash_contribution_v<Consistency<Consistency_v::STRONG, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<OpaqueLifetime<Lifetime_v::PER_FLEET, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<Crash<CrashClass_v::NoThrow, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<Budgeted<BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<EpochVersioned<BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<NumaPlacement<BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<RecipeSpec<BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+
+// Per-wrapper hash discriminates between distinct enum tier values
+// (the enum's underlying value participates in the salt's low byte).
+static_assert(cd::row_hash_contribution_v<Consistency<Consistency_v::STRONG,   int>>
+           != cd::row_hash_contribution_v<Consistency<Consistency_v::EVENTUAL, int>>);
+static_assert(cd::row_hash_contribution_v<OpaqueLifetime<Lifetime_v::PER_FLEET,   int>>
+           != cd::row_hash_contribution_v<OpaqueLifetime<Lifetime_v::PER_PROGRAM, int>>);
+static_assert(cd::row_hash_contribution_v<Crash<CrashClass_v::NoThrow, int>>
+           != cd::row_hash_contribution_v<Crash<CrashClass_v::Abort,   int>>);
+
+// TimeOrdered: distinct N produces distinct hash (per-buffer cache
+// slot — different ring sizes are semantically different carriers).
+static_assert(cd::row_hash_contribution_v<TimeOrdered<int, 4>>
+           != cd::row_hash_contribution_v<TimeOrdered<int, 8>>);
+
 static_assert(cd::row_hash_contribution_v<CanonicalFiveDeep>
            == cd::row_hash_contribution_v<CanonicalFiveDeep>);
 static_assert(cd::row_hash_contribution_v<Linear<BgCarrier>>

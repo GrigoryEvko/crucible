@@ -126,8 +126,11 @@ template <typename R, typename T> class Computation;
 namespace crucible::algebra::lattices {
 enum class AllocClassTag : std::uint8_t;
 enum class CipherTierTag : std::uint8_t;
+enum class Consistency : std::uint8_t;       // A3-003
+enum class CrashClass : std::uint8_t;        // A3-003
 enum class DetSafeTier : std::uint8_t;
 enum class HotPathTier : std::uint8_t;
+enum class Lifetime : std::uint8_t;          // A3-003
 enum class MemOrderTag : std::uint8_t;
 enum class ProgressClass : std::uint8_t;
 enum class ResidencyHeatTag : std::uint8_t;
@@ -152,6 +155,18 @@ template <auto Pred, typename T> class Refined;
 template <typename T> class Secret;
 template <typename T> class Stale;
 template <typename T, typename Tag> class Tagged;
+// ── A3-003 — 11 Graded-bearing wrappers ────────────────────────────
+template <auto Pred, typename T> class SealedRefined;
+template <typename T, std::size_t N, typename Tag> class TimeOrdered;
+template <typename T, typename Cmp> class Monotonic;
+template <typename T, template <typename...> class Storage> class AppendOnly;
+template <algebra::lattices::Consistency Level, typename T> class Consistency;
+template <algebra::lattices::Lifetime Scope, typename T> class OpaqueLifetime;
+template <algebra::lattices::CrashClass Class, typename T> class Crash;
+template <typename T> class Budgeted;
+template <typename T> class EpochVersioned;
+template <typename T> class NumaPlacement;
+template <typename T> class RecipeSpec;
 }  // namespace crucible::safety
 
 namespace crucible::safety::diag {
@@ -191,6 +206,33 @@ inline constexpr std::uint64_t WRAPPER_LINEAR_TAG         = 0x0F00'0000'0000'000
 // next to declaration") and refer back to these constants.
 inline constexpr std::uint64_t WRAPPER_RESOURCE_TAG_TAG   = 0x1000'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_CONCURRENT_ROW_TAG = 0x1100'0000'0000'0000ULL;
+
+// ── A3-003: 11 Graded-bearing wrappers from DimensionTraits.h ──────
+//
+// Post-GAPS-028 the DimensionTraits.h `wrapper_dimension<W>` registry
+// added 11 NEW Graded-bearing wrappers beyond the canonical 15 above
+// (TimeOrdered, EpochVersioned, Budgeted, Consistency, RecipeSpec,
+// NumaPlacement, OpaqueLifetime, Crash, SealedRefined, Monotonic,
+// AppendOnly).  Without their own high-byte salts every instantiation
+// collides with the primary-template zero contribution; CLAUDE.md
+// §XVI's "16-of-16 wrappers covered" claim becomes false once
+// production code starts wrapping with these — federation cache slot
+// collision exactly as A3-002 witnessed for ResourceTag.  Salts 0x12-
+// 0x1C keep the eleven disjoint from each other AND from the existing
+// 15 canonical-wrapper salts above AND from the resource family
+// (0x10-0x11).  Specializations live in this header alongside the
+// canonical 15 (centralized convention for safety::* wrappers).
+inline constexpr std::uint64_t WRAPPER_SEALED_REFINED_TAG   = 0x1200'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_TIME_ORDERED_TAG     = 0x1300'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_MONOTONIC_TAG        = 0x1400'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_APPEND_ONLY_TAG      = 0x1500'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_CONSISTENCY_TAG      = 0x1600'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_OPAQUE_LIFETIME_TAG  = 0x1700'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_CRASH_TAG            = 0x1800'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_BUDGETED_TAG         = 0x1900'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_EPOCH_VERSIONED_TAG  = 0x1A00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_NUMA_PLACEMENT_TAG   = 0x1B00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_RECIPE_SPEC_TAG      = 0x1C00'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -546,6 +588,135 @@ template <typename Inner>
 struct row_hash_contribution<safety::Linear<Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::WRAPPER_LINEAR_TAG,
+        row_hash_contribution_v<Inner>);
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── A3-003 specializations — 11 Graded-bearing safety wrappers ─────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Post-GAPS-028 the DimensionTraits.h `wrapper_dimension<W>` registry
+// (safety/DimensionTraits.h:407-509) grew from the canonical 15 above
+// to 26 entries.  Without per-wrapper row_hash_contribution every new
+// instantiation collapses to the primary-template zero and federation-
+// cache-keys collide — same defect class as A3-002 closed for the
+// ResourceTag family.  The 11 specializations below restore the
+// invariant "every Graded-bearing wrapper folds its own bits into
+// row_hash" for the entire DimensionTraits.h registry.
+
+// SealedRefined<Pred, T> — same shape as Refined<Pred, T>: the
+// predicate's type folds into the hash so two refinements over the
+// same Inner with different predicates produce distinct slots.
+template <auto Pred, typename Inner>
+struct row_hash_contribution<safety::SealedRefined<Pred, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::combine_ids(
+            detail::WRAPPER_SEALED_REFINED_TAG,
+            stable_type_id<std::remove_cvref_t<decltype(Pred)>>),
+        row_hash_contribution_v<Inner>);
+};
+
+// TimeOrdered<T, N, Tag> — bucket count N and lane tag both
+// participate.  Two TimeOrdered carriers with the same Inner but
+// distinct N or Tag are semantically different (different ring sizes,
+// different threading discipline) — they MUST cache separately.
+// N folds in directly: std::size_t is already uint64_t on every
+// supported Crucible platform (x86_64 / aarch64, CLAUDE.md §XIV), so
+// the cast is useless under -Werror=useless-cast.
+template <typename Inner, std::size_t N, typename Tag>
+struct row_hash_contribution<safety::TimeOrdered<Inner, N, Tag>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::combine_ids(
+            detail::combine_ids(
+                detail::WRAPPER_TIME_ORDERED_TAG,
+                N),
+            stable_type_id<Tag>),
+        row_hash_contribution_v<Inner>);
+};
+
+// Monotonic<T, Cmp> — the comparator type folds.  Two monotonic
+// counters with the same Inner but distinct Cmp (e.g. std::less vs
+// std::greater for ascending vs descending sequences) are different
+// row-bearing values.
+template <typename Inner, typename Cmp>
+struct row_hash_contribution<safety::Monotonic<Inner, Cmp>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::combine_ids(
+            detail::WRAPPER_MONOTONIC_TAG,
+            stable_type_id<Cmp>),
+        row_hash_contribution_v<Inner>);
+};
+
+// AppendOnly<T, Storage> — Storage is a template-template parameter
+// and cannot directly participate in stable_type_id (which takes a
+// concrete type).  The wrapper-tag distinguishes the wrapper family;
+// callers that swap Storage classes will produce identical row hashes,
+// which matches the contract that AppendOnly is policy-bearing only
+// at the value-level (the storage choice is an implementation detail,
+// not a row-relevant property).
+template <typename Inner, template <typename...> class Storage>
+struct row_hash_contribution<safety::AppendOnly<Inner, Storage>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_APPEND_ONLY_TAG,
+        row_hash_contribution_v<Inner>);
+};
+
+// Consistency<Level, T> — enum-encoded tier in the salt's low byte.
+template <algebra::lattices::Consistency Level, typename Inner>
+struct row_hash_contribution<safety::Consistency<Level, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_CONSISTENCY_TAG | static_cast<std::uint64_t>(Level),
+        row_hash_contribution_v<Inner>);
+};
+
+// OpaqueLifetime<Scope, T> — enum-encoded scope in the salt's low
+// byte.  Distinct scopes (PER_FLEET / PER_NODE / PER_PROCESS / ...)
+// route to disjoint cache slots.
+template <algebra::lattices::Lifetime Scope, typename Inner>
+struct row_hash_contribution<safety::OpaqueLifetime<Scope, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_OPAQUE_LIFETIME_TAG | static_cast<std::uint64_t>(Scope),
+        row_hash_contribution_v<Inner>);
+};
+
+// Crash<Class, T> — enum-encoded BSYZ22 crash class.  NoThrow /
+// ErrorReturn / Throw / Abort tier different recovery contracts and
+// therefore distinct row-bearing values.
+template <algebra::lattices::CrashClass Class, typename Inner>
+struct row_hash_contribution<safety::Crash<Class, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_CRASH_TAG | static_cast<std::uint64_t>(Class),
+        row_hash_contribution_v<Inner>);
+};
+
+// Budgeted<T> / EpochVersioned<T> / NumaPlacement<T> / RecipeSpec<T>
+// — single-template-arg wrappers.  No internal attributes to fold;
+// just the wrapper-tag salt over Inner's contribution.
+template <typename Inner>
+struct row_hash_contribution<safety::Budgeted<Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_BUDGETED_TAG,
+        row_hash_contribution_v<Inner>);
+};
+
+template <typename Inner>
+struct row_hash_contribution<safety::EpochVersioned<Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_EPOCH_VERSIONED_TAG,
+        row_hash_contribution_v<Inner>);
+};
+
+template <typename Inner>
+struct row_hash_contribution<safety::NumaPlacement<Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_NUMA_PLACEMENT_TAG,
+        row_hash_contribution_v<Inner>);
+};
+
+template <typename Inner>
+struct row_hash_contribution<safety::RecipeSpec<Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_RECIPE_SPEC_TAG,
         row_hash_contribution_v<Inner>);
 };
 
