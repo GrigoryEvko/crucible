@@ -97,6 +97,70 @@ static void test_runtime_cardinality_discrimination() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Set-semantic dedup — fixy-H-19 runtime peer.  Duplicate-atom drift
+// cannot fragment the federation cache: `Row<X, X> ≡ Row<X>` and
+// `Row<Bg, IO, Bg, IO> ≡ Row<IO, Bg>` by hash.  The header pins this
+// at compile time; the runtime peer defeats any consteval-only fast-
+// path miscompile per the runtime-smoke-test discipline.
+static void test_runtime_set_semantic_dedup() {
+    using ce::Effect;
+    using ce::Row;
+
+    // Singleton dedup — every atom × twice collapses to once.
+    volatile std::uint64_t single_alloc =
+        cd::row_hash_of_v<Row<Effect::Alloc>>.raw();
+    volatile std::uint64_t double_alloc =
+        cd::row_hash_of_v<Row<Effect::Alloc, Effect::Alloc>>.raw();
+    assert(single_alloc == double_alloc);
+
+    volatile std::uint64_t single_io = cd::row_hash_of_v<Row<Effect::IO>>.raw();
+    volatile std::uint64_t double_io =
+        cd::row_hash_of_v<Row<Effect::IO, Effect::IO>>.raw();
+    assert(single_io == double_io);
+
+    volatile std::uint64_t triple_io =
+        cd::row_hash_of_v<Row<Effect::IO, Effect::IO, Effect::IO>>.raw();
+    assert(single_io == triple_io);
+
+    // Pair + leading/trailing duplicate collapses to the pair.
+    volatile std::uint64_t alloc_io_pair =
+        cd::row_hash_of_v<Row<Effect::Alloc, Effect::IO>>.raw();
+    volatile std::uint64_t alloc_io_left_dup =
+        cd::row_hash_of_v<Row<Effect::Alloc, Effect::Alloc, Effect::IO>>.raw();
+    volatile std::uint64_t alloc_io_right_dup =
+        cd::row_hash_of_v<Row<Effect::Alloc, Effect::IO, Effect::IO>>.raw();
+    assert(alloc_io_pair == alloc_io_left_dup);
+    assert(alloc_io_pair == alloc_io_right_dup);
+
+    // Interleaved duplicates collapse to canonical pair regardless
+    // of declaration order before dedup.
+    volatile std::uint64_t bg_io_pair =
+        cd::row_hash_of_v<Row<Effect::IO, Effect::Bg>>.raw();
+    volatile std::uint64_t bg_io_interleaved =
+        cd::row_hash_of_v<Row<Effect::Bg, Effect::IO, Effect::Bg, Effect::IO>>.raw();
+    volatile std::uint64_t io_bg_interleaved =
+        cd::row_hash_of_v<Row<Effect::IO, Effect::Bg, Effect::Bg, Effect::IO>>.raw();
+    assert(bg_io_pair == bg_io_interleaved);
+    assert(bg_io_pair == io_bg_interleaved);
+
+    // 4-pack with 2 unique atoms — pins that cardinality_seed is fed
+    // unique_count (2), not raw pack size (4).  Otherwise the seed
+    // would differ from the canonical pair's seed.
+    volatile std::uint64_t alloc_io_2x2 =
+        cd::row_hash_of_v<Row<Effect::Alloc, Effect::Alloc,
+                              Effect::IO,    Effect::IO>>.raw();
+    assert(alloc_io_2x2 == alloc_io_pair);
+
+    // Set-equivalent dedup must NOT collide with a strictly larger
+    // set — `Row<IO, IO>` must still differ from `Row<IO, Bg>`.
+    volatile std::uint64_t io_bg_canonical =
+        cd::row_hash_of_v<Row<Effect::IO, Effect::Bg>>.raw();
+    assert(double_io != io_bg_canonical);
+
+    std::printf("  test_set_semantic_dedup:        PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Bare types contribute zero — confirms the row_hash_contribution
 // primary template fires for non-row-bearing T, and that the result
 // flows through `row_hash_of_v` as `RowHash{0}`.
@@ -305,11 +369,12 @@ static void test_runtime_federation_hash_pins() {
 int main() {
     test_runtime_permutation_invariance();
     test_runtime_cardinality_discrimination();
+    test_runtime_set_semantic_dedup();
     test_runtime_bare_types_zero();
     test_runtime_empty_row_distinct_from_bare();
     test_runtime_determinism();
     test_runtime_computation_specialization();
     test_runtime_federation_hash_pins();
-    std::printf("test_row_hash_fold: 7 groups, all passed\n");
+    std::printf("test_row_hash_fold: 8 groups, all passed\n");
     return 0;
 }

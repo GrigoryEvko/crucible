@@ -213,6 +213,53 @@ fmix64_fold(std::array<std::uint64_t, N> const& xs,
     return h;
 }
 
+// Count the unique values in a sorted array.  O(N) walk: every
+// transition where xs[i] != xs[i-1] adds one unique.  Returns 0 for
+// the empty array and 1 for any singleton.  Used by the Row<Es...>
+// specialization to seed cardinality_seed() with the SET-cardinality
+// (the number of distinct Effect atoms) rather than the raw pack
+// size — otherwise `Row<IO, IO>` and `Row<IO>` would differ in seed
+// even though the body's dedup-fold renders the rest identical.
+template <std::size_t N>
+[[nodiscard]] consteval std::size_t
+unique_count_sorted(std::array<std::uint64_t, N> const& xs) noexcept {
+    if constexpr (N == 0) {
+        return 0;
+    } else {
+        std::size_t count = 1;
+        for (std::size_t i = 1; i < N; ++i) {
+            if (xs[i] != xs[i - 1]) ++count;
+        }
+        return count;
+    }
+}
+
+// fmix64-fold over the UNIQUE values of a sorted array.  Only the
+// first occurrence at each value contributes; later adjacent
+// duplicates are skipped.  Together with unique_count_sorted() this
+// turns the Row hash into a set-semantic function — two rows with
+// the same effect set produce identical hashes regardless of
+// declaration order OR atom multiplicity.
+//
+// The seed MUST encode UNIQUE-cardinality (caller's responsibility);
+// see unique_count_sorted() for the rationale.
+template <std::size_t N>
+[[nodiscard]] consteval std::uint64_t
+fmix64_fold_unique_sorted(std::array<std::uint64_t, N> const& xs,
+                          std::uint64_t seed) noexcept {
+    if constexpr (N == 0) {
+        return seed;
+    } else {
+        std::uint64_t h = ::crucible::detail::fmix64(seed ^ xs[0]);
+        for (std::size_t i = 1; i < N; ++i) {
+            if (xs[i] != xs[i - 1]) {
+                h = ::crucible::detail::fmix64(h ^ xs[i]);
+            }
+        }
+        return h;
+    }
+}
+
 // Cardinality-mixing seed factory.  Every row hash starts here:
 // the seed FNV1A_OFFSET_BASIS is XOR'd with N (the row's
 // cardinality) and then mixed.  This guarantees Row<X> with N
@@ -262,33 +309,53 @@ inline constexpr std::uint64_t row_hash_contribution_v =
     row_hash_contribution<T>::value;
 
 // ═════════════════════════════════════════════════════════════════════
-// ── Row<Es...> specialization — sort-fold over Effect values ───────
+// ── Row<Es...> specialization — set-semantic sort+dedup fold ───────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Permutation-invariant by construction: the underlying Effect values
-// are extracted into a fixed-size array, sorted, then fmix64-folded.
-// Two rows with the same effect set hash identically regardless of
-// declaration order.
+// **Set semantics, not multiset.**  `Row<Es...>` denotes a set of
+// Effect atoms — `row_union_t`, `row_intersection_t`, and
+// `row_difference_t` are inherently set-shaped (see EffectRow.h §92-
+// 104).  The hash function honors that: it is invariant under both
+// (a) permutation of the pack and (b) duplicate-atom drift, so
+// `Row<IO, IO> ≡ Row<IO>` and `Row<Bg, IO, Bg> ≡ Row<IO, Bg>` by
+// hash, matching set-equality.
+//
+// Without dedup, a future caller that produces `Row<IO, IO>` (e.g.
+// by composing two policies that each declare IO before METX-2's
+// type-level canonicalization lands at #474) would fragment the
+// federation cache into N+1 slots for the same semantic row — a
+// silent correctness AND scale defect.  Set-semantic hashing closes
+// this regardless of when canonicalization arrives.
+//
+// Federation-pin stability: every pinned row in the self-test block
+// below has all-distinct atoms, so the dedup pass is a no-op for the
+// pinned cases — the published hashes do not move when this
+// specialization gains dedup.
 
 template <effects::Effect... Es>
 struct row_hash_contribution<effects::Row<Es...>> {
     static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
         constexpr std::size_t N = sizeof...(Es);
-        // Cardinality is mixed FIRST so different N values cannot
-        // collide regardless of how the body's XOR-fold lands.  The
-        // bug this guards against: Effect::Alloc has underlying
-        // value 0, and `fmix64(seed ^ 0) == fmix64(seed)`, so
-        // without cardinality-seeding `Row<Alloc>` would alias
-        // `EmptyRow` whose seed is the same FNV-1a offset basis.
-        constexpr std::uint64_t seed = detail::cardinality_seed(N);
         if constexpr (N == 0) {
-            return seed;
+            // EmptyRow path: cardinality_seed(0).  Preserved bit-
+            // exactly so detail::EMPTY_ROW_HASH stays the published
+            // constant.
+            return detail::cardinality_seed(0);
         } else {
             std::array<std::uint64_t, N> const raw_vals{
                 static_cast<std::uint64_t>(
                     static_cast<std::underlying_type_t<effects::Effect>>(Es))...
             };
-            return detail::fmix64_fold(detail::sorted_uints(raw_vals), seed);
+            auto const sorted = detail::sorted_uints(raw_vals);
+            // Cardinality is mixed FIRST as the SET-cardinality (the
+            // number of distinct atoms), NOT the raw pack size — see
+            // detail::unique_count_sorted for the duplicate-drift
+            // rationale.  Mixing the cardinality first also guards
+            // against the Effect::Alloc = 0 / EmptyRow collision
+            // (fmix64(seed ^ 0) == fmix64(seed)).
+            std::size_t const unique_n = detail::unique_count_sorted(sorted);
+            std::uint64_t const seed = detail::cardinality_seed(unique_n);
+            return detail::fmix64_fold_unique_sorted(sorted, seed);
         }
     }();
 };
@@ -569,6 +636,57 @@ static_assert(row_hash_contribution_v<FullRow_canonical>
            == row_hash_contribution_v<FullRow_reversed>);
 static_assert(row_hash_contribution_v<FullRow_canonical>
            == row_hash_contribution_v<FullRow_shuffled>);
+
+// ─── Set-semantic dedup — Row is a set, not a multiset ─────────────
+//
+// Duplicate-atom drift cannot fragment the federation cache:
+// `Row<X, X>` and `Row<X>` MUST hash identically.  This protects the
+// cache against pre-canonicalization paths that produce non-
+// canonical packs (METX-2 / #474 lands type-level canonicalization
+// later; until then the hash is the only line of defense).
+//
+// fixy-H-19 regression anchor: removing dedup would re-introduce
+// federation-cache slot fragmentation across semantically-equal
+// rows, silently breaking the SET-semantic guarantee documented in
+// EffectRow.h §92-104 for row_union/intersection/difference.
+
+// Singletons: dedup is a no-op (already unique) — Row<X, X> ≡ Row<X>.
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::Alloc>>
+           == row_hash_contribution_v<Row<Effect::Alloc>>);
+static_assert(row_hash_contribution_v<Row<Effect::IO, Effect::IO>>
+           == row_hash_contribution_v<Row<Effect::IO>>);
+static_assert(row_hash_contribution_v<Row<Effect::Block, Effect::Block>>
+           == row_hash_contribution_v<Row<Effect::Block>>);
+static_assert(row_hash_contribution_v<Row<Effect::Bg, Effect::Bg>>
+           == row_hash_contribution_v<Row<Effect::Bg>>);
+
+// Triple-replicated atom collapses to singleton.
+static_assert(row_hash_contribution_v<Row<Effect::IO, Effect::IO, Effect::IO>>
+           == row_hash_contribution_v<Row<Effect::IO>>);
+
+// Pair + leading or trailing duplicate collapses to the pair.
+static_assert(row_hash_contribution_v<
+                  Row<Effect::Alloc, Effect::Alloc, Effect::IO>>
+           == row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>);
+static_assert(row_hash_contribution_v<
+                  Row<Effect::Alloc, Effect::IO, Effect::IO>>
+           == row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>);
+
+// Interleaved duplicates: order before dedup doesn't matter.
+static_assert(row_hash_contribution_v<
+                  Row<Effect::Bg, Effect::IO, Effect::Bg, Effect::IO>>
+           == row_hash_contribution_v<Row<Effect::IO, Effect::Bg>>);
+static_assert(row_hash_contribution_v<
+                  Row<Effect::IO, Effect::Bg, Effect::Bg, Effect::IO>>
+           == row_hash_contribution_v<Row<Effect::IO, Effect::Bg>>);
+
+// Cardinality-seed dedup: a 4-pack with 2 unique atoms must seed
+// with unique-count=2, NOT raw-count=4 — pins that the seed factory
+// is fed unique_count_sorted, not the raw pack size.
+static_assert(row_hash_contribution_v<
+                  Row<Effect::Alloc, Effect::Alloc,
+                      Effect::IO,    Effect::IO>>
+           == row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>);
 
 // ─── Cardinality discriminates ─────────────────────────────────────
 //
@@ -891,6 +1009,41 @@ static_assert(detail::sorted_uints(std::array<std::uint64_t, 4>{4, 3, 2, 1})
            == std::array<std::uint64_t, 4>{1, 2, 3, 4});
 static_assert(detail::sorted_uints(std::array<std::uint64_t, 4>{1, 1, 1, 1})
            == std::array<std::uint64_t, 4>{1, 1, 1, 1});
+
+// ─── unique_count_sorted helper correctness ─────────────────────────
+
+static_assert(detail::unique_count_sorted(std::array<std::uint64_t, 0>{}) == 0);
+static_assert(detail::unique_count_sorted(std::array<std::uint64_t, 1>{42}) == 1);
+static_assert(detail::unique_count_sorted(std::array<std::uint64_t, 3>{1, 2, 3}) == 3);
+static_assert(detail::unique_count_sorted(std::array<std::uint64_t, 4>{1, 1, 1, 1}) == 1);
+static_assert(detail::unique_count_sorted(std::array<std::uint64_t, 4>{1, 1, 2, 2}) == 2);
+static_assert(detail::unique_count_sorted(std::array<std::uint64_t, 5>{1, 1, 2, 3, 3}) == 3);
+static_assert(detail::unique_count_sorted(std::array<std::uint64_t, 6>{0, 0, 1, 1, 2, 2}) == 3);
+
+// ─── fmix64_fold_unique_sorted helper correctness ──────────────────
+//
+// Dedup-fold over a singleton array equals the non-dedup fold over
+// the same singleton (xs[0] is always the first occurrence).  Dedup-
+// fold over a duplicated singleton ([X, X]) equals fold over the
+// canonical singleton ([X]).  These two invariants pin that the
+// helper's "skip xs[i] == xs[i-1]" branch is wired the right way.
+
+static_assert(
+    detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 1>{7}, 0xAA)
+ == detail::fmix64_fold(std::array<std::uint64_t, 1>{7}, 0xAA));
+
+static_assert(
+    detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 2>{7, 7}, 0xAA)
+ == detail::fmix64_fold(std::array<std::uint64_t, 1>{7}, 0xAA));
+
+static_assert(
+    detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 3>{1, 1, 2}, 0xBB)
+ == detail::fmix64_fold(std::array<std::uint64_t, 2>{1, 2}, 0xBB));
+
+// Empty array — fold returns the seed verbatim regardless of dedup.
+static_assert(
+    detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 0>{}, 0xCC)
+ == 0xCC);
 
 }  // namespace detail::row_hash_self_test
 
