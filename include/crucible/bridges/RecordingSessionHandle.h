@@ -1107,8 +1107,12 @@ public:
         noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
                  && std::is_nothrow_move_constructible_v<Resource>)
     {
-        log_->append_event(SessionEvent::delegate_handoff(
-            self_role_, peer_role_, default_proto_hash<T>, inner_perm_set));
+        // fixy-A2-005: EpochedDelegate emits a dedicated EpochedDelegate
+        // event so MinEpoch/MinGeneration NTTPs survive into the audit
+        // log; plain `delegate_handoff` would drop both silently.
+        log_->append_event(SessionEvent::epoched_delegate_handoff(
+            self_role_, peer_role_, default_proto_hash<T>,
+            MinEpoch, MinGeneration, inner_perm_set));
         this->mark_consumed_();
         auto next = std::move(inner_).delegate(
             std::move(delegated), std::move(transport));
@@ -1123,8 +1127,12 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>
                  && std::is_nothrow_destructible_v<DelegatedResource>)
     {
-        log_->append_event(SessionEvent::delegate_handoff(
-            self_role_, peer_role_, default_proto_hash<T>, inner_perm_set));
+        // fixy-A2-005: EpochedDelegate emits a dedicated EpochedDelegate
+        // event so MinEpoch/MinGeneration NTTPs survive into the audit
+        // log; plain `delegate_handoff` would drop both silently.
+        log_->append_event(SessionEvent::epoched_delegate_handoff(
+            self_role_, peer_role_, default_proto_hash<T>,
+            MinEpoch, MinGeneration, inner_perm_set));
         this->mark_consumed_();
         auto next = std::move(inner_).delegate_local(std::move(delegated));
         return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
@@ -1196,8 +1204,12 @@ public:
     {
         auto [delegated_handle, next] =
             std::move(inner_).accept(std::move(transport));
-        log_->append_event(SessionEvent::accept_handoff(
-            self_role_, peer_role_, default_proto_hash<T>, inner_perm_set));
+        // fixy-A2-005: EpochedAccept must carry MinEpoch/MinGeneration
+        // through the event log; plain `accept_handoff` would drop the
+        // reshard-guard NTTPs silently.
+        log_->append_event(SessionEvent::epoched_accept_handoff(
+            self_role_, peer_role_, default_proto_hash<T>,
+            MinEpoch, MinGeneration, inner_perm_set));
         this->mark_consumed_();
         auto wrapped_next =
             detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
@@ -1213,8 +1225,11 @@ public:
     {
         auto [delegated_handle, next] =
             std::move(inner_).accept_with(std::move(delegated_res));
-        log_->append_event(SessionEvent::accept_handoff(
-            self_role_, peer_role_, default_proto_hash<T>, inner_perm_set));
+        // fixy-A2-005: see accept() above — EpochedAccept preserves
+        // reshard thresholds losslessly through the audit log.
+        log_->append_event(SessionEvent::epoched_accept_handoff(
+            self_role_, peer_role_, default_proto_hash<T>,
+            MinEpoch, MinGeneration, inner_perm_set));
         this->mark_consumed_();
         auto wrapped_next =
             detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);

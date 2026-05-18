@@ -14,12 +14,14 @@
 //
 // Two pieces ship in this header:
 //
-//   * `SessionEvent` — the per-operation record (POD, 56 bytes,
+//   * `SessionEvent` — the per-operation record (POD, 72 bytes,
 //     TriviallyCopyable for fast bulk-drain to Cipher).  Carries
-//     step_id, session, from_role, to_role, op kind, and two typed
-//     64-bit payload lanes interpreted by the selected SessionOp
+//     step_id, session, from_role, to_role, op kind, two typed 64-bit
+//     payload lanes interpreted by the selected SessionOp
 //     (payload schema/hash for Send/Recv, checkpoint ids, delegated
-//     protocol hashes, crash recovery hashes, etc.).
+//     protocol hashes, crash recovery hashes, etc.), and two dedicated
+//     epoch_threshold / generation_threshold lanes used by the
+//     fixy-A2-005 EpochedDelegate / EpochedAccept variants.
 //
 //   * `SessionEventLog` — the log primitive.  Wraps an
 //     OrderedAppendOnly<SessionEvent, StepIdKeyFn> (step monotonicity
@@ -184,6 +186,8 @@ enum class SessionOp : uint8_t {
     TierPromote    = 15, // Cipher tier promotion boundary
     TierDemote     = 16, // Cipher tier demotion boundary
     TierRestore    = 17, // Cipher cold restore into warm/hot tier
+    EpochedDelegate = 18, // EpochedDelegate<T, K, MinEpoch, MinGen>::delegate()
+    EpochedAccept   = 19, // EpochedAccept<T, K, MinEpoch, MinGen>::accept()
 };
 
 }  // namespace event_detail
@@ -209,6 +213,8 @@ using SessionOp = event_detail::SessionOp;
         case SessionOp::TierPromote:    return "TierPromote";
         case SessionOp::TierDemote:     return "TierDemote";
         case SessionOp::TierRestore:    return "TierRestore";
+        case SessionOp::EpochedDelegate: return "EpochedDelegate";
+        case SessionOp::EpochedAccept:   return "EpochedAccept";
         default:                return "?";
     }
 }
@@ -240,7 +246,7 @@ using SessionOp = event_detail::SessionOp;
 }
 
 // Reason classifier for SessionOp::Stop.  Kept as a one-byte enum so
-// the fixed 56-byte SessionEvent layout survives the Stop extension.
+// the fixed-size SessionEvent layout survives the Stop extension.
 enum class StopReasonKind : uint8_t {
     Unknown     = 0,
     PeerCrashed = 1,
@@ -256,9 +262,9 @@ enum class CheckpointChoice : uint8_t {
     Rollback = 2,
 };
 
-// Cipher uses the same 56-byte SessionEvent record.  These payload
-// structs name the per-kind interpretation of the two 64-bit lanes and
-// two one-byte control lanes; they do not add storage to SessionEvent.
+// Cipher uses the same SessionEvent record.  These payload structs
+// name the per-kind interpretation of the two 64-bit lanes and two
+// one-byte control lanes; they do not add storage to SessionEvent.
 struct CipherEventPayload {
     ::crucible::ContentHash content_hash{};
     uint64_t                timestamp_ns = 0;
@@ -270,7 +276,7 @@ struct CipherEventPayload {
 // ── SessionEvent — the per-operation record ─────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Layout: 56 bytes.  TriviallyCopyable for memcpy-bulk-drain into
+// Layout: 72 bytes.  TriviallyCopyable for memcpy-bulk-drain into
 // the Cipher's cold tier.  Field ordering minimises padding while
 // keeping the most-queried fields (step_id, session, op) at the head.
 //
@@ -290,20 +296,30 @@ struct CipherEventPayload {
 //   payload_schema.value -> delegated_proto_hash.raw()
 //   payload_hash.value   -> inner_perm_set_hash
 //
+// EpochedDelegate/EpochedAccept events extend Delegate/Accept with two
+// dedicated full-fidelity lanes (16-byte epoch_threshold / generation_
+// threshold pair).  These lanes are zero for every non-Epoched op kind
+// — fixy-A2-005 mandates lossless preservation of the Cipher-reshard
+// guard (`session_epoch_threshold_valid_v` at SessionDelegate.h) so
+// replay can re-validate the (MinEpoch, MinGeneration) NTTPs that drove
+// the original handoff.
+//
 // The typed helpers below make that variant payload explicit without
 // adding storage or runtime dispatch.
 
 struct SessionEvent {
-    StepId       step_id        {};
-    SessionTagId session        {};
-    RoleTagId    from_role      {};
-    RoleTagId    to_role        {};
-    SchemaHash   payload_schema {};
-    PayloadHash  payload_hash   {};
-    SessionOp    op             = SessionOp::Send;
-    uint8_t      branch_index   = 0;   // Select/Offer: chosen index; else 0
-    uint8_t      reason_kind    = 0;   // Stop: StopReasonKind; else 0
-    uint8_t      pad[5]{};              // explicit zero-init padding
+    StepId       step_id              {};
+    SessionTagId session              {};
+    RoleTagId    from_role            {};
+    RoleTagId    to_role              {};
+    SchemaHash   payload_schema       {};
+    PayloadHash  payload_hash         {};
+    uint64_t     epoch_threshold      = 0; // Epoched*: MinEpoch NTTP; else 0
+    uint64_t     generation_threshold = 0; // Epoched*: MinGen NTTP;   else 0
+    SessionOp    op                   = SessionOp::Send;
+    uint8_t      branch_index         = 0; // Select/Offer: chosen index; else 0
+    uint8_t      reason_kind          = 0; // Stop: StopReasonKind; else 0
+    uint8_t      pad[5]{};                 // explicit zero-init padding
 
     [[nodiscard]] static constexpr SessionEvent stop(
         RoleTagId self,
@@ -381,6 +397,51 @@ struct SessionEvent {
             .payload_schema = SchemaHash{accepted_proto_hash.raw()},
             .payload_hash   = PayloadHash{inner_perm_set.value},
             .op             = SessionOp::Accept,
+        };
+    }
+
+    // fixy-A2-005: EpochedDelegate handoff carries the (MinEpoch,
+    // MinGeneration) reshard-guard NTTPs alongside the inner protocol's
+    // hash + perm set.  The two thresholds occupy dedicated lanes so
+    // replay reconstructs them losslessly — replay can re-validate
+    // `session_epoch_threshold_valid_v` against the live Cipher epoch
+    // chain without consulting the original source TU.
+    [[nodiscard]] static constexpr SessionEvent epoched_delegate_handoff(
+        RoleTagId sender,
+        RoleTagId recipient,
+        ::crucible::ContentHash delegated_proto_hash,
+        std::uint64_t min_epoch,
+        std::uint64_t min_generation,
+        InnerPermSetHash inner_perm_set = {}) noexcept
+    {
+        return SessionEvent{
+            .from_role            = sender,
+            .to_role              = recipient,
+            .payload_schema       = SchemaHash{delegated_proto_hash.raw()},
+            .payload_hash         = PayloadHash{inner_perm_set.value},
+            .epoch_threshold      = min_epoch,
+            .generation_threshold = min_generation,
+            .op                   = SessionOp::EpochedDelegate,
+        };
+    }
+
+    // fixy-A2-005: symmetric peer-side accept of an EpochedDelegate.
+    [[nodiscard]] static constexpr SessionEvent epoched_accept_handoff(
+        RoleTagId recipient,
+        RoleTagId sender,
+        ::crucible::ContentHash accepted_proto_hash,
+        std::uint64_t min_epoch,
+        std::uint64_t min_generation,
+        InnerPermSetHash inner_perm_set = {}) noexcept
+    {
+        return SessionEvent{
+            .from_role            = sender,
+            .to_role              = recipient,
+            .payload_schema       = SchemaHash{accepted_proto_hash.raw()},
+            .payload_hash         = PayloadHash{inner_perm_set.value},
+            .epoch_threshold      = min_epoch,
+            .generation_threshold = min_generation,
+            .op                   = SessionOp::EpochedAccept,
         };
     }
 
@@ -506,6 +567,19 @@ struct SessionEvent {
         return InnerPermSetHash{payload_hash.value};
     }
 
+    // fixy-A2-005: full-fidelity accessors for the Cipher-reshard guard
+    // NTTPs preserved by EpochedDelegate / EpochedAccept events.  Both
+    // return 0 on plain Delegate/Accept (and on every non-Epoched op)
+    // because the lanes are zero-initialised — replay code must consult
+    // `op` first when threshold semantics matter.
+    [[nodiscard]] constexpr std::uint64_t epoched_min_epoch() const noexcept {
+        return epoch_threshold;
+    }
+
+    [[nodiscard]] constexpr std::uint64_t epoched_min_generation() const noexcept {
+        return generation_threshold;
+    }
+
     [[nodiscard]] constexpr bool is_cipher_event() const noexcept {
         return session_op_is_cipher(op);
     }
@@ -541,10 +615,12 @@ struct SessionEvent {
     }
 };
 
-static_assert(sizeof(SessionEvent) == 56,
-    "SessionEvent layout must be exactly 56 bytes — Cipher cold-tier "
-    "serialisation depends on the fixed size.  If a field changes, "
-    "bump the layout version and update the deserialiser.");
+static_assert(sizeof(SessionEvent) == 72,
+    "SessionEvent layout must be exactly 72 bytes — Cipher cold-tier "
+    "serialisation depends on the fixed size.  The fixy-A2-005 "
+    "EpochedDelegate/EpochedAccept extension added two dedicated 64-bit "
+    "threshold lanes; if a field changes again, bump the layout version "
+    "and update the deserialiser.");
 static_assert(std::is_trivially_copyable_v<SessionEvent>,
     "SessionEvent must be TriviallyCopyable for fast bulk drain.");
 

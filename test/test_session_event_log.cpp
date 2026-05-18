@@ -32,7 +32,7 @@ using namespace crucible::safety::proto;
 
 // ── Compile-time witnesses ─────────────────────────────────────────
 
-static_assert(sizeof(SessionEvent) == 56);
+static_assert(sizeof(SessionEvent) == 72);
 static_assert(std::is_trivially_copyable_v<SessionEvent>);
 static_assert(session_op_name(SessionOp::Stop) == std::string_view{"Stop"});
 static_assert(session_op_name(SessionOp::Checkpoint_Base) ==
@@ -889,6 +889,168 @@ int run_recording_delegate_accept_recorded() {
     return 0;
 }
 
+// ── Worked: EpochedDelegate / EpochedAccept emit dedicated SessionOps
+//           carrying MinEpoch + MinGeneration NTTPs (fixy-A2-005) ───
+
+int run_recording_epoched_delegate_accept_fidelity() {
+    struct CarrierResource { int transferred_endpoint = 0; };
+    struct DelegatedResource { int endpoint = 0; };
+
+    using DelegatedEndpoint = End;
+    // Two distinct (MinEpoch, MinGeneration) NTTP pairs.  A silent
+    // collapse to {0, 0} (the pre-fix behaviour, where `delegate_handoff`
+    // dropped the thresholds entirely) would tie pair-A's and pair-B's
+    // recorded events together — the cross-pair inequality witnesses
+    // below would fire immediately.
+    static constexpr std::uint64_t kEpochA = 5;
+    static constexpr std::uint64_t kGenA   = 3;
+    static constexpr std::uint64_t kEpochB = 7;
+    static constexpr std::uint64_t kGenB   = 11;
+
+    using DelegateCarrierA =
+        EpochedDelegate<DelegatedEndpoint, End, kEpochA, kGenA>;
+    using AcceptCarrierA   =
+        EpochedAccept<DelegatedEndpoint,   End, kEpochA, kGenA>;
+    using DelegateCarrierB =
+        EpochedDelegate<DelegatedEndpoint, End, kEpochB, kGenB>;
+    using AcceptCarrierB   =
+        EpochedAccept<DelegatedEndpoint,   End, kEpochB, kGenB>;
+
+    // The Accept side requires a LoopCtx carrying an explicit-epoch
+    // proof (EpochCtx<MinE, MinG>) — without it, is_well_formed_v on
+    // EpochedAccept is false and mint_session_handle would refuse to
+    // construct.  Aggregate-construct the inner SessionHandle directly
+    // and let mint_recording_session deduce LoopCtx.
+    using RecipientCtxA = EpochCtx<kEpochA, kGenA>;
+    using RecipientCtxB = EpochCtx<kEpochB, kGenB>;
+
+    constexpr InnerPermSetHash kPerms{0xCAFEBABEDEADBEEFULL};
+
+    auto delegate_transport =
+        [](CarrierResource& carrier, DelegatedResource&& delegated) noexcept {
+            carrier.transferred_endpoint = delegated.endpoint;
+        };
+    auto accept_transport =
+        [](CarrierResource& carrier) noexcept -> DelegatedResource {
+            return DelegatedResource{carrier.transferred_endpoint};
+        };
+
+    SessionEventLog log{SessionTagId{4242}};
+
+    // ── Pair A: MinEpoch = 5, MinGeneration = 3 ─────────────────────
+    auto delegate_bare_a =
+        mint_session_handle<DelegateCarrierA>(CarrierResource{});
+    auto delegate_rec_a = mint_recording_session(
+        std::move(delegate_bare_a), log, kClient, kServer);
+    auto delegated_handle_a =
+        mint_session_handle<DelegatedEndpoint>(DelegatedResource{77});
+
+    auto delegate_end_a = std::move(delegate_rec_a).delegate(
+        std::move(delegated_handle_a), delegate_transport, kPerms);
+    CarrierResource carrier_after_delegate_a =
+        std::move(delegate_end_a).close();
+    if (carrier_after_delegate_a.transferred_endpoint != 77)     return 1;
+
+    // Direct aggregate-construct on the Accept side so the EpochCtx
+    // LoopCtx flows through mint_recording_session unchanged.
+    SessionHandle<AcceptCarrierA, CarrierResource, RecipientCtxA>
+        accept_bare_a{carrier_after_delegate_a};
+    auto accept_rec_a = mint_recording_session(
+        std::move(accept_bare_a), log, kServer, kClient);
+    auto [accepted_handle_a, accept_end_a] =
+        std::move(accept_rec_a).accept(accept_transport, kPerms);
+
+    DelegatedResource accepted_resource_a =
+        std::move(accepted_handle_a).close();
+    CarrierResource carrier_after_accept_a =
+        std::move(accept_end_a).close();
+    if (accepted_resource_a.endpoint != 77)                      return 2;
+    if (carrier_after_accept_a.transferred_endpoint != 77)        return 3;
+
+    // ── Pair B: MinEpoch = 7, MinGeneration = 11 ────────────────────
+    auto delegate_bare_b =
+        mint_session_handle<DelegateCarrierB>(CarrierResource{});
+    auto delegate_rec_b = mint_recording_session(
+        std::move(delegate_bare_b), log, kClient, kServer);
+    auto delegated_handle_b =
+        mint_session_handle<DelegatedEndpoint>(DelegatedResource{99});
+
+    auto delegate_end_b = std::move(delegate_rec_b).delegate(
+        std::move(delegated_handle_b), delegate_transport, kPerms);
+    CarrierResource carrier_after_delegate_b =
+        std::move(delegate_end_b).close();
+    if (carrier_after_delegate_b.transferred_endpoint != 99)     return 4;
+
+    SessionHandle<AcceptCarrierB, CarrierResource, RecipientCtxB>
+        accept_bare_b{carrier_after_delegate_b};
+    auto accept_rec_b = mint_recording_session(
+        std::move(accept_bare_b), log, kServer, kClient);
+    auto [accepted_handle_b, accept_end_b] =
+        std::move(accept_rec_b).accept(accept_transport, kPerms);
+
+    DelegatedResource accepted_resource_b =
+        std::move(accepted_handle_b).close();
+    CarrierResource carrier_after_accept_b =
+        std::move(accept_end_b).close();
+    if (accepted_resource_b.endpoint != 99)                      return 5;
+    if (carrier_after_accept_b.transferred_endpoint != 99)        return 6;
+
+    // ── Event-log fidelity assertions ───────────────────────────────
+    // Each (delegate, accept) pair emits 4 events: EpochedDelegate,
+    // Close (sender's End continuation), EpochedAccept, Close
+    // (receiver's End continuation).  Two pairs → 8 events.
+    if (log.size() != 8)                                          return 7;
+
+    // Pair A: events 0-3
+    if (log[0].op != SessionOp::EpochedDelegate)                  return 10;
+    if (log[0].from_role != kClient)                              return 11;
+    if (log[0].delegate_recipient_role_tag() != kServer)          return 12;
+    if (log[0].delegated_proto_hash() !=
+        default_proto_hash<DelegatedEndpoint>)                    return 13;
+    if (log[0].inner_perm_set_hash() != kPerms)                   return 14;
+    if (log[0].epoched_min_epoch() != kEpochA)                    return 15;
+    if (log[0].epoched_min_generation() != kGenA)                 return 16;
+    if (log[1].op != SessionOp::Close)                            return 17;
+
+    if (log[2].op != SessionOp::EpochedAccept)                    return 18;
+    if (log[2].to_role != kServer)                                return 19;
+    if (log[2].accept_sender_role_tag() != kClient)               return 20;
+    if (log[2].delegated_proto_hash() !=
+        default_proto_hash<DelegatedEndpoint>)                    return 21;
+    if (log[2].inner_perm_set_hash() != kPerms)                   return 22;
+    if (log[2].epoched_min_epoch() != kEpochA)                    return 23;
+    if (log[2].epoched_min_generation() != kGenA)                 return 24;
+    if (log[3].op != SessionOp::Close)                            return 25;
+
+    // Pair B: events 4-7 — only the epoch lanes need re-checking, the
+    // structural shape was already pinned by Pair A.
+    if (log[4].op != SessionOp::EpochedDelegate)                  return 30;
+    if (log[4].epoched_min_epoch() != kEpochB)                    return 31;
+    if (log[4].epoched_min_generation() != kGenB)                 return 32;
+    if (log[5].op != SessionOp::Close)                            return 33;
+
+    if (log[6].op != SessionOp::EpochedAccept)                    return 34;
+    if (log[6].epoched_min_epoch() != kEpochB)                    return 35;
+    if (log[6].epoched_min_generation() != kGenB)                 return 36;
+    if (log[7].op != SessionOp::Close)                            return 37;
+
+    // ── Anti-collapse witnesses ─────────────────────────────────────
+    // A pre-fix regression that dropped MinEpoch/MinGeneration would
+    // record {0, 0} on every Epoched* event.  These cross-pair
+    // inequalities catch that silent collapse independent of the
+    // structural-shape assertions above.
+    if (log[0].epoched_min_epoch() == log[4].epoched_min_epoch())
+        return 40;
+    if (log[0].epoched_min_generation() == log[4].epoched_min_generation())
+        return 41;
+    if (log[2].epoched_min_epoch() == log[6].epoched_min_epoch())
+        return 42;
+    if (log[2].epoched_min_generation() == log[6].epoched_min_generation())
+        return 43;
+
+    return 0;
+}
+
 // ── Worked: every SessionOp round-trips bit-exactly ────────────────
 
 int run_all_session_ops_bit_exact_replay() {
@@ -1090,6 +1252,7 @@ int main() {
     if (int rc = run_recording_checkpoint_paths_recorded(); rc != 0) return 1100 + rc;
     if (int rc = run_delegate_event_replay_roundtrip(); rc != 0) return 1200 + rc;
     if (int rc = run_recording_delegate_accept_recorded(); rc != 0) return 1300 + rc;
+    if (int rc = run_recording_epoched_delegate_accept_fidelity(); rc != 0) return 1350 + rc;
     if (int rc = run_all_session_ops_bit_exact_replay(); rc != 0) return 1400 + rc;
     if (int rc = run_mixed_session_cipher_events_ordered(); rc != 0) return 1500 + rc;
 

@@ -149,9 +149,11 @@ class CRUCIBLE_OWNER Cipher {
             persist_session_events_required_row>};
 
     static_assert(static_cast<bool>(SESSION_EVENT_FEDERATION_ROW_HASH));
-    static_assert(sizeof(SessionEvent) == 56,
+    static_assert(sizeof(SessionEvent) == 72,
         "Cipher session-event persistence is pinned to the SessionEvent "
-        "cold-tier wire size.");
+        "cold-tier wire size.  Bumped from 56 to 72 by fixy-A2-005, which "
+        "added two dedicated 64-bit epoch/generation threshold lanes to "
+        "preserve EpochedDelegate/EpochedAccept reshard-guard NTTPs.");
     static_assert(std::is_trivially_copyable_v<SessionEvent>,
         "Cipher session-event persistence bulk-serializes SessionEvent "
         "bytes and therefore requires a trivially-copyable payload.");
