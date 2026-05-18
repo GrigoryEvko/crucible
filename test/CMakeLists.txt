@@ -2020,6 +2020,18 @@ crucible_neg_compile_effects_test(neg_exec_ctx_heat_resid_incoherent
 crucible_neg_compile_effects_test(neg_exec_ctx_pinned_negative_node
     "static assertion failed|Pinned.*requires N >= 0|Node >= 0")
 
+# ─── fixy-A3-004 (#1611): IsExecCtx / IsEffectRow strip cv-ref ─────
+#
+# Widening is_exec_ctx_v / is_effect_row_v with std::remove_cvref_t
+# (so the concepts match the IsLinear / IsTagged / IsRefined family
+# convention) must NOT accidentally accept non-Ctx / non-Row types
+# just because they carry cv-ref qualifiers.  Two fixtures pin both
+# directions of the asymmetry: `int const&` and `int&&` still reject.
+crucible_neg_compile_effects_test(neg_is_exec_ctx_non_ctx_cvref_rejected
+    "static assertion failed|fixy-A3-004|IsExecCtx|is_exec_ctx")
+crucible_neg_compile_effects_test(neg_is_effect_row_non_row_cvref_rejected
+    "static assertion failed|fixy-A3-004|IsEffectRow|is_effect_row")
+
 # ─── P1-AUDIT-2 (#853): composition-point witnesses ─────────────────
 #
 # Four fixtures locking the composition concepts and bridge traits:

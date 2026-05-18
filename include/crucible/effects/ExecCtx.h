@@ -275,9 +275,17 @@ template <class T> inline constexpr bool is_residency_tier_v = is_residency_tier
 template <class T> concept IsResidencyTier = is_residency_tier_v<T>;
 
 // ── Effect-row recognition ─────────────────────────────────────────
+//
+// `is_effect_row_v` and `IsEffectRow` strip top-level cv-ref before
+// matching so `IsEffectRow<Row<...> const&>` ≡ `IsEffectRow<Row<...>>`.
+// This matches the convention established by safety/IsLinear.h,
+// IsTagged.h, IsRefined.h et al. — every Is* concept in the project
+// behaves uniformly when fed a forwarding-reference deduction.
+// fixy-A3-004.
 template <class T>           struct is_effect_row                  : std::false_type {};
 template <Effect... Es>      struct is_effect_row<Row<Es...>>      : std::true_type  {};
-template <class T>           inline constexpr bool is_effect_row_v = is_effect_row<T>::value;
+template <class T>           inline constexpr bool is_effect_row_v =
+    is_effect_row<std::remove_cvref_t<T>>::value;
 template <class T>           concept IsEffectRow = is_effect_row_v<T>;
 
 // ── Workload-hint recognition ──────────────────────────────────────
@@ -608,12 +616,18 @@ using TestRunnerCtx = ExecCtx<
 // `typename Ctx::cap_type` (saves the `typename`, parallels every
 // other extractor in the project).
 
+// `is_exec_ctx_v` and `IsExecCtx` strip top-level cv-ref before
+// matching so `IsExecCtx<HotFgCtx const&>` ≡ `IsExecCtx<HotFgCtx>`.
+// Mirrors the IsLinear / IsTagged / IsRefined family convention so
+// generic code using forwarding-reference deduction does not
+// accidentally trip the concept gate.  fixy-A3-004.
 template <class T> struct is_exec_ctx : std::false_type {};
 template <class Cap, class Numa, class Alloc, class Heat,
           class Resid, class Row, class Workload>
 struct is_exec_ctx<ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload>>
     : std::true_type {};
-template <class T> inline constexpr bool is_exec_ctx_v = is_exec_ctx<T>::value;
+template <class T> inline constexpr bool is_exec_ctx_v =
+    is_exec_ctx<std::remove_cvref_t<T>>::value;
 template <class T> concept IsExecCtx = is_exec_ctx_v<T>;
 
 template <IsExecCtx Ctx> using cap_type_of_t      = typename Ctx::cap_type;
@@ -986,6 +1000,16 @@ static_assert( is_effect_row_v<Row<>>);
 static_assert( is_effect_row_v<Row<Effect::Bg, Effect::Alloc>>);
 static_assert(!is_effect_row_v<int>);
 
+// fixy-A3-004: cv-ref-stripping discipline (mirrors IsLinear family).
+// Generic code using forwarding-reference deduction must still match.
+static_assert( is_effect_row_v<Row<> const>);
+static_assert( is_effect_row_v<Row<> &>);
+static_assert( is_effect_row_v<Row<Effect::Bg> const&>);
+static_assert( is_effect_row_v<Row<Effect::Bg> &&>);
+static_assert(!is_effect_row_v<int const&>);
+static_assert( IsEffectRow<Row<Effect::Bg> const&>);
+static_assert( IsEffectRow<Row<Effect::Bg>&&>);
+
 static_assert( is_workload_hint_v<ctx_workload::Unspecified>);
 static_assert( is_workload_hint_v<ctx_workload::ByteBudget<4096>>);
 static_assert( is_workload_hint_v<ctx_workload::ItemBudget<128>>);
@@ -1024,6 +1048,20 @@ static_assert( is_exec_ctx_v<BgDrainCtx>);
 static_assert( is_exec_ctx_v<MaxCtx>);
 static_assert(!is_exec_ctx_v<int>);
 static_assert(!is_exec_ctx_v<Bg>);  // Bg is a Cap, not a Ctx
+
+// fixy-A3-004: cv-ref-stripping discipline (mirrors IsLinear family).
+// Without this, `template <IsExecCtx Ctx>` rejected forwarding-ref
+// deductions of `HotFgCtx const&` / `HotFgCtx&&` — load-bearing
+// user-facing footgun in generic code.
+static_assert( is_exec_ctx_v<HotFgCtx const>);
+static_assert( is_exec_ctx_v<HotFgCtx&>);
+static_assert( is_exec_ctx_v<HotFgCtx const&>);
+static_assert( is_exec_ctx_v<HotFgCtx&&>);
+static_assert( is_exec_ctx_v<BgDrainCtx const&>);
+static_assert(!is_exec_ctx_v<int const&>);
+static_assert(!is_exec_ctx_v<Bg const&>);
+static_assert( IsExecCtx<HotFgCtx const&>);
+static_assert( IsExecCtx<HotFgCtx&&>);
 
 static_assert(std::is_same_v<cap_type_of_t<BgDrainCtx>, Bg>);
 static_assert(std::is_same_v<numa_policy_of_t<BgDrainCtx>, ctx_numa::Local>);
