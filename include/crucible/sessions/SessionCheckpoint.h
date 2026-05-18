@@ -218,6 +218,15 @@ struct is_dual_involutive<CheckpointedSession<B, R>>
 // are reachable at runtime via rollback/abandon, so empty Choice in
 // EITHER branch fails the reachability invariant the mint gate
 // enforces.
+//
+// Orthogonal to `is_well_formed<CheckpointedSession<B, R>, LoopCtx>`
+// (lines 282-329 below, fixy-A2-024 doc companion): this trait
+// answers "is any reachable Choice in B or R empty?"; well-formedness
+// answers "is every Continue inside B or R enclosed by some Loop in
+// the surrounding context?".  Both must pass at `mint_session_handle`
+// (Session.h:2422) before a SessionHandle is constructible — each
+// gate fires its own classified diagnostic, neither subsumes the
+// other.
 
 template <typename B, typename R>
 struct is_empty_choice<CheckpointedSession<B, R>>
@@ -239,11 +248,58 @@ struct compose<CheckpointedSession<B, R>, Q> {
 };
 
 // ═════════════════════════════════════════════════════════════════════
-// ── is_well_formed<CheckpointedSession<P, R>, LoopCtx> ─────────────
+// ── is_well_formed<CheckpointedSession<P, R>, LoopCtx> (fixy-A2-024)
 // ═════════════════════════════════════════════════════════════════════
 //
 // Both branches must be well-formed under the same LoopCtx.  The
 // checkpointed session itself doesn't introduce a new Loop scope.
+//
+// ── Relationship with is_empty_choice<CheckpointedSession> ─────────
+//
+// fixy-A2-024 closes the documentation companion gap left by A2-004.
+// `is_well_formed` and `is_empty_choice` are INTENTIONALLY ORTHOGONAL
+// traits — they answer different questions about the same protocol:
+//
+//   • `is_well_formed<P, LoopCtx>` governs STRUCTURAL placement of
+//     Continue / Loop.  Every Continue must have a Loop above it in
+//     the protocol tree.  A CheckpointedSession itself does not open a
+//     new Loop scope (LoopCtx threads through unchanged to both
+//     branches), so a `Continue` inside B or R is only well-formed if
+//     the surrounding context provides the Loop.
+//
+//   • `is_empty_choice<P>` (lines 222-225) governs RUNNABILITY of
+//     reachable choice positions.  An empty `Select<>` / `Offer<>`
+//     buried at any reachable depth in B OR R is rejected because
+//     `.pick<I>()` would have no branch and the peer would have no
+//     label to signal.
+//
+// The two traits are NOT redundant: a `CheckpointedSession<End, End>`
+// is well-formed AND non-empty-choice (passes both); a
+// `CheckpointedSession<Continue, End>` (outside Loop) is ill-formed
+// but vacuously non-empty-choice; a `CheckpointedSession<Select<>, End>`
+// is well-formed but empty-choice.  Each gate catches a defect class
+// the other cannot see, by design.
+//
+// ── Composition at mint_session_handle ─────────────────────────────
+//
+// `mint_session_handle<Proto>(resource)` (Session.h:2422) is the
+// CANONICAL composition site for both gates.  It fires:
+//
+//   1. `static_assert(is_well_formed_v<Proto>, [Protocol_Ill_Formed])`
+//   2. `static_assert(!is_empty_choice_v<Proto>, [Empty_Choice_Combinator])`
+//
+// in that order — structural well-formedness is checked first because
+// it is the more fundamental defect (Continue placement is a property
+// of the protocol's TREE, while empty-choice is a property of the
+// protocol's RUNNABILITY).  For CheckpointedSession, BOTH traits
+// recurse into BOTH branches, so a defect in EITHER B or R surfaces a
+// clean diagnostic at the mint site.
+//
+// A user expecting "well-formed implies runnable" should remember
+// that the two traits answer orthogonal questions; the runnability
+// rejection from `[Empty_Choice_Combinator]` is independent of the
+// structural answer from `[Protocol_Ill_Formed]`.  Both must pass
+// before `mint_session_handle` returns a SessionHandle.
 
 template <typename B, typename R, typename LoopCtx>
 struct is_well_formed<CheckpointedSession<B, R>, LoopCtx>

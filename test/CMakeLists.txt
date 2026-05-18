@@ -6481,6 +6481,25 @@ crucible_neg_compile_test(neg_refines_self_double_dual_sender_offer
 crucible_neg_compile_test(neg_refines_self_double_dual_nested_sender_offer
     "static assertion failed|refines_self_and_double_dual|is_dual_involutive")
 
+# fixy-A2-024 — HS14 floor for the orthogonal two-gate composition at
+# `mint_session_handle` over `CheckpointedSession<B, R>`.  Documents
+# (in SessionCheckpoint.h doc-blocks) and witnesses (in these two
+# fixtures) that `is_well_formed_v` (structural Continue/Loop
+# placement) and `is_empty_choice_v` (reachable Choice runnability)
+# are intentionally orthogonal traits BOTH composed at the mint site:
+#   ill_formed_base       — Continue outside Loop in base branch →
+#                           [Protocol_Ill_Formed] from is_well_formed_v
+#   empty_choice_recovery — empty Select<> in recovery branch →
+#                           [Empty_Choice_Combinator] from is_empty_choice_v
+# The two gates catch different defect classes; neither subsumes the
+# other.  These fixtures complement the trait-level static_asserts in
+# `fixy_a2_004_is_empty_choice_checkpointed` (SessionCheckpoint.h:601+)
+# by exercising the mint-level composition.
+crucible_neg_compile_test(neg_session_mint_checkpointed_ill_formed_base
+    "static assertion failed|Protocol_Ill_Formed|is_well_formed")
+crucible_neg_compile_test(neg_session_mint_checkpointed_empty_choice_recovery
+    "static assertion failed|Empty_Choice_Combinator|is_empty_choice")
+
 # Cipher federation MPST order gates (GAPS-039).  These fixtures use
 # concept probes plus framework-controlled static_assert messages so
 # drift in method availability is surfaced without depending on GCC's
