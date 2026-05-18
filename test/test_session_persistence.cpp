@@ -247,6 +247,87 @@ int test_fixy_a2_007_stored_view_discipline(const std::string& dir) {
     return 0;
 }
 
+// fixy-A2-013: compile-time discipline checks — destructor MUST be both
+// non-trivial (proving it does work, not `= default;`) AND noexcept
+// (matching the rest of the flush_all gates per CLAUDE.md §XII).  A
+// regression that defaults the destructor again would fire the first
+// static_assert; a regression that makes it throwing would fire the
+// second.
+static_assert(!std::is_trivially_destructible_v<
+    proto::SessionPersistenceState<eff::TestRunnerCtx::row_type>>,
+    "fixy-A2-013: ~SessionPersistenceState must be non-trivial — it MUST "
+    "flush pending events at destruction or the audit-trail promise is "
+    "VIOLATED for any abandoned-handle path.");
+static_assert(std::is_nothrow_destructible_v<
+    proto::SessionPersistenceState<eff::TestRunnerCtx::row_type>>,
+    "fixy-A2-013: ~SessionPersistenceState must be noexcept — matches "
+    "flush_all_or_abort_ discipline (SessionPersistence.h:335-340) so "
+    "every flush gate has the same termination policy.");
+
+// fixy-A2-013: SessionPersistenceState destructor MUST flush pending
+// events.  Pre-fix the destructor was `= default;` — events appended but
+// not driven through flush_if_due()/flush_all() were silently lost when
+// the state's owning scope exited without close().  Post-fix the
+// destructor calls flush_all() unconditionally when pending_count() > 0.
+//
+// The test exercises the state DIRECTLY (not via PersistedSessionHandle)
+// because (a) PSH's `detach = delete` means handles can't be cleanly
+// abandoned from user code, and (b) DEBUG builds of SessionHandleBase
+// fire the abandonment-check before SessionPersistenceState's destructor
+// runs, masking the RELEASE-build bug we're fixing.  Direct construction
+// isolates the destructor behavior under audit.
+//
+// Pre-fix observable: events.size() == 0 after re-open (silently lost).
+// Post-fix observable: events.size() == kEvents (flushed at destruction).
+int test_fixy_a2_013_destructor_flushes_pending_events(const std::string& dir) {
+    auto cipher = crucible::Cipher::open(dir);
+    assert(cipher.is_open());
+
+    constexpr proto::SessionTagId kSession{0xA2013};
+    constexpr int kEvents = 5;
+
+    {
+        auto view = cipher.mint_open_view();
+        // Thresholds chosen so neither count nor time triggers an
+        // automatic flush — the only flush path exercised is the
+        // destructor.  count_threshold == 0 disables count gating;
+        // time_threshold == hour-scale ensures the clock-driven path
+        // never fires.
+        proto::SessionPersistencePolicy manual_only{
+            .count_threshold = 0,
+            .time_threshold  = std::chrono::hours{1},
+        };
+        proto::SessionPersistenceState<eff::TestRunnerCtx::row_type> state{
+            cipher, view, kSession, manual_only};
+
+        for (int i = 0; i < kEvents; ++i) {
+            proto::SessionEvent ev{};
+            ev.from_role = kClient;
+            ev.to_role   = kServer;
+            ev.op        = proto::SessionOp::Send;
+            state.log().record_now(ev);
+        }
+        assert(state.pending_count() == kEvents);
+        assert(state.flushed_count() == 0);
+        // Scope exit here invokes ~SessionPersistenceState which MUST
+        // drain the pending tail into Cipher's cold tier.
+    }
+
+    auto reopened = crucible::Cipher::open(dir);
+    assert(reopened.is_open());
+    auto view = reopened.mint_open_view();
+    const auto events = reopened.load_session_events(view, kSession);
+    assert(events.size() == kEvents);
+    for (std::size_t i = 0; i < events.size(); ++i) {
+        assert(events[i].session == kSession);
+        assert(events[i].op == proto::SessionOp::Send);
+        if (i > 0) {
+            assert(events[i - 1].step_id.value < events[i].step_id.value);
+        }
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -264,13 +345,21 @@ int main() {
         return rc2;
     }
     const int rc3 = test_fixy_a2_007_stored_view_discipline(tmp.string());
+    if (rc3 != 0) {
+        std::error_code ec;
+        std::filesystem::remove_all(tmp, ec);
+        return rc3;
+    }
+    const int rc4 = test_fixy_a2_013_destructor_flushes_pending_events(
+        tmp.string());
 
     std::error_code ec;
     std::filesystem::remove_all(tmp, ec);
-    if (rc3 != 0) return rc3;
+    if (rc4 != 0) return rc4;
 
     std::puts("session_persistence: 2 persisted sessions x 5000 events, "
               "manual flush, existing-handle mint, fixy-A2-007 stored-view "
-              "discipline, reopen + replay OK");
+              "discipline, fixy-A2-013 destructor-flush discipline, "
+              "reopen + replay OK");
     return 0;
 }

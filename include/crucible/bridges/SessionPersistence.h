@@ -74,7 +74,30 @@ public:
     SessionPersistenceState& operator=(const SessionPersistenceState&) = delete;
     SessionPersistenceState(SessionPersistenceState&&) = delete;
     SessionPersistenceState& operator=(SessionPersistenceState&&) = delete;
-    ~SessionPersistenceState() = default;
+
+    // fixy-A2-013: flush any not-yet-persisted SessionEvents on destruction.
+    // PersistedSessionHandle drives flush_all() through finish_call_() for
+    // every consumed protocol step, but a state owner dropped without ever
+    // reaching End/Stop (e.g., a PersistedSessionHandle that falls out of
+    // scope via early return, or a state constructed directly for replay
+    // staging) would otherwise lose the trailing log silently — Cipher
+    // cold tier would never see the events, replay would be incomplete,
+    // and the audit-trail promise (RecordingSessionHandle.h:14-24) would
+    // be VIOLATED for the abandoned path.  Combined with A2-007 (stored
+    // view) and A2-025 (PSH detach = delete), abandonment can no longer
+    // both drop the view AND lose the events.
+    //
+    // noexcept: matches `flush_all_or_abort_` (line 335-340) — same
+    // policy at every flush gate.  flush_all() is non-throwing under
+    // -fno-exceptions; an abort on failure surfaces a Cipher write
+    // refusal at the same diagnostic site as every other flush gate.
+    ~SessionPersistenceState() noexcept {
+        if (pending_count() > 0) {
+            if (!flush_all()) [[unlikely]] {
+                std::abort();
+            }
+        }
+    }
 
     [[nodiscard]] SessionEventLog& log() noexcept { return log_; }
     [[nodiscard]] const SessionEventLog& log() const noexcept { return log_; }
