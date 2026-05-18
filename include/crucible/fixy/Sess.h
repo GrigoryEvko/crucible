@@ -320,6 +320,21 @@ using federation::mint_federation_pool;
 // outer boundary — diagnostics fire on the fixy call site, not three
 // levels deep in the substrate.
 //
+// ── fixy-A4-009: §XXI single-concept gate packaging note ────────────
+//
+// Per §XXI Universal Mint Pattern, "The `requires` clause MUST be a
+// single concept (`CtxFitsX<X, Ctx>` for ctx-bound mints) ... Multi-
+// clause requires-lists belong INSIDE the concept definition, not at
+// the call site."  `CtxFitsFederation<Ctx>` (sessions/FederationProtocol.h:73-77)
+// packages BOTH:
+//   1. `IsExecCtx<Ctx>`       — proves Ctx is a well-formed ExecCtx,
+//   2. `Subrow<federation_required_row, typename Ctx::row_type>` —
+//      proves Ctx's row admits the IO+Block federation atoms.
+// A non-IsExecCtx first argument trips clause (1); a Ctx with empty
+// or insufficient row trips clause (2).  Coverage is witnessed by
+// `neg_fixy_federation_channel_non_ctx.cpp` (clause 1) and
+// `neg_fixy_federation_channel_no_row_*.cpp` (clause 2).
+//
 // Public anchors re-exported below for grep-discovery.
 
 using ::crucible::safety::proto::federation::federation_required_row;
