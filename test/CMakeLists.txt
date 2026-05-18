@@ -2822,6 +2822,21 @@ crucible_neg_compile_test(neg_is_graded_specialization_lookalike
 crucible_neg_compile_test(neg_is_graded_specialization_cvref_nongraded
   "static assertion failed|static_assert|fixy-A3-014")
 
+# ─── A3-017 lattice name-coverage fold (HS14 pair) ─────────────────
+#
+# Two fixtures pin the load-bearing umbrella fold-static_assert in
+# algebra/lattices/AllLattices.h that rejects shipped lattices without
+# a `name()` member.  Companion forms:
+#  (1) `in_pack` — proves the fold itself rejects when an unnamed
+#      lattice is added to the pack.
+#  (2) `sentinel_admits` — proves the HasLatticeName concept rejects
+#      sentinel-fallback admission, defending the concept against
+#      future drift toward "any string return == named".
+crucible_neg_compile_test(neg_lattice_missing_name_in_pack
+  "static assertion failed|static_assert|Lattice_Missing_Name|fixy-A3-017")
+crucible_neg_compile_test(neg_lattice_name_sentinel_admits
+  "static assertion failed|static_assert|fixy-A3-017")
+
 # ─── DimensionTraits Tier-S/V concept gates (Phase 0 P0-3, #1094) ──
 #
 # Two neg-compile fixtures pinning the Tier concept gates exposed

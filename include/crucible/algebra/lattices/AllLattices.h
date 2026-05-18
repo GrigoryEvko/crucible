@@ -57,6 +57,11 @@
 // budgets remain — they ARE measurable at the type-level
 // granularity Crucible needs.
 
+#include <crucible/algebra/Lattice.h>  // HasLatticeName concept (fixy-A3-017)
+
+#include <cstdint>     // LatticeNameProbeElement::v (fixy-A3-017)
+#include <functional>  // std::less for MonotoneLattice canonical instantiation (fixy-A3-017)
+
 // ── Shipped lattices ────────────────────────────────────────────────
 #include <crucible/algebra/lattices/AffinityLattice.h>  // FOUND-G71  — shipped (2/2 NumaPlacement axes)
 #include <crucible/algebra/lattices/AllocClassLattice.h> // FOUND-G38  — shipped
@@ -124,5 +129,95 @@ namespace crucible::algebra::lattices {
 
 // Componentwise product over N lattices.
 template <typename... Ls> struct ProductLattice;
+
+// ── Name-coverage assertion (fixy-A3-017) ───────────────────────────
+//
+// `lattice_name<L>()` (algebra/Lattice.h:114-123) falls back to the
+// sentinel `"<unnamed lattice>"` when `HasLatticeName<L>` is false.
+// Without this assertion, a future contributor could ship a lattice
+// in `lattices/` without a `static consteval std::string_view name()
+// noexcept` member — every diagnostic that mentions the lattice
+// would silently render the sentinel instead of the lattice name, a
+// failure mode invisible to tests but visible in production
+// telemetry.  Mirrors `effects::detail::every_effect_has_name()`
+// (Capabilities.h:502-521) — the load-bearing reflection-driven
+// coverage assertion for the Effect catalog.
+//
+// Each shipped lattice MUST appear in this pack in its canonical
+// concrete instantiation form.  Adding a new lattice header to the
+// includes above WITHOUT adding it to this pack does NOT fire (the
+// pack is the discipline grep-point).  Adding a lattice WITHOUT a
+// `name()` AND adding it to this pack DOES fire — the fold below
+// rejects the pack and the diagnostic names the offending lattice.
+//
+// Templated lattices (BoolLattice<Pred>, TrustLattice<Source>,
+// MonotoneLattice<T, Cmp>, HappensBeforeLattice<N>, SeqPrefixLattice
+// <Element>, ProductLattice<Ls...>) appear under representative
+// concrete instantiations — since each template's name() is
+// parameter-agnostic at the source level (returns a fixed string),
+// covering one canonical instantiation per template suffices to
+// detect a removed/missing name() member at compile time.
+
+namespace detail::lattice_name_coverage {
+
+// Witness predicates / payloads for parameterized lattices.  Each is
+// a stateless tag struct, used only to satisfy the template-parameter
+// shape — no runtime state, no lattice operations exercised here
+// (those live in per-lattice self-test blocks).
+struct LatticeNameProbeTruePred {
+    template <typename T>
+    [[nodiscard]] static constexpr bool check(T const&) noexcept { return true; }
+};
+struct LatticeNameProbeSource {};
+struct LatticeNameProbeElement {
+    std::uint32_t v = 0;
+    [[nodiscard]] constexpr bool operator==(LatticeNameProbeElement const&) const noexcept = default;
+};
+
+template <typename... Ls>
+[[nodiscard]] consteval bool every_lattice_has_name() noexcept {
+    return (HasLatticeName<Ls> && ...);
+}
+
+static_assert(every_lattice_has_name<
+    AffinityLattice,
+    AllocClassLattice,
+    BitsBudgetLattice,
+    BoolLattice<LatticeNameProbeTruePred>,
+    CipherTierLattice,
+    ConfLattice,
+    ConsistencyLattice,
+    CrashLattice,
+    DetSafeLattice,
+    EpochLattice,
+    FractionalLattice,
+    GenerationLattice,
+    HappensBeforeLattice<4>,
+    HotPathLattice,
+    LifetimeLattice,
+    MemOrderLattice,
+    MonotoneLattice<int, std::less<int>>,
+    NumaNodeLattice,
+    PeakBytesLattice,
+    ProductLattice<HotPathLattice, DetSafeLattice>,
+    ProgressLattice,
+    QttSemiring,
+    RecipeFamilyLattice,
+    ResidencyHeatLattice,
+    SeqPrefixLattice<LatticeNameProbeElement>,
+    StalenessSemiring,
+    ToleranceLattice,
+    TrustLattice<LatticeNameProbeSource>,
+    VendorLattice,
+    WaitLattice
+>(),
+    "[Lattice_Missing_Name] At least one shipped lattice does not "
+    "satisfy HasLatticeName<L> — `lattice_name<L>()` would return the "
+    "`<unnamed lattice>` sentinel and degrade diagnostics silently. "
+    "Add `static consteval std::string_view name() noexcept` to the "
+    "lattice; the existing per-lattice self-test blocks contain "
+    "examples (e.g. HotPathLattice.h, DetSafeLattice.h).");
+
+}  // namespace detail::lattice_name_coverage
 
 }  // namespace crucible::algebra::lattices
