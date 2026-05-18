@@ -11,6 +11,7 @@
 // Discipline reference: feedback_algebra_runtime_smoke_test_discipline +
 // feedback_header_only_static_assert_blind_spot.
 
+#include <crucible/handles/Once.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Linear.h>
@@ -34,6 +35,10 @@ int main() {
     detail::tagged_self_test::runtime_smoke_test();
 
     ct::detail::ct_self_test::runtime_smoke_test();
+
+    // fixy-A1-017: Lazy<T> get_or_init / no-arg get split.  Witnesses
+    // that the renamed surface preserves "f runs exactly once".
+    detail::lazy_self_test::runtime_smoke_test();
 
     return 0;
 }

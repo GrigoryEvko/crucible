@@ -38,6 +38,8 @@
 #include <crucible/safety/Pre.h>
 
 #include <atomic>
+#include <cstdlib>
+#include <new>
 #include <type_traits>
 #include <utility>
 
@@ -225,21 +227,41 @@ public:
 
 // ── Lazy<T> ────────────────────────────────────────────────────────
 //
-// Deferred initialization.  get() returns a reference to the stored
-// T; on first call, invokes the initializer.  Thread-safe: if
-// multiple threads race on the first get(), exactly one runs the
-// init, the others wait.
+// Deferred initialization.  get_or_init(f) returns a reference to
+// the stored T; on first call, invokes f().  Thread-safe: if
+// multiple threads race on the first get_or_init(), exactly one
+// runs the init, the others wait.  get() returns the stored value
+// after init; calling it before initialized() is a contract bug.
 //
 // sizeof(Lazy<T>) == sizeof(T) + sizeof(Once) + padding.  Heavier
 // than SetOnce because it stores the T inline rather than behind a
 // pointer; use SetOnce for pointer-sized slots and Lazy when you
 // want the value co-located.
+//
+// fixy-A1-017: the original API exposed a single `get(F&& f)` that
+// invoked f only on the FIRST call.  Subsequent calls silently
+// ignored f even when the lambda body had been refactored — the
+// classic "set-once, ignore-thereafter" footgun.  The split below
+// makes the semantic explicit: `get_or_init` says it out loud, and
+// a no-arg `get()` exists for fetch-only call sites where the F
+// is irrelevant.  Same machinery, narrower call-site contract.
 
 template <typename T>
 class Lazy : Pinned<Lazy<T>> {
-    // Storage for T, left uninitialized until first get().
+    // Storage for T, left uninitialized until first get_or_init().
     alignas(T) unsigned char storage_[sizeof(T)]{};
     Once once_{};
+
+    // Internal reach-through: cast cascade static_cast<T*>(
+    // static_cast<void*>(&storage_)) is the §III-clean equivalent of
+    // reinterpret_cast<T*> — reaches through void* without invoking
+    // pointer-type-pun UB.
+    [[nodiscard]] T* storage_ptr_() noexcept {
+        return static_cast<T*>(static_cast<void*>(&storage_));
+    }
+    [[nodiscard]] const T* storage_ptr_() const noexcept {
+        return static_cast<const T*>(static_cast<const void*>(&storage_));
+    }
 
 public:
     constexpr Lazy() noexcept = default;
@@ -247,32 +269,104 @@ public:
     // Destructor calls T::~T only if the Once ran.
     ~Lazy() {
         if (once_.done()) {
-            static_cast<T*>(static_cast<void*>(&storage_))->~T();
+            storage_ptr_()->~T();
         }
     }
 
-    // get(f): first call invokes f() and stores the result.
-    // Subsequent calls return a reference to the stored value without
-    // re-invoking f.  f must be invocable with no args and return T.
-    //
-    // The placement-new at &storage_ begins T's lifetime in the
-    // unsigned char[] backing.  The cast cascade (static_cast<T*>(
-    // static_cast<void*>(&storage_))) is the §III-clean equivalent of
-    // reinterpret_cast<T*>: it reaches through void* without invoking
-    // pointer-type-pun UB.
+    // get_or_init(f): first call invokes f() and stores the result.
+    // Subsequent calls return a reference to the stored value
+    // WITHOUT re-invoking f.  The name encodes the semantic to
+    // prevent the historical "silently ignored f" footgun.
     template <typename F>
-    [[nodiscard]] T& get(F&& f)
+    [[nodiscard]] T& get_or_init(F&& f) noexcept
         requires std::is_invocable_r_v<T, F>
     {
-        once_.call([&] {
+        // Crucible compiles with `-fno-exceptions` (CLAUDE.md §III),
+        // so throw is impossible across this header.  Both the inner
+        // wrapping lambda and `get_or_init` are declared unconditionally
+        // `noexcept` to satisfy `-Wnoexcept` body inference — a
+        // conditional `noexcept(noexcept(F()))` spec evaluates to
+        // false for a user lambda whose `operator()` isn't declared
+        // noexcept, while GCC's body analyzer sees the bodies have
+        // no throw paths and warns (surfaced by fixy-A1-017's smoke
+        // — a latent bug pure static_assert tests miss).
+        once_.call([&]() noexcept {
             ::new (&storage_) T(std::forward<F>(f)());
         });
-        return *static_cast<T*>(static_cast<void*>(&storage_));
+        return *storage_ptr_();
+    }
+
+    // get(): fetch the stored value.  Pre: initialized() must hold.
+    // Use after at least one successful get_or_init() to acknowledge
+    // that no initializer is being provided at this call site.
+    [[nodiscard]] T& get() & {
+        CRUCIBLE_PRE(initialized());
+        return *storage_ptr_();
+    }
+
+    [[nodiscard]] const T& get() const& {
+        CRUCIBLE_PRE(initialized());
+        return *storage_ptr_();
     }
 
     [[nodiscard]] bool initialized() const noexcept {
         return once_.done();
     }
 };
+
+// ── runtime_smoke_test ──────────────────────────────────────────────
+//
+// fixy-A1-017: sentinel exercises the renamed Lazy<T> surface
+// (get_or_init / no-arg get) on non-constant input under project
+// warning flags.  Discipline reference: feedback_algebra_runtime_
+// smoke_test_discipline + feedback_header_only_static_assert_blind_
+// spot.  The "f only fires once" invariant is the load-bearing claim
+// behind the rename; without a runtime witness, a refactor that
+// broke once_.call into a re-runnable shape would compile silently.
+
+namespace detail::lazy_self_test {
+
+inline void runtime_smoke_test() {
+    // Non-constant seed keeps bit-patterns out of the constant
+    // folder's view.
+    const int seed = 0xA5C3;
+    int invocations = 0;
+    Lazy<int> lazy{};
+
+    if (lazy.initialized()) std::abort();
+
+    // First call runs f; result is f()'s return value.
+    int& first = lazy.get_or_init([&] {
+        ++invocations;
+        return seed + 1;
+    });
+    if (first != seed + 1) std::abort();
+    if (invocations != 1) std::abort();
+    if (!lazy.initialized()) std::abort();
+
+    // Subsequent get_or_init passes a DIFFERENT lambda body — its
+    // return value is silently discarded by design.  The witnesses:
+    // (a) `invocations` stays at 1, (b) the returned ref still
+    // aliases the first stored value.
+    int& second = lazy.get_or_init([&] {
+        ++invocations;
+        return seed + 99999;  // body ignored on second call
+    });
+    if (invocations != 1) std::abort();
+    if (&second != &first) std::abort();
+    if (second != seed + 1) std::abort();
+
+    // No-arg get() returns the same reference.
+    int& third = lazy.get();
+    if (&third != &first) std::abort();
+    if (third != seed + 1) std::abort();
+
+    // const get() returns const ref to the same storage.
+    const Lazy<int>& clazy = lazy;
+    const int& fourth = clazy.get();
+    if (&fourth != &first) std::abort();
+}
+
+}  // namespace detail::lazy_self_test
 
 } // namespace crucible::safety
