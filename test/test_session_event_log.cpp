@@ -16,8 +16,11 @@
 //     twice produces step_id-shifted but otherwise identical event
 //     sequences.
 
+#include <crucible/bridges/RecordingPermissionedSessionHandle.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <array>
 #include <cstdio>
@@ -274,6 +277,88 @@ int run_request_reply_recorded() {
     if (log[3].payload_schema != default_schema_hash<RepMsg>) return 12;
 
     // Step-id monotonicity across both sides.
+    for (std::size_t i = 1; i < log.size(); ++i) {
+        if (!(log[i - 1].step_id.value < log[i].step_id.value)) return 13;
+    }
+
+    return 0;
+}
+
+// ── Worked: request/reply over PSH wrapped in recording handle ─────
+//
+// fixy-A2-006 Phase 1 positive runtime witness.  The bare-handle
+// recording path is covered by run_request_reply_recorded above; this
+// test exercises the PSH overload of mint_recording_session that
+// permissioned channels rely on for audit.  EmptyPermSet keeps the
+// scope minimal — what's verified here is that wrapping a PSH does NOT
+// silently degrade the recording surface: the same 6 events appear in
+// the same order with the same payload schemas.
+
+int run_request_reply_psh_recorded() {
+    namespace eff = crucible::effects;
+
+    std::deque<int> wire;
+    WireBuf c_wire{&wire};
+    WireBuf s_wire{&wire};
+
+    using ClientProto = Send<ReqMsg, Recv<RepMsg, End>>;
+    using ServerProto = dual_of_t<ClientProto>;
+
+    SessionEventLog log{SessionTagId{2026}};
+
+    constexpr eff::HotFgCtx kCtx{};
+    auto client_psh = mint_permissioned_session<ClientProto>(
+        kCtx, std::move(c_wire));
+    auto server_psh = mint_permissioned_session<ServerProto>(
+        kCtx, std::move(s_wire));
+
+    // PSH overload of mint_recording_session.
+    auto client = mint_recording_session(
+        std::move(client_psh), log, kClient, kServer);
+    auto server = mint_recording_session(
+        std::move(server_psh), log, kServer, kClient);
+
+    auto client_recv = std::move(client).send(
+        ReqMsg{21},
+        [](WireBuf& w, ReqMsg m) noexcept { w.bytes->push_back(m.n); });
+
+    auto [req, server_send] = std::move(server).recv(
+        [](WireBuf& w) noexcept -> ReqMsg {
+            ReqMsg m{w.bytes->front()};
+            w.bytes->pop_front();
+            return m;
+        });
+
+    auto server_end = std::move(server_send).send(
+        RepMsg{req.n * 3},
+        [](WireBuf& w, RepMsg m) noexcept { w.bytes->push_back(m.n); });
+
+    auto [rep, client_end] = std::move(client_recv).recv(
+        [](WireBuf& w) noexcept -> RepMsg {
+            RepMsg m{w.bytes->front()};
+            w.bytes->pop_front();
+            return m;
+        });
+
+    if (rep.n != 63) return 1;
+
+    auto c_buf = std::move(client_end).close();
+    auto s_buf = std::move(server_end).close();
+    (void)c_buf; (void)s_buf;
+
+    if (log.size() != 6)                                              return 2;
+    if (log[0].op != SessionOp::Send  || log[0].from_role != kClient) return 3;
+    if (log[1].op != SessionOp::Recv  || log[1].to_role   != kServer) return 4;
+    if (log[2].op != SessionOp::Send  || log[2].from_role != kServer) return 5;
+    if (log[3].op != SessionOp::Recv  || log[3].to_role   != kClient) return 6;
+    if (log[4].op != SessionOp::Close || log[4].from_role != kClient) return 7;
+    if (log[5].op != SessionOp::Close || log[5].from_role != kServer) return 8;
+
+    if (log[0].payload_schema != default_schema_hash<ReqMsg>) return 9;
+    if (log[1].payload_schema != default_schema_hash<ReqMsg>) return 10;
+    if (log[2].payload_schema != default_schema_hash<RepMsg>) return 11;
+    if (log[3].payload_schema != default_schema_hash<RepMsg>) return 12;
+
     for (std::size_t i = 1; i < log.size(); ++i) {
         if (!(log[i - 1].step_id.value < log[i].step_id.value)) return 13;
     }
@@ -1231,6 +1316,7 @@ int main() {
     if (int rc = run_manual_record_preserves_stepid();  rc != 0) return 200 + rc;
     if (int rc = run_drain_yields_storage();            rc != 0) return 300 + rc;
     if (int rc = run_request_reply_recorded();          rc != 0) return 400 + rc;
+    if (int rc = run_request_reply_psh_recorded();      rc != 0) return 450 + rc;
     if (int rc = run_replay_determinism_property();     rc != 0) return 500 + rc;
     if (int rc = run_payload_hash_opt_in();             rc != 0) return 600 + rc;
     if (int rc = run_offer_branch_recorded();           rc != 0) return 700 + rc;
