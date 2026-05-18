@@ -177,10 +177,32 @@ public:
     // contract (compile-time enforced never-double-publish via the
     // CAS pattern + contract_assert).  This catches the bug class
     // "two init paths raced and one silently overwrote the other".
-
-    void establish(Resource* r) noexcept {
-        resource_.publish(r);
-    }
+    //
+    // ── §XXI naming rationale (fixy-A1-026) ─────────────────────────
+    //
+    // `establish()` deliberately does NOT carry the `mint_` prefix
+    // even though it transitions the LEC from "un-published" to
+    // "established" (a synthesis-of-authority moment).  Two reasons:
+    //
+    //  1. §XXI Universal Mint Pattern requires
+    //     `[[nodiscard]] constexpr auto mint_X(...) noexcept -> X` —
+    //     a value-returning factory whose return type carries the
+    //     fresh authoritative instance.  `establish` is void-returning
+    //     and mutates `this` in-place; it does not yield a token.
+    //  2. `LazyEstablishedChannel` is `Pinned` (the underlying
+    //     PublishOnce IS the channel identity), so a free-function
+    //     `mint_lazy_established_channel<...>() -> LEC` is structurally
+    //     impossible — the return-by-value would violate Pinned's
+    //     deleted copy/move.
+    //
+    // The §XXI-shaped factory that actually fires inside this header
+    // is `mint_session_handle<Proto>(r)` — invoked from `observe()`
+    // below.  Each observer call mints a fresh session-handle token
+    // bound to the published Resource; that mint IS the cross-tier
+    // composition the discipline catalogs.  `establish` is the
+    // *publication* event that unblocks subsequent `mint_*` calls,
+    // not a mint itself.  Reviewers grepping `mint_session_handle<`
+    // see every session-token origination including the LEC path.
 
     // ── Observe ──────────────────────────────────────────────────────
     //
@@ -203,6 +225,11 @@ public:
     [[nodiscard]] std::optional<session_handle_type> observe() noexcept {
         Resource* r = resource_.observe();
         if (!r) return std::nullopt;
+        // §XXI mint factory fires here: every successful observe() is a
+        // fresh session-handle origination point.  Grep-discoverable as
+        // `mint_session_handle<`.  See the establish() doc-block for
+        // why this header chooses observe()→mint over a free-function
+        // mint that would conflict with Pinned-by-value semantics.
         return safety::proto::mint_session_handle<Proto>(r);
     }
 
