@@ -20,6 +20,7 @@
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/ComputationGraded.h>
 #include <crucible/effects/Capability.h>
+#include <crucible/effects/Concurrent.h>
 #include <crucible/effects/CtxWrapperLift.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/EffectRowLattice.h>
@@ -28,6 +29,7 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/effects/OsUniverse.h>
+#include <crucible/effects/Resources.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -55,7 +57,22 @@ void run_test(const char* name, F&& body) {
 void test_capabilities_compile()  {}
 void test_computation_compile()   {}
 void test_effect_row_compile()    {}
-void test_effects_umbrella()      {}
+void test_effects_umbrella() {
+    // fixy-A3-010: the umbrella must reach Resources.h (GAPS-189 23
+    // ResourceTag axes) and Concurrent.h (GAPS-190 ConcurrentRow
+    // additive-sum).  Reach the public surface through the umbrella's
+    // namespace path only — no direct Resources.h/Concurrent.h include
+    // needed below this point.  If the umbrella ever drops one of
+    // these includes, this assertion fires.
+    namespace ce = ::crucible::effects;
+    static_assert(ce::resource_kind_count == 23,
+        "fixy-A3-010: effects/Effects.h must reach Resources.h — "
+        "ResourceKind catalog has 23 axes per GAPS-189.");
+    static_assert(std::is_same_v<ce::EmptyConcurrentRow,
+                                 ce::ConcurrentRow<>>,
+        "fixy-A3-010: effects/Effects.h must reach Concurrent.h — "
+        "EmptyConcurrentRow + ConcurrentRow<> per GAPS-190.");
+}
 void test_fx_aliases_compile()    {
     // Drive the runtime smoke test so the consteval/constexpr accessor
     // surfaces actually get instantiated under the test target's full
