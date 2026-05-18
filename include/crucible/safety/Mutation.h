@@ -816,8 +816,6 @@ static_assert(sizeof(WriteOnceNonNull<void*>) == sizeof(void*));
 // Thread-safe Monotonic: multiple threads may observe and advance.
 // Loads are acquire; advances are acq_rel.
 //
-// sizeof(AtomicMonotonic<uint64_t>) == sizeof(atomic<uint64_t>).
-//
 //   Axiom coverage: ThreadSafe + DetSafe.
 //   Runtime cost:   one fetch_max / fetch_min per advance for the
 //                   canonical std::less / std::greater comparators on
@@ -829,10 +827,47 @@ static_assert(sizeof(WriteOnceNonNull<void*>) == sizeof(void*));
 //
 // Pinned<>: the atomic IS the channel identity; movement would fork
 // the monotonic sequence across two atomics.
+//
+// ── Cache-line isolation discipline (fixy-A1-003) ──────────────────
+//
+// AtomicMonotonic IS the canonical SPSC head/tail (and MPSC, MPMC,
+// SCQ, seqlock-counter, work-stealing top/bottom) machinery — every
+// try_advance / advance / bump / bump_by / compare_exchange_advance
+// call fires REPEATEDLY across the channel's lifetime, and every
+// advance invalidates the consumer's cached line.  Sharing a line
+// with unrelated state in the embedder triggers the 40× false-
+// sharing slowdown CLAUDE.md §IX warns about: every cross-thread
+// atomic deserves its own cache line.
+//
+// `alignas(64)` at the class level hoists the discipline INTO the
+// type so every embedder is cache-line-isolated by construction.
+// The discipline used to live at every embed site — TraceRing head/
+// tail at lines 229/234, MetaLog head/tail, MpscRing/MpmcRing/
+// SpscRing head_/tail_, ChaseLevDeque top_, AtomicSnapshot seq_,
+// PermissionedCalendarGrid current_bucket_, PermissionedShardedGrid
+// current_bucket — all already apply `alignas(64)` at the field
+// level.  Those directives remain valid (a stricter alignment is
+// always honoured) but are now defensive depth, not the load-
+// bearing rule.  New embed sites that forget the alignment become
+// structurally safe by construction.
+//
+// Cost: 64 bytes per AtomicMonotonic vs ≤16 bytes for a bare
+// atomic.  Production embedders hold O(threads) instances — a
+// handful per ring, tens per fleet — so the absolute memory cost
+// is rounding error and the latency-cost-of-false-sharing saved at
+// every advance is the dominant signal.  Same trade as OneShotFlag
+// (fixy-A1-001) and PublishSlot (fixy-A1-002): cache-line-isolate
+// the steady-state cross-thread case.
+//
+// In contrast to PublishOnce<T> (fixy-A1-002), which CAS-gates a
+// single publication per instance and stays at pointer alignment
+// because RegionNode is layout-locked to 80B at MerkleDag.h:770:
+// AtomicMonotonic operations are unbounded steady-state, so the
+// false-sharing physics fundamentally differ.
 
 template <typename T, typename Cmp = std::less<T>>
     requires std::is_trivially_copyable_v<T>
-class [[nodiscard]] AtomicMonotonic : Pinned<AtomicMonotonic<T, Cmp>> {
+class [[nodiscard]] alignas(64) AtomicMonotonic : Pinned<AtomicMonotonic<T, Cmp>> {
     std::atomic<T> value_;
 
     // Canonical comparator detection: handle both the explicitly-typed
@@ -1081,6 +1116,25 @@ public:
     }
 };
 
+// Cache-line isolation: every AtomicMonotonic instance occupies a
+// full cache line so cross-thread advance/RMW traffic never
+// invalidates adjacent state (fixy-A1-003).  alignof claim is the
+// structural guarantee; sizeof follows from the standard rule that
+// sizeof is a multiple of alignof.
+static_assert(alignof(AtomicMonotonic<uint64_t>) >= 64,
+              "AtomicMonotonic must be cache-line aligned: repeated "
+              "advance/bump/CAS traffic invalidates the consumer's "
+              "cached line every iteration, so the counter must NOT "
+              "share a line with unrelated embedder state "
+              "(CLAUDE.md §IX).");
+static_assert(alignof(AtomicMonotonic<uint32_t>) >= 64);
+static_assert(sizeof(AtomicMonotonic<uint64_t>)  >= 64,
+              "AtomicMonotonic occupies a full cache line by "
+              "construction; embedders rely on the counter NOT "
+              "sharing a line with any field touched on the "
+              "producer/consumer hot path.");
+static_assert(sizeof(AtomicMonotonic<uint32_t>)  >= 64);
+
 // ── MaxObserved<T> ─────────────────────────────────────────────────
 //
 // AtomicMonotonic<T, std::less<T>> alias expressing "max seen so far".
@@ -1088,8 +1142,8 @@ public:
 //   MaxObserved<uint64_t> high_water{0};
 //   high_water.try_advance(new_size);  // track peak
 //
-// Using the named alias rather than a new class preserves the
-// underlying implementation and keeps sizeof collapse.
+// Using the named alias preserves the underlying implementation —
+// MaxObserved inherits AtomicMonotonic's cache-line isolation.
 
 template <typename T>
 using MaxObserved = AtomicMonotonic<T, std::less<T>>;
