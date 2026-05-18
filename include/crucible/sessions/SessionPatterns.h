@@ -941,8 +941,24 @@ static_assert(is_well_formed_v<Handshake_Server<Hello, Welcome, Reject>>);
 // aliases are bidirectionally equivalent; and branch-bearing patterns
 // have local strict witnesses for Select narrowing / Offer widening.
 
+// fixy-A2-022/A2-023: the `is_subtype_sync_v<P, dual(dual(P))>`
+// conjunct presupposes `dual_of` is involutive on P — otherwise the
+// supertype `dual(dual(P))` is structurally a DIFFERENT protocol
+// than P (Session.h:633 — `Offer<Sender<Role>, Bs...>` strips the
+// role tag on round-trip).  Asking "does P refine its double dual?"
+// of a non-involutive P is malformed: the right-hand side is no
+// longer the involution, so a yes/no answer carries no semantic
+// content about the subtype lattice's behaviour under duality.
+//
+// We gate the trait on `is_dual_involutive_v<P>` so non-involutive
+// shapes (Sender-annotated Offer in any sub-position) report false,
+// which routes future contributors who add a Sender-Offer to the
+// static_assert list at SessionPatterns.h:951+ to a clean rejection
+// rather than a misleading-yes/no that happens to fall out of the
+// structural subtype check.
 template <typename P>
 inline constexpr bool refines_self_and_double_dual_v =
+    is_dual_involutive_v<P> &&
     is_subtype_sync_v<P, P> &&
     is_subtype_sync_v<P, dual_of_t<dual_of_t<P>>>;
 

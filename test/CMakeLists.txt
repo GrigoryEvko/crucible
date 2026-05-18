@@ -6471,6 +6471,16 @@ crucible_neg_compile_test(neg_session_dual_mismatch_sender_offer_reversed
 crucible_neg_compile_test(neg_session_dual_mismatch_sender_offer_branches
     "static assertion failed|Dual_Mismatch|ensure_dual")
 
+# fixy-A2-023 — HS14 floor for the `is_dual_involutive_v` gate on
+# `refines_self_and_double_dual_v` (SessionPatterns.h:944+).
+# Two fixtures witness rejection of non-involutive shapes:
+#   sender_offer        — direct Offer<Sender<R>, B> as P
+#   nested_sender_offer — Loop<Offer<Sender<R>, ...>> — propagation case
+crucible_neg_compile_test(neg_refines_self_double_dual_sender_offer
+    "static assertion failed|refines_self_and_double_dual|is_dual_involutive")
+crucible_neg_compile_test(neg_refines_self_double_dual_nested_sender_offer
+    "static assertion failed|refines_self_and_double_dual|is_dual_involutive")
+
 # Cipher federation MPST order gates (GAPS-039).  These fixtures use
 # concept probes plus framework-controlled static_assert messages so
 # drift in method availability is surfaced without depending on GCC's
