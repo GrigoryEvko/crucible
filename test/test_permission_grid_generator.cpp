@@ -10,7 +10,7 @@
 //   1. Compile-time identity of Producer<Whole, I> vs Consumer<Whole, J>
 //   2. can_split_grid_v at multiple (M, N) combinations
 //   3. auto_split_grid type descriptor surface
-//   4. Runtime smoke — mint → split_grid → destruction
+//   4. Runtime smoke — mint → mint_grid_permissions → destruction
 //   5. Stress at non-trivial M × N (16 × 8) beyond in-header sentinels
 // ═══════════════════════════════════════════════════════════════════
 
@@ -97,7 +97,7 @@ void run_runtime_smoke() {
 
     // Stress at 16 × 8 (beyond the in-header sentinel range).
     auto parent = mint_permission_root<GridChannel>();
-    auto big_grid = split_grid<GridChannel, 16, 8>(std::move(parent));
+    auto big_grid = mint_grid_permissions<GridChannel, 16, 8>(std::move(parent));
 
     static_assert(std::tuple_size_v<decltype(big_grid.producers)> == 16);
     static_assert(std::tuple_size_v<decltype(big_grid.consumers)> == 8);
@@ -107,13 +107,13 @@ void run_runtime_smoke() {
 
     // Asymmetric — many producers, few consumers (scatter pattern).
     auto p2 = mint_permission_root<GridChannel>();
-    auto scatter = split_grid<GridChannel, 32, 1>(std::move(p2));
+    auto scatter = mint_grid_permissions<GridChannel, 32, 1>(std::move(p2));
     static_assert(std::tuple_size_v<decltype(scatter.producers)> == 32);
     static_assert(std::tuple_size_v<decltype(scatter.consumers)> == 1);
 
     // Asymmetric — one producer, many consumers (broadcast pattern).
     auto p3 = mint_permission_root<GridChannel>();
-    auto broadcast = split_grid<GridChannel, 1, 32>(std::move(p3));
+    auto broadcast = mint_grid_permissions<GridChannel, 1, 32>(std::move(p3));
     static_assert(std::tuple_size_v<decltype(broadcast.producers)> == 1);
     static_assert(std::tuple_size_v<decltype(broadcast.consumers)> == 32);
 

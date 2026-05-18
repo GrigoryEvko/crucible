@@ -361,10 +361,10 @@ void test_calendar_with_recombined_access() {
         [&]() noexcept { body_ran = true; });
     CRUCIBLE_TEST_REQUIRE(body_ran);
 
-    // Returned permission re-splittable via the same split_grid<Whole, M, 1>
+    // Returned permission re-splittable via the same mint_grid_permissions<Whole, M, 1>
     // factory used by CalendarGrid handles.  Push and pop one item to
     // confirm the channel is functional after the mode transition.
-    auto perms = split_grid<typename Calendar::whole_tag, 2, 1>(
+    auto perms = mint_grid_permissions<typename Calendar::whole_tag, 2, 1>(
         std::move(returned));
     auto p0 = cal.template producer<0>(
         std::move(std::get<0>(perms.producers)));

@@ -2,7 +2,7 @@
 // test_permissioned_sharded_grid — sentinel TU for FOUND-A11..A15
 //
 // Exercises concurrent/PermissionedShardedGrid.h — the M producers ×
-// N consumers worked example backed by the FOUND-A22 split_grid
+// N consumers worked example backed by the FOUND-A22 mint_grid_permissions
 // auto-permission-tree generator.
 //
 // Coverage:
@@ -97,7 +97,7 @@ static_assert(!std::is_default_constructible_v<C0>);
 template <typename UserTag, std::size_t M, std::size_t N>
 auto fresh_grid_perms() {
     auto whole = mint_permission_root<grid_tag::Whole<UserTag>>();
-    return split_grid<grid_tag::Whole<UserTag>, M, N>(std::move(whole));
+    return mint_grid_permissions<grid_tag::Whole<UserTag>, M, N>(std::move(whole));
 }
 
 // ── Tier 1: single-thread round trip ─────────────────────────────

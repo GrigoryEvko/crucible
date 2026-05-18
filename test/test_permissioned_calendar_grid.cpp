@@ -123,7 +123,7 @@ void test_single_thread_priority_order() {
     auto& grid = *grid_ptr;
 
     auto whole = mint_permission_root<TestGrid::whole_tag>();
-    auto perms = split_grid<TestGrid::whole_tag, 4, 1>(std::move(whole));
+    auto perms = mint_grid_permissions<TestGrid::whole_tag, 4, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
 
@@ -159,7 +159,7 @@ void test_late_item_clamps_to_current_bucket() {
     auto& grid = *grid_ptr;
 
     auto whole = mint_permission_root<TestGrid::whole_tag>();
-    auto perms = split_grid<TestGrid::whole_tag, 4, 1>(std::move(whole));
+    auto perms = mint_grid_permissions<TestGrid::whole_tag, 4, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
 
@@ -186,7 +186,7 @@ void test_cross_producer_same_bucket_per_row_fifo() {
     auto& grid = *grid_ptr;
 
     auto whole = mint_permission_root<TestGrid::whole_tag>();
-    auto perms = split_grid<TestGrid::whole_tag, 4, 1>(std::move(whole));
+    auto perms = mint_grid_permissions<TestGrid::whole_tag, 4, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
@@ -227,7 +227,7 @@ void test_batched_push_pop_priority() {
     auto& grid = *grid_ptr;
 
     auto whole = mint_permission_root<TestGrid::whole_tag>();
-    auto perms = split_grid<TestGrid::whole_tag, 4, 1>(std::move(whole));
+    auto perms = mint_grid_permissions<TestGrid::whole_tag, 4, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
 
@@ -260,7 +260,7 @@ void test_multi_producer_concurrent_stress() {
     auto& grid = *grid_ptr;
 
     auto whole = mint_permission_root<TestGrid::whole_tag>();
-    auto perms = split_grid<TestGrid::whole_tag, 4, 1>(std::move(whole));
+    auto perms = mint_grid_permissions<TestGrid::whole_tag, 4, 1>(std::move(whole));
 
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
 
@@ -332,7 +332,7 @@ void test_with_recombined_access() {
     CRUCIBLE_TEST_REQUIRE(body_ran);
 
     // Returned permission is re-splittable.
-    auto perms = split_grid<TestGrid::whole_tag, 4, 1>(std::move(returned));
+    auto perms = mint_grid_permissions<TestGrid::whole_tag, 4, 1>(std::move(returned));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
     CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 0, .payload = 42}));
@@ -352,7 +352,7 @@ void test_diagnostic_surface() {
     CRUCIBLE_TEST_REQUIRE(grid.current_bucket() == 0);
 
     auto whole = mint_permission_root<TestGrid::whole_tag>();
-    auto perms = split_grid<TestGrid::whole_tag, 4, 1>(std::move(whole));
+    auto perms = mint_grid_permissions<TestGrid::whole_tag, 4, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
 
     CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 7'000'000, .payload = 7}));

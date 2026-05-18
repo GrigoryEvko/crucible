@@ -6798,8 +6798,9 @@ crucible_neg_compile_test(neg_computation_then_non_computation_callback
 # Prove that the FOUND-A21 (1D) and FOUND-A22 (2D) generators reject
 # every misuse the static_asserts were designed to catch.  All five
 # patterns are FRAMEWORK-CONTROLLED — diagnostics come from
-# auto_split_n / auto_split_grid / split_grid / permission_split_n's
-# own static_assert messages, not GCC phrasing.
+# auto_split_n / auto_split_grid / mint_grid_permissions / permission_split_n's
+# own static_assert messages or §XXI requires-clause failures, not raw
+# GCC phrasing.
 
 # 1D (FOUND-A21): N=0 split is structurally meaningless.
 crucible_neg_compile_test(neg_auto_split_n_zero
@@ -6829,10 +6830,14 @@ crucible_neg_compile_test(neg_auto_split_grid_zero_m
 crucible_neg_compile_test(neg_auto_split_grid_zero_n
     "N .consumer count. must be > 0")
 
-# 2D (FOUND-A22): the factory call site re-checks independently of
-# the type-level descriptor — caller mistakes get their own pinpoint.
-crucible_neg_compile_test(neg_split_grid_call_zero
-    "M and N must both be greater than zero")
+# 2D (FOUND-A22 / fixy-A1-020): §XXI Universal Mint Pattern shape for
+# mint_grid_permissions.  Two HS14 mismatch classes:
+#   (1) requires-clause can_split_grid_v fold (M=0 or N=0)
+#   (2) parameter-shape mismatch (non-Permission rvalue)
+crucible_neg_compile_test(neg_mint_grid_permissions_call_zero
+    "can_split_grid_v|constraints not satisfied")
+crucible_neg_compile_test(neg_mint_grid_permissions_non_permission_arg
+    "invalid initialization|cannot bind|no match|could not convert|mint_grid_permissions")
 
 # 1D (FOUND-A21): cross-parent slice mixing — splits_into_pack fires
 # only for matching Parent.  Non-matching parents trip

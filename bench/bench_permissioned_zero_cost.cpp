@@ -193,7 +193,7 @@ bench::Report wrapped_grid_push() {
     auto grid = std::make_unique<PG>();
     auto whole = crucible::safety::mint_permission_root<
         typename PG::whole_tag>();
-    auto perms = crucible::safety::split_grid<typename PG::whole_tag, 1, 1>(
+    auto perms = crucible::safety::mint_grid_permissions<typename PG::whole_tag, 1, 1>(
         std::move(whole));
     auto p0 = grid->template producer<0>(
         std::move(std::get<0>(perms.producers)));
@@ -220,7 +220,7 @@ bench::Report wrapped_grid_recv() {
     auto grid = std::make_unique<PG>();
     auto whole = crucible::safety::mint_permission_root<
         typename PG::whole_tag>();
-    auto perms = crucible::safety::split_grid<typename PG::whole_tag, 1, 1>(
+    auto perms = crucible::safety::mint_grid_permissions<typename PG::whole_tag, 1, 1>(
         std::move(whole));
     {
         auto p0 = grid->template producer<0>(

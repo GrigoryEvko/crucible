@@ -30,7 +30,7 @@ int main() {
     Grid grid;
     auto whole = crucible::safety::mint_permission_root<
         cc::sharded_calendar_tag::Whole<Tag>>();
-    auto perms = crucible::safety::split_grid<
+    auto perms = crucible::safety::mint_grid_permissions<
         cc::sharded_calendar_tag::Whole<Tag>, 2, 2>(std::move(whole));
     auto consumer = grid.template consumer<0>(
         std::move(std::get<0>(perms.consumers)));

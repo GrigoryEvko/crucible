@@ -50,7 +50,7 @@ static_assert(std::is_same_v<
 template <typename UserTag, std::size_t M, std::size_t N>
 auto fresh_grid_perms() {
     auto whole = safety::mint_permission_root<cc::grid_tag::Whole<UserTag>>();
-    return safety::split_grid<cc::grid_tag::Whole<UserTag>, M, N>(
+    return safety::mint_grid_permissions<cc::grid_tag::Whole<UserTag>, M, N>(
         std::move(whole));
 }
 

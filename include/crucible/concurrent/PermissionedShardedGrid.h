@@ -13,11 +13,11 @@
 //                           Permission<Consumer<UserTag, J>> for J in [0, N).
 //
 // All permissions are derived from a single Whole<UserTag> root via
-// the FOUND-A22 split_grid factory:
+// the FOUND-A22 mint_grid_permissions factory:
 //
 //   auto whole = mint_permission_root<grid_tag::Whole<UserTag>>();
-//   auto grid  = split_grid<grid_tag::Whole<UserTag>, M, N>(whole);
-//   //                                                ^^ M+N tokens
+//   auto grid  = mint_grid_permissions<grid_tag::Whole<UserTag>, M, N>(whole);
+//   //                                                            ^^ M+N tokens
 //
 // Each handle is STATICALLY INDEXED at compile time — ProducerHandle<I>
 // knows at type-level that it serves shard I, and try_push() takes no
@@ -74,7 +74,7 @@
 //   * M ≥ 1, N ≥ 1, Capacity > 0 and a power of two.
 //   * Each PermissionedShardedGrid uses a distinct UserTag.  Per
 //     Permission.h's grep-discoverable rule, mint each Whole<UserTag>
-//     EXACTLY ONCE per program, then split via split_grid.
+//     EXACTLY ONCE per program, then split via mint_grid_permissions.
 //   * ProducerHandle<I> and ConsumerHandle<J> are move-only via their
 //     embedded Linear Permission.
 //
@@ -86,7 +86,7 @@
 //   // Mint root + split via FOUND-A22 generator.
 //   auto whole = mint_permission_root<
 //       safety::grid_whole<WorkChannel>>();
-//   auto perms = safety::split_grid<
+//   auto perms = safety::mint_grid_permissions<
 //       safety::grid_whole<WorkChannel>, 4, 3>(std::move(whole));
 //
 //   // Construct producers (M=4) — each statically indexed.
@@ -136,8 +136,8 @@ namespace crucible::concurrent {
 // Reuses the FOUND-A22 generator's tag types DIRECTLY — Producer<I>,
 // Consumer<J> aliases over Slice<ProducerSide<UserTag>, I> and
 // Slice<ConsumerSide<UserTag>, J>.  No per-channel tag declaration
-// needed; split_grid<grid_tag::Whole<UserTag>, M, N>(whole) yields the
-// matching tuples of permissions automatically.
+// needed; mint_grid_permissions<grid_tag::Whole<UserTag>, M, N>(whole) yields
+// the matching tuples of permissions automatically.
 
 namespace grid_tag {
 
@@ -300,8 +300,8 @@ public:
     // ── Factories ─────────────────────────────────────────────────
     //
     // Caller obtains the M+N permission tokens via the FOUND-A22
-    // split_grid<grid_tag::Whole<UserTag>, M, N>(whole) factory and
-    // hands one to each producer<I>/consumer<J>.
+    // mint_grid_permissions<grid_tag::Whole<UserTag>, M, N>(whole)
+    // factory and hands one to each producer<I>/consumer<J>.
 
     template <std::size_t I>
     [[nodiscard]] ProducerHandle<I> producer(

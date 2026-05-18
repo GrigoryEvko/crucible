@@ -74,7 +74,7 @@ template <typename UserTag, std::size_t Shards>
 auto fresh_sharded_calendar_perms() {
     auto whole = safety::mint_permission_root<
         cc::sharded_calendar_tag::Whole<UserTag>>();
-    return safety::split_grid<
+    return safety::mint_grid_permissions<
         cc::sharded_calendar_tag::Whole<UserTag>, Shards, Shards>(
         std::move(whole));
 }

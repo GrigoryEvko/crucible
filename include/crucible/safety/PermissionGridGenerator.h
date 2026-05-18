@@ -57,9 +57,11 @@
 //   GridPermissions<Whole, M, N>    runtime carrier of M producer
 //                                   permissions + N consumer permissions
 //
-//   split_grid<Whole, M, N>(parent) two-level split factory
+//   mint_grid_permissions<Whole, M, N>(parent)
+//                                   two-level split factory (§XXI token mint)
 //
 //   can_split_grid_v<Whole, M, N>   consteval capability check
+//                                   (§XXI requires-clause gate)
 //
 // ─── Diagnostic naming ─────────────────────────────────────────────
 //
@@ -133,7 +135,7 @@ struct auto_split_grid {
     using producer_tags = auto_split_n_t<ProducerSide<Whole>, M>;
     using consumer_tags = auto_split_n_t<ConsumerSide<Whole>, N>;
 
-    // Permission tuples — what split_grid actually returns.
+    // Permission tuples — what mint_grid_permissions actually returns.
     using producer_perms = auto_split_n_permissions_t<ProducerSide<Whole>, M>;
     using consumer_perms = auto_split_n_permissions_t<ConsumerSide<Whole>, N>;
 };
@@ -141,7 +143,7 @@ struct auto_split_grid {
 // ── GridPermissions<Whole, M, N> — runtime carrier ─────────────────
 //
 // Move-only because each Permission inside is linear.  Holds the
-// full M producer + N consumer permission tokens after split_grid().
+// full M producer + N consumer permission tokens after mint_grid_permissions().
 
 template <typename Whole, std::size_t M, std::size_t N>
 struct [[nodiscard]] GridPermissions {
@@ -154,11 +156,35 @@ struct [[nodiscard]] GridPermissions {
     typename auto_split_grid<Whole, M, N>::consumer_perms consumers;
 };
 
-// ── split_grid<Whole, M, N>(parent) — two-level split factory ──────
+// ── can_split_grid_v<Whole, M, N> — capability check ───────────────
 //
-// Consumes the parent Permission<Whole>, performs the binary
-// side-split then the per-side N-ary split, and returns
-// GridPermissions holding all M+N child permissions.
+// §XXI requires-clause gate for mint_grid_permissions.  Folds M>0,
+// N>0, the binary side-split fit, and per-side N-ary fit into one
+// concept-shaped value trait so the factory's requires clause is a
+// single capability check.
+
+template <typename Whole, std::size_t M, std::size_t N>
+inline constexpr bool can_split_grid_v =
+       (M > 0)
+    && (N > 0)
+    && splits_into_v<Whole, ProducerSide<Whole>, ConsumerSide<Whole>>
+    && can_split_n_v<ProducerSide<Whole>, M>
+    && can_split_n_v<ConsumerSide<Whole>, N>;
+
+// ── mint_grid_permissions<Whole, M, N>(parent) — §XXI token mint ───
+//
+// §XXI Universal Mint Pattern: a token mint that consumes a parent
+// Permission<Whole> and produces a fresh authoritative
+// GridPermissions<Whole, M, N> holding M producer permissions and N
+// consumer permissions.  Named `mint_*` so `grep "mint_"` finds every
+// authorization point in the codebase.
+//
+// Two-level construction: binary side-split (producer vs consumer)
+// followed by per-side N-ary split.  Soundness gate is the single
+// `requires can_split_grid_v<Whole, M, N>` clause, which folds M>0,
+// N>0, and the per-side splits_into_pack registration in one place
+// (consistent with the §XXI canonical-mints table where every token
+// mint carries a single concept gate).
 
 namespace detail {
 
@@ -183,12 +209,10 @@ template <typename Whole, std::size_t... Js>
 }  // namespace detail
 
 template <typename Whole, std::size_t M, std::size_t N>
-[[nodiscard]] auto split_grid(Permission<Whole>&& parent) noexcept
+    requires can_split_grid_v<Whole, M, N>
+[[nodiscard]] constexpr auto mint_grid_permissions(Permission<Whole>&& parent) noexcept
     -> GridPermissions<Whole, M, N>
 {
-    static_assert(M > 0 && N > 0,
-        "split_grid<Whole, M, N>: M and N must both be greater than zero");
-
     auto sides = mint_permission_split<ProducerSide<Whole>, ConsumerSide<Whole>>(
         std::move(parent));
 
@@ -199,16 +223,6 @@ template <typename Whole, std::size_t M, std::size_t N>
             std::move(sides.second), std::make_index_sequence<N>{}),
     };
 }
-
-// ── can_split_grid_v<Whole, M, N> — capability check ───────────────
-
-template <typename Whole, std::size_t M, std::size_t N>
-inline constexpr bool can_split_grid_v =
-       (M > 0)
-    && (N > 0)
-    && splits_into_v<Whole, ProducerSide<Whole>, ConsumerSide<Whole>>
-    && can_split_n_v<ProducerSide<Whole>, M>
-    && can_split_n_v<ConsumerSide<Whole>, N>;
 
 // ── Sentinel static_asserts ────────────────────────────────────────
 
@@ -267,7 +281,7 @@ inline void runtime_smoke_test_grid() {
 
     // Mint, split into 4-producer × 3-consumer grid.
     auto whole = mint_permission_root<Tag>();
-    auto grid = split_grid<Tag, 4, 3>(std::move(whole));
+    auto grid = mint_grid_permissions<Tag, 4, 3>(std::move(whole));
 
     static_assert(std::is_same_v<
         decltype(grid),

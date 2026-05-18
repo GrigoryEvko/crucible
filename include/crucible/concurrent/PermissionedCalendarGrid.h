@@ -73,11 +73,11 @@
 //     * NumProducers Producer<UserTag, P> linear permissions
 //     * 1 Consumer<UserTag> linear permission
 //
-//   Re-uses the FOUND-A22 split_grid<Whole, M, 1> factory with
-//   N=1 — the consumer side has exactly one slot.
+//   Re-uses the FOUND-A22 mint_grid_permissions<Whole, M, 1> factory
+//   with N=1 — the consumer side has exactly one slot.
 //
 //     auto whole = mint_permission_root<calendar_tag::Whole<X>>();
-//     auto perms = split_grid<calendar_tag::Whole<X>, M, 1>(whole);
+//     auto perms = mint_grid_permissions<calendar_tag::Whole<X>, M, 1>(whole);
 //     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
 //     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
 //     // ...
@@ -129,7 +129,7 @@ namespace crucible::concurrent {
 // ── Tag tree for PermissionedCalendarGrid ──────────────────────────
 //
 // Mirrors PermissionedShardedGrid's grid_tag pattern: Whole<UserTag>
-// is the root, splits via FOUND-A22's split_grid<Whole, M, 1> into
+// is the root, splits via FOUND-A22's mint_grid_permissions<Whole, M, 1> into
 // M producer slots + 1 consumer slot.  Producer index is part of
 // the type (Slice<ProducerSide<Whole>, P>); the single consumer is
 // Slice<ConsumerSide<Whole>, 0>.
@@ -411,7 +411,7 @@ public:
     // ── Factories ─────────────────────────────────────────────────
     //
     // Mirrors PermissionedShardedGrid: caller obtains permissions via
-    // split_grid<calendar_tag::Whole<UserTag>, M, 1>(whole) and
+    // mint_grid_permissions<calendar_tag::Whole<UserTag>, M, 1>(whole) and
     // hands them to producer<P>() and consumer().
 
     template <std::size_t P>
@@ -541,6 +541,7 @@ private:
 // ── splits_into_pack auto-spec ─────────────────────────────────────
 //
 // CalendarGrid uses the same FOUND-A22 auto-permission-tree as
-// ShardedGrid.  No new specialization is needed: split_grid<Whole, M, N>
-// already expands Whole into ProducerSide / ConsumerSide / Slices.
-// Callers use `split_grid<calendar_tag::Whole<X>, M, 1>(whole)`.
+// ShardedGrid.  No new specialization is needed:
+// mint_grid_permissions<Whole, M, N> already expands Whole into
+// ProducerSide / ConsumerSide / Slices.
+// Callers use `mint_grid_permissions<calendar_tag::Whole<X>, M, 1>(whole)`.

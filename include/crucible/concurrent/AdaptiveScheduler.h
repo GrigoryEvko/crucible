@@ -362,7 +362,7 @@ public:
 
     QueuePortal() {
         auto whole = safety::mint_permission_root<typename queue_type::whole_tag>();
-        auto perms = safety::split_grid<typename queue_type::whole_tag, M, N>(
+        auto perms = safety::mint_grid_permissions<typename queue_type::whole_tag, M, N>(
             std::move(whole));
         emplace_producers_(std::move(perms.producers),
                            std::make_index_sequence<M>{});
@@ -498,7 +498,7 @@ public:
 
     QueuePortal() {
         auto whole = safety::mint_permission_root<typename queue_type::whole_tag>();
-        auto perms = safety::split_grid<typename queue_type::whole_tag, M, 1>(
+        auto perms = safety::mint_grid_permissions<typename queue_type::whole_tag, M, 1>(
             std::move(whole));
         emplace_producers_(std::move(perms.producers),
                            std::make_index_sequence<M>{});
@@ -591,8 +591,8 @@ public:
 
     QueuePortal() {
         auto whole = safety::mint_permission_root<typename queue_type::whole_tag>();
-        auto perms = safety::split_grid<typename queue_type::whole_tag,
-                                        NumShards, NumShards>(std::move(whole));
+        auto perms = safety::mint_grid_permissions<typename queue_type::whole_tag,
+                                                   NumShards, NumShards>(std::move(whole));
         emplace_producers_(std::move(perms.producers),
                            std::make_index_sequence<NumShards>{});
         emplace_consumers_(std::move(perms.consumers),

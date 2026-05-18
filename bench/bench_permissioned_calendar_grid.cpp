@@ -70,7 +70,7 @@ bench::Report calendar_single_push() {
     auto grid_ptr = std::make_unique<Grid>();
     auto& grid = *grid_ptr;
     auto whole = mint_permission_root<Grid::whole_tag>();
-    auto perms = split_grid<Grid::whole_tag, 1, 1>(std::move(whole));
+    auto perms = mint_grid_permissions<Grid::whole_tag, 1, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
 
     Job j{.deadline_ns = 0, .payload = 0};
@@ -85,7 +85,7 @@ bench::Report calendar_single_pop() {
     auto grid_ptr = std::make_unique<Grid>();
     auto& grid = *grid_ptr;
     auto whole = mint_permission_root<Grid::whole_tag>();
-    auto perms = split_grid<Grid::whole_tag, 1, 1>(std::move(whole));
+    auto perms = mint_grid_permissions<Grid::whole_tag, 1, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
 
@@ -112,7 +112,7 @@ bench::Report calendar_batched_push() {
     auto grid_ptr = std::make_unique<Grid>();
     auto& grid = *grid_ptr;
     auto whole = mint_permission_root<Grid::whole_tag>();
-    auto perms = split_grid<Grid::whole_tag, 1, 1>(std::move(whole));
+    auto perms = mint_grid_permissions<Grid::whole_tag, 1, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
 
@@ -172,7 +172,7 @@ bench::Report calendar_cross_bucket_push() {
     auto grid_ptr = std::make_unique<Grid>();
     auto& grid = *grid_ptr;
     auto whole = mint_permission_root<Grid::whole_tag>();
-    auto perms = split_grid<Grid::whole_tag, 1, 1>(std::move(whole));
+    auto perms = mint_grid_permissions<Grid::whole_tag, 1, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
 
     constexpr std::size_t kBatch = 64;

@@ -30,7 +30,7 @@ int main() {
     Grid grid;
     auto whole = crucible::safety::mint_permission_root<
         cc::calendar_tag::Whole<Tag>>();
-    auto perms = crucible::safety::split_grid<cc::calendar_tag::Whole<Tag>, 2, 1>(
+    auto perms = crucible::safety::mint_grid_permissions<cc::calendar_tag::Whole<Tag>, 2, 1>(
         std::move(whole));
     auto producer = grid.template producer<0>(
         std::move(std::get<0>(perms.producers)));

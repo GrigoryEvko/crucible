@@ -23,7 +23,7 @@ using Grid = cc::PermissionedShardedGrid<int, 2, 2, 32, Tag>;
 int main() {
     Grid grid;
     auto whole = crucible::safety::mint_permission_root<cc::grid_tag::Whole<Tag>>();
-    auto perms = crucible::safety::split_grid<cc::grid_tag::Whole<Tag>, 2, 2>(
+    auto perms = crucible::safety::mint_grid_permissions<cc::grid_tag::Whole<Tag>, 2, 2>(
         std::move(whole));
     auto producer = grid.template producer<0>(
         std::move(std::get<0>(perms.producers)));

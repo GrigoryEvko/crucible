@@ -15,7 +15,7 @@ void exercise_producer_try_pop_compile_error() {
     crucible::concurrent::PermissionedShardedGrid<int, 2, 2, 32, BadGrid> grid;
     auto whole = crucible::safety::mint_permission_root<
         crucible::concurrent::grid_tag::Whole<BadGrid>>();
-    auto perms = crucible::safety::split_grid<
+    auto perms = crucible::safety::mint_grid_permissions<
         crucible::concurrent::grid_tag::Whole<BadGrid>, 2, 2>(std::move(whole));
     auto p = grid.template producer<0>(
         std::move(std::get<0>(perms.producers)));

@@ -1479,7 +1479,7 @@ void drive_psharded_grid_cookie_(Channel& grid) {
 
     using WT = typename Channel::whole_tag;
     auto whole = mint_permission_root<WT>();
-    auto perms = split_grid<WT, M, N>(std::move(whole));
+    auto perms = mint_grid_permissions<WT, M, N>(std::move(whole));
 
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
@@ -1599,7 +1599,7 @@ void drive_pcalendar_cookie_(Channel& grid) {
 
     using WT = typename Channel::whole_tag;
     auto whole = mint_permission_root<WT>();
-    auto perms = split_grid<WT, M, 1>(std::move(whole));
+    auto perms = mint_grid_permissions<WT, M, 1>(std::move(whole));
 
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
