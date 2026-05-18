@@ -6771,6 +6771,24 @@ crucible_neg_compile_test(neg_delegated_session_payload_row_fg
 crucible_neg_compile_test(neg_delegated_session_payload_row_bg
     "CtxFitsPermissionedProtocol|CtxFitsProtocol|EffectRowMismatch|constraints not satisfied|no matching function")
 
+# fixy-A2-011 — substrate-side rejection of Choice<From, To> with
+# ZERO branches at the global-wellformedness gate (Honda 2008 MPST).
+# Before the fix, the variadic `Bs...` specialization of
+# `is_global_well_formed<Choice<From, To, Bs...>>` folded branch
+# validity via `(... && ...)` over an empty pack — vacuously true.
+# After the fix, an explicit zero-branch specialization returns
+# `false_type` and a recursive `has_empty_choice_v<G>` + routed
+# `assert_no_empty_choice<G>()` helper surface the case for nested
+# occurrences.  Two distinct rejection classes:
+#   * top-level Choice<F, T> — caught by is_global_well_formed_v
+#   * nested Choice<F, T> inside Rec_G/Transmission body — caught
+#     by has_empty_choice_v + the routed [Choice_Empty_Branches]
+#     diagnostic (analogous to [ProtocolViolation_Self_Loop] #371).
+crucible_neg_compile_test(neg_session_global_empty_choice
+    "should be well-formed|static assertion failed|constraints not satisfied")
+crucible_neg_compile_test(neg_session_global_empty_choice_nested
+    "Choice_Empty_Branches")
+
 # fixy-A1-008 — strong-type discipline on FederationHandshake fields
 # + federation_signature_fingerprint + make_self_signed_handshake.
 # Three rejection classes:

@@ -525,6 +525,23 @@ struct is_global_well_formed<Transmission<From, To, P, G>, RecCtx>
           && is_global_well_formed<G, RecCtx>::value
       > {};
 
+// fixy-A2-011 — Choice<From, To> with zero branches is rejected.
+//
+// The variadic `Bs...` specialization below folds branch well-formedness
+// via `(... && ...)`, which returns `true` on an empty pack — a vacuous
+// pass.  Combined with `From ≠ To` admitting any two distinct roles,
+// this would let `Choice<Alice, Bob>` (no branches) slip past the
+// global-wellformedness gate.  The error eventually surfaces deep in
+// projection (`plain_merge_t<>` is `is_same_v<>`-ill-formed at the leaf),
+// but that's a confusing site — the diagnostic belongs at the highest-
+// level gate.  Structurally empty Choice has no semantic meaning in
+// MPST (there's no branch to select); explicitly reject here.
+//
+// Discoverable via `has_empty_choice_v<G>` (below) and routed via
+// `assert_no_empty_choice<G>()` for the cleanest diagnostic.
+template <typename From, typename To, typename RecCtx>
+struct is_global_well_formed<Choice<From, To>, RecCtx> : std::false_type {};
+
 template <typename From, typename To, typename... Bs, typename RecCtx>
 struct is_global_well_formed<Choice<From, To, Bs...>, RecCtx>
     : std::bool_constant<
@@ -594,6 +611,69 @@ consteval void assert_no_self_loop() noexcept {
         "genuinely want a participant's local-only state transition, "
         "model it as a Machine<State> transition outside the global "
         "protocol rather than as a self-Transmission.");
+}
+
+// ─── Empty-Choice detection (fixy-A2-011) ──────────────────────────
+//
+// has_empty_choice_v<G> is true iff G CONTAINS a Choice<From, To>
+// with zero branches at any position in its type tree.  Distinct
+// from is_global_well_formed_v's negation: WF can return false for
+// free Var_G OR self-loops too; this trait pinpoints the empty-
+// Choice case specifically so the diagnostic helper can give a
+// routed message.
+//
+// Walks Transmission continuation, Choice branches' continuations,
+// AND the variadic Bs pack of Choice itself (so empty Choices
+// nested anywhere — at the root, inside Rec_G's body, inside a
+// branch's continuation, or as a sibling of well-formed branches —
+// all surface here).
+
+template <typename G>
+struct has_empty_choice : std::false_type {};
+
+template <typename From, typename To, typename P, typename G>
+struct has_empty_choice<Transmission<From, To, P, G>>
+    : has_empty_choice<G> {};
+
+// Empty-pack Choice — the load-bearing specialization.  Matches
+// `Choice<From, To>` more specifically than the variadic case
+// below (zero-pack vs nonempty-pack partial ordering).
+template <typename From, typename To>
+struct has_empty_choice<Choice<From, To>> : std::true_type {};
+
+// Non-empty-branch Choice — recurse into each branch's continuation.
+template <typename From, typename To, typename... Bs>
+struct has_empty_choice<Choice<From, To, Bs...>>
+    : std::bool_constant<
+          (has_empty_choice<typename Bs::next>::value || ...)
+      > {};
+
+template <typename Body>
+struct has_empty_choice<Rec_G<Body>> : has_empty_choice<Body> {};
+
+template <typename G>
+inline constexpr bool has_empty_choice_v = has_empty_choice<G>::value;
+
+// assert_no_empty_choice<G>() — consteval helper that fires a routed
+// [Choice_Empty_Branches] static_assert when G contains a Choice
+// with zero branches anywhere in its tree.  Use at protocol
+// declaration sites for the cleanest diagnostic; the framework-
+// controlled tag prefix is stable across GCC versions.
+
+template <typename G>
+consteval void assert_no_empty_choice() noexcept {
+    static_assert(!has_empty_choice_v<G>,
+        "crucible::session::diagnostic [Choice_Empty_Branches]: "
+        "global type contains a Choice<From, To> with zero branches.  "
+        "An empty-branch Choice has no semantic meaning in MPST — "
+        "there's no selectable label to drive the protocol forward, "
+        "and projection would collapse to plain_merge_t<> which is "
+        "ill-formed at the leaf.  Add at least one BranchG<Payload, "
+        "Continuation> to the Choice's branch pack, or replace the "
+        "Choice with End_G / StopG<Peer> / Transmission<From, To, P, "
+        "End_G> depending on the intended semantics.  Common cause: "
+        "scaffolding a Choice before its branches were filled in and "
+        "leaving the placeholder.");
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1108,6 +1188,69 @@ consteval bool check_assert_no_self_loop_compiles() {
     return true;
 }
 static_assert(check_assert_no_self_loop_compiles());
+
+// ─── Empty-Choice rejection (fixy-A2-011) ──────────────────────────
+//
+// is_global_well_formed_v rejects Choice<F, T> with zero branches;
+// has_empty_choice_v identifies the case structurally for routed
+// diagnostics; assert_no_empty_choice<G>() fires
+// [Choice_Empty_Branches] at the declaration site.
+
+// Zero-branch Choice at the root — rejected.
+static_assert(!is_global_well_formed_v<Choice<Alice, Bob>>);
+static_assert(!is_global_well_formed_v<Choice<Bob,   Carol>>);
+
+// Single-branch Choice — well-formed (positive sentinel).
+static_assert( is_global_well_formed_v<Choice<Alice, Bob,
+    BranchG<Ping, End_G>>>);
+
+// Multi-branch Choice — well-formed.
+static_assert( is_global_well_formed_v<Choice<Alice, Bob,
+    BranchG<Ping, End_G>,
+    BranchG<Ack,  End_G>>>);
+
+// Zero-branch Choice nested inside Rec_G — also rejected (recursion
+// into Body, which contains the empty Choice).
+static_assert(!is_global_well_formed_v<Rec_G<Choice<Alice, Bob>>>);
+
+// Zero-branch Choice nested inside a Transmission's continuation —
+// also rejected.
+static_assert(!is_global_well_formed_v<
+    Transmission<Alice, Bob, Ping, Choice<Bob, Carol>>>);
+
+// Zero-branch Choice nested inside a Choice branch's continuation —
+// also rejected.
+static_assert(!is_global_well_formed_v<Choice<Alice, Bob,
+    BranchG<Ping, Choice<Bob, Carol>>>>);
+
+// has_empty_choice_v identifies empty Choice independently of WF
+// (a well-formed prefix doesn't redeem the inner empty Choice).
+static_assert(!has_empty_choice_v<End_G>);
+static_assert(!has_empty_choice_v<Var_G>);
+static_assert(!has_empty_choice_v<StopG<Alice>>);
+static_assert(!has_empty_choice_v<Transmission<Alice, Bob, Ping, End_G>>);
+static_assert(!has_empty_choice_v<Choice<Alice, Bob,
+    BranchG<Ping, End_G>>>);
+static_assert( has_empty_choice_v<Choice<Alice, Bob>>);
+static_assert( has_empty_choice_v<Rec_G<Choice<Alice, Bob>>>);
+static_assert( has_empty_choice_v<Transmission<Alice, Bob, Ping,
+    Choice<Bob, Carol>>>);
+static_assert( has_empty_choice_v<Choice<Alice, Bob,
+    BranchG<Ping, Choice<Bob, Carol>>>>);
+
+// has_empty_choice_v on Rec_G with a clean body — false.
+static_assert(!has_empty_choice_v<
+    Rec_G<Transmission<Alice, Bob, Ping, Var_G>>>);
+
+// assert_no_empty_choice<G>() is consteval and compiles for clean Gs.
+consteval bool check_assert_no_empty_choice_compiles() {
+    assert_no_empty_choice<End_G>();
+    assert_no_empty_choice<Transmission<Alice, Bob, Ping, End_G>>();
+    assert_no_empty_choice<Choice<Alice, Bob, BranchG<Ping, End_G>>>();
+    assert_no_empty_choice<Rec_G<Transmission<Alice, Bob, Ping, Var_G>>>();
+    return true;
+}
+static_assert(check_assert_no_empty_choice_compiles());
 
 // ─── plain_merge_t ─────────────────────────────────────────────────
 
