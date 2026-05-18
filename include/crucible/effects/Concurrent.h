@@ -99,6 +99,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 
 namespace crucible::effects {
@@ -405,37 +406,40 @@ inline constexpr bool kind_no_overflow_v = sum_does_not_overflow(
     concurrent_row_value_v<K, R1>,
     concurrent_row_value_v<K, R2>);
 
-// All-kinds no-overflow guard.  Folds && across the 23 ResourceKind
-// atoms.  Catalog order matches resource_kind_name() — a future
-// extension adds the new atom to BOTH switches.  The guard is
-// reflection-checkable but spelled out for now to keep the surface
-// transparent (a reflection-driven version is a future fold
-// improvement; correctness comes first).
+// All-kinds no-overflow guard.  Reflection-driven `template for`
+// over `std::meta::enumerators_of(^^ResourceKind)` materialized via
+// `std::define_static_array` (P2996R13 + P3491R3): the atom set is
+// the source of truth and a new ResourceKind enumerator
+// automatically extends the guard without touching this file
+// (fixy-A3-023).  The 23-atom hand-roll it replaces was a syntactic
+// liability — adding an atom required editing two switches and the
+// fold, and a forgotten line would silently weaken the overflow
+// gate.  Instantiation count of `kind_no_overflow_v<K, R1, R2>` is
+// unchanged (one per enumerator); only the boilerplate is gone.
+template <typename R1, typename R2>
+[[nodiscard]] consteval bool eval_concurrently_schedulable_() noexcept {
+    // `static constexpr` is mandatory: `template for` requires the
+    // operand to be a constant expression, and a non-`static`
+    // constexpr local has a per-invocation address that is NOT a
+    // constant expression (GCC 16 reflection footgun documented in
+    // CLAUDE.md "GCC 16 reflection — implementation gotchas").
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto ea : enumerators) {
+        constexpr ResourceKind kind = [:ea:];
+        if (!kind_no_overflow_v<kind, R1, R2>) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
 template <typename R1, typename R2>
 inline constexpr bool concurrently_schedulable_v =
-    kind_no_overflow_v<ResourceKind::Sm, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::WarpScheduler, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::RegistersPerWarp, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::Smem, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::L2, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::HbmBytes, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::HbmBw, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::NvlinkBw, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::PcieBw, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::NicQ, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::NicRing, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::NicQp, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::NicCq, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::NicMr, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::SwitchEgressBw, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::SwitchBuffer, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::Tcam, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::CpuCore, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::Llc, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::PowerWatts, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::ThermalCelsius, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::RackPowerKw, R1, R2> &&
-    kind_no_overflow_v<ResourceKind::CarbonGramsPerKwh, R1, R2>;
+    eval_concurrently_schedulable_<R1, R2>();
 
 }  // namespace detail
 
@@ -581,6 +585,34 @@ static_assert(!ConcurrentlySchedulable<
                   resource::HbmBytes<UINT64_MAX>>,
     ConcurrentRow<resource::SmBudget<64>,
                   resource::HbmBytes<1>>>);
+
+// ── fixy-A3-023: reflection refactor — behavior-preservation pin
+//
+// The reflection-driven `eval_concurrently_schedulable_` MUST agree
+// with the prior 23-atom `&&`-fold on every observable case.  Three
+// witnesses cover the lattice corners:
+//
+//   1. EmptyRow × EmptyRow → schedulable (identity).
+//   2. Singleton × EmptyRow → schedulable (additive identity).
+//   3. Full-pack × Full-pack with last-catalog-atom overflow →
+//      rejected (proves the reflection loop visits the LAST atom,
+//      not just an early prefix; a buggy early-return would let this
+//      slip past).
+static_assert(ConcurrentlySchedulable<
+    ConcurrentRow<>,
+    ConcurrentRow<>>);
+
+static_assert(ConcurrentlySchedulable<
+    ConcurrentRow<resource::SmBudget<1>>,
+    ConcurrentRow<>>);
+
+// CarbonGramsPerKwh is the LAST enumerator in the ResourceKind
+// catalog.  An overflow there proves the reflection-derived loop
+// covers the full atom set; a buggy hand-roll that dropped the last
+// `&&` would silently accept this.
+static_assert(!ConcurrentlySchedulable<
+    ConcurrentRow<resource::CarbonGramsPerKwh<UINT64_MAX>>,
+    ConcurrentRow<resource::CarbonGramsPerKwh<1>>>);
 
 // ── IsConcurrentRow concept ────────────────────────────────────────
 static_assert(IsConcurrentRow<ConcurrentRow<>>);
