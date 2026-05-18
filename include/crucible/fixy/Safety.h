@@ -7,6 +7,23 @@
 // `fixy::safety::` so callers who include only the fixy umbrella
 // never have to descend into the safety/ tree to wrap a value.
 //
+// ── Cross-reference (fixy-A4-011) ─────────────────────────────────
+//
+// Linear / Secret / mint_linear / mint_secret / drop are ALSO
+// re-exported via `fixy::wrap::` (the "one-stop value-wrapping"
+// directory; see Wrap.h header doc, line 17-18 + line 32-33).  The
+// dual export is intentional: by-feature carve-outs here, one-stop
+// directory there.  Both paths name the SAME substrate symbol via
+// `using ::crucible::safety::*` — type identity is drift-checked at
+// compile time by `test/test_fixy_umbrella.cpp` (search
+// "fixy-A4-011" for the static_assert family).  Callers should pick
+// ONE namespace path per TU and stick to it; mixing
+// `using namespace fixy::safety; using namespace fixy::wrap;` works
+// today only because the using-declarations point at identical
+// substrate symbols, and would degenerate to ADL ambiguity the
+// moment one path acquires a divergent re-export — the drift-check
+// static_asserts catch that the same build.
+//
 // Per CLAUDE.md §XXI Universal Mint Pattern: every re-export
 // preserves the substrate's `std::is_constructible_v<T, Args...>`
 // token-mint gate (or the lifetime-bound `Carrier const&` gate for

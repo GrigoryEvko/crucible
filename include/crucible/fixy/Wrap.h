@@ -17,6 +17,17 @@
 // re-exported here too so `fixy::wrap::` is the single one-stop
 // directory for value-wrapping.
 //
+// ── Dual-export discipline (fixy-A4-011) ──────────────────────────
+//
+// The Linear / Secret / SharedPermission re-exports below also
+// appear in fixy::safety:: (Safety.h) and fixy::perm:: (Perm.h)
+// respectively — by design.  Both paths name the SAME substrate
+// symbol; type identity is drift-checked at compile time by
+// `test/test_fixy_umbrella.cpp` (search "fixy-A4-011").  A user TU
+// that does `using namespace fixy::safety; using namespace fixy::wrap;`
+// works today only because the two using-declarations point at the
+// same symbol — divergence would surface as an ADL lookup error.
+//
 // ── Substrate consumed ─────────────────────────────────────────────
 //
 // Graded-backed (11 wrappers):

@@ -41,6 +41,58 @@ static_assert(std::is_same_v<
                  ::crucible::effects::ctx_cap::Bg>)>,
     "fixy::cap::mint_cap must be reachable via the umbrella.");
 
+// ── fixy-A4-011 / fixy-M-28 dual-path drift detector ──────────────
+//
+// Linear / Secret / SharedPermission (and their mint factories) are
+// re-exported on TWO namespace paths intentionally — by-feature
+// carve-outs (fixy::safety::, fixy::perm::) AND the one-stop
+// value-wrapping directory (fixy::wrap::).  Today both paths name
+// the SAME substrate symbol via using-declarations, so the dual
+// re-export is structurally redundant rather than ambiguous.  These
+// static_asserts pin that fact at compile time: if a future patch
+// changes one path's `using` to point at a divergent symbol, the
+// build breaks here rather than silently giving callers two
+// different "Linear<int>" types.  See Safety.h header docs +
+// Wrap.h "Dual-export discipline" block for the policy.
+
+static_assert(std::is_same_v<
+    fixy::safety::Linear<int>,
+    fixy::wrap::Linear<int>>,
+    "fixy-A4-011: fixy::safety::Linear and fixy::wrap::Linear must "
+    "resolve to the same substrate symbol.");
+
+static_assert(std::is_same_v<
+    fixy::safety::Secret<int>,
+    fixy::wrap::Secret<int>>,
+    "fixy-A4-011: fixy::safety::Secret and fixy::wrap::Secret must "
+    "resolve to the same substrate symbol.");
+
+static_assert(std::is_same_v<
+    decltype(&fixy::safety::mint_linear<int, int>),
+    decltype(&fixy::wrap::mint_linear<int, int>)>,
+    "fixy-A4-011: fixy::safety::mint_linear and fixy::wrap::mint_linear "
+    "must resolve to the same substrate symbol.");
+
+static_assert(std::is_same_v<
+    decltype(&fixy::safety::mint_secret<int, int>),
+    decltype(&fixy::wrap::mint_secret<int, int>)>,
+    "fixy-A4-011: fixy::safety::mint_secret and fixy::wrap::mint_secret "
+    "must resolve to the same substrate symbol.");
+
+// Tag for the SharedPermission identity assertion below.  Lives in
+// an anonymous namespace so it can't collide with any other TU's
+// tag tree; the per-tag root mint is gated by SharedPermissionPool
+// at runtime so the test compiles without instantiating either.
+namespace {
+struct A4_011_TestTag {};
+}  // namespace
+
+static_assert(std::is_same_v<
+    fixy::perm::SharedPermission<A4_011_TestTag>,
+    fixy::wrap::SharedPermission<A4_011_TestTag>>,
+    "fixy-A4-011: fixy::perm::SharedPermission and fixy::wrap::SharedPermission "
+    "must resolve to the same substrate symbol.");
+
 // Per-namespace reachability checks (compile-only, no instantiation).
 // Each `using namespace` block names a fixy:: sub-namespace.  If the
 // umbrella failed to pull a header, the name would not exist and
@@ -65,6 +117,7 @@ void reach_sub_namespaces() {
     using namespace fixy::substr::sharded_grid;
     using namespace fixy::mach;
     using namespace fixy::safety;
+    using namespace fixy::wrap;    // fixy-A4-011 / fixy-M-27: wrap re-exports
     using namespace fixy::stance;
     using namespace fixy::grant;
     using namespace fixy::dim;
