@@ -6756,6 +6756,21 @@ crucible_neg_compile_test(neg_federation_mint_raw_permission
 crucible_neg_compile_test(neg_federation_mint_wrong_org_share
     "no matching function|could not convert|cannot convert|invalid initialization|deduction/substitution failed")
 
+# fixy-A2-010 — substrate-side HS14 floor for the higher-order
+# capability-transfer fix on `payload_row<DelegatedSession<InnerProto,
+# InnerPS>>`.  Before the fix the trait fell through to the primary
+# template's `Row<>` default, silently hiding the inner protocol's
+# effects from the outer Ctx's row admission walk.  After the fix the
+# trait returns `protocol_effect_row_t<InnerProto>`, so the outer
+# Ctx must admit the union of effects every Send/Recv in the inner
+# protocol carries.  Two distinct rejection classes:
+#   * Fg empty-row Ctx + inner protocol with Row<IO>          (full miss)
+#   * Bg compile Ctx Row<Bg, Alloc, IO> + inner with Row<Block> (subset miss)
+crucible_neg_compile_test(neg_delegated_session_payload_row_fg
+    "CtxFitsPermissionedProtocol|CtxFitsProtocol|EffectRowMismatch|constraints not satisfied|no matching function")
+crucible_neg_compile_test(neg_delegated_session_payload_row_bg
+    "CtxFitsPermissionedProtocol|CtxFitsProtocol|EffectRowMismatch|constraints not satisfied|no matching function")
+
 # fixy-A1-008 — strong-type discipline on FederationHandshake fields
 # + federation_signature_fingerprint + make_self_signed_handshake.
 # Three rejection classes:

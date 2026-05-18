@@ -23,6 +23,9 @@
 //   Transferable<T, X>     → payload_row<T>          (transparent unwrap)
 //   Borrowed<T, X>         → payload_row<T>          (transparent unwrap)
 //   Returned<T, X>         → payload_row<T>          (transparent unwrap)
+//   DelegatedSession<P,
+//                    InnerPS>
+//                          → protocol_effect_row<P>  (higher-order capability)
 //
 // Composed payloads (Refined<P, Linear<Tagged<Computation<R, T>, S>>>)
 // unwrap transparently — every value-level wrapper that "passes
@@ -58,6 +61,16 @@
 #include <crucible/effects/Capability.h>
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/EffectRow.h>
+// Session protocol primitives — needed by `protocol_effect_row<Proto>`, the
+// recursive walker that powers `payload_row<DelegatedSession<P, IPS>>`.
+// Without these, sending a DelegatedSession<HighIO_Proto, ...> across a
+// channel would fall through to the primary `payload_row<>` and yield
+// Row<>, silently hiding every effect that running the inner protocol
+// would carry.  Closes fixy-A2-010.
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionDelegate.h>
 // Value-level wrappers — every wrapper that can appear in a Send/Recv
 // payload position must specialize payload_row<>.  Per CLAUDE.md §XXI's
 // AUDIT-2 closure: missing specializations are SOUNDNESS BUGS — the
@@ -308,6 +321,208 @@ struct payload_row<::crucible::safety::AppendOnly<T, Storage>>
 template <class T, std::size_t N, class Tag>
 struct payload_row<::crucible::safety::TimeOrdered<T, N, Tag>>
     : payload_row<T> {};
+
+// ── protocol_effect_row<Proto> — higher-order capability walker ────
+//
+// Closes fixy-A2-010.  When a session `Send<DelegatedSession<P, IPS>, K>`
+// transfers an endpoint of protocol P to the receiver, the receiver
+// gains the capability to RUN P.  By the same principle that gives
+// `payload_row<Capability<E, S>>` = `Row<E>` (sending a cap conveys its
+// effect), sending a DelegatedSession conveys every effect P's
+// operations could trigger.  The outer Ctx must therefore admit the
+// union of P's per-step effect rows, just as if the sender had to
+// possess those effects to legitimately transfer the authority.
+//
+// Without this spec, `payload_row<DelegatedSession<HighIO_Proto, IPS>>`
+// falls through to the primary template's `Row<>` default — a Fg
+// empty-row Ctx silently admits a session that contains
+// `Send<DelegatedSession<IO_heavy_proto, ...>, ...>`, defeating the
+// fundamental row-admission discipline that `mint_permissioned_session`'s
+// `CtxFitsProtocol` concept is supposed to enforce.
+//
+// Walk shape (mirrors `proto_row_admitted_by` in SessionMint.h):
+//
+//   End                         → Row<>
+//   Stop_g<C>                   → Row<>
+//   Continue                    → Row<>
+//   Send<T, K>                  → row_union(payload_effect_row<T>,
+//                                            protocol_effect_row<K>)
+//   Recv<T, K>                  → same as Send
+//   Loop<B>                     → protocol_effect_row<B>
+//   VendorPinned<V, P>          → protocol_effect_row<P>
+//   Select<Bs...>               → union over branches
+//   Offer<Bs...>                → union over branches
+//   Offer<Sender<R>, Bs...>     → union over branches
+//   CheckpointedSession<B, R>   → row_union(walk(B), walk(R))
+//   Delegate<T, K>              → protocol_effect_row<K>
+//                                  (T is recipient's-of-the-Delegate
+//                                   responsibility per existing
+//                                   `proto_row_admitted_by<Delegate>`
+//                                   semantics — sender of the Delegate
+//                                   does not execute T; same discipline
+//                                   carries through nested delegation)
+//   Accept<T, K>                → protocol_effect_row<K>  (symmetric)
+//   EpochedDelegate<T, K, ...>  → protocol_effect_row<Delegate<T, K>>
+//   EpochedAccept<T, K, ...>    → protocol_effect_row<Accept<T, K>>
+//
+//   Axiom coverage: TypeSafe / InitSafe / DetSafe — pure metafunction.
+//   Runtime cost:   zero.
+
+template <class Proto>
+struct protocol_effect_row;
+
+// End: terminal; carries no effects.
+template <>
+struct protocol_effect_row<End> {
+    using type = ::crucible::effects::Row<>;
+};
+
+// Continue: closes back to enclosing Loop; payloads already accounted
+// for when Loop was visited.
+template <>
+struct protocol_effect_row<Continue> {
+    using type = ::crucible::effects::Row<>;
+};
+
+// Stop_g<CrashClass>: crash-stop terminator (covers `Stop`, which is
+// the `Stop_g<CrashClass::Abort>` alias).  Same row semantics as End.
+template <CrashClass C>
+struct protocol_effect_row<Stop_g<C>> {
+    using type = ::crucible::effects::Row<>;
+};
+
+// Send<T, K>: union of payload's row with continuation's row.
+// Uses the explicit `payload_row_effect_t<payload_row<T>::type>`
+// expansion because the alias `payload_effect_row_t` is defined later
+// in the file (after the `payload_row_t` alias); the inlined form here
+// depends only on the primary trait and the wrapper-row projector,
+// both of which are visible above.
+template <class T, class K>
+struct protocol_effect_row<Send<T, K>> {
+    using type = ::crucible::effects::row_union_t<
+        payload_row_effect_t<typename payload_row<T>::type>,
+        typename protocol_effect_row<K>::type>;
+};
+
+// Recv<T, K>: symmetric to Send.
+template <class T, class K>
+struct protocol_effect_row<Recv<T, K>> {
+    using type = ::crucible::effects::row_union_t<
+        payload_row_effect_t<typename payload_row<T>::type>,
+        typename protocol_effect_row<K>::type>;
+};
+
+// Loop<B>: walk the body.
+template <class B>
+struct protocol_effect_row<Loop<B>>
+    : protocol_effect_row<B> {};
+
+// VendorPinned<V, P>: walk the inner protocol; vendor-axis is non-effect.
+template <VendorBackend V, class P>
+struct protocol_effect_row<VendorPinned<V, P>>
+    : protocol_effect_row<P> {};
+
+namespace detail::protocol_effect_row_fold {
+
+template <class... Rows>
+struct row_union_pack;
+
+template <>
+struct row_union_pack<> {
+    using type = ::crucible::effects::Row<>;
+};
+
+template <class R>
+struct row_union_pack<R> {
+    using type = R;
+};
+
+template <class R1, class R2, class... Rest>
+struct row_union_pack<R1, R2, Rest...> {
+    using type = typename row_union_pack<
+        ::crucible::effects::row_union_t<R1, R2>, Rest...>::type;
+};
+
+template <class... Rows>
+using row_union_pack_t = typename row_union_pack<Rows...>::type;
+
+}  // namespace detail::protocol_effect_row_fold
+
+// Select<Branches...>: union over all branches (the proposer may pick
+// any, so the surrounding Ctx must admit the worst case).
+template <class... Branches>
+struct protocol_effect_row<Select<Branches...>> {
+    using type = detail::protocol_effect_row_fold::row_union_pack_t<
+        typename protocol_effect_row<Branches>::type...>;
+};
+
+// Offer<Branches...>: symmetric — the offerer must support every branch.
+template <class... Branches>
+struct protocol_effect_row<Offer<Branches...>> {
+    using type = detail::protocol_effect_row_fold::row_union_pack_t<
+        typename protocol_effect_row<Branches>::type...>;
+};
+
+// Offer<Sender<Role>, Branches...>: sender-typed Offer; Sender wrapper
+// carries no payload, walk the same branch pack.
+template <class Role, class... Branches>
+struct protocol_effect_row<Offer<Sender<Role>, Branches...>> {
+    using type = detail::protocol_effect_row_fold::row_union_pack_t<
+        typename protocol_effect_row<Branches>::type...>;
+};
+
+// CheckpointedSession<Base, Rollback>: BOTH branches are reachable.
+template <class Base, class Rollback>
+struct protocol_effect_row<CheckpointedSession<Base, Rollback>> {
+    using type = ::crucible::effects::row_union_t<
+        typename protocol_effect_row<Base>::type,
+        typename protocol_effect_row<Rollback>::type>;
+};
+
+// Delegate<T, K>: mirror `proto_row_admitted_by<Delegate, Ctx>`'s
+// discipline — the SENDER of the Delegate doesn't execute T; the
+// recipient is responsible for T's effects under their own Ctx.  Walk
+// only K (the sender's continuation).  Nested DelegatedSession payloads
+// inside K still surface via the payload_row<DelegatedSession<...>>
+// specialisation below.
+template <class T, class K>
+struct protocol_effect_row<Delegate<T, K>>
+    : protocol_effect_row<K> {};
+
+// Accept<T, K>: symmetric to Delegate.
+template <class T, class K>
+struct protocol_effect_row<Accept<T, K>>
+    : protocol_effect_row<K> {};
+
+// EpochedDelegate / EpochedAccept: forward to the un-epoched variant.
+template <class T, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_effect_row<
+    EpochedDelegate<T, K, MinEpoch, MinGeneration>>
+    : protocol_effect_row<Delegate<T, K>> {};
+
+template <class T, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_effect_row<
+    EpochedAccept<T, K, MinEpoch, MinGeneration>>
+    : protocol_effect_row<Accept<T, K>> {};
+
+template <class Proto>
+using protocol_effect_row_t = typename protocol_effect_row<Proto>::type;
+
+// ── DelegatedSession<P, InnerPS> ───────────────────────────────────
+//
+// fixy-A2-010 fix: higher-order capability transfer.  Conveys the union
+// of every effect row P's Send/Recv operations carry, by symmetry with
+// `payload_row<Capability<E, S>>` = `Row<E>`.  The InnerPS axis is
+// permission-token bookkeeping handled by SessionPermPayloads.h's
+// compute_perm_set_after_send/_recv specialisations — it is NOT a
+// row-admission concern, so InnerPS does not contribute here.
+
+template <class InnerProto, class InnerPS>
+struct payload_row<DelegatedSession<InnerProto, InnerPS>> {
+    using type = protocol_effect_row_t<InnerProto>;
+};
 
 // ── User alias ──────────────────────────────────────────────────────
 
@@ -567,6 +782,97 @@ static_assert(std::is_same_v<typename payload_row_t<DeepStack>::effect_row,
                               eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
 static_assert(std::is_same_v<payload_effect_row_t<DeepStack>,
                               eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
+
+// ── fixy-A2-010: DelegatedSession higher-order capability ──────────
+//
+// `payload_row<DelegatedSession<P, IPS>>` walks `P` for the union of
+// effect rows in P's Send/Recv payloads.  Without this, sending an
+// endpoint of P silently hides P's effects from the outer Ctx admission
+// check.  These tests pin the closure of the soundness gap.
+
+struct DSPermTag {};
+
+// (a) DelegatedSession<End, EmptyPermSet> — inner protocol has no
+//     operations, so no effects flow.
+using IPS_empty = ::crucible::safety::proto::EmptyPermSet;
+static_assert(std::is_same_v<
+    payload_row_t<DelegatedSession<End, IPS_empty>>,
+    eff::Row<>>);
+static_assert(std::is_same_v<
+    protocol_effect_row_t<End>,
+    eff::Row<>>);
+
+// (b) DelegatedSession<Send<Computation<Row<IO>, int>, End>, ...> —
+//     inner protocol has a Send carrying an IO payload, so the outer
+//     payload_row must surface IO.
+using InnerIo =
+    Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, End>;
+static_assert(std::is_same_v<
+    protocol_effect_row_t<InnerIo>,
+    eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<
+    payload_row_t<DelegatedSession<InnerIo, IPS_empty>>,
+    eff::Row<eff::Effect::IO>>);
+
+// (c) Deeper inner protocol with Bg + Alloc payloads on chained Send
+//     and Recv — union accumulates correctly.
+using InnerBgAlloc =
+    Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>,
+    Recv<eff::Computation<eff::Row<eff::Effect::Alloc>, int>,
+    End>>;
+static_assert(::crucible::effects::is_subrow_v<
+    eff::Row<eff::Effect::Bg, eff::Effect::Alloc>,
+    protocol_effect_row_t<InnerBgAlloc>>);
+static_assert(::crucible::effects::is_subrow_v<
+    protocol_effect_row_t<InnerBgAlloc>,
+    eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
+static_assert(::crucible::effects::is_subrow_v<
+    eff::Row<eff::Effect::Bg, eff::Effect::Alloc>,
+    payload_row_t<DelegatedSession<InnerBgAlloc, IPS_empty>>>);
+
+// (d) Loop<Send<IO, Continue>> — Loop transparently unwraps.
+using InnerLoopIo =
+    Loop<Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, Continue>>;
+static_assert(std::is_same_v<
+    payload_row_t<DelegatedSession<InnerLoopIo, IPS_empty>>,
+    eff::Row<eff::Effect::IO>>);
+
+// (e) Select<End, Send<IO, End>>: branch walker takes the union of
+//     reachable branch effects.
+using InnerSelectIo =
+    Select<End,
+           Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, End>>;
+static_assert(std::is_same_v<
+    protocol_effect_row_t<InnerSelectIo>,
+    eff::Row<eff::Effect::IO>>);
+
+// (f) Delegate<X, K> nested inside InnerProto: by the existing
+//     proto_row_admitted_by<Delegate> discipline, T is bypassed at the
+//     sender's row gate.  Effect comes from K alone.
+using InnerDelegate =
+    Delegate<Send<eff::Computation<eff::Row<eff::Effect::Block>, int>, End>,
+             Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>>;
+static_assert(std::is_same_v<
+    protocol_effect_row_t<InnerDelegate>,
+    eff::Row<eff::Effect::Bg>>);
+
+// (g) Stop_g<C> is a terminal — no effects.
+static_assert(std::is_same_v<
+    protocol_effect_row_t<Stop_g<CrashClass::Abort>>,
+    eff::Row<>>);
+static_assert(std::is_same_v<
+    protocol_effect_row_t<Stop>,
+    eff::Row<>>);
+
+// (h) The whole point of the gap-closure: a `Send<DelegatedSession,
+//     End>` previously yielded Row<> on the outer Send walker (the
+//     primary payload_row<> fallback).  After the spec it correctly
+//     surfaces every effect the inner protocol carries.
+using OuterSendCarryingDelegated =
+    Send<DelegatedSession<InnerIo, IPS_empty>, End>;
+static_assert(std::is_same_v<
+    protocol_effect_row_t<OuterSendCarryingDelegated>,
+    eff::Row<eff::Effect::IO>>);
 
 }  // namespace detail::payload_row_self_test
 
