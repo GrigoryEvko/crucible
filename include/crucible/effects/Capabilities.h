@@ -397,14 +397,51 @@ public:
 // trades the key for a fresh context — the type-level check has
 // already happened at the passkey's construction site.
 
+// fixy-A3-015 (#1622): each factory body holds a friend-scope
+// `static_assert(noexcept(Context{}))` pin.  Bg/Init/Test's default
+// constructors are private; the only places `Context{}` is a valid
+// expression are inside the friended mint factory bodies (and ExecCtx,
+// via NSDMI).  Pinning the noexcept-ness HERE catches the moment any
+// cap::* atom's NSDMI becomes throwing — the regression localizes to
+// the broken context AND to the cap atom (cf. the cap::*-level pins
+// in detail::capabilities_self_test below).  Defense-in-depth chain:
+//
+//   cap::*  ── noexcept default ctor  (atom level)
+//      │
+//      ▼
+//   Bg/Init/Test  ── noexcept aggregate-init via NSDMI  (context level)
+//      │
+//      ▼
+//   TestWitness::bg/init/test()  ── noexcept call  (mint level, pinned
+//                                     at lines 580-585 of the self-test)
+//
+// All three layers fire on a throwing-NSDMI regression.  The factory-
+// body pin is the middle layer — it sits in the only scope where the
+// private default ctor is accessible.
+
 [[nodiscard]] inline constexpr Bg
-mint_bg_context(detail::ctx_mint::bg_key) noexcept { return Bg{}; }
+mint_bg_context(detail::ctx_mint::bg_key) noexcept {
+    static_assert(noexcept(Bg{}),
+        "fixy-A3-015: Bg default ctor MUST be noexcept — a cap::* "
+        "token's NSDMI must never throw.");
+    return Bg{};
+}
 
 [[nodiscard]] inline constexpr Init
-mint_init_context(detail::ctx_mint::init_key) noexcept { return Init{}; }
+mint_init_context(detail::ctx_mint::init_key) noexcept {
+    static_assert(noexcept(Init{}),
+        "fixy-A3-015: Init default ctor MUST be noexcept — a cap::* "
+        "token's NSDMI must never throw.");
+    return Init{};
+}
 
 [[nodiscard]] inline constexpr Test
-mint_test_context(detail::ctx_mint::test_key) noexcept { return Test{}; }
+mint_test_context(detail::ctx_mint::test_key) noexcept {
+    static_assert(noexcept(Test{}),
+        "fixy-A3-015: Test default ctor MUST be noexcept — a cap::* "
+        "token's NSDMI must never throw.");
+    return Test{};
+}
 
 // ── effects::testing — scaffolding entry point ──────────────────────
 //
@@ -565,6 +602,22 @@ static_assert(std::is_trivially_copyable_v<cap::Block>);
 static_assert(std::is_trivially_destructible_v<cap::Alloc>);
 static_assert(std::is_trivially_destructible_v<cap::IO>);
 static_assert(std::is_trivially_destructible_v<cap::Block>);
+
+// fixy-A3-015 (#1622): cap::* atom-level noexcept pins.  Every cap::*
+// is the source of an NSDMI inside Bg/Init/Test (`[[no_unique_address]]
+// cap::Alloc alloc{};`).  If a future change to cap::* adds a throwing
+// default ctor or NSDMI, this assertion fires AT THE ATOM — naming the
+// exact cap that broke before the chain reaches Bg/Init/Test's friended
+// factory bodies (which carry their own pins per A3-015) and the
+// outermost TestWitness pins above.  Three-layer defense in depth: atom
+// → context → mint.  A regression at the atom layer fires all three;
+// the atom pin pinpoints the cause.
+static_assert(noexcept(cap::Alloc{}));
+static_assert(noexcept(cap::IO{}));
+static_assert(noexcept(cap::Block{}));
+static_assert(std::is_nothrow_default_constructible_v<cap::Alloc>);
+static_assert(std::is_nothrow_default_constructible_v<cap::IO>);
+static_assert(std::is_nothrow_default_constructible_v<cap::Block>);
 
 // Top-level aliases really do refer to the cap::* originals.
 static_assert(std::is_same_v<Alloc, cap::Alloc>);

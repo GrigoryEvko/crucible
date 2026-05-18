@@ -2120,6 +2120,23 @@ crucible_neg_compile_effects_test(neg_capability_forge_default_ctor
 crucible_neg_compile_effects_test(neg_capability_forge_via_passkey
     "is private within this context|private member|private|cap_mint_key")
 
+# ─── fixy-A3-015 (#1622): NSDMI noexcept defense-in-depth pin ──────
+#
+# Capabilities.h carries a three-layer noexcept pin: cap::* atoms
+# (self-test), Bg/Init/Test contexts (friended factory bodies), and
+# TestWitness::bg/init/test() (mint-level self-test).  The two fixtures
+# below witness the REJECTION side of that gate by defining a
+# structurally cap::*-shaped struct with an explicitly throwing default
+# ctor and asserting (via the two distinct standard paths — noexcept(T{})
+# operator + is_nothrow_default_constructible_v<T> trait) that the
+# production pins would fire.  Both pin halves run in lockstep: if
+# either standard path silently weakens, only ONE fixture admits and
+# the other still fires, surfacing the broken path immediately.
+crucible_neg_compile_effects_test(neg_capability_throwing_nsdmi_noexcept_pin
+    "static assertion failed|static_assert|fixy-A3-015")
+crucible_neg_compile_effects_test(neg_capability_throwing_nsdmi_trait_pin
+    "static assertion failed|static_assert|fixy-A3-015")
+
 # ─── P1-AUDIT-5 (#856): wrapper-lift + tier-discrimination gates ───
 #
 # Two fixtures: AllocClassFromCtx rejects Unbound (no wrapper
