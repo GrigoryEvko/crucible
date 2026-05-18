@@ -8118,6 +8118,36 @@ crucible_neg_compile_test(neg_decide_valid_span_truncation
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 
 # ─────────────────────────────────────────────────────────────────
+# fixy-A1-032 — OneShotFlag::reset_in_quiescent_context passkey gate
+# ─────────────────────────────────────────────────────────────────
+#
+# Lifts the prior `reset_unsafe()` precondition (producer + consumer
+# both quiescent at reset time) from doc-comment to type system via
+# the `OneShotFlag::QuiescenceProof` passkey.  Two fixtures pin the
+# rename's structural promise:
+#
+#   * neg_reset_in_quiescent_context_without_proof — primary.
+#     Witness: zero-argument call.  Catches refactor-induced loss of
+#     the parameter entirely; legacy `reset_unsafe()` was a no-arg
+#     surface, so a mechanical rename without reading the new
+#     signature dies here.
+#
+#   * neg_reset_in_quiescent_context_braced_init — companion.
+#     Witness: `{}` implicit-conversion call.  Catches the bypass
+#     that would defeat the audit-discoverability claim — `grep
+#     "QuiescenceProof{}"` works only when every call site spells
+#     the type literally.  The `explicit QuiescenceProof()` ctor
+#     blocks `{}`; this fixture pins that property.
+#
+# Together the two cover the two shapes of "forgot the passkey"
+# refactor mistake.  Diagnostic family naming is broad to absorb
+# GCC dialect drift across the two shapes.
+crucible_neg_compile_test(neg_reset_in_quiescent_context_without_proof
+    "too few arguments|no matching function|candidate function not viable|expects 1 argument|expected.*argument")
+crucible_neg_compile_test(neg_reset_in_quiescent_context_braced_init
+    "explicit constructor|explicit.*conversion|no matching function|could not convert|cannot convert|not a valid template argument")
+
+# ─────────────────────────────────────────────────────────────────
 # FIXY-GAP-B — Agent B round 2
 # ─────────────────────────────────────────────────────────────────
 #

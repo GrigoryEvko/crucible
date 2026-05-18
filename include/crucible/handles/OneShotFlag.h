@@ -122,11 +122,48 @@ public:
         return true;
     }
 
+    // ── reset_in_quiescent_context — quiescence-gated reset ────────
+    //
     // Unconditional reset — only safe when both producer and consumer
     // are quiescent (e.g. shutdown / reset-all paths).  Relaxed store
     // matches TraceRing::reset's assumption that no concurrent access
     // exists at the call site.
-    void reset_unsafe() noexcept {
+    //
+    // fixy-A1-032 (task #1574): replaces the prior `reset_unsafe()`
+    // surface.  Two improvements:
+    //
+    //   1. Renamed to `reset_in_quiescent_context` so the precondition
+    //      is grep-discoverable from the call site name — readers and
+    //      code-review agents do not need to chase the `_unsafe` suffix
+    //      back to this header to learn what the unsafety is.
+    //
+    //   2. Gated behind the `QuiescenceProof` passkey (below).  The
+    //      passkey's default ctor is `explicit`, so:
+    //          flag.reset_in_quiescent_context()        — compile error
+    //          flag.reset_in_quiescent_context({})      — compile error
+    //          flag.reset_in_quiescent_context(QuiescenceProof{}) — OK
+    //      Every certified-quiescent reset site spells out the proof
+    //      construction at the call site, which audits via `grep
+    //      "QuiescenceProof{}"`.  The runtime cost of the parameter
+    //      is zero (sizeof(QuiescenceProof) == 1 byte; EBO-collapsed
+    //      against the function parameter ABI on every supported
+    //      target).
+    //
+    // The discipline is "every reset call site explicitly asserts the
+    // precondition", not "only friends may reset" — call sites in
+    // BackgroundThread and tests are the audit ground truth.  A future
+    // hardening could close the passkey gate (private default ctor +
+    // friend list); the current shape is the minimum that makes the
+    // precondition visible without friend-list churn.
+    struct QuiescenceProof {
+        // Default ctor is `explicit` — callers must spell out
+        // `QuiescenceProof{}` (or a named local) at every call site.
+        // Implicit braced-init (`reset_in_quiescent_context({})`)
+        // fails: §II TypeSafe demands the precondition be visible.
+        explicit QuiescenceProof() = default;
+    };
+
+    void reset_in_quiescent_context(QuiescenceProof) noexcept {
         flag_.store(false, std::memory_order_relaxed);
     }
 

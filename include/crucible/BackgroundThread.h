@@ -162,10 +162,11 @@ struct BackgroundThread {
 
   // Thread control.  stop_requested is a one-way signal for one run()
   // invocation; start() / tests re-arm it under quiescence with
-  // reset_unsafe() before launching the next pipeline.  The signal has
-  // no data dependency beyond termination, but using OneShotFlag keeps
-  // the release/acquire discipline structural instead of hand-rolled
-  // atomic<bool> loads and stores.
+  // reset_in_quiescent_context(QuiescenceProof{}) before launching the
+  // next pipeline (fixy-A1-032 — passkey-gated rename of reset_unsafe).
+  // The signal has no data dependency beyond termination, but using
+  // OneShotFlag keeps the release/acquire discipline structural instead
+  // of hand-rolled atomic<bool> loads and stores.
   alignas(64) crucible::safety::OneShotFlag stop_requested;
   std::jthread pipeline_thread;
 
@@ -693,7 +694,8 @@ struct BackgroundThread {
     world_size = world_size_;
     device_capability = device_cap;
     reserve_iteration_buffers_();
-    stop_requested.reset_unsafe();
+    stop_requested.reset_in_quiescent_context(
+        ::crucible::safety::OneShotFlag::QuiescenceProof{});
     pipeline_thread = std::jthread([this](std::stop_token) noexcept {
       run_in_row<run_required_row>();
     });

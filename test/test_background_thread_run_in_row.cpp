@@ -526,7 +526,8 @@ static void test_audit_f_concurrent_spsc_drain() {
     auto metalog = std::make_unique<MetaLog>();
     bt.ring.set(BackgroundThread::RingPtr{ring.get()});
     bt.meta_log.set(BackgroundThread::MetaLogPtr{metalog.get()});
-    bt.stop_requested.reset_unsafe();
+    bt.stop_requested.reset_in_quiescent_context(
+        crucible::safety::OneShotFlag::QuiescenceProof{});
 
     using Required = BackgroundThread::run_required_row;
 
@@ -700,7 +701,8 @@ static void test_audit_i_large_batch_drain() {
     auto metalog = std::make_unique<MetaLog>();
     bt.ring.set(BackgroundThread::RingPtr{ring.get()});
     bt.meta_log.set(BackgroundThread::MetaLogPtr{metalog.get()});
-    bt.stop_requested.reset_unsafe();
+    bt.stop_requested.reset_in_quiescent_context(
+        crucible::safety::OneShotFlag::QuiescenceProof{});
 
     using Required = BackgroundThread::run_required_row;
 
@@ -773,7 +775,8 @@ static void test_audit_j_rearm_cycle() {
     uint64_t prev_processed = 0;
 
     for (uint32_t cycle = 0; cycle < 2; ++cycle) {
-        bt.stop_requested.reset_unsafe();
+        bt.stop_requested.reset_in_quiescent_context(
+            crucible::safety::OneShotFlag::QuiescenceProof{});
 
         std::thread bg([&]() {
             bt.run_in_row<Required>();
