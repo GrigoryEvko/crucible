@@ -726,9 +726,26 @@ inline constexpr bool is_dual_involutive_v = is_dual_involutive<P>::value;
 // segfaults when the channel runs out of message types it knows how
 // to decode.
 //
-// `is_dual_v<P1, P2>` is the trait — `true` iff P1 == dual_of_t<P2>.
-// (Equivalently, since `dual_of_t` is involutive on well-formed
-// protocols, dual_of_t<P1> == P2 holds too.)
+// `is_dual_v<P1, P2>` is the trait — `true` iff the two endpoint
+// protocols form a dual pair under `dual_of`.  Concretely the
+// disjunction `dual_of_t<P1> == P2 || P1 == dual_of_t<P2>` — the OR
+// is load-bearing on the asymmetric `Offer<Sender<Role>, Bs...>`
+// shape because `dual_of` is non-involutive there (fixy-CR-11) and
+// the simpler `dual_of_t<P1> == P2` form is argument-order-sensitive:
+//
+//   using OfferS = Offer<Sender<Role>, B1, B2>;
+//   using SelP   = Select<dual_of_t<B1>, dual_of_t<B2>>;
+//   dual_of_t<OfferS>  == SelP            // forward strips Sender
+//   dual_of_t<SelP>    == Offer<B1, B2>   // reverse cannot restore
+//
+// so `dual_of_t<OfferS> == SelP` holds but `dual_of_t<SelP> == OfferS`
+// does NOT — the two orientations disagree.  `ensure_dual<P1, P2>`
+// MUST be argument-order-insensitive (a channel pair has no "primary"
+// side), so `is_dual_v` checks both orientations.  On the closed
+// involutive core (Send/Recv/Select/plain Offer/Loop/...) the OR is
+// redundant — either operand suffices — so the symmetric form is
+// strictly weaker only on the Sender-Offer shape where asymmetry
+// would otherwise leak through fixy-A2-022.
 //
 // `ensure_dual<P1, P2>()` is the consteval one-line check that fires
 // the framework-controlled `[Dual_Mismatch]` diagnostic when the pair
@@ -754,7 +771,9 @@ inline constexpr bool is_dual_involutive_v = is_dual_involutive<P>::value;
 // Audit: grep "ensure_dual<"  →  every channel-establishment pair.
 
 template <typename P1, typename P2>
-inline constexpr bool is_dual_v = std::is_same_v<dual_of_t<P1>, P2>;
+inline constexpr bool is_dual_v =
+    std::is_same_v<dual_of_t<P1>, P2> ||
+    std::is_same_v<P1, dual_of_t<P2>>;
 
 template <typename P1, typename P2>
 consteval void ensure_dual() noexcept {

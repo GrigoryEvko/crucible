@@ -6458,6 +6458,19 @@ crucible_neg_compile_test(neg_session_pick_index_out_of_range
 crucible_neg_compile_test(neg_session_dual_mismatch
     "Dual_Mismatch")
 
+# fixy-A2-022 — HS14 floor for symmetric `is_dual_v` over the
+# Sender-annotated Offer asymmetric case.  Two fixtures witness that
+# `ensure_dual` still REJECTS genuinely-non-dual pairs after the
+# OR-disjunction fix:
+#   reversed-orientation — branch-count mismatch in reverse argument order
+#   branches            — element-wise payload-type drift on the
+#                         Sender-Offer shape (regression test that the
+#                         OR doesn't relax detection)
+crucible_neg_compile_test(neg_session_dual_mismatch_sender_offer_reversed
+    "static assertion failed|Dual_Mismatch|ensure_dual")
+crucible_neg_compile_test(neg_session_dual_mismatch_sender_offer_branches
+    "static assertion failed|Dual_Mismatch|ensure_dual")
+
 # Cipher federation MPST order gates (GAPS-039).  These fixtures use
 # concept probes plus framework-controlled static_assert messages so
 # drift in method availability is surfaced without depending on GCC's
