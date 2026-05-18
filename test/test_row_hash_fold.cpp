@@ -13,6 +13,7 @@
 #include <crucible/safety/diag/RowHashFold.h>
 #include <crucible/Types.h>
 #include <crucible/effects/Computation.h>
+#include <crucible/safety/HotPath.h>
 
 #include "test_assert.h"
 
@@ -366,6 +367,77 @@ static void test_runtime_federation_hash_pins() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// fixy-A3-016 sentinel — pins BOTH order properties RowHashFold.h's
+// doc-comment now distinguishes:
+//
+//   (i)  Computation-internal order (R-first, T-second):
+//        `Computation<R, int>` differs from a hypothetical
+//        `Computation<int, R>` because combine_ids is non-commutative.
+//        We witness this through a row swap (which is the only legal
+//        way to swap the two slots — bare `int` isn't a valid row
+//        type, but two distinct Rows can be tried in either slot).
+//
+//   (ii) Wrapper-stack × Computation interleave order:
+//        `HotPath<Hot, Computation<R, int>>` differs from
+//        `Computation<R, HotPath<Hot, int>>` — wrapping the
+//        Computation is NOT the same as wrapping the payload inside
+//        the Computation.  This is the property a reader who
+//        misreads the doc-comment would expect to be EQUAL; the
+//        sentinel pins it INEQUAL, foreclosing that
+//        misinterpretation.
+//
+// Both properties together imply the doc clarification is load-
+// bearing: a refactor that flattens the distinction between
+// "wrapper outside Computation" and "Computation outside wrapper"
+// would break federation cache slot assignment for every wrapped
+// row-typed carrier.
+static void test_runtime_wrapper_computation_interleave_order() {
+    using ce::Effect;
+    using ce::EmptyRow;
+    using ce::Row;
+    using ce::Computation;
+    using crucible::safety::HotPath;
+    using crucible::safety::HotPathTier_v;
+
+    // (i) Within Computation, swapping the two type slots produces a
+    // different hash because combine_ids is non-commutative.  Use two
+    // structurally-distinct row types to legally fill both slots —
+    // bare integral types in slot 1 would not be Row-shaped.
+    using R_A = Row<Effect::Alloc>;
+    using R_B = Row<Effect::IO>;
+
+    volatile std::uint64_t sink_AB =
+        cd::row_hash_of_v<Computation<R_A, R_B>>.raw();
+    volatile std::uint64_t sink_BA =
+        cd::row_hash_of_v<Computation<R_B, R_A>>.raw();
+
+    // Distinct rows in distinct slots ⇒ distinct combine_ids output.
+    // (Both Rows non-zero, combine_ids non-commutative.)
+    assert(sink_AB != sink_BA);
+
+    // (ii) Wrapper outside vs. inside Computation produces different
+    // hashes — this is the load-bearing pin against the doc-comment
+    // misreading.  Both expressions touch the same atom set; only the
+    // nesting differs.
+    volatile std::uint64_t sink_wrap_outside =
+        cd::row_hash_of_v<HotPath<HotPathTier_v::Hot,
+                                  Computation<Row<Effect::Bg>, int>>>.raw();
+    volatile std::uint64_t sink_wrap_inside =
+        cd::row_hash_of_v<Computation<Row<Effect::Bg>,
+                                      HotPath<HotPathTier_v::Hot, int>>>.raw();
+    assert(sink_wrap_outside != sink_wrap_inside);
+
+    // Both must also differ from the bare-Computation baseline (the
+    // wrapper contribution flows in regardless of nesting position).
+    volatile std::uint64_t sink_bare_comp =
+        cd::row_hash_of_v<Computation<Row<Effect::Bg>, int>>.raw();
+    assert(sink_wrap_outside != sink_bare_comp);
+    assert(sink_wrap_inside  != sink_bare_comp);
+
+    std::printf("  test_wrapper_computation_interleave_order: PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 int main() {
     test_runtime_permutation_invariance();
     test_runtime_cardinality_discrimination();
@@ -375,6 +447,7 @@ int main() {
     test_runtime_determinism();
     test_runtime_computation_specialization();
     test_runtime_federation_hash_pins();
-    std::printf("test_row_hash_fold: 8 groups, all passed\n");
+    test_runtime_wrapper_computation_interleave_order();
+    std::printf("test_row_hash_fold: 9 groups, all passed\n");
     return 0;
 }

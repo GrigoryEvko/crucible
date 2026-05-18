@@ -459,9 +459,35 @@ struct row_hash_contribution<effects::Row<Es...>> {
 //     guarantees (3).
 //
 // Order-sensitivity (combine_ids(R, T) ≠ combine_ids(T, R)) is
-// deliberate.  It pins the canonical ROW-FIRST nesting order: the
-// row R is "outer", the payload T is "inner".  This is the same
-// nesting documented for FOUND-I03's wrapper-stack discipline.
+// deliberate.  It pins canonical metadata-before-payload contribution
+// WITHIN the Computation carrier — R (the row) folds first, T (the
+// payload) folds second.
+//
+// fixy-A3-016 clarification — "outer/inner" terminology differs at the
+// two scales an audit reader bridges between this header and CLAUDE.md
+// §XVI's wrapper-nesting order.  They are NOT in conflict:
+//
+//   * WRAPPER-STACK level (§XVI, FOUND-I03):
+//       `HotPath<Tier, Computation<R, T>>` — HotPath is the OUTER
+//       wrapper, Computation is the INNER carrier.  §XVI says
+//       Computation is the INNERMOST member of every effect stack.
+//       The wrapper specializations below (`HotPath<Tier, Inner>`, …)
+//       fold `combine_ids(<wrapper tag>, row_hash_v<Inner>)` —
+//       wrapper-tag first, inner contribution second.
+//
+//   * COMPUTATION-INTERNAL level (this specialization):
+//       Within a single `Computation<R, T>` instantiation, R is the
+//       row metadata and T is the payload.  Calling R "outer" and T
+//       "inner" describes their position in the combine_ids fold INSIDE
+//       Computation — NOT their position in the wrapper stack (the
+//       whole Computation IS inside any wrapper that wraps it).
+//
+// Both order properties fold deterministically and orthogonally; a
+// reader who confuses them would expect the wrong row_hash for
+// `Computation<R, HotPath<Tier, int>>` vs
+// `HotPath<Tier, Computation<R, int>>` (which produce different
+// hashes — pinned by the wrapper-stack × Computation interleave test
+// in test_row_hash_fold.cpp).
 
 template <typename R, typename T>
 struct row_hash_contribution<effects::Computation<R, T>> {
