@@ -299,6 +299,19 @@ static_assert(non_distributive_witness(),
     "RecipeFamilyLattice's non-distributivity is a STRUCTURAL CLAIM "
     "(M3 substructure — same as NumaNodeLattice).");
 
+// fixy-H-20: invoke central Lattice.h verifier.  M3-shape lattice is
+// non-distributive (see non_distributive_witness above) — only the
+// bounded-lattice rollup is invoked; verify_distributive_lattice is
+// INTENTIONALLY omitted.
+static_assert(verify_bounded_lattice_axioms_at<RecipeFamilyLattice>(
+    RecipeFamily::None, RecipeFamily::Kahan, RecipeFamily::Any));
+static_assert(verify_bounded_lattice_axioms_at<RecipeFamilyLattice>(
+    RecipeFamily::Linear, RecipeFamily::Pairwise, RecipeFamily::Kahan));
+static_assert(verify_bounded_lattice_axioms_at<RecipeFamilyLattice>(
+    RecipeFamily::Kahan, RecipeFamily::BlockStable, RecipeFamily::Any));
+static_assert(verify_bounded_lattice_axioms_at<RecipeFamilyLattice>(
+    RecipeFamily::None, RecipeFamily::None, RecipeFamily::Any));
+
 inline void runtime_smoke_test() {
     RecipeFamily              bot   = RecipeFamilyLattice::bottom();
     RecipeFamily              topv  = RecipeFamilyLattice::top();

@@ -198,6 +198,21 @@ static_assert(!(BitsBudget{5} != BitsBudget{5}));
 }
 static_assert(distributive_witness());
 
+// fixy-H-20: invoke central Lattice.h verifier on representative
+// witnesses.  Chain lattice ⇒ distributive.
+static_assert(verify_bounded_lattice_axioms_at<BitsBudgetLattice>(
+    BitsBudgetLattice::bottom(), BitsBudget{1024}, BitsBudgetLattice::top()));
+static_assert(verify_bounded_lattice_axioms_at<BitsBudgetLattice>(
+    BitsBudget{0}, BitsBudget{42}, BitsBudget{99}));
+static_assert(verify_bounded_lattice_axioms_at<BitsBudgetLattice>(
+    BitsBudget{1}, BitsBudget{2}, BitsBudget{3}));
+static_assert(verify_distributive_lattice<BitsBudgetLattice>(
+    BitsBudgetLattice::bottom(), BitsBudget{1024}, BitsBudgetLattice::top()));
+static_assert(verify_distributive_lattice<BitsBudgetLattice>(
+    BitsBudget{2}, BitsBudget{5}, BitsBudget{8}));
+static_assert(verify_distributive_lattice<BitsBudgetLattice>(
+    BitsBudget{99}, BitsBudget{99}, BitsBudget{99}));
+
 // Strong-typing rejection — BitsBudget != raw uint64_t at the
 // element_type level (the leq signature would fail to bind a
 // uint64_t directly without the explicit BitsBudget{} construction).

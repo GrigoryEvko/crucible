@@ -292,6 +292,21 @@ static_assert(associativity_witness());
 }
 static_assert(absorption_witness());
 
+// fixy-H-20: invoke central Lattice.h verifier.  NumaNodeLattice is
+// non-distributive (M3 substructure — see non_distributive_witness
+// above), so verify_distributive_lattice is INTENTIONALLY omitted.
+// The bounded-lattice rollup covers idempotence, commutativity,
+// associativity, absorption, partial-order, bottom/top identity —
+// every law NumaNodeLattice claims to satisfy.
+static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(
+    NumaNodeId::None, NumaNodeId{2}, NumaNodeId::Any));
+static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(
+    NumaNodeId{0}, NumaNodeId{1}, NumaNodeId{2}));
+static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(
+    NumaNodeId{42}, NumaNodeId{42}, NumaNodeId{43}));
+static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(
+    NumaNodeId::None, NumaNodeId::None, NumaNodeId::Any));
+
 inline void runtime_smoke_test() {
     NumaNodeId                bot   = NumaNodeLattice::bottom();
     NumaNodeId                topv  = NumaNodeLattice::top();

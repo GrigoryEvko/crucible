@@ -166,6 +166,23 @@ static_assert(EpochLattice::meet(Epoch{99}, Epoch{99}).value == 99);
 }
 static_assert(distributive_witness());
 
+// fixy-H-20: invoke central Lattice.h verifier on representative
+// witnesses (bottom, mid, top + adjacent triples).  Chain lattice ⇒
+// distributive (every chain is distributive — meet/join distribute
+// trivially when ordered).
+static_assert(verify_bounded_lattice_axioms_at<EpochLattice>(
+    EpochLattice::bottom(), Epoch{1024}, EpochLattice::top()));
+static_assert(verify_bounded_lattice_axioms_at<EpochLattice>(
+    Epoch{0}, Epoch{42}, Epoch{99}));
+static_assert(verify_bounded_lattice_axioms_at<EpochLattice>(
+    Epoch{1}, Epoch{2}, Epoch{3}));
+static_assert(verify_distributive_lattice<EpochLattice>(
+    EpochLattice::bottom(), Epoch{1024}, EpochLattice::top()));
+static_assert(verify_distributive_lattice<EpochLattice>(
+    Epoch{2}, Epoch{5}, Epoch{8}));
+static_assert(verify_distributive_lattice<EpochLattice>(
+    Epoch{7}, Epoch{7}, Epoch{42}));
+
 // Implicit conversion DOWN to uint64_t.
 static_assert([] consteval {
     Epoch         e{42};

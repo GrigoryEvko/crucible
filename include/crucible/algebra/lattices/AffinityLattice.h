@@ -386,6 +386,34 @@ static_assert(transitivity_witness());
 }
 static_assert(de_morgan_witness());
 
+// fixy-H-20: invoke central Lattice.h verifier.  Boolean lattice ⇒
+// distributive (powerset under ∪/∩ is the canonical distributive
+// lattice; Birkhoff's representation theorem).
+static_assert(verify_bounded_lattice_axioms_at<AffinityLattice>(
+    AffinityLattice::bottom(),
+    AffinityMask::range(0, 31),
+    AffinityLattice::top()));
+static_assert(verify_bounded_lattice_axioms_at<AffinityLattice>(
+    AffinityMask::single(0),
+    AffinityMask::single(127),
+    AffinityMask::single(255)));
+static_assert(verify_bounded_lattice_axioms_at<AffinityLattice>(
+    AffinityMask::range(0,   63),
+    AffinityMask::range(32,  95),
+    AffinityMask::range(64, 127)));
+static_assert(verify_distributive_lattice<AffinityLattice>(
+    AffinityLattice::bottom(),
+    AffinityMask::range(0, 31),
+    AffinityLattice::top()));
+static_assert(verify_distributive_lattice<AffinityLattice>(
+    AffinityMask::range(0,   63),
+    AffinityMask::range(32,  95),
+    AffinityMask::range(64, 127)));
+static_assert(verify_distributive_lattice<AffinityLattice>(
+    AffinityMask::single(0),
+    AffinityMask::single(127),
+    AffinityMask::single(255)));
+
 inline void runtime_smoke_test() {
     AffinityMask                  bot   = AffinityLattice::bottom();
     AffinityMask                  topv  = AffinityLattice::top();

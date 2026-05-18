@@ -154,6 +154,21 @@ static_assert(GenerationLattice::meet(Generation{99}, Generation{99}).value == 9
 }
 static_assert(distributive_witness());
 
+// fixy-H-20: invoke central Lattice.h verifier on representative
+// witnesses.  Chain lattice ⇒ distributive.
+static_assert(verify_bounded_lattice_axioms_at<GenerationLattice>(
+    GenerationLattice::bottom(), Generation{7}, GenerationLattice::top()));
+static_assert(verify_bounded_lattice_axioms_at<GenerationLattice>(
+    Generation{0}, Generation{1}, Generation{2}));
+static_assert(verify_bounded_lattice_axioms_at<GenerationLattice>(
+    Generation{1}, Generation{4}, Generation{16}));
+static_assert(verify_distributive_lattice<GenerationLattice>(
+    GenerationLattice::bottom(), Generation{7}, GenerationLattice::top()));
+static_assert(verify_distributive_lattice<GenerationLattice>(
+    Generation{1}, Generation{4}, Generation{16}));
+static_assert(verify_distributive_lattice<GenerationLattice>(
+    Generation{99}, Generation{99}, Generation{99}));
+
 // Implicit conversion DOWN to uint64_t.
 static_assert([] consteval {
     Generation    g{42};
