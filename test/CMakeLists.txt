@@ -7869,11 +7869,14 @@ crucible_neg_compile_test(neg_decide_valid_span_truncation
 # Theory.h §30.14 corpus expansion (G6/G7) — adds two literature-
 # backed unsoundness detectors:
 #
-#   staleness_secret_without_declassify  — Sabelfeld-Sands 2009 /
-#     Hunt-Sands 2008 stale-replay as failed erasure (fixy-CR-16
-#     replaced an earlier Andrysco-2015 attribution that did not
-#     back the claim; Hunt-Sands 2008 "Just Forget It" formalizes
-#     erasure as the dual axis of staleness).
+#   staleness_secret_without_declassify  — Hunt-Sands 2008 primary
+#     ("Just Forget It" formalizes erasure as the dual axis of
+#     staleness); Askarov-Hunt-Sabelfeld-Sands 2008 supports the
+#     timing/replay-channel formalization; Sabelfeld-Sands 2009
+#     survey-cite for the "when"-dimension conceptual frame (fixy-
+#     H-17 demoted SS09 from primary to survey; fixy-CR-16 replaced
+#     an earlier Andrysco-2015 attribution that did not back the
+#     claim).
 #     Pattern: as_secret + stale_to<N> + no declassify<Policy>.
 #
 #   ghost_runtime_observable             — Filliâtre-Gondelman-

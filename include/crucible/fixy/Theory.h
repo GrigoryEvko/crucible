@@ -316,19 +316,36 @@ struct classified_bg_without_declassify {
 
 // ── Entry 3: staleness_secret_without_declassify ─────────────────
 //
-// Cite: Sabelfeld-Sands 2009, "Declassification: dimensions and
-// principles" (J. Computer Security) — the "when" dimension of
-// declassification (temporal release authorization); Hunt-Sands
-// 2008, "Just Forget It — The Semantics and Enforcement of
-// Information Erasure" (POPL) — the dual axis: classified data
-// that should be unobservable after a staleness window expires
-// is a failed erasure policy.  (fixy-CR-16: replaces a prior
-// Andrysco-et-al 2015 attribution that did not back the claim —
-// that paper, "On Subnormal Floating Point and Abnormal Timing"
-// IEEE S&P, is about FP-subnormal timing side channels and has
-// nothing to say about staleness/freshness/replay information
-// flow.  The substantive corpus entry is unchanged; only the
-// supporting citation rotates to the correct paper.)
+// Primary cite: Hunt-Sands 2008, "Just Forget It — The Semantics
+// and Enforcement of Information Erasure" (POPL).  Formalizes
+// erasure semantics — the dual axis of staleness.  A classified
+// value reachable through a stale-cache replay window of duration
+// TauMax is, semantically, a failed erasure policy: data the
+// erasure-enforced system would require be forgotten remains
+// observable across the replay window.  This is the closest
+// formal account of the pattern this corpus entry catches.
+//
+// Supporting cite: Askarov-Hunt-Sabelfeld-Sands 2008, "Termination-
+// Insensitive Noninterference Leaks More Than Just a Bit" (ESORICS).
+// Formalizes the timing/replay channel as an information leak
+// distinct from data-flow channels — relevant when the staleness
+// window itself encodes timing-observable state.
+//
+// Survey cite: Sabelfeld-Sands 2009, "Declassification: dimensions
+// and principles" (J. Computer Security).  Names the "when"
+// dimension of declassification as the conceptual frame for
+// temporal release authorization.  SS09 is a survey of approaches
+// — it identifies the dimension exists but does not formalize the
+// stale-replay-as-failed-erasure pattern this entry detects.  Kept
+// as orientation for readers, demoted from primary attribution per
+// fixy-H-17 (cite-discipline tightening).
+//
+// (fixy-CR-16: an earlier Andrysco-et-al 2015 attribution did not
+// back the claim — that paper, "On Subnormal Floating Point and
+// Abnormal Timing" IEEE S&P, is about FP-subnormal timing side
+// channels and has nothing to say about staleness/freshness/replay
+// information flow.  The substantive corpus entry is unchanged;
+// only the supporting citation rotated to the correct paper.)
 //
 // Pattern: a binding engages `as_secret` (or `as_classified`) on
 // Security AND `stale_to<TauMax>` on Staleness (non-Fresh) AND omits
@@ -371,15 +388,19 @@ struct staleness_secret_without_declassify {
     }
 
     static constexpr std::string_view cite() noexcept {
-        return "Sabelfeld-Sands 2009 / Hunt-Sands 2008 — "
+        return "Hunt-Sands 2008 'Just Forget It' (POPL) primary — "
                "stale-replay as failed erasure: classified value is "
                "reachable through a non-Fresh Staleness window "
                "(stale_to<TauMax>) without a declassification "
                "policy; the replay-window keeps observable what an "
-               "erasure policy would require be forgotten.  Insert "
-               "grant::declassify<Policy> OR drop the stale_to<N> "
-               "grant (Staleness defaults to Fresh) OR project "
-               "Security to a less restrictive level.";
+               "erasure policy would require be forgotten.  "
+               "Askarov-Hunt-Sabelfeld-Sands 2008 (ESORICS) supports "
+               "the timing/replay-channel formalization; Sabelfeld-"
+               "Sands 2009 (J.Comp.Sec.) is the 'when'-dimension "
+               "survey frame.  Insert grant::declassify<Policy> OR "
+               "drop the stale_to<N> grant (Staleness defaults to "
+               "Fresh) OR project Security to a less restrictive "
+               "level.";
     }
 };
 
