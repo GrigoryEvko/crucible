@@ -117,7 +117,16 @@ public:
 
 template <typename... Tags>
 struct inheritance_list {
-    static constexpr std::size_t size = sizeof...(Tags);
+    // fixy-A1-027: the prior `static constexpr std::size_t size =
+    // sizeof...(Tags);` exposed a raw size_t on the public surface
+    // (§II TypeSafe — "every semantic value is a strong type — no
+    // raw integers for anything with meaning").  No production or
+    // test consumer read the field; `inheritance_list_empty_v<List>`
+    // is the empty-list predicate, and a strong-typed cardinality
+    // accessor will arrive with a project-wide convergence pass that
+    // covers the parallel `PermSet::size` / `roles_of_t::size`
+    // exposures uniformly.  Field deleted rather than left as raw
+    // drift inside the safety/handles tree.
 };
 
 namespace detail {
