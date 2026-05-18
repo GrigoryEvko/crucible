@@ -194,6 +194,36 @@ struct is_dual_involutive<CheckpointedSession<B, R>>
                          is_dual_involutive<R>::value> {};
 
 // ═════════════════════════════════════════════════════════════════════
+// ── is_empty_choice<CheckpointedSession<B, R>> (fixy-A2-004) ───────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Symmetric to SessionDelegate.h:938-957's recursive specializations
+// for Delegate / Accept / EpochedDelegate / EpochedAccept (the
+// fixy-CR-14 reachability sweep).  Pre-fix CheckpointedSession had no
+// specialization, so the primary template at Session.h:534
+// (`is_empty_choice<P>:std::false_type`) silently returned FALSE for
+// any CheckpointedSession<B, R> regardless of inner content — which
+// admitted `CheckpointedSession<Select<>, End>` and
+// `CheckpointedSession<Loop<Select<End, Send<int, Offer<>>>>, End>`
+// past the `is_empty_choice_v` mint gates at Session.h:2396 and
+// PermissionedSession.h:1923 (fixy-CR-14 closed the gap for plain
+// Select<>/Offer<> recursion but not the checkpointed-wrapped form).
+//
+// Post-fix `is_empty_choice<CheckpointedSession<B, R>>` distributes
+// disjunctively over B and R, matching the SessionDelegate.h
+// convention (an empty Choice in EITHER branch is a defect because
+// rollback OR forward progress would be ill-defined).  Rationale:
+// CheckpointedSession represents Try(B) | RollbackTo(R) — both arms
+// are reachable at runtime via rollback/abandon, so empty Choice in
+// EITHER branch fails the reachability invariant the mint gate
+// enforces.
+
+template <typename B, typename R>
+struct is_empty_choice<CheckpointedSession<B, R>>
+    : std::bool_constant<is_empty_choice<B>::value ||
+                         is_empty_choice<R>::value> {};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── compose<CheckpointedSession<P, R>, Q> ──────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -519,6 +549,46 @@ namespace fixy_a2_003_is_dual_involutive_checkpointed {
 
     using NestedCkptInvolutive = CheckpointedSession<NestedCkpt, End>;
     static_assert(is_dual_involutive_v<NestedCkptInvolutive>);
+}
+
+// fixy-A2-004 — is_empty_choice distributes disjunctively over BOTH
+// branches.  Empty Select<>/Offer<> in EITHER B or R is a defect
+// because both arms execute at runtime (Try(B) | RollbackTo(R)), so
+// the mint-gate reachability invariant rejects either-branch defects.
+namespace fixy_a2_004_is_empty_choice_checkpointed {
+    // Pure, no empty Choice in either branch.
+    using HealthyCkpt =
+        CheckpointedSession<Send<int, End>, Recv<int, End>>;
+    static_assert(!is_empty_choice_v<HealthyCkpt>);
+
+    // Empty Select<> in base branch — defect surfaces.
+    using EmptySelectInBase =
+        CheckpointedSession<Select<>, End>;
+    static_assert(is_empty_choice_v<EmptySelectInBase>);
+
+    // Empty Offer<> in recovery branch — defect surfaces symmetrically.
+    using EmptyOfferInRecovery =
+        CheckpointedSession<End, Offer<>>;
+    static_assert(is_empty_choice_v<EmptyOfferInRecovery>);
+
+    // Buried inside Send/Recv continuation — recursive primary spec
+    // already handles Send<_, K> / Recv<_, K> via is_empty_choice<K>,
+    // so the CheckpointedSession layer projects through cleanly.
+    using BuriedEmpty =
+        CheckpointedSession<Send<int, Select<>>, End>;
+    static_assert(is_empty_choice_v<BuriedEmpty>);
+
+    // Loop-wrapped empty Choice in recovery branch.
+    using LoopEmptyRecovery =
+        CheckpointedSession<End, Loop<Offer<>>>;
+    static_assert(is_empty_choice_v<LoopEmptyRecovery>);
+
+    // Nested CheckpointedSession with empty Choice in INNERMOST base —
+    // disjunction propagates outward through both levels.
+    using NestedEmpty = CheckpointedSession<
+        CheckpointedSession<Select<>, End>,
+        End>;
+    static_assert(is_empty_choice_v<NestedEmpty>);
 }
 
 }  // namespace detail::checkpoint_self_test

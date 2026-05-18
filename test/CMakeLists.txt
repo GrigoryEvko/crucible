@@ -8312,6 +8312,32 @@ crucible_neg_compile_session_test(neg_is_dual_involutive_checkpointed_wraps_send
     "static assertion failed|static assert|fixy-A2-003")
 
 # ─────────────────────────────────────────────────────────────────
+# fixy-A2-004 — is_empty_choice<CheckpointedSession<B, R>> recursion
+# ─────────────────────────────────────────────────────────────────
+#
+# Symmetric to SessionDelegate.h:927-957's recursive specializations
+# for Delegate/Accept/Epoched* (fixy-CR-14).  Pre-fix the primary
+# template at Session.h:534 (`is_empty_choice<P>:std::false_type`)
+# silently returned FALSE for every CheckpointedSession<B, R> — so
+# `CheckpointedSession<Select<>, End>` and the symmetric recovery-
+# branch defect passed the `is_empty_choice_v` mint gates at
+# Session.h:2396 and PermissionedSession.h:1923 even though the
+# wrapped branch was ill-formed.
+#
+# Post-fix `is_empty_choice<CheckpointedSession<B, R>>` distributes
+# disjunctively over B and R: empty Choice in EITHER reachable arm
+# (Try(B) | RollbackTo(R)) is a defect because both arms execute at
+# runtime via rollback/abandon.  These two fixtures witness BOTH
+# placement defects (empty Select in base, empty Offer in recovery)
+# using DIFFERENT empty-Choice variants (Select<> vs Offer<>) — a
+# regression that re-introduced the silent admission on either side
+# would surface independently.
+crucible_neg_compile_session_test(neg_is_empty_choice_checkpointed_base_empty_select
+    "static assertion failed|static assert|fixy-A2-004")
+crucible_neg_compile_session_test(neg_is_empty_choice_checkpointed_recovery_empty_offer
+    "static assertion failed|static assert|fixy-A2-004")
+
+# ─────────────────────────────────────────────────────────────────
 # FIXY-GAP-B — Agent B round 2
 # ─────────────────────────────────────────────────────────────────
 #
