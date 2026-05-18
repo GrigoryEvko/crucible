@@ -382,6 +382,51 @@ template <class Heat, class Alloc>
 inline constexpr bool heat_alloc_coherent_v =
     heat_alloc_coherent<Heat, Alloc>::value;
 
+// ── WellFormedExecCtxAxes ───────────────────────────────────────────
+//
+// fixy-A3-020: the seven per-axis recognition traits + the Cap×Row
+// Subrow invariant are hoisted from a class-body static_assert
+// cascade into a SINGLE concept evaluated by a single static_assert
+// at the top of the class body.  Rationale: a typo like
+// `ExecCtx<int>{}` used to fire 8 separate "static assertion failed"
+// lines from inside the class body, burying the FIRST violation
+// under 7 followups.  Folding the seven atoms into ONE concept lets
+// concept conjunction short-circuit at the first failing atom — only
+// the FIRST violation (e.g. `IsCapType<int>` for `ExecCtx<int>`)
+// fires a diagnostic, and the later `Subrow<Row,
+// cap_permitted_row_t<Cap>>` atom is NOT substituted, so the
+// undeclared `cap_permitted_row<int>::type` access never fires a
+// secondary cascade.
+//
+// Why a body static_assert and NOT a template-head requires-clause:
+// the friend declarations of ExecCtx live inside Bg/Init/Test in
+// Capabilities.h, and Capabilities.h cannot include EffectRow.h
+// (circular).  A requires-clause at the template head would require
+// matching constraints on the forward declaration AND the friend
+// declarations, but those declarations cannot see Subrow / Row /
+// IsEffectRow.  The body static_assert sees the full set, and
+// concept short-circuiting still gives the same single-diagnostic
+// behaviour as a requires-clause would.
+//
+// Cross-axis Heat × Resid and Heat × Alloc coherence rules are NOT
+// folded into WellFormedExecCtxAxes — they stay as separate
+// class-body static_asserts because builder-chain intermediate
+// states (rebuild_to<NewCtx>, line ~870) transiently violate them
+// between an axis swap and the matching coherence repair.  Pushing
+// them in would reject mid-chain reshapes that production code
+// depends on.
+template <class Cap, class Numa, class Alloc, class Heat,
+          class Resid, class Row, class Workload>
+concept WellFormedExecCtxAxes =
+       IsCapType<Cap>
+    && IsNumaPolicy<Numa>
+    && IsAllocClass<Alloc>
+    && IsHeatTier<Heat>
+    && IsResidencyTier<Resid>
+    && IsEffectRow<Row>
+    && IsWorkloadHint<Workload>
+    && Subrow<Row, cap_permitted_row_t<Cap>>;
+
 // ── ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload> ───────────
 
 template <class Cap      = ctx_cap::Fg,
@@ -392,42 +437,23 @@ template <class Cap      = ctx_cap::Fg,
           class Row      = ::crucible::effects::Row<>,
           class Workload = ctx_workload::Unspecified>
 struct [[nodiscard]] ExecCtx {
-    // ── Soundness invariants enforced at the class template ────────
-    //
-    // Each axis is recognized by its corresponding concept; passing
-    // a non-axis type at any position fails substitution here with
-    // a clean diagnostic that names the offending axis.  The
-    // cap-permitted-row check forbids incoherent combinations like
-    // `ExecCtx<ctx_cap::Fg, …, Row<Effect::Bg>>` — a foreground
-    // context cannot legally claim a Bg-effect row.
-    static_assert(is_cap_type_v<Cap>,
-        "ExecCtx Cap parameter must be one of ctx_cap::Fg / Bg / "
-        "Init / Test (or their effects:: aggregates); see "
-        "is_cap_type for the recognition trait");
-    static_assert(is_numa_policy_v<Numa>,
-        "ExecCtx Numa parameter must be one of ctx_numa::Any / "
-        "Local / Spread / Pinned<N>");
-    static_assert(is_alloc_class_v<Alloc>,
-        "ExecCtx Alloc parameter must be one of ctx_alloc::Unbound "
-        "/ Stack / Arena / Pool / HugePage / Heap");
-    static_assert(is_heat_tier_v<Heat>,
-        "ExecCtx Heat parameter must be one of ctx_heat::Cold / "
-        "Warm / Hot");
-    static_assert(is_residency_tier_v<Resid>,
-        "ExecCtx Resid parameter must be one of ctx_resid::DRAM / "
-        "L3 / L2 / L1");
-    static_assert(is_effect_row_v<Row>,
-        "ExecCtx Row parameter must be an effects::Row<Es...> "
-        "specialization");
-    static_assert(is_workload_hint_v<Workload>,
-        "ExecCtx Workload parameter must be one of "
-        "ctx_workload::Unspecified / ByteBudget<N> / ItemBudget<N> / "
-        "ChannelBudget<Bytes, Producers, Consumers, LatestOnly>");
-    static_assert(Subrow<Row, cap_permitted_row_t<Cap>>,
-        "ExecCtx Row must be a Subrow of Cap's permitted row.  "
-        "Foreground (ctx_cap::Fg) permits only Row<>; Bg permits "
-        "{Bg, Alloc, IO, Block}; Init permits {Init, Alloc, IO}; "
-        "Test permits {Test, Alloc, IO, Block}.  See cap_permitted_row.");
+    // fixy-A3-020: single concept gate, evaluated FIRST so the
+    // diagnostic short-circuits at the first failing axis (e.g.
+    // `IsCapType<int>` for `ExecCtx<int>`).  Replaces the
+    // 7-line static_assert cascade that used to live here — each
+    // axis line fired independently and a single-axis typo
+    // produced 7 unrelated diagnostics.
+    static_assert(WellFormedExecCtxAxes<Cap, Numa, Alloc, Heat, Resid, Row, Workload>,
+        "ExecCtx<...> axis well-formedness failed.  One of: Cap is not a "
+        "cap type (ctx_cap::Fg / Bg / Init / Test); Numa is not a numa "
+        "policy (ctx_numa::Any / Local / Spread / Pinned<N>); Alloc is "
+        "not an alloc class (ctx_alloc::Unbound / Stack / Arena / Pool / "
+        "HugePage / Heap); Heat is not a heat tier (ctx_heat::Cold / "
+        "Warm / Hot); Resid is not a residency tier (ctx_resid::DRAM / "
+        "L3 / L2 / L1); Row is not an effect Row<...>; Workload is not "
+        "a workload hint (ctx_workload::Unspecified / ByteBudget<N> / "
+        "ItemBudget<N> / ChannelBudget<...>); OR Row ⊄ "
+        "cap_permitted_row<Cap>.  See WellFormedExecCtxAxes — fixy-A3-020.");
 
     // ── Cross-axis coherence ────────────────────────────────────────
     //

@@ -2019,11 +2019,26 @@ crucible_neg_compile_effects_test(neg_exec_ctx_with_cap_non_axis
 crucible_neg_compile_effects_test(neg_exec_ctx_in_row_non_row
     "associated constraints are not satisfied|IsEffectRow")
 crucible_neg_compile_effects_test(neg_exec_ctx_cap_row_incoherent
-    "static assertion failed|cap_permitted_row|Subrow")
+    "associated constraints are not satisfied|WellFormedExecCtxAxes|static assertion failed|cap_permitted_row|Subrow")
 crucible_neg_compile_effects_test(neg_exec_ctx_heat_resid_incoherent
     "static assertion failed|heat_resid_coherent|Heat × Resid")
 crucible_neg_compile_effects_test(neg_exec_ctx_pinned_negative_node
     "static assertion failed|Pinned.*requires N >= 0|Node >= 0")
+
+# ─── fixy-A3-020 (#1627): WellFormedExecCtxAxes concept hoist ──────
+#
+# The 7 per-axis recognition static_asserts + the Cap×Row Subrow
+# check are hoisted from the class body into a single concept
+# applied at the class template's `requires` clause.  A typo like
+# `ExecCtx<int>` used to fire 7 cascaded body static_asserts; after
+# the hoist it must fail at substitution with ONE diagnostic.  Two
+# fixtures pin both endpoints of the conjunction: typo at the
+# leading axis (short-circuits at IsCapType) and typo at the
+# trailing axis (must still fire after every upstream atom passes).
+crucible_neg_compile_effects_test(neg_exec_ctx_int_typo_clean_diag
+    "constraints not satisfied|WellFormedExecCtxAxes|IsCapType|fixy-A3-020")
+crucible_neg_compile_effects_test(neg_exec_ctx_well_formed_axes_workload_typo
+    "constraints not satisfied|WellFormedExecCtxAxes|IsWorkloadHint|fixy-A3-020")
 
 # ─── fixy-A3-004 (#1611): IsExecCtx / IsEffectRow strip cv-ref ─────
 #
