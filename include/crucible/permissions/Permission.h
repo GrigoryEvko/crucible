@@ -151,11 +151,14 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/FractionalLattice.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/Pinned.h>
 
 #include <atomic>
 #include <concepts>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <optional>
 #include <string_view>
 #include <tuple>
@@ -986,6 +989,33 @@ public:
     }
 };
 
+// ── Diagnostic helper for SharedPermissionPool saturation (fixy-A1-015) ─
+//
+// Pre-fix `lend_raw_()` aborted silently when its atomic state word's
+// count saturated at COUNT_MASK (2^63 - 1).  The new helper emits the
+// catalogued tag's name/description/remediation to stderr first so an
+// operator inspecting the core dump has a breadcrumb, then aborts.
+// `[[gnu::cold, gnu::noinline]]` keeps the helper out of the hot
+// instruction-cache footprint of `lend_raw_()`; the helper is only
+// reachable on the genuinely catastrophic path.
+//
+// Header-only `inline` to satisfy ODR across translation units that
+// include Permission.h; the helper has no template parameters because
+// the diagnostic is fixed.
+
+[[noreturn]] CRUCIBLE_COLD
+inline void shared_permission_pool_saturated_abort_() noexcept {
+    using Tag = diag::SharedPermissionPoolSaturated;
+    std::fprintf(stderr,
+        "crucible: fatal contract violation: %.*s\n"
+        "  description: %.*s\n"
+        "  remediation: %.*s\n",
+        static_cast<int>(Tag::name.size()),         Tag::name.data(),
+        static_cast<int>(Tag::description.size()),  Tag::description.data(),
+        static_cast<int>(Tag::remediation.size()),  Tag::remediation.data());
+    std::abort();
+}
+
 // ── SharedPermissionPool<Tag> ────────────────────────────────────────
 //
 // Pinned manager for fractional permissions on a region tagged Tag.
@@ -1090,7 +1120,10 @@ private:
                 return std::nullopt;  // upgrade in progress
             }
             if ((observed & COUNT_MASK) == COUNT_MASK) [[unlikely]] {
-                std::abort();
+                // fixy-A1-015: emit catalogued diagnostic before aborting
+                // so the operator inspecting the core dump has a
+                // breadcrumb pointing at SharedPermissionPoolSaturated.
+                shared_permission_pool_saturated_abort_();
             }
             const std::uint64_t desired = observed + std::uint64_t{1};
             if (state_.compare_exchange_weak(

@@ -219,9 +219,9 @@ static_assert(Category::EffectRowMismatch ==
 static_assert(Category::LinearAliasViolation ==
               ::crucible::safety::diag::Category::LinearAliasViolation);
 
-// catalog_size frozen at 28 — bumps require coordinated Catalog +
+// catalog_size frozen at 29 — bumps require coordinated Catalog +
 // Category + Diagnostic.h append-only edits.
-static_assert(catalog_size == 28,
+static_assert(catalog_size == 29,
     "fixy::diag::catalog_size must match safety::diag::catalog_size");
 
 // Tag-class identity.

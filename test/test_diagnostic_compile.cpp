@@ -88,8 +88,9 @@ void test_runtime_smoke() {
 void test_catalog_cardinality() {
     // 22 wrapper-axis tags shipped at FOUND-E01 + 3 F*-style alias tags
     // shipped at FOUND-E18 + 1 FIXY-G9 witness tag + 2 FIXY-G10
-    // modality tags (ModalityMismatch, LinearAliasViolation).
-    EXPECT_EQ(diag::catalog_size, std::size_t{28});
+    // modality tags (ModalityMismatch, LinearAliasViolation) + 1
+    // fixy-A1-015 SharedPermissionPool saturation tag.
+    EXPECT_EQ(diag::catalog_size, std::size_t{29});
 }
 
 // Namespace-scope user-extension tag.  C++26 [class.local]/4 forbids
@@ -197,7 +198,7 @@ void test_categories_array() {
     EXPECT_EQ(diag::categories_v.size(), diag::catalog_size);
     EXPECT_EQ(diag::categories_v[0], diag::Category::EffectRowMismatch);
     EXPECT_EQ(diag::categories_v[diag::catalog_size - 1],
-              diag::Category::LinearAliasViolation);
+              diag::Category::SharedPermissionPoolSaturated);
 
     // Runtime traversal: sequential indexing matches enum value.
     volatile std::size_t const cap = diag::catalog_size;
@@ -228,7 +229,7 @@ void test_enumerate_categories_visits_all() {
     });
     EXPECT_EQ(cursor, diag::catalog_size);
     EXPECT_EQ(visited.front(), diag::EffectRowMismatch::name);
-    EXPECT_EQ(visited.back(), diag::LinearAliasViolation::name);
+    EXPECT_EQ(visited.back(), diag::SharedPermissionPoolSaturated::name);
 }
 
 void test_mint_diagnostic_factory() {

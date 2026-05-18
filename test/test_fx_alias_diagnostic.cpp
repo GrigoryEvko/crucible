@@ -91,8 +91,8 @@ void test_catalog_indices_for_fx_alias_tags() {
     static_assert(diag::category_of_v<diag::LinearAliasViolation>
                   == diag::Category::LinearAliasViolation);
 
-    EXPECT_TRUE(diag::catalog_size == 28);
-    EXPECT_TRUE(static_cast<std::size_t>(diag::Category::LinearAliasViolation)
+    EXPECT_TRUE(diag::catalog_size == 29);
+    EXPECT_TRUE(static_cast<std::size_t>(diag::Category::SharedPermissionPoolSaturated)
                 == diag::catalog_size - 1);
 }
 

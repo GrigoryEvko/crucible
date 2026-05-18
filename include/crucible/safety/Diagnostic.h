@@ -768,6 +768,42 @@ struct LinearAliasViolation : tag_base {
         "explicit fractional borrow via SharedPermissionPool<Tag>.";
 };
 
+// ─── SharedPermissionPoolSaturated (fixy-A1-015) ──────────────────────
+//
+// SharedPermissionPool<Tag>::lend_raw_() drives an atomic state word
+// whose low 63 bits track outstanding fractional borrows.  When that
+// count saturates at COUNT_MASK (2^63 - 1) a new lend would silently
+// wrap, then alias an unrelated holder's permission — catastrophic
+// loss of CSL frame discipline.  Pre-fix the saturation site called
+// std::abort() with no diagnostic, leaving an operator with only a
+// core dump and no breadcrumb.  Post-fix the abort path emits this
+// tag's name/description/remediation before terminating.
+struct SharedPermissionPoolSaturated : tag_base {
+    static constexpr std::string_view name = "SharedPermissionPoolSaturated";
+    static constexpr std::string_view description =
+        "SharedPermissionPool<Tag>::lend_raw_() observed an outstanding-"
+        "lend count at COUNT_MASK (2^63 - 1) — the atomic state word "
+        "cannot admit another lend without aliasing the count field "
+        "with the EXCLUSIVE_OUT_BIT.  Incrementing past the mask would "
+        "silently mark the pool as upgrade-in-progress AND wrap the "
+        "count to zero, producing two contradictory states at once.  "
+        "Reaching this site indicates either (a) a runaway borrow leak "
+        "(legitimate guards never destructed), (b) a pool reused across "
+        "an unbounded lifetime that should have been re-rooted via "
+        "mint_permission_root, or (c) a wraparound attack against the "
+        "fractional-permission accounting.";
+    static constexpr std::string_view remediation =
+        "Audit lifetime of every SharedPermissionGuard<Tag> sourced "
+        "from the pool — a leaked guard prevents the count from ever "
+        "decrementing.  If borrow lifetimes are correct but throughput "
+        "genuinely exceeds 2^63 lend operations across the pool's "
+        "lifetime, refactor to use a fresh pool rooted by "
+        "mint_permission_root<Tag>() at a higher boundary so older "
+        "pools can be sunk.  COUNT_MASK is structural; it is not "
+        "tunable because the layout shares its top bit with "
+        "EXCLUSIVE_OUT_BIT for lock-free upgrade signaling.";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_diagnostic_class_v<T> ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -920,6 +956,7 @@ inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 //   [25] InsufficientWitness         (FIXY-G9)
 //   [26] ModalityMismatch            (FIXY-G10)
 //   [27] LinearAliasViolation        (FIXY-G10 R017)
+//   [28] SharedPermissionPoolSaturated (fixy-A1-015)
 
 using Catalog = std::tuple<
     EffectRowMismatch,        //  0
@@ -949,7 +986,8 @@ using Catalog = std::tuple<
     StateBudgetViolation,     // 24
     InsufficientWitness,      // 25
     ModalityMismatch,         // 26
-    LinearAliasViolation      // 27
+    LinearAliasViolation,     // 27
+    SharedPermissionPoolSaturated // 28
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
@@ -1006,6 +1044,7 @@ enum class Category : std::uint8_t {
     InsufficientWitness      = 25,
     ModalityMismatch         = 26,
     LinearAliasViolation     = 27,
+    SharedPermissionPoolSaturated = 28,
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1153,6 +1192,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::InsufficientWitness:      return InsufficientWitness::name;
         case Category::ModalityMismatch:         return ModalityMismatch::name;
         case Category::LinearAliasViolation:     return LinearAliasViolation::name;
+        case Category::SharedPermissionPoolSaturated:
+            return SharedPermissionPoolSaturated::name;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1187,6 +1228,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::InsufficientWitness:      return InsufficientWitness::description;
         case Category::ModalityMismatch:         return ModalityMismatch::description;
         case Category::LinearAliasViolation:     return LinearAliasViolation::description;
+        case Category::SharedPermissionPoolSaturated:
+            return SharedPermissionPoolSaturated::description;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1221,6 +1264,8 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::InsufficientWitness:      return InsufficientWitness::remediation;
         case Category::ModalityMismatch:         return ModalityMismatch::remediation;
         case Category::LinearAliasViolation:     return LinearAliasViolation::remediation;
+        case Category::SharedPermissionPoolSaturated:
+            return SharedPermissionPoolSaturated::remediation;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1395,17 +1440,19 @@ static_assert(diagnostic_name_v<user_defined_tag> == "UserDefinedTag");
 
 // ─── Catalog cardinality matches Category enum cardinality ────────
 //
-// 25 tags shipped in this version (22 wrapper-axis tags from FOUND-E01
-// + 3 F*-style alias tags from FOUND-E18).  Adding a tag bumps both
-// the Catalog tuple size AND requires a Category enumerator at the
-// same integer value.  The bijection self-test below asserts both in
-// lock step.
+// 29 tags shipped in this version (22 wrapper-axis tags from FOUND-E01
+// + 3 F*-style alias tags from FOUND-E18 + 1 witness FIXY-G9 + 2
+// modality FIXY-G10 + 1 SharedPermissionPool saturation fixy-A1-015).
+// Adding a tag bumps both the Catalog tuple size AND requires a
+// Category enumerator at the same integer value.  The bijection
+// self-test below asserts both in lock step.
 
-static_assert(catalog_size == 28,
-    "Catalog cardinality drifted from the 28-tag inventory "
+static_assert(catalog_size == 29,
+    "Catalog cardinality drifted from the 29-tag inventory "
     "(22 wrapper-axis + 3 F* alias + 1 witness FIXY-G9 + 2 modality "
-    "FIXY-G10) — confirm the new tag was added to Catalog AND to "
-    "Category at the same integer index.");
+    "FIXY-G10 + 1 SharedPermissionPool fixy-A1-015) — confirm the "
+    "new tag was added to Catalog AND to Category at the same "
+    "integer index.");
 
 // ─── Catalog ↔ Category bijection ─────────────────────────────────
 //
@@ -1595,7 +1642,7 @@ static_assert(categories_v.size() == catalog_size,
     "categories_v cardinality drifted from catalog_size — both must "
     "track the same source of truth.");
 static_assert(categories_v[0] == Category::EffectRowMismatch);
-static_assert(categories_v[catalog_size - 1] == Category::LinearAliasViolation);
+static_assert(categories_v[catalog_size - 1] == Category::SharedPermissionPoolSaturated);
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool categories_array_matches_enum_impl(
