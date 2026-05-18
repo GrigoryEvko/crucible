@@ -95,6 +95,7 @@ namespace crucible::bridges {
 template <class Substr,
           ::crucible::concurrent::Direction Dir,
           ::crucible::effects::IsExecCtx Ctx>
+    requires ::crucible::concurrent::IsBridgeableDirection<Substr, Dir>
 [[nodiscard]] constexpr auto mint_recording_endpoint(
     ::crucible::concurrent::Endpoint<Substr, Dir, Ctx>&& ep,
     ::crucible::safety::proto::SessionEventLog& log,
@@ -122,6 +123,7 @@ template <class PeerTag,
           class Substr,
           ::crucible::concurrent::Direction Dir,
           ::crucible::effects::IsExecCtx Ctx>
+    requires ::crucible::concurrent::IsBridgeableDirection<Substr, Dir>
 [[nodiscard]] constexpr auto mint_crash_watched_endpoint(
     ::crucible::concurrent::Endpoint<Substr, Dir, Ctx>&& ep,
     ::crucible::safety::OneShotFlag& flag) noexcept
