@@ -261,6 +261,14 @@ public:
     // wrappers whose default position is "no information accumulated"
     // (e.g. AppendOnly<T> starting at the empty-prefix lattice
     // bottom; Monotonic<T, std::less<>> starting at MIN).
+    //
+    // Two overloads — uniform across all three Graded specializations
+    // (primary, T==element_type, derived-grade) per fixy-A3-028:
+    //   - at_bottom()         : default-constructed value, grade=bottom
+    //   - at_bottom(T value)  : caller-provided value, grade=bottom
+    // The T==element_type and derived-grade specializations expose the
+    // matching pair below; consumers can call either form regardless of
+    // which specialization fires.
     [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(
         std::is_nothrow_move_constructible_v<T>)
         requires BoundedBelowLattice<L>
@@ -271,6 +279,18 @@ public:
         // equivalent runtime checking under enforce semantic.  See
         // feedback_gcc16_c26_contract_gotchas memory for the rule.
         Graded result{std::move(value), L::bottom()};
+        contract_assert(L::leq(result.grade(), L::bottom())
+                     && L::leq(L::bottom(), result.grade()));
+        return result;
+    }
+
+    [[nodiscard]] static constexpr Graded at_bottom() noexcept(
+        std::is_nothrow_default_constructible_v<T>
+        && std::is_nothrow_move_constructible_v<T>)
+        requires BoundedBelowLattice<L>
+              && std::default_initializable<T>
+    {
+        Graded result{T{}, L::bottom()};
         contract_assert(L::leq(result.grade(), L::bottom())
                      && L::leq(L::bottom(), result.grade()));
         return result;
@@ -825,11 +845,23 @@ public:
 
     // ── at_bottom: produce a value whose derived grade IS bottom ────
     //
-    // Different from the primary's at_bottom(T value) form — we can't
-    // generally arrange for an arbitrary user-supplied value to have
-    // grade == bottom.  The default-constructed T (e.g. empty
-    // Storage<T>) is the natural "bottom-deriving" value: empty
-    // vector → Length{0} → SeqPrefixLattice::bottom().
+    // Two overloads — uniform with the primary template's pair per
+    // fixy-A3-028:
+    //   - at_bottom()        : default-construct T; grade derives to bottom
+    //                          when T's default state has bottom-grade (the
+    //                          common case — empty vector → Length{0},
+    //                          empty set → cardinality 0, etc.).
+    //   - at_bottom(T value) : caller-supplied value; runtime contract
+    //                          asserts the derived grade IS bottom.  Useful
+    //                          when the caller knows their value derives
+    //                          bottom (e.g. a re-emptied container moved
+    //                          into the slot) and wants the API shape that
+    //                          matches the other two specializations.
+    //
+    // Both overloads materialize a result with `grade() == L::bottom()`
+    // — the contract enforces this at construction.  Under enforce
+    // semantic a non-conforming `at_bottom(value)` aborts; at consteval
+    // it poisons the surrounding constant expression.
     [[nodiscard]] static constexpr Graded at_bottom() noexcept(
         std::is_nothrow_default_constructible_v<T> &&
         std::is_nothrow_move_constructible_v<T>)
@@ -837,6 +869,16 @@ public:
               && std::default_initializable<T>
     {
         Graded result{T{}};
+        contract_assert(L::leq(result.grade(), L::bottom())
+                     && L::leq(L::bottom(), result.grade()));
+        return result;
+    }
+
+    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        requires BoundedBelowLattice<L>
+    {
+        Graded result{std::move(value)};
         contract_assert(L::leq(result.grade(), L::bottom())
                      && L::leq(L::bottom(), result.grade()));
         return result;
@@ -1087,6 +1129,13 @@ static_assert(g_at_top.peek().c == 0);
 constexpr GOneByte g_bot = GOneByte::at_bottom(OneByteValue{});
 static_assert(g_bot.grade() == false);  // TrivialBool::bottom() is false
 
+// fixy-A3-028: no-arg at_bottom() is uniformly available — same grade
+// as the one-arg form, default-constructed value.  Reaches the primary
+// template here (OneByteValue != element_type<TrivialBoolLattice>).
+constexpr GOneByte g_bot_noarg = GOneByte::at_bottom();
+static_assert(g_bot_noarg.grade() == false);
+static_assert(g_bot_noarg.peek().c == 0);
+
 // weaken: widen grade.  false ⊑ true is legal.
 constexpr GOneByte g_weakened = g_bot.weaken(true);
 static_assert(g_weakened.grade() == true);
@@ -1112,6 +1161,85 @@ static_assert( CanInject<GRelMonad>);
 static_assert(!CanInject<GComonad>);
 static_assert(!CanInject<GAbsolute>);
 static_assert(!CanInject<GRelative>);
+
+// ── fixy-A3-028: at_bottom uniformity across Graded specializations ─
+//
+// Concept gates witnessing that both overloads — `at_bottom()` no-arg
+// and `at_bottom(T value)` — are reachable on every Graded
+// specialization whose Lattice is BoundedBelow.  The audit observed
+// that pre-fix:
+//   - primary       : at_bottom(T) only          [no no-arg]
+//   - T==element    : at_bottom() AND at_bottom(T)
+//   - derived-grade : at_bottom() only           [no one-arg]
+// The fix adds no-arg to primary and one-arg to derived-grade, making
+// the surface uniform (modulo each specialization's intrinsic
+// requirements: primary's no-arg needs default_initializable<T>;
+// derived-grade's one-arg runtime-asserts grade_of(value) == bottom).
+template <typename G> concept CanAtBottomNoArg =
+    requires { G::at_bottom(); };
+template <typename G> concept CanAtBottomValue =
+    requires (typename G::value_type v) { G::at_bottom(std::move(v)); };
+
+// Primary template — TrivialBoolLattice is BoundedBelow,
+// OneByteValue != bool, so this hits the primary template path.
+// OneByteValue is default-constructible, so the no-arg form is
+// admitted.
+static_assert(CanAtBottomNoArg<GOneByte>);
+static_assert(CanAtBottomValue<GOneByte>);
+
+// T == element_type specialization — already had both pre-fix; pin
+// regression-free via the same concepts.
+using GBoolElement = Graded<ModalityKind::Absolute, TrivialBoolLattice, bool>;
+static_assert(CanAtBottomNoArg<GBoolElement>);
+static_assert(CanAtBottomValue<GBoolElement>);
+
+// Derived-grade specialization — exercise via an INLINE minimal
+// lattice (avoids a circular #include against
+// lattices/SeqPrefixLattice.h, which itself includes this header).
+// MiniDerivedLattice publishes `grade_of(MiniContainer const&)`
+// returning the container's size; element_type is std::size_t, which
+// differs from MiniContainer — so the third (derived-grade) Graded
+// specialization fires.
+//
+// Both at_bottom overloads must resolve: the no-arg form
+// default-constructs MiniContainer (size 0 ⇒ grade 0 ⇒ bottom); the
+// one-arg form accepts a caller-supplied empty container and
+// runtime-contract-asserts that its derived grade IS bottom.
+struct MiniContainer {
+    std::size_t n{0};
+    constexpr MiniContainer() = default;
+    constexpr explicit MiniContainer(std::size_t k) noexcept : n{k} {}
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return n; }
+    constexpr bool operator==(const MiniContainer&) const = default;
+};
+
+struct MiniDerivedLattice {
+    using element_type = std::size_t;
+    static constexpr element_type bottom() noexcept { return 0; }
+    static constexpr bool leq(element_type a, element_type b) noexcept { return a <= b; }
+    static constexpr element_type join(element_type a, element_type b) noexcept { return a < b ? b : a; }
+    static constexpr element_type meet(element_type a, element_type b) noexcept { return a < b ? a : b; }
+    static constexpr element_type grade_of(MiniContainer const& c) noexcept { return c.size(); }
+    static constexpr std::string_view name() noexcept { return "MiniDerivedLattice"; }
+};
+static_assert(Lattice<MiniDerivedLattice>);
+static_assert(BoundedBelowLattice<MiniDerivedLattice>);
+static_assert(LatticeDerivesGrade<MiniDerivedLattice, MiniContainer>);
+
+using GDerivedSeq = Graded<ModalityKind::Absolute, MiniDerivedLattice, MiniContainer>;
+
+static_assert(CanAtBottomNoArg<GDerivedSeq>);
+static_assert(CanAtBottomValue<GDerivedSeq>);
+
+// at_bottom() no-arg reaches grade==bottom on derived-grade.
+constexpr GDerivedSeq g_derived_bot_noarg = GDerivedSeq::at_bottom();
+static_assert(g_derived_bot_noarg.grade() == MiniDerivedLattice::bottom());
+
+// at_bottom(value) one-arg accepts a bottom-deriving value (empty
+// container ⇒ size 0 ⇒ MiniDerivedLattice::bottom()).
+constexpr GDerivedSeq g_derived_bot_value =
+    GDerivedSeq::at_bottom(MiniContainer{});
+static_assert(g_derived_bot_value.grade() == MiniDerivedLattice::bottom());
 
 // Layout invariant macro fires correctly on the EBO-collapsed path.
 template <typename T> using AbsoluteOverEmpty =
@@ -1198,6 +1326,25 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] bool g3 = mcomposed.grade();
     [[maybe_unused]] auto v1 = composed.peek().c;
     [[maybe_unused]] auto v2 = std::move(mcomposed).consume().c;
+
+    // fixy-A3-028 runtime exercise — drive both at_bottom overloads
+    // through non-constant args on each Graded specialization so the
+    // contract_assert(...) bodies execute under runtime semantics
+    // (the static_asserts above only cover consteval).
+    GOneByte prim_noarg   = GOneByte::at_bottom();
+    GOneByte prim_value   = GOneByte::at_bottom(OneByteValue{static_cast<char>(value.c + 1)});
+    [[maybe_unused]] bool gb1 = prim_noarg.grade();
+    [[maybe_unused]] auto  vb1 = prim_value.peek().c;
+
+    GBoolElement same_noarg = GBoolElement::at_bottom();
+    GBoolElement same_value = GBoolElement::at_bottom(false);
+    [[maybe_unused]] bool gs1 = same_noarg.grade();
+    [[maybe_unused]] bool gs2 = same_value.grade();
+
+    GDerivedSeq der_noarg   = GDerivedSeq::at_bottom();
+    GDerivedSeq der_value   = GDerivedSeq::at_bottom(MiniContainer{});
+    [[maybe_unused]] std::size_t gd1 = der_noarg.grade();
+    [[maybe_unused]] std::size_t gd2 = der_value.grade();
 }
 
 }  // namespace detail::graded_self_test
