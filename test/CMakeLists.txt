@@ -2001,6 +2001,25 @@ crucible_neg_compile_effects_test(neg_bits_from_row_non_row
 crucible_neg_compile_effects_test(neg_row_subsumes_bits_non_row
     "associated constraints are not satisfied|constraints not satisfied|no matching|IsEffectRow")
 
+# fixy-A3-027 (#1634): ExecCtx Progress axis (8th axis).
+# Termination / liveness claim per F* Pure/Tot/Div vocabulary.
+# Four fixtures pin the four orthogonal failure modes introduced by
+# the new axis: (1) direct instantiation with Heat=Hot+MayDiverge
+# fires heat_progress_coherent_v in the class body; (2) the
+# WellFormedExecCtxAxes concept rejects non-IsProgressClass arg at
+# the trailing slot; (3) with_progress<>()'s requires-clause rejects
+# non-class arg at the builder call site; (4) the builder-chain trap
+# — .with_heat<Hot>() without first setting Progress fires the
+# class-body static_assert on the intermediate return type.
+crucible_neg_compile_effects_test(neg_exec_ctx_hot_maydiverge
+    "static assertion failed|heat_progress_coherent|Heat × Progress|fixy-A3-027")
+crucible_neg_compile_effects_test(neg_exec_ctx_progress_non_class
+    "constraints not satisfied|WellFormedExecCtxAxes|IsProgressClass|fixy-A3-027")
+crucible_neg_compile_effects_test(neg_exec_ctx_with_progress_int
+    "associated constraints are not satisfied|IsProgressClass|with_progress|fixy-A3-027")
+crucible_neg_compile_effects_test(neg_exec_ctx_builder_hot_default_progress
+    "static assertion failed|heat_progress_coherent|Heat × Progress|fixy-A3-027")
+
 # fixy-A3-026 (#1633): signalling-channel workload-hint shapes.
 # ProducerOnlyChannel<Bytes, Producers, LatestOnly> and
 # ConsumerOnlyChannel<Bytes, Consumers> declare producer-only and

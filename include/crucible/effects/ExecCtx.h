@@ -170,6 +170,31 @@ namespace ctx_resid {
     struct L1   {};
 }
 
+// Axis 8 (Progress) — termination / liveness claim ------------------
+//
+// Mirrors safety::ProgressClass_v (algebra/lattices/ProgressLattice.h).
+// Lattice order: MayDiverge ⊑ Terminating ⊑ Productive ⊑ Bounded.
+// MayDiverge is the bottom / "nothing claimed" sentinel; Bounded is
+// the top / wall-clock-budgeted promise.
+//
+// Closes the F* Pure/Tot/Div expressivity gap (fixy-A3-027 and
+// CLAUDE.md §XVI F*-style aliases): a context can now carry a
+// termination claim alongside its capability + numa + alloc + heat +
+// resid + row + workload axes.  Hot tier requires the Ctx PROMISE
+// termination (Terminating ⊒); Warm/Cold accept MayDiverge.
+//
+// We carry the policy as a tag rather than the enum value to keep
+// ExecCtx free of its own includes from algebra/lattices/ — every
+// axis lives in this file's own ctx_* namespace, bridged onto the
+// algebra enum via to_progress_class_v below.
+
+namespace ctx_progress {
+    struct MayDiverge  {};
+    struct Terminating {};
+    struct Productive  {};
+    struct Bounded     {};
+}
+
 // Axis 7 (Workload) — caller-supplied workload hint ------------------
 //
 // Used by recommend_parallelism(WorkBudget) / AdaptiveScheduler when
@@ -372,6 +397,15 @@ struct is_workload_hint<
 template <class T>           inline constexpr bool is_workload_hint_v = is_workload_hint<T>::value;
 template <class T>           concept IsWorkloadHint = is_workload_hint_v<T>;
 
+// ── Progress-class recognition ─────────────────────────────────────
+template <class T> struct is_progress_class                            : std::false_type {};
+template <>        struct is_progress_class<ctx_progress::MayDiverge>  : std::true_type  {};
+template <>        struct is_progress_class<ctx_progress::Terminating> : std::true_type  {};
+template <>        struct is_progress_class<ctx_progress::Productive>  : std::true_type  {};
+template <>        struct is_progress_class<ctx_progress::Bounded>     : std::true_type  {};
+template <class T> inline constexpr bool is_progress_class_v = is_progress_class<T>::value;
+template <class T> concept IsProgressClass = is_progress_class_v<T>;
+
 // ── Cap-permitted-row trait ─────────────────────────────────────────
 //
 // Each cap type publishes the maximum effect row it can authorize.
@@ -454,6 +488,25 @@ template <class Heat, class Alloc>
 inline constexpr bool heat_alloc_coherent_v =
     heat_alloc_coherent<Heat, Alloc>::value;
 
+// Heat × Progress: hot path forbids MayDiverge — a context promising
+// hot-tier execution MUST promise termination (a hot-path function
+// that may never return blocks the foreground thread and breaks every
+// p99 / tail-latency budget downstream).  Terminating / Productive /
+// Bounded are all admissible for Heat=Hot; Warm/Cold accept any
+// Progress claim (drain loops can plausibly diverge in degenerate
+// cases; cold-init paths often have no static termination proof).
+// fixy-A3-027.
+
+template <class Heat, class Progress>
+struct heat_progress_coherent : std::true_type {};
+template <>
+struct heat_progress_coherent<ctx_heat::Hot, ctx_progress::MayDiverge>
+    : std::false_type {};
+
+template <class Heat, class Progress>
+inline constexpr bool heat_progress_coherent_v =
+    heat_progress_coherent<Heat, Progress>::value;
+
 // ── WellFormedExecCtxAxes ───────────────────────────────────────────
 //
 // fixy-A3-020: the seven per-axis recognition traits + the Cap×Row
@@ -488,7 +541,7 @@ inline constexpr bool heat_alloc_coherent_v =
 // them in would reject mid-chain reshapes that production code
 // depends on.
 template <class Cap, class Numa, class Alloc, class Heat,
-          class Resid, class Row, class Workload>
+          class Resid, class Row, class Workload, class Progress>
 concept WellFormedExecCtxAxes =
        IsCapType<Cap>
     && IsNumaPolicy<Numa>
@@ -497,9 +550,10 @@ concept WellFormedExecCtxAxes =
     && IsResidencyTier<Resid>
     && IsEffectRow<Row>
     && IsWorkloadHint<Workload>
+    && IsProgressClass<Progress>
     && Subrow<Row, cap_permitted_row_t<Cap>>;
 
-// ── ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload> ───────────
+// ── ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload, Progress> ─
 
 template <class Cap      = ctx_cap::Fg,
           class Numa     = ctx_numa::Any,
@@ -507,15 +561,16 @@ template <class Cap      = ctx_cap::Fg,
           class Heat     = ctx_heat::Cold,
           class Resid    = ctx_resid::DRAM,
           class Row      = ::crucible::effects::Row<>,
-          class Workload = ctx_workload::Unspecified>
+          class Workload = ctx_workload::Unspecified,
+          class Progress = ctx_progress::Terminating>
 struct [[nodiscard]] ExecCtx {
-    // fixy-A3-020: single concept gate, evaluated FIRST so the
-    // diagnostic short-circuits at the first failing axis (e.g.
-    // `IsCapType<int>` for `ExecCtx<int>`).  Replaces the
-    // 7-line static_assert cascade that used to live here — each
-    // axis line fired independently and a single-axis typo
-    // produced 7 unrelated diagnostics.
-    static_assert(WellFormedExecCtxAxes<Cap, Numa, Alloc, Heat, Resid, Row, Workload>,
+    // fixy-A3-020 / fixy-A3-027: single concept gate, evaluated FIRST
+    // so the diagnostic short-circuits at the first failing axis
+    // (e.g.  `IsCapType<int>` for `ExecCtx<int>`).  Replaces the
+    // per-axis static_assert cascade that used to live here — each
+    // axis line fired independently and a single-axis typo produced
+    // 8 unrelated diagnostics.
+    static_assert(WellFormedExecCtxAxes<Cap, Numa, Alloc, Heat, Resid, Row, Workload, Progress>,
         "ExecCtx<...> axis well-formedness failed.  One of: Cap is not a "
         "cap type (ctx_cap::Fg / Bg / Init / Test); Numa is not a numa "
         "policy (ctx_numa::Any / Local / Spread / Pinned<N>); Alloc is "
@@ -524,8 +579,10 @@ struct [[nodiscard]] ExecCtx {
         "Warm / Hot); Resid is not a residency tier (ctx_resid::DRAM / "
         "L3 / L2 / L1); Row is not an effect Row<...>; Workload is not "
         "a workload hint (ctx_workload::Unspecified / ByteBudget<N> / "
-        "ItemBudget<N> / ChannelBudget<...>); OR Row ⊄ "
-        "cap_permitted_row<Cap>.  See WellFormedExecCtxAxes — fixy-A3-020.");
+        "ItemBudget<N> / ChannelBudget<...>); Progress is not a "
+        "progress class (ctx_progress::MayDiverge / Terminating / "
+        "Productive / Bounded); OR Row ⊄ cap_permitted_row<Cap>.  "
+        "See WellFormedExecCtxAxes — fixy-A3-020 / fixy-A3-027.");
 
     // ── Cross-axis coherence ────────────────────────────────────────
     //
@@ -547,6 +604,18 @@ struct [[nodiscard]] ExecCtx {
         "hot-path budget).  Use Stack / Arena / Pool / HugePage.  "
         "See heat_alloc_coherent.");
 
+    // Heat × Progress: hot path forbids MayDiverge.  A hot-path
+    // context that may never return blocks the foreground thread and
+    // breaks every p99 / tail-latency budget downstream.  Hot ⇒
+    // Progress ∈ {Terminating, Productive, Bounded}.  Warm/Cold
+    // accept any Progress claim.  fixy-A3-027.
+    static_assert(heat_progress_coherent_v<Heat, Progress>,
+        "ExecCtx Heat × Progress incoherent: Heat=Hot forbids "
+        "Progress=MayDiverge — a hot-path function that may never "
+        "return blocks the foreground thread.  Use Progress ∈ "
+        "{Terminating, Productive, Bounded}.  See "
+        "heat_progress_coherent.");
+
     [[no_unique_address]] Cap      cap_{};
     [[no_unique_address]] Numa     numa_{};
     [[no_unique_address]] Alloc    alloc_{};
@@ -554,6 +623,7 @@ struct [[nodiscard]] ExecCtx {
     [[no_unique_address]] Resid    resid_{};
     [[no_unique_address]] Row      row_{};
     [[no_unique_address]] Workload wl_{};
+    [[no_unique_address]] Progress progress_{};
 
     // ── Type-level accessors ───────────────────────────────────────
     //
@@ -561,13 +631,14 @@ struct [[nodiscard]] ExecCtx {
     // to specialise on a particular axis writes
     // `requires std::is_same_v<typename Ctx::cap_type, effects::Bg>`
     // or pattern-matches on the alias from inside a partial spec.
-    using cap_type      = Cap;
-    using numa_policy   = Numa;
-    using alloc_class   = Alloc;
-    using hot_path_tier = Heat;
-    using residency     = Resid;
-    using row_type      = Row;
-    using workload_hint = Workload;
+    using cap_type       = Cap;
+    using numa_policy    = Numa;
+    using alloc_class    = Alloc;
+    using hot_path_tier  = Heat;
+    using residency      = Resid;
+    using row_type       = Row;
+    using workload_hint  = Workload;
+    using progress_class = Progress;
 
     // ── Builder methods ────────────────────────────────────────────
     //
@@ -585,27 +656,27 @@ struct [[nodiscard]] ExecCtx {
         requires IsCapType<NewCap>
               && Subrow<Row, cap_permitted_row_t<NewCap>>
     [[nodiscard]] consteval auto with_cap() const noexcept
-        -> ExecCtx<NewCap, Numa, Alloc, Heat, Resid, Row, Workload> { return {}; }
+        -> ExecCtx<NewCap, Numa, Alloc, Heat, Resid, Row, Workload, Progress> { return {}; }
 
     template <class NewNuma>
         requires IsNumaPolicy<NewNuma>
     [[nodiscard]] consteval auto pinned_to() const noexcept
-        -> ExecCtx<Cap, NewNuma, Alloc, Heat, Resid, Row, Workload> { return {}; }
+        -> ExecCtx<Cap, NewNuma, Alloc, Heat, Resid, Row, Workload, Progress> { return {}; }
 
     template <class NewAlloc>
         requires IsAllocClass<NewAlloc>
     [[nodiscard]] consteval auto with_alloc() const noexcept
-        -> ExecCtx<Cap, Numa, NewAlloc, Heat, Resid, Row, Workload> { return {}; }
+        -> ExecCtx<Cap, Numa, NewAlloc, Heat, Resid, Row, Workload, Progress> { return {}; }
 
     template <class NewHeat>
         requires IsHeatTier<NewHeat>
     [[nodiscard]] consteval auto with_heat() const noexcept
-        -> ExecCtx<Cap, Numa, Alloc, NewHeat, Resid, Row, Workload> { return {}; }
+        -> ExecCtx<Cap, Numa, Alloc, NewHeat, Resid, Row, Workload, Progress> { return {}; }
 
     template <class NewResid>
         requires IsResidencyTier<NewResid>
     [[nodiscard]] consteval auto with_residency() const noexcept
-        -> ExecCtx<Cap, Numa, Alloc, Heat, NewResid, Row, Workload> { return {}; }
+        -> ExecCtx<Cap, Numa, Alloc, Heat, NewResid, Row, Workload, Progress> { return {}; }
 
     // Row weakening: caller may ENLARGE the row (allow more effects)
     // by virtue of holding the appropriate cap tokens.  The current
@@ -620,12 +691,24 @@ struct [[nodiscard]] ExecCtx {
               && Subrow<Row,    NewRow>
               && Subrow<NewRow, cap_permitted_row_t<Cap>>
     [[nodiscard]] consteval auto in_row() const noexcept
-        -> ExecCtx<Cap, Numa, Alloc, Heat, Resid, NewRow, Workload> { return {}; }
+        -> ExecCtx<Cap, Numa, Alloc, Heat, Resid, NewRow, Workload, Progress> { return {}; }
 
     template <class NewWl>
         requires IsWorkloadHint<NewWl>
     [[nodiscard]] consteval auto with_workload() const noexcept
-        -> ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, NewWl> { return {}; }
+        -> ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, NewWl, Progress> { return {}; }
+
+    // Progress upgrade: caller may strengthen the termination claim
+    // by virtue of having proven a stronger property about the body
+    // running in this context.  No subtyping direction enforced at
+    // the builder level — the lattice direction is enforced when
+    // bridging to safety::Progress<...> (which checks the producer's
+    // claim against the consumer's requirement via
+    // ProgressLattice::At<>).  fixy-A3-027.
+    template <class NewProgress>
+        requires IsProgressClass<NewProgress>
+    [[nodiscard]] consteval auto with_progress() const noexcept
+        -> ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload, NewProgress> { return {}; }
 
     // ── Diagnostic emitter ─────────────────────────────────────────
 
@@ -643,17 +726,22 @@ struct [[nodiscard]] ExecCtx {
 
 // Foreground vessel hot path: caller owns no minted cap tokens, NUMA-
 // local to the vessel thread, stack alloc, hot tier, L1 resident,
-// pure row, no workload budget.  This is the implicit context every
-// Vessel-side dispatch op runs in.  Note the explicit Heat=Hot +
-// Resid=L1 — the ExecCtx<> default is Cold+DRAM (the most permissive
-// shape); HotFgCtx is the named alias that matches its title.
+// pure row, no workload budget, terminating.  This is the implicit
+// context every Vessel-side dispatch op runs in.  Note the explicit
+// Heat=Hot + Resid=L1 + Progress=Terminating — the ExecCtx<> default
+// is Cold+DRAM+MayDiverge (the most permissive shape); HotFgCtx is
+// the named alias that matches its title.  Hot × MayDiverge would
+// fire heat_progress_coherent — Terminating is the cheapest hot-path
+// claim that satisfies the coherence rule.
 using HotFgCtx = ExecCtx<
     ctx_cap::Fg,
     ctx_numa::Local,
     ctx_alloc::Stack,
     ctx_heat::Hot,
     ctx_resid::L1,
-    Row<>
+    Row<>,
+    ctx_workload::Unspecified,
+    ctx_progress::Terminating
 >;
 
 // Background drain context: bg cap, NUMA-local to bg thread, arena
@@ -721,20 +809,21 @@ using TestRunnerCtx = ExecCtx<
 // accidentally trip the concept gate.  fixy-A3-004.
 template <class T> struct is_exec_ctx : std::false_type {};
 template <class Cap, class Numa, class Alloc, class Heat,
-          class Resid, class Row, class Workload>
-struct is_exec_ctx<ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload>>
+          class Resid, class Row, class Workload, class Progress>
+struct is_exec_ctx<ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload, Progress>>
     : std::true_type {};
 template <class T> inline constexpr bool is_exec_ctx_v =
     is_exec_ctx<std::remove_cvref_t<T>>::value;
 template <class T> concept IsExecCtx = is_exec_ctx_v<T>;
 
-template <IsExecCtx Ctx> using cap_type_of_t      = typename Ctx::cap_type;
-template <IsExecCtx Ctx> using numa_policy_of_t   = typename Ctx::numa_policy;
-template <IsExecCtx Ctx> using alloc_class_of_t   = typename Ctx::alloc_class;
-template <IsExecCtx Ctx> using hot_path_tier_of_t = typename Ctx::hot_path_tier;
-template <IsExecCtx Ctx> using residency_of_t     = typename Ctx::residency;
-template <IsExecCtx Ctx> using row_type_of_t      = typename Ctx::row_type;
-template <IsExecCtx Ctx> using workload_hint_of_t = typename Ctx::workload_hint;
+template <IsExecCtx Ctx> using cap_type_of_t       = typename Ctx::cap_type;
+template <IsExecCtx Ctx> using numa_policy_of_t    = typename Ctx::numa_policy;
+template <IsExecCtx Ctx> using alloc_class_of_t    = typename Ctx::alloc_class;
+template <IsExecCtx Ctx> using hot_path_tier_of_t  = typename Ctx::hot_path_tier;
+template <IsExecCtx Ctx> using residency_of_t      = typename Ctx::residency;
+template <IsExecCtx Ctx> using row_type_of_t       = typename Ctx::row_type;
+template <IsExecCtx Ctx> using workload_hint_of_t  = typename Ctx::workload_hint;
+template <IsExecCtx Ctx> using progress_class_of_t = typename Ctx::progress_class;
 
 // Per-axis discrimination concepts — for call sites that want to
 // specialise on a particular Cap or NUMA placement.
@@ -779,6 +868,28 @@ concept IsStackCtx    = IsExecCtx<Ctx>
 template <class Ctx>
 concept IsPoolCtx     = IsExecCtx<Ctx>
                      && std::is_same_v<alloc_class_of_t<Ctx>, ctx_alloc::Pool>;
+
+// ── Progress-class discrimination ──────────────────────────────────
+//
+// fixy-A3-027: per-axis specialisation concepts mirror the Heat /
+// Alloc family.  Production sites that gate on termination class
+// (Forge Phase L row admission, hot-path entry-point invariants,
+// warden deadline policy) write `requires IsTerminatingCtx<Ctx>`
+// rather than spelling out `std::is_same_v<progress_class_of_t<Ctx>,
+// ctx_progress::Terminating>`.
+
+template <class Ctx>
+concept IsMayDivergeCtx  = IsExecCtx<Ctx>
+                        && std::is_same_v<progress_class_of_t<Ctx>, ctx_progress::MayDiverge>;
+template <class Ctx>
+concept IsTerminatingCtx = IsExecCtx<Ctx>
+                        && std::is_same_v<progress_class_of_t<Ctx>, ctx_progress::Terminating>;
+template <class Ctx>
+concept IsProductiveCtx  = IsExecCtx<Ctx>
+                        && std::is_same_v<progress_class_of_t<Ctx>, ctx_progress::Productive>;
+template <class Ctx>
+concept IsBoundedCtx     = IsExecCtx<Ctx>
+                        && std::is_same_v<progress_class_of_t<Ctx>, ctx_progress::Bounded>;
 
 // ── Composition concepts ────────────────────────────────────────────
 //
@@ -960,35 +1071,45 @@ using MaxCtx = ExecCtx<
     ctx_heat::Hot,
     ctx_resid::L1,
     Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>,
-    ctx_workload::ByteBudget<2 * 1024 * 1024>
+    ctx_workload::ByteBudget<2 * 1024 * 1024>,
+    ctx_progress::Bounded
 >;
 static_assert(sizeof(MaxCtx) == 1, "fully-distinguished ExecCtx must still EBO-collapse");
 
 // ── ExecCtx<> primitive defaults (the ALL-AXES-DEFAULT shape) ───────
 //
 // This is the shape produced by `ExecCtx<>{}` with no template
-// arguments — the most permissive context (Cold/DRAM/Unbound).  The
-// defaults pin the "nothing claimed" sentinel for every axis.
-static_assert(std::is_same_v<typename ExecCtx<>::cap_type,      ctx_cap::Fg>);
-static_assert(std::is_same_v<typename ExecCtx<>::numa_policy,   ctx_numa::Any>);
-static_assert(std::is_same_v<typename ExecCtx<>::alloc_class,   ctx_alloc::Unbound>);
-static_assert(std::is_same_v<typename ExecCtx<>::hot_path_tier, ctx_heat::Cold>);
-static_assert(std::is_same_v<typename ExecCtx<>::residency,     ctx_resid::DRAM>);
-static_assert(std::is_same_v<typename ExecCtx<>::row_type,      Row<>>);
-static_assert(std::is_same_v<typename ExecCtx<>::workload_hint, ctx_workload::Unspecified>);
+// arguments — the most permissive resource-axis context
+// (Cold/DRAM/Unbound).  Resource axes default to the bottom / "nothing
+// claimed" sentinel.  Progress (axis 8) defaults to Terminating rather
+// than the lattice bottom (MayDiverge) because C++ function semantics
+// already imply termination; MayDiverge is opt-in for explicitly-
+// non-terminating code (drain loops, fixed-point iteration).  This
+// default also makes Hot tier × default-Progress coherent without
+// requiring every Hot-ctx site to thread Progress=Terminating
+// explicitly.  fixy-A3-027.
+static_assert(std::is_same_v<typename ExecCtx<>::cap_type,       ctx_cap::Fg>);
+static_assert(std::is_same_v<typename ExecCtx<>::numa_policy,    ctx_numa::Any>);
+static_assert(std::is_same_v<typename ExecCtx<>::alloc_class,    ctx_alloc::Unbound>);
+static_assert(std::is_same_v<typename ExecCtx<>::hot_path_tier,  ctx_heat::Cold>);
+static_assert(std::is_same_v<typename ExecCtx<>::residency,      ctx_resid::DRAM>);
+static_assert(std::is_same_v<typename ExecCtx<>::row_type,       Row<>>);
+static_assert(std::is_same_v<typename ExecCtx<>::workload_hint,  ctx_workload::Unspecified>);
+static_assert(std::is_same_v<typename ExecCtx<>::progress_class, ctx_progress::Terminating>);
 
 // ── HotFgCtx — actually Hot+L1 (matches the alias name) ─────────────
 //
 // HotFgCtx is the named alias for the foreground vessel hot path.
 // Distinct from `ExecCtx<>` which uses the default Cold+DRAM
 // sentinel — the alias documents the real-world Vessel-side shape.
-static_assert(std::is_same_v<typename HotFgCtx::cap_type,      ctx_cap::Fg>);
-static_assert(std::is_same_v<typename HotFgCtx::numa_policy,   ctx_numa::Local>);
-static_assert(std::is_same_v<typename HotFgCtx::alloc_class,   ctx_alloc::Stack>);
-static_assert(std::is_same_v<typename HotFgCtx::hot_path_tier, ctx_heat::Hot>);
-static_assert(std::is_same_v<typename HotFgCtx::residency,     ctx_resid::L1>);
-static_assert(std::is_same_v<typename HotFgCtx::row_type,      Row<>>);
-static_assert(std::is_same_v<typename HotFgCtx::workload_hint, ctx_workload::Unspecified>);
+static_assert(std::is_same_v<typename HotFgCtx::cap_type,       ctx_cap::Fg>);
+static_assert(std::is_same_v<typename HotFgCtx::numa_policy,    ctx_numa::Local>);
+static_assert(std::is_same_v<typename HotFgCtx::alloc_class,    ctx_alloc::Stack>);
+static_assert(std::is_same_v<typename HotFgCtx::hot_path_tier,  ctx_heat::Hot>);
+static_assert(std::is_same_v<typename HotFgCtx::residency,      ctx_resid::L1>);
+static_assert(std::is_same_v<typename HotFgCtx::row_type,       Row<>>);
+static_assert(std::is_same_v<typename HotFgCtx::workload_hint,  ctx_workload::Unspecified>);
+static_assert(std::is_same_v<typename HotFgCtx::progress_class, ctx_progress::Terminating>);
 
 // ── Builder chain composes correctly ────────────────────────────────
 constexpr auto _ctx0 = ExecCtx<>{};
@@ -1002,16 +1123,20 @@ static_assert(std::is_same_v<typename decltype(_ctx1)::hot_path_tier, ctx_heat::
 constexpr auto _ctx2 = _ctx1.pinned_to<ctx_numa::Pinned<3>>();
 static_assert(std::is_same_v<typename decltype(_ctx2)::numa_policy, ctx_numa::Pinned<3>>);
 
-// Note: residency must be set BEFORE heat when heat advances —
-// `with_heat<Hot>()` would fire heat_resid_coherent_v on the
-// intermediate type `(..., Heat=Hot, Resid=DRAM)` if Resid stayed
-// at its default.  Set Resid first.
+// Note: residency AND progress must be set BEFORE heat when heat
+// advances — `with_heat<Hot>()` would fire heat_resid_coherent_v on
+// the intermediate type `(..., Heat=Hot, Resid=DRAM)` if Resid stayed
+// at its default; symmetrically, it would fire heat_progress_coherent
+// on `(..., Heat=Hot, Progress=MayDiverge)` if Progress stayed at its
+// default.  Set Resid AND Progress first.  fixy-A3-027.
 constexpr auto _ctx3 = _ctx2.with_alloc<ctx_alloc::Arena>()
                             .with_residency<ctx_resid::L1>()
+                            .with_progress<ctx_progress::Terminating>()
                             .with_heat<ctx_heat::Hot>();
-static_assert(std::is_same_v<typename decltype(_ctx3)::alloc_class,   ctx_alloc::Arena>);
-static_assert(std::is_same_v<typename decltype(_ctx3)::hot_path_tier, ctx_heat::Hot>);
-static_assert(std::is_same_v<typename decltype(_ctx3)::residency,     ctx_resid::L1>);
+static_assert(std::is_same_v<typename decltype(_ctx3)::alloc_class,    ctx_alloc::Arena>);
+static_assert(std::is_same_v<typename decltype(_ctx3)::hot_path_tier,  ctx_heat::Hot>);
+static_assert(std::is_same_v<typename decltype(_ctx3)::residency,      ctx_resid::L1>);
+static_assert(std::is_same_v<typename decltype(_ctx3)::progress_class, ctx_progress::Terminating>);
 
 // Row weakening: ∅ ⊆ {Bg, Alloc} so the constraint succeeds.
 constexpr auto _ctx4 = _ctx3.in_row<Row<Effect::Bg, Effect::Alloc>>();
@@ -1030,6 +1155,13 @@ static_assert(std::is_same_v<typename decltype(_ctx6)::workload_hint,
 static_assert(std::is_same_v<typename decltype(_ctx6)::cap_type,    Bg>);
 static_assert(std::is_same_v<typename decltype(_ctx6)::numa_policy, ctx_numa::Pinned<3>>);
 
+// Progress swap from Terminating to Bounded (a stronger claim).
+// The builder accepts any Progress tag — directional ordering only
+// kicks in when bridging to safety::Progress<...> via the lattice.
+constexpr auto _ctx7 = _ctx6.with_progress<ctx_progress::Bounded>();
+static_assert(std::is_same_v<typename decltype(_ctx7)::progress_class,
+                              ctx_progress::Bounded>);
+
 // Builder chain remains 1 byte at every link.
 static_assert(sizeof(_ctx0) == 1);
 static_assert(sizeof(_ctx1) == 1);
@@ -1038,6 +1170,7 @@ static_assert(sizeof(_ctx3) == 1);
 static_assert(sizeof(_ctx4) == 1);
 static_assert(sizeof(_ctx5) == 1);
 static_assert(sizeof(_ctx6) == 1);
+static_assert(sizeof(_ctx7) == 1);
 
 // ── Canonical alias accessors ───────────────────────────────────────
 static_assert(std::is_same_v<typename BgDrainCtx::cap_type,    Bg>);
@@ -1112,6 +1245,14 @@ static_assert( is_workload_hint_v<ctx_workload::Unspecified>);
 static_assert( is_workload_hint_v<ctx_workload::ByteBudget<4096>>);
 static_assert( is_workload_hint_v<ctx_workload::ItemBudget<128>>);
 static_assert(!is_workload_hint_v<int>);
+
+// fixy-A3-027: Progress-class recognition gates.
+static_assert( is_progress_class_v<ctx_progress::MayDiverge>);
+static_assert( is_progress_class_v<ctx_progress::Terminating>);
+static_assert( is_progress_class_v<ctx_progress::Productive>);
+static_assert( is_progress_class_v<ctx_progress::Bounded>);
+static_assert(!is_progress_class_v<int>);
+static_assert(!is_progress_class_v<void*>);
 
 // ── Cap-permitted-row coverage ─────────────────────────────────────
 //
@@ -1216,6 +1357,17 @@ static_assert( heat_resid_coherent_v<ctx_heat::Cold, ctx_resid::L2>);
 static_assert( heat_resid_coherent_v<ctx_heat::Cold, ctx_resid::L3>);
 static_assert( heat_resid_coherent_v<ctx_heat::Cold, ctx_resid::DRAM>);
 
+// Heat × Progress: only the Hot-MayDiverge pair is forbidden.  All
+// other combinations are admissible.  fixy-A3-027.
+static_assert(!heat_progress_coherent_v<ctx_heat::Hot,  ctx_progress::MayDiverge>);
+static_assert( heat_progress_coherent_v<ctx_heat::Hot,  ctx_progress::Terminating>);
+static_assert( heat_progress_coherent_v<ctx_heat::Hot,  ctx_progress::Productive>);
+static_assert( heat_progress_coherent_v<ctx_heat::Hot,  ctx_progress::Bounded>);
+static_assert( heat_progress_coherent_v<ctx_heat::Warm, ctx_progress::MayDiverge>);
+static_assert( heat_progress_coherent_v<ctx_heat::Warm, ctx_progress::Terminating>);
+static_assert( heat_progress_coherent_v<ctx_heat::Cold, ctx_progress::MayDiverge>);
+static_assert( heat_progress_coherent_v<ctx_heat::Cold, ctx_progress::Bounded>);
+
 // Heat × Alloc: only the Hot-Heap pair is forbidden.
 static_assert( heat_alloc_coherent_v<ctx_heat::Hot,  ctx_alloc::Stack>);
 static_assert( heat_alloc_coherent_v<ctx_heat::Hot,  ctx_alloc::Arena>);
@@ -1253,6 +1405,16 @@ static_assert(heat_alloc_coherent_v<typename ColdInitCtx::hot_path_tier,
 static_assert(heat_alloc_coherent_v<typename MaxCtx::hot_path_tier,
                                      typename MaxCtx::alloc_class>);
 
+// Heat × Progress coherence re-stated for canonical aliases.
+static_assert(heat_progress_coherent_v<typename HotFgCtx::hot_path_tier,
+                                        typename HotFgCtx::progress_class>);
+static_assert(heat_progress_coherent_v<typename BgDrainCtx::hot_path_tier,
+                                        typename BgDrainCtx::progress_class>);
+static_assert(heat_progress_coherent_v<typename ColdInitCtx::hot_path_tier,
+                                        typename ColdInitCtx::progress_class>);
+static_assert(heat_progress_coherent_v<typename MaxCtx::hot_path_tier,
+                                        typename MaxCtx::progress_class>);
+
 // ── Discrimination concepts ─────────────────────────────────────────
 static_assert( IsHotCtx<HotFgCtx>);
 static_assert(!IsHotCtx<BgDrainCtx>);
@@ -1286,6 +1448,21 @@ static_assert( IsHugePageCtx<MaxCtx>);
 static_assert( IsHeapCtx<ColdInitCtx>);
 static_assert( IsHeapCtx<TestRunnerCtx>);
 static_assert( IsStackCtx<HotFgCtx>);
+
+// fixy-A3-027: Progress-class discrimination witnesses.
+static_assert( IsTerminatingCtx<HotFgCtx>);           // alias declared Terminating
+static_assert(!IsMayDivergeCtx<HotFgCtx>);
+static_assert( IsBoundedCtx<MaxCtx>);                 // self-test MaxCtx declared Bounded
+static_assert(!IsTerminatingCtx<MaxCtx>);
+// Canonical Bg/Cold/Test aliases inherit default Progress=Terminating —
+// the F*-common-case + C++-function-semantics default.  MayDiverge is
+// opt-in for explicitly-non-terminating code (drain loops, fixed-point
+// iteration) via .with_progress<MayDiverge>() on Cold/Bg contexts only
+// (Hot × MayDiverge fires the heat_progress_coherent rule).
+static_assert( IsTerminatingCtx<BgDrainCtx>);
+static_assert( IsTerminatingCtx<BgCompileCtx>);
+static_assert( IsTerminatingCtx<ColdInitCtx>);
+static_assert( IsTerminatingCtx<TestRunnerCtx>);
 
 // ── Composition concepts ────────────────────────────────────────────
 
@@ -1381,7 +1558,7 @@ static_assert(std::is_same_v<decltype(_rebuilt), const BgDrainCtx>);
 // regression class that pure-static_assert coverage misses.
 inline void runtime_smoke_test() {
     // Default-construct each canonical alias at runtime — proves
-    // ExecCtx<7-axis...>{} stays trivially-default-constructible
+    // ExecCtx<8-axis...>{} stays trivially-default-constructible
     // even though every axis member uses [[no_unique_address]].
     [[maybe_unused]] HotFgCtx      hot{};
     [[maybe_unused]] BgDrainCtx    bg{};
@@ -1390,17 +1567,38 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] TestRunnerCtx test_ctx{};
 
     // Drive sizeof at the runtime call site — EBO collapse claim
-    // holds against the actual built ctx.
+    // holds against the actual built ctx.  The 8th axis (Progress)
+    // is an empty tag struct with [[no_unique_address]] — it cannot
+    // grow ctx beyond the 1-byte floor.  fixy-A3-027.
     [[maybe_unused]] auto s1 = sizeof(hot);
     [[maybe_unused]] auto s2 = sizeof(bg);
 
     // Drive rebuild_ctx_to through a runtime-typed source — the
-    // batch-builder docstring (line 1292) asserts this path bypasses
-    // per-link cross-axis invariants.  The runtime path MUST stay
-    // callable; a future refactor making rebuild_ctx_to consteval-only
-    // would silently break production call sites.
+    // batch-builder docstring asserts this path bypasses per-link
+    // cross-axis invariants.  The runtime path MUST stay callable;
+    // a future refactor making rebuild_ctx_to consteval-only would
+    // silently break production call sites.
     auto rebuilt = rebuild_ctx_to<BgDrainCtx>(hot);
     [[maybe_unused]] BgDrainCtx r_copy = rebuilt;
+
+    // fixy-A3-027: drive the Progress axis through a runtime builder
+    // chain.  Witnesses (a) `.with_progress<>()` is callable at
+    // runtime, not just consteval, and (b) the returned ctx carries
+    // the new Progress tag.  Building from `hot` (Heat=Hot,
+    // Progress=Terminating) — promote Terminating → Bounded which
+    // satisfies heat_progress_coherent_v unconditionally.
+    auto hot_bounded = hot.template with_progress<ctx_progress::Bounded>();
+    static_assert(std::is_same_v<typename decltype(hot_bounded)::progress_class,
+                                  ctx_progress::Bounded>);
+    [[maybe_unused]] auto s3 = sizeof(hot_bounded);
+
+    // Drive Progress axis on a Cold ctx where MayDiverge is permitted —
+    // proves the axis works in both Hot-constrained and Cold-unconstrained
+    // shapes without firing the Heat × Progress coherence rule.
+    auto cold_productive = cold.template with_progress<ctx_progress::Productive>();
+    static_assert(std::is_same_v<typename decltype(cold_productive)::progress_class,
+                                  ctx_progress::Productive>);
+    [[maybe_unused]] auto s4 = sizeof(cold_productive);
 }
 
 }  // namespace detail::exec_ctx_self_test

@@ -772,10 +772,15 @@ struct workload_traits<::crucible::effects::Computation<Row, T>> {
 };
 
 template <class Cap, class Numa, class Alloc, class Heat,
-          class Resid, class Row, class Workload>
+          class Resid, class Row, class Workload, class Progress>
 struct workload_traits<
-    ::crucible::effects::ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload>> {
+    ::crucible::effects::ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload, Progress>> {
     [[nodiscard]] static constexpr AutoSplitWorkloadHint hint() noexcept {
+        // Progress is not consumed by hint_from_exec_ctx_axes — the
+        // scheduler hint surface (Latency/Throughput/Locality) is
+        // orthogonal to termination class.  Progress affects the
+        // Hot×Progress coherence rule in ExecCtx itself, not the
+        // workload-fanout decision.  fixy-A3-027.
         return autosplit_detail::hint_from_exec_ctx_axes<Heat, Resid, Row, Workload>();
     }
 };

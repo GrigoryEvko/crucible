@@ -301,7 +301,7 @@ namespace testing { struct TestWitness; }
 // the Cap's default ctor — friending ExecCtx grants that access
 // without leaking the default ctor to user TUs).
 template <class Cap, class Numa, class Alloc, class Heat,
-          class Resid, class Row, class Workload>
+          class Resid, class Row, class Workload, class Progress>
 struct ExecCtx;
 
 namespace detail::ctx_mint {
