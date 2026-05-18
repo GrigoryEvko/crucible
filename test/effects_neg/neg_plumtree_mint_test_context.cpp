@@ -5,7 +5,7 @@
 int main() {
     crucible::canopy::HyParViewMembership<4, 8> membership{};
     auto broadcast = crucible::canopy::mint_plumtree<4, 8>(
-        crucible::effects::Test{},
+        crucible::effects::testing::test(),
         membership);
     return static_cast<int>(broadcast.link_count().value());
 }

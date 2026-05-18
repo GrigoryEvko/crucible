@@ -53,10 +53,10 @@ int main() {
     assert(Snapshot::from_sparse_delta(duplicate_delta).at(n0) == 10);
 
     auto c0 = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         0);
     auto c1 = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         1);
 
     c0.on_local_event();
@@ -77,7 +77,7 @@ int main() {
     assert(c1.snapshot() == carrier.snapshot());
 
     auto c2 = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         2);
     c2.apply_delta(c1.sparse_delta());
     assert(c2.at(n0) == c1.at(n0));
@@ -87,10 +87,10 @@ int main() {
     assert(c2.at(n2) == 1);
 
     auto left = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         0);
     auto right = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         1);
     left.on_local_event();
     right.on_local_event();
@@ -98,7 +98,7 @@ int main() {
     assert(!left.comparable_with(right));
 
     auto shared = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         0);
     constexpr std::size_t per_thread = 256;
     std::jthread t0([&] {

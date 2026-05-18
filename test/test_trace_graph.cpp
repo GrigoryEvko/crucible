@@ -20,7 +20,7 @@ static Edge E(uint32_t src, uint32_t dst, EdgeKind k = EdgeKind::DATA_FLOW) {
 }
 
 static void test_empty_graph() {
-    effects::Test t;
+    auto t = effects::testing::test();
     Arena arena{1 << 16};
     TraceGraph g{};
     build_csr(t.alloc, arena, &g, nullptr, 0, 0);
@@ -31,7 +31,7 @@ static void test_empty_graph() {
 }
 
 static void test_single_edge_fwd_rev() {
-    effects::Test t;
+    auto t = effects::testing::test();
     Arena arena{1 << 16};
     TraceGraph g{};
     Edge edges[] = {E(0, 1)};
@@ -50,7 +50,7 @@ static void test_single_edge_fwd_rev() {
 
 static void test_counting_sort_groups_by_src() {
     // Edges in random src order must all group by src in fwd_edges.
-    effects::Test t;
+    auto t = effects::testing::test();
     Arena arena{1 << 16};
     TraceGraph g{};
     std::vector<Edge> edges = {
@@ -84,7 +84,7 @@ static void test_counting_sort_groups_by_src() {
 }
 
 static void test_edge_kind_preserved() {
-    effects::Test t;
+    auto t = effects::testing::test();
     Arena arena{1 << 16};
     TraceGraph g{};
     Edge edges[] = {
@@ -107,7 +107,7 @@ static void test_edge_kind_preserved() {
 }
 
 static void test_offsets_prefix_sum_invariant() {
-    effects::Test t;
+    auto t = effects::testing::test();
     Arena arena{1 << 16};
     TraceGraph g{};
     std::vector<Edge> edges;
@@ -130,7 +130,7 @@ static void test_offsets_prefix_sum_invariant() {
 }
 
 static void test_fanout_node_has_multiple_edges() {
-    effects::Test t;
+    auto t = effects::testing::test();
     Arena arena{1 << 16};
     TraceGraph g{};
     // Hub-and-spoke: node 0 → {1, 2, 3, 4, 5, 6, 7, 8, 9}

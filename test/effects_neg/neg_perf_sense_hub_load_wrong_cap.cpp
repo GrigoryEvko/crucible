@@ -15,7 +15,7 @@
 // SenseHub::load() calls" — is asserted in the SenseHub.h docblock at
 // lines 234-240.  This test is the regression-witness for that claim.
 //
-// Violation: passes `effects::Bg{}` where `effects::Init{}` is required.
+// Violation: passes `effects::testing::bg()` where `effects::testing::init()` is required.
 // The compiler should fail with "no matching function" / "could not
 // convert" / "expected" pointing at the parameter type mismatch.
 //
@@ -32,7 +32,7 @@ int main() {
     // Bg is a Bg-frame context (Alloc + IO + Block); load() requires
     // an Init-frame context (Alloc + IO).  These are DISTINCT 1-byte
     // structs — no implicit conversion exists or should exist.
-    crucible::effects::Bg bg_cap{};
+    auto bg_cap = crucible::effects::testing::bg();
 
     // <-- this line must NOT compile
     std::optional<crucible::perf::SenseHub> hub =

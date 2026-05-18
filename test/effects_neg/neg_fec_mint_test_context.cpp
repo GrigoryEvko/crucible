@@ -7,7 +7,7 @@
 
 int main() {
     auto rs = crucible::cntp::mint_reed_solomon<4, 2>(
-        crucible::effects::Test{});
+        crucible::effects::testing::test());
     (void)rs;
     return 0;
 }

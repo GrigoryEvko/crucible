@@ -239,7 +239,7 @@ class SenseHub {
     // that prevents accidental hot-path SenseHub::load() calls.
     // Init-time call sites construct the tag inline:
     //
-    //     auto hub = crucible::perf::SenseHub::load(crucible::effects::Init{});
+    //     auto hub = crucible::perf::SenseHub::load(crucible::effects::testing::init());
     //
     // The returned optional is typically cached in a process-wide
     // static so the load cost is paid exactly once.

@@ -38,7 +38,7 @@
 //
 // ─── USAGE EXAMPLE ────────────────────────────────────────────────────
 //
-//   auto hub = crucible::perf::SenseHubV2::load(crucible::effects::Init{});
+//   auto hub = crucible::perf::SenseHubV2::load(crucible::effects::testing::init());
 //   if (!hub) return;
 //
 //   auto a = hub->read_counters();

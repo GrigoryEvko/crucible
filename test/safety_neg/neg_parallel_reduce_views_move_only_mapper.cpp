@@ -40,7 +40,7 @@ int main() {
     auto perm = safety::mint_permission_root<DataNeg>();
     constexpr std::size_t N = 8;
     auto region = safety::OwnedRegion<std::uint64_t, DataNeg>::adopt(
-        effects::Test{}.alloc, arena, N, std::move(perm));
+        effects::testing::test().alloc, arena, N, std::move(perm));
     for (std::size_t i = 0; i < N; ++i) region.span()[i] = 1;
 
     // Move-only state captured by the mapper.  std::unique_ptr is the

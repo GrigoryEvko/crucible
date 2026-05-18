@@ -145,7 +145,7 @@ void setup_compiled_vigil(Vigil& vigil) {
 // we allocate those too — even though the pointers we write through
 // fake_ptr don't point at real storage.
 struct BenchRegion {
-    effects::Test    test;
+    auto test = effects::testing::test();
     Arena       arena{1 << 16};
     RegionNode* region = nullptr;
     MemoryPlan* plan   = nullptr;
@@ -268,7 +268,7 @@ int main() {
     }());
 
     reports.push_back([&]{
-        effects::Test test;
+        auto test = effects::testing::test();
         Arena arena{1 << 16};
         constexpr uint32_t NSLOTS = 16;
         auto* slots = arena.alloc_array<TensorSlot>(test.alloc, NSLOTS);
@@ -524,7 +524,7 @@ int main() {
     }());
 
     reports.push_back([&]{
-        effects::Test test;
+        auto test = effects::testing::test();
         Arena arena{1 << 16};
         constexpr uint32_t NR = 4;
         const RegionNode* regions[NR];

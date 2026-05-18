@@ -55,7 +55,7 @@ int main() {
     };
 
     auto lifeguard = cc::mint_lifeguard_swim<4, 8, 4, 8>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         swim_peer(99),
         std::span<const cc::SwimPeer>{initial},
         lcfg,

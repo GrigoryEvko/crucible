@@ -39,7 +39,7 @@
 //
 // ─── Production usage ──────────────────────────────────────────────
 //
-//     if (auto h = crucible::perf::LockContention::load(crucible::effects::Init{})) {
+//     if (auto h = crucible::perf::LockContention::load(crucible::effects::testing::init())) {
 //         const uint64_t wait_pre = h->wait_count();
 //         // ... run workload ...
 //         const uint64_t wait_delta = h->wait_count() - wait_pre;
@@ -210,7 +210,7 @@ class LockContention {
     // prevents accidental hot-path LockContention::load() calls
     // structurally.
     //
-    //     auto h = crucible::perf::LockContention::load(crucible::effects::Init{});
+    //     auto h = crucible::perf::LockContention::load(crucible::effects::testing::init());
     //
     // Diagnostic line printed to stderr unless CRUCIBLE_PERF_QUIET=1 is
     // set in the environment.  CRUCIBLE_PERF_VERBOSE=1 forwards libbpf's

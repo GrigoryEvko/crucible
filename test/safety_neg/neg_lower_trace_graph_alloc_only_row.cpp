@@ -14,7 +14,7 @@
 namespace eff = ::crucible::effects;
 
 int main() {
-  eff::Test test{};
+  auto test = eff::testing::test();
   crucible::ExprPool pool{test.alloc};
   crucible::Graph graph{test.alloc, &pool};
   crucible::TraceGraph trace{};

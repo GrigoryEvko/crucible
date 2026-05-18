@@ -37,7 +37,7 @@
 //
 // ─── Production usage ──────────────────────────────────────────────
 //
-//     if (auto h = crucible::perf::SyscallLatency::load(crucible::effects::Init{})) {
+//     if (auto h = crucible::perf::SyscallLatency::load(crucible::effects::testing::init())) {
 //         const uint64_t syscalls_pre = h->total_syscalls();
 //         // ... run workload ...
 //         const uint64_t syscalls_delta = h->total_syscalls() - syscalls_pre;
@@ -201,7 +201,7 @@ class SyscallLatency {
     // prevents accidental hot-path SyscallLatency::load() calls
     // structurally.
     //
-    //     auto h = crucible::perf::SyscallLatency::load(crucible::effects::Init{});
+    //     auto h = crucible::perf::SyscallLatency::load(crucible::effects::testing::init());
     //
     // Diagnostic line printed to stderr unless CRUCIBLE_PERF_QUIET=1 is set.
     // CRUCIBLE_PERF_VERBOSE=1 forwards libbpf's INFO/WARN messages.

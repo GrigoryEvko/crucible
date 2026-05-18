@@ -14,7 +14,7 @@
 namespace eff = crucible::effects;
 
 int main() {
-    eff::Init init;
+    auto init = eff::testing::init();
     auto bad = eff::mint_cap<eff::Effect::Block>(init);  // Init doesn't permit Block
     (void)bad;
     return 0;

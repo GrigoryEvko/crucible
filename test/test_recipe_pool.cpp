@@ -66,8 +66,8 @@ using crucible::SoftmaxRecurrence;
 // in the new Met(X) effect-row substrate; the per-context types Bg /
 // Init / Test still aggregate cap members and serve as the canonical
 // way to mint one.  Tests use effects::Test.
-crucible::effects::Test g_test{};
-crucible::effects::Init g_init{};
+auto g_test = crucible::effects::testing::test();
+auto g_init = crucible::effects::testing::init();
 inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 inline crucible::effects::Init init_cap() noexcept { return g_init; }
 

@@ -10,7 +10,7 @@ using crucible::safety::Positive;
 using crucible::safety::PowerOfTwo;
 
 [[gnu::cold]] int main() {
-  crucible::effects::Test test;
+  auto test = crucible::effects::testing::test();
 
   // Basic allocation
   crucible::Arena arena(4096);

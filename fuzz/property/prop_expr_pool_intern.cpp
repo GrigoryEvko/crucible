@@ -233,7 +233,7 @@ struct Resolved {
 // comment for the full rationale).
 [[nodiscard]] bool check_plan(const Plan& p) noexcept {
     using namespace crucible;
-    effects::Test test{};
+    auto test = effects::testing::test();
     // Smallest legal capacity forces the pool to rehash while interning
     // even a tiny user set (the ~258 preseeded int singletons already
     // push the table past its 87.5% load factor).  Rehash-during-insert

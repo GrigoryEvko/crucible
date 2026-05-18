@@ -2032,6 +2032,21 @@ crucible_neg_compile_effects_test(neg_is_exec_ctx_non_ctx_cvref_rejected
 crucible_neg_compile_effects_test(neg_is_effect_row_non_row_cvref_rejected
     "static assertion failed|fixy-A3-004|IsEffectRow|is_effect_row")
 
+# ─── fixy-A3-005 (#1612): cap-tag default ctors are private ─────────
+#
+# Bg / Init / Test contexts default ctors are PRIVATE; only the
+# matching `mint_*_context(detail::ctx_mint::*_key)` factory can
+# fabricate one.  Bg's key is friended only on BackgroundThread (+
+# the test-witness); Init's key on Vigil + BackgroundThread (+ the
+# test-witness); Test's key only on the test-witness.  An
+# unprivileged TU that writes `effects::Bg bg{};` or `effects::Init
+# i{};` must fail to compile.  Mirrors the H-25 passkey-via-passkey
+# pattern from permissions/PermissionInherit.h.
+crucible_neg_compile_effects_test(neg_effects_bg_default_ctor_private
+    "private within this context|fixy-A3-005|is private|explicitly marked as private")
+crucible_neg_compile_effects_test(neg_effects_init_default_ctor_private
+    "private within this context|fixy-A3-005|is private|explicitly marked as private")
+
 # ─── P1-AUDIT-2 (#853): composition-point witnesses ─────────────────
 #
 # Four fixtures locking the composition concepts and bridge traits:

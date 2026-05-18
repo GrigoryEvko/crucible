@@ -136,7 +136,7 @@ namespace {
 // effects::Test exposes an Alloc capability member; copy it for use in
 // arena allocations.  Same pattern as test_owned_region.cpp.
 inline effects::Alloc test_alloc_token_() noexcept {
-    return effects::Test{}.alloc;
+    return effects::testing::test().alloc;
 }
 
 int total_passed = 0;

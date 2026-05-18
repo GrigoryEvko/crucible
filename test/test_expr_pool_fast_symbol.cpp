@@ -27,7 +27,7 @@ constexpr uint16_t NUM_FLAGS = ExprFlags::IS_INTEGER;
 // ── Test: fast_symbol returns nullptr before registration ─────────
 
 static void test_unregistered_returns_nullptr() {
-    effects::Test t{};
+    auto t = effects::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -51,7 +51,7 @@ static void test_unregistered_returns_nullptr() {
 // ── Test: fast_symbol matches the symbol() interning result ───────
 
 static void test_matches_slow_path() {
-    effects::Test t{};
+    auto t = effects::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -83,7 +83,7 @@ static void test_matches_slow_path() {
 // ── Test: cache grows sparsely — non-contiguous SymbolId ──────────
 
 static void test_sparse_sids() {
-    effects::Test t{};
+    auto t = effects::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -116,7 +116,7 @@ static void test_sparse_sids() {
 // ── Test: large sid range stress ──────────────────────────────────
 
 static void test_dense_sids_stress() {
-    effects::Test t{};
+    auto t = effects::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -144,7 +144,7 @@ static void test_dense_sids_stress() {
 }
 
 static void test_make_returns_interned_det_safe() {
-    effects::Test t{};
+    auto t = effects::testing::test();
     const auto a = t.alloc;
     ExprPool pool{a};
 

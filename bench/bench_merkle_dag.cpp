@@ -112,7 +112,7 @@ int main(int argc, char* argv[]) {
 
     // ── compute_content_hash at three region sizes ───────────────────
     reports.push_back([]{
-        effects::Test test;
+        auto test = effects::testing::test();
         Arena arena{1 << 16};
         constexpr uint32_t N = 8;
         TraceEntry ops[N]{};
@@ -126,7 +126,7 @@ int main(int argc, char* argv[]) {
     }());
 
     reports.push_back([]{
-        effects::Test test;
+        auto test = effects::testing::test();
         Arena arena{1 << 20};
         constexpr uint32_t N = 481;
         auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
@@ -143,7 +143,7 @@ int main(int argc, char* argv[]) {
     }());
 
     reports.push_back([]{
-        effects::Test test;
+        auto test = effects::testing::test();
         Arena arena{1 << 20};
         constexpr uint32_t N = 1110;
         auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
@@ -161,7 +161,7 @@ int main(int argc, char* argv[]) {
 
     // ── make_region (481 ops) ────────────────────────────────────────
     reports.push_back([]{
-        effects::Test test;
+        auto test = effects::testing::test();
         Arena data_arena{1 << 20};
         constexpr uint32_t N = 481;
         auto* ops = data_arena.alloc_array<TraceEntry>(test.alloc, N);
@@ -177,7 +177,7 @@ int main(int argc, char* argv[]) {
 
     // ── compute_merkle_hash ──────────────────────────────────────────
     reports.push_back([]{
-        effects::Test test;
+        auto test = effects::testing::test();
         Arena arena{1 << 20};
         constexpr uint32_t N = 481;
         auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
@@ -193,7 +193,7 @@ int main(int argc, char* argv[]) {
 
     // ── build_csr (481 ops, 900 edges) ────────────────────────────────
     reports.push_back([]{
-        effects::Test test;
+        auto test = effects::testing::test();
         Arena arena{1 << 20};
         constexpr uint32_t NUM_OPS   = 481;
         constexpr uint32_t NUM_EDGES = 900;
@@ -221,7 +221,7 @@ int main(int argc, char* argv[]) {
 
     // ── compute_memory_plan (300 slots) ──────────────────────────────
     reports.push_back([]{
-        effects::Test test;
+        auto test = effects::testing::test();
         Arena arena{1 << 20};
         constexpr uint32_t NUM_SLOTS = 300;
         auto* slots = arena.alloc_array<TensorSlot>(test.alloc, NUM_SLOTS);
@@ -250,7 +250,7 @@ int main(int argc, char* argv[]) {
 
     // ── build_trace full pipeline (481 synthetic ops) ────────────────
     reports.push_back([]{
-        effects::Test test;
+        auto test = effects::testing::test();
 
         TraceRing ring;
         ring.reset();
@@ -349,7 +349,7 @@ int main(int argc, char* argv[]) {
     // ── Optional: build_trace from real .crtrace argv paths ──────────
     for (int i = 1; i < argc; i++) {
         reports.push_back([path = argv[i]]{
-            effects::Test test;
+            auto test = effects::testing::test();
             auto trace = load_trace(path);
             if (!trace) {
                 std::fprintf(stderr, "[skip] could not load %s\n", path);

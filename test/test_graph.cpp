@@ -7,7 +7,7 @@
 #include <span>
 
 [[gnu::cold]] int main() {
-    crucible::effects::Test test;
+    auto test = crucible::effects::testing::test();
     crucible::ExprPool pool(test.alloc);
     crucible::Graph graph(test.alloc, &pool);
 

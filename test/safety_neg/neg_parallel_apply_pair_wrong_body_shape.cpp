@@ -38,10 +38,10 @@ int main() {
     Arena arena;
     constexpr std::size_t N = 8;
     auto region_a = safety::OwnedRegion<std::uint64_t, DataNegA>::adopt(
-        effects::Test{}.alloc, arena, N,
+        effects::testing::test().alloc, arena, N,
         safety::mint_permission_root<DataNegA>());
     auto region_b = safety::OwnedRegion<std::uint64_t, DataNegB>::adopt(
-        effects::Test{}.alloc, arena, N,
+        effects::testing::test().alloc, arena, N,
         safety::mint_permission_root<DataNegB>());
 
     // Should FAIL: body takes both parameters as

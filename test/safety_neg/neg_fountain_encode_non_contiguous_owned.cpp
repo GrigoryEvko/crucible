@@ -15,7 +15,7 @@ struct NotWireBytes {
 
 int main() {
     auto encoder = crucible::cntp::mint_fountain_encoder<4, 16>(
-        crucible::effects::Init{});
+        crucible::effects::testing::init());
     auto seed = crucible::Philox::op_key_det(
         1, 2, crucible::ContentHash{3});
     crucible::cntp::LinearFountainBuffer<NotWireBytes> input{NotWireBytes{}};

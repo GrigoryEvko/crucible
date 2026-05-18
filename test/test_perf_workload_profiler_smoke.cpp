@@ -69,7 +69,7 @@ int main() {
     // ── (3) nullptr Senses → pass-through over ParallelismRule ─────
     {
         WorkloadProfiler profiler{
-            /*senses=*/nullptr, ::crucible::effects::Init{}};
+            /*senses=*/nullptr, ::crucible::effects::testing::init()};
 
         // L3-resident budget — structural rule recommends Parallel.
         // Profiler with no telemetry MUST forward verbatim.
@@ -105,9 +105,9 @@ int main() {
     // hold even when senses is non-null.
     {
         auto senses = crucible::perf::Senses::load_subset(
-            ::crucible::effects::Init{},
+            ::crucible::effects::testing::init(),
             crucible::perf::SensesMask{ .sense_hub = true });
-        WorkloadProfiler profiler{&senses, ::crucible::effects::Init{}};
+        WorkloadProfiler profiler{&senses, ::crucible::effects::testing::init()};
 
         const WorkBudget tiny_budget{
             .read_bytes  = 1024,    // ~L1d-resident on every modern CPU
@@ -143,9 +143,9 @@ int main() {
     // telemetry that isn't worth synthesizing in a smoke test.
     {
         auto senses = crucible::perf::Senses::load_subset(
-            ::crucible::effects::Init{},
+            ::crucible::effects::testing::init(),
             crucible::perf::SensesMask{ .sense_hub = true });
-        WorkloadProfiler profiler{&senses, ::crucible::effects::Init{}};
+        WorkloadProfiler profiler{&senses, ::crucible::effects::testing::init()};
 
         const WorkBudget l3_budget{
             .read_bytes  = 8 * 1024 * 1024,
@@ -200,7 +200,7 @@ int main() {
     // ── (6) Diagnostics on a fresh profiler ────────────────────────
     {
         WorkloadProfiler profiler{
-            /*senses=*/nullptr, ::crucible::effects::Init{}};
+            /*senses=*/nullptr, ::crucible::effects::testing::init()};
         if (profiler.last_was_demoted()
             || profiler.last_futex_wait_delta() != 0
             || profiler.last_ctx_vol_delta() != 0) {
@@ -220,7 +220,7 @@ int main() {
     // ── (7) reset() returns to first-call state ────────────────────
     {
         WorkloadProfiler profiler{
-            /*senses=*/nullptr, ::crucible::effects::Init{}};
+            /*senses=*/nullptr, ::crucible::effects::testing::init()};
         const WorkBudget budget{
             .read_bytes  = 8 * 1024 * 1024,
             .write_bytes = 8 * 1024 * 1024,
@@ -241,7 +241,7 @@ int main() {
     // ── (8) Move-construct sanity ──────────────────────────────────
     {
         WorkloadProfiler profiler_src{
-            /*senses=*/nullptr, ::crucible::effects::Init{}};
+            /*senses=*/nullptr, ::crucible::effects::testing::init()};
         WorkloadProfiler profiler_sink = std::move(profiler_src);
         const WorkBudget budget{
             .read_bytes  = 1024,

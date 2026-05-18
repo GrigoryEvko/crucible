@@ -11,7 +11,7 @@
 
 int main() {
   crucible::Arena arena{};
-  crucible::effects::Init init{};
+  auto init = crucible::effects::testing::init();
   crucible::RecipePool pool{&arena, init};
   return pool.capacity() == 0;
 }

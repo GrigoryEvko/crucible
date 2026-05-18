@@ -36,11 +36,11 @@ int main() {
     std::array<cc::SwimPeer, 1> b_peers{p1};
 
     auto a = cc::mint_scuttlebutt<4, 4>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         p1,
         std::span<const cc::SwimPeer>{a_peers});
     auto b = cc::mint_scuttlebutt<4, 4>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         p2,
         std::span<const cc::SwimPeer>{b_peers});
 
@@ -160,7 +160,7 @@ int main() {
     assert(compacted.has_value());
     assert(compacted.value() == 2);
 
-    auto tiny = cc::mint_scuttlebutt<2, 1>(crucible::effects::Init{}, p1);
+    auto tiny = cc::mint_scuttlebutt<2, 1>(crucible::effects::testing::init(), p1);
     assert(tiny.add_peer(p2).has_value());
     auto overflow_peer = tiny.add_peer(p3);
     assert(!overflow_peer.has_value());

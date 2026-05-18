@@ -316,7 +316,7 @@ static void test_cache_miss_fallback() {
 
 // ── Test 4: Cache capacity and FIFO eviction ──────────────────────
 static void test_cache_dedup_and_cap() {
-    effects::Test test;
+    auto test = effects::testing::test();
     RegionCache cache;
 
     assert(cache.size() == 0);

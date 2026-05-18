@@ -11,7 +11,7 @@
 
 int main() {
     auto encoder = crucible::cntp::mint_fountain_encoder<4, 16>(
-        crucible::effects::Init{});
+        crucible::effects::testing::init());
     std::array<std::byte, 16> payload{};
     (void)encoder.start_encoding(payload, 42ULL);
     return 0;

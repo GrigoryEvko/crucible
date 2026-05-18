@@ -36,7 +36,7 @@ int main() {
     bench::Report reports[] = {
         [&]{
             crucible::Arena arena(1u << 24);
-            crucible::effects::Test test;
+            auto test = crucible::effects::testing::test();
             return bench::run("arena.alloc(8)", [&]{
                 auto* p = arena.alloc(test.alloc,
                     crucible::safety::Positive<size_t>{8});
@@ -45,7 +45,7 @@ int main() {
         }(),
         [&]{
             crucible::Arena arena(1u << 24);
-            crucible::effects::Test test;
+            auto test = crucible::effects::testing::test();
             return bench::run("arena.alloc(64)", [&]{
                 auto* p = arena.alloc(test.alloc,
                     crucible::safety::Positive<size_t>{64});
@@ -54,7 +54,7 @@ int main() {
         }(),
         [&]{
             crucible::Arena arena(1u << 24);
-            crucible::effects::Test test;
+            auto test = crucible::effects::testing::test();
             return bench::run("arena.alloc(64, align=64)", [&]{
                 auto* p = arena.alloc(test.alloc,
                     crucible::safety::Positive<size_t>{64},
@@ -64,7 +64,7 @@ int main() {
         }(),
         [&]{
             crucible::Arena arena(1u << 24);
-            crucible::effects::Test test;
+            auto test = crucible::effects::testing::test();
             return bench::run("arena.alloc_obj<uint64_t>", [&]{
                 auto* p = arena.alloc_obj<uint64_t>(test.alloc);
                 bench::do_not_optimize(p);
@@ -72,7 +72,7 @@ int main() {
         }(),
         [&]{
             crucible::Arena arena(1u << 24);
-            crucible::effects::Test test;
+            auto test = crucible::effects::testing::test();
             return bench::run("arena.alloc_array<uint64_t>(100)", [&]{
                 auto* p = arena.alloc_array<uint64_t>(test.alloc, 100);
                 bench::do_not_optimize(p);
@@ -80,7 +80,7 @@ int main() {
         }(),
         [&]{
             crucible::Arena arena(1u << 24);
-            crucible::effects::Test test;
+            auto test = crucible::effects::testing::test();
             return bench::run("arena.alloc_array<uint64_t>(0) nullptr", [&]{
                 auto* p = arena.alloc_array<uint64_t>(test.alloc, 0);
                 bench::do_not_optimize(p);
@@ -92,7 +92,7 @@ int main() {
             // Fluent-builder form because we override samples/warmup; the
             // one-shot bench::run(name, body) helper has no override hook.
             crucible::Arena arena(4096);
-            crucible::effects::Test test;
+            auto test = crucible::effects::testing::test();
             auto r = bench::Run("arena.alloc(8192) slow-path")
                          .samples(kSlowPathSamples).warmup(kSlowPathWarmup);
             if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
@@ -104,7 +104,7 @@ int main() {
         }(),
         [&]{
             crucible::Arena arena(1u << 24);
-            crucible::effects::Test test;
+            auto test = crucible::effects::testing::test();
             return bench::run("arena.copy_string(\"relu\")", [&]{
                 auto* p = arena.copy_string(test.alloc, "relu");
                 bench::do_not_optimize(p);

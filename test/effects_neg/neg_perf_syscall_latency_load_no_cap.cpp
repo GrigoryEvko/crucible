@@ -3,7 +3,7 @@
 // GAPS-004e (#1281): SyscallLatency::load() takes a mandatory
 // `effects::Init` capability tag.  No default — even a typo that
 // drops the argument fails compilation rather than silently calling
-// a stub.  A future maintainer who adds `= effects::Init{}` as a
+// a stub.  A future maintainer who adds `= effects::testing::init()` as a
 // default would silently weaken the gate, and this fixture catches
 // that regression at the earliest CI point.
 //

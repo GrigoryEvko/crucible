@@ -8,7 +8,7 @@
 int main() {
     auto local = crucible::canopy::admit_swim_peer({});
     auto lifeguard = crucible::canopy::mint_lifeguard_swim<4>(
-        crucible::effects::Test{},
+        crucible::effects::testing::test(),
         local);
     (void)lifeguard;
     return 0;

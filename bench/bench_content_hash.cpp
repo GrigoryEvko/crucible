@@ -17,7 +17,7 @@
 
 using namespace crucible;
 
-static const effects::Bg BG;
+static const auto BG = effects::testing::bg();
 static constexpr auto A = BG.alloc;
 
 static std::vector<TraceEntry> make_ops(Arena& arena,

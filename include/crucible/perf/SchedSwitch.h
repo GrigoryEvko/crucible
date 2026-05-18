@@ -42,7 +42,7 @@
 //
 // ─── Production usage ──────────────────────────────────────────────
 //
-//     if (auto h = crucible::perf::SchedSwitch::load(crucible::effects::Init{})) {
+//     if (auto h = crucible::perf::SchedSwitch::load(crucible::effects::testing::init())) {
 //         const uint64_t cs_pre = h->context_switches();
 //         // ... run workload ...
 //         const uint64_t cs_post = h->context_switches();
@@ -246,7 +246,7 @@ class SchedSwitch {
     // hold no Init token, so the cap-typing gate prevents
     // accidental hot-path SchedSwitch::load() calls structurally.
     //
-    //     auto h = crucible::perf::SchedSwitch::load(crucible::effects::Init{});
+    //     auto h = crucible::perf::SchedSwitch::load(crucible::effects::testing::init());
     //
     // Diagnostic line printed to stderr unless CRUCIBLE_PERF_QUIET=1 is
     // set in the environment.  CRUCIBLE_PERF_VERBOSE=1 forwards libbpf's

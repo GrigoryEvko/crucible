@@ -62,7 +62,7 @@ int main() {
 
     std::printf("=== expr_pool ===\n  target: intern() cache hit ≤ 10 ns median\n\n");
 
-    effects::Test   t{};
+    auto t = effects::testing::test();
     const auto a = t.alloc;
 
     // ── Pre-bench diagnostic: hash-table load factor after 10 k entries.

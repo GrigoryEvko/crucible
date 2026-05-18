@@ -19,7 +19,7 @@
 // Plus track which loaded.  Plus coordinate teardown.  Senses replaces
 // that with one call:
 //
-//   auto s = Senses::load_all(crucible::effects::Init{});
+//   auto s = Senses::load_all(crucible::effects::testing::init());
 //   auto cov = s.coverage();          // diagnostic: which loaded
 //   if (auto* h = s.sense_hub())      { /* use it */ }
 //   if (auto* p = s.pmu_sample())     { /* use it */ }
@@ -55,7 +55,7 @@
 // ─── HS14 NEG-COMPILE FIXTURES ────────────────────────────────────────
 //
 // • neg_perf_senses_load_no_cap.cpp     — Senses::load_all() without arg
-// • neg_perf_senses_load_wrong_cap.cpp  — pass effects::Bg{} instead of Init{}
+// • neg_perf_senses_load_wrong_cap.cpp  — pass effects::testing::bg() instead of Init{}
 
 #include <crucible/effects/Capabilities.h>
 #include <crucible/perf/LockContention.h>

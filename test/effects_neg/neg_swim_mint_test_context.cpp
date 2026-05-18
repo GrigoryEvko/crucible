@@ -7,7 +7,7 @@
 
 int main() {
     auto membership =
-        crucible::canopy::mint_swim_membership(crucible::effects::Test{});
+        crucible::canopy::mint_swim_membership(crucible::effects::testing::test());
     (void)membership;
     return 0;
 }

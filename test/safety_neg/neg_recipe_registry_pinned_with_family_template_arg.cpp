@@ -49,8 +49,8 @@ using namespace crucible;
 
 int main() {
     Arena arena{};
-    effects::Test test_ctx{};
-    effects::Init init_ctx{};
+    auto test_ctx = effects::testing::test();
+    auto init_ctx = effects::testing::init();
     RecipePool     pool{RecipePool::ArenaBorrow{arena}, init_ctx};
     RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool},  test_ctx.alloc};
 

@@ -18,7 +18,7 @@
 namespace eff = crucible::effects;
 
 int main() {
-    eff::Bg bg;
+    auto bg = eff::testing::bg();
     auto bg_cap = eff::mint_cap<eff::Effect::Bg>(bg);  // thread-effect cap
     auto bare   = eff::extract_bare(std::move(bg_cap));  // no matching overload
     (void)bare;

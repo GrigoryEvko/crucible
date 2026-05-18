@@ -49,7 +49,7 @@ int main() {
         .shuffle_period_ns = cc::HyParViewDurationNs{30'000'000'000ULL},
     };
     auto membership = cc::mint_hyparview<3, 6>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         std::span<const cc::HyParViewPeer>{active},
         std::span<const cc::HyParViewPeer>{passive},
         config);

@@ -7,7 +7,7 @@
 // them, so a hot-path or background frame that holds only `Bg` cannot
 // accidentally construct a profiler.
 //
-// Violation: passes `effects::Bg{}` where `effects::Init{}` is required.
+// Violation: passes `effects::testing::bg()` where `effects::testing::init()` is required.
 // The compiler should fail with "no matching function" / "could not
 // convert" / "expected" pointing at the parameter type mismatch.
 //
@@ -18,7 +18,7 @@
 #include <crucible/perf/WorkloadProfiler.h>
 
 int main() {
-    crucible::effects::Bg bg_cap{};
+    auto bg_cap = crucible::effects::testing::bg();
 
     // <-- this line must NOT compile
     crucible::perf::WorkloadProfiler profiler{nullptr, bg_cap};

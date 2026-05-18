@@ -223,9 +223,15 @@ template <class T> using source_of_t = typename source_of<T>::type;
 template <Effect E, IsExecCtx Ctx>
     requires CtxCanMint<Ctx, E>
 [[nodiscard]] constexpr Capability<E, cap_type_of_t<Ctx>>
-mint_from_ctx(Ctx const&) noexcept {
-    using Source = cap_type_of_t<Ctx>;
-    return mint_cap<E>(Source{});
+mint_from_ctx(Ctx const& ctx) noexcept {
+    // fixy-A3-005: pass the ctx's already-constructed Cap member
+    // rather than fabricating a fresh Source{}.  The ctx's Cap was
+    // legitimately constructed via the mint_*_context passkey path;
+    // re-defaulting Source here would now hit Source's private
+    // default ctor (Bg/Init/Test are passkey-minted).  The ctx IS
+    // the proof of authority; mint_cap consumes the existing Cap
+    // by const-ref.
+    return mint_cap<E>(ctx.cap_);
 }
 
 // ── Cap-Ctx alignment concept ──────────────────────────────────────
@@ -394,18 +400,22 @@ static_assert( CapMatchesCtx<Capability<Effect::Alloc, Test>, BgCompileCtx>);
 
 [[gnu::cold]] inline void runtime_smoke_test_capability() noexcept {
     // ── Mint from each authorized source ────────────────────────────
-    Bg bg;
+    // fixy-A3-005: Bg/Init/Test default ctors are private; route
+    // through the test-only witness path (TestWitness friended on
+    // each passkey).  The witness path is callable from any TU
+    // (these are smoke tests, not production minters).
+    auto bg = testing::bg();
     auto bg_alloc = mint_cap<Effect::Alloc>(bg);
     auto bg_io    = mint_cap<Effect::IO>(bg);
     auto bg_block = mint_cap<Effect::Block>(bg);
     auto bg_self  = mint_cap<Effect::Bg>(bg);
 
-    Init init;
+    auto init = testing::init();
     auto init_alloc = mint_cap<Effect::Alloc>(init);
     auto init_io    = mint_cap<Effect::IO>(init);
     auto init_self  = mint_cap<Effect::Init>(init);
 
-    Test test;
+    auto test = testing::test();
     auto test_alloc = mint_cap<Effect::Alloc>(test);
     auto test_block = mint_cap<Effect::Block>(test);
 

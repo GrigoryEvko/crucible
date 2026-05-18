@@ -3,7 +3,7 @@
 // GAPS-004y (#1287): Senses::load_all() takes a mandatory `effects::Init`
 // capability tag.  No default — even a typo that drops the argument
 // fails compilation rather than silently constructing a Senses without
-// the cap.  A future maintainer who adds `= effects::Init{}` as a
+// the cap.  A future maintainer who adds `= effects::testing::init()` as a
 // default would silently weaken the gate, and this fixture catches
 // that regression at the earliest CI point.
 //

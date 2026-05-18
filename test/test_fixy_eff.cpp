@@ -141,7 +141,7 @@ static_assert(fe::Universe<fe::OsUniverse>);
 // ─── 9. Runtime sanity ────────────────────────────────────────────
 
 int main() {
-    fe::Bg bg{};
+    auto bg = fe::testing::bg();
     {
         auto cap = fe::mint_cap<fe::Effect::Alloc>(bg);
         std::move(cap).consume();

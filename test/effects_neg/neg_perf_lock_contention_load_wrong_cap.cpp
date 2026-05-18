@@ -7,7 +7,7 @@
 // hot-path or background frame that holds only `Bg` cannot
 // accidentally reach the startup-only loader.
 //
-// Violation: passes `effects::Bg{}` where `effects::Init{}` is required.
+// Violation: passes `effects::testing::bg()` where `effects::testing::init()` is required.
 // The compiler should fail with "no matching function" / "could not
 // convert" / "expected" pointing at the parameter type mismatch.
 //
@@ -20,7 +20,7 @@
 #include <optional>
 
 int main() {
-    crucible::effects::Bg bg_cap{};
+    auto bg_cap = crucible::effects::testing::bg();
 
     // <-- this line must NOT compile
     std::optional<crucible::perf::LockContention> hub =

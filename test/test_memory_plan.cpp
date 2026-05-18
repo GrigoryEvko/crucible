@@ -6,7 +6,7 @@
 #include <cstring>
 
 int main() {
-  crucible::effects::Test test;
+  auto test = crucible::effects::testing::test();
   crucible::BackgroundThread bt;
 
   // Create slots with known liveness intervals for memory planning.

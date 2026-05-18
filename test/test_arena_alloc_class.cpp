@@ -66,7 +66,7 @@ static void test_alloc_obj_pinned_returns_arena_pointer() {
     std::printf("  alloc_obj_pinned returns valid arena pointer...\n");
 
     Arena arena;
-    effects::Bg bg;
+    auto bg = effects::testing::bg();
 
     auto wrapped = arena.alloc_obj_pinned<HotPathStruct>(bg.alloc);
     HotPathStruct* unwrapped = wrapped.peek();
@@ -97,7 +97,7 @@ static void test_alloc_array_pinned_zero_yields_null_wrapper() {
     std::printf("  alloc_array_pinned(0) yields null wrapper...\n");
 
     Arena arena;
-    effects::Bg bg;
+    auto bg = effects::testing::bg();
 
     // n == 0 must produce a wrapper around nullptr — mirrors
     // alloc_array's contract.  AllocClass<Arena, T*>{nullptr} is
@@ -111,7 +111,7 @@ static void test_alloc_array_pinned_nonzero_yields_writeable_array() {
     std::printf("  alloc_array_pinned(N>0) yields writeable array...\n");
 
     Arena arena;
-    effects::Bg bg;
+    auto bg = effects::testing::bg();
 
     constexpr size_t N = 16;
     auto wrapped = arena.alloc_array_pinned<uint32_t>(bg.alloc, N);
@@ -126,7 +126,7 @@ static void test_alloc_array_nonzero_pinned_returns_nonnull() {
     std::printf("  alloc_array_nonzero_pinned returns non-null...\n");
 
     Arena arena;
-    effects::Bg bg;
+    auto bg = effects::testing::bg();
 
     auto wrapped = arena.alloc_array_nonzero_pinned<SmallStruct>(bg.alloc, 32);
     SmallStruct* arr = wrapped.peek();
@@ -303,7 +303,7 @@ static void test_pointer_lifetime_through_wrapper() {
     std::printf("  pointer lifetime preserved through AllocClass...\n");
 
     Arena arena;
-    effects::Bg bg;
+    auto bg = effects::testing::bg();
 
     auto wrapped = arena.alloc_obj_pinned<HotPathStruct>(bg.alloc);
     HotPathStruct* via_peek = wrapped.peek();
@@ -333,7 +333,7 @@ static void test_move_semantics_through_wrapper() {
     std::printf("  move-semantics through AllocClass wrapper...\n");
 
     Arena arena;
-    effects::Bg bg;
+    auto bg = effects::testing::bg();
 
     auto wrapped = arena.alloc_obj_pinned<HotPathStruct>(bg.alloc);
     HotPathStruct* before = wrapped.peek();
@@ -365,7 +365,7 @@ static void test_null_on_zero_contract() {
     std::printf("  null-on-zero contract preserved through wrapper...\n");
 
     Arena arena;
-    effects::Bg bg;
+    auto bg = effects::testing::bg();
 
     auto w0 = arena.alloc_array_pinned<int>(bg.alloc, 0);
     assert(w0.peek() == nullptr);
@@ -422,7 +422,7 @@ static void test_relax_arena_to_weaker() {
     std::printf("  relax Arena → Heap (down-the-lattice)...\n");
 
     Arena arena;
-    effects::Bg bg;
+    auto bg = effects::testing::bg();
 
     auto wrapped = arena.alloc_obj_pinned<int>(bg.alloc);
     int* before = wrapped.peek();
@@ -474,7 +474,7 @@ static void test_e2e_fence_checked_consumer() {
     std::printf("  end-to-end fence-checked consumer accepts Arena...\n");
 
     Arena arena;
-    effects::Bg bg;
+    auto bg = effects::testing::bg();
 
     auto wrapped = arena.alloc_array_nonzero_pinned<int>(bg.alloc, 4);
     int* arr = consume_arena_or_stronger(std::move(wrapped));
@@ -509,7 +509,7 @@ static void test_slow_path_preserves_wrapper() {
     std::printf("  slow-path large allocation preserves wrapper...\n");
 
     Arena arena{/*block_size=*/256};  // small block to force slow path
-    effects::Bg bg;
+    auto bg = effects::testing::bg();
 
     // Allocate larger than block_size — forces slow path.
     auto wrapped = arena.alloc_array_nonzero_pinned<uint64_t>(bg.alloc, 64);
@@ -529,7 +529,7 @@ static void test_sequential_allocations_distinct() {
     std::printf("  sequential pinned allocations yield distinct pointers...\n");
 
     Arena arena;
-    effects::Bg bg;
+    auto bg = effects::testing::bg();
 
     auto w1 = arena.alloc_obj_pinned<HotPathStruct>(bg.alloc);
     auto w2 = arena.alloc_obj_pinned<HotPathStruct>(bg.alloc);

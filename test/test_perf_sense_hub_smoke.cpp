@@ -181,7 +181,7 @@ int main() {
     // Init for Bg or removed the parameter entirely would fail-build
     // here, not silently propagate to production callers.
     std::optional<crucible::perf::SenseHub> hub =
-        crucible::perf::SenseHub::load(::crucible::effects::Init{});
+        crucible::perf::SenseHub::load(::crucible::effects::testing::init());
     static_assert(std::is_same_v<
         decltype(hub),
         std::optional<crucible::perf::SenseHub>>);

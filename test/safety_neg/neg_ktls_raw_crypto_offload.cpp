@@ -6,7 +6,7 @@
 
 int main() {
     using namespace crucible::cntp::_wip;
-    crucible::effects::Init init{};
+    auto init = crucible::effects::testing::init();
     auto fd = admit_socket_fd(3).value();
     auto iface = NicInterfaceName::from("eth0").value();
     TlsCryptoInfo raw{

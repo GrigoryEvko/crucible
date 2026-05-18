@@ -20,7 +20,7 @@
 
 using namespace crucible;
 
-static const effects::Bg BG;
+static const auto BG = effects::testing::bg();
 static constexpr auto A = BG.alloc;
 
 // Avoids collision with crucible::make_region — this one builds a region

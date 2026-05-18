@@ -110,7 +110,7 @@ void test_crypto_mint_and_validation() {
 }
 
 void test_socket_request_and_deferred_enable() {
-    eff::Init init{};
+    auto init = eff::testing::init();
     auto fd = cntp::admit_socket_fd(7);
     auto iface = cntp::NicInterfaceName::from("eth0");
     assert(fd.has_value());

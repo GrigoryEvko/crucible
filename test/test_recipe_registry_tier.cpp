@@ -64,8 +64,8 @@ using crucible::safety::NumericalTier;
 
 namespace names = crucible::recipe_names;
 
-crucible::effects::Test g_test{};
-crucible::effects::Init g_init{};
+auto g_test = crucible::effects::testing::test();
+auto g_init = crucible::effects::testing::init();
 inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 inline crucible::effects::Init init_cap() noexcept { return g_init; }
 

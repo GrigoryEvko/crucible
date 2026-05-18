@@ -119,7 +119,7 @@ static constexpr uint64_t SZ_BD     = B * D * 4;           // 64
 static constexpr uint64_t SZ_BNCLS  = B * N_CLS * 4;       // 24
 
 int main() {
-    effects::Test test;
+    auto test = effects::testing::test();
     std::printf("test_compute_vit:\n");
 
     // ── Initialize parameters with seeded random values ──────────────

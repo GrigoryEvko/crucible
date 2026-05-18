@@ -24,7 +24,7 @@ namespace {
 } // namespace
 
 [[gnu::cold]] int main() {
-  crucible::effects::Test test;
+  auto test = crucible::effects::testing::test();
   crucible::Arena arena(1 << 16);
 
   crucible::TraceEntry arm0_op{};

@@ -17,7 +17,7 @@ namespace eff = ::crucible::effects;
 
 int main() {
   crucible::Arena arena{};
-  eff::Init init{};
+  auto init = eff::testing::init();
   crucible::RecipePool pool{
       crucible::RecipePool::ArenaBorrow{arena},
       init,

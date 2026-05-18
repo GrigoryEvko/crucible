@@ -4,6 +4,6 @@
 // mint runtime membership state.
 int main() {
     auto membership = crucible::canopy::mint_hyparview<4, 8>(
-        crucible::effects::Test{});
+        crucible::effects::testing::test());
     return static_cast<int>(membership.active_size().value());
 }

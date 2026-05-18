@@ -26,7 +26,7 @@
 
 using namespace crucible;
 
-static const effects::Bg BG;
+static const auto BG = effects::testing::bg();
 static constexpr auto A = BG.alloc;
 
 static RegionNode* synth_region(Arena& arena, uint32_t num_ops,

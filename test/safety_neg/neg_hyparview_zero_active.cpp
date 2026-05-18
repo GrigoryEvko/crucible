@@ -4,6 +4,6 @@
 // form a usable overlay.
 int main() {
     auto membership = crucible::canopy::mint_hyparview<0, 8>(
-        crucible::effects::Init{});
+        crucible::effects::testing::init());
     return static_cast<int>(membership.active_size().value());
 }

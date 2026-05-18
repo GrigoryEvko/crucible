@@ -9,7 +9,7 @@
 #include <crucible/RecipeRegistry.h>
 
 int main() {
-  crucible::effects::Test test{};
+  auto test = crucible::effects::testing::test();
   crucible::Arena arena{};
   crucible::RecipeRegistry registry{
       crucible::safety::BorrowedRef<crucible::Arena>{arena}, test.alloc};

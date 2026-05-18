@@ -462,7 +462,10 @@ struct BackgroundThread {
 
   static void DetectIterationFn(typename TraceBatchChannel::ConsumerHandle&& in,
                                 typename BuildWorkChannel::ProducerHandle&& out) {
-    effects::Bg bg;
+    // fixy-A3-005: Bg ctor is private; BackgroundThread is friended on
+    // bg_key so we mint via the passkey path.
+    [[maybe_unused]] auto bg =
+        effects::mint_bg_context(effects::detail::ctx_mint::bg_key{});
 
     while (true) {
       auto maybe_batch = in.try_pop();
@@ -522,7 +525,9 @@ struct BackgroundThread {
   // Stop sentinel (null BgBuildWork*) is forwarded as null BgGraphPublish*.
   static void BuildTraceFn(typename BuildWorkChannel::ConsumerHandle&& in,
                            typename GraphPublishChannel::ProducerHandle&& out) {
-    effects::Bg bg;
+    // fixy-A3-005: Bg ctor private; mint via passkey.
+    [[maybe_unused]] auto bg =
+        effects::mint_bg_context(effects::detail::ctx_mint::bg_key{});
 
     while (true) {
       auto maybe_work = in.try_pop();
@@ -612,7 +617,9 @@ struct BackgroundThread {
   // pre-fix pipeline could violate by 5–500 µs under load.
   static void MakeRegionFn(typename GraphPublishChannel::ConsumerHandle&& in,
                            BgSinkProducerHandle&& out) {
-    effects::Bg bg;
+    // fixy-A3-005: Bg ctor private; mint via passkey.
+    [[maybe_unused]] auto bg =
+        effects::mint_bg_context(effects::detail::ctx_mint::bg_key{});
 
     while (true) {
       auto maybe_publish = in.try_pop();

@@ -58,17 +58,25 @@ static void test_cap_tag_layout_traits() {
     static_assert(std::is_trivially_destructible_v<cap::IO>);
     static_assert(std::is_trivially_destructible_v<cap::Block>);
 
-    static_assert(std::is_nothrow_default_constructible_v<Bg>);
-    static_assert(std::is_nothrow_default_constructible_v<Init>);
-    static_assert(std::is_nothrow_default_constructible_v<Test>);
+    // fixy-A3-005: Bg/Init/Test default ctors are PRIVATE — the only
+    // construction path is via mint_*_context(passkey).  Tests/bench
+    // code construct them via the friended TestWitness namespace.
+    static_assert(!std::is_default_constructible_v<Bg>);
+    static_assert(!std::is_default_constructible_v<Init>);
+    static_assert(!std::is_default_constructible_v<Test>);
+    // The minter factories themselves are nothrow.
+    static_assert(noexcept(testing::bg()));
+    static_assert(noexcept(testing::init()));
+    static_assert(noexcept(testing::test()));
     std::printf("  test_cap_tag_layout_traits:     PASSED\n");
 }
 
 static void test_context_member_access() {
-    // Construction succeeds and member access yields a usable cap token.
-    Bg   bg;
-    Init init;
-    Test test;
+    // fixy-A3-005: mint via the testing path; the default ctors of
+    // Bg/Init/Test are private and only the minters can call them.
+    auto bg   = testing::bg();
+    auto init = testing::init();
+    auto test = testing::test();
 
     // Assigning to a cap-typed local is the canonical pattern callers
     // use to thread permission through a call chain.
@@ -92,7 +100,7 @@ static void test_context_member_access() {
 }
 
 static void test_cap_param_propagation() {
-    Bg bg;
+    auto bg = testing::bg();
     int r = with_alloc(bg.alloc);
     assert(r == 42);
     // with_alloc(int{}) would fail to compile — the cap::Alloc parameter

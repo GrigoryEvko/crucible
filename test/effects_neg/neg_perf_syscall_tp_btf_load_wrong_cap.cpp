@@ -4,7 +4,7 @@
 // value.  Bg / Init / Test are distinct 1-byte capability structs
 // with no implicit conversion.
 //
-// Violation: passes `effects::Bg{}` where `effects::Init{}` is required.
+// Violation: passes `effects::testing::bg()` where `effects::testing::init()` is required.
 // Expected diagnostic: "could not convert|no matching function|
 // cannot convert|expected.*Init".
 
@@ -14,7 +14,7 @@
 #include <optional>
 
 int main() {
-    crucible::effects::Bg bg_cap{};
+    auto bg_cap = crucible::effects::testing::bg();
 
     // <-- this line must NOT compile (Bg cap, Init required)
     std::optional<crucible::perf::SyscallTpBtf> hub =

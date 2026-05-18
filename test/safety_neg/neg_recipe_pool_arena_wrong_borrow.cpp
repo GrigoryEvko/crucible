@@ -12,7 +12,7 @@ struct OtherArena {};
 
 int main() {
   OtherArena other{};
-  crucible::effects::Init init{};
+  auto init = crucible::effects::testing::init();
   crucible::RecipePool pool{
       crucible::safety::BorrowedRef<OtherArena>{other}, init};
   return pool.capacity() == 0;

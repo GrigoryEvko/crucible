@@ -16,7 +16,7 @@ struct NotWireBytes {
 
 int main() {
     auto rs = crucible::cntp::mint_reed_solomon<4, 2>(
-        crucible::effects::Init{});
+        crucible::effects::testing::init());
     crucible::cntp::LinearShardBuffer<NotWireBytes> input{NotWireBytes{}};
     std::array<std::byte, 6> output{};
     (void)rs.encode_owned(std::move(input), output);

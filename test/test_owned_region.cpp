@@ -86,7 +86,7 @@ struct DataSeq {};
 
 // effects::Test exposes an Alloc capability member; copy it for use.
 inline effects::Alloc test_alloc_token() noexcept {
-    return effects::Test{}.alloc;
+    return effects::testing::test().alloc;
 }
 
 // ── Tier 1: compile-time structural ──────────────────────────────

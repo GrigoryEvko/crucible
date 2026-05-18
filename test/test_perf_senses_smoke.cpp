@@ -80,7 +80,7 @@ int main() {
     setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
 
     // ── (5) load_all returns a Senses unconditionally — partial loads OK.
-    auto s = crucible::perf::Senses::load_all(::crucible::effects::Init{});
+    auto s = crucible::perf::Senses::load_all(::crucible::effects::testing::init());
     static_assert(std::is_same_v<decltype(s), crucible::perf::Senses>);
 
     // ── (6) coverage() matches accessor non-nullness for each subprogram.
@@ -124,7 +124,7 @@ int main() {
 
     // ── (7) load_subset honours the mask — unmasked accessors null.
     auto sub = crucible::perf::Senses::load_subset(
-        ::crucible::effects::Init{},
+        ::crucible::effects::testing::init(),
         crucible::perf::SensesMask{
             .sense_hub  = true,
             .pmu_sample = true,

@@ -1005,7 +1005,9 @@ static_assert(std::is_same_v<
     static_assert(std::is_same_v<payload_row_t<int>, eff::Row<>>);
 
     // Capability minted at runtime; payload_row recovers the effect.
-    eff::Bg bg;
+    // fixy-A3-005: Bg default ctor is private; route through the
+    // test-only witness path for this smoke test.
+    auto bg = eff::testing::bg();
     auto cap = eff::mint_cap<eff::Effect::Alloc>(bg);
     static_assert(std::is_same_v<payload_row_t<decltype(cap)>,
                                   eff::Row<eff::Effect::Alloc>>);

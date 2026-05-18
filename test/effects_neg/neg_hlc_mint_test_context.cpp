@@ -6,7 +6,7 @@
 #include <crucible/canopy/Hlc.h>
 
 int main() {
-    auto clock = crucible::canopy::mint_hlc(crucible::effects::Test{});
+    auto clock = crucible::canopy::mint_hlc(crucible::effects::testing::test());
     (void)clock;
     return 0;
 }

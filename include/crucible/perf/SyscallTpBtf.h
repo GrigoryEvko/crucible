@@ -41,7 +41,7 @@
 //
 // ─── Production usage ──────────────────────────────────────────────
 //
-//     if (auto h = crucible::perf::SyscallTpBtf::load(crucible::effects::Init{})) {
+//     if (auto h = crucible::perf::SyscallTpBtf::load(crucible::effects::testing::init())) {
 //         const uint64_t syscalls_pre = h->total_syscalls();
 //         // ... run workload ...
 //         const uint64_t syscalls_delta =

@@ -19,7 +19,7 @@ namespace {
 } // namespace
 
 [[gnu::cold]] int main() {
-  crucible::effects::Test test;
+  auto test = crucible::effects::testing::test();
   crucible::Arena arena(1 << 16);
 
   // Test compute_storage_nbytes

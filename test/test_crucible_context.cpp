@@ -318,7 +318,7 @@ static void test_external_slots() {
 
 // ── Test 8: Integration with sweep-line ──
 static void test_integration_sweep_line() {
-  crucible::effects::Test test;
+  auto test = crucible::effects::testing::test();
   crucible::BackgroundThread bt;
 
   // 2 internal slots, 1 external.

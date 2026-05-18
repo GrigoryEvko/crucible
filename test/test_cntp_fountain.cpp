@@ -78,9 +78,9 @@ int main() {
         crucible::ContentHash{0xCAFE'BEEFULL});
 
     auto encoder = ci::mint_fountain_encoder<8, 4>(
-        crucible::effects::Init{});
+        crucible::effects::testing::init());
     auto decoder = ci::mint_fountain_decoder<8, 4>(
-        crucible::effects::Init{});
+        crucible::effects::testing::init());
 
     {
         constexpr auto payload = payload_seed<29>();
@@ -130,7 +130,7 @@ int main() {
         assert(owned_packet.has_value());
 
         auto owned_decoder = ci::mint_fountain_decoder<8, 4>(
-            crucible::effects::Init{});
+            crucible::effects::testing::init());
         auto state = owned_decoder.add_packet_owned(std::move(*owned_packet));
         assert(state.has_value());
         assert(*state == ci::FountainDecodeState::NeedsMore);
@@ -158,7 +158,7 @@ int main() {
         bad.mask = 1;
 
         auto shape_decoder = ci::mint_fountain_decoder<8, 4>(
-            crucible::effects::Init{});
+            crucible::effects::testing::init());
         auto rejected = shape_decoder.add_packet(bad);
         assert(!rejected.has_value());
         assert(rejected.error() == ci::FountainError::PacketShapeMismatch);

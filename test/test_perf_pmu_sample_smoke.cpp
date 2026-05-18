@@ -9,7 +9,7 @@
 //   4. PmuEventType ABI-stable discriminator values.
 //   5. Move-only / non-copyable.
 //   6. EBO sizeof — sizeof(PmuSample) == sizeof(unique_ptr<State>).
-//   7. load(effects::Init{}) link-reachable; bound-check on
+//   7. load(effects::testing::init()) link-reachable; bound-check on
 //      attached_programs / attach_failures Refined types.
 //   8. Moved-from defenses on every accessor.
 
@@ -108,7 +108,7 @@ int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
     std::optional<crucible::perf::PmuSample> hub =
-        crucible::perf::PmuSample::load(::crucible::effects::Init{});
+        crucible::perf::PmuSample::load(::crucible::effects::testing::init());
     static_assert(std::is_same_v<
         decltype(hub),
         std::optional<crucible::perf::PmuSample>>);

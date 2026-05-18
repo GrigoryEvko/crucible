@@ -12,7 +12,7 @@ int main() {
     crucible::cog::CogIdentity peer{};
     peer.uuid = crucible::cog::Uuid{1, 2};
     auto sync = cc::mint_scuttlebutt<4, 4>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         cc::admit_swim_peer(peer));
     auto key = cc::admit_scuttlebutt_key("bad").value();
     NotCrdt value{};

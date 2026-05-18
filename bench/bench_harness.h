@@ -386,7 +386,7 @@ namespace detail {
     // constructs from the rvalue return.
     static ::crucible::perf::Senses slot =
         ::crucible::perf::Senses::load_subset(
-            ::crucible::effects::Init{},
+            ::crucible::effects::testing::init(),
             ::crucible::perf::SensesMask{
                 .sense_hub    = true,
                 .sched_switch = true,

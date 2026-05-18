@@ -106,7 +106,7 @@ int main() {
                   crucible::effects::ConcurrentRow<
                       crucible::effects::SmBudget<1>>>);
 
-    auto rs42 = ci::mint_reed_solomon<4, 2>(crucible::effects::Init{});
+    auto rs42 = ci::mint_reed_solomon<4, 2>(crucible::effects::testing::init());
 
     {
         constexpr auto payload = payload_seed<17>();
@@ -204,7 +204,7 @@ int main() {
     }
 
     {
-        auto rs102 = ci::mint_reed_solomon<10, 2>(crucible::effects::Init{});
+        auto rs102 = ci::mint_reed_solomon<10, 2>(crucible::effects::testing::init());
         constexpr auto payload = payload_seed<103>();
         constexpr auto shard_bytes = Rs102::shard_bytes_for(payload.size());
         std::array<std::byte, Rs102::encoded_size_for(payload.size())> encoded{};

@@ -48,7 +48,8 @@ static_assert(std::is_same_v<
 // ─── 4. Runtime sanity — mint via fixy::, consume, observe ────────
 
 int main() {
-    eff::ctx_cap::Bg bg{};
+    // fixy-A3-005: Bg ctor is private — route through testing minter.
+    auto bg = eff::testing::bg();
     {
         auto alloc_cap = cap::mint_cap<eff::Effect::Alloc>(bg);
         std::move(alloc_cap).consume();

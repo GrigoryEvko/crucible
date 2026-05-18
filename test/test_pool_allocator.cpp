@@ -260,7 +260,7 @@ static void test_reinit() {
 // End-to-end: create realistic slots, run the sweep-line allocator,
 // then materialize with PoolAllocator and verify write isolation.
 static void test_integration_with_sweep_line() {
-  crucible::effects::Test test;
+  auto test = crucible::effects::testing::test();
   crucible::BackgroundThread bt;
 
   // Slot 0: birth=0, death=5, 1024B (internal)

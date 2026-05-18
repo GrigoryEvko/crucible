@@ -35,7 +35,7 @@ using crucible::ScalarType;
 using crucible::safety::Wait;
 using crucible::safety::WaitStrategy_v;
 
-static crucible::effects::Test g_test;
+static auto g_test = crucible::effects::testing::test();
 
 // Build a minimal RegionNode (mirrors test_cipher.cpp's helper).
 static RegionNode* make_test_region(Arena& arena, uint32_t seed) {

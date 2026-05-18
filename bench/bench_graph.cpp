@@ -28,7 +28,7 @@
 
 using namespace crucible;
 
-static const effects::Bg BG;
+static const auto BG = effects::testing::bg();
 static constexpr auto A = BG.alloc;
 
 // Build a pointwise chain of length N: x → op0 → op1 → ... → op(N-1).

@@ -40,7 +40,7 @@
 //
 // ─── Production usage ──────────────────────────────────────────────
 //
-//     if (auto h = crucible::perf::SchedTpBtf::load(crucible::effects::Init{})) {
+//     if (auto h = crucible::perf::SchedTpBtf::load(crucible::effects::testing::init())) {
 //         const uint64_t cs_pre = h->context_switches();
 //         // ... run workload ...
 //         const uint64_t cs_delta = h->context_switches() - cs_pre;

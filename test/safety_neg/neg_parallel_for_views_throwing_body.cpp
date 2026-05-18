@@ -31,7 +31,7 @@ int main() {
     auto perm = safety::mint_permission_root<DataNeg>();
     constexpr std::size_t N = 8;
     auto region = safety::OwnedRegion<std::uint64_t, DataNeg>::adopt(
-        effects::Test{}.alloc, arena, N, std::move(perm));
+        effects::testing::test().alloc, arena, N, std::move(perm));
 
     // Should FAIL: body is NOT noexcept (no `noexcept` qualifier on
     // the lambda).  parallel_for_views requires a noexcept-invocable

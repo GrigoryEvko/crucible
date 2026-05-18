@@ -56,7 +56,7 @@ int main() {
     Arena arena;
     MetaLog log;
     auto* region = arena.alloc_obj<RegionNode>(
-        crucible::effects::Test{}.alloc);
+        crucible::effects::testing::test().alloc);
     region->content_hash = ContentHash{0xDEADBEEF};
 
     OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>

@@ -45,7 +45,7 @@
 //
 // ─── Production usage ──────────────────────────────────────────────
 //
-//     auto h = crucible::perf::PmuSample::load(crucible::effects::Init{});
+//     auto h = crucible::perf::PmuSample::load(crucible::effects::testing::init());
 //     if (h) {
 //         const uint64_t pre  = h->timeline_write_index();
 //         // ... run workload ...

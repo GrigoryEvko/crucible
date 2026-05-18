@@ -13,7 +13,7 @@
 namespace eff = crucible::effects;
 
 int main() {
-    eff::Bg bg;
+    auto bg = eff::testing::bg();
     auto cap = eff::mint_cap<eff::Effect::Alloc>(bg);
     auto bad = cap;  // copy: deleted
     (void)bad;

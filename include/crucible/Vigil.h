@@ -273,10 +273,12 @@ class Vigil {
         // tears down wd_, then senses_ — no UAF on the borrow.
         if (cfg_.enable_deadline_watchdog) {
             senses_.emplace(::crucible::perf::Senses::load_subset(
-                ::crucible::effects::Init{},
+                ::crucible::effects::mint_init_context(
+                    ::crucible::effects::detail::ctx_mint::init_key{}),
                 ::crucible::perf::SensesMask{ .sched_switch = true }));
             wd_.emplace(&*senses_, cfg_.watchdog_policy,
-                        ::crucible::effects::Init{});
+                        ::crucible::effects::mint_init_context(
+                            ::crucible::effects::detail::ctx_mint::init_key{}));
         }
 
         bg_.start(ring_.get(), meta_log_.get(),

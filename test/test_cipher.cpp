@@ -11,7 +11,7 @@
 #include <string>
 #include <type_traits>
 
-static crucible::effects::Test g_test;
+static auto g_test = crucible::effects::testing::test();
 
 // Build a minimal RegionNode suitable for Cipher round-trip tests.
 static crucible::RegionNode* make_test_region(crucible::Arena& arena) {

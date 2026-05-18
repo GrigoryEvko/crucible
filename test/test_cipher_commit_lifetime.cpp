@@ -67,7 +67,7 @@ using crucible::safety::cipher_tier::Hot;
 using crucible::safety::cipher_tier::Warm;
 using crucible::safety::CipherTierTag_v;
 
-static crucible::effects::Test g_test;
+static auto g_test = crucible::effects::testing::test();
 
 // ── Helpers ─────────────────────────────────────────────────────
 

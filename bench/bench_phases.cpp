@@ -49,7 +49,7 @@ namespace {
 // Benches run outside the normal bg thread so we spin a standalone
 // effects::Bg context once and thread its .alloc token through every
 // capability-tagged call.
-const effects::Bg BG_CTX;
+const auto BG_CTX = effects::testing::bg();
 constexpr auto A = BG_CTX.alloc;
 
 struct PhaseTiming {

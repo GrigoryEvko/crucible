@@ -49,7 +49,7 @@ int main() {
         .shuffle_period_ns = cc::HyParViewDurationNs{30'000'000'000ULL},
     };
     auto membership = cc::mint_hyparview<3, 4>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         std::span<const cc::HyParViewPeer>{active},
         {},
         hy_config);
@@ -61,7 +61,7 @@ int main() {
         .max_eager_fanout = cc::PlumtreePositiveCount{2},
     };
     auto broadcast = cc::mint_plumtree<4, 8>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         membership,
         config);
 

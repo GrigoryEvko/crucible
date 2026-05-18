@@ -9,7 +9,7 @@ int main() {
     crucible::cog::CogIdentity peer{};
     peer.uuid = crucible::cog::Uuid{1, 2};
     auto sync = crucible::canopy::mint_scuttlebutt<4, 4>(
-        crucible::effects::Test{},
+        crucible::effects::testing::test(),
         crucible::canopy::admit_swim_peer(peer));
     (void)sync;
     return 0;

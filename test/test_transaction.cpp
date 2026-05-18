@@ -5,7 +5,7 @@
 #include <cstring>
 
 [[gnu::cold]] int main() {
-    crucible::effects::Test test;
+    auto test = crucible::effects::testing::test();
     crucible::TransactionLog<16> log;
     crucible::Arena arena(1 << 12);
 

@@ -330,7 +330,8 @@ struct smoke_tag {};
 
 inline void runtime_smoke_test() {
     int seed = 7;
-    effects::Test test_ctx{};
+    // fixy-A3-005: Test ctor private — route through testing minter.
+    auto test_ctx = effects::testing::test();
     Arena arena{};
 
     // adopt(arena, count, perm) — single arena bump-pointer alloc + perm.

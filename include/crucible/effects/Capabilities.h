@@ -248,31 +248,196 @@ using Block = cap::Block;
 //           never block on a synchronisation primitive)
 //   Test  — test driver: unrestricted (alloc + io + block)
 //
-// Usage:
-//   void bg_main(Arena& arena) {
-//       effects::Bg bg;
-//       arena.alloc_obj<RegionNode>(bg.alloc);  // OK
-//   }
+// ── fixy-A3-005 — private default ctor + passkey-via-passkey ────────
 //
-// Hot-path code holds NO context, therefore cannot construct any
-// cap::* token, therefore cannot call any cap::*-taking function.
+// Each context's default ctor is **private**, friending only the
+// canonical mint factory.  Each factory takes a passkey type whose
+// own default ctor is private and friended only to authorized
+// production entry points (`Vigil`, `BackgroundThread`) plus the
+// test-witness scaffolding (`effects::testing::TestWitness`).
+//
+// Mirrors the H-25 `crash_witness_key` ↔ `WrapCrashReturnKey` layered
+// gate from permissions/PermissionInherit.h: production code holds
+// the upstream passkey by construction; user TUs cannot forge a
+// context without holding ONE of the friended entry points' identity,
+// closing the "any TU can mint a cross-tier capability" hole.
+//
+// Production:                         | Tests + bench:
+//   void Vigil::ctor() {              |   auto init = effects::testing
+//       auto k = detail::ctx_mint::   |              ::TestWitness::init();
+//                    init_key{};      |   // or shorter:
+//       auto init = mint_init_context(|   auto init = effects::testing::init();
+//                    k);              |
+//   }                                 |
+//
+// Hot-path code holds NO context, holds NO passkey, therefore cannot
+// construct any cap::* token, therefore cannot call any cap::*-taking
+// function.  The discipline scales: adding a new privileged entry
+// point means adding a single friend declaration to the relevant
+// passkey type — discoverable by grep on `detail::ctx_mint::`.
+//
+// fixy-A3-015: each context's mint factory is `constexpr noexcept`
+// so the context can be aggregated at compile time within friended
+// callers (`Vigil::Vigil(...)` ctor body, perf-loader templates).
 
-struct Bg {
+// Forward declarations for friend lists.  Briefly close
+// crucible::effects (a nested-namespace-declaration closes both
+// crucible AND crucible::effects in one `}`) so we can forward-declare
+// the host classes Vigil + BackgroundThread that friend the passkeys
+// below.  Then reopen.
+}  // namespace crucible::effects
+
+namespace crucible {
+class Vigil;
+struct BackgroundThread;
+}
+
+namespace crucible::effects {
+
+namespace testing { struct TestWitness; }
+
+// Forward-declare ExecCtx so the contexts can friend it (ExecCtx
+// aggregate-inits its Cap member via NSDMI, which requires access to
+// the Cap's default ctor — friending ExecCtx grants that access
+// without leaking the default ctor to user TUs).
+template <class Cap, class Numa, class Alloc, class Heat,
+          class Resid, class Row, class Workload>
+struct ExecCtx;
+
+namespace detail::ctx_mint {
+
+// Bg minter key.  Private default ctor friended only to authorized
+// production entry points + the test-witness namespace.
+class bg_key {
+private:
+    constexpr bg_key() noexcept = default;
+
+    friend struct ::crucible::BackgroundThread;
+    friend struct ::crucible::effects::testing::TestWitness;
+};
+
+class init_key {
+private:
+    constexpr init_key() noexcept = default;
+
+    friend class ::crucible::Vigil;
+    friend struct ::crucible::BackgroundThread;
+    friend struct ::crucible::effects::testing::TestWitness;
+};
+
+class test_key {
+private:
+    constexpr test_key() noexcept = default;
+
+    friend struct ::crucible::effects::testing::TestWitness;
+};
+
+}  // namespace detail::ctx_mint
+
+class Bg {
+private:
+    // fixy-A3-005 (CLAUDE.md §XXI Universal Mint Pattern): the only
+    // path to a Bg context is `mint_bg_context(detail::ctx_mint::bg_key)`,
+    // and the only path to a bg_key is through a friended class.
+    constexpr Bg() noexcept = default;
+
+    friend constexpr Bg mint_bg_context(detail::ctx_mint::bg_key) noexcept;
+
+    // ExecCtx<Bg, ...> aggregate-inits its Cap member via NSDMI
+    // (`[[no_unique_address]] Cap cap_{};` in ExecCtx.h).  NSDMI
+    // access is checked in the member's containing-class context per
+    // [class.base.init]/9, so friending the ExecCtx template grants
+    // ExecCtx's class body access to Bg's private default ctor while
+    // keeping it private from every other TU.
+    template <class Cap, class Numa, class Alloc, class Heat,
+              class Resid, class Row, class Workload>
+    friend struct ::crucible::effects::ExecCtx;
+
+public:
     [[no_unique_address]] cap::Alloc alloc{};
     [[no_unique_address]] cap::IO    io{};
     [[no_unique_address]] cap::Block block{};
 };
 
-struct Init {
+class Init {
+private:
+    constexpr Init() noexcept = default;
+
+    friend constexpr Init mint_init_context(detail::ctx_mint::init_key) noexcept;
+
+    template <class Cap, class Numa, class Alloc, class Heat,
+              class Resid, class Row, class Workload>
+    friend struct ::crucible::effects::ExecCtx;
+
+public:
     [[no_unique_address]] cap::Alloc alloc{};
     [[no_unique_address]] cap::IO    io{};
 };
 
-struct Test {
+class Test {
+private:
+    constexpr Test() noexcept = default;
+
+    friend constexpr Test mint_test_context(detail::ctx_mint::test_key) noexcept;
+
+    template <class Cap, class Numa, class Alloc, class Heat,
+              class Resid, class Row, class Workload>
+    friend struct ::crucible::effects::ExecCtx;
+
+public:
     [[no_unique_address]] cap::Alloc alloc{};
     [[no_unique_address]] cap::IO    io{};
     [[no_unique_address]] cap::Block block{};
 };
+
+// ── Mint factories (§XXI Universal Mint Pattern) ─────────────────────
+//
+// Each factory takes the corresponding passkey by value (sizeof == 1
+// each — EBO-collapsed; zero runtime cost).  The factory body just
+// trades the key for a fresh context — the type-level check has
+// already happened at the passkey's construction site.
+
+[[nodiscard]] inline constexpr Bg
+mint_bg_context(detail::ctx_mint::bg_key) noexcept { return Bg{}; }
+
+[[nodiscard]] inline constexpr Init
+mint_init_context(detail::ctx_mint::init_key) noexcept { return Init{}; }
+
+[[nodiscard]] inline constexpr Test
+mint_test_context(detail::ctx_mint::test_key) noexcept { return Test{}; }
+
+// ── effects::testing — scaffolding entry point ──────────────────────
+//
+// Tests + bench harnesses construct contexts via this namespace.  The
+// `TestWitness` struct is friended on every passkey type, so its
+// static accessors can produce a key and immediately trade it in for
+// the corresponding context.
+//
+// **Production-code discipline**: `effects::testing::` in production
+// code (anywhere outside `test/`, `bench/`, or test-only headers) is
+// a review-rejected smell — the entire point of the namespace is
+// grep-discoverability for "this TU is exercising the test path".
+
+namespace testing {
+
+struct TestWitness {
+    [[nodiscard]] static constexpr Bg bg() noexcept {
+        return mint_bg_context(detail::ctx_mint::bg_key{});
+    }
+    [[nodiscard]] static constexpr Init init() noexcept {
+        return mint_init_context(detail::ctx_mint::init_key{});
+    }
+    [[nodiscard]] static constexpr Test test() noexcept {
+        return mint_test_context(detail::ctx_mint::test_key{});
+    }
+};
+
+// Free-function aliases for terse call sites.
+[[nodiscard]] inline constexpr Bg   bg()   noexcept { return TestWitness::bg(); }
+[[nodiscard]] inline constexpr Init init() noexcept { return TestWitness::init(); }
+[[nodiscard]] inline constexpr Test test() noexcept { return TestWitness::test(); }
+
+}  // namespace testing
 
 static_assert(sizeof(Bg)   == 1, "Bg context must be 1 byte (EBO over empty cap::* members)");
 static_assert(sizeof(Init) == 1, "Init context must be 1 byte");
@@ -406,10 +571,35 @@ static_assert(std::is_same_v<Alloc, cap::Alloc>);
 static_assert(std::is_same_v<IO,    cap::IO>);
 static_assert(std::is_same_v<Block, cap::Block>);
 
-// Bg / Init / Test contexts default-construct without throwing.
-static_assert(std::is_nothrow_default_constructible_v<Bg>);
-static_assert(std::is_nothrow_default_constructible_v<Init>);
-static_assert(std::is_nothrow_default_constructible_v<Test>);
+// fixy-A3-005: Bg / Init / Test contexts default-construct without
+// throwing — but only through their friended mint factory.  We assert
+// the property at the mint-factory level via the static accessors on
+// effects::testing::TestWitness (which has friend access to every
+// passkey type), confirming the (a) constexpr noexcept (b) zero-cost
+// EBO-collapsed shape (c) lvalue-callable contract.
+static_assert(noexcept(::crucible::effects::testing::TestWitness::bg()));
+static_assert(noexcept(::crucible::effects::testing::TestWitness::init()));
+static_assert(noexcept(::crucible::effects::testing::TestWitness::test()));
+static_assert(noexcept(::crucible::effects::testing::bg()));
+static_assert(noexcept(::crucible::effects::testing::init()));
+static_assert(noexcept(::crucible::effects::testing::test()));
+
+// fixy-A3-005: direct default construction MUST be rejected — the
+// whole point of the privatization is that user TUs cannot forge a
+// context.  Use the negation here so the property is visible in the
+// header self-tests; the load-bearing reject lives in the HS14
+// neg-compile fixtures at test/effects_neg/.
+static_assert(!std::is_default_constructible_v<Bg>,
+    "fixy-A3-005: Bg default ctor must be private — use "
+    "effects::testing::TestWitness::bg() in tests or the friended "
+    "production entry point (BackgroundThread).");
+static_assert(!std::is_default_constructible_v<Init>,
+    "fixy-A3-005: Init default ctor must be private — use "
+    "effects::testing::TestWitness::init() in tests or the friended "
+    "production entry point (Vigil, BackgroundThread).");
+static_assert(!std::is_default_constructible_v<Test>,
+    "fixy-A3-005: Test default ctor must be private — use "
+    "effects::testing::TestWitness::test().");
 
 }  // namespace detail::capabilities_self_test
 

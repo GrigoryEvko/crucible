@@ -10,8 +10,8 @@
 #include <crucible/RecipeRegistry.h>
 
 int main() {
-  crucible::effects::Test test{};
-  crucible::effects::Init init{};
+  auto test = crucible::effects::testing::test();
+  auto init = crucible::effects::testing::init();
   crucible::Arena arena{};
   crucible::RecipePool pool{
       crucible::RecipePool::ArenaBorrow{arena}, init};

@@ -351,7 +351,7 @@ static void test_current_entry() {
 // End-to-end: create realistic slots, run sweep-line, materialize
 // pool, build ops with slot assignments, replay and verify pointers.
 static void test_integration_with_pool() {
-  crucible::effects::Test test;
+  auto test = crucible::effects::testing::test();
   crucible::BackgroundThread bt;
 
   // 3 internal slots:

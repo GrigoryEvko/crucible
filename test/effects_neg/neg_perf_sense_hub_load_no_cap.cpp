@@ -5,7 +5,7 @@
 // even a typo that drops the argument at the call site fails to
 // compile rather than silently calling a stub.  This is load-bearing
 // for the "Init context is required" claim — a future maintainer who
-// adds `= effects::Init{}` as a default would silently weaken the
+// adds `= effects::testing::init()` as a default would silently weaken the
 // gate (any caller could now call without holding the cap), and
 // this fixture catches that regression at the earliest possible
 // point in CI.

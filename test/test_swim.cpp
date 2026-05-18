@@ -38,7 +38,7 @@ int main() {
     };
 
     auto membership = mint_swim_membership<8>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         std::span<const SwimPeer>{initial});
     assert(membership.size().value() == 3);
     assert(membership.config().period_ns.value() ==
@@ -98,7 +98,7 @@ int main() {
 
     std::array<SwimPeer, 1> remote_initial{admit_swim_peer(peer(1))};
     auto remote = mint_swim_membership<4>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         std::span<const SwimPeer>{remote_initial});
     assert(remote.size().value() == 1);
 
@@ -130,7 +130,7 @@ int main() {
     assert(!missing.has_value());
     assert(missing.error() == SwimError::PeerNotFound);
 
-    auto tiny = mint_swim_membership<1>(crucible::effects::Init{});
+    auto tiny = mint_swim_membership<1>(crucible::effects::testing::init());
     assert(tiny.add_peer(admit_swim_peer(peer(10))).has_value());
     auto overflow = tiny.add_peer(admit_swim_peer(peer(11)));
     assert(!overflow.has_value());

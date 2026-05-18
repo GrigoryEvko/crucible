@@ -55,10 +55,10 @@
 // ─── USAGE ────────────────────────────────────────────────────────────
 //
 //     auto senses = crucible::perf::Senses::load_subset(
-//         crucible::effects::Init{},
+//         crucible::effects::testing::init(),
 //         crucible::perf::SensesMask{ .sense_hub = true });
 //     crucible::perf::WorkloadProfiler profiler{
-//         &senses, crucible::effects::Init{}};
+//         &senses, crucible::effects::testing::init()};
 //
 //     while (running) {
 //         const auto budget = my_workload.budget();

@@ -7,7 +7,7 @@
 
 int main() {
     auto clock = crucible::canopy::mint_vector_clock<0>(
-        crucible::effects::Init{},
+        crucible::effects::testing::init(),
         0);
     (void)clock;
     return 0;

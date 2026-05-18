@@ -7,7 +7,7 @@
 
 int main() {
     auto snapshot = crucible::topology::mint_discovery_snapshot<1, 1>(
-        crucible::effects::Test{});
+        crucible::effects::testing::test());
     (void)snapshot;
     return 0;
 }

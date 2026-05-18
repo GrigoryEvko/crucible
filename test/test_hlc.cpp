@@ -48,7 +48,7 @@ int main() {
                        .counter = UINT32_MAX},
                       9) == HlcTimestamp{.physical_ns = 11, .counter = 0});
 
-    auto clock = crucible::canopy::mint_hlc(crucible::effects::Init{});
+    auto clock = crucible::canopy::mint_hlc(crucible::effects::testing::init());
     const HlcTimestamp a = clock.now();
     const HlcTimestamp b = clock.on_send();
     const HlcTimestamp c = clock.now();

@@ -25,7 +25,7 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
 }
 
 [[gnu::cold]] int main() {
-    crucible::effects::Test test;
+    auto test = crucible::effects::testing::test();
     crucible::Arena arena(1 << 16);
     crucible::ExprPool pool(test.alloc);
 
