@@ -1,0 +1,10 @@
+# scripts/permission-storage-allowlist.txt — per-line allowlist for
+# scripts/check-permission-storage.sh (fixy-L-03 #1519).
+#
+# Format: one repo-relative "<path>:<line>" entry per line.  Lines
+# starting with '#' are comments.  Use ONLY for tracked migrations
+# with a TODO citation; deliberate single-line designs should use the
+# inline `// PERMISSION-STORAGE-OK: <reason>` marker instead.
+#
+# Initial state: empty.  Every existing Permission<*> member-decl in
+# the codebase uses [[no_unique_address]] — the rule holds cleanly.

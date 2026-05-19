@@ -145,7 +145,16 @@
 //
 // 1. NEVER store a `Permission<Tag>` in a long-lived data structure
 //    that is shared between threads.  The struct may be aliased and
-//    the type system can't see it; defeats linearity.
+//    the type system can't see it; defeats linearity.  The canonical
+//    storage shape IS a handle class (Pinned + move-only + nested
+//    inside a channel / session class) with the Permission member
+//    annotated `[[no_unique_address]]` — see
+//    PermissionedSpscChannel / PermissionedMpscChannel /
+//    SwmrSession / KernelCacheSlot for production exemplars.  The
+//    `[[no_unique_address]]` marker is enforced as a CI invariant
+//    by scripts/check-permission-storage.sh (fixy-L-03 #1519): a
+//    new bare `Permission<Tag> p_;` member-decl fails the
+//    permission_storage ctest entry.
 // 2. `mint_permission_root<Tag>()` is REENTRANT by design.  Each call
 //    returns a fresh authoritative `Permission<Tag>` token; soundness
 //    rides on the token's MOVE-ONLY linearity at the holding scope,

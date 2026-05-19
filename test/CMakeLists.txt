@@ -459,6 +459,23 @@ add_test(NAME mint_pattern_self_test
           --self-test)
 add_test(NAME mint_pattern
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.sh)
+# fixy-L-03 #1519 — Permission<Tag> long-lived-struct antipattern
+# guard (Permission.h:144-148 doc-block, CLAUDE.md §IX).  Every
+# Permission<*> declared as a class/struct member MUST be on a line
+# containing [[no_unique_address]] — the canonical handle-storage
+# marker (see PermissionedSpscChannel / PermissionedMpscChannel /
+# SwmrSession / KernelCacheSlot for the production shape).  Without
+# the marker, holders may be aliased across threads silently,
+# defeating CSL linearity (Permission move-only at value-level but
+# the type system can't see pointer-based escape through struct
+# sharing).  Initial state: clean — all 15 current sites use the
+# discipline; allowlist is empty.  Self-test mode plants a synthetic
+# violation to guard against regex regression.
+add_test(NAME permission_storage_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.sh
+          --self-test)
+add_test(NAME permission_storage
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.sh)
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
