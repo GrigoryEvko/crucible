@@ -199,7 +199,10 @@ struct is_declassify_grant<grant::declassify<Policy>>
 // corresponding matchers; assigning bits here keeps the mask stable
 // across the lifetime of any field that stores an `axes_discharged_of`
 // value):
-//   - IO         — Volpano-Smith-Irvine 1996 implicit-flow IO discharge.
+//   - IO         — Sabelfeld-Myers 2003 implicit-flow IO discharge
+//                  (Volpano-Smith-Irvine 1996 type-system foundation;
+//                  the IO-channel-specific reading is SM03's, not
+//                  VSI96's — fixy-M-16 softened attribution).
 //   - Bg         — Smith-Volpano 1998 concurrent-IFC scheduler discharge.
 //   - Crash      — BSYZ22 crash-stop session-protocol audit discharge.
 //   - Reentrancy — re-entrant audit-trail (re-classification) discharge.
@@ -373,9 +376,13 @@ namespace corpus {
 
 // ── Entry 1: classified_io_without_declassify ─────────────────────
 //
-// Cite: §30.14 implicit-flow row.  Volpano-Smith-Irvine 1996, "A
-// sound type system for secure flow analysis"; Sabelfeld-Myers 2003,
-// "Language-based information-flow security".
+// Cite: §30.14 implicit-flow row.  Sabelfeld-Myers 2003, "Language-
+// based information-flow security" (the IO-channel specialization;
+// surveys + tightens the implicit-flow-to-IO discharge); after
+// Volpano-Smith-Irvine 1996, "A sound type system for secure flow
+// analysis" (the type-system foundation — VSI96 establishes the
+// implicit-flow tracking framework but does not specialise to IO
+// channels.  fixy-M-16 softened from leading-VSI96 attribution).
 //
 // Pattern: a binding engages `as_secret` (or `as_classified`) on
 // Security AND `with<..., IO, ...>` on Effect AND omits any
@@ -406,11 +413,12 @@ struct classified_io_without_declassify {
     }
 
     static constexpr std::string_view cite() noexcept {
-        return "Volpano-Smith-Irvine 1996 / Sabelfeld-Myers 2003 — "
-               "implicit information flow: classified value flows out "
-               "of the program via I/O without a declassification "
-               "policy.  Insert grant::declassify<Policy> with a named "
-               "policy OR drop the IO effect.";
+        return "Sabelfeld-Myers 2003 (after Volpano-Smith-Irvine 1996 "
+               "type-system foundation) — implicit information flow: "
+               "classified value flows out of the program via I/O "
+               "without a declassification policy.  Insert "
+               "grant::declassify<Policy> with a named policy OR drop "
+               "the IO effect.";
     }
 
     // fixy-A4-029: per-corpus-entry pre-baked diagnostic.  The

@@ -310,10 +310,11 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
 CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::theory::corpus::classified_io_without_declassify,
     ::crucible::safety::diag::Severity::Fatal,
-    "Volpano-Smith-Irvine 1996 + Sabelfeld-Myers 2003 implicit information "
-    "flow: a classified value reaches an I/O boundary without an audit-"
-    "discharging declassification policy.  Sequential IFC type systems "
-    "require an explicit policy at every classified→IO transition.",
+    "Sabelfeld-Myers 2003 (after Volpano-Smith-Irvine 1996 type-system "
+    "foundation) implicit information flow: a classified value reaches an "
+    "I/O boundary without an audit-discharging declassification policy.  "
+    "Sequential IFC type systems require an explicit policy at every "
+    "classified→IO transition.",
     "Binding engages as_secret/as_classified on Security AND with<...,IO,...> "
     "on Effect AND omits any grant::declassify<Policy>.",
     "grant::declassify<secret_policy::AuthorizedExport>",
