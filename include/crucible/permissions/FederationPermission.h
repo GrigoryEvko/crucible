@@ -570,6 +570,66 @@ template <typename Org>
             0xCFED'9EED'0000'0001ULL) };
 }
 
+// ── fixy-L-02 #1518 — §XXI Universal Mint Pattern ──────────────────
+//
+// `mint_self_signed_handshake<Org>(...)` is the §XXI grep-target for
+// federation handshake construction.  The handshake is the only
+// path to a `FederationHandshake` POD whose `self_signature_
+// fingerprint` field downstream `mint_federation_admittance` will
+// accept — so the handshake IS authority-bearing material (the
+// signature mechanism is forgeable per CR-02/03/04 deprecation
+// notice on `mint_federation_admittance`, but renaming serves
+// §XXI's audit-grep discipline regardless of the v1-production-
+// readiness of the underlying crypto).
+//
+// Concept gate: `FederationOrgTag<Org>` — Org must be an empty
+// class type, the structural shape every shipped federation org
+// tag (SelfOrg / OrgPeer / OrgA / OrgBlocked / ...) actually has.
+// This is the same shape `permissions::PermissionTag` uses for
+// CSL permission tags and matches Source.h's tag-discipline.  The
+// requirement is grep-discoverable via `FederationOrgTag<`.
+//
+// `make_self_signed_handshake<Org>(...)` is kept as a thin
+// backwards-compat forwarder so the ~12 internal call sites in
+// federation tests + safety_neg + fixy_neg fixtures don't migrate
+// in lockstep with this header.  It carries NO `[[deprecated]]`
+// attribute — flooding the test build with `-Wdeprecated-
+// declarations` would obscure real regressions; the migration is
+// a separate mechanical sweep.
+
+template <typename Org>
+concept FederationOrgTag =
+    std::is_class_v<Org> && std::is_empty_v<Org>;
+
+template <typename Org>
+    requires FederationOrgTag<Org>
+[[nodiscard]] constexpr FederationHandshake
+mint_self_signed_handshake(
+    PeerKeyFingerprint peer_key_fingerprint =
+        default_peer_key_fingerprint<Org>(),
+    Nonce nonce = Nonce{0}) noexcept
+{
+    const OrgId org_id = federation_org_id<Org>;
+    return FederationHandshake{
+        .org_id = org_id,
+        .peer_key_fingerprint = peer_key_fingerprint,
+        .nonce = nonce,
+        .self_signature_fingerprint =
+            federation_signature_fingerprint(
+                org_id, peer_key_fingerprint, nonce),
+    };
+}
+
+// Backwards-compat forwarder.  Kept WITHOUT the
+// `requires FederationOrgTag<Org>` clause so the ~12 existing
+// call sites in tests / safety_neg / fixy_neg / federation
+// header self-test compile unchanged regardless of whether the
+// caller's Org tag satisfies the stricter concept.  The §XXI
+// audit grep target is `mint_self_signed_handshake<` — `make_*`
+// is the legacy entry, no [[deprecated]] (emitting
+// -Wdeprecated-declarations at every test call site would
+// obscure real regressions during the interim before the
+// mechanical migration sweep).
 template <typename Org>
 [[nodiscard]] constexpr FederationHandshake
 make_self_signed_handshake(

@@ -119,6 +119,33 @@ static_assert(kSelfHandshake.self_signature_fingerprint
     "Handshake signature must equal signature_fingerprint over the "
     "(org_id, peer_key_fingerprint, nonce) triple.");
 
+// ─── 5b. fixy-L-02 #1518 — §XXI mint_self_signed_handshake re-export.
+//
+// Witness that `mint_self_signed_handshake` (renamed from `make_*`
+// per §XXI Universal Mint Pattern) is reachable through
+// `fixy::source::federation::` AND that its `FederationOrgTag`
+// concept gate is also re-exported.  The mint must produce a
+// handshake bit-identical to the `make_*` forwarder's output
+// (same org_id, same signature, same peer-key/nonce round-trip).
+
+static_assert(ffed::FederationOrgTag<SelfOrg>,
+    "SelfOrg satisfies the FederationOrgTag concept gate (empty "
+    "class type) — concept reachable via fixy::source::federation::.");
+
+constexpr auto kSelfMintHandshake =
+    ffed::mint_self_signed_handshake<SelfOrg>(
+        ffed::PeerKeyFingerprint{0xCAFEBABEu},
+        ffed::Nonce{0xDEADBEEFu});
+
+static_assert(kSelfMintHandshake.org_id == kSelfHandshake.org_id,
+    "mint_self_signed_handshake and make_self_signed_handshake "
+    "must produce identical handshakes (same org_id) — "
+    "make_* IS the §XXI-compliant mint_* under a forwarder.");
+
+static_assert(kSelfMintHandshake.self_signature_fingerprint
+              == kSelfHandshake.self_signature_fingerprint,
+    "mint_* and make_* must produce identical handshake signatures.");
+
 // ─── 6. Admittance error surface ──────────────────────────────────
 
 static_assert(ffed::admittance_error_name(

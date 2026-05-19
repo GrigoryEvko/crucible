@@ -221,8 +221,18 @@ using ::crucible::permissions::federation_signature_fingerprint;
 using ::crucible::permissions::default_peer_key_fingerprint;
 using ::crucible::permissions::make_self_signed_handshake;
 
-// ── Token mint — Universal Mint Pattern (CLAUDE.md §XXI) ───────────
+// ── Token mints — Universal Mint Pattern (CLAUDE.md §XXI) ──────────
+//
+// `mint_self_signed_handshake` (fixy-L-02 #1518): renamed from
+// `make_self_signed_handshake` to align with §XXI grep-discipline
+// (the handshake POD's self_signature_fingerprint is the only path
+// to a downstream-accepted FederationHandshake, so it carries
+// federation authority in the structural sense — even though the
+// signature is forgeable per CR-02/03/04).  Concept gate at the
+// substrate: `FederationOrgTag<Org>` (empty class type).
 
+using ::crucible::permissions::FederationOrgTag;
+using ::crucible::permissions::mint_self_signed_handshake;
 using ::crucible::permissions::mint_federation_admittance;
 
 }  // namespace crucible::fixy::source::federation

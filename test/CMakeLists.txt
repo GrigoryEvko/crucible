@@ -7574,6 +7574,18 @@ crucible_neg_compile_test(neg_federation_mint_raw_permission
 crucible_neg_compile_test(neg_federation_mint_wrong_org_share
     "no matching function|could not convert|cannot convert|invalid initialization|deduction/substitution failed")
 
+# fixy-L-02 #1518 — substrate-side HS14 floor for
+# `mint_self_signed_handshake<Org>` §XXI mint gate.
+# Two distinct rejection classes both targeting FederationOrgTag<Org>:
+#   * non-class type (int)        — fails std::is_class_v half
+#   * non-empty class (data field) — fails std::is_empty_v half
+# Per §XXI Universal Mint Pattern: every new mint factory ships with
+# ≥2 negative-compile fixtures demonstrating distinct mismatch classes.
+crucible_neg_compile_test(neg_federation_mint_self_signed_non_class_org
+    "constraints not satisfied|no matching function|FederationOrgTag|is_class_v|deduction/substitution failed")
+crucible_neg_compile_test(neg_federation_mint_self_signed_non_empty_org
+    "constraints not satisfied|no matching function|FederationOrgTag|is_empty_v|deduction/substitution failed")
+
 # fixy-A2-010 — substrate-side HS14 floor for the higher-order
 # capability-transfer fix on `payload_row<DelegatedSession<InnerProto,
 # InnerPS>>`.  Before the fix the trait fell through to the primary
