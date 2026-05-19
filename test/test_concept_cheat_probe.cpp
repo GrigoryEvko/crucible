@@ -957,4 +957,256 @@ static_assert( cheat51_admits,
     "[CHEAT 51 STATUS CHANGED] trait-spec injection on is_consistency_impl "
     "is now REJECTED — flip assertion to !cheat51_admits.");
 
+// ── Round-7 expansion (FIXY-U-063) — 8 wrappers × 2 cheats ──────────
+//
+// Closes the per-wrapper trait-spec-injection probe coverage for the
+// 8 remaining Graded-backed wrappers with dedicated IsX.h headers that
+// Round-6 did not reach: Budgeted, EpochVersioned, NumaPlacement,
+// OpaqueLifetime, RecipeSpec, Bits, Borrowed, OwnedRegion.  Identical
+// shape to Round-6 (derived-from-W → !IsW locked rejection; trait-spec
+// injection → IsW admitted as documented architectural limit).
+//
+// Each pair is structurally distinct in its concept-gate path:
+//   - The derived-from cheat exercises the partial-spec EXACT-match
+//     refusal (subclass not matched).  Regression catch: weakening
+//     IsW to "any class with W's typedefs" or "family match".
+//   - The trait-injection cheat is the originating-namespace escape
+//     hatch (same as Cheats 11/12/20-51).  Defense lives in
+//     scripts/check-trait-injection.sh + review discipline.
+
+#include <crucible/safety/IsBits.h>
+#include <crucible/safety/IsBorrowed.h>
+#include <crucible/safety/IsBudgeted.h>
+#include <crucible/safety/IsEpochVersioned.h>
+#include <crucible/safety/IsNumaPlacement.h>
+#include <crucible/safety/IsOpaqueLifetime.h>
+#include <crucible/safety/IsOwnedRegion.h>
+#include <crucible/safety/IsRecipeSpec.h>
+
+// ── Budgeted (Tier-Space, off-tree) ────────────────────────────────
+struct Cheat52_DerivedFromBudgeted
+    : crucible::safety::Budgeted<int> {};
+static constexpr bool cheat52_admits =
+    crucible::safety::extract::IsBudgeted<Cheat52_DerivedFromBudgeted>;
+
+struct Cheat53_FakeBudgetedViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_budgeted_impl<::Cheat53_FakeBudgetedViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat53_admits =
+    crucible::safety::extract::IsBudgeted<
+        ::Cheat53_FakeBudgetedViaTraitInjection>;
+
+// ── EpochVersioned (Tier-V Version, off-tree) ───────────────────────
+struct Cheat54_DerivedFromEpochVersioned
+    : crucible::safety::EpochVersioned<int> {};
+static constexpr bool cheat54_admits =
+    crucible::safety::extract::IsEpochVersioned<
+        Cheat54_DerivedFromEpochVersioned>;
+
+struct Cheat55_FakeEpochVersionedViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_epoch_versioned_impl<
+    ::Cheat55_FakeEpochVersionedViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat55_admits =
+    crucible::safety::extract::IsEpochVersioned<
+        ::Cheat55_FakeEpochVersionedViaTraitInjection>;
+
+// ── NumaPlacement (Tier-L Representation, off-tree) ─────────────────
+struct Cheat56_DerivedFromNumaPlacement
+    : crucible::safety::NumaPlacement<int> {};
+static constexpr bool cheat56_admits =
+    crucible::safety::extract::IsNumaPlacement<
+        Cheat56_DerivedFromNumaPlacement>;
+
+struct Cheat57_FakeNumaPlacementViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_numa_placement_impl<
+    ::Cheat57_FakeNumaPlacementViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat57_admits =
+    crucible::safety::extract::IsNumaPlacement<
+        ::Cheat57_FakeNumaPlacementViaTraitInjection>;
+
+// ── OpaqueLifetime (Lifetime axis, off-tree) ────────────────────────
+struct Cheat58_DerivedFromOpaqueLifetime
+    : crucible::safety::OpaqueLifetime<
+          crucible::safety::Lifetime_v::PER_REQUEST, int> {};
+static constexpr bool cheat58_admits =
+    crucible::safety::extract::IsOpaqueLifetime<
+        Cheat58_DerivedFromOpaqueLifetime>;
+
+struct Cheat59_FakeOpaqueLifetimeViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_opaque_lifetime_impl<
+    ::Cheat59_FakeOpaqueLifetimeViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    static constexpr ::crucible::safety::Lifetime_v scope =
+        ::crucible::safety::Lifetime_v::PER_REQUEST;
+    static constexpr bool has_scope = true;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat59_admits =
+    crucible::safety::extract::IsOpaqueLifetime<
+        ::Cheat59_FakeOpaqueLifetimeViaTraitInjection>;
+
+// ── RecipeSpec (Tier-Precision, off-tree) ───────────────────────────
+struct Cheat60_DerivedFromRecipeSpec
+    : crucible::safety::RecipeSpec<int> {};
+static constexpr bool cheat60_admits =
+    crucible::safety::extract::IsRecipeSpec<
+        Cheat60_DerivedFromRecipeSpec>;
+
+struct Cheat61_FakeRecipeSpecViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_recipe_spec_impl<::Cheat61_FakeRecipeSpecViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat61_admits =
+    crucible::safety::extract::IsRecipeSpec<
+        ::Cheat61_FakeRecipeSpecViaTraitInjection>;
+
+// ── Bits (typed bitset, scoped-enum carrier) ────────────────────────
+enum class Cheat62EnumProbe : std::uint8_t {
+    A = 1 << 0, B = 1 << 1, C = 1 << 2,
+};
+struct Cheat62_DerivedFromBits
+    : crucible::safety::Bits<Cheat62EnumProbe> {};
+static constexpr bool cheat62_admits =
+    crucible::safety::extract::IsBits<Cheat62_DerivedFromBits>;
+
+struct Cheat63_FakeBitsViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_bits_impl<::Cheat63_FakeBitsViaTraitInjection> : std::true_type {
+    using value_type      = ::Cheat62EnumProbe;
+    using underlying_type = std::underlying_type_t<::Cheat62EnumProbe>;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat63_admits =
+    crucible::safety::extract::IsBits<
+        ::Cheat63_FakeBitsViaTraitInjection>;
+
+// ── Borrowed (lifetime-bound, two-template-arg wrapper) ─────────────
+struct Cheat64_BorrowSource {};
+struct Cheat64_DerivedFromBorrowed
+    : crucible::safety::Borrowed<int, Cheat64_BorrowSource> {
+    using crucible::safety::Borrowed<int, Cheat64_BorrowSource>::Borrowed;
+};
+static constexpr bool cheat64_admits =
+    crucible::safety::extract::IsBorrowed<Cheat64_DerivedFromBorrowed>;
+
+struct Cheat65_FakeBorrowedViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_borrowed_impl<::Cheat65_FakeBorrowedViaTraitInjection>
+    : std::true_type
+{
+    using element_type = int;
+    using source_type  = ::Cheat64_BorrowSource;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat65_admits =
+    crucible::safety::extract::IsBorrowed<
+        ::Cheat65_FakeBorrowedViaTraitInjection>;
+
+// ── OwnedRegion (RAII region, two-template-arg wrapper) ─────────────
+struct Cheat66_OwnedTag {};
+struct Cheat66_DerivedFromOwnedRegion
+    : crucible::safety::OwnedRegion<int, Cheat66_OwnedTag> {
+    using crucible::safety::OwnedRegion<int, Cheat66_OwnedTag>::OwnedRegion;
+};
+static constexpr bool cheat66_admits =
+    crucible::safety::extract::IsOwnedRegion<
+        Cheat66_DerivedFromOwnedRegion>;
+
+struct Cheat67_FakeOwnedRegionViaTraitInjection { int payload{0}; };
+namespace crucible::safety::extract::detail {
+template <>
+struct is_owned_region_impl<
+    ::Cheat67_FakeOwnedRegionViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    using tag_type   = ::Cheat66_OwnedTag;
+};
+}  // namespace crucible::safety::extract::detail
+static constexpr bool cheat67_admits =
+    crucible::safety::extract::IsOwnedRegion<
+        ::Cheat67_FakeOwnedRegionViaTraitInjection>;
+
+// ── Round-7 verdicts ────────────────────────────────────────────────
+//
+// Locked-in REJECTIONS — same wrapper-identity rationale as Round-6.
+
+static_assert(!cheat52_admits,
+    "[CHEAT 52 ADMITTED] derived-from-Budgeted passed IsBudgeted.");
+static_assert(!cheat54_admits,
+    "[CHEAT 54 ADMITTED] derived-from-EpochVersioned passed IsEpochVersioned.");
+static_assert(!cheat56_admits,
+    "[CHEAT 56 ADMITTED] derived-from-NumaPlacement passed IsNumaPlacement.");
+static_assert(!cheat58_admits,
+    "[CHEAT 58 ADMITTED] derived-from-OpaqueLifetime passed IsOpaqueLifetime.");
+static_assert(!cheat60_admits,
+    "[CHEAT 60 ADMITTED] derived-from-RecipeSpec passed IsRecipeSpec.");
+static_assert(!cheat62_admits,
+    "[CHEAT 62 ADMITTED] derived-from-Bits passed IsBits.");
+static_assert(!cheat64_admits,
+    "[CHEAT 64 ADMITTED] derived-from-Borrowed passed IsBorrowed.");
+static_assert(!cheat66_admits,
+    "[CHEAT 66 ADMITTED] derived-from-OwnedRegion passed IsOwnedRegion.");
+
+// Documented ARCHITECTURAL LIMITS — same trait-injection escape as
+// Round-6.  When the rejection is gained (e.g., impl trait moved to
+// inaccessible namespace, OR scripts/check-trait-injection.sh tightened),
+// flip the assertion to !cheatN_admits and document the new defense.
+
+static_assert( cheat53_admits,
+    "[CHEAT 53 STATUS CHANGED] trait-spec injection on is_budgeted_impl "
+    "is now REJECTED — flip assertion to !cheat53_admits.");
+static_assert( cheat55_admits,
+    "[CHEAT 55 STATUS CHANGED] trait-spec injection on is_epoch_versioned_impl "
+    "is now REJECTED — flip assertion to !cheat55_admits.");
+static_assert( cheat57_admits,
+    "[CHEAT 57 STATUS CHANGED] trait-spec injection on is_numa_placement_impl "
+    "is now REJECTED — flip assertion to !cheat57_admits.");
+static_assert( cheat59_admits,
+    "[CHEAT 59 STATUS CHANGED] trait-spec injection on is_opaque_lifetime_impl "
+    "is now REJECTED — flip assertion to !cheat59_admits.");
+static_assert( cheat61_admits,
+    "[CHEAT 61 STATUS CHANGED] trait-spec injection on is_recipe_spec_impl "
+    "is now REJECTED — flip assertion to !cheat61_admits.");
+static_assert( cheat63_admits,
+    "[CHEAT 63 STATUS CHANGED] trait-spec injection on is_bits_impl "
+    "is now REJECTED — flip assertion to !cheat63_admits.");
+static_assert( cheat65_admits,
+    "[CHEAT 65 STATUS CHANGED] trait-spec injection on is_borrowed_impl "
+    "is now REJECTED — flip assertion to !cheat65_admits.");
+static_assert( cheat67_admits,
+    "[CHEAT 67 STATUS CHANGED] trait-spec injection on is_owned_region_impl "
+    "is now REJECTED — flip assertion to !cheat67_admits.");
+
 int main() { return 0; }
