@@ -1423,6 +1423,12 @@ crucible_neg_compile_fixy_test(neg_fixy_stance_sync_blocking_array     "IsAccept
 crucible_neg_compile_fixy_test(neg_fixy_stance_realtime_hot_void       "IsAccepted")
 crucible_neg_compile_fixy_test(neg_fixy_stance_realtime_hot_ref        "IsAccepted")
 
+# fixy-A4-027 — [[nodiscard]] preservation regression guard for the
+# `mint_federation_admittance` using-decl re-export.  Audit flagged a
+# §XXI mint discipline risk; this fixture empirically witnesses that
+# discarding the return triggers -Werror=unused-result.
+crucible_neg_compile_fixy_test(neg_fixy_federation_admittance_nodiscard "unused-result")
+
 # FIXY-AUDIT-A3 — HS14 floor for UniqueEngagementPerAxis.
 crucible_neg_compile_fixy_test(neg_fixy_duplicate_engagement     "UniqueEngagementPerAxis")
 
