@@ -7435,6 +7435,24 @@ crucible_neg_compile_test(neg_mint_sealed_refined_predicate_arg_mismatch
 crucible_neg_compile_test(neg_mint_sealed_refined_predicate_return_mismatch
     "PredicateInvocableOn")
 
+# ── fixy-L-04 #1520 — mint_secret §XXI gate witness ─────────────
+# CLAUDE.md §XXI Universal Mint Pattern: every authorization
+# factory is named `mint_<noun>`.  mint_secret's docstring
+# previously overclaimed "canonical authorization point";
+# Secret<T> ships an open public ctor + CTAD guide (mirrors
+# mint_linear / mint_tagged precedent), so mint_secret is the
+# §XXI-grep-discoverable surface, NOT a stricter chokepoint.
+# The real chokepoint is `declassify<Policy>()`.  Two HS14
+# fixtures witness that the mint's
+# `requires std::is_constructible_v<T, Args...>` gate fires
+# across two distinct mismatch classes:
+#   #1 wrong-arg-type — int not constructible from const char*
+#   #2 deleted-ctor   — class with explicit `= delete`'d ctor
+crucible_neg_compile_test(neg_secret_mint_unconstructible_args
+    "constraints not satisfied|no matching function|is_constructible|mint_secret|deduction/substitution failed")
+crucible_neg_compile_test(neg_secret_mint_deleted_ctor
+    "constraints not satisfied|no matching function|use of deleted function|is_constructible|mint_secret|deduction/substitution failed")
+
 # ── A8-P2 #146 — Permission<Tag> linearity enforcement ──────────
 # Foundational CSL frame-rule token (O'Hearn 2007).  Duplicating a
 # Permission<Tag> would create two simultaneous owners of the same

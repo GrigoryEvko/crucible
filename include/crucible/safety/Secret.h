@@ -314,12 +314,46 @@ public:
 template <typename T>
 Secret(T) -> Secret<T>;
 
-// ── mint_secret<T>(args...) — Universal Mint Pattern ──────────────
+// ── §XXI Universal Mint factory — fixy-L-04 (#1520) ────────────────
 //
-// Token mint per CLAUDE.md §XXI — constructs Secret<T> by forwarding
-// to T's constructor.  Authority derives from the constructibility
-// proof; this is the canonical authorization point for classifying a
-// raw value as Secret (escapes only via declassify<Policy>()).
+// `mint_secret<T>(args...)` synthesizes a `Secret<T>` at the §XXI
+// grep-discoverable boundary.  Per CLAUDE.md §XXI: every authorization
+// factory is named `mint_<noun>` so `grep "mint_"` finds every site
+// that explicitly opts into the named factory.  Constructing
+// `Secret<T>{value}` or `Secret<T>{std::in_place, args...}` directly
+// is functionally equivalent — both gate on the SAME
+// `std::is_constructible_v<T, Args...>` predicate; the §XXI mint
+// exists for grep-discoverability and uniform forwarding ergonomics,
+// NOT as a stricter chokepoint than the public ctor.  Production code
+// wrapping a credential / token / private key / cryptographic
+// material SHOULD route through this factory so the audit trail
+// traces classify→declassify via grep alone.
+//
+// This matches the precedent set by `mint_linear` / `mint_tagged`
+// (Tier-1 wrapper mint family): the §XXI promise the mint provides is
+// "the wrapper has a named factory you can grep," NOT "every wrap goes
+// through one entrance."  The TRUE chokepoint on classified data is
+// the declassification path — `declassify<Policy>()` is the only way
+// to extract T from Secret<T>; `transform()` preserves classification,
+// `zeroize()` destroys it.  That asymmetry (open classification entry
+// + audited declassification exit) is the substrate's actual
+// information-flow guarantee, distinct from the §XXI grep convention.
+//
+// HS14 gate: the `requires std::is_constructible_v<T, Args...>` clause
+// is the load-bearing soundness check.  Two HS14 neg-compile fixtures
+// at test/safety_neg/ witness the gate fires across two distinct
+// mismatch classes:
+//   1. wrong-arg-type — `mint_secret<int>("not_a_number")`: int is
+//      not constructible from `const char*` → requires-clause rejects.
+//   2. deleted-ctor — `mint_secret<Deleted>()` where Deleted's default
+//      ctor is `= delete`'d: substitution fails at the constructibility
+//      predicate from the opposite direction (ctor existed in source
+//      form but was explicitly disabled).
+//
+// Hot-path cost: zero — `[[nodiscard]] constexpr noexcept` (when T's
+// matching ctor is noexcept), forwards via Graded EBO substrate.
+// Identical machine code to `Secret<T>{std::in_place, args...}` under
+// -O3.
 template <typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
 [[nodiscard]] constexpr Secret<T> mint_secret(Args&&... args)
