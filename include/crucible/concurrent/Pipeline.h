@@ -362,7 +362,7 @@ concept pipeline_chain =
 
 namespace detail {
 
-inline void mint_pipeline_row_admission_anchor() noexcept {}
+inline void pipeline_row_admission_anchor_() noexcept {}
 
 template <class... Stages>
 struct pipeline_row_union_impl;
@@ -558,7 +558,7 @@ struct stage_graph_row_union<
     using type = pipeline_row_union_t<Stages...>;
 };
 
-inline void mint_pipeline_dag_row_admission_anchor() noexcept {}
+inline void pipeline_dag_row_admission_anchor_() noexcept {}
 
 }  // namespace detail
 
@@ -960,7 +960,7 @@ template <::crucible::effects::IsExecCtx Ctx, class... Stages>
     CRUCIBLE_ROW_MISMATCH_ASSERT(
         (::crucible::decide::row_subset<required_row, ctx_row>()),
         EffectRowMismatch,
-        &::crucible::concurrent::detail::mint_pipeline_row_admission_anchor,
+        &::crucible::concurrent::detail::pipeline_row_admission_anchor_,
         ctx_row,
         required_row,
         offending_row);
@@ -1012,7 +1012,7 @@ template <::crucible::effects::IsExecCtx Ctx, class Graph, class... Stages>
     CRUCIBLE_ROW_MISMATCH_ASSERT(
         (::crucible::decide::row_subset<required_row, ctx_row>()),
         EffectRowMismatch,
-        &::crucible::concurrent::detail::mint_pipeline_dag_row_admission_anchor,
+        &::crucible::concurrent::detail::pipeline_dag_row_admission_anchor_,
         ctx_row,
         required_row,
         offending_row);

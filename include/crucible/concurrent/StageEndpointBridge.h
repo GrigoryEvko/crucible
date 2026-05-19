@@ -390,8 +390,8 @@ make_mpmc_stage_from_endpoint_tuple(Ctx const& ctx,
     return stage_type{ctx, std::move(inputs), std::move(outputs)};
 }
 
-inline void mint_mpmc_stage_row_admission_anchor() noexcept {}
-inline void mint_swmr_stage_row_admission_anchor() noexcept {}
+inline void mpmc_stage_row_admission_anchor_() noexcept {}
+inline void swmr_stage_row_admission_anchor_() noexcept {}
 
 template <auto FnPtr, class Ctx, class ConsumerEp, class Writer>
 struct swmr_stage_from_endpoint_gate {
@@ -538,7 +538,7 @@ template <auto FnPtr,
     CRUCIBLE_ROW_MISMATCH_ASSERT(
         (::crucible::decide::row_subset<required_row, ctx_row>()),
         EffectRowMismatch,
-        &::crucible::concurrent::detail::mint_mpmc_stage_row_admission_anchor,
+        &::crucible::concurrent::detail::mpmc_stage_row_admission_anchor_,
         ctx_row,
         required_row,
         offending_row);
@@ -569,7 +569,7 @@ template <auto FnPtr,
     CRUCIBLE_ROW_MISMATCH_ASSERT(
         (::crucible::decide::row_subset<required_row, ctx_row>()),
         EffectRowMismatch,
-        &::crucible::concurrent::detail::mint_swmr_stage_row_admission_anchor,
+        &::crucible::concurrent::detail::swmr_stage_row_admission_anchor_,
         ctx_row,
         required_row,
         offending_row);

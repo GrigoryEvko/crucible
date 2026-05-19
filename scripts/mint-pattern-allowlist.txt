@@ -97,14 +97,6 @@ include/crucible/cntp/AfXdp.h:394:noexcept-ok
 include/crucible/cntp/dataplane/Xdp.h:192:requires-ok
 include/crucible/cntp/OverlayMulticast.h:373:constexpr-ok
 include/crucible/cntp/_wip/QuicTransport.h:201:noexcept-ok
-include/crucible/concurrent/Pipeline.h:365:constexpr-ok
-include/crucible/concurrent/Pipeline.h:365:nodiscard-ok
-include/crucible/concurrent/Pipeline.h:561:constexpr-ok
-include/crucible/concurrent/Pipeline.h:561:nodiscard-ok
-include/crucible/concurrent/StageEndpointBridge.h:393:constexpr-ok
-include/crucible/concurrent/StageEndpointBridge.h:393:nodiscard-ok
-include/crucible/concurrent/StageEndpointBridge.h:394:constexpr-ok
-include/crucible/concurrent/StageEndpointBridge.h:394:nodiscard-ok
 include/crucible/CrucibleContext.h:301:constexpr-ok
 include/crucible/observe/Metrics.h:67:constexpr-ok
 include/crucible/observe/Metrics.h:75:constexpr-ok
