@@ -99,8 +99,15 @@
 //      (binding rejected by NotInTheoryCorpus) but surfaces a stale
 //      / empty diagnostic — the contributor's job is to make the
 //      rejection diagnostic literally true for the new entry.
-//   5. Bump `corpus_size_v` to the new entry count.  The static
-//      sentinel below the constant breaks if the bump is forgotten.
+//   5. Bump `corpus_size_v` AND append a new `entry_witness{...::
+//      name(), ...::cite(), ...::full_diagnostic()}` row to
+//      `kRoster` (see the sentinel doc-block alongside
+//      `corpus_size_v` for the full deduction story).  BOTH the
+//      bump and the roster append are required — the std::array
+//      CTAD sentinel breaks the build on either omission, but the
+//      discipline block above is the AUTHORITATIVE 5-step shape
+//      that should make the sentinel firing unnecessary in
+//      practice.
 //
 // The corpus grows monotonically by DEFAULT.  Retirement (when a
 // substrate-level fix makes a §30.14 pattern impossible to express
