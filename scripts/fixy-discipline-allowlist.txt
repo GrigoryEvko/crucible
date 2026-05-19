@@ -1,0 +1,16 @@
+# scripts/fixy-discipline-allowlist.txt — Phase F grandfather list.
+#
+# One repo-relative path per line.  Files listed here are exempted
+# from the check-fixy-discipline.sh "no raw safety::fn::Fn< in
+# fixy-only zones" rule.  Lines beginning with '#' are comments.
+#
+# Trim discipline: every entry is a TODO.  When the listed file
+# migrates to fixy::fn< spellings or is deleted, REMOVE its line.
+# A clean fixy-only file must not stay on the allowlist; the
+# allowlist exists for in-flight migrations only.
+#
+# Current state: empty.  At the Phase F ship moment, no file under
+# examples/fn/ or test/fixy_neg/ reaches past the umbrella, so
+# zero grandfathering is needed.  Entries will be added if a
+# migration cycle widens the CRUCIBLE_FIXY_ONLY surface to a
+# directory that hasn't been fully ported yet.

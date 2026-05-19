@@ -427,10 +427,22 @@ add_test(NAME refined_pre_subsumption_self_test
           --self-test)
 add_test(NAME refined_pre_subsumption
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.sh)
-# FIXY discipline linter removed alongside the parallel-universe
-# fixy/ tree.  The clean reimplementation re-ships
-# scripts/check-fixy-discipline.sh under Phase F per
-# misc/16_05_2026_fixy.md §4 Phase F.
+# FIXY-U-001 Phase F discipline gate (misc/16_05_2026_fixy.md §4
+# Phase F).  scripts/check-fixy-discipline.sh enforces the
+# greenfield rule: directories opted into CRUCIBLE_FIXY_ONLY must
+# spell fixy::fn<Type, Grants...> at consumer call sites rather
+# than reaching past the umbrella to safety::fn::Fn<...> directly.
+# Mirrors the discipline of check-trait-injection.sh +
+# check-refined-pre-subsumption.sh — self-test mode is wired
+# separately so a regex regression (rg upgrade, anchor drift)
+# fails CI on its own diagnostic rather than silently letting the
+# production scan pass.  Initial opt-ins: examples/fn/ +
+# test/fixy_neg/.
+add_test(NAME fixy_discipline_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.sh
+          --self-test)
+add_test(NAME fixy_discipline
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.sh)
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
