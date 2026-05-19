@@ -1829,6 +1829,25 @@ crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_nothrow
 crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_unregistered_peer
     "survivor_registry|require_crash_survivors_declared_|mint_permission_inherit survivors|inheritance_list_empty|static assertion failed")
 
+# fixy-HS14-03 — mint_recording_endpoint HS14 floor (≥2 fixtures via
+# the fixy::bridge:: re-export).  Two GENUINELY distinct mismatch
+# classes — substrate-side equivalent collapsed both into the
+# first-param gate; the fixy-side pair separates them:
+# (#1) non_endpoint — first-param template deduction fails (passing
+#      `int` to `Endpoint<Substr, Dir, Ctx>&&` — no specialization
+#      matches), producing "no matching function for call to /
+#      could not deduce" against the whole template;
+# (#2) wrong_log_type — first-param successfully deduces (a real
+#      Endpoint is built via fpipe::mint_endpoint<Channel,
+#      Direction::Consumer>(ctx, cons)), THEN the second-param
+#      reference type `SessionEventLog&` cannot bind to `int`.  This
+#      is the post-deduction reference-binding gate — distinct
+#      diagnostic shape from #1.
+crucible_neg_compile_fixy_test(neg_fixy_bridge_recording_endpoint_non_endpoint
+    "no matching function|mint_recording_endpoint|could not deduce|no matching template|deduction failed")
+crucible_neg_compile_fixy_test(neg_fixy_bridge_recording_endpoint_wrong_log_type
+    "no matching function|mint_recording_endpoint|cannot bind|could not convert|SessionEventLog")
+
 # ── FIXY-AUDIT-D6 — mint_vigil_mode_bridge HS14 floor.
 #
 # `mint_vigil_mode_bridge(const Vigil&)` is a parameter-typed token
