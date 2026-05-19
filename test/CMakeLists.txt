@@ -1808,6 +1808,18 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_swmr_stage_non_writer
 # crash-watched NoThrow contradiction:
 crucible_neg_compile_fixy_test(neg_fixy_bridge_persisted_session_hot_ctx
     "PersistedSession|CipherTier|HotFgCtx|constraints not satisfied|associated constraints are not satisfied|IO|Block")
+# fixy-HS14-01 — mint_recording_session HS14 floor (≥2 fixtures via
+# the fixy::bridge:: re-export).  Two distinct mismatch classes:
+# (#1) non-handle first argument trips overload-set rejection across
+# all three substrate overloads (bare SessionHandle, CrashWatched,
+# PSH); (#2) valid first argument selects the bare overload, then
+# wrong-log-type second argument fails reference-binding.  Mirrors
+# the substrate-side pair (test/bridges_neg/neg_mint_recording_session_*)
+# at the fixy:: wrapping boundary.
+crucible_neg_compile_fixy_test(neg_fixy_bridge_recording_session_non_handle
+    "no matching function|mint_recording_session|IsSessionHandle|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_bridge_recording_session_wrong_log_type
+    "no matching function|mint_recording_session|cannot bind|could not convert|SessionEventLog")
 crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_nothrow
     "CrashWatched_NoThrow_Rejected|crash-watched|NoThrow")
 # fixy-HS14-02 — mint_crash_watched_session HS14 floor (≥2 fixtures).
