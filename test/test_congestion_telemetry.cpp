@@ -203,6 +203,35 @@ void test_live_tcp_info_if_available() {
     std::printf("  test_live_tcp_info_if_available: PASSED\n");
 }
 
+void test_aggregate_finalize_guard() {
+    // fixy-A5-031 regression: aggregate_congestion and harvest_per_link
+    // share finalize_aggregate.  Empty span ⇒ sample_count=0 ⇒ helper
+    // must early-return, never divide.  Pre-extraction the guard lived
+    // only in aggregate_congestion; harvest_per_link divided
+    // unconditionally.  Same helper now binds both call sites — drift
+    // structurally impossible.
+    auto empty = topology::aggregate_congestion(nic(101), {});
+    assert(empty.sample_count == 0);
+    assert(empty.mean_btl_bw_bps == 0);
+    assert(empty.p50_rtt_us == 0);
+    assert(empty.p95_rtt_us == 0);
+    assert(empty.p95_btl_bw_bps == 0);
+    assert(empty.nic_uuid == nic(101).uuid);
+
+    std::array samples{
+        sample(100'000'000ull, 1'500ull, topology::CongestionMode::BbrProbeBw),
+        sample(200'000'000ull, 2'500ull, topology::CongestionMode::BbrProbeBw),
+        sample(300'000'000ull, 3'500ull, topology::CongestionMode::BbrProbeBw),
+    };
+    auto agg = topology::aggregate_congestion(
+        nic(102), std::span<const topology::TcpInfoSnapshot>{samples});
+    assert(agg.sample_count == 3);
+    assert(agg.mean_btl_bw_bps == 200'000'000ull);
+    assert(agg.nic_uuid == nic(102).uuid);
+
+    std::printf("  test_aggregate_finalize_guard: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -220,6 +249,7 @@ int main() {
     std::printf("test_congestion_telemetry:\n");
     test_names_and_admission();
     test_aggregate_and_drift();
+    test_aggregate_finalize_guard();
     test_worker_recording();
     test_live_tcp_info_if_available();
     std::printf("test_congestion_telemetry: all PASSED\n");

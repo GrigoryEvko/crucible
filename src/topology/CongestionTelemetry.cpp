@@ -173,6 +173,24 @@ void record_sample(CongestionAggregate& aggregate,
     bw_hist.record(BandwidthHistogram::checked_value(bw_value));
 }
 
+// fixy-A5-031: single finalize step shared by aggregate_congestion and
+// harvest_per_link.  Pre-fix harvest_per_link omitted the sample_count
+// guard and divided unconditionally — a div-by-zero waiting for any
+// future record_sample filter (or for the obvious symmetric guard to
+// drift away from its sibling).  One helper, one guard, two call
+// sites — drift is now structurally impossible.
+void finalize_aggregate(CongestionAggregate& aggregate,
+                        RttHistogram& rtt_hist,
+                        BandwidthHistogram& bw_hist) noexcept {
+    if (aggregate.sample_count == 0) {
+        return;
+    }
+    aggregate.mean_btl_bw_bps /= aggregate.sample_count;
+    aggregate.p50_rtt_us = rtt_hist.percentile(50.0);
+    aggregate.p95_rtt_us = rtt_hist.percentile(95.0);
+    aggregate.p95_btl_bw_bps = bw_hist.percentile(95.0);
+}
+
 }  // namespace
 
 std::string_view congestion_mode_name(CongestionMode mode) noexcept {
@@ -265,12 +283,7 @@ aggregate_congestion(cog::CogIdentity const& nic,
     for (auto const& sample : samples) {
         record_sample(aggregate, rtt_hist, bw_hist, sample);
     }
-    if (aggregate.sample_count != 0) {
-        aggregate.mean_btl_bw_bps /= aggregate.sample_count;
-        aggregate.p50_rtt_us = rtt_hist.percentile(50.0);
-        aggregate.p95_rtt_us = rtt_hist.percentile(95.0);
-        aggregate.p95_btl_bw_bps = bw_hist.percentile(95.0);
-    }
+    finalize_aggregate(aggregate, rtt_hist, bw_hist);
     return aggregate;
 }
 
@@ -296,10 +309,7 @@ harvest_per_link(cog::CogIdentity const& nic,
         }
         record_sample(aggregate, rtt_hist, bw_hist, *sample);
     }
-    aggregate.mean_btl_bw_bps /= aggregate.sample_count;
-    aggregate.p50_rtt_us = rtt_hist.percentile(50.0);
-    aggregate.p95_rtt_us = rtt_hist.percentile(95.0);
-    aggregate.p95_btl_bw_bps = bw_hist.percentile(95.0);
+    finalize_aggregate(aggregate, rtt_hist, bw_hist);
     return aggregate;
 }
 
