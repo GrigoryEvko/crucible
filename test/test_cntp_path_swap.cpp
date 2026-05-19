@@ -148,6 +148,57 @@ void test_concurrent_observer_sees_only_valid_states() {
     std::printf("  test_concurrent_observer_sees_only_valid_states: PASSED\n");
 }
 
+// fixy-A5-024 HS14 fixture #2: runtime witness that `commit_sender` is
+// state-machine-only — bytes sitting on the OLD resource at the swap
+// boundary are LOST, never migrated to the new resource.  A real Tier-2
+// engine (MPTCP TCP_MIGRATE, RDMA path-migration verb, AF_XDP map swap)
+// would replay or hand-off these bytes; today's stub does not, and the
+// `data_migration_implemented` honesty marker advertises that fact.
+//
+// We arm a sentinel byte (`old_wire.last = 0xBEEF`) on the OLD wire to
+// represent "buffered-but-unsent" application data, drive the swap to
+// completion, and then assert the NEW wire is structurally independent:
+// fresh id, no inherited sentinel.  The OLD wire is consumed by the
+// detach inside commit_sender and is unobservable post-call — the
+// structural type guarantee IS the proof that the bytes are gone.
+void test_commit_sender_loses_in_flight_bytes() {
+    crucible::effects::ColdInitCtx init{};
+    crucible::effects::BgDrainCtx bg{};
+
+    auto swapper = cntp::mint_path_swapper<8>(init);
+    auto plan = make_plan();
+    assert(swapper.begin_swap(bg, plan, 100).has_value());
+    assert(swapper.receiver_accepts_bidir(bg, 200).has_value());
+    assert(swapper.sender_observed_drain_ack(bg, 300).has_value());
+
+    Wire old_wire{.id = 7, .last = 0xBEEF};  // sentinel "in-flight byte"
+    auto old_handle = proto::mint_session_handle<Proto>(std::move(old_wire));
+
+    Wire new_wire{.id = 9, .last = 0};
+    auto swapped = swapper.commit_sender(bg, std::move(old_handle),
+                                         std::move(new_wire), 400);
+    assert(swapped.has_value());
+    assert(swapper.state() == cntp::SwapState::Complete);
+
+    // The new resource is structurally independent of the old one: the
+    // sentinel byte 0xBEEF is unrecoverable because no Tier-2 migration
+    // engine copied or replayed it.  A future migration-capable backend
+    // would flip `data_migration_implemented` to true AND propagate the
+    // sentinel — that day this assert turns into a positive check.
+    assert(swapped->resource().id == 9);
+    assert(swapped->resource().last == 0);
+    assert(swapped->resource().last != 0xBEEF);
+
+    // Drive the session through send+close so the SessionHandle lifetime
+    // contract is honored (the framework aborts on dropped handles).
+    auto end = std::move(*swapped).send(7, send_int);
+    auto final_wire = std::move(end).close();
+    assert(final_wire.id == 9);
+    assert(final_wire.last == 7);
+
+    std::printf("  test_commit_sender_loses_in_flight_bytes: PASSED\n");
+}
+
 void test_invalid_transition_and_timeout() {
     crucible::effects::ColdInitCtx init{};
     crucible::effects::BgDrainCtx bg{};
@@ -184,9 +235,22 @@ int main() {
     static_assert(cntp::PathSwapSessionResource<Wire>);
     static_assert(!cntp::PathSwapSessionResource<Wire&>);
 
+    // fixy-A5-024 HS14 fixture #1: compile-time witness that the
+    // PathSwapper class advertises STATE-ONLY semantics — no Tier-2
+    // in-flight data migration engine (MPTCP/RDMA/AF_XDP) ships yet.
+    // The marker is `static constexpr bool`, grep-discoverable via
+    // `data_migration_implemented`, and reachable from every template
+    // arity so callers can branch at compile time on the gap.
+    static_assert(!cntp::PathSwapper<>::data_migration_implemented,
+                  "fixy-A5-024: PathSwapper must advertise state-only "
+                  "semantics until a per-transport migration engine ships");
+    static_assert(!cntp::PathSwapper<8>::data_migration_implemented);
+    static_assert(!cntp::PathSwapper<16>::data_migration_implemented);
+
     std::printf("test_cntp_path_swap:\n");
     test_admission();
     test_state_machine_and_session_resource_transition();
+    test_commit_sender_loses_in_flight_bytes();
     test_concurrent_observer_sees_only_valid_states();
     test_invalid_transition_and_timeout();
     std::printf("test_cntp_path_swap: all PASSED\n");

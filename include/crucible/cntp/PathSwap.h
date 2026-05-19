@@ -7,6 +7,21 @@
 // live session handle to a new resource at the same protocol position.
 // Kernel MPTCP subflow management, RDMA QP migration, route selection,
 // and socket creation are separate transport substrates.
+//
+// fixy-A5-024 STATE-ONLY HONESTY MARKER.  `PathSwapper` ships the
+// state-machine `Stable → Draining → BidirReceive → NewPathFlushing
+// → Complete` correctly but performs ZERO in-flight data migration.
+// `commit_sender` detaches the old session via
+// `TransportClosedOutOfBand` and mints a fresh handle on the new
+// resource — any bytes buffered on the OLD path are LOST.  Real
+// transport-class-specific reconnect (MPTCP subflow swap, RDMA QP
+// recovery, AF_XDP umem rebind) is downstream work tracked separately.
+//
+// The static constant `PathSwapper::data_migration_implemented` is
+// the grep-discoverable single-source-of-truth: callers branching on
+// it can detect the gap at compile time.  When per-transport engines
+// land, that constant flips to `true` per-specialization AND the
+// commit_sender doc warning is removed in the same PR.
 
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
@@ -131,6 +146,14 @@ class PathSwapper : public safety::Pinned<PathSwapper<MaxEvents>> {
     static_assert(std::atomic<SwapState>::is_always_lock_free,
                   "PathSwapper observers need a lock-free state load on every "
                   "supported platform; the target ISA does not provide one");
+
+ public:
+    // fixy-A5-024 honesty marker.  False until a per-transport engine
+    // ships actual MPTCP/RDMA/AF_XDP in-flight migration; callers can
+    // branch on this at compile time to detect the gap.
+    static constexpr bool data_migration_implemented = false;
+
+ private:
 
     // fixy-A5-038: state_ is published by a single Bg-context writer and
     // observed concurrently by foreground threads through state(). The
@@ -257,6 +280,22 @@ public:
         return {};
     }
 
+    // fixy-A5-024: STATE-MACHINE-ONLY commit, no in-flight data migration.
+    //
+    // This call:
+    //   1. Detaches `current` with `TransportClosedOutOfBand{}`.  Any bytes
+    //      still buffered on the OLD path (kernel TX queue, NIC ring, in-
+    //      flight datagrams, app-level send window) are LOST — there is no
+    //      replay, no resend, no buffer hand-off.  Receivers MUST tolerate
+    //      this (or use an application-level ACK/idempotency layer).
+    //   2. Transitions Tier-1 state to `Complete`.
+    //   3. Mints a fresh `SessionHandle` over `new_resource` and returns it.
+    //
+    // The Tier-2 per-transport migration engines (MPTCP TCP_MIGRATE, RDMA
+    // path-migration verb, AF_XDP map swap) that would preserve in-flight
+    // bytes are intentionally NOT implemented here — see the class-level
+    // `data_migration_implemented = false` honesty marker.  Callers can
+    // branch on that constexpr to detect the gap at compile time.
     template <class Ctx,
               typename Proto,
               typename OldResource,
@@ -280,6 +319,8 @@ public:
             return std::unexpected(SwapError::InvalidTransition);
         }
 
+        // STATE-ONLY: in-flight bytes on `current` are dropped on detach;
+        // see fixy-A5-024 doc-block above.
         std::move(current).detach(
             safety::proto::detach_reason::TransportClosedOutOfBand{});
         transition_to(SwapState::Complete, now_ns);
