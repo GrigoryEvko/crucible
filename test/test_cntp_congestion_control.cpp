@@ -177,18 +177,19 @@ void test_live_socket_roundtrip_if_available() {
     std::printf("  test_live_socket_roundtrip_if_available: PASSED\n");
 }
 
-// fixy-A5-016 HS14 fixture #1: positive runtime witness that the
-// Ctx-gated overload of set_cc_for_socket dispatches correctly when
-// the caller's ExecCtx carries Effect::IO in its row.  We can't make
-// a real setsockopt() succeed without an actual TCP socket, but we
-// can prove the overload IS selectable + IS callable + agrees with
-// the unparameterized form on error returns (both return
-// SetSockOptFailed on an unsupported fd, same path).
+// fixy-A5-016 HS14 fixture #1: positive runtime witness that EVERY
+// Ctx-gated overload in this header dispatches correctly when the
+// caller's ExecCtx carries Effect::IO in its row.  We can't make a
+// real {set,get}sockopt() succeed without an actual TCP socket, but
+// we can prove each overload IS selectable + IS callable + agrees
+// with its unparameterized form on error returns (both return
+// {Set,Get}SockOptFailed on an unsupported fd, same path).
 void test_io_gated_overload_dispatches() {
     // Closed fd; admit_socket_fd checks for >= 0 so any non-negative
-    // value passes admission; the syscall then fails downstream.
-    // What we're proving here is that the Ctx-gated overload reaches
-    // the syscall site, not that the syscall succeeds.
+    // value passes admission; each syscall then fails downstream.
+    // What we're proving here is that every Ctx-gated overload
+    // reaches the syscall site and stays bit-equivalent to its bare
+    // form, not that the syscalls succeed.
     auto fd = cntp::admit_socket_fd(/*invalid*/ 0xFFFE);
     assert(fd.has_value());
 
@@ -197,17 +198,64 @@ void test_io_gated_overload_dispatches() {
         .kernel_name = cntp::KernelCcName::from("cubic").value(),
     }};
 
-    // Gated form: same expected<void, CcError> shape.  BgDrainCtx has
-    // row = Row<Bg, Alloc> — no IO!  So this Ctx CANNOT reach the
-    // gate; ColdInitCtx has Row<Init, Alloc, IO> and IS accepted.
+    // ColdInitCtx has Row<Init, Alloc, IO> and is accepted by every
+    // gate below.  BgDrainCtx (Row<Bg, Alloc> — no IO) and HotFgCtx
+    // (Row<>) are rejected at substitution and witnessed via the
+    // top-level static_asserts; see the file-scope block below.
     eff::ColdInitCtx init{};
-    auto gated = cntp::set_cc_for_socket(init, *fd, choice);
-    auto bare  = cntp::set_cc_for_socket(*fd, choice);
-    // Either both succeed (impossible on closed fd) or both produce
-    // the same error code — the two overloads agree.
-    assert(gated.has_value() == bare.has_value());
-    if (!gated.has_value()) {
-        assert(gated.error() == bare.error());
+
+    // (1) set_cc_for_socket — setsockopt(TCP_CONGESTION)
+    {
+        auto gated = cntp::set_cc_for_socket(init, *fd, choice);
+        auto bare  = cntp::set_cc_for_socket(*fd, choice);
+        assert(gated.has_value() == bare.has_value());
+        if (!gated.has_value()) {
+            assert(gated.error() == bare.error());
+        }
+    }
+
+    // (2) query_cc_for_socket — getsockopt(TCP_CONGESTION)
+    {
+        auto gated = cntp::query_cc_for_socket(init, *fd);
+        auto bare  = cntp::query_cc_for_socket(*fd);
+        assert(gated.has_value() == bare.has_value());
+        if (!gated.has_value()) {
+            assert(gated.error() == bare.error());
+        }
+    }
+
+    // (3) query_cc_selection_for_socket — getsockopt(TCP_CONGESTION)
+    {
+        auto gated = cntp::query_cc_selection_for_socket(init, *fd);
+        auto bare  = cntp::query_cc_selection_for_socket(*fd);
+        assert(gated.has_value() == bare.has_value());
+        if (!gated.has_value()) {
+            assert(gated.error() == bare.error());
+        }
+    }
+
+    // (4) read_available_congestion_control — open()+read() on /proc.
+    // Side-effect-free: result depends only on the host kernel; the
+    // gated overload MUST agree byte-for-byte with the bare form.
+    {
+        auto gated = cntp::read_available_congestion_control(init);
+        auto bare  = cntp::read_available_congestion_control();
+        assert(gated.has_value() == bare.has_value());
+        if (gated.has_value()) {
+            // CcAvailability holds a CcAlgorithmMask (Bits<CcAlgorithm>)
+            // — value-comparable via the underlying integral.
+            for (auto algo : {cntp::CcAlgorithm::Cubic,
+                              cntp::CcAlgorithm::Reno,
+                              cntp::CcAlgorithm::Bbr1,
+                              cntp::CcAlgorithm::Bbr2,
+                              cntp::CcAlgorithm::Bbr3,
+                              cntp::CcAlgorithm::Dctcp,
+                              cntp::CcAlgorithm::Vegas}) {
+                assert(gated->contains(algo) == bare->contains(algo));
+            }
+        } else {
+            assert(gated.error() == bare.error());
+        }
     }
 
     std::printf("  test_io_gated_overload_dispatches:  PASSED\n");

@@ -227,27 +227,31 @@ query_cc_for_socket(SocketFd fd) noexcept;
 [[nodiscard]] std::expected<CcSelection, CcError>
 query_cc_selection_for_socket(SocketFd fd) noexcept;
 
-// fixy-A5-016 worked-example: cap-row-gated entry point for the
-// TCP_CONGESTION setsockopt() syscall.
+// fixy-A5-016 worked example: cap-row-gated entry points for EVERY
+// syscall-touching surface in this header.  Four operations cross
+// the kernel boundary:
 //
-// The unparameterized overloads above retain backward compatibility
-// (no Ctx-aware caller exists yet across cntp/canopy/topology), so
-// the gate is additive: callers that already thread an ExecCtx
-// through their flow get a compile-time-checked entry point; legacy
-// callers continue to compile.  The §XXI Universal Mint Pattern is
-// NOT invoked here because nothing is being minted — the function
-// performs a privileged action against an already-owned SocketFd.
+//   1. `set_cc_for_socket`              — setsockopt(TCP_CONGESTION)
+//   2. `query_cc_for_socket`            — getsockopt(TCP_CONGESTION)
+//   3. `query_cc_selection_for_socket`  — getsockopt(TCP_CONGESTION)
+//   4. `read_available_congestion_control` — open()+read() on /proc
+//
+// Every one of them is an Effect::IO action: kernel-state read or
+// mutation through a file descriptor, or filesystem read.  All four
+// get an additive Ctx-gated overload requiring
+// `CtxOwnsCapability<Ctx, Effect::IO>`.  The unparameterized forms
+// above retain backward compatibility (no Ctx-aware caller exists
+// yet across cntp/canopy/topology); FIXY-U-100 tracks the migration
+// + eventual `[[deprecated]]` of the compat shims.
 //
 // What the gate enforces:
-//   • `Ctx::row_type` MUST contain `Effect::IO` (the setsockopt
-//     syscall is an IO effect — kernel state mutation through a
-//     file descriptor).
+//   • `Ctx::row_type` MUST contain `Effect::IO`.
 //   • Without the cap, the concept rejects at template-substitution
 //     time — the call site becomes a compile error pointing at
 //     `CtxOwnsCapability<Ctx, Effect::IO>`.
-//   • A `HotFgCtx` (Row<>) cannot reach this overload; it can still
-//     reach the unparameterized form (which IS the discipline gap
-//     the FIXY-U-100 linter sweep closes — see below).
+//   • A `HotFgCtx` (Row<>) cannot reach any of these overloads; it
+//     can still reach the unparameterized forms (the discipline gap
+//     the FIXY-U-100 linter sweep closes).
 //
 // Production migration path (FIXY-U-100):
 //   1. Author callers thread `ColdInitCtx` / `BgDrainCtx` /
@@ -257,15 +261,36 @@ query_cc_selection_for_socket(SocketFd fd) noexcept;
 //   3. Eventually the unparameterized form is `[[deprecated]]` then
 //      removed; until then it serves as the compat shim.
 //
-// Body: forwards to the unparameterized form so the two overloads
-// agree on the underlying setsockopt call.  Zero runtime cost from
-// the gate — concepts evaluate at compile time, the Ctx parameter
-// is an empty struct (sizeof == 1, EBO-collapsible).
+// Body: each gated overload forwards to its unparameterized form so
+// the two overloads agree on the underlying syscall.  Zero runtime
+// cost from the gate — concepts evaluate at compile time, the Ctx
+// parameter is an empty struct (sizeof == 1, EBO-collapsible).
 template <effects::IsExecCtx Ctx>
     requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
 [[nodiscard]] std::expected<void, CcError>
 set_cc_for_socket(Ctx const&, SocketFd fd, DeclaredCcChoice choice) noexcept {
     return set_cc_for_socket(fd, choice);
+}
+
+template <effects::IsExecCtx Ctx>
+    requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
+[[nodiscard]] std::expected<CcAlgorithm, CcError>
+query_cc_for_socket(Ctx const&, SocketFd fd) noexcept {
+    return query_cc_for_socket(fd);
+}
+
+template <effects::IsExecCtx Ctx>
+    requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
+[[nodiscard]] std::expected<CcSelection, CcError>
+query_cc_selection_for_socket(Ctx const&, SocketFd fd) noexcept {
+    return query_cc_selection_for_socket(fd);
+}
+
+template <effects::IsExecCtx Ctx>
+    requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
+[[nodiscard]] std::expected<CcAvailability, CcError>
+read_available_congestion_control(Ctx const&) noexcept {
+    return read_available_congestion_control();
 }
 
 }  // namespace crucible::cntp
