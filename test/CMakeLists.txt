@@ -2003,6 +2003,35 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_metalog_consumer_session_non_ctx
 crucible_neg_compile_fixy_test(neg_fixy_substr_metalog_consumer_session_wrong_handle
     "no matching function|cannot convert|ConsumerHandle|mint_metalog_consumer_session")
 
+# fixy-HS14-09 — Substr.h re-export of ChainEdge mints
+# (mint_chainedge_signaler / mint_chainedge_waiter /
+# mint_chainedge_signaler_session / mint_chainedge_waiter_session).
+# Four mints × two distinct mismatch classes each = 8 fixtures.
+# The pairs split:
+#   _non_surface  / _wrong_perm    — signaler/waiter token mints
+#   _non_ctx      / _wrong_handle  — signaler/waiter ctx-bound
+#                                    session mints
+#
+# Witnesses the using-decl preserves the per-mint requires-clause
+# AND the per-parameter binding shape independently across all
+# four ChainEdge mints.
+crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_signaler_non_surface
+    "constraints not satisfied|ChainEdgeSessionSurface|no matching function|mint_chainedge_signaler")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_signaler_wrong_perm
+    "no matching function|cannot convert|Permission|mint_chainedge_signaler")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_waiter_non_surface
+    "constraints not satisfied|ChainEdgeSessionSurface|no matching function|mint_chainedge_waiter")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_waiter_wrong_perm
+    "no matching function|cannot convert|Permission|mint_chainedge_waiter")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_signaler_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function|mint_chainedge_signaler_session")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_signaler_session_wrong_handle
+    "no matching function|cannot convert|SignalerHandle|mint_chainedge_signaler_session")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_waiter_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function|mint_chainedge_waiter_session")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chainedge_waiter_session_wrong_handle
+    "no matching function|cannot convert|WaiterHandle|mint_chainedge_waiter_session")
+
 # fixy-A4-030 — substrate-vs-fixy disjointness discriminator witness.
 # Reject.h's main guard is the std::index_sequence fold that walks every
 # safety::diag::Catalog entry and asserts !is_fixy_diag_v<entry>; these
