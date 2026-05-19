@@ -72,23 +72,25 @@
 //          whatever SessionPersistenceState's ctor does — typically
 //          one ring-buffer allocation + Cipher::OpenView capture).
 
-// ── Include discipline (FIXY-AUDIT-C5) ─────────────────────────────
+// ── Include discipline (FIXY-AUDIT-C5 + fixy-H-23) ─────────────────
 //
-// All five substrate headers are pulled in directly, per CLAUDE.md
-// §XV "Self-contained. Every header compiles standalone. Add
-// required includes directly; never rely on transitive pull-in."
+// All substrate headers are pulled in directly, per CLAUDE.md §XV
+// "Self-contained. Every header compiles standalone. Add required
+// includes directly; never rely on transitive pull-in."
 //
-// `<crucible/Vigil.h>` is STRUCTURALLY REQUIRED for the
-// `mint_vigil_mode_bridge` re-export below: the substrate signature
-// returns `Vigil::ModeSessionHandle`, a nested type whose definition
-// (`decltype(safety::mint_atomic_session<ModeProtocol>(...))`)
-// cannot be named through a forward declaration.  A `class Vigil;`
-// forward decl is insufficient because (a) the return type names a
-// nested member, and (b) the substrate function is `inline` with its
-// body in Vigil.h, so any caller that *invokes* the re-export still
-// needs the complete definition for the call-expression to resolve.
-// Forward-declaring the function with `auto` deduction is also a
-// non-option — `auto` requires the definition for deduction.
+// fixy-H-23 (2026-05-19): the `mint_vigil_mode_bridge` re-export
+// below used to require `<crucible/Vigil.h>` because the substrate
+// signature returned the nested type `Vigil::ModeSessionHandle`.
+// That dragged in BackgroundThread + MerkleDag + Cipher (warm tier)
+// + perf::Senses + warden::DeadlineWatchdog — every fixy::bridge::
+// consumer paid the full 1.1 KLoC Vigil hub cost just to wrap a
+// mode-cell session.  The mode machinery is now carved out into a
+// standalone `<crucible/bridges/VigilModeHandle.h>` (~140 LOC) that
+// pulls only MachineSessionBridge + sessions/Session.  The umbrella
+// re-export resolves to the ModeCell-taking primary mint surface;
+// callers that already hold a Vigil reach the convenience overload
+// `mint_vigil_mode_bridge(const Vigil&)` only after directly
+// including `<crucible/Vigil.h>` (e.g. via `<crucible/Fixy.h>`).
 //
 // The four `bridges/*` headers (CrashTransport, EndpointMint,
 // RecordingSessionHandle, SessionPersistence) are each required
@@ -98,11 +100,11 @@
 // fixy::bridge:: re-exports mint_persisted_session and its companions,
 // so the umbrella restores the convenience pull.
 #include <crucible/Cipher.h>
-#include <crucible/Vigil.h>
 #include <crucible/bridges/CrashTransport.h>
 #include <crucible/bridges/EndpointMint.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/bridges/SessionPersistence.h>
+#include <crucible/bridges/VigilModeHandle.h>
 
 namespace crucible::fixy::bridge {
 

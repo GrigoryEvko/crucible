@@ -39,6 +39,7 @@
 #include <crucible/TraceRing.h>
 #include <crucible/Transaction.h>
 #include <crucible/bridges/MachineSessionBridge.h>
+#include <crucible/bridges/VigilModeHandle.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/handles/PublishOnce.h>
@@ -62,108 +63,49 @@ namespace crucible {
 
 class Vigil {
  public:
-    enum class Mode : uint8_t {
-        RECORDING,   // recording ops into TraceRing
-        COMPILED,    // active RegionNode is live, replay() active
-        DIVERGED,    // guard mismatch, fell back from COMPILED
-    };
-
-    static consteval bool mode_transition_allowed(Mode from,
-                                                  Mode to) noexcept {
-        return (from == Mode::RECORDING && to == Mode::COMPILED)
-            || (from == Mode::COMPILED && to == Mode::RECORDING);
-    }
-
-    template <Mode From, Mode To>
-    struct ModeTransition {
-        static_assert(mode_transition_allowed(From, To),
-            "crucible::vigil::diagnostic "
-            "[VigilModeBridge_IllegalTransition]: persistent Vigil mode "
-            "transitions are RECORDING -> COMPILED and COMPILED -> "
-            "RECORDING only. DIVERGED is a replay status, not a persistent "
-            "mode; SERVING/REPLAYING are stale design-doc modes.");
-        static constexpr Mode from = From;
-        static constexpr Mode to = To;
-    };
-
-    using ModeRecordingToCompiled =
-        ModeTransition<Mode::RECORDING, Mode::COMPILED>;
-    using ModeCompiledToRecording =
-        ModeTransition<Mode::COMPILED, Mode::RECORDING>;
-
-    using ModeProtocol = safety::proto::Loop<safety::proto::Select<
-        safety::proto::Send<ModeRecordingToCompiled,
-                            safety::proto::Continue>,
-        safety::proto::Send<ModeCompiledToRecording,
-                            safety::proto::Continue>,
-        safety::proto::End>>;
-
-    static_assert(safety::proto::is_well_formed_v<ModeProtocol>);
-
+    // ── Mode machinery (fixy-H-23) ─────────────────────────────────
+    //
+    // The Mode enum, ModeTransition typestates, ModeCell carrier,
+    // ModeProtocol session type, and ModeSessionHandle alias all
+    // live in `<crucible/bridges/VigilModeHandle.h>` so that
+    // fixy/Bridge.h can re-export `mint_vigil_mode_bridge` without
+    // transitively pulling Vigil's full DAG / Cipher / perf /
+    // watchdog dependency closure.  The nested aliases below keep
+    // every pre-fixy-H-23 caller of `Vigil::Mode`, `Vigil::ModeCell`,
+    // `Vigil::ModeProtocol`, `Vigil::ModeSessionHandle`, and friends
+    // resolving identically (same types, just relocated).
+    //
     // GAPS-031 audit note: the task text originally suggested
     // AtomicMonotonic<ContextMode>. Vigil's lifecycle is intentionally
     // cyclic: RECORDING -> COMPILED -> RECORDING after divergence. A
-    // monotonic wrapper would lie about that state machine. ModeCell keeps
-    // the raw atomic private and exposes only the two named transitions the
-    // runtime actually performs. GAPS-080 layers an atomic-aware
-    // MachineSessionBridge view over the same cell; external observers use
-    // acquire/release through ModeProtocol while the foreground hot query
-    // keeps its relaxed status-flag load. The pending region uses
-    // PublishSlot rather than PublishOnce for the same reason: divergence
-    // recovery can publish multiple latest-wins regions across one process
-    // lifetime.
-    class ModeCell {
-        std::atomic<Mode> value_{Mode::RECORDING};
+    // monotonic wrapper would lie about that state machine. ModeCell
+    // keeps the raw atomic private and exposes only the two named
+    // transitions the runtime actually performs. GAPS-080 layers an
+    // atomic-aware MachineSessionBridge view over the same cell;
+    // external observers use acquire/release through ModeProtocol
+    // while the foreground hot query keeps its relaxed status-flag
+    // load. The pending region uses PublishSlot rather than
+    // PublishOnce for the same reason: divergence recovery can publish
+    // multiple latest-wins regions across one process lifetime.
+    using Mode      = ::crucible::vigil_mode::Mode;
+    using ModeCell  = ::crucible::vigil_mode::ModeCell;
 
-    public:
-        using state_type = Mode;
+    template <Mode From, Mode To>
+    using ModeTransition =
+        ::crucible::vigil_mode::ModeTransition<From, To>;
 
-        constexpr ModeCell() noexcept = default;
+    using ModeRecordingToCompiled =
+        ::crucible::vigil_mode::ModeRecordingToCompiled;
+    using ModeCompiledToRecording =
+        ::crucible::vigil_mode::ModeCompiledToRecording;
 
-        ModeCell(const ModeCell&)            = delete("Vigil mode cell is process-local state");
-        ModeCell& operator=(const ModeCell&) = delete("Vigil mode cell is process-local state");
-        ModeCell(ModeCell&&)                 = delete("atomic mode cell is the channel identity");
-        ModeCell& operator=(ModeCell&&)      = delete("atomic mode cell is the channel identity");
+    using ModeProtocol      = ::crucible::vigil_mode::ModeProtocol;
+    using ModeSessionHandle = ::crucible::vigil_mode::ModeSessionHandle;
 
-        [[nodiscard]] Mode load(std::memory_order order = std::memory_order_relaxed)
-            const noexcept
-        {
-            return value_.load(order);
-        }
-
-        void publish_compiled() noexcept {
-            value_.store(Mode::COMPILED, std::memory_order_relaxed);
-        }
-
-        void publish_recording_after_divergence() noexcept {
-            value_.store(Mode::RECORDING, std::memory_order_relaxed);
-        }
-
-        bool publish_from_session(
-            ModeRecordingToCompiled,
-            std::memory_order order = std::memory_order_release) noexcept
-        {
-            value_.store(Mode::COMPILED, order);
-            return true;
-        }
-
-        bool publish_from_session(
-            ModeCompiledToRecording,
-            std::memory_order order = std::memory_order_release) noexcept
-        {
-            value_.store(Mode::RECORDING, order);
-            return true;
-        }
-    };
-
-    static_assert(sizeof(ModeCell) == sizeof(std::atomic<Mode>));
-
-    using ModeSessionHandle = decltype(
-        safety::mint_atomic_session<ModeProtocol>(
-            std::declval<const ModeCell&>()));
-
-    static_assert(std::is_same_v<
-        typename ModeSessionHandle::resource_type, const ModeCell*>);
+    static consteval bool mode_transition_allowed(Mode from,
+                                                  Mode to) noexcept {
+        return ::crucible::vigil_mode::mode_transition_allowed(from, to);
+    }
 
     struct Config {
         int32_t     rank             = -1;
@@ -1112,15 +1054,21 @@ class Vigil {
     BackgroundThread                bg_;  // MUST be declared last
 };
 
-// §XXI Universal Mint Pattern (token-mint flavor): synthesizes a
-// fresh authoritative ModeSessionHandle whose authority derives from
-// the carrier Vigil's mode_ cell.  Constexpr-qualified per §XXI
-// discipline ("Every mint MUST be [[nodiscard]] constexpr noexcept");
-// the body forwards to mode_session() → mint_atomic_session, both
-// constexpr.  Vigil is not a literal type (it holds std::atomic<Mode>),
-// so this mint is not invocable in a constant expression in practice,
-// but the constexpr qualifier remains semantically valid and discipline-
-// uniform.  Closes fixy-M-22 (#1507).
+// §XXI Universal Mint Pattern (token-mint flavor): convenience
+// overload that synthesizes a fresh authoritative ModeSessionHandle
+// from a Vigil reference, forwarding to mode_session() which mints
+// over the embedded ModeCell.  The ModeCell-taking primary mint
+// lives in <crucible/bridges/VigilModeHandle.h> and is the surface
+// that fixy/Bridge.h re-exports; this overload exists so callers
+// that already hold a Vigil don't have to expose the cell.
+//
+// Constexpr-qualified per §XXI discipline ("Every mint MUST be
+// [[nodiscard]] constexpr noexcept"); Vigil is not a literal type
+// (it holds std::atomic<Mode>), so this mint is not invocable in a
+// constant expression in practice, but the constexpr qualifier
+// remains semantically valid and discipline-uniform.  Closes
+// fixy-M-22 (#1507); fixy-H-23 (#1483) carved out the ModeCell
+// overload as the primary surface.
 [[nodiscard]] constexpr Vigil::ModeSessionHandle mint_vigil_mode_bridge(
     const Vigil& vigil) noexcept
 {
