@@ -56,8 +56,13 @@
 #include <crucible/safety/diag/Insights.h>
 
 // ═══════════════════════════════════════════════════════════════════
-// ── 20 FixyNotEngaged_<Axis> specializations ──────────────────────
+// ── 22 FixyNotEngaged_<Axis> specializations (FIXY-U-110) ─────────
 // ═══════════════════════════════════════════════════════════════════
+// 20 original axes + Synchronization (fixy-A3-008, 2026-05-18) +
+// Regime (fixy-A3-009, 2026-05-18).  Coverage is reflection-witnessed
+// at the bottom of this header: every DimensionAxis enumerator must
+// have a corresponding insight_provider specialization, or the
+// coverage sentinel fails to compile.
 
 CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::diag::FixyNotEngaged_Type,
@@ -303,6 +308,49 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "grant::accept_default_strict_for<dim::DimensionAxis::Staleness>",
     "fixy::fn<T, /* no Staleness grant */, ...>");
 
+// FIXY-U-110: Synchronization axis added 2026-05-18 per fixy-A3-008.
+// Strict default is sync::Unconstrained — the binding makes no claim
+// about wait strategy / memory order at the binding scope; the
+// Wait<Strategy, T> / MemOrder<Tag, T> value wrapper carries the
+// discipline.  Missing engagement leaves the §6.8 collision catalog
+// unable to gate on E044 (Wait × CT incompatible) or S010 (Staleness
+// × CT incompatible) — both rules dispatch on the Wait/MemOrder grade.
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_Synchronization,
+    ::crucible::safety::diag::Severity::Error,
+    "Synchronization engages wait-strategy + memory-order discipline "
+    "(safety::Wait<Strategy, T> + safety::MemOrder<Tag, T>).  Strict "
+    "default is sync::Unconstrained — the binding makes no scope-level "
+    "claim; wrapped values carry per-value discipline.  Missing "
+    "engagement defeats the §6.8 E044 (Wait × CT) collision rule and "
+    "the constant-time × non-fresh-staleness audit (S010); both rules "
+    "dispatch on the Synchronization grade.",
+    "Grants pack omits grant::with_sync<Strategy> AND omits "
+    "accept_default_strict_for<Synchronization>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>",
+    "fixy::fn<T, /* no Synchronization grant */, ...>");
+
+// FIXY-U-110: Regime axis added 2026-05-18 per fixy-A3-009.  Strict
+// default is regime::Unconstrained — the binding makes no claim about
+// operating regime at scope, deferring to the HotPath<Tier, T> value
+// wrapper (which itself defaults to Cold).  Missing engagement disables
+// the §6.8 H001/H002/H003 collision family (HotPath × unbounded-cost,
+// HotPath × trivial-refinement, HotPath × Alloc/IO+unbounded), all of
+// which dispatch on the Regime grade.
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_Regime,
+    ::crucible::safety::diag::Severity::Error,
+    "Regime engages operating-tier discipline (safety::HotPath<Tier, T> "
+    "= Hot / Warm / Cold).  Strict default is regime::Unconstrained — "
+    "the binding defers to the value wrapper, which itself defaults to "
+    "Cold.  Missing engagement defeats the §6.8 H001/H002/H003 family "
+    "(HotPath × unbounded-cost; HotPath × pred::True; HotPath × "
+    "Alloc-or-IO-with-unbounded), all dispatched on the Regime grade.",
+    "Grants pack omits grant::with_regime<Tier> AND omits "
+    "accept_default_strict_for<Regime>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::Regime>",
+    "fixy::fn<T, /* no Regime grant */, ...>");
+
 // ═══════════════════════════════════════════════════════════════════
 // ── 4 §30.14 corpus entry specializations ─────────────────────────
 // ═══════════════════════════════════════════════════════════════════
@@ -390,3 +438,91 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "on Effect AND omits any grant::declassify<Policy>.",
     "grant::declassify<secret_policy::CrossThreadAuthorized>  // cross-thread",
     "fixy::fn<T, grant::as_internal, grant::with<effects::Effect::Bg>>");
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-U-110 coverage sentinel — reflection-driven ───────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Closes the catalog-completeness gap: every DimensionAxis enumerator
+// must have a corresponding `insight_provider<FixyNotEngaged_<Axis>>`
+// specialization in this header.  Without the sentinel, adding a new
+// DimensionAxis silently ships without diagnostic insight — caller
+// sees the bare `FixyNotEngaged_<NewAxis>` tag name, no Why/Symptom/
+// Correct/Violating fields.  fixy-A3-008 (Synchronization) and
+// fixy-A3-009 (Regime) were exactly this oversight before FIXY-U-110.
+//
+// Implementation: reflection enumerates DimensionAxis, projects each
+// to its tag via `tag_for_axis<D>::type`, then checks `has_insights_v`
+// on the resulting tag.  Any axis without an insight provider trips
+// the consteval-fold to false, failing the static_assert.
+//
+// Theory.h corpus entries: enumerated by hand (no enum to reflect
+// over).  Each of the 6 corpus entries has its CRUCIBLE_DEFINE_INSIGHTS
+// call in this header above; we sentinel them explicitly so a future
+// corpus addition without a matching insight provider trips the
+// individual static_assert.
+//
+// Catalog Category coverage: substrate-level, distinct from fixy::
+// layer (safety::diag::Category enumerators correspond to substrate
+// diagnostic tags like EffectRowMismatch, LinearityViolation, etc.,
+// which are unrelated to fixy's FixyNotEngaged_* and corpus tags).
+// Insight providers for those tags belong in production headers per
+// their use-site, not in fixy/Insights.h — declared out-of-scope here.
+
+namespace crucible::fixy::insights::self_test {
+
+// ── Per-axis sentinel: every DimensionAxis has an insight provider ─
+[[nodiscard]] consteval bool every_axis_has_insight_provider() noexcept {
+    // Per fixy/Dim.h:138 note: `^^` cannot follow a using-decl in
+    // GCC 16, so reach through to the substrate enum directly.
+    static constexpr auto enumerators = std::define_static_array(
+        std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        using tag_t = typename ::crucible::fixy::diag::tag_for_axis<
+            ([:en:])>::type;
+        if (!::crucible::safety::diag::has_insights_v<tag_t>) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_axis_has_insight_provider(),
+    "FIXY-U-110: a DimensionAxis enumerator has no corresponding "
+    "insight_provider<FixyNotEngaged_<Axis>> specialization in "
+    "fixy/Insights.h.  Add a CRUCIBLE_DEFINE_INSIGHTS_QV(...) call "
+    "for the missing axis, or update tag_for_axis<D>::type in "
+    "fixy/Reject.h to surface the new tag.");
+
+// ── Per-corpus sentinel: every Theory.h corpus entry has insight ──
+//
+// Hand-enumerated (no enum to reflect over).  Adding a 7th corpus
+// entry without an insight provider trips its own static_assert here.
+static_assert(::crucible::safety::diag::has_insights_v<
+    ::crucible::fixy::theory::corpus::classified_io_without_declassify>,
+    "Theory.h corpus entry classified_io_without_declassify needs "
+    "insight_provider specialization in fixy/Insights.h.");
+static_assert(::crucible::safety::diag::has_insights_v<
+    ::crucible::fixy::theory::corpus::classified_bg_without_declassify>,
+    "Theory.h corpus entry classified_bg_without_declassify needs "
+    "insight_provider specialization in fixy/Insights.h.");
+static_assert(::crucible::safety::diag::has_insights_v<
+    ::crucible::fixy::theory::corpus::staleness_secret_without_declassify>,
+    "Theory.h corpus entry staleness_secret_without_declassify needs "
+    "insight_provider specialization in fixy/Insights.h.");
+static_assert(::crucible::safety::diag::has_insights_v<
+    ::crucible::fixy::theory::corpus::ghost_runtime_observable>,
+    "Theory.h corpus entry ghost_runtime_observable needs "
+    "insight_provider specialization in fixy/Insights.h.");
+static_assert(::crucible::safety::diag::has_insights_v<
+    ::crucible::fixy::theory::corpus::internal_io_without_declassify>,
+    "Theory.h corpus entry internal_io_without_declassify needs "
+    "insight_provider specialization in fixy/Insights.h.");
+static_assert(::crucible::safety::diag::has_insights_v<
+    ::crucible::fixy::theory::corpus::internal_bg_without_declassify>,
+    "Theory.h corpus entry internal_bg_without_declassify needs "
+    "insight_provider specialization in fixy/Insights.h.");
+
+}  // namespace crucible::fixy::insights::self_test
