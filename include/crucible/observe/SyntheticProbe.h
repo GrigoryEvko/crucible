@@ -274,6 +274,31 @@ public:
             && peers_[peer_index].enabled_kinds.test(kind);
     }
 
+    // fixy-A5-012: schedule_probe is the dispatch-side counter — call once
+    // when a probe is sent (or otherwise committed to the wire), BEFORE
+    // record_outcome reports its result.  Pre-fix the scheduled counter was
+    // incremented inside record_outcome, which made it a duplicate of
+    // (succeeded + failed) and erased the "lost probe" signal entirely: a
+    // probe that never reported back was simply invisible.  Splitting the
+    // dispatch and outcome counters gives the operator a real loss-rate
+    // metric (scheduled - succeeded - failed = unreported / in-flight).
+    template <effects::IsExecCtx Ctx>
+        requires CtxFitsSyntheticProbeRecord<Ctx>
+    [[nodiscard]] bool
+    schedule_probe(Ctx const&,
+                   cog::CogIdentity const& peer,
+                   TransportProbeKind kind) noexcept {
+        auto const peer_index = find_peer(peer);
+        if (peer_index == peers_.size()
+            || !peers_[peer_index].enabled_kinds.test(kind)) {
+            return false;
+        }
+        auto& counters =
+            stats_[peer_index][detail::transport_probe_index(kind)];
+        counters.scheduled.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+
     template <effects::IsExecCtx Ctx>
         requires CtxFitsSyntheticProbeRecord<Ctx>
     [[nodiscard]] bool
@@ -289,7 +314,9 @@ public:
 
         auto& counters =
             stats_[peer_index][detail::transport_probe_index(outcome.kind)];
-        counters.scheduled.fetch_add(1, std::memory_order_relaxed);
+        // fixy-A5-012: NO scheduled.fetch_add here — outcomes are independent
+        // of dispatches.  Production callers must invoke schedule_probe()
+        // when the probe is committed to the wire.
         counters.last_latency_ns.store(outcome.latency_ns, std::memory_order_relaxed);
         counters.last_sequence.store(outcome.sequence, std::memory_order_release);
         counters.last_failure.store(
