@@ -9692,6 +9692,21 @@ crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_accept_transpor
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_accept_transport_returns_void
     "incomplete type|void|cannot declare|no matching function|accept")
 
+# fixy-A2-006d — HS14 floor for the EpochedDelegate<DelegatedSession<P, IPS>,
+# K, MinEpoch, MinGeneration> specialization on RecordingPSH.  Mirror of the
+# Delegate spec (006b) at the EpochedDelegate level — same .delegate() /
+# .delegate_local() API, same two-conjunct requires-clause.  Epoch gate is
+# enforced upstream by the inner PSH at carrier-construction time; the
+# wrapper inherits it transparently.  Each fixture witnesses one mismatch
+# class:
+#   epoched_wrong_inner_proto       — signature-shape (InnerProto mismatch)
+#   epoched_transport_not_invocable — requires-clause (is_invocable_v=false)
+# Distinct layers: #1 = signature shape, #2 = requires-clause body.
+crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_delegate_wrong_inner_proto
+    "no matching function|cannot convert|PermissionedSessionHandle|delegate")
+crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_epoched_delegate_transport_not_invocable
+    "constraints not satisfied|is_invocable|no matching function|delegate")
+
 # fixy-A2-019 — HS14 floor for the renamed mint_atomic_session<Proto>(cell).
 # Two fixtures witness the two-conjunct requires-clause:
 #   AtomicMachineCell<Cell>          — non-cell argument fails the concept
