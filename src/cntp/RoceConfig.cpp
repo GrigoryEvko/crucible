@@ -208,13 +208,9 @@ DcqcnState query_dcqcn_state(NicInterfaceName iface) noexcept {
 
 std::expected<bool, RoceError>
 verify_dcqcn_active(NicInterfaceName iface) noexcept {
-    switch (query_dcqcn_state(iface)) {
-        case DcqcnState::Active:   return true;
-        case DcqcnState::Inactive: return false;
-        case DcqcnState::BackendUnavailable:
-        default:
-            return std::unexpected(RoceError::DcqcnStatusUnavailable);
-    }
+    // Pure mapping lives in the header so the back-compat contract
+    // is static_assert-coverable at every include site.
+    return dcqcn_state_to_bool(query_dcqcn_state(iface));
 }
 
 }  // namespace crucible::cntp

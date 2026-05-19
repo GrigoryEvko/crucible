@@ -181,12 +181,39 @@ enum class DcqcnState : std::uint8_t {
 [[nodiscard]] DcqcnState
 query_dcqcn_state(NicInterfaceName iface) noexcept;
 
+// Pure mapping from queried state to the legacy `bool, RoceError`
+// expected shape.  Extracted from `verify_dcqcn_active` so the
+// back-compat contract is testable at compile time without
+// requiring a working backend — the Active→true / Inactive→false
+// branches stay dead until a vendor probe ships, but the mapping
+// must remain correct for that future ship-day.
+[[nodiscard]] constexpr std::expected<bool, RoceError>
+dcqcn_state_to_bool(DcqcnState state) noexcept {
+    switch (state) {
+        case DcqcnState::Active:   return true;
+        case DcqcnState::Inactive: return false;
+        case DcqcnState::BackendUnavailable:
+        default:
+            return std::unexpected(RoceError::DcqcnStatusUnavailable);
+    }
+}
+
 // Back-compat thin wrapper over `query_dcqcn_state`.  Returns
 // `unexpected(DcqcnStatusUnavailable)` for the no-backend case so
 // existing call sites keep their error path; new code should
 // prefer `query_dcqcn_state` and branch on `DcqcnState` directly.
 [[nodiscard]] std::expected<bool, RoceError>
 verify_dcqcn_active(NicInterfaceName iface) noexcept;
+
+// fixy-A5-042 follow-up: prove the back-compat mapping covers all
+// three DcqcnState discriminators correctly.  Branches stay dead
+// until a vendor probe ships; the static_assert is the
+// regression net for the ship-day mapping.
+static_assert(dcqcn_state_to_bool(DcqcnState::Active).value() == true);
+static_assert(dcqcn_state_to_bool(DcqcnState::Inactive).value() == false);
+static_assert(!dcqcn_state_to_bool(DcqcnState::BackendUnavailable).has_value());
+static_assert(dcqcn_state_to_bool(DcqcnState::BackendUnavailable).error() ==
+              RoceError::DcqcnStatusUnavailable);
 
 static_assert(sizeof(PfcPriorityMask) == sizeof(std::uint8_t));
 static_assert(sizeof(RoceDscp) == sizeof(std::uint8_t));
