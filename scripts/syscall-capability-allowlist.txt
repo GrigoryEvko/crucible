@@ -85,5 +85,80 @@ src/topology/Ptp.cpp:326 — effects::IO via Ptp::close (close fd)
 # Init-row Cipher.warm_tier setup; mmap site IS the durability proof.
 include/crucible/sessions/SessionEventLog.h:173 — effects::IO via SessionEventLog::open (mmap PROT_READ|PROT_WRITE)
 include/crucible/sessions/SessionEventLog.h:174 — effects::IO via SessionEventLog::open (mmap MAP_SHARED)
+include/crucible/sessions/SessionEventLog.h:179 — effects::IO via SessionEventLog::close (close fd)
 include/crucible/sessions/SessionEventLog.h:183 — effects::IO via SessionEventLog::close (munmap)
 include/crucible/sessions/SessionEventLog.h:191 — effects::IO via SessionEventLog::truncate (munmap on resize)
+
+# ── handles/FileHandle.h — RAII file descriptor wrapper ───────────────
+# IO-row file I/O wrapped in OwnedFd RAII.  open/close/read/write/fstat
+# all reach kernel; FileHandle is the §XXI capability surface — every
+# caller routes here, so each line below is the capability-discharge
+# bottom.  Future production migrations replace raw FILE*/fd uses with
+# FileHandle (CLAUDE.md feedback_runtime_smoke discipline applies).
+include/crucible/handles/FileHandle.h:110 — effects::IO via FileHandle::~FileHandle (close on RAII drop)
+include/crucible/handles/FileHandle.h:120 — effects::IO via FileHandle::reset (close before reassign)
+include/crucible/handles/FileHandle.h:145 — effects::IO via FileHandle::release_close (explicit close)
+include/crucible/handles/FileHandle.h:169 — effects::IO via FileHandle::open_read (O_RDONLY)
+include/crucible/handles/FileHandle.h:178 — effects::IO via FileHandle::open_write (O_WRONLY|O_CREAT|O_TRUNC)
+include/crucible/handles/FileHandle.h:187 — effects::IO via FileHandle::open_append (O_WRONLY|O_CREAT|O_APPEND)
+include/crucible/handles/FileHandle.h:220 — effects::IO via FileHandle::read_all (read until EOF)
+include/crucible/handles/FileHandle.h:242 — effects::IO via FileHandle::write_all (write until done)
+include/crucible/handles/FileHandle.h:262 — effects::IO via FileHandle::stat_size (fstat)
+
+# ── Cipher.h — RAII fd lifecycle of warm-tier log ─────────────────────
+include/crucible/Cipher.h:208 — effects::IO via Cipher::load (read warm-tier log header)
+
+# ── Platform.h — process startup probes ───────────────────────────────
+# Init-row /proc reads at startup (CPU topology, isolated CPUs).
+include/crucible/Platform.h:276 — effects::Init via parse_self_status (open /proc/self/status)
+include/crucible/Platform.h:279 — effects::Init via parse_self_status (read /proc/self/status)
+include/crucible/Platform.h:280 — effects::Init via parse_self_status (close /proc/self/status)
+
+# ── canopy/Hlc.h — Hybrid Logical Clock wall-time read ────────────────
+# Bg-row clock_gettime(CLOCK_REALTIME); HLC is a Bg-drain observer.
+include/crucible/canopy/Hlc.h:241 — effects::Bg via Hlc::now (CLOCK_REALTIME read)
+
+# ── topology/Ptp.cpp — PTP hardware clock device ──────────────────────
+# IO-row file ops on /dev/ptp* PTP clock device.  Reachable only from
+# Init-row topology probing.
+src/topology/Ptp.cpp:54  — effects::IO via PtpClock::~PtpClock (RAII close /dev/ptp*)
+src/topology/Ptp.cpp:126 — effects::IO via PtpClock::close (explicit close)
+src/topology/Ptp.cpp:208 — effects::IO via PtpClock::open (open /dev/ptp*)
+src/topology/Ptp.cpp:242 — effects::IO via PtpClock::now (clock_gettime CLOCK_TAI or vendor clockid)
+
+# ── cntp/CongestionControl.cpp — /proc/sys/net/ipv4/tcp_available_cc ──
+# IO-row /proc reads to detect kernel-supported CC algorithms.  Init.
+src/cntp/CongestionControl.cpp:43  — effects::IO via CongestionControl::~CongestionControl (RAII close)
+src/cntp/CongestionControl.cpp:171 — effects::IO via CongestionControl::detect (open /proc CC list)
+src/cntp/CongestionControl.cpp:177 — effects::IO via CongestionControl::detect (read /proc CC list)
+
+# ── cntp/Pacing.cpp — RAII close of netlink fd ────────────────────────
+src/cntp/Pacing.cpp:44 — effects::IO via Pacing::~Pacing (RAII close netlink fd)
+
+# ── cntp/RoceConfig.cpp — RoCE sysfs probe ────────────────────────────
+# IO-row /sys/class/infiniband reads at Init time.
+src/cntp/RoceConfig.cpp:40 — effects::IO via RoceConfig::~RoceConfig (RAII close)
+src/cntp/RoceConfig.cpp:82 — effects::IO via RoceConfig::probe (open /sys/class/infiniband)
+src/cntp/RoceConfig.cpp:87 — effects::IO via RoceConfig::probe (read sysfs)
+
+# ── perf/PmuSample.cpp — Init-row perf_event_open fd lifecycle ────────
+src/perf/PmuSample.cpp:252 — effects::Init via PmuSample::open (close on partial-init rollback)
+src/perf/PmuSample.cpp:409 — effects::Init via PmuSample::reset (close perf fd)
+src/perf/PmuSample.cpp:424 — effects::Init via PmuSample::detach (close perf fd)
+
+# ── perf/ProcGauges.cpp — /proc gauge sampler ─────────────────────────
+# Bg-row /proc reads (cpuload, meminfo, vmstat, schedstat).  Bg drain
+# context polls these; not on hot path.
+src/perf/ProcGauges.cpp:39  — effects::Bg via ProcGauges::~ProcGauges (RAII close)
+src/perf/ProcGauges.cpp:53  — effects::Bg via ProcGauges::open (open /proc gauge)
+src/perf/ProcGauges.cpp:65  — effects::Bg via ProcGauges::read_one (pread /proc gauge)
+src/perf/ProcGauges.cpp:425 — effects::Bg via ProcGauges::poll (pread /proc gauge)
+src/perf/ProcGauges.cpp:547 — effects::Bg via ProcGauges::loadavg (pread /proc/loadavg)
+src/perf/ProcGauges.cpp:565 — effects::Bg via ProcGauges::sample (pread /proc gauge)
+
+# ── perf/detail/BpfLoader.h — BTF / object-file existence probes ──────
+include/crucible/perf/detail/BpfLoader.h:238 — effects::Init via BpfLoader::resolve_btf (access /sys/kernel/btf/vmlinux)
+include/crucible/perf/detail/BpfLoader.h:242 — effects::Init via BpfLoader::resolve_btf (access /sys/kernel/btf/vmlinux fallback)
+
+# ── warden/CpuTopology.h — /sys/devices/system/cpu/isolated probe ─────
+include/crucible/warden/CpuTopology.h:193 — effects::Init via CpuTopology::isolated_cpus (access /sys/.../isolated)

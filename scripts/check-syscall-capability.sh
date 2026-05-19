@@ -168,10 +168,17 @@ if ! command -v rg >/dev/null 2>&1; then
 fi
 
 # ── Pattern ──────────────────────────────────────────────────────────
-# Match `::<syscall>(` form (qualified Linux syscall / libc invocation).
-# The trailing `\(` anchor prevents false positives on members named
-# `::socket_path()` etc. — we want only direct invocations.
-candidate_pattern='::(socket|bind|listen|connect|accept|send|sendto|sendmsg|recv|recvfrom|recvmsg|shutdown|setsockopt|getsockopt|mmap|munmap|mlock|mlock2|munlock|madvise|sched_setaffinity|sched_getaffinity|sched_setattr|sched_getattr|sched_yield|prctl|syscall|epoll_create1|epoll_ctl|epoll_wait|eventfd|ioctl)\s*\('
+# Match the global-scope `::<syscall>(` form ONLY.  The negative
+# lookbehind `(?<![a-zA-Z_0-9])` excludes namespace-qualified calls
+# (`std::simd::select`, `crucible::foo::open`, etc.) — those are not
+# POSIX syscalls even when they share the name.
+#
+# Syscall list per fixy-A5-016 "EVERY syscall path" wording: covers
+# network family, scheduler, memory, file I/O, process, time, fd
+# manipulation, polling, sync, signal, BPF, random.  Each entry below
+# represents a kernel-state observation or mutation that requires
+# explicit effects::* capability admission.
+candidate_pattern='(?<![a-zA-Z_0-9])::(socket|bind|listen|connect|accept|send|sendto|sendmsg|recv|recvfrom|recvmsg|shutdown|setsockopt|getsockopt|mmap|munmap|mremap|mlock|mlock2|munlock|munlockall|mlockall|madvise|mincore|mprotect|brk|sbrk|sched_setaffinity|sched_getaffinity|sched_setattr|sched_getattr|sched_yield|prctl|syscall|epoll_create1|epoll_ctl|epoll_wait|eventfd|ioctl|open|openat|close|read|write|pread|pwrite|readv|writev|fsync|fdatasync|stat|fstat|lstat|unlink|rename|mkdir|rmdir|fork|vfork|clone|execve|waitpid|kill|sigaction|signal|sigprocmask|clock_gettime|clock_settime|nanosleep|gettimeofday|pipe|pipe2|dup|dup2|dup3|fcntl|flock|poll|select|pselect|futex|bpf|getrandom|getrlimit|setrlimit|chmod|chown|access|faccessat)\s*\('
 
 # ── Allowlist lookup ─────────────────────────────────────────────────
 allowlisted() {
