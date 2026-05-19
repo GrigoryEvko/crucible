@@ -152,6 +152,7 @@
 #include <crucible/fixy/Is.h>
 #include <crucible/fixy/Mach.h>
 #include <crucible/fixy/Perm.h>
+#include <crucible/fixy/Handle.h>
 #include <crucible/fixy/Pipe.h>
 #include <crucible/fixy/Safety.h>
 #include <crucible/fixy/Sess.h>
