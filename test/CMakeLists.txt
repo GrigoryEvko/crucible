@@ -1810,6 +1810,12 @@ crucible_neg_compile_fixy_test(neg_fixy_bridge_persisted_session_hot_ctx
     "PersistedSession|CipherTier|HotFgCtx|constraints not satisfied|associated constraints are not satisfied|IO|Block")
 crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_nothrow
     "CrashWatched_NoThrow_Rejected|crash-watched|NoThrow")
+# fixy-HS14-02 — mint_crash_watched_session HS14 floor (≥2 fixtures).
+# Sibling fixture exercises the survivor-registry gate via the MINT
+# factory call site (distinct mismatch class + distinct entry point
+# from _nothrow which goes through the class-template ctor).
+crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_unregistered_peer
+    "survivor_registry|require_crash_survivors_declared_|mint_permission_inherit survivors|inheritance_list_empty|static assertion failed")
 
 # ── FIXY-AUDIT-D6 — mint_vigil_mode_bridge HS14 floor.
 #
