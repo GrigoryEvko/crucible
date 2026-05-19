@@ -110,6 +110,24 @@ void test_static_contracts() {
                   mb::NetworkBackend<mb::NetworkBackendVendor::Nv,
                                      cog::CogKind::Gpu>>);
 
+    // fixy-A5-037: all 6 per-vendor _wip backends share the same
+    // `has_emit_path = false` stub state.  Each per-vendor header
+    // ships an identical sentinel `static_assert(!has_emit_path<V>)`;
+    // the asserts below mirror it at the test layer so a future PR
+    // that drops a per-vendor sentinel is still caught.
+    static_assert(!mb::network_backend_has_emit_path_v<
+                  mb::NetworkBackendVendor::Cpu>);
+    static_assert(!mb::network_backend_has_emit_path_v<
+                  mb::NetworkBackendVendor::Nv>);
+    static_assert(!mb::network_backend_has_emit_path_v<
+                  mb::NetworkBackendVendor::Am>);
+    static_assert(!mb::network_backend_has_emit_path_v<
+                  mb::NetworkBackendVendor::Intel>);
+    static_assert(!mb::network_backend_has_emit_path_v<
+                  mb::NetworkBackendVendor::Mellanox>);
+    static_assert(!mb::network_backend_has_emit_path_v<
+                  mb::NetworkBackendVendor::Broadcom>);
+
     assert(mb::network_backend_vendor_name(mb::NetworkBackendVendor::Mellanox)
            == std::string_view{"mellanox"});
     assert(mb::network_artifact_kind_name(mb::NetworkArtifactKind::DpuOffload)
