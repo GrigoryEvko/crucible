@@ -110,11 +110,20 @@ network_backend_error_name(NetworkBackendError error) noexcept {
 template <NetworkBackendVendor Vendor>
 struct NetworkBackendTraits;
 
+// fixy-A5-043: every vendor declares `has_emit_path` — false while the
+// per-vendor specialization is a WIP scaffold, true once a real RDMA /
+// AF_XDP / DPU / switch emitter ships. `plan_network_kernel` gates on
+// this trait so a stub never admits an artifact whose downstream
+// `emit_network_kernel` will return `BackendUnavailable` — pre-fix the
+// planner succeeded silently and the cache filled with looks-complete
+// artifacts that emit zero bytes.
+
 template <>
 struct NetworkBackendTraits<NetworkBackendVendor::Cpu> {
     using source = wip_source::CpuNetwork;
     static constexpr NetworkArtifactKind artifact_kind =
         NetworkArtifactKind::SocketOracle;
+    static constexpr bool has_emit_path = false;
 };
 
 template <>
@@ -122,6 +131,7 @@ struct NetworkBackendTraits<NetworkBackendVendor::Nv> {
     using source = wip_source::NvNetwork;
     static constexpr NetworkArtifactKind artifact_kind =
         NetworkArtifactKind::CudaAwareRdma;
+    static constexpr bool has_emit_path = false;
 };
 
 template <>
@@ -129,6 +139,7 @@ struct NetworkBackendTraits<NetworkBackendVendor::Am> {
     using source = wip_source::AmNetwork;
     static constexpr NetworkArtifactKind artifact_kind =
         NetworkArtifactKind::RocmAwareRdma;
+    static constexpr bool has_emit_path = false;
 };
 
 template <>
@@ -136,6 +147,7 @@ struct NetworkBackendTraits<NetworkBackendVendor::Intel> {
     using source = wip_source::IntelNetwork;
     static constexpr NetworkArtifactKind artifact_kind =
         NetworkArtifactKind::IntelIpuRdma;
+    static constexpr bool has_emit_path = false;
 };
 
 template <>
@@ -143,6 +155,7 @@ struct NetworkBackendTraits<NetworkBackendVendor::Mellanox> {
     using source = wip_source::MellanoxNetwork;
     static constexpr NetworkArtifactKind artifact_kind =
         NetworkArtifactKind::DpuOffload;
+    static constexpr bool has_emit_path = false;
 };
 
 template <>
@@ -150,7 +163,12 @@ struct NetworkBackendTraits<NetworkBackendVendor::Broadcom> {
     using source = wip_source::BroadcomNetwork;
     static constexpr NetworkArtifactKind artifact_kind =
         NetworkArtifactKind::SwitchPipeline;
+    static constexpr bool has_emit_path = false;
 };
+
+template <NetworkBackendVendor Vendor>
+inline constexpr bool network_backend_has_emit_path_v =
+    NetworkBackendTraits<Vendor>::has_emit_path;
 
 template <NetworkBackendVendor Vendor, cog::CogKind Kind>
 [[nodiscard]] consteval bool backend_accepts_cog_kind() noexcept {
@@ -261,7 +279,7 @@ plan_network_kernel(
         }
     }
 
-    return DeclaredNetworkKernel<Vendor>{NetworkKernelArtifact{
+    DeclaredNetworkKernel<Vendor> artifact{NetworkKernelArtifact{
         .vendor = Vendor,
         .artifact_kind = NetworkBackendTraits<Vendor>::artifact_kind,
         .op_kind = Node::kind,
@@ -281,6 +299,29 @@ plan_network_kernel(
             static_cast<std::uint32_t>(64U + 16U * participants),
         .participants = participants,
     }};
+
+    // fixy-A5-043 post-construct invariant: planner output may never
+    // carry a zero content_hash.  The pre-check on `raw_node.content_hash`
+    // currently makes this unreachable, but the post-check documents
+    // the contract for downstream pushbuffer/replay code that assumes
+    // `plan exists ⟹ artifact.content_hash != 0`.  A future refactor
+    // that drops the pre-check will trip the post-check instead of
+    // silently propagating a sentinel-zero artifact through the cache.
+    if (artifact.value().content_hash.raw() == 0) {
+        return std::unexpected(NetworkBackendError::BackendUnavailable);
+    }
+
+    // fixy-A5-043: backend without a real emitter cannot satisfy
+    // `plan exists ⟹ emit produces real bytes`.  Refuse at planner
+    // boundary so the cache is never poisoned with looks-complete
+    // artifacts that subsequently fail to emit.  Once a per-vendor
+    // RDMA / AF_XDP / DPU / switch emitter ships, flip
+    // `has_emit_path` to `true` for that specialization.
+    if constexpr (!network_backend_has_emit_path_v<Vendor>) {
+        return std::unexpected(NetworkBackendError::BackendUnavailable);
+    }
+
+    return artifact;
 }
 
 template <NetworkBackendVendor Vendor>

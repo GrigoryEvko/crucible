@@ -121,7 +121,12 @@ void test_static_contracts() {
     std::printf("  test_static_contracts: PASSED\n");
 }
 
-void test_cpu_collective_plan() {
+void test_cpu_stub_signals_unavailable() {
+    // fixy-A5-043 HS14: stub backend with `has_emit_path = false` must
+    // refuse to admit an artifact at planner boundary.  Pre-fix the
+    // planner returned a populated artifact whose downstream
+    // `emit_network_kernel` immediately failed — silent cache pollution
+    // with looks-complete-but-emits-zero-bytes entries.
     auto p = peers();
     auto constraints = net::query_constraints(
         recipe(crucible::ReductionDeterminism::ORDERED),
@@ -135,25 +140,21 @@ void test_cpu_collective_plan() {
             p, net::NetworkCollectiveAlgorithm::Ring)),
         constraints);
 
-    assert(planned.has_value());
-    assert(planned->value().vendor == mb::NetworkBackendVendor::Cpu);
-    assert(planned->value().artifact_kind
-           == mb::NetworkArtifactKind::SocketOracle);
-    assert(planned->value().op_kind == ir::Ir001OpKind::AllReduce);
-    assert(planned->value().participants == 4);
-    assert(planned->value().content_hash.raw() != 0);
-    assert(planned->value().target_caps_class_hash != 0);
-    assert(planned->value().cog_kernel_cache_key != 0);
+    assert(!planned.has_value());
+    assert(planned.error() == mb::NetworkBackendError::BackendUnavailable);
 
-    auto emitted =
-        mb::emit_network_kernel<mb::NetworkBackendVendor::Cpu>(*planned);
-    assert(!emitted.has_value());
-    assert(emitted.error() == mb::NetworkBackendError::BackendUnavailable);
+    // Symmetry check: `emit_network_kernel` also returns
+    // `BackendUnavailable` — the trait gates both layers consistently.
+    static_assert(!mb::network_backend_has_emit_path_v<
+                  mb::NetworkBackendVendor::Cpu>);
 
-    std::printf("  test_cpu_collective_plan: PASSED\n");
+    std::printf("  test_cpu_stub_signals_unavailable: PASSED\n");
 }
 
-void test_gpu_point_to_point_plan() {
+void test_gpu_stub_signals_unavailable() {
+    // fixy-A5-043 HS14: same contract for the NV stub on the
+    // point-to-point path.  Recipe/cog validation reaches the gate
+    // (no pre-gate rejection fires), then the trait rejects.
     auto constraints = net::query_constraints(
         recipe(crucible::ReductionDeterminism::ORDERED));
     auto gpu_identity = identity_for<cog::CogKind::Gpu>(
@@ -162,14 +163,47 @@ void test_gpu_point_to_point_plan() {
     auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Nv>(
         gpu, ir::admit_ir001_node(send_node()), constraints);
 
-    assert(planned.has_value());
-    assert(planned->value().vendor == mb::NetworkBackendVendor::Nv);
-    assert(planned->value().artifact_kind
-           == mb::NetworkArtifactKind::CudaAwareRdma);
-    assert(planned->value().op_kind == ir::Ir001OpKind::SendAsync);
-    assert(planned->value().participants == 1);
+    assert(!planned.has_value());
+    assert(planned.error() == mb::NetworkBackendError::BackendUnavailable);
 
-    std::printf("  test_gpu_point_to_point_plan: PASSED\n");
+    static_assert(!mb::network_backend_has_emit_path_v<
+                  mb::NetworkBackendVendor::Nv>);
+
+    std::printf("  test_gpu_stub_signals_unavailable: PASSED\n");
+}
+
+void test_empty_content_hash_rejected_with_distinct_error() {
+    // fixy-A5-043 HS14: input pre-check returns `EmptyContentHash`,
+    // NOT `BackendUnavailable`.  Diagnostic distinction matters —
+    // callers must be able to tell "user supplied a zero-hash node"
+    // (bug upstream) from "stub backend has no emitter" (waiting on
+    // M2-M9).  Both flow through `plan_network_kernel` but should
+    // surface different error codes.
+    auto p = peers();
+    auto constraints = net::query_constraints(
+        recipe(crucible::ReductionDeterminism::ORDERED),
+        net::NetworkReductionLaws{.associative = true, .commutative = true});
+    auto cpu_identity = identity_for<cog::CogKind::CpuSocket>(
+        cog::Uuid{0xCAFEULL, 4});
+    auto cpu = mimic_for<cog::CogKind::CpuSocket>(cpu_identity);
+
+    // admit_ir001_node forces content_hash to non-zero (`h == 0 ? 1 : h`
+    // in compute_ir001_content_hash), so we re-zero through Tagged's
+    // mutable accessor to drive the planner pre-check.  This is the
+    // sanctioned in-test boundary-bypass; production code never reaches
+    // for value_mut() on a DeclaredIr001Node.
+    auto raw_node = all_reduce(p, net::NetworkCollectiveAlgorithm::Ring);
+    auto declared = ir::admit_ir001_node(raw_node);
+    declared.value_mut().content_hash = crucible::ContentHash{0};
+
+    auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
+        cpu, declared, constraints);
+
+    assert(!planned.has_value());
+    assert(planned.error() == mb::NetworkBackendError::EmptyContentHash);
+
+    std::printf("  test_empty_content_hash_rejected_with_distinct_error: "
+                "PASSED\n");
 }
 
 void test_recipe_rejection() {
@@ -215,8 +249,9 @@ void test_unbound_mimic_rejected() {
 int main() {
     std::printf("test_mimic_network_backend:\n");
     test_static_contracts();
-    test_cpu_collective_plan();
-    test_gpu_point_to_point_plan();
+    test_cpu_stub_signals_unavailable();
+    test_gpu_stub_signals_unavailable();
+    test_empty_content_hash_rejected_with_distinct_error();
     test_recipe_rejection();
     test_unbound_mimic_rejected();
     std::printf("test_mimic_network_backend: all PASSED\n");
