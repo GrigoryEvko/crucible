@@ -8096,6 +8096,16 @@ crucible_neg_compile_session_test(neg_persisted_session_psh_hot_ctx
 crucible_neg_compile_session_test(neg_persisted_session_psh_no_open_view
     "PersistedSession_OpenViewRequired|use of deleted function")
 
+# fixy-M-17 — HS14 floor for mint_session_view<Tag>(handle).
+# Two fixtures × distinct mismatch classes: #1 wrong protocol position
+# (handle at Send, request AtRecv); #2 unrecognized position tag
+# (BogusPositionTag).  Both fire mint_session_view's
+# `requires HandleIsAt<Handle, Tag>` clause.
+crucible_neg_compile_session_test(neg_mint_session_view_wrong_position
+    "constraints not satisfied|HandleIsAt|handle_is_at|no matching function|mint_session_view")
+crucible_neg_compile_session_test(neg_mint_session_view_invalid_tag
+    "constraints not satisfied|HandleIsAt|handle_is_at|no matching function|mint_session_view")
+
 crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|permission_flow_closes")
 
