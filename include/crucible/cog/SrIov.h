@@ -307,27 +307,52 @@ vf_handle_at(DeclaredSrIovPlan plan, VfIndex index) noexcept {
     return make_vf_handle(plan.value().physical, index);
 }
 
+// FIXY-U-087: stub-vs-live deprecation discipline.  Every SrIovManager method
+// and every free-function counterpart is a STUB (see
+// `privileged_apply_implemented = false`).  Authorized callers
+// (`test/test_sriov.cpp`, `test/cog_neg/neg_sriov_raw_plan_enable.cpp`,
+// `src/cog/SrIov.cpp` free→member forwarders) suppress the warning with
+// `#pragma GCC diagnostic push/ignored "-Wdeprecated-declarations"/pop`.
 class SrIovManager : public safety::Pinned<SrIovManager> {
 public:
     SrIovManager() = default;
 
-    [[nodiscard]] std::expected<std::span<VfHandle>, SrIovError>
+    [[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF enable (sysfs "
+        "sriov_numvfs / netlink) not yet wired; returns "
+        "PrivilegedApplyDeferred or PrivilegedBackendUnavailable; see "
+        "fixy-A5-002 / FIXY-U-087")]]
+    std::expected<std::span<VfHandle>, SrIovError>
     enable(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept;
 
-    [[nodiscard]] std::expected<void, SrIovError>
+    [[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF configure (iproute2 / "
+        "netlink) not yet wired; returns PrivilegedApplyDeferred; see "
+        "fixy-A5-002 / FIXY-U-087")]]
+    std::expected<void, SrIovError>
     configure_vf(VfHandle handle, DeclaredVfConfig config) noexcept;
 
-    [[nodiscard]] std::expected<void, SrIovError>
+    [[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF disable (sysfs "
+        "sriov_numvfs=0) not yet wired; returns PrivilegedApplyDeferred or "
+        "PrivilegedBackendUnavailable; see fixy-A5-002 / FIXY-U-087")]]
+    std::expected<void, SrIovError>
     disable(DeclaredSrIovPlan plan) noexcept;
 };
 
-[[nodiscard]] std::expected<std::span<VfHandle>, SrIovError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF enable (sysfs sriov_numvfs "
+    "/ netlink) not yet wired; see fixy-A5-002 / FIXY-U-087")]]
+std::expected<std::span<VfHandle>, SrIovError>
 enable(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept;
-[[nodiscard]] std::expected<void, SrIovError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF configure (iproute2 / "
+    "netlink) not yet wired; see fixy-A5-002 / FIXY-U-087")]]
+std::expected<void, SrIovError>
 configure_vf(VfHandle handle, DeclaredVfConfig config) noexcept;
-[[nodiscard]] std::expected<void, SrIovError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF disable (sysfs "
+    "sriov_numvfs=0) not yet wired; see fixy-A5-002 / FIXY-U-087")]]
+std::expected<void, SrIovError>
 disable(DeclaredSrIovPlan plan) noexcept;
-[[nodiscard]] std::expected<DeclaredSrIovPlan, SrIovError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: SR-IOV VF query (sysfs / netlink) "
+    "not yet wired; returns SrIovError::QueryDeferred; see fixy-A5-002 / "
+    "FIXY-U-087")]]
+std::expected<DeclaredSrIovPlan, SrIovError>
 query_current(CogIdentity physical, cntp::NicInterfaceName interface) noexcept;
 
 static_assert(sizeof(VfCount) == sizeof(std::uint16_t));

@@ -210,7 +210,15 @@ std::expected<bool, RoceError>
 verify_dcqcn_active(NicInterfaceName iface) noexcept {
     // Pure mapping lives in the header so the back-compat contract
     // is static_assert-coverable at every include site.
+    // FIXY-U-087: substrate-internal stub call — query_dcqcn_state is
+    // deprecated-as-stub; the back-compat chain is part of the substrate
+    // boundary, so we suppress the warning at exactly this composition
+    // site.  External callers still observe the warning when they call
+    // either function from outside the substrate.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     return dcqcn_state_to_bool(query_dcqcn_state(iface));
+#pragma GCC diagnostic pop
 }
 
 }  // namespace crucible::cntp

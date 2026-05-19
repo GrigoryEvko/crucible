@@ -7,6 +7,13 @@
 #include <string_view>
 #include <type_traits>
 
+// FIXY-U-087: tcam::force_tcam_backend_boundary is
+// [[deprecated("CRUCIBLE_STUB:...")]] until a vendor install path
+// (rdma-core DV / DPDK rte_flow / tc-flower / switchd / netlink) is
+// attached.  Authorized fixture-level suppression.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace cog = crucible::cog;
 namespace eff = crucible::effects;
 namespace saf = crucible::safety;
@@ -347,3 +354,5 @@ int main() {
     std::printf("test_cntp_tcam: all PASSED\n");
     return 0;
 }
+
+#pragma GCC diagnostic pop

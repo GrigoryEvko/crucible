@@ -8,6 +8,13 @@
 #include <string_view>
 #include <type_traits>
 
+// FIXY-U-087: every sriov::enable / configure_vf / disable / query_current
+// (free + SrIovManager member) is a [[deprecated("CRUCIBLE_STUB:...")]]
+// entrypoint until the CAP_NET_ADMIN sysfs/iproute2/netlink backend ships.
+// Authorized fixture-level suppression.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace cog = crucible::cog;
 namespace eff = crucible::effects;
 namespace saf = crucible::safety;
@@ -286,3 +293,5 @@ int main() {
     std::printf("test_sriov: all PASSED\n");
     return 0;
 }
+
+#pragma GCC diagnostic pop

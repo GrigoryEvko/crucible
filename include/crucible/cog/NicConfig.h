@@ -404,15 +404,35 @@ audit_features_from_offloads(safety::Bits<NicOffload> offloads) noexcept {
     return out;
 }
 
-[[nodiscard]] std::expected<void, NicConfigError>
+// FIXY-U-087: stub-vs-live deprecation discipline.  The five privileged
+// surfaces below are STUBS (see `privileged_apply_implemented = false`).
+// Authorized callers (`test/test_nic_config.cpp`,
+// `test/cog_neg/neg_nic_config_raw_apply.cpp`) suppress the warning with
+// `#pragma GCC diagnostic push/ignored "-Wdeprecated-declarations"/pop`.
+[[nodiscard, deprecated("CRUCIBLE_STUB: privileged NIC config apply not yet "
+    "wired to CAP_NET_ADMIN ethtool/sysctl/tc-qdisc backend; returns "
+    "PrivilegedApplyDeferred or PrivilegedBackendUnavailable; see fixy-A5-002 "
+    "/ FIXY-U-087")]]
+std::expected<void, NicConfigError>
 apply_config(DeclaredNicConfig config) noexcept;
-[[nodiscard]] std::expected<void, NicConfigError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: privileged ethtool ring/queue/RSS "
+    "apply not yet wired; returns PrivilegedApplyDeferred; see fixy-A5-002 / "
+    "FIXY-U-087")]]
+std::expected<void, NicConfigError>
 apply_ethtool(DeclaredEthtoolConfig config) noexcept;
-[[nodiscard]] std::expected<void, NicConfigError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: privileged tc-qdisc apply not yet "
+    "wired; returns PrivilegedApplyDeferred; see fixy-A5-002 / FIXY-U-087")]]
+std::expected<void, NicConfigError>
 apply_qdisc(DeclaredQdiscConfig config) noexcept;
-[[nodiscard]] std::expected<void, NicConfigError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: privileged sysctl tcp_* / rmem_max / "
+    "wmem_max apply not yet wired; returns PrivilegedApplyDeferred; see "
+    "fixy-A5-002 / FIXY-U-087")]]
+std::expected<void, NicConfigError>
 apply_sysctl(DeclaredSysctlConfig config) noexcept;
-[[nodiscard]] std::expected<DeclaredNicConfig, NicConfigError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: privileged sysfs/ethtool query "
+    "backend not yet attached; returns NicConfigError::QueryDeferred; see "
+    "fixy-A5-002 / FIXY-U-087")]]
+std::expected<DeclaredNicConfig, NicConfigError>
 query_current(CogIdentity identity, cntp::NicInterfaceName interface) noexcept;
 
 static_assert(sizeof(NicRingSize) == sizeof(std::uint16_t));

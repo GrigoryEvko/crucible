@@ -449,19 +449,40 @@ admit_mtls_peer_from_handshake(DeclaredMtlsConfig const& config,
                                MtlsCertificateFingerprint peer_fingerprint,
                                MtlsCipherSuite chosen_cipher) noexcept;
 
-[[nodiscard]] std::expected<MtlsConnection, MtlsError>
+// FIXY-U-087: stub-vs-live deprecation discipline.  The four data-plane
+// entrypoints below are STUBS (see `data_plane_implemented = false` above).
+// Every call site emits a `-Wdeprecated-declarations` warning so the substrate
+// surface is grep-discoverable at compile time, not only at runtime sentinel
+// (`MtlsError::BackendUnavailable` / `KtlsOffloadDeferred`).  Authorized test
+// sites (`test/test_cntp_mtls_transport.cpp`, `test/test_cntp_ktls_offload.cpp`)
+// suppress the warning with `#pragma GCC diagnostic push/ignored
+// "-Wdeprecated-declarations"/pop`.  When `data_plane_implemented` flips to
+// true the attribute is removed in lockstep with the pragma teardown.
+[[nodiscard, deprecated("CRUCIBLE_STUB: TLS 1.3 handshake not yet implemented; "
+    "returns MtlsError::BackendUnavailable until BoringSSL/kTLS backend ships; "
+    "see fixy-A5-001 / FIXY-U-087")]]
+std::expected<MtlsConnection, MtlsError>
 connect_mtls(SocketFd socket,
              DeclaredMtlsConfig const& config,
              MtlsDnsName peer_dns,
              MtlsCertificateFingerprint peer_fingerprint) noexcept;
 
-[[nodiscard]] std::expected<std::size_t, MtlsError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: mTLS record-layer send not yet "
+    "implemented; returns MtlsError::BackendUnavailable; see fixy-A5-001 / "
+    "FIXY-U-087")]]
+std::expected<std::size_t, MtlsError>
 mtls_send(MtlsConnection& connection, std::span<const std::byte> bytes) noexcept;
 
-[[nodiscard]] std::expected<std::size_t, MtlsError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: mTLS record-layer recv not yet "
+    "implemented; returns MtlsError::BackendUnavailable; see fixy-A5-001 / "
+    "FIXY-U-087")]]
+std::expected<std::size_t, MtlsError>
 mtls_recv(MtlsConnection& connection, std::span<std::byte> bytes) noexcept;
 
-[[nodiscard]] std::expected<void, MtlsError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: kTLS TLS_TX/TLS_RX socket-option "
+    "install not yet implemented; returns MtlsError::KtlsOffloadDeferred; "
+    "see fixy-A5-001 / FIXY-U-087")]]
+std::expected<void, MtlsError>
 enable_ktls_offload(MtlsConnection& connection, NicInterfaceName iface) noexcept;
 
 static_assert(sizeof(MtlsCertificate) == sizeof(MtlsCertificateBytes));

@@ -8,6 +8,15 @@
 #include <string_view>
 #include <type_traits>
 
+// FIXY-U-087: this fixture deliberately exercises connect_mtls /
+// mtls_send / mtls_recv / enable_ktls_offload — every one is a
+// [[deprecated("CRUCIBLE_STUB:...")]] entrypoint until the live
+// BoringSSL/kTLS backend ships.  Suppress the warning at this fixture
+// so the build stays clean; the test bodies pin the sentinel return
+// codes that prove the stub still IS a stub.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace cntp = crucible::cntp;
 namespace saf = crucible::safety;
 
@@ -322,3 +331,5 @@ int main() {
     std::printf("test_cntp_mtls_transport: all PASSED\n");
     return 0;
 }
+
+#pragma GCC diagnostic pop

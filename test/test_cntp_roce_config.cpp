@@ -5,6 +5,13 @@
 #include <string_view>
 #include <type_traits>
 
+// FIXY-U-087: apply_roce_config / query_dcqcn_state / verify_dcqcn_active
+// are [[deprecated("CRUCIBLE_STUB:...")]] entrypoints until the vendor
+// policy installer (mlxconfig / bnxt_re) ships.  Authorized fixture-level
+// suppression.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace cntp = crucible::cntp;
 namespace saf = crucible::safety;
 
@@ -235,3 +242,5 @@ int main() {
     std::printf("test_cntp_roce_config: all PASSED\n");
     return 0;
 }
+
+#pragma GCC diagnostic pop

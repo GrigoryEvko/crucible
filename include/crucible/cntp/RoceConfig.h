@@ -161,7 +161,18 @@ validate_roce_config(DeclaredRoceConfig config) noexcept {
     return {};
 }
 
-[[nodiscard]] std::expected<void, RoceError>
+// FIXY-U-087: stub-vs-live deprecation discipline.  `apply_roce_config` is
+// a STUB (see `privileged_apply_implemented = false`).
+// `parse_pfc_pause_counters` and `query_pfc_pause_counters` are LIVE — they
+// parse / read /proc-counter text and ship today.  Authorized stub callers
+// (`test/test_cntp_roce_config.cpp`, `test/safety_neg/neg_roce_raw_config_apply.cpp`)
+// suppress the warning with `#pragma GCC diagnostic push/ignored
+// "-Wdeprecated-declarations"/pop`.
+[[nodiscard, deprecated("CRUCIBLE_STUB: privileged sysfs/vendor-tool RoCEv2 "
+    "policy install (Mellanox mlxconfig / Broadcom bnxt_re) not yet attached; "
+    "returns PrivilegedApplyDeferred or VendorBackendUnavailable; see "
+    "fixy-A5-002 / FIXY-U-087")]]
+std::expected<void, RoceError>
 apply_roce_config(DeclaredRoceConfig config) noexcept;
 
 [[nodiscard]] std::expected<PfcPauseStats, RoceError>
@@ -190,8 +201,13 @@ enum class DcqcnState : std::uint8_t {
 // vendor-specific probe succeeded for this interface — callers
 // should treat it as "unknown" rather than "off".  No allocation,
 // no errno propagation; vendor sysfs / ethtool probes land here as
-// they ship per-vendor.
-[[nodiscard]] DcqcnState
+// they ship per-vendor.  FIXY-U-087: STUB until a vendor probe ships
+// (today the body returns `DcqcnState::BackendUnavailable` for every
+// interface — the explicit-unknown sentinel of fixy-A5-042).
+[[nodiscard, deprecated("CRUCIBLE_STUB: DCQCN state probe (vendor sysfs / "
+    "ethtool) not yet wired; returns DcqcnState::BackendUnavailable; see "
+    "fixy-A5-002 / fixy-A5-042 / FIXY-U-087")]]
+DcqcnState
 query_dcqcn_state(NicInterfaceName iface) noexcept;
 
 // Pure mapping from queried state to the legacy `bool, RoceError`
@@ -215,7 +231,14 @@ dcqcn_state_to_bool(DcqcnState state) noexcept {
 // `unexpected(DcqcnStatusUnavailable)` for the no-backend case so
 // existing call sites keep their error path; new code should
 // prefer `query_dcqcn_state` and branch on `DcqcnState` directly.
-[[nodiscard]] std::expected<bool, RoceError>
+// FIXY-U-087: STUB by composition — chains on `query_dcqcn_state` (above),
+// so the only attainable return today is
+// `unexpected(DcqcnStatusUnavailable)`.
+[[nodiscard, deprecated("CRUCIBLE_STUB: DCQCN active-state verification not "
+    "yet wired (transitively, via query_dcqcn_state); returns "
+    "RoceError::DcqcnStatusUnavailable; see fixy-A5-002 / fixy-A5-042 / "
+    "FIXY-U-087")]]
+std::expected<bool, RoceError>
 verify_dcqcn_active(NicInterfaceName iface) noexcept;
 
 // fixy-A5-042 follow-up: prove the back-compat mapping covers all

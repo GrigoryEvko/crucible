@@ -8,6 +8,12 @@
 #include <string_view>
 #include <type_traits>
 
+// FIXY-U-087: KtlsOffload tests transitively call cntp::enable_ktls_offload,
+// which is [[deprecated("CRUCIBLE_STUB:...")]] until the live kTLS install
+// path ships.  Authorized suppression.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace cntp = crucible::cntp::_wip;
 namespace eff = crucible::effects;
 namespace saf = crucible::safety;
@@ -171,3 +177,5 @@ int main() {
     std::printf("test_cntp_ktls_offload: all PASSED\n");
     return 0;
 }
+
+#pragma GCC diagnostic pop

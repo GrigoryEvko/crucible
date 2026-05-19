@@ -404,7 +404,22 @@ public:
     }
 };
 
-[[nodiscard]] std::expected<void, TcamError>
+// FIXY-U-087: stub-vs-live deprecation discipline.
+// `force_tcam_backend_boundary` is a STUB (see
+// `vendor_backend_attached = false`).  When `backend_ready=false` on the
+// per-table admin claim, it returns `VendorBackendUnavailable`.  When
+// `backend_ready=true` the function returns success — but until a real
+// vendor backend ships (rdma-core DV / DPDK rte_flow / tc-flower / switchd
+// / netlink), that "success" is substrate-bookkeeping, not device-level
+// rule installation.  Authorized callers
+// (`test/test_cntp_tcam.cpp::test_apply_paths_are_stubbed`) suppress the
+// warning with `#pragma GCC diagnostic push/ignored
+// "-Wdeprecated-declarations"/pop`.
+[[nodiscard, deprecated("CRUCIBLE_STUB: TCAM flow-rule install (rdma-core DV "
+    "/ DPDK rte_flow / tc-flower / switchd / netlink) not yet attached; "
+    "success path is substrate bookkeeping, not device programming; see "
+    "fixy-A5-002 / fixy-A5-025 / FIXY-U-087")]]
+std::expected<void, TcamError>
 force_tcam_backend_boundary(DeclaredTcamTable table,
                             DeclaredTcamFlowRule rule) noexcept;
 

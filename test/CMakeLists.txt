@@ -508,6 +508,22 @@ add_test(NAME no_reinterpret_cast
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh)
 set_tests_properties(no_reinterpret_cast no_reinterpret_cast_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-105")
+# FIXY-U-087 stub-vs-live deprecation discipline (fixy-A5-001 / A5-002 / A5-025
+# / A5-042).  scripts/check-stub-discipline.sh pairs every honesty marker
+# (`inline constexpr bool *_implemented = false` / `*_attached = false`) with a
+# matching `[[deprecated("CRUCIBLE_STUB:")]]` attribute in the SAME header.
+# Without the pair, a stub surface looks live and only fails at runtime
+# (BackendUnavailable / Deferred sentinels); WITH the pair, every production
+# call site emits a -Wdeprecated-declarations warning at compile time.
+# Self-test plants an honesty-marker-without-deprecation header and verifies
+# the scan catches it.
+add_test(NAME stub_discipline_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-stub-discipline.sh
+          --self-test)
+add_test(NAME stub_discipline
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-stub-discipline.sh)
+set_tests_properties(stub_discipline stub_discipline_self_test PROPERTIES
+    LABELS "ci_guard;fixy-U-087")
 # FIXY-U-086 cross-thread atomic sibling-assert discipline (CLAUDE.md §IX
 # + fixy-A5-029).  scripts/check-lock-free-asserts.sh flags any
 # `std::atomic<T>` declaration in canopy/cntp/topology/warden that lacks
@@ -566,6 +582,7 @@ crucible_test(test_cntp_sharp)
 crucible_test(test_cntp_doca)
 crucible_test(test_cntp_p4)
 crucible_test(test_cntp_tcam)
+crucible_test(test_stub_discipline)
 crucible_test(test_quarantine)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)

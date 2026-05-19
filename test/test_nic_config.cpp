@@ -5,6 +5,14 @@
 #include <string_view>
 #include <type_traits>
 
+// FIXY-U-087: this fixture deliberately exercises nic::apply_config /
+// apply_ethtool / apply_qdisc / apply_sysctl / query_current — every one
+// is a [[deprecated("CRUCIBLE_STUB:...")]] entrypoint until the
+// CAP_NET_ADMIN ethtool/sysctl/tc-qdisc backend ships.  Authorized
+// suppression at the fixture boundary.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace cog = crucible::cog;
 namespace nic = crucible::cog::nic;
 namespace cntp = crucible::cntp;
@@ -297,3 +305,5 @@ int main() {
     std::printf("test_nic_config: all PASSED\n");
     return 0;
 }
+
+#pragma GCC diagnostic pop
