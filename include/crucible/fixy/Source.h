@@ -137,6 +137,41 @@ namespace hash_family = ::crucible::hash_family;
 // the source axis); it lives in `crucible::safety::source` and is
 // therefore already reachable via the `fixy::tags::source` namespace
 // alias above as `fixy::tags::source::FederatedPeer<Org>`.
+//
+// ── Disambiguation (fixy-A4-013) ──────────────────────────────────
+//
+// TWO distinct types named `FederatedPeer<Org>` are reachable through
+// the fixy umbrella.  They carry the SAME identifier name but live on
+// ORTHOGONAL axes (Bell-LaPadula 1973 information-flow vs CSL frame
+// rule), so the collision is structural — not a typo, not a re-export
+// bug:
+//
+//   fixy::tags::source::FederatedPeer<Org>
+//     ≡ ::crucible::safety::source::FederatedPeer<Org>
+//     Axis: PROVENANCE (the "who said this value")
+//     Used in: Tagged<T, source::FederatedPeer<Org>> on cross-org
+//              Cipher payloads.  Compile-time only; never appears in
+//              a Permission carrier.
+//
+//   fixy::source::federation::FederatedPeer<Org>
+//     ≡ ::crucible::permissions::tag::FederatedPeer<Org>
+//     Axis: PERMISSION (the "who is allowed to act on this value")
+//     Used in: Permission<tag::FederatedPeer<Org>> → carrier
+//              FederatedPeerPermission<Org>.  Runtime move-only token
+//              under the CSL linearity discipline.
+//
+// A caller TU that does BOTH `using namespace fixy::tags::source;` and
+// `using namespace fixy::source::federation;` will see two
+// declarations of `FederatedPeer<Org>` in the same lookup scope; bare
+// `FederatedPeer<MyOrg> x;` is ambiguous and the compiler rejects.
+// This is correct behavior — the user must qualify
+// (`safety::source::FederatedPeer<MyOrg>` vs
+// `permissions::tag::FederatedPeer<MyOrg>`) so the AXIS choice is
+// visible at the use site.  The disambiguation static_assert in
+// `fixy::tags::self_test` (search "fixy-A4-013") pins the
+// "two-distinct-types" fact at compile time; if a future refactor
+// makes the two types alias to the same substrate (e.g. by promoting
+// one axis to the other), the build breaks here.
 
 namespace crucible::fixy::source::federation {
 
@@ -225,5 +260,46 @@ static_assert(std::is_same_v<secret_policy::AuditedLogging,
 static_assert(std::is_same_v<hash_family::FamilyA,
                              ::crucible::hash_family::FamilyA>,
     "fixy::tags::hash_family::FamilyA must alias hash_family::FamilyA");
+
+// ── fixy-A4-013: provenance / permission FederatedPeer disambiguation
+//
+// Two distinct substrate types share the identifier `FederatedPeer<Org>`,
+// reachable through the umbrella on different namespace paths.  Pin
+// the distinction at compile time so a future refactor that would
+// silently unify them (e.g. making the provenance tag inherit from
+// the permission tag) breaks the build here, BEFORE it propagates
+// into Tagged<>/Permission<> call sites where the diagnostic would
+// be far less localized.
+//
+// Witness with a phantom Org parameter — federation_org_id<Org> is
+// the only structural requirement and ints satisfy it as well as a
+// concrete Org tag struct.
+namespace a4_013_disambiguation {
+struct ProbeOrg {};
+}  // namespace a4_013_disambiguation
+
+static_assert(!std::is_same_v<
+        ::crucible::fixy::tags::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
+        ::crucible::fixy::source::federation::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
+    "fixy-A4-013: fixy::tags::source::FederatedPeer (provenance axis) and "
+    "fixy::source::federation::FederatedPeer (permission axis) must remain "
+    "distinct substrate types.  Unification would collapse two orthogonal "
+    "axes (Bell-LaPadula provenance vs CSL frame-rule permission) into one "
+    "and break the umbrella's axis-discrimination contract.");
+
+// Symmetric positive assertions — pin each fixy path to its substrate
+// origin so a rename on either substrate side reddens HERE rather
+// than 40 call sites downstream.
+static_assert(std::is_same_v<
+        ::crucible::fixy::tags::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
+        ::crucible::safety::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
+    "fixy-A4-013: fixy::tags::source::FederatedPeer must alias "
+    "safety::source::FederatedPeer (provenance axis).");
+
+static_assert(std::is_same_v<
+        ::crucible::fixy::source::federation::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
+        ::crucible::permissions::tag::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
+    "fixy-A4-013: fixy::source::federation::FederatedPeer must alias "
+    "permissions::tag::FederatedPeer (permission axis).");
 
 }  // namespace crucible::fixy::tags::self_test
