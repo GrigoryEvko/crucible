@@ -1898,6 +1898,21 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_mint_coord_non_ctx
 crucible_neg_compile_fixy_test(neg_fixy_sess_mint_coord_no_row_fg
     "CtxFitsFederation|EffectRowMismatch|constraints not satisfied|row_subset|federation_required_row|mint_coord")
 
+# fixy-HS14-06 super-set — third mismatch class per mint (wrong
+# admittance template-class binding).  IsExecCtx + row-subset both
+# satisfied via TestRunnerCtx (Row<Test, Alloc, IO, Block> ⊃
+# federation_required_row).  Failure is the third parameter:
+# `SharedPermission<FederatedPeer<Org>>` cannot bind to `int`.
+# Pushes HS14-06 from "floor" (2 per mint) to "100%+" (3 per
+# mint), witnessing per-role mint signature preservation through
+# the using-decl across ALL THREE parameter slots independently.
+crucible_neg_compile_fixy_test(neg_fixy_sess_mint_sender_wrong_admittance
+    "no matching function|cannot convert|SharedPermission|FederatedPeer|mint_sender")
+crucible_neg_compile_fixy_test(neg_fixy_sess_mint_receiver_wrong_admittance
+    "no matching function|cannot convert|SharedPermission|FederatedPeer|mint_receiver")
+crucible_neg_compile_fixy_test(neg_fixy_sess_mint_coord_wrong_admittance
+    "no matching function|cannot convert|SharedPermission|FederatedPeer|mint_coord")
+
 # ── FIXY-AUDIT-D6 — mint_vigil_mode_bridge HS14 floor.
 #
 # `mint_vigil_mode_bridge(const Vigil&)` is a parameter-typed token
