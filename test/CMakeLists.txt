@@ -1868,6 +1868,36 @@ crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_endpoint_non_endpoin
 crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_endpoint_wrong_flag_type
     "no matching function|mint_crash_watched_endpoint|cannot bind|could not convert|OneShotFlag")
 
+# fixy-HS14-06 — per-role federation mints HS14 floor (≥2 fixtures
+# each across mint_sender / mint_receiver / mint_coord, all via the
+# `fixy::sess::` re-export — `using federation::mint_{sender,
+# receiver,coord};` at Sess.h:285-287).
+#
+# Each mint has the same 3-arg shape (ctx, endpoint, admittance) and
+# the same requires-clause `CtxFitsFederation<Ctx>`.  The HS14 floor
+# requires per-mint coverage of TWO distinct mismatch classes:
+# (#1) non_ctx     — `int` fails the IsExecCtx prerequisite that
+#                    CtxFitsFederation transitively requires;
+# (#2) no_row_fg   — `HotFgCtx` IS IsExecCtx but its `Row<>` lacks
+#                    the IO+Block atoms federation demands, so the
+#                    row-subset check fires.
+#
+# 6 fixtures total — distinct from the 4-arg mint_federation_channel
+# fixtures (HS14-05) which exercise the combined sender+receiver
+# forwarder.
+crucible_neg_compile_fixy_test(neg_fixy_sess_mint_sender_non_ctx
+    "CtxFitsFederation|IsExecCtx|constraints not satisfied|mint_sender")
+crucible_neg_compile_fixy_test(neg_fixy_sess_mint_sender_no_row_fg
+    "CtxFitsFederation|EffectRowMismatch|constraints not satisfied|row_subset|federation_required_row|mint_sender")
+crucible_neg_compile_fixy_test(neg_fixy_sess_mint_receiver_non_ctx
+    "CtxFitsFederation|IsExecCtx|constraints not satisfied|mint_receiver")
+crucible_neg_compile_fixy_test(neg_fixy_sess_mint_receiver_no_row_fg
+    "CtxFitsFederation|EffectRowMismatch|constraints not satisfied|row_subset|federation_required_row|mint_receiver")
+crucible_neg_compile_fixy_test(neg_fixy_sess_mint_coord_non_ctx
+    "CtxFitsFederation|IsExecCtx|constraints not satisfied|mint_coord")
+crucible_neg_compile_fixy_test(neg_fixy_sess_mint_coord_no_row_fg
+    "CtxFitsFederation|EffectRowMismatch|constraints not satisfied|row_subset|federation_required_row|mint_coord")
+
 # ── FIXY-AUDIT-D6 — mint_vigil_mode_bridge HS14 floor.
 #
 # `mint_vigil_mode_bridge(const Vigil&)` is a parameter-typed token
