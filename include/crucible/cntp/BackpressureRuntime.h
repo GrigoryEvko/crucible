@@ -9,6 +9,7 @@
 // socket cannot be published into two slots concurrently.
 
 #include <crucible/cntp/Backpressure.h>
+#include <crucible/concurrent/SpinLock.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
@@ -86,24 +87,15 @@ class CreditFlowControl : public safety::Pinned<CreditFlowControl<MaxFlows>> {
                   "std::atomic<uint64_t> must be lock-free on this target — "
                   "fixy-A5-029");
 
-    class SpinGuard {
-        std::atomic_flag& flag_;
-
-    public:
-        explicit SpinGuard(std::atomic_flag& flag) noexcept : flag_{flag} {
-            while (flag_.test_and_set(std::memory_order_acquire)) {}
-        }
-
-        SpinGuard(SpinGuard const&) = delete;
-        SpinGuard& operator=(SpinGuard const&) = delete;
-
-        ~SpinGuard() noexcept {
-            flag_.clear(std::memory_order_release);
-        }
-    };
-
     std::array<FlowSlot, MaxFlows> flows_{};
-    std::atomic_flag start_gate_ = ATOMIC_FLAG_INIT;
+    // fixy-A5-022 + FIXY-U-085 consolidation: prior to the migration this
+    // field was a raw `std::atomic_flag start_gate_` with NO alignas(64)
+    // discipline, and start_flow used a private nested SpinGuard that lacked
+    // the _mm_pause hint.  Adopting the canonical primitive inherits both
+    // cache-line isolation (alignas(64) on SpinLock) and the pause-hinted
+    // spin loop, closing the false-sharing trap and the missing pause in one
+    // change.  See concurrent/SpinLock.h header rationale.
+    concurrent::SpinLock start_gate_{};
 
     [[nodiscard]] static constexpr std::uint32_t
     fd_key(cntp::SocketFd fd) noexcept {
@@ -129,7 +121,7 @@ public:
     start_flow(Ctx const&,
                cntp::SocketFd fd,
                cntp::PositiveBackpressureBytes initial_credit) noexcept {
-        SpinGuard guard{start_gate_};
+        concurrent::SpinGuard guard{start_gate_};
 
         if (FlowSlot* existing = find(fd); existing != nullptr) {
             existing->credit_bytes.store(initial_credit.value(),
