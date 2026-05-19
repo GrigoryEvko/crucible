@@ -966,6 +966,33 @@ static_assert( cheat51_admits,
 // shape to Round-6 (derived-from-W → !IsW locked rejection; trait-spec
 // injection → IsW admitted as documented architectural limit).
 //
+// ── §XVI canonical wrappers WITHOUT per-wrapper trait-injection ─────
+//
+// Five §XVI canonical wrappers do NOT fit the Round-6/7 pattern
+// because they have no dedicated IsX.h header / `is_<w>_impl` partial
+// specialization to inject into:
+//
+//   - SealedRefined<Pred, T>     — detected via `is_refined_impl`
+//                                  with `sealed = true`; shares
+//                                  attack surface with Refined
+//                                  (already covered by Cheats 26/27).
+//   - Monotonic<T, Cmp>          — no dedicated trait; substrate
+//                                  detection via GradedWrapper concept
+//                                  (covered by Cheats 1-12 generically).
+//   - AppendOnly<T, Storage>     — same as Monotonic.
+//   - TimeOrdered<T, N, Tag>     — same as Monotonic.
+//   - SharedPermission<Tag>      — façade detected via
+//                                  `is_permission_impl` shared variant;
+//                                  attack surface shared with Permission.
+//
+// These five wrappers are NOT abandoned — their attack surface is
+// covered by the generic GradedWrapper-substrate cheats (Round-1..5,
+// Cheats 1-12).  Adding per-wrapper Is traits for them would be a
+// substrate-side prerequisite (5 new IsX.h headers); when those land,
+// Round-8 mechanically extends Round-7's pattern.  Until then, the
+// 25 wrappers with IsX.h (17 Round-6 + 8 Round-7) span the full
+// per-wrapper trait-injection attack surface.
+//
 // Each pair is structurally distinct in its concept-gate path:
 //   - The derived-from cheat exercises the partial-spec EXACT-match
 //     refusal (subclass not matched).  Regression catch: weakening
