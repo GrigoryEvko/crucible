@@ -123,6 +123,7 @@
 #include <crucible/fixy/Bridge.h>
 #include <crucible/fixy/Cap.h>
 #include <crucible/fixy/Contract.h>
+#include <crucible/fixy/Decide.h>
 #include <crucible/fixy/Is.h>
 #include <crucible/fixy/Mach.h>
 #include <crucible/fixy/Perm.h>
