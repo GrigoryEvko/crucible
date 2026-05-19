@@ -113,9 +113,12 @@ using Graded = ::crucible::algebra::Graded<M, L, T>;
 
 using ::crucible::algebra::GradedWrapper;
 
-// IsGraded<W> — wrapper-level "wraps Graded<...>" probe; mirrors
-// the substrate predicate so fixy:: callers do not need to spell the
-// algebra:: namespace.
+// IsGraded<T> — STRICT-IDENTITY probe: true iff T is literally a
+// `Graded<M, L, V>` specialization (with cv-ref symmetry).  Distinct
+// from `GradedWrapper` above, which admits CLASSES wrapping Graded
+// (Linear<T>, Refined<P, T>, ...) — those are not Graded specializa-
+// tions themselves and `IsGraded` reports false for them.  Substrate
+// reference: algebra/Graded.h:1353-1387 (the FIXY-G*-AUDIT block).
 using ::crucible::algebra::IsGraded;
 
 // ── Lattice / Semiring concepts ────────────────────────────────────
@@ -224,5 +227,19 @@ static_assert(modality_kind_count
     "bump on enumerator addition) or reflection is reporting a different "
     "enum than the substrate exposes.  Investigate algebra/Modality.h:74 — "
     "it MUST remain `std::meta::enumerators_of(^^ModalityKind).size()`.");
+
+// fixy-M-01: IsGraded strict-identity witness.  The fixy doc-block
+// previously characterised IsGraded as a "wrapper-level" probe, which
+// is GradedWrapper's role.  IsGraded asks the orthogonal question:
+// "is T LITERALLY a Graded<M, L, V> specialization?" — see Graded.h
+// :1365-1366.  These two witnesses lock the strict-identity reading
+// down: a true Graded passes, a bare value type fails.
+static_assert(IsGraded<Graded<ModalityKind::Absolute,
+                              lattices::QttSemiring::At<lattices::QttGrade::One>,
+                              int>>,
+    "fixy::algebra::IsGraded must accept Graded<...> specializations.");
+static_assert(!IsGraded<int>,
+    "fixy::algebra::IsGraded must reject bare types — strict identity, "
+    "not structural / wrapper-level (the latter is GradedWrapper's role).");
 
 }  // namespace crucible::fixy::algebra::self_test
