@@ -187,6 +187,7 @@ crucible_test(test_decide)
 crucible_test(test_fixy_engaged)
 crucible_test(test_fixy_cheat_probe)
 crucible_test(test_fixy_cheat_probe_theory)
+crucible_test(test_fixy_l11_short_circuit)  # fixy-L-11 OR-fold short-circuit + chain-order coherence positive proofs
 crucible_test(test_fixy_fn)
 crucible_test(test_fixy_profile)
 crucible_test(test_fixy_rule_helpers)
