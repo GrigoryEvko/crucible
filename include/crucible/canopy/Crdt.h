@@ -15,12 +15,13 @@
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
 
+#include <bit>
 #include <compare>
 #include <concepts>
 #include <cstdint>
-#include <functional>
 #include <limits>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 namespace crucible::canopy {
@@ -65,13 +66,71 @@ sat_add(std::uint64_t a, std::uint64_t b) noexcept {
     return a > max - b ? max : a + b;
 }
 
+// fixy-A5-003: MurmurHash3 64-bit finalizer.  std::hash<T> is
+// implementation-defined — its bit-pattern varies across libstdc++ ABI
+// revisions, libc++/MSVC vendors, and ASLR-seeded implementations.  A
+// BoundedHashSetState serialized on Relay R1 (libstdc++ N) and re-
+// inspected on Relay R2 (libstdc++ N+1) would place each value at a
+// slot determined by R1's std::hash; R2's contains() / merge() would
+// probe slots determined by R2's std::hash and answer wrong — silently
+// corrupting CRDT cross-process convergence.
+//
+// fmix64 is a closed-form integer mix with documented avalanche
+// (Appleby 2011) — bit-identical on every platform, every compiler,
+// every libstdc++ version.  Open-addressing positions computed via
+// fmix64 → stable_hash<T> are part of the CRDT wire format from now
+// on; changing the constants breaks every persisted state.
+[[nodiscard]] constexpr std::uint64_t crdt_fmix64(std::uint64_t k) noexcept {
+    k ^= k >> 33;
+    k *= 0xff51afd7ed558ccdULL;
+    k ^= k >> 33;
+    k *= 0xc4ceb9fe1a85ec53ULL;
+    k ^= k >> 33;
+    return k;
+}
+
+// Platform-stable hash for HashableValue T.  Enum / integer / floating
+// / pointer are dispatched directly via fmix64.  Class types must
+// supply an explicit specialization (no such call site exists today;
+// adding one is the gate that forces the author to think about cross-
+// process stability for that T).
+template <typename T>
+[[nodiscard]] constexpr std::uint64_t stable_hash(T const& value) noexcept {
+    if constexpr (std::is_enum_v<T>) {
+        return crdt_fmix64(
+            static_cast<std::uint64_t>(std::to_underlying(value)));
+    } else if constexpr (std::is_integral_v<T>) {
+        return crdt_fmix64(static_cast<std::uint64_t>(value));
+    } else if constexpr (std::is_floating_point_v<T>) {
+        if constexpr (sizeof(T) == 4) {
+            return crdt_fmix64(static_cast<std::uint64_t>(
+                std::bit_cast<std::uint32_t>(value)));
+        } else {
+            static_assert(sizeof(T) == 8,
+                "stable_hash<T> floating-point dispatch requires "
+                "4- or 8-byte T (fixy-A5-003)");
+            return crdt_fmix64(std::bit_cast<std::uint64_t>(value));
+        }
+    } else if constexpr (std::is_pointer_v<T>) {
+        return crdt_fmix64(std::bit_cast<std::uintptr_t>(value));
+    } else {
+        static_assert(false,
+            "stable_hash<T> requires T to be enum, integer, floating-"
+            "point, or pointer.  Class types must supply an explicit "
+            "specialization that defines a cross-process-stable bit "
+            "pattern (fixy-A5-003).  std::hash is intentionally NOT "
+            "used because its output varies across libstdc++ versions "
+            "and would silently corrupt CRDT convergence.");
+    }
+}
+
 template <typename T>
 concept HashableValue =
     std::default_initializable<T> &&
     std::copyable<T> &&
     std::equality_comparable<T> &&
     requires(T const& v) {
-        { std::hash<T>{}(v) } -> std::convertible_to<std::size_t>;
+        { stable_hash<T>(v) } -> std::convertible_to<std::size_t>;
     };
 
 template <HashableValue T, std::size_t Capacity>
@@ -100,7 +159,8 @@ struct BoundedHashSetState {
     }
 
     [[nodiscard]] bool contains(T const& value) const {
-        const std::size_t start = std::hash<T>{}(value) % Capacity;
+        const std::size_t start =
+            static_cast<std::size_t>(stable_hash<T>(value)) % Capacity;
         for (std::size_t n = 0; n < Capacity; ++n) {
             const std::size_t idx = (start + n) % Capacity;
             if (!slots[idx].occupied) {
@@ -114,7 +174,8 @@ struct BoundedHashSetState {
     }
 
     [[nodiscard]] bool insert(T const& value) {
-        const std::size_t start = std::hash<T>{}(value) % Capacity;
+        const std::size_t start =
+            static_cast<std::size_t>(stable_hash<T>(value)) % Capacity;
         for (std::size_t n = 0; n < Capacity; ++n) {
             const std::size_t idx = (start + n) % Capacity;
             if (slots[idx].occupied && slots[idx].value == value) {

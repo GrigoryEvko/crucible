@@ -72,6 +72,71 @@ int main() {
     assert(!gset_static_overflow.contains(2));
     assert(!gset_static_overflow.contains(3));
 
+    // fixy-A5-003 regression: BoundedHashSetState's open-addressing
+    // position is computed via a Crucible-stable hash (fmix64), NOT
+    // std::hash<T>.  std::hash<int> on libstdc++ is identity, so under
+    // the old code value V landed at slot V%Capacity — a value
+    // shipped from a peer Relay (different libstdc++ ABI) would be
+    // stored at a different slot, breaking contains() on the receiver.
+    //
+    // Witness: with stable_hash<int>(N) = fmix64(N), the occupied slot
+    // for value N is fmix64(N)%Capacity, which differs from N%Capacity
+    // for almost every N.  Pin the prediction here so any future
+    // accidental regression to std::hash trips the test.
+    {
+        constexpr auto fmix64_of = [](std::uint64_t k) constexpr {
+            k ^= k >> 33;
+            k *= 0xff51afd7ed558ccdULL;
+            k ^= k >> 33;
+            k *= 0xc4ceb9fe1a85ec53ULL;
+            k ^= k >> 33;
+            return k;
+        };
+        constexpr std::size_t expected_slot_7 = fmix64_of(7) % 8;
+        static_assert(
+            expected_slot_7 != 7,
+            "fmix64(7) % 8 must differ from std::hash<int>(7) % 8 — "
+            "otherwise the fixy-A5-003 stable-hash regression test "
+            "tautologically passes regardless of the hash function in "
+            "use.  Choose a different witness value.");
+
+        GSet<int, 8> stable_probe;
+        assert(stable_probe.add(LocalWrite<int>{7}));
+        const auto stable_state = stable_probe.state();
+        assert(stable_probe.size().value() == 1);
+        assert(stable_state.slots[expected_slot_7].occupied);
+        assert(stable_state.slots[expected_slot_7].value == 7);
+        // Slot 7 (where std::hash<int>(7)%8 would have placed it) is
+        // untouched — proves we are NOT using std::hash.
+        assert(!stable_state.slots[7].occupied);
+
+        // Cross-instance: two independently-constructed GSets must
+        // produce byte-identical state for the same insertions — the
+        // open-addressing layout is purely a function of the values.
+        GSet<int, 8> stable_probe_b;
+        assert(stable_probe_b.add(LocalWrite<int>{7}));
+        assert(stable_probe.state() == stable_probe_b.state());
+        for (std::size_t i = 0; i < 8; ++i) {
+            assert(stable_state.slots[i].occupied ==
+                   stable_probe_b.state().slots[i].occupied);
+            if (stable_state.slots[i].occupied) {
+                assert(stable_state.slots[i].value ==
+                       stable_probe_b.state().slots[i].value);
+            }
+        }
+
+        // Gossip round-trip: receive a peer's state directly (no
+        // mediating insert()), then ask contains().  contains() must
+        // use the SAME stable hash the producer used, otherwise the
+        // probe walks the wrong slot and answers wrong.
+        GSet<int, 8> gossip_receiver;
+        assert(gossip_receiver.merge(
+            typename GSet<int, 8>::gossiped_state_type{stable_state}));
+        assert(gossip_receiver.contains(7));
+        assert(!gossip_receiver.contains(8));
+        assert(gossip_receiver.state() == stable_state);
+    }
+
     OrSet<int, std::uint64_t, 8> orset_a;
     OrSet<int, std::uint64_t, 8> orset_b;
     assert(orset_a.add(LocalWrite<OrSetAdd<int, std::uint64_t>>{
