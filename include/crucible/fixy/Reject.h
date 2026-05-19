@@ -1038,7 +1038,13 @@ concept IsAcceptedDirect =
     && IsAcceptedGrants<Grants...>
     && theory::NotInTheoryCorpus<Type, Grants...>;
 
-// ─── IsAcceptedDirect_v — variable-template form ───────────────────
+// ─── IsAcceptedDirect_v — variable-template form (public API) ──────
+//
+// fixy-L-08: public-API surface, paired with the `IsAcceptedDirect`
+// concept for ergonomic SFINAE / `if constexpr` use.  No in-tree
+// consumer; equivalence to the concept is witnessed below the
+// `IsAccepted_v` definition (the two variable templates share the
+// same closure rationale).
 
 template <typename Type, typename... Grants>
 inline constexpr bool IsAcceptedDirect_v = IsAcceptedDirect<Type, Grants...>;
@@ -1061,10 +1067,42 @@ template <typename Type, typename... Grants>
 concept IsAccepted =
     IsAcceptedDirect<Type, detail::accept::ImplicitTypeMarker, Grants...>;
 
-// ─── IsAccepted_v — variable-template form for static_assert sites ─
+// ─── IsAccepted_v — variable-template form (public API) ────────────
+//
+// Companion to the `IsAccepted` concept.  Variable-template shape so
+// callers can write `if constexpr (IsAccepted_v<T, G...>)` or
+// `static_assert(IsAccepted_v<T, G...>, "...")` without dragging the
+// concept-name spelling through `requires`-clauses.  fixy-L-08: no
+// in-tree consumer ships today; the variable-template is exported as
+// part of the public API surface for downstream metaprogramming
+// (every fixy concept already pairs with a `_v` variable form per the
+// Is.h convention — keep the surface complete here too).  The
+// equivalence witness below pins the variable-template ↔ concept
+// relationship so a refactor of the variable's definition cannot
+// silently diverge from the concept.
 
 template <typename Type, typename... Grants>
 inline constexpr bool IsAccepted_v = IsAccepted<Type, Grants...>;
+
+// ─── fixy-L-08: variable-template ↔ concept equivalence witnesses ──
+//
+// Both `IsAccepted_v` and `IsAcceptedDirect_v` are defined as
+// `inline constexpr bool name_v = ConceptName<...>;` so on every type
+// pack the variable agrees with the concept by construction.  Pin
+// that relationship structurally on a bare-int pack (everything
+// rejects) — a refactor that decouples the variable from its concept
+// (e.g. forgetting to update one shape after a rename) fires here at
+// the definition site, not at a distant umbrella consumer.
+
+static_assert(IsAccepted_v<int> == IsAccepted<int>,
+    "fixy-L-08: IsAccepted_v must equal IsAccepted on every pack — "
+    "the variable-template is the public-API mirror of the concept.");
+
+static_assert(IsAcceptedDirect_v<int> == IsAcceptedDirect<int>,
+    "fixy-L-08: IsAcceptedDirect_v must equal IsAcceptedDirect on every "
+    "pack — the variable-template is the public-API mirror of the "
+    "low-level concept (IsAcceptedDirect expects a complete pack; both "
+    "variable and concept correctly reject the bare-int probe here).");
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Failure inspection — for downstream diagnostic emission ────────
@@ -1090,9 +1128,13 @@ template <typename... Grants>
 inline constexpr std::optional<dim::DimensionAxis> first_missing_axis_v =
     detail::engagement::first_missing_axis<Grants...>();
 
-template <typename... Grants>
-inline constexpr bool every_axis_engaged_v =
-    detail::engagement::every_axis_engaged<Grants...>();
+// fixy-L-08: `every_axis_engaged_v<Grants...>` deleted — fully
+// subsumed by the `AllDimsEngaged<Grants...>` concept above (both
+// delegate to the same `detail::engagement::every_axis_engaged<>()`
+// consteval).  In C++26, concepts ARE booleans usable in
+// `if constexpr` / `static_assert` / variable-template contexts, so
+// the redundant `_v` variable shipped zero ergonomic value and zero
+// callers.  Use `AllDimsEngaged<Grants...>` directly.
 
 // ─── fixy-A4-026: Observability-is-alive structural witness ────────
 //
