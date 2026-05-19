@@ -5,10 +5,10 @@
 // resolves to a real substrate symbol.  Witnesses:
 //
 //   1. fixy::substr::spsc / swmr / chaselev / metalog / chainedge /
-//      mpmc / calendar_grid / sharded_calendar_grid / sharded_grid
-//      sub-namespaces compile under -Werror without an unknown-name
-//      error.  Each declared `using` directive surfaces a real name
-//      in its enclosing fixy::substr::<sub> namespace.
+//      mpmc / mpsc / calendar_grid / sharded_calendar_grid /
+//      sharded_grid sub-namespaces compile under -Werror without an
+//      unknown-name error.  Each declared `using` directive surfaces
+//      a real name in its enclosing fixy::substr::<sub> namespace.
 //   2. The substrate's namespace path is preserved verbatim — no
 //      second-source mint authority is introduced.
 //
@@ -36,6 +36,7 @@ void reach_chaselev()              { using namespace fsubstr::chaselev;         
 void reach_metalog()               { using namespace fsubstr::metalog;               (void)0; }
 void reach_chainedge()             { using namespace fsubstr::chainedge;             (void)0; }
 void reach_mpmc()                  { using namespace fsubstr::mpmc;                  (void)0; }
+void reach_mpsc()                  { using namespace fsubstr::mpsc;                  (void)0; }
 void reach_calendar_grid()         { using namespace fsubstr::calendar_grid;         (void)0; }
 void reach_sharded_calendar_grid() { using namespace fsubstr::sharded_calendar_grid; (void)0; }
 void reach_sharded_grid()          { using namespace fsubstr::sharded_grid;          (void)0; }
@@ -49,6 +50,7 @@ int main() {
     reach_metalog();
     reach_chainedge();
     reach_mpmc();
+    reach_mpsc();
     reach_calendar_grid();
     reach_sharded_calendar_grid();
     reach_sharded_grid();

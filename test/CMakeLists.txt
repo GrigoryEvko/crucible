@@ -2124,6 +2124,19 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_grid_consumer_session_non
 crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_grid_consumer_session_wrong_handle
     "no matching function|cannot convert|ConsumerHandle|mint_consumer_session")
 
+# fixy-M-20 — fixy::substr::mpsc:: namespace shipped (closes the
+# discipline-inconsistent gap where PermissionedMpscChannel had a
+# working SubstrateSessionBridge default_proto_for<> specialization
+# but no per-substrate sub-namespace mirroring spsc / swmr / mpmc).
+# HS14 floor: ≥2 distinct-mismatch fixtures.  Fixture #1 trips the
+# IsExecCtx prerequisite on `mint_mpsc_producer_session`'s ctx slot;
+# fixture #2 trips the ConsumerHandle reference binding on
+# `mint_mpsc_consumer_session`'s second slot AFTER IsExecCtx passes.
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_producer_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function|mint_mpsc_producer_session")
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_consumer_session_wrong_handle
+    "no matching function|cannot convert|cannot bind|ConsumerHandle|mint_mpsc_consumer_session")
+
 # fixy-A4-030 — substrate-vs-fixy disjointness discriminator witness.
 # Reject.h's main guard is the std::index_sequence fold that walks every
 # safety::diag::Catalog entry and asserts !is_fixy_diag_v<entry>; these

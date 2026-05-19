@@ -13,8 +13,12 @@
 //      ThiefProto / SignalerProto / WaiterProto).
 //   2. Per-namespace surface concepts (where the substrate ships one).
 //   3. Per-namespace mint factories (function-template name lookup).
-//   4. concurrent::PermissionedMpscChannel (MPSC raw substrate —
-//      no typed-session layer yet).
+//   4. mpsc::PermissionedMpscChannel + ProducerProto / ConsumerProto
+//      + MpscChannelSessionSurface + mint_mpsc_*_endpoint /
+//      mint_mpsc_*_session (promoted from `concurrent::` into
+//      `mpsc::` by fixy-M-20; substrate ships no sessions/Mpsc*.h
+//      typed-session header, so the mint shims live in Substr.h
+//      directly rather than re-exporting from a session-header).
 //   5. concurrent::PermissionedSnapshot (Snapshot raw substrate
 //      under SwmrSession's session layer).
 //
@@ -157,12 +161,16 @@ static_assert(std::is_same_v<
     csg::ConsumerProto<int>>);
 
 // ═════════════════════════════════════════════════════════════════════
-// ─── 10. Raw concurrent primitives (no session layer) ────────────────
+// ─── 10. MPSC (substrate-only, no session header) ────────────────────
 // ═════════════════════════════════════════════════════════════════════
+//
+// Promoted into `fixy::substr::mpsc::` by fixy-M-20.  The substrate
+// has no `sessions/MpscChannelSession.h`, so the mint shims live
+// directly in Substr.h (mirror of spsc / swmr / mpmc surface, but
+// the mint factories are defined here rather than re-exported).
 
-// MPSC channel — substrate exists, session header does not.
 static_assert(std::is_same_v<
-    fs::concurrent::PermissionedMpscChannel<int, 16>,
+    fs::mpsc::PermissionedMpscChannel<int, 16>,
     cconc::PermissionedMpscChannel<int, 16>>);
 
 namespace test_substr_mpsc {
@@ -170,10 +178,23 @@ struct UserTag {};
 }
 
 static_assert(std::is_same_v<
-    fs::concurrent::PermissionedMpscChannel<
+    fs::mpsc::PermissionedMpscChannel<
         int, 32, test_substr_mpsc::UserTag>,
     cconc::PermissionedMpscChannel<
         int, 32, test_substr_mpsc::UserTag>>);
+
+// Protocol-type aliases match the canonical SubstrateSessionBridge
+// default_proto_for<PermissionedMpscChannel<...>, Direction::*> form.
+static_assert(std::is_same_v<
+    fs::mpsc::ProducerProto<int>,
+    ::crucible::safety::proto::Loop<
+        ::crucible::safety::proto::Send<int,
+            ::crucible::safety::proto::Continue>>>);
+static_assert(std::is_same_v<
+    fs::mpsc::ConsumerProto<double>,
+    ::crucible::safety::proto::Loop<
+        ::crucible::safety::proto::Recv<double,
+            ::crucible::safety::proto::Continue>>>);
 
 // Snapshot — raw substrate AND typed-session minters now under
 // fixy::substr::snapshot:: (fixy-A4-022; promoted from `concurrent::`).

@@ -35,6 +35,14 @@
 //                         _session variants
 //   MpmcChannelSession.h  mpmc_producer_endpoint /
 //                         mpmc_consumer_endpoint + _session variants
+//   PermissionedMpscChannel.h  (concurrent/, no session header)
+//                         mpsc_producer_endpoint / mpsc_consumer_endpoint
+//                         + producer / consumer _session — shims defined
+//                         directly in `mpsc::` since the substrate ships
+//                         no sessions/MpscChannelSession.h.  The protocol
+//                         shape is identical to the canonical
+//                         SubstrateSessionBridge default_proto_for<>
+//                         specialization for PermissionedMpscChannel.
 //   CalendarGridSession.h calendar_grid_producer / _consumer +
 //                         producer / consumer _session
 //   ShardedCalendarGridSession.h  sharded_calendar_grid_*
@@ -347,33 +355,139 @@ using ::crucible::safety::proto::snapshot_session::mint_snapshot_reader_session;
 }  // namespace snapshot
 
 // ═════════════════════════════════════════════════════════════════════
-// ── Raw concurrent primitives without a typed-session layer ────────
+// ── MPSC channel (multi-producer single-consumer) ──────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Substrates that ship a `concurrent::Permissioned*` primitive but
-// have not yet been wrapped by a `sessions/*Session.h` typed-session
-// header.  Surfaced under `fixy::substr::concurrent::*` so callers
-// who need the raw substrate (handle-level only, no session protocol)
-// can reach it through the fixy umbrella.
+// MPSC ships a `concurrent/PermissionedMpscChannel.h` substrate but
+// no `sessions/MpscChannelSession.h` typed-session header — MPMC's
+// shape (both endpoints Pool-mediated) does not generalize cleanly
+// to MPSC (Linear consumer Permission + fractional producer Pool).
+// Rather than wait for a session header that may never ship in this
+// shape, the fixy umbrella defines the mpsc::* surface here, directly
+// against the substrate primitive.  Mirror of the spsc:: / swmr:: /
+// mpmc:: pattern: ProducerProto / ConsumerProto type aliases, surface
+// concept, endpoint mints, ctx-bound session mints.  Closes fixy-M-20.
 //
-// MPSC: raw substrate (concurrent/PermissionedMpscChannel.h) is
-// surfaced below.  No `sessions/MpscChannelSession.h` ships today;
-// the related fixy-side gap (a `fixy::substr::mpsc` sub-namespace
-// mirroring `fixy::substr::spsc::` / `metalog::` / etc.) is tracked
-// independently as fixy-M-20 — fixy-A4-028 deliberately does NOT
-// promise a delivery here, because the substrate-side typed-session
-// header is the actual prerequisite and its shape is unsettled
-// (MPMC ships via MpmcChannelSession.h with a different protocol
-// shape that may or may not generalize cleanly to MPSC).
+// Protocol shape matches the canonical SubstrateSessionBridge
+// default_proto_for<PermissionedMpscChannel<...>, Direction::*>
+// specialization exactly (Loop<Send<T,Continue>> for the producer
+// stream; Loop<Recv<T,Continue>> for the consumer drain).  The bridge
+// already supports `mint_substrate_session<MpscT, Direction::Producer>`
+// and `Direction::Consumer`; mpsc:: surfaces named-MPSC equivalents
+// for callers who prefer the substrate-named factory style and adds
+// a surface concept gate so MPSC-specific call sites get a
+// substrate-typed diagnostic instead of a generic substrate-bridge
+// concept failure.
 
-namespace concurrent {
-// MPSC channel (multi-producer single-consumer) — raw primitive only.
+namespace mpsc {
+// Substrate alias — exposed because callers reach the substrate
+// directly when minting endpoints (no two-step session-header indirection
+// exists yet for MPSC).
 template <::crucible::concurrent::RingValue T,
           std::size_t Capacity,
           typename UserTag = void>
 using PermissionedMpscChannel =
     ::crucible::concurrent::PermissionedMpscChannel<T, Capacity, UserTag>;
-}  // namespace concurrent
+
+// Protocol type aliases — match default_proto_for<MpscT, Direction::*>.
+template <typename T>
+using ProducerProto =
+    ::crucible::safety::proto::Loop<
+        ::crucible::safety::proto::Send<T,
+            ::crucible::safety::proto::Continue>>;
+
+template <typename T>
+using ConsumerProto =
+    ::crucible::safety::proto::Loop<
+        ::crucible::safety::proto::Recv<T,
+            ::crucible::safety::proto::Continue>>;
+
+// Surface concept — gates the mint factories below.  Differs from
+// MpmcChannelSessionSurface in two ways:
+//   1. `ch.consumer(perm)` takes a Linear Permission&& and returns a
+//      bare ConsumerHandle (NOT optional); MpscRing's try_pop is
+//      single-consumer-only, so the consumer side is structurally
+//      Linear, not Pool-mediated.
+//   2. `ch.producer()` IS Pool-mediated and returns optional (matches
+//      MPMC's producer side).
+template <typename Channel>
+concept MpscChannelSessionSurface = requires(
+    Channel& ch,
+    typename Channel::ProducerHandle& producer_handle,
+    typename Channel::ConsumerHandle& consumer_handle,
+    ::crucible::safety::Permission<typename Channel::consumer_tag>&& cons_perm,
+    const typename Channel::value_type& sample_payload)
+{
+    typename Channel::value_type;
+    typename Channel::user_tag;
+    typename Channel::producer_tag;
+    typename Channel::consumer_tag;
+    typename Channel::ProducerHandle;
+    typename Channel::ConsumerHandle;
+
+    // Endpoint factories — producer Pool-mediated, consumer Linear.
+    { ch.producer() }
+        -> std::same_as<std::optional<typename Channel::ProducerHandle>>;
+    { ch.consumer(std::move(cons_perm)) }
+        -> std::same_as<typename Channel::ConsumerHandle>;
+
+    // Handle method shapes.
+    { producer_handle.try_push(sample_payload) }
+        -> std::same_as<bool>;
+    { consumer_handle.try_pop() }
+        -> std::same_as<std::optional<typename Channel::value_type>>;
+};
+
+// Endpoint mint helpers — pure forwarders to the substrate's
+// .producer() / .consumer() member factories.  Surfaced here so
+// every per-substrate `mpsc::mint_*_endpoint` follows the same
+// `mint_<substrate>_<role>_endpoint(ch[, perm])` shape grep-finds.
+
+template <MpscChannelSessionSurface Channel>
+[[nodiscard]] constexpr auto mint_mpsc_producer_endpoint(Channel& ch) noexcept
+    -> std::optional<typename Channel::ProducerHandle>
+{
+    return ch.producer();
+}
+
+template <MpscChannelSessionSurface Channel>
+[[nodiscard]] constexpr auto mint_mpsc_consumer_endpoint(
+    Channel& ch,
+    ::crucible::safety::Permission<typename Channel::consumer_tag>&& perm) noexcept
+    -> typename Channel::ConsumerHandle
+{
+    return ch.consumer(std::move(perm));
+}
+
+// Session mint factories (ctx-bound) — wrap the endpoint handle in
+// a PermissionedSessionHandle.  Take handle BY REFERENCE; internally
+// take its address and forward as Resource = Handle* per the MPMC /
+// MetaLog precedent.  EmptyPermSet because MPSC's wire-permission
+// flow is empty — producer/consumer authority lives in the embedded
+// SharedPermissionGuard / Linear Permission on the handle itself.
+
+template <MpscChannelSessionSurface Channel,
+          ::crucible::effects::IsExecCtx Ctx>
+[[nodiscard]] constexpr auto
+mint_mpsc_producer_session(Ctx const& ctx,
+                           typename Channel::ProducerHandle& handle) noexcept
+{
+    using T = typename Channel::value_type;
+    return ::crucible::safety::proto::mint_permissioned_session<
+        ProducerProto<T>>(ctx, &handle);
+}
+
+template <MpscChannelSessionSurface Channel,
+          ::crucible::effects::IsExecCtx Ctx>
+[[nodiscard]] constexpr auto
+mint_mpsc_consumer_session(Ctx const& ctx,
+                           typename Channel::ConsumerHandle& handle) noexcept
+{
+    using T = typename Channel::value_type;
+    return ::crucible::safety::proto::mint_permissioned_session<
+        ConsumerProto<T>>(ctx, &handle);
+}
+}  // namespace mpsc
 
 // ── fixy-A4-005 + fixy-M-19: mint_substrate_session — the generic
 // substrate→session bridge.  Lives in `concurrent::` (Tier-2→3 bridge
