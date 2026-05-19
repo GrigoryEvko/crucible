@@ -508,6 +508,23 @@ add_test(NAME no_reinterpret_cast
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh)
 set_tests_properties(no_reinterpret_cast no_reinterpret_cast_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-105")
+# FIXY-U-104 fixy::is:: alias-parity enforcement (closes fixy-L-05 +
+# fixy-L-06 going forward).  scripts/check-isx-parity.sh diffs the
+# public `_v` traits + `_t` slot-extractor aliases in safety/Is*.h
+# (at extract:: namespace level, excluding detail:: internals) against
+# fixy/Is.h's `using ::crucible::safety::extract::*` re-exports.  Adding
+# a new IsX.h header (or growing an existing one) WITHOUT adding the
+# matching fixy::is:: re-export now fails CI.  The DETAIL_EXCLUSIONS
+# array inside the script lists the one currently-known detail symbol
+# (session_base_probe_t in extract::detail::); new detail symbols that
+# match the public-alias regex shape get added there.
+add_test(NAME isx_parity_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-isx-parity.sh
+          --self-test)
+add_test(NAME isx_parity
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-isx-parity.sh)
+set_tests_properties(isx_parity isx_parity_self_test PROPERTIES
+    LABELS "ci_guard;fixy-U-104")
 # FIXY-U-087 stub-vs-live deprecation discipline (fixy-A5-001 / A5-002 / A5-025
 # / A5-042).  scripts/check-stub-discipline.sh pairs every honesty marker
 # (`inline constexpr bool *_implemented = false` / `*_attached = false`) with a

@@ -220,6 +220,7 @@ using ::crucible::safety::extract::is_progress_v;
 using ::crucible::safety::extract::is_recipe_spec_v;
 using ::crucible::safety::extract::is_reduce_into_v;
 using ::crucible::safety::extract::is_refined_v;
+using ::crucible::safety::extract::refined_is_sealed_v;
 using ::crucible::safety::extract::is_residency_heat_v;
 using ::crucible::safety::extract::is_secret_v;
 using ::crucible::safety::extract::is_session_handle_v;
