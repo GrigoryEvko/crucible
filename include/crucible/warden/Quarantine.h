@@ -426,6 +426,14 @@ public:
         return snapshot(*slot);
     }
 
+    // fixy-A5-040: returns a contiguous view of the physical events_
+    // array.  Pre-wrap (event_count_ < MaxEvents) the slots [0..count)
+    // are chronologically ordered by happy accident.  Post-wrap, slot 0
+    // holds a recently-overwritten event and the chronological order is
+    // broken across the ring boundary.  Consumers that need correct
+    // post-wrap chronological access MUST use transition_event_at()
+    // below; this span accessor is preserved only for pre-wrap
+    // callers + as the legacy raw view.
     [[nodiscard]] constexpr std::span<const QuarantineEvent>
     transition_events() const noexcept {
         return std::span<const QuarantineEvent>{events_.data(), event_count_};
@@ -433,6 +441,22 @@ public:
 
     [[nodiscard]] constexpr std::size_t transition_event_count() const noexcept {
         return event_count_;
+    }
+
+    [[nodiscard]] constexpr const QuarantineEvent*
+    transition_event_at(std::size_t index) const noexcept {
+        if (index >= event_count_) {
+            return nullptr;
+        }
+        // fixy-A5-040: events_[index] returns the PHYSICAL slot — junk
+        // post-wrap.  Same wrap-handling formula as
+        // cntp::ConnectionPool::event_at (fixy-A5-010): pre-wrap
+        // next_event_ ≡ event_count_ so the subtraction is zero modulo
+        // size and base=0; post-wrap base=next_event_ which IS the
+        // oldest surviving slot.
+        const std::size_t size = events_.size();
+        const std::size_t base = (next_event_ + size - event_count_) % size;
+        return &events_[(base + index) % size];
     }
 };
 

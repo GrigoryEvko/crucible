@@ -157,6 +157,60 @@ static void test_permanent_requires_operator_permission() {
     std::printf("  test_permanent_requires_operator_permission: PASSED\n");
 }
 
+static void test_event_ring_wrap_chronological_order() {
+    // fixy-A5-040 regression: transition_event_at(index) must return
+    // chronologically-indexed events.  After wrap, events_[0] holds a
+    // post-wrap event and the oldest surviving event lives at slot
+    // next_event_.  Same shape as fixy-A5-010 in ConnectionPool.
+    //
+    // MaxCogs=2, MaxEvents=4 (override default MaxCogs*4=8 for a tight
+    // wrap).  Drive 6 alternating Q↔H operator_override transitions
+    // (sequences 1..6).  Surviving ring: events #3, #4, #5, #6.
+    auto policy = warden::mint_quarantine_policy<effects::ColdInitCtx, 2, 4>(
+        effects::ColdInitCtx{}, test_config());
+    auto target = peer(99);
+    auto authority =
+        saf::mint_permission_root<warden::quarantine_tag::OperatorOverride>();
+
+    for (std::uint64_t seq = 1; seq <= 6; ++seq) {
+        auto next = (seq % 2 == 1)
+            ? warden::QuarantineState::Quarantined
+            : warden::QuarantineState::Healthy;
+        authority = policy.operator_override(
+            effects::ColdInitCtx{}, std::move(authority), target,
+            next, 100u * seq, seq);
+    }
+    saf::permission_drop(std::move(authority));
+
+    assert(policy.transition_event_count() == 4u);
+
+    auto const* oldest = policy.transition_event_at(0);
+    auto const* newest = policy.transition_event_at(3);
+    assert(oldest != nullptr);
+    assert(newest != nullptr);
+    // Pre-fix transition_events()[0] returned the slot 0 contents,
+    // overwritten by event #5 (odd seq → Quarantined).  The correct
+    // chronological-first event is #3 with sequence 3.
+    assert(oldest->sequence == 3u);
+    assert(newest->sequence == 6u);
+    // Sequence 3 was odd → Quarantined.  Sequence 6 was even → Healthy.
+    assert(oldest->to == warden::QuarantineState::Quarantined);
+    assert(newest->to == warden::QuarantineState::Healthy);
+
+    std::uint64_t prev = 0;
+    for (std::size_t k = 0; k < policy.transition_event_count(); ++k) {
+        auto const* e = policy.transition_event_at(k);
+        assert(e != nullptr);
+        assert(e->sequence > prev);
+        prev = e->sequence;
+    }
+    assert(prev == 6u);
+
+    assert(policy.transition_event_at(4) == nullptr);
+
+    std::printf("  test_event_ring_wrap_chronological_order: PASSED\n");
+}
+
 int main() {
     static_assert(warden::CtxFitsQuarantineMint<effects::ColdInitCtx>);
     static_assert(!warden::CtxFitsQuarantineMint<effects::BgDrainCtx>);
@@ -173,6 +227,7 @@ int main() {
     test_asymmetric_failure_policy();
     test_recovery_canary();
     test_permanent_requires_operator_permission();
+    test_event_ring_wrap_chronological_order();
     std::printf("test_quarantine: all PASSED\n");
     return 0;
 }
