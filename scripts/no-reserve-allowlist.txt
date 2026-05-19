@@ -1,0 +1,48 @@
+# scripts/no-reserve-allowlist.txt — grandfathered std::vector::reserve sites.
+#
+# Format: `path:line` (one per line, relative to project root).
+# Comments start with '#'.  Blank lines ignored.
+#
+# Every entry is a TODO awaiting a tracked migration.  When the
+# referenced fixy-A5-* or WRAP-* ticket lands, delete the line —
+# the guard then enforces no regression.
+#
+# ── warden/Registry.h ───────────────────────────────────────────────
+# fixy-A5-020 / FIXY-U-081 (#1753): out.reserve(size()) before
+# emplace-loop.  Migration: inplace_vector when N known, or accept
+# amortization.
+include/crucible/warden/Registry.h:128
+#
+# ── vis/TraceVisualizer.h ───────────────────────────────────────────
+# Trace visualization tools — cold-tier, but still bound by §IV.
+# Migrate to fixed-capacity per-graph buffers when the visualizer
+# tooling is refactored (no dedicated ticket yet).
+include/crucible/vis/TraceVisualizer.h:1006
+include/crucible/vis/TraceVisualizer.h:1019
+#
+# ── Cipher.h ────────────────────────────────────────────────────────
+# WRAP-Cipher-2 / WRAP-Cipher-3 / WRAP-Cipher-5 cluster (#885, #886,
+# #888): Cipher cold-tier path constructs O(K) buffers before
+# serialization; amortization is acceptable but the guard tracks
+# them so the long-term migration to inplace_vector + Linear<bytes>
+# isn't forgotten.
+include/crucible/Cipher.h:1032
+include/crucible/Cipher.h:1151
+include/crucible/Cipher.h:1165
+include/crucible/Cipher.h:1210
+#
+# ── BackgroundThread.h ──────────────────────────────────────────────
+# WRAP-BgThread-6 (#877): current_trace + parallel vectors reserved
+# to kInitialTraceCapacity at iteration start.  Migration target:
+# length-coupled SoA newtype where the SoA backing storage is
+# arena-owned or inplace_vector<T, kInitialTraceCapacity>.
+include/crucible/BackgroundThread.h:313
+include/crucible/BackgroundThread.h:314
+include/crucible/BackgroundThread.h:315
+include/crucible/BackgroundThread.h:316
+#
+# ── concurrent/AdaptiveScheduler.h ──────────────────────────────────
+# workers_.reserve(worker_count_) during pool init — bounded by
+# the CostModel's cap, would convert cleanly to inplace_vector
+# with NUMA-pinned capacity.  No dedicated ticket yet.
+include/crucible/concurrent/AdaptiveScheduler.h:748

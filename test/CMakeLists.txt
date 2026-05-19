@@ -476,6 +476,21 @@ add_test(NAME permission_storage_self_test
           --self-test)
 add_test(NAME permission_storage
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.sh)
+# FIXY-U-097 std::vector::reserve ban enforcement (CLAUDE.md §IV
+# opt-out matrix).  scripts/check-no-reserve.sh flags every NEW
+# `.reserve(` / `->reserve(` call site outside the allowlist; 12
+# grandfathered sites are tracked in scripts/no-reserve-allowlist.txt
+# with their migration tickets (fixy-A5-020, WRAP-Cipher-*,
+# WRAP-BgThread-6, etc.).  Self-test mode plants a violation,
+# allowlist entry, inline-suppressed call, and commented-out call
+# to verify all four exemption axes work.
+add_test(NAME no_reserve_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reserve.sh
+          --self-test)
+add_test(NAME no_reserve
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reserve.sh)
+set_tests_properties(no_reserve no_reserve_self_test PROPERTIES
+    LABELS "ci_guard;fixy-U-097")
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
