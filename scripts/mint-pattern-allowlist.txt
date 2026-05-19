@@ -38,7 +38,7 @@
 #     every mint, so this category is also mostly migration-TODO.
 #
 # Cross-references:
-#   fixy-M-22 (#1507) tracks mint_vigil_mode_bridge constexpr drift.
+#   fixy-M-22 (#1507) — CLOSED: mint_vigil_mode_bridge gained constexpr.
 #   fixy-M-23 (#1508) tracks mint_persisted_session noexcept drift.
 #   fixy-A4-027 (#1666) tracks mint_federation_admittance nodiscard drift.
 
@@ -202,4 +202,3 @@ include/crucible/sessions/SwmrSession.h:241:requires-ok
 include/crucible/sessions/SwmrSession.h:250:requires-ok
 include/crucible/topology/Pingmesh.h:415:constexpr-ok
 include/crucible/topology/Ptp.h:415:constexpr-ok
-include/crucible/Vigil.h:1115:constexpr-ok

@@ -473,7 +473,7 @@ class Vigil {
     }
     [[nodiscard]] bool is_compiled() const noexcept { return mode() == Mode::COMPILED; }
 
-    [[nodiscard]] ModeSessionHandle mode_session() const noexcept {
+    [[nodiscard]] constexpr ModeSessionHandle mode_session() const noexcept {
         return safety::mint_atomic_session<ModeProtocol>(mode_);
     }
 
@@ -1112,7 +1112,16 @@ class Vigil {
     BackgroundThread                bg_;  // MUST be declared last
 };
 
-[[nodiscard]] inline Vigil::ModeSessionHandle mint_vigil_mode_bridge(
+// §XXI Universal Mint Pattern (token-mint flavor): synthesizes a
+// fresh authoritative ModeSessionHandle whose authority derives from
+// the carrier Vigil's mode_ cell.  Constexpr-qualified per §XXI
+// discipline ("Every mint MUST be [[nodiscard]] constexpr noexcept");
+// the body forwards to mode_session() → mint_atomic_session, both
+// constexpr.  Vigil is not a literal type (it holds std::atomic<Mode>),
+// so this mint is not invocable in a constant expression in practice,
+// but the constexpr qualifier remains semantically valid and discipline-
+// uniform.  Closes fixy-M-22 (#1507).
+[[nodiscard]] constexpr Vigil::ModeSessionHandle mint_vigil_mode_bridge(
     const Vigil& vigil) noexcept
 {
     return vigil.mode_session();
