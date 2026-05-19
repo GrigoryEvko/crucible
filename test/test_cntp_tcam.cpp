@@ -173,15 +173,30 @@ void test_rule_table_lifecycle() {
 }
 
 void test_backend_boundary() {
-    auto table_plan = tcam::mint_tcam_table(
-        eff::ColdInitCtx{}, nic_identity(), nic_caps(),
-        *tcam::admit_tcam_entries(4), true);
-    assert(table_plan.has_value());
+    // fixy-A5-025 regression: force_tcam_backend_boundary must return
+    // success when both the rule validates AND the table reports
+    // backend_ready, and VendorBackendUnavailable ONLY when the backend
+    // is genuinely unavailable.  Pre-fix the success path returned the
+    // same VendorBackendUnavailable error as the not-ready path,
+    // collapsing two distinct outcomes into one.
     auto declared = tcam::declare_tcam_rule(flow_rule());
     assert(declared.has_value());
-    auto backend = tcam::force_tcam_backend_boundary(*table_plan, *declared);
-    assert(!backend.has_value());
-    assert(backend.error() == tcam::TcamError::VendorBackendUnavailable);
+
+    auto ready_plan = tcam::mint_tcam_table(
+        eff::ColdInitCtx{}, nic_identity(), nic_caps(),
+        *tcam::admit_tcam_entries(4), true);
+    assert(ready_plan.has_value());
+    auto ready = tcam::force_tcam_backend_boundary(*ready_plan, *declared);
+    assert(ready.has_value());
+
+    auto pending_plan = tcam::mint_tcam_table(
+        eff::ColdInitCtx{}, nic_identity(), nic_caps(),
+        *tcam::admit_tcam_entries(4), false);
+    assert(pending_plan.has_value());
+    auto pending =
+        tcam::force_tcam_backend_boundary(*pending_plan, *declared);
+    assert(!pending.has_value());
+    assert(pending.error() == tcam::TcamError::VendorBackendUnavailable);
 
     std::printf("  test_backend_boundary: PASSED\n");
 }
