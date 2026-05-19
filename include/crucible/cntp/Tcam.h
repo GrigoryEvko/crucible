@@ -30,6 +30,23 @@ namespace crucible::cntp::tcam {
 
 inline constexpr std::uint32_t kMaxStaticTcamRules = 65'536;
 
+// fixy-A5-002 honesty marker.  Live tier = admission (admit_*, validate_*,
+// declare_tcam_rule, mint_tcam_table) + in-process TcamRules<MaxRules> rule
+// table (add_rule / remove_rule / query_counter / note_match — pure value
+// bookkeeping, no privileged effect) + `require_backend_ready` which honestly
+// surfaces VendorBackendUnavailable whenever the per-table admin claim
+// `backend_ready=false`; stub tier = `force_tcam_backend_boundary` and any
+// vendor install path which currently has no rdma-core DV / DPDK rte_flow /
+// tc-flower / switchd / netlink backend attached.  The per-table
+// `backend_ready` flag is an admin assertion, NOT proof of an installed
+// backend — the substrate-level claim is `vendor_backend_attached == false`
+// until a real backend ships.  Flipping the trait to true requires (a) a
+// vendor install path that talks to rdma-core / DPDK / tc / netlink, (b) a
+// lockstep update to test_cntp_tcam::test_apply_paths_are_stubbed, and
+// (c) cycle-counter audit that `force_tcam_backend_boundary` actually
+// programs the device.  Tracked by FIXY-U-087.
+inline constexpr bool vendor_backend_attached = false;
+
 enum class TcamError : std::uint8_t {
     None = 0,
     ZeroTargetCog,

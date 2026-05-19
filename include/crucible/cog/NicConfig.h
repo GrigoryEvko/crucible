@@ -27,6 +27,16 @@
 
 namespace crucible::cog::nic {
 
+// fixy-A5-002 honesty marker.  Live tier = admission + validators
+// (mint_*, admit_*, validate_*); stub tier = every privileged apply
+// function (apply_*, query_*).  While `privileged_apply_implemented`
+// is false, callers MUST observe PrivilegedApplyDeferred from apply
+// and PrivilegedBackendUnavailable / QueryDeferred from query.  Flipping
+// the trait to true requires a CAP_NET_ADMIN backend that talks to
+// ethtool / sysctl / tc-qdisc and a lockstep update to
+// test_nic_config::test_apply_paths_are_stubbed.  Tracked by FIXY-U-087.
+inline constexpr bool privileged_apply_implemented = false;
+
 enum class NicConfigError : std::uint8_t {
     None = 0,
     ZeroCog = 1,

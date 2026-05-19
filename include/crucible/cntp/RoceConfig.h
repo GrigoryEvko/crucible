@@ -19,6 +19,19 @@
 
 namespace crucible::cntp {
 
+// fixy-A5-002 honesty marker.  Live tier = admission + RoCEv2 typed
+// validation (PFC mask / DSCP / DCQCN alpha + target / CE threshold) +
+// /proc-counter reads; stub tier = privileged apply paths (sysfs / vendor
+// tool mutation) which currently return PrivilegedApplyDeferred or
+// VendorBackendUnavailable, and `verify_dcqcn_active` which returns
+// DcqcnState::BackendUnavailable (per fixy-A5-042, an honest "no live
+// evidence" sentinel — NOT a fabricated Inactive).  Flipping
+// `privileged_apply_implemented` to true requires a vendor-policy
+// installer (Mellanox mlxconfig / Broadcom bnxt_re tools) + a lockstep
+// update to test_cntp_roce_config::test_apply_paths_are_stubbed.
+// Tracked by FIXY-U-087.
+inline constexpr bool privileged_apply_implemented = false;
+
 enum class RoceError : std::uint8_t {
     InvalidPfcPriorityMask,
     InvalidDscp,

@@ -27,6 +27,15 @@
 
 namespace crucible::cog::sriov {
 
+// fixy-A5-002 honesty marker.  Live tier = admission + DeclaredSrIovPlan
+// validation; stub tier = every privileged apply / query function which
+// currently returns PrivilegedApplyDeferred or PrivilegedBackendUnavailable
+// or QueryDeferred.  Flipping `privileged_apply_implemented` to true
+// requires a CAP_NET_ADMIN backend (sysfs sriov_numvfs / iproute2 / netlink)
+// and a lockstep update to test_sriov::test_apply_paths_are_stubbed.
+// Tracked by FIXY-U-087.
+inline constexpr bool privileged_apply_implemented = false;
+
 enum class SrIovError : std::uint8_t {
     None = 0,
     ZeroCog = 1,

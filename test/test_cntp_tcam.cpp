@@ -201,6 +201,113 @@ void test_backend_boundary() {
     std::printf("  test_backend_boundary: PASSED\n");
 }
 
+// fixy-A5-002 honesty-marker fixture.  TCAM's stub model is the
+// subtlest of the four NIC-config substrates — `force_tcam_backend_boundary`
+// returns success when the per-table admin assertion `backend_ready=true`
+// admits responsibility, but the substrate-level claim is that NO real
+// vendor backend (rdma-core DV / DPDK rte_flow / tc-flower / switchd /
+// netlink) is wired anywhere.  This fixture proves:
+//
+//   (a) the compile-time honesty marker `vendor_backend_attached` is
+//       `false` — a backend author who wires a real vendor SDK MUST
+//       flip this in lockstep, or the static_assert in main() reds;
+//   (b) `force_tcam_backend_boundary` returns success on backend_ready
+//       plans BUT this is an in-process state-machine transition, NOT
+//       evidence of a wire-level rule install (the per-table flag is
+//       an ADMIN claim, not a HARDWARE claim — only the substrate-
+//       level trait can witness wire-level state);
+//   (c) the in-process TcamRules<MaxRules> rule table is a value-only
+//       data structure — installed_rules() reflects ONLY the in-process
+//       add_rule calls, not any real silicon match-action programming;
+//       a fresh table reports installed_rules() == 0 even though a real
+//       device might have residual rules from a previous boot;
+//   (d) `require_backend_ready()` on `backend_ready=false` plans
+//       honestly surfaces VendorBackendUnavailable, proving the
+//       error code stays load-bearing.
+//
+// When a vendor backend lands, the migration is:
+//   (1) flip tcam::vendor_backend_attached to true,
+//   (2) augment `force_tcam_backend_boundary` to actually program
+//       the device via the chosen vendor path (rdma-core DV / DPDK /
+//       tc-flower / switchd / netlink),
+//   (3) replace this fixture's "stub-is-in-process" assertions with
+//       live-fabric fixtures that round-trip a rule through hardware
+//       and verify it via packet probe + counter reads,
+//   (4) ship per-vendor query path so TcamRules can mirror real
+//       device state (currently it only mirrors in-process state).
+// Tracked by FIXY-U-087.
+void test_apply_paths_are_stubbed() {
+    static_assert(tcam::vendor_backend_attached == false,
+        "fixy-A5-002: TCAM substrate has no vendor backend.  "
+        "Flipping vendor_backend_attached to true requires "
+        "(a) a real vendor SDK (rdma-core DV / DPDK rte_flow / "
+        "tc-flower / switchd / netlink), (b) force_tcam_backend_boundary "
+        "actually programs the device, (c) test_apply_paths_are_stubbed "
+        "replaced with live-fabric fixtures, and (d) FIXY-U-087 audit.");
+    static_assert(std::is_same_v<decltype(tcam::vendor_backend_attached),
+                                 const bool>,
+        "fixy-A5-002: honesty trait must be a compile-time bool");
+
+    auto declared = tcam::declare_tcam_rule(flow_rule());
+    assert(declared.has_value());
+
+    // (b) Substrate state-machine success ≠ wire-level install.
+    // backend_ready=true on the table plan admits the substrate-level
+    // transition, but it does NOT prove that any real silicon was
+    // programmed — the vendor_backend_attached trait carries that
+    // claim, and it is false.
+    auto ready_plan = tcam::mint_tcam_table(
+        eff::ColdInitCtx{}, nic_identity(), nic_caps(),
+        *tcam::admit_tcam_entries(4), true);
+    assert(ready_plan.has_value());
+    auto ready_boundary =
+        tcam::force_tcam_backend_boundary(*ready_plan, *declared);
+    assert(ready_boundary.has_value());
+
+    // (c) In-process rule table is value-only — no silicon state.
+    tcam::TcamRules<4> table{*ready_plan};
+    assert(table.installed_rules() == 0);
+    assert(table.available_rules_remaining() == 4);
+    auto handle = table.add_rule(*declared);
+    assert(handle.has_value());
+    assert(table.installed_rules() == 1);
+
+    // After in-process install, counter is in-process bookkeeping.
+    // Real silicon would show fabric-side match counts; our query
+    // returns the value note_match wrote.
+    auto count_zero = table.query_counter(*handle);
+    assert(count_zero.has_value());
+    assert(*count_zero == 0);
+
+    assert(table.note_match(*handle, 42u).has_value());
+    auto count_set = table.query_counter(*handle);
+    assert(count_set.has_value());
+    assert(*count_set == 42u);
+
+    auto removed = table.remove_rule(std::move(*handle));
+    assert(removed.has_value());
+    assert(table.installed_rules() == 0);
+
+    // (d) backend_ready=false plans honestly report no backend.
+    auto pending_plan = tcam::mint_tcam_table(
+        eff::ColdInitCtx{}, nic_identity(), nic_caps(),
+        *tcam::admit_tcam_entries(4), false);
+    assert(pending_plan.has_value());
+    auto pending_boundary =
+        tcam::force_tcam_backend_boundary(*pending_plan, *declared);
+    assert(!pending_boundary.has_value());
+    assert(pending_boundary.error()
+           == tcam::TcamError::VendorBackendUnavailable);
+
+    tcam::TcamRules<4> pending_table{*pending_plan};
+    auto pending_require = pending_table.require_backend_ready();
+    assert(!pending_require.has_value());
+    assert(pending_require.error()
+           == tcam::TcamError::VendorBackendUnavailable);
+
+    std::printf("  test_apply_paths_are_stubbed: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -222,11 +329,21 @@ int main() {
     static_assert(std::is_trivially_copyable_v<tcam::FiveTuple>);
     static_assert(std::is_trivially_copyable_v<tcam::TcamFlowRule>);
 
+    static_assert(!tcam::vendor_backend_attached,
+        "fixy-A5-002: TCAM substrate is documented stub — "
+        "force_tcam_backend_boundary returns substrate-level success "
+        "ONLY when backend_ready=true (an admin claim, not a wire "
+        "claim).  The vendor_backend_attached trait carries the "
+        "wire-level claim and stays false until a real vendor SDK "
+        "(rdma-core DV / DPDK / tc-flower / switchd / netlink) is "
+        "wired in.  Tracked by FIXY-U-087.");
+
     std::printf("test_cntp_tcam:\n");
     test_admission_and_names();
     test_table_minting();
     test_rule_table_lifecycle();
     test_backend_boundary();
+    test_apply_paths_are_stubbed();
     std::printf("test_cntp_tcam: all PASSED\n");
     return 0;
 }

@@ -179,6 +179,82 @@ void test_privileged_boundaries() {
     std::printf("  test_privileged_boundaries: PASSED\n");
 }
 
+// fixy-A5-002 honesty-marker fixture.  Proves three machine-readable
+// claims that together define "the SR-IOV substrate currently does
+// nothing privileged":
+//
+//   (a) the compile-time honesty marker `privileged_apply_implemented`
+//       is `false` — a backend author who wires a real
+//       sysfs/iproute2/netlink installer MUST flip this in lockstep,
+//       or the static_assert in main() reds;
+//   (b) sriov::enable with allow_privileged_apply=false (default)
+//       returns PrivilegedApplyDeferred — proving the substrate
+//       honestly advertises "not attempted" rather than fabricating
+//       success;
+//   (c) sriov::enable with allow_privileged_apply=true returns
+//       PrivilegedBackendUnavailable — proving the privileged path
+//       is genuinely absent (NOT a silent admit-and-do-nothing);
+//   (d) sriov::configure_vf returns PrivilegedApplyDeferred and
+//       sriov::query_current returns QueryDeferred — proving every
+//       VF-touching surface is stubbed in lockstep.
+//
+// When a CAP_NET_ADMIN backend lands, the migration is:
+//   (1) flip sriov::privileged_apply_implemented to true,
+//   (2) replace this fixture's "stub-returns-Deferred" assertions
+//       with live-NIC fixtures that exercise
+//       /sys/class/net/<iface>/device/sriov_numvfs writes /
+//       iproute2 / netlink VF-config messages,
+//   (3) re-validate query_current against a known SR-IOV state.
+// Tracked by FIXY-U-087.
+void test_apply_paths_are_stubbed() {
+    static_assert(sriov::privileged_apply_implemented == false,
+        "fixy-A5-002: SR-IOV apply paths are substrate stubs.  "
+        "Flipping privileged_apply_implemented to true requires "
+        "(a) a CAP_NET_ADMIN backend (sysfs sriov_numvfs / iproute2 / "
+        "netlink), (b) test_apply_paths_are_stubbed replaced with "
+        "live-NIC fixtures, and (c) FIXY-U-087 sweep audit.");
+    static_assert(std::is_same_v<decltype(sriov::privileged_apply_implemented),
+                                 const bool>,
+        "fixy-A5-002: honesty trait must be a compile-time bool");
+
+    auto plan = sriov::mint_sriov_plan(
+        eff::ColdInitCtx{}, nic_identity(), sriov_caps(), iface(),
+        *sriov::admit_vf_count(2));
+    assert(plan.has_value());
+
+    // (b) Deferred path: allow_privileged_apply defaults to false.
+    std::array<sriov::VfHandle, 2> handles{};
+    auto deferred = sriov::enable(*plan, std::span<sriov::VfHandle>{handles});
+    assert(!deferred.has_value());
+    assert(deferred.error() == sriov::SrIovError::PrivilegedApplyDeferred);
+
+    // (c) Backend-unavailable path: allow_privileged_apply=true.
+    auto requested = sriov::mint_sriov_plan(
+        eff::ColdInitCtx{}, nic_identity(), sriov_caps(), iface(),
+        *sriov::admit_vf_count(2), {}, true);
+    assert(requested.has_value());
+    auto requested_enable =
+        sriov::enable(*requested, std::span<sriov::VfHandle>{handles});
+    assert(!requested_enable.has_value());
+    assert(requested_enable.error()
+           == sriov::SrIovError::PrivilegedBackendUnavailable);
+
+    // (d) Per-VF configure side stubbed in lockstep.
+    auto handle = sriov::make_vf_handle(
+        nic_identity(), sriov::VfIndex{std::uint16_t{0},
+                                       typename sriov::VfIndex::Trusted{}});
+    auto cfg = sriov::declare_vf_config(sriov::VfConfig{});
+    auto configure = sriov::configure_vf(handle, cfg);
+    assert(!configure.has_value());
+    assert(configure.error() == sriov::SrIovError::PrivilegedApplyDeferred);
+
+    auto query = sriov::query_current(nic_identity(), iface());
+    assert(!query.has_value());
+    assert(query.error() == sriov::SrIovError::QueryDeferred);
+
+    std::printf("  test_apply_paths_are_stubbed: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -192,11 +268,21 @@ int main() {
     static_assert(std::is_trivially_copyable_v<sriov::VfConfig>);
     static_assert(std::is_trivially_copyable_v<sriov::SrIovPlan>);
 
+    static_assert(!sriov::privileged_apply_implemented,
+        "fixy-A5-002: SR-IOV substrate is documented stub — every "
+        "enable/configure path returns PrivilegedApplyDeferred or "
+        "PrivilegedBackendUnavailable; query_current returns "
+        "QueryDeferred.  Flipping the trait to true requires "
+        "(a) a CAP_NET_ADMIN backend, (b) live-NIC fixtures "
+        "replacing test_apply_paths_are_stubbed, and (c) "
+        "FIXY-U-087 sweep audit.");
+
     std::printf("test_sriov:\n");
     test_admission();
     test_mint_and_handles();
     test_identity_and_capability_gates();
     test_privileged_boundaries();
+    test_apply_paths_are_stubbed();
     std::printf("test_sriov: all PASSED\n");
     return 0;
 }

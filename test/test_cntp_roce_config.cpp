@@ -134,6 +134,73 @@ void test_live_surfaces_if_available() {
     std::printf("  test_live_surfaces_if_available: PASSED\n");
 }
 
+// fixy-A5-002 honesty-marker fixture.  Proves four machine-readable
+// claims that together define "the RoCEv2 substrate currently does
+// nothing privileged":
+//
+//   (a) the compile-time honesty marker `privileged_apply_implemented`
+//       is `false` — a backend author who wires a real Mellanox
+//       mlxconfig / Broadcom bnxt_re installer MUST flip this in
+//       lockstep, or the static_assert in main() reds;
+//   (b) apply_roce_config with allow_privileged_apply=false returns
+//       PrivilegedApplyDeferred — proving the substrate honestly
+//       advertises "not attempted" rather than fabricating success;
+//   (c) apply_roce_config with allow_privileged_apply=true returns
+//       VendorBackendUnavailable — proving the privileged path is
+//       genuinely absent (NOT a silent admit-and-do-nothing);
+//   (d) the DCQCN read side (query_dcqcn_state / verify_dcqcn_active)
+//       returns BackendUnavailable / DcqcnStatusUnavailable — proving
+//       the read side is structurally stubbed in lockstep with the
+//       write side, NOT fabricating an "Inactive" answer.  This
+//       composes with the existing fixy-A5-042 invariant.
+//
+// When a vendor-policy installer lands, the migration is:
+//   (1) flip cntp::privileged_apply_implemented to true,
+//   (2) replace this fixture's "stub-returns-Deferred" assertions
+//       with live-NIC fixtures that exercise mlxconfig / bnxt_re
+//       privileged paths against a probe NIC,
+//   (3) ship per-vendor DCQCN probe so query_dcqcn_state returns
+//       Active / Inactive rather than BackendUnavailable.
+// Tracked by FIXY-U-087.
+void test_apply_paths_are_stubbed() {
+    static_assert(cntp::privileged_apply_implemented == false,
+        "fixy-A5-002: RoCEv2 apply paths are substrate stubs.  "
+        "Flipping privileged_apply_implemented to true requires "
+        "(a) a vendor-policy installer (Mellanox mlxconfig / "
+        "Broadcom bnxt_re), (b) test_apply_paths_are_stubbed "
+        "replaced with live-NIC fixtures, (c) per-vendor DCQCN "
+        "probe wired, and (d) FIXY-U-087 sweep audit.");
+    static_assert(std::is_same_v<decltype(cntp::privileged_apply_implemented),
+                                 const bool>,
+        "fixy-A5-002: honesty trait must be a compile-time bool");
+
+    auto iface = cntp::NicInterfaceName::from("eth0");
+    assert(iface.has_value());
+
+    // (b) Deferred path: allow_privileged_apply defaults to false.
+    auto deferred = cntp::mint_roce_config<0b0000'1000, 26>(*iface);
+    auto deferred_apply = cntp::apply_roce_config(deferred);
+    assert(!deferred_apply.has_value());
+    assert(deferred_apply.error() == cntp::RoceError::PrivilegedApplyDeferred);
+
+    // (c) Backend-unavailable path: allow_privileged_apply=true.
+    auto requested = cntp::mint_roce_config<0b0000'1000, 26>(
+        *iface, cntp::DcqcnParams{}, true);
+    auto requested_apply = cntp::apply_roce_config(requested);
+    assert(!requested_apply.has_value());
+    assert(requested_apply.error()
+           == cntp::RoceError::VendorBackendUnavailable);
+
+    // (d) DCQCN read side stubbed in lockstep with write side.
+    auto state = cntp::query_dcqcn_state(*iface);
+    assert(state == cntp::DcqcnState::BackendUnavailable);
+    auto verify = cntp::verify_dcqcn_active(*iface);
+    assert(!verify.has_value());
+    assert(verify.error() == cntp::RoceError::DcqcnStatusUnavailable);
+
+    std::printf("  test_apply_paths_are_stubbed: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -150,11 +217,21 @@ int main() {
     static_assert(std::is_trivially_copyable_v<cntp::DcqcnParams>);
     static_assert(std::is_trivially_copyable_v<cntp::RoceConfig>);
 
+    static_assert(!cntp::privileged_apply_implemented,
+        "fixy-A5-002: RoCEv2 substrate is documented stub — every "
+        "apply_roce_config path returns PrivilegedApplyDeferred or "
+        "VendorBackendUnavailable; verify_dcqcn_active returns "
+        "DcqcnStatusUnavailable.  Flipping the trait to true requires "
+        "(a) a vendor-policy installer, (b) live-NIC fixtures "
+        "replacing test_apply_paths_are_stubbed, (c) per-vendor "
+        "DCQCN probe wired, and (d) FIXY-U-087 sweep audit.");
+
     std::printf("test_cntp_roce_config:\n");
     test_admission_and_names();
     test_config_minting_and_validation();
     test_pause_counter_parse();
     test_live_surfaces_if_available();
+    test_apply_paths_are_stubbed();
     std::printf("test_cntp_roce_config: all PASSED\n");
     return 0;
 }
