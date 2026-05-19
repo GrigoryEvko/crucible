@@ -87,6 +87,7 @@ using ::crucible::safety::proto::CrashClass;
 using ::crucible::safety::proto::Delegate;
 using ::crucible::safety::proto::Accept;
 using ::crucible::safety::proto::EpochedDelegate;
+using ::crucible::safety::proto::EpochedAccept;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Checkpoint (sessions/SessionCheckpoint.h) ──────────────────────

@@ -293,6 +293,7 @@ crucible_test(test_row_hash_fold)
 crucible_test(test_row_hash_contribution_sentinel)
 crucible_test(test_fixy_mint_inventory)
 crucible_test(test_fixy_decide)
+crucible_test(test_fixy_sess_mint_handle_reach)  # FIXY-U-022
 crucible_test(test_cost_model)
 crucible_test(test_saturate)
 crucible_test(test_checked)
