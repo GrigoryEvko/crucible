@@ -1337,6 +1337,12 @@ crucible_neg_compile_fixy_test(neg_fixy_unengaged_regime         "FixyNotEngaged
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_unengaged_axis   "AllDimsEngaged")
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_invalid_grant    "AllGrantsWellFormed")
 
+# fixy-A4-033 — IsGrantTag rejects cv-/ref-qualified grants.  Two
+# fixtures cover orthogonal copy-paste-from-runtime bug classes
+# (cv-qualification vs reference-qualification).
+crucible_neg_compile_fixy_test(neg_fixy_grant_cv_qualified       "AllGrantsWellFormed")
+crucible_neg_compile_fixy_test(neg_fixy_grant_reference          "AllGrantsWellFormed")
+
 # FIXY-AUDIT-E10 + fixy-H-01 — HS14 floor for mint_fn_for stance-bound
 # mint.  fixy-H-01 hardened mint_fn_for with explicit requires-clauses
 # (`StanceForUnary` for 1-param stances, `StanceForBinary` for 2-param

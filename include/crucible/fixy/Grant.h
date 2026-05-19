@@ -90,11 +90,32 @@ struct grant_base {
 
 // IsGrantTag — structural concept gate.
 //
-// Two clauses: (a) inherits grant_base, (b) is final per
-// safety/NotInherited.h discipline.  Inheriting without final would
-// allow a user-defined subclass to inject behavior into IsAccepted
-// by extending an already-shipped grant tag; the cheat-probe round
-// caches a neg-compile fixture for this exact attempt.
+// Three clauses: (a) G is its own cv-ref-stripped form — no
+// `const`/`volatile`/reference qualifiers; (b) inherits grant_base;
+// (c) is final per safety/NotInherited.h discipline.  Inheriting
+// without final would allow a user-defined subclass to inject
+// behavior into IsAccepted by extending an already-shipped grant
+// tag; the cheat-probe round caches a neg-compile fixture for this
+// exact attempt.
+//
+// ── cv-ref rejection (fixy-A4-033) ─────────────────────────────────
+//
+// Grant tags are pure zero-state phantom markers — every shipped
+// tag is empty + final + 1-byte sized.  There is no legitimate code
+// path that produces a cv-qualified or reference-qualified grant
+// type; such a type arises only from copy-paste of a `decltype` on
+// a runtime variable (`const auto g = affine{}; decltype(g)` →
+// `const affine`) or a reference return.  The pre-A4-033 form
+// stripped cv-ref via `std::remove_cvref_t` before checking, which
+// silently accepted these copy-paste mistakes; the tightened form
+// requires the caller to spell the bare grant type.
+//
+// Effect on diagnostic surface: a cv-ref-qualified grant now flows
+// through the same `AllGrantsWellFormed` rejection path as a
+// non-grant type (e.g. `int` in the pack), instead of being
+// silently coerced to its cv-ref-stripped form and projected onto
+// the resolver.  See test/fixy_neg/neg_fixy_grant_cv_qualified.cpp
+// and test/fixy_neg/neg_fixy_grant_reference.cpp.
 //
 // ── Defense-surface honesty (fixy-CR-09) ───────────────────────────
 //
@@ -137,8 +158,12 @@ struct grant_base {
 
 template <typename G>
 inline constexpr bool IsGrantTag_v =
-       std::is_base_of_v<grant_base, std::remove_cvref_t<G>>
-    && std::is_final_v<std::remove_cvref_t<G>>;
+       // fixy-A4-033: G must be cv-ref-free; copy-paste-from-runtime
+       // bugs (decltype on a const/reference variable) reject here
+       // rather than reach `which_dim_v<G>` via the resolver.
+       std::is_same_v<G, std::remove_cvref_t<G>>
+    && std::is_base_of_v<grant_base, G>
+    && std::is_final_v<G>;
 
 template <typename G>
 concept IsGrantTag = IsGrantTag_v<G>;
@@ -595,6 +620,33 @@ static_assert(which_dim_v<in_region<0>>                                      == 
 static_assert(which_dim_v<from_source<safety::source::FromUser>>             == dim::DimensionAxis::Provenance);
 static_assert(which_dim_v<trust_assumed<>>                                   == dim::DimensionAxis::Trust);
 static_assert(which_dim_v<protocol<safety::fn::proto::None>>                 == dim::DimensionAxis::Protocol);
+
+// ── fixy-A4-033: cv-ref rejection witnesses ────────────────────────
+//
+// Three classes of copy-paste-from-runtime mistake must be rejected:
+//   * const-qualified grant (`const auto g = affine{}; decltype(g)`)
+//   * volatile-qualified grant (rare; uniform discipline)
+//   * reference-qualified grant (return value from `g_ref()`)
+//
+// The pre-A4-033 form (which stripped cv-ref before checking) made
+// every line below ACCEPT — silently coercing the bug to its bare
+// form.  The tightened form REJECTS all six, forcing the caller to
+// spell the grant tag's bare type.
+
+// Positive control — bare grant tags accept.
+static_assert(IsGrantTag_v<affine>);
+static_assert(IsGrantTag_v<copy>);
+static_assert(IsGrantTag_v<as_public>);
+
+// cv-qualified — REJECT.
+static_assert(!IsGrantTag_v<const affine>);
+static_assert(!IsGrantTag_v<volatile affine>);
+static_assert(!IsGrantTag_v<const volatile affine>);
+
+// Reference-qualified — REJECT.
+static_assert(!IsGrantTag_v<affine&>);
+static_assert(!IsGrantTag_v<const affine&>);
+static_assert(!IsGrantTag_v<affine&&>);
 
 }  // namespace detail::grant_self_test
 
