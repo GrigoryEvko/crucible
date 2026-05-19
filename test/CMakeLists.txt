@@ -1945,6 +1945,35 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_wrong_handle
 crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_unfit_snap
     "constraints not satisfied|SnapshotSessionSurface|no matching function")
 
+# fixy-HS14-07 — Substr.h re-export of ChaseLevDeque mints
+# (mint_chaselev_owner / mint_chaselev_thief / mint_owner_session /
+# mint_thief_session).  Four mints × two distinct mismatch classes
+# each = 8 fixtures.  The pairs split:
+#   _non_surface  / _wrong_perm  — owner token mint
+#   _non_surface  / _wrong_proof — thief token mint
+#   _non_ctx      / _wrong_handle — owner ctx-bound session mint
+#   _non_ctx      / _wrong_handle — thief ctx-bound session mint
+#
+# Witnesses the using-decl preserves the per-mint requires-clause
+# AND the per-parameter binding shape independently across all
+# four ChaseLev mints.
+crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_owner_non_surface
+    "constraints not satisfied|ChaseLevSessionSurface|no matching function|mint_chaselev_owner")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_owner_wrong_perm
+    "no matching function|cannot convert|Permission|mint_chaselev_owner")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_thief_non_surface
+    "constraints not satisfied|ChaseLevSessionSurface|no matching function|mint_chaselev_thief")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_thief_wrong_proof
+    "no matching function|cannot convert|SharedPermission|mint_chaselev_thief")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_owner_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function|mint_owner_session")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_owner_session_wrong_handle
+    "no matching function|cannot convert|OwnerHandle|mint_owner_session")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_thief_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function|mint_thief_session")
+crucible_neg_compile_fixy_test(neg_fixy_substr_chaselev_thief_session_wrong_handle
+    "no matching function|cannot convert|ThiefHandle|mint_thief_session")
+
 # fixy-A4-030 — substrate-vs-fixy disjointness discriminator witness.
 # Reject.h's main guard is the std::index_sequence fold that walks every
 # safety::diag::Catalog entry and asserts !is_fixy_diag_v<entry>; these
