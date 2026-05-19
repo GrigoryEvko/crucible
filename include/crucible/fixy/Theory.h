@@ -57,8 +57,9 @@
 // that engages every axis correctly STILL fails IsAccepted if its
 // Grants pack matches any §30.14 entry.  The fixy-level diagnostic
 // names which corpus entry matched (struct name + paper + year) —
-// the tier-5 static_assert at fixy/Fn.h:641 surfaces the matched
-// entry's `name()` (e.g. `classified_io_without_declassify` —
+// the tier-5 static_assert keyed by `fixy_h02_tier5_not_in_corpus`
+// in fixy/Fn.h surfaces the matched entry's `name()` (e.g.
+// `classified_io_without_declassify` —
 // fixy-H-16) AND its `cite()` text (e.g. "Volpano-Smith-Irvine
 // 1996 / Sabelfeld-Myers 2003 — …" — fixy-H-13) via
 // `corpus_full_diagnostic_v<Type, Grants...>`, assembled into
