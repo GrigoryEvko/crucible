@@ -1430,6 +1430,27 @@ static_assert(!IsAccepted<int>,
 static_assert(!IsAcceptedGrants<>,
     "IsAcceptedGrants<> must reject the empty pack.");
 
+// fixy-M-06: pin the rejection CAUSE.  The two asserts above could
+// fire for multiple reasons — bad payload type, Type-marker injection
+// failure, OR axes 2..22 unengaged.  These two diagnostic-surface
+// witnesses pin the actual cause: `first_missing_axis_v<>` reports
+// Type for an empty-empty pack (proves rejection is "no axis
+// engaged"), and after the implicit Type-marker injection that
+// `IsAccepted` performs, the first-missing shifts to Refinement
+// (proves rejection of `IsAccepted<int>` specifically is from axes
+// 2..22, not from the Type axis or the int payload).
+static_assert(first_missing_axis_v<> == dim::DimensionAxis::Type,
+    "fixy-M-06: empty Grants pack must miss Type FIRST — pins the "
+    "IsAcceptedGrants<> rejection cause as 'no axis engaged'.");
+static_assert(
+    first_missing_axis_v<detail::accept::ImplicitTypeMarker>
+        == dim::DimensionAxis::Refinement,
+    "fixy-M-06: after Type-marker injection (what IsAccepted does), "
+    "the first missing axis MUST be Refinement.  Pins the "
+    "IsAccepted<int> rejection cause as 'axes 2..22 unengaged', "
+    "NOT 'Type axis' or 'int payload'.  A change to the Type-axis "
+    "logic that silently shifts the cause fires this static_assert.");
+
 // 2. All-strict pack accepts (low-level form — pack includes strict<Type>).
 static_assert(accepts_pack_v<int, AllStrictPack>,
     "AllStrict pack must accept — every dim has an engagement marker.");
