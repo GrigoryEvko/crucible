@@ -3,6 +3,7 @@
 #include <array>
 #include <cerrno>
 #include <cstring>
+#include <memory>
 
 #include <asm-generic/socket.h>
 #include <linux/pkt_sched.h>
@@ -61,17 +62,18 @@ struct QdiscDumpRequest {
 
 [[nodiscard]] std::expected<Qdisc, PacingError>
 qdisc_from_attrs(tcmsg const* msg, std::size_t payload_len) noexcept {
-    auto const* cursor = reinterpret_cast<std::byte const*>(msg + 1);
+    auto const* cursor =
+        static_cast<std::byte const*>(static_cast<void const*>(msg + 1));
     std::size_t remaining = payload_len;
 
     while (remaining >= sizeof(rtattr)) {
-        auto const* attr = reinterpret_cast<rtattr const*>(cursor);
+        auto const* attr = std::start_lifetime_as<rtattr>(cursor);
         if (attr->rta_len < sizeof(rtattr) || attr->rta_len > remaining) {
             return std::unexpected(PacingError::QdiscKindMissing);
         }
         if (attr->rta_type == TCA_KIND) {
-            auto const* data = reinterpret_cast<char const*>(
-                cursor + sizeof(rtattr));
+            auto const* data = static_cast<char const*>(
+                static_cast<void const*>(cursor + sizeof(rtattr)));
             const std::size_t cap = attr->rta_len - sizeof(rtattr);
             std::size_t len = 0;
             while (len < cap && data[len] != '\0') {
@@ -180,10 +182,11 @@ query_active_qdisc(NicInterfaceName iface) noexcept {
             return std::unexpected(PacingError::NetlinkReceiveFailed);
         }
 
-        auto const* cursor = reinterpret_cast<std::byte const*>(buffer.data());
+        auto const* cursor = static_cast<std::byte const*>(
+            static_cast<void const*>(buffer.data()));
         std::size_t remaining = static_cast<std::size_t>(received);
         while (remaining >= sizeof(nlmsghdr)) {
-            auto const* header = reinterpret_cast<nlmsghdr const*>(cursor);
+            auto const* header = std::start_lifetime_as<nlmsghdr>(cursor);
             if (header->nlmsg_len < sizeof(nlmsghdr) ||
                 header->nlmsg_len > remaining) {
                 return std::unexpected(PacingError::NetlinkReceiveFailed);
@@ -200,7 +203,7 @@ query_active_qdisc(NicInterfaceName iface) noexcept {
                     return std::unexpected(PacingError::NetlinkReceiveFailed);
                 }
 
-                auto const* msg = reinterpret_cast<tcmsg const*>(
+                auto const* msg = std::start_lifetime_as<tcmsg>(
                     cursor + NLMSG_HDRLEN);
                 if (msg->tcm_ifindex == static_cast<int>(ifindex) &&
                     msg->tcm_parent == TC_H_ROOT) {

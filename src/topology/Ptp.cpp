@@ -5,6 +5,7 @@
 #include <cstring>
 #include <ctime>
 #include <limits>
+#include <memory>
 
 #include <fcntl.h>
 #include <linux/net_tstamp.h>
@@ -277,7 +278,7 @@ configure_hardware_timestamping(cntp::SocketFd control_socket,
     ifreq request{};
     std::memcpy(request.ifr_name, iface.view().data(), iface.view().size());
     request.ifr_name[iface.view().size()] = '\0';
-    request.ifr_data = reinterpret_cast<char*>(&config);
+    request.ifr_data = static_cast<char*>(static_cast<void*>(&config));
 
     const int rc = ::ioctl(control_socket.value(), SIOCSHWTSTAMP, &request);
     if (rc != 0) {
@@ -326,7 +327,7 @@ recv_with_hw_timestamp(cntp::SocketFd socket,
             return std::unexpected(PtpError::MalformedTimestampControl);
         }
 
-        auto* ts = reinterpret_cast<timespec*>(CMSG_DATA(cmsg));
+        auto* ts = std::start_lifetime_as_array<timespec>(CMSG_DATA(cmsg), 3);
         const bool has_hardware = timespec_nonzero(ts[2]);
         const bool has_software = timespec_nonzero(ts[0]);
         if (!has_hardware && !has_software) {
