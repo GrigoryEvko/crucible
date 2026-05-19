@@ -508,6 +508,22 @@ add_test(NAME no_reinterpret_cast
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh)
 set_tests_properties(no_reinterpret_cast no_reinterpret_cast_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-105")
+# FIXY-U-106 wire: gen-mint-inventory.sh self-test + --check drift gate.
+# Complementary to test_fixy_mint_inventory (the structural CI gate of
+# U-002) — the script surfaces the WHOLE substrate-mint table with §XXI
+# compliance flags and HS14 fixture counts.  --check fires CI red if
+# scripts/gen-mint-inventory.sh has not been re-run after a mint
+# add/rename/move, forcing same-PR resync of misc/mint-inventory.md.
+add_test(NAME mint_inventory_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.sh
+          --self-test
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME mint_inventory_check
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.sh
+          --check
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+set_tests_properties(mint_inventory_self_test mint_inventory_check PROPERTIES
+    LABELS "ci_guard;fixy-U-106")
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
