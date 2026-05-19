@@ -320,9 +320,15 @@ using ::crucible::safety::proto::sharded_grid_session::mint_consumer_session;
 // who need the raw substrate (handle-level only, no session protocol)
 // can reach it through the fixy umbrella.
 //
-// MPSC has a primitive (concurrent/PermissionedMpscChannel.h) but no
-// session header yet — when sessions/MpscChannelSession.h ships, a
-// `fixy::substr::mpsc` sub-namespace will join the others above.
+// MPSC: raw substrate (concurrent/PermissionedMpscChannel.h) is
+// surfaced below.  No `sessions/MpscChannelSession.h` ships today;
+// the related fixy-side gap (a `fixy::substr::mpsc` sub-namespace
+// mirroring `fixy::substr::spsc::` / `metalog::` / etc.) is tracked
+// independently as fixy-M-20 — fixy-A4-028 deliberately does NOT
+// promise a delivery here, because the substrate-side typed-session
+// header is the actual prerequisite and its shape is unsettled
+// (MPMC ships via MpmcChannelSession.h with a different protocol
+// shape that may or may not generalize cleanly to MPSC).
 
 namespace concurrent {
 // MPSC channel (multi-producer single-consumer) — raw primitive only.
