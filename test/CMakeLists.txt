@@ -525,6 +525,23 @@ add_test(NAME syscall_capability
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.sh)
 set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-100")
+# FIXY-U-101 row-membership discipline (closes fixy-A5-039
+# regression-prevention surface).  scripts/check-row-contains-discipline.sh
+# flags inline `effects::row_contains_v<row_type_of_t<Ctx>, ...>` sites
+# that should migrate to the named lifts (CtxOwnsCapability /
+# CtxOwnsAnyOf / CtxOwnsAllOf, shipped in commit c0b53827).  43
+# grandfathered sites live in scripts/row-contains-discipline-allowlist.txt,
+# each annotated with fixy-U-101-MIGRATE: <target lift> — the allowlist
+# IS the migration tracking surface.  When a site migrates to the
+# named lift, its allowlist entry MUST be pruned in the same PR (drift-
+# free invariant).
+add_test(NAME row_contains_discipline_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-row-contains-discipline.sh
+          --self-test)
+add_test(NAME row_contains_discipline
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-row-contains-discipline.sh)
+set_tests_properties(row_contains_discipline row_contains_discipline_self_test
+    PROPERTIES LABELS "ci_guard;fixy-U-101")
 # FIXY-U-104 fixy::is:: alias-parity enforcement (closes fixy-L-05 +
 # fixy-L-06 going forward).  scripts/check-isx-parity.sh diffs the
 # public `_v` traits + `_t` slot-extractor aliases in safety/Is*.h
