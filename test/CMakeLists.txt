@@ -2061,6 +2061,37 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_calendar_grid_consumer_session_no
 crucible_neg_compile_fixy_test(neg_fixy_substr_calendar_grid_consumer_session_wrong_handle
     "no matching function|cannot convert|ConsumerHandle|mint_consumer_session")
 
+# fixy-HS14-11 — Substr.h re-export of ShardedCalendarGrid mints
+# (mint_sharded_calendar_grid_producer /
+# mint_sharded_calendar_grid_consumer / mint_producer_session /
+# mint_consumer_session).  Four mints × two distinct mismatch
+# classes each = 8 fixtures.  The pairs split:
+#   _non_surface  / _wrong_perm    — producer/consumer token mints
+#   _non_ctx      / _wrong_handle  — producer/consumer ctx-bound
+#                                    session mints
+#
+# Note: BOTH producer and consumer sides carry a non-deducible
+# shard-index `S` (std::size_t) — distinct from CalendarGrid where
+# only the producer carries `P`.  Both variants are witnessed at
+# the sharded mints to prove the using-decl preserves the
+# non-deducible-parameter discipline on both sides.
+crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_calendar_grid_producer_non_surface
+    "constraints not satisfied|ShardedCalendarGridSessionSurface|no matching function|mint_sharded_calendar_grid_producer")
+crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_calendar_grid_producer_wrong_perm
+    "no matching function|cannot convert|Permission|mint_sharded_calendar_grid_producer")
+crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_calendar_grid_consumer_non_surface
+    "constraints not satisfied|ShardedCalendarGridSessionSurface|no matching function|mint_sharded_calendar_grid_consumer")
+crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_calendar_grid_consumer_wrong_perm
+    "no matching function|cannot convert|Permission|mint_sharded_calendar_grid_consumer")
+crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_calendar_grid_producer_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function|mint_producer_session")
+crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_calendar_grid_producer_session_wrong_handle
+    "no matching function|cannot convert|ProducerHandle|mint_producer_session")
+crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_calendar_grid_consumer_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function|mint_consumer_session")
+crucible_neg_compile_fixy_test(neg_fixy_substr_sharded_calendar_grid_consumer_session_wrong_handle
+    "no matching function|cannot convert|ConsumerHandle|mint_consumer_session")
+
 # fixy-A4-030 — substrate-vs-fixy disjointness discriminator witness.
 # Reject.h's main guard is the std::index_sequence fold that walks every
 # safety::diag::Catalog entry and asserts !is_fixy_diag_v<entry>; these
