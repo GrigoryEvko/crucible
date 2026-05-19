@@ -65,23 +65,57 @@ using ::crucible::effects::Capability;
 
 // ── Self-test ──────────────────────────────────────────────────────
 //
-// One witness rides this header: the re-exported `mint_cap` and
-// `mint_from_ctx` are the SAME functions as the substrate's, not
-// re-declarations.  We assert this via pointer-to-function
-// comparison at compile time.
+// Three witnesses ride this header (fixy-M-02: previously the block
+// defined a `same_mint_cap_v` template but never fired it — false
+// advertising).  Each witness pins one structural promise:
+//
+//   1. `fixy::cap::mint_cap` is the substrate function, not a re-
+//      declaration.  Function-pointer type identity at a concrete
+//      (E, Source) pair that satisfies `CanMintCap` proves the
+//      using-decl does NOT introduce a new overload.
+//   2. `fixy::cap::mint_from_ctx` is the substrate function, same
+//      mechanism over a (E, Ctx) pair that satisfies `CtxCanMint`.
+//   3. `fixy::cap::Capability<E, S>` IS `effects::Capability<E, S>`
+//      (template-identity, not an alias-template that happens to
+//      have the same instantiations).
 
 namespace crucible::fixy::cap::self_test {
-
-// Round-trip witness: `fixy::cap::mint_cap` and `effects::mint_cap`
-// name the same function template.  We instantiate both at the same
-// (E, Source) pair and check the resolved function-pointer types
-// match — this proves the using-declaration does not introduce a
-// new overload.
 
 template <::crucible::effects::Effect E, class Source>
 inline constexpr bool same_mint_cap_v =
     std::is_same_v<
         decltype(&::crucible::fixy::cap::mint_cap<E, Source>),
         decltype(&::crucible::effects::mint_cap<E, Source>)>;
+
+template <::crucible::effects::Effect E, class Ctx>
+inline constexpr bool same_mint_from_ctx_v =
+    std::is_same_v<
+        decltype(&::crucible::fixy::cap::mint_from_ctx<E, Ctx>),
+        decltype(&::crucible::effects::mint_from_ctx<E, Ctx>)>;
+
+// (1) mint_cap identity — Bg is a cap_type whose permitted_row
+//     contains Alloc and IO, so CanMintCap is satisfied for both.
+static_assert(same_mint_cap_v<::crucible::effects::Effect::Alloc,
+                              ::crucible::effects::Bg>,
+    "fixy::cap::mint_cap must alias the substrate function — the "
+    "using-decl did not introduce a new overload (Alloc row).");
+static_assert(same_mint_cap_v<::crucible::effects::Effect::IO,
+                              ::crucible::effects::Bg>,
+    "fixy::cap::mint_cap must alias the substrate function (IO row).");
+
+// (2) mint_from_ctx identity — BgDrainCtx's cap_type is Bg, whose
+//     permitted_row contains Alloc, so CtxCanMint is satisfied.
+static_assert(same_mint_from_ctx_v<::crucible::effects::Effect::Alloc,
+                                   ::crucible::effects::BgDrainCtx>,
+    "fixy::cap::mint_from_ctx must alias the substrate function.");
+
+// (3) Capability type-carrier identity — alias preserves template
+//     identity (same instantiation, not just convertible).
+static_assert(std::is_same_v<
+    ::crucible::fixy::cap::Capability<
+        ::crucible::effects::Effect::Alloc, ::crucible::effects::Bg>,
+    ::crucible::effects::Capability<
+        ::crucible::effects::Effect::Alloc, ::crucible::effects::Bg>>,
+    "fixy::cap::Capability must alias effects::Capability.");
 
 }  // namespace crucible::fixy::cap::self_test
