@@ -10,6 +10,7 @@
 // admitted kernel name to an already-owned socket fd.
 
 #include <crucible/Platform.h>
+#include <crucible/effects/ExecCtx.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
@@ -225,5 +226,46 @@ query_cc_for_socket(SocketFd fd) noexcept;
 
 [[nodiscard]] std::expected<CcSelection, CcError>
 query_cc_selection_for_socket(SocketFd fd) noexcept;
+
+// fixy-A5-016 worked-example: cap-row-gated entry point for the
+// TCP_CONGESTION setsockopt() syscall.
+//
+// The unparameterized overloads above retain backward compatibility
+// (no Ctx-aware caller exists yet across cntp/canopy/topology), so
+// the gate is additive: callers that already thread an ExecCtx
+// through their flow get a compile-time-checked entry point; legacy
+// callers continue to compile.  The §XXI Universal Mint Pattern is
+// NOT invoked here because nothing is being minted — the function
+// performs a privileged action against an already-owned SocketFd.
+//
+// What the gate enforces:
+//   • `Ctx::row_type` MUST contain `Effect::IO` (the setsockopt
+//     syscall is an IO effect — kernel state mutation through a
+//     file descriptor).
+//   • Without the cap, the concept rejects at template-substitution
+//     time — the call site becomes a compile error pointing at
+//     `CtxOwnsCapability<Ctx, Effect::IO>`.
+//   • A `HotFgCtx` (Row<>) cannot reach this overload; it can still
+//     reach the unparameterized form (which IS the discipline gap
+//     the FIXY-U-100 linter sweep closes — see below).
+//
+// Production migration path (FIXY-U-100):
+//   1. Author callers thread `ColdInitCtx` / `BgDrainCtx` /
+//      `BgCompileCtx` into their setup flows.
+//   2. The Ctx-gated overload is selected by overload resolution
+//      when a Ctx is in scope.
+//   3. Eventually the unparameterized form is `[[deprecated]]` then
+//      removed; until then it serves as the compat shim.
+//
+// Body: forwards to the unparameterized form so the two overloads
+// agree on the underlying setsockopt call.  Zero runtime cost from
+// the gate — concepts evaluate at compile time, the Ctx parameter
+// is an empty struct (sizeof == 1, EBO-collapsible).
+template <effects::IsExecCtx Ctx>
+    requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
+[[nodiscard]] std::expected<void, CcError>
+set_cc_for_socket(Ctx const&, SocketFd fd, DeclaredCcChoice choice) noexcept {
+    return set_cc_for_socket(fd, choice);
+}
 
 }  // namespace crucible::cntp

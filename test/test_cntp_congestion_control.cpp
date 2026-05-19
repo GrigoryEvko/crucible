@@ -1,15 +1,18 @@
 #include <crucible/cntp/CongestionControl.h>
+#include <crucible/effects/ExecCtx.h>
 
 #include <cassert>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 #include <sys/socket.h>
 #include <unistd.h>
 
 namespace cntp = crucible::cntp;
 namespace saf = crucible::safety;
+namespace eff = crucible::effects;
 
 namespace {
 
@@ -174,7 +177,67 @@ void test_live_socket_roundtrip_if_available() {
     std::printf("  test_live_socket_roundtrip_if_available: PASSED\n");
 }
 
+// fixy-A5-016 HS14 fixture #1: positive runtime witness that the
+// Ctx-gated overload of set_cc_for_socket dispatches correctly when
+// the caller's ExecCtx carries Effect::IO in its row.  We can't make
+// a real setsockopt() succeed without an actual TCP socket, but we
+// can prove the overload IS selectable + IS callable + agrees with
+// the unparameterized form on error returns (both return
+// SetSockOptFailed on an unsupported fd, same path).
+void test_io_gated_overload_dispatches() {
+    // Closed fd; admit_socket_fd checks for >= 0 so any non-negative
+    // value passes admission; the syscall then fails downstream.
+    // What we're proving here is that the Ctx-gated overload reaches
+    // the syscall site, not that the syscall succeeds.
+    auto fd = cntp::admit_socket_fd(/*invalid*/ 0xFFFE);
+    assert(fd.has_value());
+
+    auto choice = cntp::DeclaredCcChoice{cntp::CcSelection{
+        .algorithm = cntp::CcAlgorithm::Cubic,
+        .kernel_name = cntp::KernelCcName::from("cubic").value(),
+    }};
+
+    // Gated form: same expected<void, CcError> shape.  BgDrainCtx has
+    // row = Row<Bg, Alloc> — no IO!  So this Ctx CANNOT reach the
+    // gate; ColdInitCtx has Row<Init, Alloc, IO> and IS accepted.
+    eff::ColdInitCtx init{};
+    auto gated = cntp::set_cc_for_socket(init, *fd, choice);
+    auto bare  = cntp::set_cc_for_socket(*fd, choice);
+    // Either both succeed (impossible on closed fd) or both produce
+    // the same error code — the two overloads agree.
+    assert(gated.has_value() == bare.has_value());
+    if (!gated.has_value()) {
+        assert(gated.error() == bare.error());
+    }
+
+    std::printf("  test_io_gated_overload_dispatches:  PASSED\n");
+}
+
 }  // namespace
+
+// fixy-A5-016 HS14 fixture #2: compile-time negative-witness that the
+// Ctx-gated overload REJECTS a Ctx whose row lacks Effect::IO.
+//
+// HotFgCtx::row_type == Row<>   — NO IO atom — must reject
+// BgDrainCtx::row_type == Row<Bg, Alloc> — NO IO atom — must reject
+// ColdInitCtx::row_type == Row<Init, Alloc, IO> — IO present — accepts
+// BgCompileCtx::row_type == Row<Bg, Alloc, IO> — IO present — accepts
+//
+// We verify via the concept directly (the GCC 16 limitation noted in
+// test_effects.cpp test_variadic_row_membership_lifts applies here
+// too — `requires(c) { fn(c); }` inside a static_assert produces a
+// hard error rather than SFINAE).
+static_assert( eff::CtxOwnsCapability<eff::ColdInitCtx,  eff::Effect::IO>,
+    "fixy-A5-016: ColdInitCtx::row = Row<Init, Alloc, IO> — IO must be present");
+static_assert( eff::CtxOwnsCapability<eff::BgCompileCtx, eff::Effect::IO>,
+    "fixy-A5-016: BgCompileCtx::row = Row<Bg, Alloc, IO> — IO must be present");
+static_assert(!eff::CtxOwnsCapability<eff::HotFgCtx,     eff::Effect::IO>,
+    "fixy-A5-016: HotFgCtx::row = Row<> — IO MUST be absent (this is "
+    "the whole point of the gate: hot-path code cannot reach the "
+    "setsockopt syscall)");
+static_assert(!eff::CtxOwnsCapability<eff::BgDrainCtx,   eff::Effect::IO>,
+    "fixy-A5-016: BgDrainCtx::row = Row<Bg, Alloc> — IO MUST be absent "
+    "(bg-drain context does not authorize IO without explicit promotion)");
 
 int main() {
     static_assert(sizeof(cntp::SocketFd) == sizeof(int));
@@ -201,6 +264,7 @@ int main() {
     test_name_admission();
     test_availability_parse_and_recommendation();
     test_mint_surfaces();
+    test_io_gated_overload_dispatches();
     test_live_socket_roundtrip_if_available();
     std::printf("test_cntp_congestion_control: all PASSED\n");
     return 0;
