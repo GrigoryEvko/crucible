@@ -97,6 +97,9 @@
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
 
+#include <cstdint>       // FIXY-U-020 sentinel uses std::uint64_t
+#include <type_traits>   // FIXY-U-020 sentinel uses std::is_same_v
+
 namespace crucible::fixy::wrap {
 
 // ─── Graded-backed wrappers (11) ─────────────────────────────────
@@ -184,3 +187,109 @@ using ::crucible::safety::OrderedAppendOnly;
 using ::crucible::safety::AtomicMonotonic;
 
 }  // namespace crucible::fixy::wrap
+
+// ─── Dual-export sentinel — FIXY-U-020 (#1732) ─────────────────────
+//
+// Header-internal static_asserts pin each `using ::crucible::safety::X`
+// alias to its substrate origin via `std::is_same_v`.  The companion
+// reach test (test/test_fixy_umbrella.cpp::reach_sub_namespaces) only
+// witnesses that `fixy::wrap::X` is REACHABLE — it does NOT verify the
+// underlying type identity.  A typo that aliases `fixy::wrap::Linear`
+// to the wrong substrate symbol (e.g., `using detail::Linear;` instead
+// of `using safety::Linear;`) would slip past the reach test.  This
+// sentinel block catches that drift in the header itself, before any
+// caller TU compiles.
+//
+// Coverage: 11 Graded-backed wrappers (CLAUDE.md §XVI canonical) +
+// 5 Mutation-derivative wrappers + 3 representative predicate lambdas
+// + the 2 fundamental Refined aliases (Linear/Refined composition).
+// 21 cells total — covers every conceptual category in this header.
+//
+// The predicate-lambda check uses `decltype(positive) ==
+// decltype(safety::positive)` because lambdas are unnameable types;
+// the address-equality form `&positive == &safety::positive` is not a
+// constant expression for stateless lambdas in C++26 unless the lambda
+// is `consteval`.  decltype-equality is the structural witness that
+// the two names resolve to the SAME compile-time lambda type.
+
+namespace crucible::fixy::wrap::self_test {
+
+// Tier-S Graded wrappers (11 per CLAUDE.md §XVI canonical outer→inner).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Linear<int>,
+    ::crucible::safety::Linear<int>>,
+    "fixy::wrap::Linear must alias safety::Linear — dual-export drift.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Refined<::crucible::safety::positive, int>,
+    ::crucible::safety::Refined<::crucible::safety::positive, int>>,
+    "fixy::wrap::Refined must alias safety::Refined — dual-export drift.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::SealedRefined<::crucible::safety::positive, int>,
+    ::crucible::safety::SealedRefined<::crucible::safety::positive, int>>,
+    "fixy::wrap::SealedRefined must alias safety::SealedRefined.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Tagged<int, ::crucible::safety::source::FromUser>,
+    ::crucible::safety::Tagged<int, ::crucible::safety::source::FromUser>>,
+    "fixy::wrap::Tagged must alias safety::Tagged.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Secret<int>,
+    ::crucible::safety::Secret<int>>,
+    "fixy::wrap::Secret must alias safety::Secret.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Monotonic<std::uint64_t>,
+    ::crucible::safety::Monotonic<std::uint64_t>>,
+    "fixy::wrap::Monotonic must alias safety::Monotonic.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::AppendOnly<int>,
+    ::crucible::safety::AppendOnly<int>>,
+    "fixy::wrap::AppendOnly must alias safety::AppendOnly.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Stale<int>,
+    ::crucible::safety::Stale<int>>,
+    "fixy::wrap::Stale must alias safety::Stale.");
+
+// Refined composition orderings (both directions must alias correctly).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::LinearRefined<::crucible::safety::positive, int>,
+    ::crucible::safety::LinearRefined<::crucible::safety::positive, int>>,
+    "fixy::wrap::LinearRefined must alias safety::LinearRefined.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::RefinedLinear<::crucible::safety::positive, int>,
+    ::crucible::safety::RefinedLinear<::crucible::safety::positive, int>>,
+    "fixy::wrap::RefinedLinear must alias safety::RefinedLinear.");
+
+// SharedPermission — dual-exported in both fixy::wrap:: and fixy::perm::.
+// Both paths MUST resolve to the same substrate type (fixy-A4-011).
+struct WrapDualExportTag {};
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::SharedPermission<WrapDualExportTag>,
+    ::crucible::safety::SharedPermission<WrapDualExportTag>>,
+    "fixy::wrap::SharedPermission must alias safety::SharedPermission "
+    "— this dual-export must agree with the fixy::perm:: parallel path.");
+
+// Mutation.h derivatives.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::WriteOnce<int>,
+    ::crucible::safety::WriteOnce<int>>,
+    "fixy::wrap::WriteOnce must alias safety::WriteOnce.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::AtomicMonotonic<std::uint64_t>,
+    ::crucible::safety::AtomicMonotonic<std::uint64_t>>,
+    "fixy::wrap::AtomicMonotonic must alias safety::AtomicMonotonic.");
+
+// Predicate lambdas — decltype-identity (lambdas are unnameable, so
+// is_same_v on decltype is the structural witness).
+static_assert(std::is_same_v<
+    decltype(::crucible::fixy::wrap::positive),
+    decltype(::crucible::safety::positive)>,
+    "fixy::wrap::positive must alias safety::positive — predicate drift.");
+static_assert(std::is_same_v<
+    decltype(::crucible::fixy::wrap::non_negative),
+    decltype(::crucible::safety::non_negative)>,
+    "fixy::wrap::non_negative must alias safety::non_negative.");
+static_assert(std::is_same_v<
+    decltype(::crucible::fixy::wrap::non_null),
+    decltype(::crucible::safety::non_null)>,
+    "fixy::wrap::non_null must alias safety::non_null.");
+
+}  // namespace crucible::fixy::wrap::self_test

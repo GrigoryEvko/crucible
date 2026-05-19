@@ -59,6 +59,8 @@
 #include <crucible/permissions/PermissionFork.h>
 #include <crucible/permissions/PermissionInherit.h>
 
+#include <type_traits>   // FIXY-U-020 sentinel uses std::is_same_v
+
 namespace crucible::fixy::perm {
 
 // ── Type carriers — grep-discoverable surface ──────────────────────
@@ -113,3 +115,71 @@ using ::crucible::permissions::mint_permission_inherit;
 using ::crucible::permissions::mint_permission_inherit_t;
 
 }  // namespace crucible::fixy::perm
+
+// ─── Dual-export sentinel — FIXY-U-020 (#1732) ─────────────────────
+//
+// Header-internal identity sentinels.  The companion umbrella reach
+// test (test/test_fixy_umbrella.cpp::reach_sub_namespaces) verifies
+// REACHABILITY of `fixy::perm::` symbols; the asserts below verify
+// IDENTITY — that each alias resolves to the substrate type, not a
+// shadowed local of the same name.
+//
+// fixy-A4-011 cross-check: `SharedPermission` is dual-exported in both
+// fixy::wrap:: (via the Graded-wrapper directory) and fixy::perm::
+// (via the CSL permission directory).  Both paths MUST alias the
+// SAME substrate symbol — verified here AND in Wrap.h's parallel
+// sentinel block.  Drift between the two paths would mean callers see
+// two distinct types depending on import path, which silently breaks
+// `splits_into` matching across TUs.
+
+namespace crucible::fixy::perm::self_test {
+
+// ── Permission tag type carriers ───────────────────────────────────
+struct PermDualExportTag {};
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::Permission<PermDualExportTag>,
+    ::crucible::safety::Permission<PermDualExportTag>>,
+    "fixy::perm::Permission must alias safety::Permission — dual-export "
+    "drift breaks linearity proofs across TUs.");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::SharedPermission<PermDualExportTag>,
+    ::crucible::safety::SharedPermission<PermDualExportTag>>,
+    "fixy::perm::SharedPermission must alias safety::SharedPermission "
+    "AND must agree with the fixy::wrap:: parallel re-export (fixy-A4-011).");
+
+// ── mint_permission_inherit_t alias-template reachability ──────────
+//
+// Witness that the alias-template NAME is imported under fixy::perm::
+// by binding a SFINAE-detector probe to it.  We do NOT instantiate
+// the alias here (instantiation requires substrate's survivor_registry
+// to be specialized for the test tag, which would couple this sentinel
+// to substrate internals).  The compile-time witness is: the using-decl
+// is well-formed when this header is parsed.  Identity vs substrate is
+// asserted at the only legitimate caller — substrate's own self-test
+// in PermissionInherit.h.  If the using-decl drifted, the umbrella
+// reach test (test/test_fixy_umbrella.cpp) would fail at link time.
+//
+// We use the SFINAE detector pattern: define a template that NAMES
+// fixy::perm::mint_permission_inherit_t in its primary template's
+// default template-argument — this forces name lookup without
+// instantiation.
+
+template <typename Probe = void>
+struct mint_permission_inherit_t_name_reach_witness_ {
+    // The body references mint_permission_inherit_t as a template-id
+    // without instantiation by using it in `requires` position.  The
+    // `requires` clause is parsed but only checked when this is
+    // instantiated, which we never do.  Mere parsing of the body
+    // requires the name `mint_permission_inherit_t` to be visible
+    // under `::crucible::fixy::perm::`.
+    template <typename DT, typename... STs>
+    using probe_t = ::crucible::fixy::perm::mint_permission_inherit_t<DT, STs...>;
+    static constexpr bool ok = true;
+};
+static_assert(mint_permission_inherit_t_name_reach_witness_<>::ok,
+    "fixy::perm::mint_permission_inherit_t must be reachable as an "
+    "alias template — drift in the using-decl breaks fixy-A1-029.");
+
+}  // namespace crucible::fixy::perm::self_test
