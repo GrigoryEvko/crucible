@@ -182,11 +182,16 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::diag::FixyNotEngaged_Observability,
     ::crucible::safety::diag::Severity::Error,
     "Observability is the dual of Effect — accept-only, half-engaged "
-    "axis (fixy-M-08).  Strict default resolves implicitly through "
-    "Effect; the marker MUST be in the pack to declare 'I read the "
-    "Effect engagement and it suffices for Observability.'",
+    "axis (fixy-M-08).  Default.h marks it `HasDerivedDefault` "
+    "(strict default RESOLVES through Effect), BUT engagement is "
+    "still required per-axis-uniform — the marker MUST appear in the "
+    "Grants pack to declare 'I read the Effect engagement and it "
+    "suffices for Observability.'  See fixy-A4-026 structural witness "
+    "in Reject.h for the consteval proof that this diagnostic is "
+    "alive (the engagement walk has no derived-axis short-circuit).",
     "Grants pack omits accept_default_strict_for<Observability> (the "
-    "only legal engagement for this axis).",
+    "only legal engagement for this axis); 'Observability is derived "
+    "so I don't need a marker' is the canonical author trap.",
     "grant::accept_default_strict_for<dim::DimensionAxis::Observability>",
     "fixy::fn<T, /* no Observability grant */, ...>");
 

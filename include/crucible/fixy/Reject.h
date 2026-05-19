@@ -1020,6 +1020,94 @@ template <typename... Grants>
 inline constexpr bool every_axis_engaged_v =
     detail::engagement::every_axis_engaged<Grants...>();
 
+// ─── fixy-A4-026: Observability-is-alive structural witness ────────
+//
+// Pre-audit hypothesis: `diag::FixyNotEngaged_Observability` is "dead
+// because Observability is a derived axis (HasDerivedDefault per
+// Default.h:299) — Effect's engagement must auto-engage it."
+//
+// REJECTED.  `every_axis_engaged()` (line 705) walks every
+// `DimensionAxis` enumerator uniformly via `kAxisEnumerators` (line
+// 643) with no derived-axis short-circuit.  `HasDerivedDefault` only
+// affects how the strict-default RESOLVES (through Effect), NOT
+// whether the engagement marker is required in the Grants pack.
+// `accept_default_strict_for<Observability>` remains the ONLY legal
+// engagement and IS the only structural proof that the author has
+// considered the axis.
+//
+// The witness below pins that property STRUCTURALLY at consteval:
+// `first_missing_axis_v<...>` MUST return Observability when handed a
+// pack engaging all 21 axes EXCEPT Observability.  A future "audit
+// optimization" that skips derived axes in the engagement walk would
+// trip this sentinel right next to the engagement-trait definition,
+// before the runtime fixture `neg_fixy_unengaged_observability.cpp`
+// would observe the regression at test time.
+//
+// Complementary to that fixture: the fixture proves the diagnostic
+// surfaces in compile-error output; this sentinel proves the
+// engagement walk itself observes the gap.
+
+namespace detail::observability_witness {
+
+template <dim::DimensionAxis A>
+using S = ::crucible::fixy::grant::accept_default_strict_for<A>;
+
+using D = dim::DimensionAxis;
+
+// Engage all 21 axes EXCEPT Observability.  Type axis is implicitly
+// engaged through fixy::fn<T, ...>; we still pass strict<Type> here
+// because this witness exercises engagement::first_missing_axis<>
+// directly (not through fn<>), which treats every axis uniformly.
+inline constexpr bool observability_diagnostic_is_alive_v =
+    detail::engagement::first_missing_axis<
+        S<D::Type>, S<D::Refinement>, S<D::Usage>, S<D::Effect>,
+        S<D::Security>, S<D::Protocol>, S<D::Lifetime>,
+        S<D::Provenance>, S<D::Trust>, S<D::Representation>,
+        /* Observability deliberately omitted */
+        S<D::Complexity>, S<D::Precision>, S<D::Space>,
+        S<D::Overflow>, S<D::Mutation>, S<D::Reentrancy>,
+        S<D::Size>, S<D::Version>, S<D::Staleness>,
+        S<D::Synchronization>, S<D::Regime>>()
+    == D::Observability;
+
+// Companion: the inverse witness — engaging every axis (including
+// Observability) yields std::nullopt.  Together, the two witnesses
+// nail the property: Observability participates in the engagement
+// walk like every other axis (alive when omitted, absent from the
+// "first missing" list when present).
+inline constexpr bool every_axis_pack_engages_observability_v =
+    !detail::engagement::first_missing_axis<
+        S<D::Type>, S<D::Refinement>, S<D::Usage>, S<D::Effect>,
+        S<D::Security>, S<D::Protocol>, S<D::Lifetime>,
+        S<D::Provenance>, S<D::Trust>, S<D::Representation>,
+        S<D::Observability>,
+        S<D::Complexity>, S<D::Precision>, S<D::Space>,
+        S<D::Overflow>, S<D::Mutation>, S<D::Reentrancy>,
+        S<D::Size>, S<D::Version>, S<D::Staleness>,
+        S<D::Synchronization>, S<D::Regime>>().has_value();
+
+}  // namespace detail::observability_witness
+
+static_assert(detail::observability_witness::observability_diagnostic_is_alive_v,
+    "fixy-A4-026: the engagement walk MUST surface Observability "
+    "as the first missing axis when handed a 20-axis pack omitting "
+    "ONLY Observability.  If this fires, someone removed Observability "
+    "from `every_axis_engaged()`'s walk — likely under the "
+    "(incorrect) assumption that `HasDerivedDefault` auto-engages "
+    "the axis.  See the doc-block above and Default.h:299: "
+    "HasDerivedDefault only affects how the strict-default resolves "
+    "(through Effect), NOT whether engagement is required.  "
+    "`accept_default_strict_for<Observability>` is the only legal "
+    "engagement; omitting it MUST trip FixyNotEngaged_Observability.");
+
+static_assert(detail::observability_witness::every_axis_pack_engages_observability_v,
+    "fixy-A4-026: a Grants pack engaging every axis (including "
+    "Observability) MUST yield std::nullopt from first_missing_axis — "
+    "the witness above pins the rejection direction; this pin "
+    "documents the acceptance direction.  A failure here means "
+    "Observability is silently rejected even when engaged, breaking "
+    "every production stance alias (Fn.h:1002+, 1514, 1601).");
+
 // Helper to surface the per-axis tag at the offending site.  Callers
 // can write:
 //
