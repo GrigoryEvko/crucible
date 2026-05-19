@@ -1363,6 +1363,12 @@ crucible_neg_compile_fixy_test(neg_fixy_fn_for_array_type        "StanceForUnary
 crucible_neg_compile_fixy_test(neg_fixy_fn_for_const_type        "StanceForUnary")
 crucible_neg_compile_fixy_test(neg_fixy_fn_for_binary_array_type "StanceForBinary")
 crucible_neg_compile_fixy_test(neg_fixy_fn_for_binary_const_type "StanceForBinary")
+# fixy-A4-019: Policy-axis fixtures (void + reference) prove the
+# extended StanceForBinary gate rejects bad-Policy shapes BEFORE
+# Stance<Type, Policy> would instantiate.  Sibling to the existing
+# Type-axis pair above.
+crucible_neg_compile_fixy_test(neg_fixy_fn_for_binary_void_policy "StanceForBinary")
+crucible_neg_compile_fixy_test(neg_fixy_fn_for_binary_ref_policy  "StanceForBinary")
 
 # FIXY-AUDIT-E10 — HS14 floor for fixy::sess::mint_federation_channel.
 # Surface-level IsExecCtx<Ctx> gate + downstream protocol-shape gate.

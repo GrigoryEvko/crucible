@@ -560,9 +560,23 @@ concept TypeIsStanceCompatible =
 template <template<typename> class Stance, typename Type>
 concept StanceForUnary = detail::TypeIsStanceCompatible<Type>;
 
+// fixy-A4-019: `StanceForBinary` historically gated only the Type axis
+// (`TypeIsStanceCompatible<Type>`) — Policy was accepted unchecked.  A
+// call like `mint_fn_for<stance::SecretConsumer, void>(42)` would
+// pass the requires-clause and then fail INSIDE `SecretConsumer<int,
+// void>` with a noisy template-instantiation cascade, violating §XXI's
+// "single concept gate at the function signature" rule.  The same
+// structural predicate fits Policy: a declassify-policy tag is a
+// phantom type whose identity is its bare class type — void / array /
+// reference / cv-qualified / function-typed Policy are all nonsensical
+// for tag identity.  Substrate-side `safety::secret_policy::*` tags
+// (Source.h) and the substrate self-test `IsGrantTag<declassify<int>>`
+// (Grant.h:555) both confirm fundamental object types remain accepted.
 template <template<typename, typename> class Stance,
           typename Type, typename Policy>
-concept StanceForBinary = detail::TypeIsStanceCompatible<Type>;
+concept StanceForBinary =
+       detail::TypeIsStanceCompatible<Type>
+    && detail::TypeIsStanceCompatible<Policy>;
 
 template <typename Type, typename... Grants>
 class fn {
@@ -904,8 +918,14 @@ template <typename Type, typename... Grants>
 // cv-qualified / function-typed Type) are rejected BEFORE Stance<Type>
 // would instantiate; this names the failure at the function signature
 // rather than parser-level deduction failure or function-parameter
-// declaration ill-formedness.  Engagement-level violations still
-// surface via fn<>'s class-body static_assert chain.
+// declaration ill-formedness.  fixy-A4-019 extended the binary gate to
+// also check Policy shape with the same `TypeIsStanceCompatible`
+// predicate — a declassify-policy tag is a phantom type whose identity
+// is its bare class type, so void / array / reference / cv-qualified /
+// function-typed Policy now reject at the function signature instead
+// of bubbling through the stance's interior static_asserts.
+// Engagement-level violations still surface via fn<>'s class-body
+// static_assert chain.
 //
 // Token-mint flavor (no Ctx).  Cost-of-violation: a stance that fails
 // IsAccepted for the deduced Type fires the same FixyNotEngaged_*
