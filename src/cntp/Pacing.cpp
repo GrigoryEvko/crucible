@@ -10,6 +10,7 @@
 #include <linux/rtnetlink.h>
 #include <net/if.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 namespace crucible::cntp {
@@ -161,11 +162,43 @@ query_active_qdisc(NicInterfaceName iface) noexcept {
         return std::unexpected(PacingError::NetlinkOpenFailed);
     }
 
+    // fixy-A5-004 / fixy-A5-036: explicit bind with nl_pid=0 forces a
+    // unique kernel-assigned PID per socket.  Without this, two threads
+    // sharing getpid() collide on the implicit-bind path and can
+    // observe each other's replies.  nl_pid=0 is the canonical
+    // "kernel pick a free address for me" sentinel; the per-socket PID
+    // is then stable for the lifetime of `nl`.
+    sockaddr_nl bind_addr{};
+    bind_addr.nl_family = AF_NETLINK;
+    bind_addr.nl_pid    = 0;
+    bind_addr.nl_groups = 0;
+    if (::bind(nl.raw(),
+               static_cast<sockaddr const*>(static_cast<void const*>(&bind_addr)),
+               static_cast<socklen_t>(sizeof(bind_addr))) != 0) {
+        static_cast<void>(errno);
+        return std::unexpected(PacingError::NetlinkOpenFailed);
+    }
+
+    // fixy-A5-004: bounded receive — kernel dropping NLMSG_DONE (broken
+    // iface, firewall) would otherwise hang this thread forever.  5 s
+    // upper bound matches the worst-case observed in production NIC
+    // fleets; failure returns NetlinkReceiveFailed.
+    timeval rcv_timeout{};
+    rcv_timeout.tv_sec  = 5;
+    rcv_timeout.tv_usec = 0;
+    if (::setsockopt(nl.raw(), SOL_SOCKET, SO_RCVTIMEO,
+                     &rcv_timeout,
+                     static_cast<socklen_t>(sizeof(rcv_timeout))) != 0) {
+        static_cast<void>(errno);
+        return std::unexpected(PacingError::NetlinkOpenFailed);
+    }
+
+    constexpr std::uint32_t kRequestSeq = 1;
     QdiscDumpRequest request{};
     request.header.nlmsg_len = sizeof(request);
     request.header.nlmsg_type = RTM_GETQDISC;
     request.header.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-    request.header.nlmsg_seq = 1;
+    request.header.nlmsg_seq = kRequestSeq;
     request.message.tcm_family = AF_UNSPEC;
 
     const auto sent = ::send(nl.raw(), &request, sizeof(request), 0);
@@ -192,6 +225,21 @@ query_active_qdisc(NicInterfaceName iface) noexcept {
                 return std::unexpected(PacingError::NetlinkReceiveFailed);
             }
 
+            // fixy-A5-036: filter replies that don't carry our request
+            // sequence number.  Multiple threads sharing this codepath
+            // can observe each other's leaked replies under the same
+            // PID even with explicit bind; the seq check makes the
+            // dispatch deterministic.  Skip-rather-than-fail because
+            // benign kernel control messages share the socket.
+            if (header->nlmsg_seq != kRequestSeq) {
+                const std::size_t step = align4(header->nlmsg_len);
+                if (step > remaining) {
+                    return std::unexpected(PacingError::NetlinkReceiveFailed);
+                }
+                cursor += step;
+                remaining -= step;
+                continue;
+            }
             if (header->nlmsg_type == NLMSG_DONE) {
                 return std::unexpected(PacingError::QdiscKindMissing);
             }

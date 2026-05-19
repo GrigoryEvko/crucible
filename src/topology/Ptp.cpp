@@ -1,5 +1,7 @@
 #include <crucible/topology/Ptp.h>
 
+#include <crucible/Platform.h>
+
 #include <array>
 #include <cerrno>
 #include <cstring>
@@ -275,6 +277,17 @@ configure_hardware_timestamping(cntp::SocketFd control_socket,
         .tx_type = HWTSTAMP_TX_ON,
         .rx_filter = HWTSTAMP_FILTER_ALL,
     };
+    // fixy-A5-027: NicInterfaceName::max_bytes is the project-wide cap
+    // on stored bytes; ifr_name is char[IFNAMSIZ].  If max_bytes ever
+    // grows past IFNAMSIZ, the trailing-NUL write below would land
+    // one byte off the end of ifr_name.  Catch that at compile time.
+    static_assert(::crucible::cntp::NicInterfaceName::max_bytes <= IFNAMSIZ,
+                  "NicInterfaceName max bytes exceeds kernel ifr_name");
+    // NicInterfaceName::from rejects size >= max_bytes, so view().size()
+    // is strictly less than max_bytes <= IFNAMSIZ — the [size] write
+    // lands at index ≤ IFNAMSIZ-1.  Runtime guard documents the
+    // structural invariant; under -DNDEBUG it folds to [[assume]].
+    CRUCIBLE_INVARIANT(iface.view().size() < IFNAMSIZ);
     ifreq request{};
     std::memcpy(request.ifr_name, iface.view().data(), iface.view().size());
     request.ifr_name[iface.view().size()] = '\0';

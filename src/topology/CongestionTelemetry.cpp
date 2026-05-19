@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstddef>
 #include <cstring>
 
 #include <linux/inet_diag.h>
@@ -210,7 +211,16 @@ harvest_socket(cntp::SocketFd fd) noexcept {
     socklen_t info_len = sizeof(info);
     const int tcp_rc = ::getsockopt(
         fd.value(), IPPROTO_TCP, TCP_INFO, &info, &info_len);
-    if (tcp_rc != 0 || info_len < offsetof(tcp_info, tcpi_total_retrans)) {
+    // fixy-A5-041: decode_tcp_info reads through tcpi_delivered_ce
+    // (and tcpi_max_pacing_rate, tcpi_delivery_rate, tcpi_min_rtt,
+    // tcpi_ca_state, ...) — every field after the first.  A short
+    // snapshot zero-fills the tail of `info` from our stack init, so
+    // the function returns zero-valued congestion data as if it were
+    // real kernel-reported state.  The gate must cover every field
+    // we semantically depend on; tcpi_delivered_ce is the latest.
+    constexpr socklen_t kRequiredInfoLen = static_cast<socklen_t>(
+        offsetof(tcp_info, tcpi_delivered_ce) + sizeof(info.tcpi_delivered_ce));
+    if (tcp_rc != 0 || info_len < kRequiredInfoLen) {
         static_cast<void>(errno);
         return std::unexpected(TelemetryError::GetTcpInfoFailed);
     }
