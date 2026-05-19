@@ -64,6 +64,36 @@ int main() {
     merged.merge_from(delta);
     assert(merged.total_count() == 4);
 
+    // fixy-A5-019 regression: subtract_from must publish bucket writes
+    // via release on total_count_ matching merge_from's discipline.  A
+    // consumer that reads total_count() via acquire must then see the
+    // post-subtract bucket state consistently — i.e. percentile reads
+    // never observe a "total decreased but buckets unchanged" tear.
+    Hist publish_h;
+    for (int i = 0; i < 16; ++i) {
+        publish_h.record(Hist::checked_value(500));
+    }
+    assert(publish_h.total_count() == 16);
+    Hist publish_delta;
+    for (int i = 0; i < 4; ++i) {
+        publish_delta.record(Hist::checked_value(500));
+    }
+    publish_h.subtract_from(publish_delta);
+    {
+        // Reader-side: load total_count() (acquire), then read bucket
+        // state via percentile().  If subtract_from's publish discipline
+        // works, the bucket sum must equal the post-subtract total.
+        const std::uint64_t post_total = publish_h.total_count();
+        assert(post_total == 12);
+        std::uint64_t bucket_sum = 0;
+        publish_h.for_each_nonzero(
+            [&](const Hist::EncodedBucket& bucket) noexcept {
+                bucket_sum += bucket.count;
+            });
+        assert(bucket_sum == post_total);
+        assert(publish_h.percentile(50.0) >= 500);
+    }
+
     using Concurrent = crucible::observe::ConcurrentHdrHistogram<2, 1'000'000, 2>;
     static_assert(crucible::observe::HdrCompatible<Concurrent>);
 

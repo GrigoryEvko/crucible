@@ -227,6 +227,16 @@ public:
         merge_from(other);
     }
 
+    // fixy-A5-019: publish discipline matches merge_from — per-bucket
+    // writes use relaxed RMW, then total_count_ is updated with release
+    // to publish all preceding bucket writes to readers doing
+    // total_count_.load(acquire).  Pre-fix this site used acq_rel, which
+    // was strictly stronger (acquire + release) but added a wasted
+    // acquire fence on the producer side: no value read after the CAS
+    // success in saturating_sub depends on other threads' writes, so the
+    // acquire was dead weight.  Aligning with merge_from also closes a
+    // documentation drift gap (one publish op per histogram, one
+    // memory-order convention).
     void subtract_from(const HdrHistogram& other) noexcept {
         for (std::size_t i = 0; i < counts_.size(); ++i) {
             const std::uint64_t count = other.counts_[i].load(std::memory_order_relaxed);
@@ -234,7 +244,7 @@ public:
                 saturating_sub(counts_[i], count);
             }
         }
-        saturating_sub(total_count_, other.total_count(), std::memory_order_acq_rel);
+        saturating_sub(total_count_, other.total_count(), std::memory_order_release);
     }
 
     void reset() noexcept {
