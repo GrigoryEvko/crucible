@@ -103,6 +103,12 @@ template <typename Whole>
 struct splits_into<Whole, ProducerSide<Whole>, ConsumerSide<Whole>>
     : std::true_type {};
 
+// fixy-M-29 authoring witness (paired with the splits_into spec above).
+template <typename Whole>
+struct splits_into_authoring_witness<
+    Whole, ProducerSide<Whole>, ConsumerSide<Whole>>
+    : std::true_type {};
+
 // ── Per-side slot aliases (reuse 1D Slice<>) ───────────────────────
 //
 // A producer slot at index I is Slice<ProducerSide<Whole>, I>.  A

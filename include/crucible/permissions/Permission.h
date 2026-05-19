@@ -332,6 +332,56 @@ template <typename Parent, typename... Children>
 inline constexpr bool splits_into_pack_v =
     splits_into_pack<Parent, Children...>::value;
 
+// ── splits_into authoring witness (fixy-M-29) ────────────────────────
+//
+// Type-level companion to scripts/check-splits-into-orphan.sh.  The
+// CI script enforces orphan-purity at BUILD time; this trait extends
+// the defense to TYPE-INSTANTIATION time — a vendored fork, a
+// pre-commit-hook bypass, or any build environment that skips the
+// script still fails at the mint_permission_split / _combine /
+// _split_n / _combine_n / _fork gate.
+//
+// Discipline: every legitimate splits_into<P, L, R> specialization
+// MUST be accompanied by a splits_into_authoring_witness<P, L, R>
+// specialization in the SAME translation unit.  The CI script greps
+// both trait names, so any orphan witness specialization is rejected
+// at build time the same way a bare splits_into specialization is.
+//
+// Soundness story: a foreign TU that specializes only splits_into
+// (forging cross-region authority) fails the witness check at the
+// mint gate; a foreign TU that specializes both trait + witness
+// fails the CI grep.  Either bypass requires defeating BOTH the
+// type system AND the CI script — far harder than today's
+// CI-script-only defense.
+
+template <typename Parent, typename L, typename R>
+struct splits_into_authoring_witness : std::false_type {};
+
+template <typename Parent, typename L, typename R>
+inline constexpr bool splits_into_authoring_witness_v =
+    splits_into_authoring_witness<Parent, L, R>::value;
+
+template <typename Parent, typename... Children>
+struct splits_into_pack_authoring_witness : std::false_type {};
+
+template <typename Parent, typename... Children>
+inline constexpr bool splits_into_pack_authoring_witness_v =
+    splits_into_pack_authoring_witness<Parent, Children...>::value;
+
+// Composite gate: trait AND witness must both be specialized true.
+// Used as the diagnostic predicate inside every mint_permission_*
+// static_assert and as the requires-clause companion concept.
+
+template <typename Parent, typename L, typename R>
+inline constexpr bool well_authored_split_v =
+    splits_into_v<Parent, L, R> &&
+    splits_into_authoring_witness_v<Parent, L, R>;
+
+template <typename Parent, typename... Children>
+inline constexpr bool well_authored_split_pack_v =
+    splits_into_pack_v<Parent, Children...> &&
+    splits_into_pack_authoring_witness_v<Parent, Children...>;
+
 // ── permission_row<Tag> ─────────────────────────────────────────────
 //
 // Most permission tags are pure ownership labels and carry Row<>.  A
@@ -631,6 +681,15 @@ mint_permission_split(Permission<In>&& parent) noexcept {
                   "mint_permission_split<L, R>(Permission<In>&&) requires "
                   "splits_into<In, L, R>::value to be specialized true.  "
                   "Declare the split in the same TU that defines the tags.");
+    static_assert(splits_into_authoring_witness_v<In, L, R>,
+                  "fixy-M-29: splits_into<In, L, R> is true but the "
+                  "accompanying splits_into_authoring_witness<In, L, R> "
+                  "specialization is missing.  Every legitimate split must "
+                  "ship the witness in the same TU as the trait; the CI "
+                  "script splits_into_orphan_purity greps both names.  "
+                  "Add `template <> struct splits_into_authoring_witness<"
+                  "In, L, R> : std::true_type {};` next to the splits_into "
+                  "specialization.");
     (void)parent;
     return std::pair<Permission<L>, Permission<R>>{
         Permission<L>{}, Permission<R>{}
@@ -647,6 +706,10 @@ mint_permission_split(Ctx const&, Permission<In>&& parent) noexcept {
     static_assert(splits_into_v<In, L, R>,
                   "mint_permission_split(ctx, Permission<In>&&) requires "
                   "splits_into<In, L, R>::value to be specialized true.");
+    static_assert(splits_into_authoring_witness_v<In, L, R>,
+                  "fixy-M-29: splits_into_authoring_witness<In, L, R> "
+                  "missing; declare it next to the splits_into "
+                  "specialization in the same TU.");
     (void)parent;
     return std::pair<Permission<L>, Permission<R>>{
         Permission<L>{}, Permission<R>{}
@@ -664,6 +727,10 @@ mint_permission_split(
     static_assert(splits_into_v<In, L, R>,
                   "mint_permission_split(left_ctx, right_ctx, Permission<In>&&) "
                   "requires splits_into<In, L, R>::value true.");
+    static_assert(splits_into_authoring_witness_v<In, L, R>,
+                  "fixy-M-29: splits_into_authoring_witness<In, L, R> "
+                  "missing for asymmetric-ctx split; declare it next to "
+                  "the splits_into specialization.");
     (void)parent;
     return std::pair<Permission<L>, Permission<R>>{
         Permission<L>{}, Permission<R>{}
@@ -683,6 +750,10 @@ mint_permission_combine(Permission<L>&& left, Permission<R>&& right) noexcept {
     static_assert(splits_into_v<In, L, R>,
                   "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&) "
                   "requires splits_into<In, L, R>::value true.");
+    static_assert(splits_into_authoring_witness_v<In, L, R>,
+                  "fixy-M-29: splits_into_authoring_witness<In, L, R> "
+                  "missing for combine; declare it next to the splits_into "
+                  "specialization.");
     (void)left;
     (void)right;
     return Permission<In>{};
@@ -699,6 +770,10 @@ mint_permission_combine(
     static_assert(splits_into_v<In, L, R>,
                   "mint_permission_combine(ctx, Permission<L>&&, "
                   "Permission<R>&&) requires splits_into<In, L, R>::value true.");
+    static_assert(splits_into_authoring_witness_v<In, L, R>,
+                  "fixy-M-29: splits_into_authoring_witness<In, L, R> "
+                  "missing for ctx-bound combine; declare it next to the "
+                  "splits_into specialization.");
     (void)left;
     (void)right;
     return Permission<In>{};
@@ -718,6 +793,10 @@ mint_permission_split_n(Permission<In>&& parent) noexcept {
     static_assert(splits_into_pack_v<In, Children...>,
                   "mint_permission_split_n<Children...>(Permission<In>&&) "
                   "requires splits_into_pack<In, Children...>::value true.");
+    static_assert(splits_into_pack_authoring_witness_v<In, Children...>,
+                  "fixy-M-29: splits_into_pack_authoring_witness<In, "
+                  "Children...> missing; declare it next to the "
+                  "splits_into_pack specialization in the same TU.");
     (void)parent;
     return std::tuple<Permission<Children>...>{
         Permission<Children>{}...
@@ -733,6 +812,10 @@ mint_permission_split_n(Ctx const&, Permission<In>&& parent) noexcept {
     static_assert(splits_into_pack_v<In, Children...>,
                   "mint_permission_split_n(ctx, Permission<In>&&) requires "
                   "splits_into_pack<In, Children...>::value true.");
+    static_assert(splits_into_pack_authoring_witness_v<In, Children...>,
+                  "fixy-M-29: splits_into_pack_authoring_witness<In, "
+                  "Children...> missing for ctx-bound split_n; declare "
+                  "next to the splits_into_pack specialization.");
     (void)parent;
     return std::tuple<Permission<Children>...>{
         Permission<Children>{}...
@@ -764,6 +847,10 @@ mint_permission_combine_n(Permission<Children>&&... children) noexcept {
                   "splits_into_pack<Parent, Children...>::value true.  "
                   "The combine call must mirror the prior split_n; "
                   "declare the manifest in the same TU as the tags.");
+    static_assert(splits_into_pack_authoring_witness_v<Parent, Children...>,
+                  "fixy-M-29: splits_into_pack_authoring_witness<Parent, "
+                  "Children...> missing for combine_n; declare next to "
+                  "the splits_into_pack specialization.");
     (void)std::tie(children...);  // consumed by move
     return Permission<Parent>{};
 }
@@ -778,6 +865,10 @@ mint_permission_combine_n(
     static_assert(splits_into_pack_v<Parent, Children...>,
                   "mint_permission_combine_n(ctx, Permission<Children>&&...) "
                   "requires splits_into_pack<Parent, Children...>::value true.");
+    static_assert(splits_into_pack_authoring_witness_v<Parent, Children...>,
+                  "fixy-M-29: splits_into_pack_authoring_witness<Parent, "
+                  "Children...> missing for ctx-bound combine_n; declare "
+                  "next to the splits_into_pack specialization.");
     (void)std::tie(children...);  // consumed by move
     return Permission<Parent>{};
 }
@@ -1544,6 +1635,13 @@ struct splits_into_pack<detail::seplog_combine_n_parent,
                         detail::seplog_combine_n_a,
                         detail::seplog_combine_n_b,
                         detail::seplog_combine_n_c>
+    : std::true_type {};
+
+template <>
+struct splits_into_pack_authoring_witness<detail::seplog_combine_n_parent,
+                                          detail::seplog_combine_n_a,
+                                          detail::seplog_combine_n_b,
+                                          detail::seplog_combine_n_c>
     : std::true_type {};
 
 namespace detail {

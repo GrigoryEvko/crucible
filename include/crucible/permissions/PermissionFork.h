@@ -184,7 +184,8 @@ concept CtxFitsPermissionFork =
         ::crucible::effects::Effect::Bg>
     && CtxAdmitsPermission<Parent, Ctx>
     && (CtxAdmitsPermission<Children, Ctx> && ...)
-    && splits_into_pack_v<Parent, Children...>;
+    && splits_into_pack_v<Parent, Children...>
+    && splits_into_pack_authoring_witness_v<Parent, Children...>;
 
 namespace detail {
 

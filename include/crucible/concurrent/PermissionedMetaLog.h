@@ -206,6 +206,21 @@ struct splits_into<concurrent::metalog_tag::Whole<UserTag>,
                    concurrent::metalog_tag::Consumer<UserTag>>
     : std::true_type {};
 
+// fixy-M-29 authoring witnesses.
+template <typename UserTag>
+struct splits_into_authoring_witness<
+    concurrent::metalog_tag::Whole<UserTag>,
+    concurrent::metalog_tag::Producer<UserTag>,
+    concurrent::metalog_tag::Consumer<UserTag>>
+    : std::true_type {};
+
+template <typename UserTag>
+struct splits_into_pack_authoring_witness<
+    concurrent::metalog_tag::Whole<UserTag>,
+    concurrent::metalog_tag::Producer<UserTag>,
+    concurrent::metalog_tag::Consumer<UserTag>>
+    : std::true_type {};
+
 template <typename UserTag>
 struct splits_into_pack<concurrent::metalog_tag::Whole<UserTag>,
                         concurrent::metalog_tag::Producer<UserTag>,

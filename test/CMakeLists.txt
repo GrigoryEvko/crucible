@@ -1760,6 +1760,17 @@ crucible_neg_compile_fixy_test(neg_fixy_perm_split_n_undeclared
     "splits_into_pack")
 crucible_neg_compile_fixy_test(neg_fixy_perm_combine_n_undeclared
     "splits_into_pack")
+# fixy-M-29 HS14 floor: two fixtures pin the type-level companion
+# witness traits (splits_into_authoring_witness +
+# splits_into_pack_authoring_witness) — orphan splits_into / _pack
+# specializations without the corresponding witness must fail at
+# mint_permission_split / _n body-level static_assert.  Distinct
+# mismatch classes: binary vs N-ary trait pair, distinct rejection
+# points in Permission.h.
+crucible_neg_compile_fixy_test(neg_fixy_perm_split_witness_missing
+    "splits_into_authoring_witness")
+crucible_neg_compile_fixy_test(neg_fixy_perm_split_n_witness_missing
+    "splits_into_pack_authoring_witness")
 
 # ── FIXY-MINT-Contract — fixy/Contract.h re-export of Cipher tier
 # migration mints (mint_promote, mint_demote, mint_restore).  HS14

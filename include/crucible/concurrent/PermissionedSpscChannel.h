@@ -409,4 +409,19 @@ struct splits_into_pack<concurrent::spsc_tag::Whole<UserTag>,
                         concurrent::spsc_tag::Consumer<UserTag>>
     : std::true_type {};
 
+// fixy-M-29 authoring witnesses (paired with the specs above).
+template <typename UserTag>
+struct splits_into_authoring_witness<
+    concurrent::spsc_tag::Whole<UserTag>,
+    concurrent::spsc_tag::Producer<UserTag>,
+    concurrent::spsc_tag::Consumer<UserTag>>
+    : std::true_type {};
+
+template <typename UserTag>
+struct splits_into_pack_authoring_witness<
+    concurrent::spsc_tag::Whole<UserTag>,
+    concurrent::spsc_tag::Producer<UserTag>,
+    concurrent::spsc_tag::Consumer<UserTag>>
+    : std::true_type {};
+
 }  // namespace crucible::safety

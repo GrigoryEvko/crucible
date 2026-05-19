@@ -105,6 +105,11 @@ template <typename Parent, std::size_t... Is>
 struct splits_into_pack<Parent, Slice<Parent, Is>...>
     : std::true_type {};
 
+// fixy-M-29 authoring witness (paired with the splits_into_pack spec above).
+template <typename Parent, std::size_t... Is>
+struct splits_into_pack_authoring_witness<Parent, Slice<Parent, Is>...>
+    : std::true_type {};
+
 // ── auto_split_n<Parent, N>::type ──────────────────────────────────
 //
 // Convenience alias producing the heterogeneous tuple of N distinct

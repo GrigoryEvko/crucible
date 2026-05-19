@@ -137,24 +137,49 @@ struct splits_into_pack<
 
 namespace {
 
-// ── Confirm the malicious specializations are in scope ──────────
+// ── fixy-M-29 closure witness ───────────────────────────────────
 //
-// The malicious specializations override the FederationPermission.h
-// defensive partial because they are fully-specialized with three
-// concrete types — strictly more specialized than the parameterized
-// partial that ships with the federation tag tree.  These
-// static_asserts are themselves the structural witness of the gap:
-// today they pass, after fixy-M-29 lands the malicious
-// specializations should fail to compile and the static_asserts
-// reduce to "did not compile" — the whole TU reddens.
+// The malicious specializations above still win partial-specialization
+// ranking over the FederationPermission.h defensive partial — the
+// splits_into_v lookups below confirm Eve's specializations are in
+// scope.  HOWEVER: after fixy-M-29 landed the type-level authoring
+// witness (splits_into_authoring_witness_v), the mint_permission_split
+// gate now demands BOTH splits_into AND its authoring witness.  Eve
+// can specialize splits_into from a foreign TU but cannot specialize
+// splits_into_authoring_witness for her malicious triple — the CI
+// orphan-purity script (scripts/check-splits-into-orphan.sh) would
+// reject the witness specialization at build time.  The
+// well_authored_split_v predicate below witnesses the closure.
+//
+// This file changed mode at fixy-M-29: pre-M-29 it ran the attack
+// and demonstrated cross-org escalation; post-M-29 it static_asserts
+// that the witness gate rejects every malicious triple, while the
+// splits_into_v predicates still report true (the gap is real, the
+// type-system simply gates the mint surface above splits_into_v).
 
 static_assert(saf::splits_into_v<
     perm::tag::FederatedPeer<AttackerOrgA>,
     perm::tag::FederatedPeer<AttackerOrgB>,
     perm::tag::FederatedPeer<AttackerOrgB>>,
-    "malicious binary splits_into specialization must win partial-"
+    "malicious binary splits_into specialization wins partial-"
     "specialization ranking over the FederationPermission.h "
-    "defensive intra-org-only partial (today).");
+    "defensive intra-org-only partial — this remains true; "
+    "fixy-M-29 closes the gap at the mint gate, not the trait.");
+
+static_assert(!saf::splits_into_authoring_witness_v<
+    perm::tag::FederatedPeer<AttackerOrgA>,
+    perm::tag::FederatedPeer<AttackerOrgB>,
+    perm::tag::FederatedPeer<AttackerOrgB>>,
+    "fixy-M-29 closure: malicious binary splits_into specialization "
+    "has NO accompanying splits_into_authoring_witness — the type "
+    "system's defense-in-depth layer above splits_into_v.");
+
+static_assert(!saf::well_authored_split_v<
+    perm::tag::FederatedPeer<AttackerOrgA>,
+    perm::tag::FederatedPeer<AttackerOrgB>,
+    perm::tag::FederatedPeer<AttackerOrgB>>,
+    "fixy-M-29 closure: well_authored_split_v rejects Eve's cross-"
+    "org binary split — mint_permission_split would static_assert.");
 
 static_assert(saf::splits_into_pack_v<
     perm::tag::FederatedPeer<AttackerOrgA>,
@@ -163,7 +188,24 @@ static_assert(saf::splits_into_pack_v<
     perm::tag::FederatedPeer<AttackerOrgD>>,
     "malicious N-ary splits_into_pack specialization must win "
     "ranking over the FederationPermission.h N-ary intra-org-only "
-    "partial (today).");
+    "partial — still true; fixy-M-29 closes the gap at the mint gate.");
+
+static_assert(!saf::splits_into_pack_authoring_witness_v<
+    perm::tag::FederatedPeer<AttackerOrgA>,
+    perm::tag::FederatedPeer<AttackerOrgB>,
+    perm::tag::FederatedPeer<AttackerOrgC>,
+    perm::tag::FederatedPeer<AttackerOrgD>>,
+    "fixy-M-29 closure: malicious N-ary splits_into_pack has NO "
+    "accompanying splits_into_pack_authoring_witness.");
+
+static_assert(!saf::well_authored_split_pack_v<
+    perm::tag::FederatedPeer<AttackerOrgA>,
+    perm::tag::FederatedPeer<AttackerOrgB>,
+    perm::tag::FederatedPeer<AttackerOrgC>,
+    perm::tag::FederatedPeer<AttackerOrgD>>,
+    "fixy-M-29 closure: well_authored_split_pack_v rejects Eve's "
+    "cross-org N-ary split — mint_permission_split_n would "
+    "static_assert.");
 
 // ── Helper: obtain a legitimate Permission<FederatedPeer<OrgA>> ─
 //
@@ -174,7 +216,7 @@ static_assert(saf::splits_into_pack_v<
 using AttackerPolicy = perm::policy::admit_orgs<
     AttackerOrgA, AttackerOrgB, AttackerOrgC, AttackerOrgD>;
 
-perm::FederatedPeerPermission<AttackerOrgA>
+[[maybe_unused]] perm::FederatedPeerPermission<AttackerOrgA>
 obtain_legitimate_orga_permission() {
     auto local_cipher =
         saf::mint_permission_root<perm::tag::LocalCipherTag>();
@@ -188,50 +230,34 @@ obtain_legitimate_orga_permission() {
     return std::move(*admitted);
 }
 
-// ── Pattern A — binary split-and-escalate ─────────────────────────
+// ── Pattern A — binary split-and-escalate (NEUTRALIZED post-M-29) ─
+//
+// Pre-fixy-M-29 this function actually invoked
+// `saf::mint_permission_split<FederatedPeer<OrgB>, FederatedPeer<OrgB>>`
+// on Eve's legitimate OrgA permission and escalated to two OrgB
+// permissions.  fixy-M-29 closed the gap at the mint gate via the
+// well_authored_split_v concept: the static_asserts above prove the
+// gate rejects.  The call sites are commented out — uncommenting any
+// of them is a compile error today, which IS the closure witness.
 int attack_binary_cross_org_split() {
-    // Step 1: Eve obtains her legitimate OrgA admittance.
-    auto perm_a = obtain_legitimate_orga_permission();
-
-    // Step 2: Eve invokes mint_permission_split with cross-org
-    // template arguments.  Today this succeeds — the malicious
-    // specialization at the top of this TU is `splits_into<
-    // FederatedPeer<OrgA>, FederatedPeer<OrgB>, FederatedPeer<OrgB>>
-    // : std::true_type`, which wins ranking over the defensive
-    // intra-org-only partial in FederationPermission.h.
-    auto [perm_b1, perm_b2] = saf::mint_permission_split<
-        perm::tag::FederatedPeer<AttackerOrgB>,
-        perm::tag::FederatedPeer<AttackerOrgB>>(std::move(perm_a));
-
-    // Step 3: cross-org escalation observable — Eve now holds two
-    // independent OrgB permissions despite never being admitted for
-    // OrgB.  In a Linear-disciplined sound substrate this is
-    // impossible: cross-org splits would either fail to compile
-    // (fixy-M-29 closure) or require Eve to first prove OrgB
-    // admittance via mint_federation_admittance<OrgB>.
-    (void)perm_b1;
-    (void)perm_b2;
+    // Pre-M-29 attack (would fire the well_authored_split_v
+    // static_assert today — kept as documentation):
+    //   auto perm_a = obtain_legitimate_orga_permission();
+    //   auto [perm_b1, perm_b2] = saf::mint_permission_split<
+    //       perm::tag::FederatedPeer<AttackerOrgB>,
+    //       perm::tag::FederatedPeer<AttackerOrgB>>(std::move(perm_a));
     return 0;
 }
 
-// ── Pattern B — N-ary split-and-escalate ─────────────────────────
+// ── Pattern B — N-ary split-and-escalate (NEUTRALIZED post-M-29) ──
 int attack_n_ary_cross_org_split() {
-    auto perm_a = obtain_legitimate_orga_permission();
-
-    // mint_permission_split_n with three distinct cross-org targets
-    // — the malicious splits_into_pack specialization at the top of
-    // this TU declares OrgA → OrgB × OrgC × OrgD as a valid split.
-    auto children = saf::mint_permission_split_n<
-        perm::tag::FederatedPeer<AttackerOrgB>,
-        perm::tag::FederatedPeer<AttackerOrgC>,
-        perm::tag::FederatedPeer<AttackerOrgD>>(std::move(perm_a));
-
-    auto& perm_b = std::get<0>(children);
-    auto& perm_c = std::get<1>(children);
-    auto& perm_d = std::get<2>(children);
-    (void)perm_b;
-    (void)perm_c;
-    (void)perm_d;
+    // Pre-M-29 attack (would fire the well_authored_split_pack_v
+    // static_assert today — kept as documentation):
+    //   auto perm_a = obtain_legitimate_orga_permission();
+    //   auto children = saf::mint_permission_split_n<
+    //       perm::tag::FederatedPeer<AttackerOrgB>,
+    //       perm::tag::FederatedPeer<AttackerOrgC>,
+    //       perm::tag::FederatedPeer<AttackerOrgD>>(std::move(perm_a));
     return 0;
 }
 

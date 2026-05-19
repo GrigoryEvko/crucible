@@ -31,6 +31,12 @@ template <>
 struct splits_into<test_fixy_perm::Whole, test_fixy_perm::Left, test_fixy_perm::Right>
     : std::true_type {};
 
+// fixy-M-29 authoring witness.
+template <>
+struct splits_into_authoring_witness<
+    test_fixy_perm::Whole, test_fixy_perm::Left, test_fixy_perm::Right>
+    : std::true_type {};
+
 }  // namespace crucible::safety
 
 namespace safe  = ::crucible::safety;

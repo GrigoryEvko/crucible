@@ -176,4 +176,19 @@ struct splits_into_pack<concurrent::chainedge_tag::Whole<UserTag>,
                         concurrent::chainedge_tag::Waiter<UserTag>>
     : std::true_type {};
 
+// fixy-M-29 authoring witnesses.
+template <typename UserTag>
+struct splits_into_authoring_witness<
+    concurrent::chainedge_tag::Whole<UserTag>,
+    concurrent::chainedge_tag::Signaler<UserTag>,
+    concurrent::chainedge_tag::Waiter<UserTag>>
+    : std::true_type {};
+
+template <typename UserTag>
+struct splits_into_pack_authoring_witness<
+    concurrent::chainedge_tag::Whole<UserTag>,
+    concurrent::chainedge_tag::Signaler<UserTag>,
+    concurrent::chainedge_tag::Waiter<UserTag>>
+    : std::true_type {};
+
 }  // namespace crucible::safety

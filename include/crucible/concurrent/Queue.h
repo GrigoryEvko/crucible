@@ -814,4 +814,19 @@ struct splits_into_pack<concurrent::queue_tag::Whole<UserTag>,
                         concurrent::queue_tag::Consumer<UserTag>>
     : std::true_type {};
 
+// fixy-M-29 authoring witnesses.
+template <typename UserTag>
+struct splits_into_authoring_witness<
+    concurrent::queue_tag::Whole<UserTag>,
+    concurrent::queue_tag::Producer<UserTag>,
+    concurrent::queue_tag::Consumer<UserTag>>
+    : std::true_type {};
+
+template <typename UserTag>
+struct splits_into_pack_authoring_witness<
+    concurrent::queue_tag::Whole<UserTag>,
+    concurrent::queue_tag::Producer<UserTag>,
+    concurrent::queue_tag::Consumer<UserTag>>
+    : std::true_type {};
+
 }  // namespace crucible::safety

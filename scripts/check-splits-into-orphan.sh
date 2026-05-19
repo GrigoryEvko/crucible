@@ -1,14 +1,26 @@
 #!/usr/bin/env bash
 #
-# fixy-A1-018 — splits_into / splits_into_pack orphan-specialization guard.
+# fixy-A1-018 + fixy-M-29 — splits_into / splits_into_pack +
+# splits_into_authoring_witness / splits_into_pack_authoring_witness
+# orphan-specialization guard.
 #
 # `splits_into<Parent, L, R>` and `splits_into_pack<Parent, Children...>`
 # are the declarative manifests that gate `mint_permission_split` /
-# `mint_permission_combine` / `mint_permission_fork`.  The CSL frame-
-# rule discipline (CLAUDE.md §IX, §XVI) requires that a specialization
-# of either trait lives in the SAME translation unit as the parent
-# tag's declaration — otherwise any TU can declare arbitrary splits
-# for foreign tags and forge cross-region authority.
+# `mint_permission_combine` / `mint_permission_fork`.  fixy-M-29 adds
+# the companion `splits_into_authoring_witness` /
+# `splits_into_pack_authoring_witness` traits — `mint_permission_*`
+# requires BOTH the splits trait AND the witness trait.  The witness
+# is itself orphan-rejected here to close the bypass where a foreign
+# TU specializes BOTH the splits trait AND the witness; under this
+# guard the witness specialization fails the same authoring-location
+# check the splits specialization does, and the type system at
+# mint-time enforces both must be present.
+#
+# The CSL frame-rule discipline (CLAUDE.md §IX, §XVI) requires that a
+# specialization of any of the four traits lives in the SAME
+# translation unit as the parent tag's declaration — otherwise any TU
+# can declare arbitrary splits for foreign tags and forge cross-
+# region authority.
 #
 # C++ has no native orphan-rule.  This script enforces the discipline
 # at build time: only blessed authoring locations may declare
@@ -62,7 +74,12 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-pattern='(struct|class)\s+splits_into(_pack)?\s*<'
+# Matches the four orphan-rejected traits:
+#   splits_into< ...                        — binary splits manifest
+#   splits_into_pack< ...                   — N-ary splits manifest
+#   splits_into_authoring_witness< ...      — fixy-M-29 binary witness
+#   splits_into_pack_authoring_witness< ... — fixy-M-29 N-ary witness
+pattern='(struct|class)\s+splits_into(_pack)?(_authoring_witness)?\s*<'
 status=0
 
 while IFS=: read -r file line text; do

@@ -106,6 +106,19 @@ struct splits_into_pack<
     permission_row_compile_tags::IoChild,
     permission_row_compile_tags::BlockChild> : std::true_type {};
 
+// fixy-M-29 authoring witnesses.
+template <>
+struct splits_into_authoring_witness<
+    permission_row_compile_tags::Whole,
+    permission_row_compile_tags::IoChild,
+    permission_row_compile_tags::BlockChild> : std::true_type {};
+
+template <>
+struct splits_into_pack_authoring_witness<
+    permission_row_compile_tags::Whole,
+    permission_row_compile_tags::IoChild,
+    permission_row_compile_tags::BlockChild> : std::true_type {};
+
 }  // namespace crucible::safety
 
 namespace {

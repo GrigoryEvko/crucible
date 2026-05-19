@@ -337,6 +337,33 @@ struct splits_into_pack<
             Children,
             ::crucible::permissions::tag::FederatedPeer<Org>> && ...)> {};
 
+// fixy-M-29 authoring witnesses.  These mirror the splits_into /
+// splits_into_pack truth conditions above — the witness's ::value is
+// `true` only for the (Org, Org, Org) self-split this TU authored.
+// Critically, the witness is NOT unconditional: if a foreign TU full-
+// specializes splits_into<FederatedPeer<AttackerOrg>, FederatedPeer<
+// VictimOrg>, FederatedPeer<VictimOrg>> to ::true_type, the partial-
+// deduced witness for (AttackerOrg, VictimOrg, VictimOrg) folds to
+// std::bool_constant<false>.  Eve's malicious cross-org split flips
+// splits_into_v to true but the witness stays false, so
+// well_authored_split_v rejects.
+template <typename Org, typename A, typename B>
+struct splits_into_authoring_witness<
+    ::crucible::permissions::tag::FederatedPeer<Org>,
+    ::crucible::permissions::tag::FederatedPeer<A>,
+    ::crucible::permissions::tag::FederatedPeer<B>>
+    : std::bool_constant<std::is_same_v<A, Org>
+                         && std::is_same_v<B, Org>> {};
+
+template <typename Org, typename... Children>
+struct splits_into_pack_authoring_witness<
+    ::crucible::permissions::tag::FederatedPeer<Org>,
+    Children...>
+    : std::bool_constant<(
+        std::is_same_v<
+            Children,
+            ::crucible::permissions::tag::FederatedPeer<Org>> && ...)> {};
+
 }  // namespace crucible::safety
 
 namespace crucible::permissions {

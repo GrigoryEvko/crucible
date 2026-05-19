@@ -297,4 +297,19 @@ struct splits_into_pack<concurrent::snapshot_tag::Whole<UserTag>,
                         concurrent::snapshot_tag::Reader<UserTag>>
     : std::true_type {};
 
+// fixy-M-29 authoring witnesses.
+template <typename UserTag>
+struct splits_into_authoring_witness<
+    concurrent::snapshot_tag::Whole<UserTag>,
+    concurrent::snapshot_tag::Writer<UserTag>,
+    concurrent::snapshot_tag::Reader<UserTag>>
+    : std::true_type {};
+
+template <typename UserTag>
+struct splits_into_pack_authoring_witness<
+    concurrent::snapshot_tag::Whole<UserTag>,
+    concurrent::snapshot_tag::Writer<UserTag>,
+    concurrent::snapshot_tag::Reader<UserTag>>
+    : std::true_type {};
+
 }  // namespace crucible::safety

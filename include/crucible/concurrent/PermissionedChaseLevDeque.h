@@ -378,6 +378,22 @@ struct splits_into<concurrent::deque_tag::Whole<UserTag>,
                    concurrent::deque_tag::Thief<UserTag>>
     : std::true_type {};
 
+// fixy-M-29 authoring witnesses (paired with the splits_into and
+// splits_into_pack specs above and below).
+template <typename UserTag>
+struct splits_into_authoring_witness<
+    concurrent::deque_tag::Whole<UserTag>,
+    concurrent::deque_tag::Owner<UserTag>,
+    concurrent::deque_tag::Thief<UserTag>>
+    : std::true_type {};
+
+template <typename UserTag>
+struct splits_into_pack_authoring_witness<
+    concurrent::deque_tag::Whole<UserTag>,
+    concurrent::deque_tag::Owner<UserTag>,
+    concurrent::deque_tag::Thief<UserTag>>
+    : std::true_type {};
+
 template <typename UserTag>
 struct splits_into_pack<concurrent::deque_tag::Whole<UserTag>,
                         concurrent::deque_tag::Owner<UserTag>,

@@ -744,6 +744,13 @@ struct splits_into_pack<fork_test::Whole,
                         fork_test::ClientRole,
                         fork_test::ServerRole>
     : std::true_type {};
+
+template <>
+struct splits_into_pack_authoring_witness<
+    fork_test::Whole,
+    fork_test::ClientRole,
+    fork_test::ServerRole>
+    : std::true_type {};
 }  // namespace crucible::safety
 
 namespace {  // re-open anonymous namespace for tests
