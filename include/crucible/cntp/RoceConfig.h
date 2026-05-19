@@ -158,6 +158,33 @@ parse_pfc_pause_counters(std::string_view rx_text,
 [[nodiscard]] std::expected<PfcPauseStats, RoceError>
 query_pfc_pause_counters(NicInterfaceName iface) noexcept;
 
+// fixy-A5-042: explicit unknown discriminator.  Pre-fix
+// `verify_dcqcn_active` returned `std::expected<bool, RoceError>`
+// which forced callers to treat the "no backend can answer" case as
+// an error — indistinguishable in caller flow from "the NIC says
+// DCQCN is genuinely inactive".  `DcqcnState::BackendUnavailable`
+// is the explicit unknown; callers can branch on it without
+// pattern-matching on an error code.
+enum class DcqcnState : std::uint8_t {
+    BackendUnavailable,
+    Inactive,
+    Active,
+};
+
+[[nodiscard]] std::string_view dcqcn_state_name(DcqcnState state) noexcept;
+
+// Returns the queried DCQCN state.  `BackendUnavailable` means no
+// vendor-specific probe succeeded for this interface — callers
+// should treat it as "unknown" rather than "off".  No allocation,
+// no errno propagation; vendor sysfs / ethtool probes land here as
+// they ship per-vendor.
+[[nodiscard]] DcqcnState
+query_dcqcn_state(NicInterfaceName iface) noexcept;
+
+// Back-compat thin wrapper over `query_dcqcn_state`.  Returns
+// `unexpected(DcqcnStatusUnavailable)` for the no-backend case so
+// existing call sites keep their error path; new code should
+// prefer `query_dcqcn_state` and branch on `DcqcnState` directly.
 [[nodiscard]] std::expected<bool, RoceError>
 verify_dcqcn_active(NicInterfaceName iface) noexcept;
 

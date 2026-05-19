@@ -187,10 +187,34 @@ query_pfc_pause_counters(NicInterfaceName iface) noexcept {
     };
 }
 
+std::string_view dcqcn_state_name(DcqcnState state) noexcept {
+    switch (state) {
+        case DcqcnState::BackendUnavailable: return "BackendUnavailable";
+        case DcqcnState::Inactive:           return "Inactive";
+        case DcqcnState::Active:             return "Active";
+        default:                             return "<unknown DcqcnState>";
+    }
+}
+
+DcqcnState query_dcqcn_state(NicInterfaceName iface) noexcept {
+    // fixy-A5-042: vendor-specific probes (Mellanox `/sys/class/
+    // infiniband/<dev>/tc/<n>/cnp_dscp`, etc.) land here as they
+    // ship.  Until a backend is wired, the honest answer is
+    // BackendUnavailable — NOT a fabricated Inactive that pretends
+    // the NIC reported off.
+    static_cast<void>(iface);
+    return DcqcnState::BackendUnavailable;
+}
+
 std::expected<bool, RoceError>
 verify_dcqcn_active(NicInterfaceName iface) noexcept {
-    static_cast<void>(iface);
-    return std::unexpected(RoceError::DcqcnStatusUnavailable);
+    switch (query_dcqcn_state(iface)) {
+        case DcqcnState::Active:   return true;
+        case DcqcnState::Inactive: return false;
+        case DcqcnState::BackendUnavailable:
+        default:
+            return std::unexpected(RoceError::DcqcnStatusUnavailable);
+    }
 }
 
 }  // namespace crucible::cntp

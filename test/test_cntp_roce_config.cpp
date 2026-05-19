@@ -111,6 +111,22 @@ void test_live_surfaces_if_available() {
         std::printf("  test_live_pfc_pause_counters: PASSED\n");
     }
 
+    // fixy-A5-042 regression: query_dcqcn_state must return the
+    // explicit `BackendUnavailable` discriminator (NOT Inactive)
+    // when no vendor probe has shipped — caller flow distinguishes
+    // "NIC says off" from "we don't know".
+    auto state = cntp::query_dcqcn_state(*lo);
+    assert(state == cntp::DcqcnState::BackendUnavailable);
+    assert(cntp::dcqcn_state_name(state) ==
+           std::string_view{"BackendUnavailable"});
+    assert(cntp::dcqcn_state_name(cntp::DcqcnState::Inactive) ==
+           std::string_view{"Inactive"});
+    assert(cntp::dcqcn_state_name(cntp::DcqcnState::Active) ==
+           std::string_view{"Active"});
+
+    // Back-compat: verify_dcqcn_active maps the explicit-unknown
+    // state to the legacy error code so existing callers keep
+    // their pattern.
     auto dcqcn = cntp::verify_dcqcn_active(*lo);
     assert(!dcqcn.has_value());
     assert(dcqcn.error() == cntp::RoceError::DcqcnStatusUnavailable);
