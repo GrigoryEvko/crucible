@@ -195,8 +195,7 @@ public:
 
 template <std::size_t MaxFlows, class Ctx>
     requires effects::IsExecCtx<Ctx>
-          && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                                     effects::Effect::Init>
+          && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>
 [[nodiscard]] constexpr IncastController<MaxFlows>
 mint_incast_controller(Ctx const&) noexcept {
     return {};
