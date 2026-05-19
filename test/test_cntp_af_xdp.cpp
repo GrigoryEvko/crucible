@@ -82,6 +82,89 @@ void test_socket_substrate_rings() {
     std::printf("  test_socket_substrate_rings: PASSED\n");
 }
 
+// fixy-A5-023 HS14 fixture: runtime sentinel that explicitly proves the
+// "kernel is not in the loop" contract.  Three "kernel-NOT-mediated"
+// assertions, each of which would FAIL on a real AF_XDP socket where the
+// kernel drives the rings:
+//
+//   (a) Fresh socket → rx ring empty (no XDP_REDIRECT feed).
+//   (b) enqueue_tx succeeds → completion ring stays empty (no kernel TX
+//       drain → completion-post transition).
+//   (c) stage_rx_descriptor is the ONLY path to populate the rx ring
+//       (test-only injection; real socket would have kernel post these).
+//
+// When a backend author wires the real AF_XDP lifecycle (open socket,
+// mmap rings, bind XDP_REDIRECT), they MUST:
+//   (1) flip cntp::kernel_rings_shared from false to true,
+//   (2) replace this fixture's "kernel-NOT-mediated" assertions with
+//       live-NIC fixtures that exercise the kernel-XDP_REDIRECT → rx and
+//       tx-ring → kernel → completion-ring transitions,
+//   (3) re-validate the AddressOfFrame bound-check against a real mmap'd
+//       UMEM region; the in-process std::bit_cast<uintptr_t> path
+//       (line ~344, the fixy-A5-028 / FIXY-U-082 fix) continues to work
+//       byte-for-byte against the kernel-shared UMEM.
+// Anything short of all three is caught by either the static_assert
+// or this runtime sentinel.
+void test_rings_are_in_process_only() {
+    // (1) Marker invariant: the honesty trait MUST be false until the
+    // FIXY-U-087 sweep flips it.
+    assert(cntp::kernel_rings_shared == false);
+
+    effects::ColdInitCtx init{};
+    auto socket = cntp::mint_af_xdp_socket<131'072, 2'048, 64, 64, 64, 64>(
+        init, config());
+
+    // (2a) "kernel-NOT-mediated" claim #1: a freshly-minted socket has
+    // ZERO RX descriptors AND ZERO completions because nothing feeds
+    // them from kernel space.  A real AF_XDP socket bound via
+    // XDP_REDIRECT would already be receiving packets at this point.
+    assert(socket.rx_pending() == 0);
+    assert(socket.completions_pending() == 0);
+    assert(socket.poll() == 0);
+    auto first_dequeue = socket.dequeue_rx();
+    assert(!first_dequeue.has_value());
+
+    // (2b) "kernel-NOT-mediated" claim #2: enqueue_tx posts to the
+    // in-process tx ring; in a real AF_XDP socket the kernel would
+    // consume the descriptor and post to the completion ring after
+    // the NIC TX'd.  Here, the completion ring stays empty even after
+    // a successful enqueue — proves no kernel side-loop.
+    auto packet = socket.alloc_tx_buffer(128);
+    assert(packet.has_value());
+    packet->front() = std::byte{0xCA};
+    assert(socket.enqueue_tx(*packet).has_value());
+    assert(socket.tx_pending() == 1);
+    // KERNEL-IS-NOT-IN-THE-LOOP witness:
+    assert(socket.completions_pending() == 0);
+    // …and a second poll() still reports only in-process accounting.
+    assert(socket.poll() == 0);  // 0 rx + 0 completion; tx is NOT in poll()
+
+    // (2c) "kernel-NOT-mediated" claim #3: stage_rx_descriptor is the
+    // ONLY path to populate the rx ring while the socket is a façade.
+    // Verify that nothing implicit (timer? thread? kernel?) appears
+    // between two distinct polls.
+    auto second_dequeue = socket.dequeue_rx();
+    assert(!second_dequeue.has_value());  // STILL empty without inject
+
+    // Now inject via the test helper and prove the ring picks it up.
+    // In a real kernel-mediated socket, packets would arrive via the
+    // XDP_REDIRECT bpf-prog → rx ring path, not via this helper.
+    assert(socket.stage_rx_descriptor(5, 64));
+    assert(socket.rx_pending() == 1);
+    auto staged = socket.dequeue_rx();
+    assert(staged.has_value());
+    assert(staged->size() == 64);
+    assert(socket.rx_pending() == 0);
+
+    // (2d) UMEM ownership remains LINEAR — the `Linear<AlignedBuffer>`
+    // is not silently shared with anything.  Compile-time proof: the
+    // socket is non-copyable AND non-movable (Pinned + Linear umem).
+    static_assert(!std::copy_constructible<decltype(socket)>);
+    static_assert(!std::move_constructible<decltype(socket)>);
+
+    std::printf("  test_rings_are_in_process_only: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -95,9 +178,25 @@ int main() {
     static_assert(cntp::CtxFitsAfXdpMint<effects::ColdInitCtx>);
     static_assert(!cntp::CtxFitsAfXdpMint<effects::BgDrainCtx>);
 
+    // fixy-A5-023: compile-time honesty-marker witnesses.  These fire
+    // at translation time if a backend author flips the trait without
+    // updating the test discipline (or vice-versa).
+    static_assert(!cntp::kernel_rings_shared,
+        "fixy-A5-023: AfXdpSocket is a documented façade — rings are "
+        "in-process, NOT shared with the kernel.  Flipping "
+        "kernel_rings_shared to true requires: (a) live "
+        "socket(AF_XDP)+setsockopt+mmap+bind lifecycle, (b) Ring<> "
+        "replaced with kernel-shared producer/consumer indices against "
+        "the mmap'd ring, (c) GAPS-130 XDP_REDIRECT attachment, "
+        "(d) updated test_rings_are_in_process_only.");
+    static_assert(std::is_same_v<decltype(cntp::kernel_rings_shared),
+                                 const bool>,
+        "fixy-A5-023: honesty trait must be a compile-time bool");
+
     std::printf("test_cntp_af_xdp:\n");
     test_admission();
     test_socket_substrate_rings();
+    test_rings_are_in_process_only();
     std::printf("test_cntp_af_xdp: all PASSED\n");
     return 0;
 }

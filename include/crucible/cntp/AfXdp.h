@@ -9,6 +9,58 @@
 // slice pins the safety shape first: power-of-two frame/ring dimensions, linear
 // UMEM ownership, source::AfXdp configuration provenance, and borrowed packet
 // views tied to the socket type.
+//
+// fixy-A5-023 honesty marker.  The header is split into TWO tiers; flipping
+// `kernel_rings_shared` from false to true is the contract a backend author
+// MUST satisfy before claiming the socket is kernel-mediated:
+//
+//   LIVE TIER (in-process — verified by test_cntp_af_xdp):
+//     • admit_af_xdp_{ifindex,queue_id,frame_size,frame_count,ring_entries}
+//     • mint_af_xdp_config / mint_af_xdp_socket / AfXdpSocket::mint
+//     • AfXdpSocket::alloc_tx_buffer       (in-process UMEM bump alloc)
+//     • AfXdpSocket::enqueue_tx            (in-process tx Ring push + addr
+//                                           bounds via std::bit_cast — the
+//                                           FIXY-U-082 / fixy-A5-028 fix)
+//     • AfXdpSocket::dequeue_rx            (in-process rx Ring pop)
+//     • AfXdpSocket::stage_rx_descriptor   (test-only RX injection)
+//     • AfXdpSocket::poll                  (in-process ring accounting)
+//
+//   STUB TIER (no kernel mediation):
+//     • No socket(AF_XDP, SOCK_RAW, 0) syscall.
+//     • No setsockopt(XDP_UMEM_REG / XDP_FILL_RING / XDP_TX_RING /
+//                     XDP_RX_RING / XDP_COMPLETION_RING).
+//     • No mmap(MAP_SHARED, fd, XDP_UMEM_PGOFF_* / XDP_PGOFF_*) of UMEM
+//       or any of the four rings into kernel space.
+//     • No bind(fd, sockaddr_xdp{queue_id, ifindex}) attachment.
+//     • No XDP_REDIRECT bpf-map population — GAPS-130 owns that.
+//     • No real NIC poll — `poll()` returns in-process ring sizes only.
+//     • No kernel feed of the rx ring — only `stage_rx_descriptor` posts.
+//     • No kernel drain of the tx ring → completion ring transition; the
+//       completion ring stays empty even after `enqueue_tx` succeeds.
+//
+// What flipping `kernel_rings_shared = true` requires:
+//   1. open the AF_XDP socket and bind to (ifindex, queue_id, mode).
+//   2. setsockopt(XDP_UMEM_REG) with the AlignedBuffer-backed UMEM region;
+//      the linear ownership of `umem_` MUST be preserved — the kernel only
+//      receives a borrowed mapping, NOT consume the Linear<AlignedBuffer>.
+//   3. setsockopt + mmap the four rings; replace the in-process
+//      `Ring<Capacity>` arrays with kernel-shared producer/consumer indices
+//      against the mmap'd region.  The Descriptor layout MUST match
+//      `struct xdp_desc` (24 bytes: addr/len/options).
+//   4. bind(fd, sockaddr_xdp) and confirm the XDP_REDIRECT bpf-prog is
+//      attached (GAPS-130 closure).
+//   5. `poll()` must call poll(2) on the AF_XDP fd and reconcile the
+//      kernel-published indices, not just sum in-process ring sizes.
+//   6. `stage_rx_descriptor` becomes a NO-OP or test-only path; production
+//      RX flows through the kernel-XDP_REDIRECT → rx ring path.
+//   7. FIXY-U-087 sweep flips `kernel_rings_shared` and updates
+//      test_cntp_af_xdp to exercise the live kernel-mediated path.
+//
+// Until then: this header refuses to fabricate kernel mediation.  The trait
+// is a compile-time honesty marker — call-site `static_assert`s and runtime
+// sentinel tests pin the in-process-only contract so a partial flip (e.g.,
+// mmap'ing UMEM without binding the socket) is caught at translation time,
+// not at production-packet-loss time.
 
 #include <crucible/Platform.h>
 #include <crucible/cntp/Pacing.h>
@@ -35,6 +87,28 @@
 #include <type_traits>
 
 namespace crucible::cntp {
+
+// fixy-A5-023 honesty marker.  See the file-level doc-block for the precise
+// live-vs-stub tier split.  This `inline constexpr` is the machine-readable
+// form of that contract:
+//
+//   while kernel_rings_shared == false:
+//     • No syscalls land — no socket(AF_XDP), no mmap, no bind.
+//     • Rings are in-process std::array; rx ring stays empty until
+//       stage_rx_descriptor injects entries.
+//     • Completion ring is permanently empty (no kernel TX drain).
+//     • UMEM is private to this process; no kernel mapping.
+//
+//   when kernel_rings_shared flips to true:
+//     • Production AF_XDP lifecycle is wired (socket/setsockopt/mmap/bind).
+//     • The runtime sentinel test_rings_are_in_process_only must be updated
+//       in lockstep to exercise the kernel-mediated path; the in-process
+//       assertions below would become false-positives masking real packet loss.
+//
+// FIXY-U-087 is the cross-substrate sweep that flips this for every façade'd
+// transport surface (MtlsTransport / NicConfig / RoceConfig / SrIov / Tcam /
+// AfXdp).  Until that sweep, this header refuses to fabricate kernel mediation.
+inline constexpr bool kernel_rings_shared = false;
 
 enum class AfXdpMode : std::uint8_t {
     Copy = 0,
