@@ -9672,6 +9672,26 @@ crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_delegate_wrong_
 crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_delegate_transport_not_invocable
     "constraints not satisfied|is_invocable|no matching function|delegate")
 
+# fixy-A2-006c — HS14 floor for the Accept<DelegatedSession<P, IPS>, K>
+# specialization on RecordingPermissionedSessionHandle.  The class spec
+# adds .accept() and .accept_with() methods.  The .accept() method
+# carries a single-conjunct requires-clause:
+#   std::is_invocable_v<Transport, Resource&>
+# Each fixture witnesses one mismatch class at a distinct layer:
+#   transport_not_invocable   — Transport = int rejects the requires
+#                                clause (REQUIRES-CLAUSE layer)
+#   transport_returns_void    — Transport callable but returns void;
+#                                requires passes but DelegatedResource
+#                                deduces to void, body instantiation
+#                                of inner_.accept(...) fails to declare
+#                                a void variable (BODY layer)
+# Distinct layers: #1 = requires-clause body, #2 = body instantiation.
+# Mirrors the bare-handle Accept spec at RecordingSessionHandle.h:994.
+crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_accept_transport_not_invocable
+    "constraints not satisfied|is_invocable|no matching function|accept")
+crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_accept_transport_returns_void
+    "incomplete type|void|cannot declare|no matching function|accept")
+
 # fixy-A2-019 — HS14 floor for the renamed mint_atomic_session<Proto>(cell).
 # Two fixtures witness the two-conjunct requires-clause:
 #   AtomicMachineCell<Cell>          — non-cell argument fails the concept
