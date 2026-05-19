@@ -175,17 +175,44 @@ struct strict_default_for<dim::DimensionAxis::Representation> {
 
 template <>
 struct strict_default_for<dim::DimensionAxis::Observability> {
-    // Derived from EffectRow per fixy.md §24.1; the strict default
-    // (empty row → no CT discipline) follows from Effect's strict
-    // default `Row<>`.  No independent slot in the Fn<...> pack.
+    // ── fixy-M-08: documented "half-engaged" duality ──────────────
+    //
+    // Observability is a DERIVED axis with a dual nature that prior
+    // doc-blocks left implicit (the source of the M-08 critique):
+    //
+    //   HALF-1 (engagement-required): the Grants pack MUST contain
+    //          `accept_default_strict_for<Observability>` for
+    //          IsAccepted to fire — the engagement marker is the
+    //          author's structural witness "I have considered the
+    //          Observability axis."  fixy-A4-026 + Reject.h:1091
+    //          pin this in the engagement walk.
+    //
+    //   HALF-2 (payload-derived):     the marker carries NO
+    //          independent semantic content.  Observability's strict
+    //          default is ALIASED from Effect's strict default —
+    //          when a binding accepts the strict default for both
+    //          Effect and Observability, the resolved type is the
+    //          SAME (`Row<>`, the empty effect row).  There is no
+    //          independent slot in the `Fn<...>` pack.
+    //
+    // The duality is DELIBERATE — Observability tracks the
+    // observability footprint of the binding's effects (Pure / Quiet
+    // / Loud), which is fully determined by the Effect row.  Forcing
+    // the engagement marker prevents authors from silently inheriting
+    // observability semantics they did not consider; aliasing the
+    // payload prevents independent specification.
+    //
+    // If a future redesign promotes Observability to a stand-alone
+    // axis (independent payload, e.g. an ObservabilityKind enum that
+    // can disagree with Effect), the `derived_from` alias here will
+    // be removed AND the engagement-required witness in Reject.h
+    // will be reused for the new payload.  Do NOT silently drop the
+    // engagement requirement.
     //
     // FIXY-AUDIT-A9: expose a `type` alias that pre-resolves to the
     // Effect axis's strict default.  Without it, consumers reaching
     // for `strict_default_for<Observability>::type` hit substitution
-    // failure (only `derived_from` was visible).  The alias preserves
-    // the "no independent slot" semantics — the Observability axis is
-    // still NOT a parameter of safety::fn::Fn<...> — but downstream
-    // metaprogramming can name a type without walking `derived_from`.
+    // failure (only `derived_from` was visible).
     using derived_from = strict_default_for<dim::DimensionAxis::Effect>;
     using type         = typename derived_from::type;
 };
@@ -200,6 +227,22 @@ static_assert(std::is_same_v<
     typename strict_default_for<dim::DimensionAxis::Observability>::type,
     typename strict_default_for<dim::DimensionAxis::Effect>::type>,
     "Observability's derived type must round-trip to Effect's strict default.");
+
+// fixy-M-08: structural witness for the half-engaged duality.  HALF-2
+// (payload-derived) is asserted above; this assertion locks HALF-1
+// (the `derived_from` alias must EXIST — its presence is the type-
+// level signal that the engagement walk MUST require an explicit
+// marker on this axis).  If a future redesign removes `derived_from`
+// (making Observability a stand-alone axis), this static_assert
+// fires and the maintainer is forced to update the engagement walk
+// and the Reject.h:1091 witness in lockstep.
+static_assert(
+    requires { typename strict_default_for<dim::DimensionAxis::Observability>::derived_from; },
+    "fixy-M-08: Observability's `derived_from` alias must exist — "
+    "its presence pins the half-engaged duality (engagement-required "
+    "+ payload-derived).  Removing the alias requires updating the "
+    "engagement walk in Reject.h (fixy-A4-026 witness at line 1091) "
+    "AND the doc-block above in lockstep.");
 
 template <>
 struct strict_default_for<dim::DimensionAxis::Complexity> {
