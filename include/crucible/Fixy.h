@@ -8,9 +8,21 @@
 // every dimension/lattice/reject diagnostic via one well-known
 // include path.
 //
+// ── Ordering convention ────────────────────────────────────────────
+//
+// Within each phase, both the doc-block below AND the #include block
+// at the bottom of this header list entries ALPHABETICALLY (with one
+// deliberate exception in Phase A — Reject.h ships before Profile.h
+// because Profile.h's IsAcceptedActive instantiates the Reject.h
+// IsAccepted concept; the dependency-order swap is intentional and
+// header-functionally inert thanks to `#pragma once`).  Adding a new
+// fixy/*.h header MUST update BOTH lists in lockstep — drift between
+// doc-block and include-block is the fixy-A4-032 audit gap that this
+// convention closes.
+//
 // ── Phase A (foundation, shipped) ──────────────────────────────────
-//   - fixy/Dim.h         — 20-axis DimensionAxis enum
 //   - fixy/Default.h     — strict_default_for<D> per-axis defaults
+//   - fixy/Dim.h         — 20-axis DimensionAxis enum
 //   - fixy/Grant.h       — grant::* engagement + relaxation tags
 //   - fixy/Reject.h      — IsAccepted concept + FixyNotEngaged_<Axis>
 //                          diagnostic tag tree
@@ -26,10 +38,36 @@
 //                          stance::* canonical bindings
 //
 // ── Phase C (substrate alias re-exports, shipped) ──────────────────
+//   - fixy/Bridge.h      — bridges/* wrap factories
+//                          (mint_recording_session, mint_crash_watched_session,
+//                          mint_persisted_session, endpoint variants,
+//                          mint_vigil_mode_bridge)
 //   - fixy/Cap.h         — effects/Capability.h mint_cap / mint_from_ctx
+//   - fixy/Contract.h    — safety/Contract.h CRUCIBLE_PRE/POST macros
+//                          + Cipher tier-migration mints under
+//                          fixy::contract::cipher::* (mint_promote,
+//                          mint_demote, mint_restore, EpochedDelegate,
+//                          mint_persisted_session)
+//   - fixy/Decide.h      — safety/Decide.h named VC predicates under
+//                          fixy::decide::* (23 predicates + Interval<T> —
+//                          no_overflow_mul / no_overflow_sum / all_in_range /
+//                          strictly_increasing / is_power_of_two_le /
+//                          intervals_pairwise_disjoint / tier_replaces /
+//                          row_subset / fmix_preserves_non_zero / ...)
+//   - fixy/Is.h          — concept-gate aliases for safety/Is*.h
+//                          (IsLinear / IsRefined / IsTagged / IsSecret /
+//                          IsMonotonic-equivalent recognizers — 32 of
+//                          them — plus IsWitness from
+//                          safety/witness/IsWitness.h)
+//   - fixy/Mach.h        — safety/Machine.h mint_machine + transition_to
 //   - fixy/Perm.h        — permissions/* CSL token mints (root /
 //                          split / combine / split_n / combine_n /
 //                          share / fork / inherit)
+//   - fixy/Pipe.h        — concurrent/* Tier-3 composition
+//                          (mint_endpoint / mint_stage / mint_pipeline /
+//                          mint_stage_from_endpoints / mint_substrate_session)
+//   - fixy/Safety.h      — safety/* token mints (Linear / Secret /
+//                          ScopedView)
 //   - fixy/Sess.h        — sessions/* protocol combinators + mint
 //                          factories + federation 3-role projection.
 //                          Note: bare `mint_session<Proto>(ctx, res)`
@@ -40,25 +78,15 @@
 //                          decl is re-exported so stale call sites
 //                          surface the canonical diagnostic via the
 //                          `fixy::` path.
-//   - fixy/Pipe.h        — concurrent/* Tier-3 composition
-//                          (mint_endpoint / mint_stage / mint_pipeline /
-//                          mint_stage_from_endpoints / mint_substrate_session)
-//   - fixy/Bridge.h      — bridges/* wrap factories
-//                          (mint_recording_session, mint_crash_watched_session,
-//                          mint_persisted_session, endpoint variants,
-//                          mint_vigil_mode_bridge)
-//   - fixy/Contract.h    — safety/Contract.h CRUCIBLE_PRE/POST macros
-//                          + Cipher tier-migration mints under
-//                          fixy::contract::cipher::* (mint_promote,
-//                          mint_demote, mint_restore, EpochedDelegate,
-//                          mint_persisted_session)
+//   - fixy/Struct.h      — structural (non-Graded) safety wrappers
+//                          (Pinned / NonMovable / NotInherited /
+//                          FinalBy / Checked.h primitives /
+//                          ConstantTime / Simd facade / OwnedRegion /
+//                          Workload parallel_for_views family)
 //   - fixy/Substr.h      — per-substrate session mints
 //                          (SPSC / SWMR / ChaseLev / MetaLog / ChainEdge /
 //                          MPMC / CalendarGrid / ShardedCalendarGrid /
-//                          ShardedGrid)
-//   - fixy/Mach.h        — safety/Machine.h mint_machine + transition_to
-//   - fixy/Safety.h      — safety/* token mints (Linear / Secret /
-//                          ScopedView)
+//                          ShardedGrid / Snapshot)
 //   - fixy/Wrap.h        — value-level safety wrappers (Refined /
 //                          SealedRefined / Tagged / Monotonic /
 //                          AppendOnly / Stale / TimeOrdered /
@@ -67,21 +95,16 @@
 //                          AtomicMonotonic — plus Linear / Secret /
 //                          SharedPermission re-exports for one-stop
 //                          `fixy::wrap::` value-wrapping access)
-//   - fixy/Struct.h      — structural (non-Graded) safety wrappers
-//                          (Pinned / NonMovable / NotInherited /
-//                          FinalBy / Checked.h primitives /
-//                          ConstantTime / Simd facade / OwnedRegion /
-//                          Workload parallel_for_views family)
-//   - fixy/Is.h          — concept-gate aliases for safety/Is*.h
-//                          (IsLinear / IsRefined / IsTagged / IsSecret /
-//                          IsMonotonic-equivalent recognizers — 32 of
-//                          them — plus IsWitness from
-//                          safety/witness/IsWitness.h)
 //
 // ── Phase D (foundation universe re-exports, shipped) ─────────────
 //   - fixy/Algebra.h     — algebra/Graded.h substrate + 30 lattices
 //                          + GradedWrapper concept + Modality enum +
 //                          law-verifier helpers
+//   - fixy/Diag.h        — safety/Diagnostic.h Category + Catalog +
+//                          tag_of_t / category_of_v bijection + 28
+//                          tag classes + stable_name / type_id /
+//                          function_id + canonicalize_pack +
+//                          insight_provider + row_hash_contribution
 //   - fixy/Eff.h         — effects/* Met(X) surface: Row<>,
 //                          Computation<>, Subrow, row_union_t /
 //                          difference_t / intersection_t, F*
@@ -89,11 +112,13 @@
 //                          Capability<>, ExecCtx + 5 canonical ctxs,
 //                          21+ Resource budget tags, ConcurrentRow,
 //                          OsUniverse, EffectMask
-//   - fixy/Diag.h        — safety/Diagnostic.h Category + Catalog +
-//                          tag_of_t / category_of_v bijection + 28
-//                          tag classes + stable_name / type_id /
-//                          function_id + canonicalize_pack +
-//                          insight_provider + row_hash_contribution
+//   - fixy/Insights.h    — per-tag `insight_provider` specializations
+//                          for the 20 FixyNotEngaged_<Axis> tags +
+//                          §30.14 Theory.h corpus entries (Hunt-Sands
+//                          axis-mismatch / Volpano-Smith-Irvine /
+//                          SS09 unsoundness witnesses) — populates
+//                          Why / Symptom / Correct / Violating prose
+//                          for the deep-diagnostic builder
 //   - fixy/Source.h      — safety/Tagged.h source::* / trust::* /
 //                          access::* / version::* / vessel_trust::*
 //                          phantom tag namespaces + safety/Secret.h
