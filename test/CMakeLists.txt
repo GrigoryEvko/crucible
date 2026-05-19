@@ -2972,6 +2972,16 @@ crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_bg_ctx
     "constraint|constraints not satisfied|CtxFitsDeadlineWatchdogMint|Init|Bg")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
     "constraint|constraints not satisfied|CtxFitsDeadlineWatchdogMint|Init|HotFgCtx")
+# 3 strengthening fixtures: SECOND mismatch class per mint = non-IsExecCtx.
+# CtxFitsXMint = IsExecCtx<Ctx> ∧ row_contains_v<…, Init>; fixtures
+# above exercise the row half (different Init-less ExecCtx shapes);
+# fixtures below exercise the IsExecCtx half via raw struct rejection.
+crucible_neg_compile_warden_test(neg_hardening_mint_not_exec_ctx
+    "constraint|constraints not satisfied|CtxFitsHardeningMint|IsExecCtx|NotAnExecCtx")
+crucible_neg_compile_warden_test(neg_hot_region_registry_mint_not_exec_ctx
+    "constraint|constraints not satisfied|CtxFitsHotRegionRegistryMint|IsExecCtx|NotAnExecCtx")
+crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_not_exec_ctx
+    "constraint|constraints not satisfied|CtxFitsDeadlineWatchdogMint|IsExecCtx|NotAnExecCtx")
 
 # ─── GAPS-130 cntp/dataplane/Xdp.h soundness gates ────────────────
 #
