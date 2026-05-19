@@ -856,6 +856,12 @@ crucible_test(test_mpmc_channel_session)
 # multi-reader lifetime accounting, late-reader visibility, matching
 # SharedPermission proof minting, and PSH send/recv wrapper execution.
 crucible_test(test_swmr_session)
+
+# SnapshotSession.h (fixy-A4-022) — typed-session facade for
+# PermissionedSnapshot (thin protocol layer over the substrate's
+# writer/reader endpoints).  Loop<Send/Recv<T,Continue>> with
+# EmptyPermSet; covers publish/load round-trip and immediate detach.
+crucible_test(test_snapshot_session)
 crucible_test(test_observe_metrics_swmr)
 crucible_test(test_observe_health)
 crucible_test(test_observe_sdc_detect)
@@ -1825,6 +1831,17 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_wrong_handle
     "cannot convert|no matching function|ProducerHandle|ConsumerHandle")
 crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_wrong_handle
     "cannot convert|no matching function|WriterHandle|ReaderHandle")
+
+# fixy-A4-022 — Substr.h promotes PermissionedSnapshot from the
+# `concurrent::` sub-namespace into its own `snapshot::` sub-namespace
+# with a typed-session surface (SnapshotSession.h).  Two HS14 fixtures
+# pin distinct mismatch classes: role swap (writer-mint receives
+# reader handle) and concept rejection (substrate fails
+# SnapshotSessionSurface).
+crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_wrong_handle
+    "cannot convert|no matching function|WriterHandle|ReaderHandle")
+crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_unfit_snap
+    "constraints not satisfied|SnapshotSessionSurface|no matching function")
 
 # ── FIXY-MINT-Mach + FIXY-MINT-Safety — fixy/Mach.h + fixy/Safety.h
 # re-export of state-machine + safety-wrapper token mints

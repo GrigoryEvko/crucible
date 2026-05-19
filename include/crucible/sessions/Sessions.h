@@ -51,6 +51,9 @@
 //   SwmrSession.h           — typed-session facade for SWMR latest-
 //                              value publication over AtomicSnapshot
 //                              + SharedPermissionPool.
+//   SnapshotSession.h       — typed-session facade for PermissionedSnapshot
+//                              (thin protocol layer over the substrate,
+//                              EmptyPermSet, Loop<Send/Recv<T,Continue>>).
 //   ChaseLevDequeSession.h  — typed-session facade for
 //                              PermissionedChaseLevDeque owner/thief
 //                              work-stealing roles.
@@ -96,6 +99,7 @@
 #include <crucible/sessions/MpmcChannelSession.h>
 #include <crucible/sessions/ChainEdgeSession.h>
 #include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/SnapshotSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>
 #include <crucible/sessions/ShardedGridSession.h>
 #include <crucible/sessions/CalendarGridSession.h>

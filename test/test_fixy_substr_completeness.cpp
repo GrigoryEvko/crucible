@@ -175,9 +175,10 @@ static_assert(std::is_same_v<
     cconc::PermissionedMpscChannel<
         int, 32, test_substr_mpsc::UserTag>>);
 
-// Snapshot — raw substrate (SwmrSession is the typed session over it).
+// Snapshot — raw substrate AND typed-session minters now under
+// fixy::substr::snapshot:: (fixy-A4-022; promoted from `concurrent::`).
 static_assert(std::is_same_v<
-    fs::concurrent::PermissionedSnapshot<int>,
+    fs::snapshot::PermissionedSnapshot<int>,
     cconc::PermissionedSnapshot<int>>);
 
 // ═════════════════════════════════════════════════════════════════════

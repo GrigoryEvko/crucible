@@ -3,11 +3,11 @@
 // ── crucible::fixy::substr — Substrate session minters ─────────────
 //
 // Phase C re-export per misc/16_05_2026_fixy.md.  Surfaces the
-// per-substrate typed-session factories (SPSC, SWMR, ChaseLev,
-// MetaLog, ChainEdge, MPMC, CalendarGrid, ShardedCalendarGrid,
-// ShardedGrid) under `fixy::substr::` so callers who include only
-// the fixy umbrella never have to pick the right sessions/* header
-// for the substrate they hold a handle into.
+// per-substrate typed-session factories (SPSC, SWMR, Snapshot,
+// ChaseLev, MetaLog, ChainEdge, MPMC, CalendarGrid,
+// ShardedCalendarGrid, ShardedGrid) under `fixy::substr::` so callers
+// who include only the fixy umbrella never have to pick the right
+// sessions/* header for the substrate they hold a handle into.
 //
 // Per CLAUDE.md §XXI Universal Mint Pattern: every re-export
 // preserves the substrate's structural concept gate (the substrate's
@@ -25,6 +25,8 @@
 //
 //   SpscSession.h         producer / consumer + _session variants
 //   SwmrSession.h         writer / reader + _session + _runtime_session
+//   SnapshotSession.h     snapshot_writer / snapshot_reader +
+//                         _session variants (over PermissionedSnapshot)
 //   ChaseLevDequeSession.h chaselev_owner / chaselev_thief +
 //                         owner / thief _session
 //   MetaLogSession.h      metalog_producer / metalog_consumer +
@@ -63,6 +65,7 @@
 #include <crucible/sessions/MpmcChannelSession.h>
 #include <crucible/sessions/ShardedCalendarGridSession.h>
 #include <crucible/sessions/ShardedGridSession.h>
+#include <crucible/sessions/SnapshotSession.h>
 #include <crucible/sessions/SpscSession.h>
 #include <crucible/sessions/SwmrSession.h>
 
@@ -311,6 +314,39 @@ using ::crucible::safety::proto::sharded_grid_session::mint_consumer_session;
 }  // namespace sharded_grid
 
 // ═════════════════════════════════════════════════════════════════════
+// ── Snapshot (PermissionedSnapshot SWMR seqlock) ───────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+namespace snapshot {
+// Substrate alias (raw primitive — exposed alongside the session
+// surface because short-lived readers reach the substrate directly).
+template <::crucible::concurrent::SnapshotValue T,
+          typename UserTag = void>
+using PermissionedSnapshot =
+    ::crucible::concurrent::PermissionedSnapshot<T, UserTag>;
+
+// Protocol type aliases.
+template <typename T>
+using WriterProto =
+    ::crucible::safety::proto::snapshot_session::WriterProto<T>;
+
+template <typename T>
+using ReaderProto =
+    ::crucible::safety::proto::snapshot_session::ReaderProto<T>;
+
+// Surface concept.
+template <typename Snap>
+concept SnapshotSessionSurface =
+    ::crucible::safety::proto::snapshot_session::SnapshotSessionSurface<Snap>;
+
+// Mint factories.
+using ::crucible::safety::proto::snapshot_session::mint_snapshot_writer;
+using ::crucible::safety::proto::snapshot_session::mint_snapshot_reader;
+using ::crucible::safety::proto::snapshot_session::mint_snapshot_writer_session;
+using ::crucible::safety::proto::snapshot_session::mint_snapshot_reader_session;
+}  // namespace snapshot
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Raw concurrent primitives without a typed-session layer ────────
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -337,14 +373,6 @@ template <::crucible::concurrent::RingValue T,
           typename UserTag = void>
 using PermissionedMpscChannel =
     ::crucible::concurrent::PermissionedMpscChannel<T, Capacity, UserTag>;
-
-// Permissioned snapshot (sequence-lock SWMR substrate without a
-// session protocol — SwmrSession layers a typed session on top, but
-// the raw substrate is useful directly for short-lived readers).
-template <::crucible::concurrent::SnapshotValue T,
-          typename UserTag = void>
-using PermissionedSnapshot =
-    ::crucible::concurrent::PermissionedSnapshot<T, UserTag>;
 }  // namespace concurrent
 
 // ── fixy-A4-005: mint_substrate_session — the generic substrate→session
