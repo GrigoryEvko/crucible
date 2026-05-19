@@ -553,6 +553,41 @@ static_assert(
     "(FOUND-E01 + FIXY-AUDIT-C8).  The fold walks every entry; a "
     "fixy-side dual-export of a substrate tag would trip here.");
 
+// ── fixy-M-12: exhaustive positive-direction in-tuple sentinel ─────
+//
+// fixy-A4-030 walks substrate → fixy (every substrate entry rejects).
+// The forward direction was hand-picked: only FixyNotEngaged_Type and
+// FixyNotEngaged_Staleness had explicit `is_fixy_diag_v<X>` witnesses
+// — the other 18 axis-engagement tags were covered only by the
+// bijection walk at line 475, which tests round-trip but NOT in-tuple
+// membership.  M-12 closes the gap with an exhaustive fold over
+// FixyCatalog: EVERY entry must register as a fixy diagnostic.  A
+// regression in `is_fixy_diag_v`'s impl that silently misses one
+// entry fires here at the definition site rather than at a distant
+// production call site.
+
+namespace detail::fixy_positive_witness {
+
+template <::std::size_t... Is>
+[[nodiscard]] inline constexpr bool every_fixy_entry_is_fixy_diag(
+    ::std::index_sequence<Is...>) noexcept
+{
+    return (is_fixy_diag_v<
+                ::std::tuple_element_t<Is, FixyCatalog>>
+            && ...);
+}
+
+}  // namespace detail::fixy_positive_witness
+
+static_assert(
+    detail::fixy_positive_witness::every_fixy_entry_is_fixy_diag(
+        ::std::make_index_sequence<fixy_catalog_size>{}),
+    "fixy-M-12: at least one FixyCatalog entry does NOT satisfy "
+    "is_fixy_diag_v.  The two predicates must agree on every catalog "
+    "entry (the tuple IS the source of truth).  A failure here means "
+    "is_fixy_diag_v's specialization is missing an entry, OR the "
+    "entry was added to FixyCatalog without updating the predicate.");
+
 static_assert(axis_for_tag_v<FixyNotEngaged_Type>
               == dim::DimensionAxis::Type,
     "axis_for_tag must invert tag_for_axis at the Type axis.");
