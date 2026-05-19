@@ -436,7 +436,16 @@ public:
         if (index >= event_count_) {
             return std::unexpected(cntp::PoolError::InvalidConnectionId);
         }
-        return cntp::mint_pool_event(events_[index]);
+        // fixy-A5-010: events_[index] indexes the PHYSICAL slot, not the
+        // chronological position.  After wrap, the oldest event lives at
+        // events_[next_event_] (the slot about to be overwritten) and the
+        // physical-zero slot holds a far-newer event.  Unified formula
+        // collapses both regimes: pre-wrap next_event_ ≡ event_count_ so
+        // the subtraction is zero modulo size, returning slot 0.
+        const std::size_t size = events_.size();
+        const std::size_t base = (next_event_ + size - event_count_) % size;
+        const std::size_t physical = (base + index) % size;
+        return cntp::mint_pool_event(events_[physical]);
     }
 };
 

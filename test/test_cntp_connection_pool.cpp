@@ -163,6 +163,59 @@ void test_configured_per_remote_limit() {
     std::printf("  test_configured_per_remote_limit: PASSED\n");
 }
 
+void test_event_ring_wrap_chronological_order() {
+    // fixy-A5-010 regression: event_at(index) must return the
+    // chronologically-indexed event, not the physical-slot one.  Before
+    // wrap, slot 0 holds the oldest event and the buggy `events_[index]`
+    // accidentally works.  After wrap, the oldest survivor lives at slot
+    // `next_event_` (the slot about to be overwritten), and `events_[0]`
+    // holds a much newer event from the post-wrap writes.
+    //
+    // Setup: MaxRemotes=2, MaxPerRemote=2 → MaxEvents = 2*2*2 = 8.
+    // Recipe: 2 Adds + 4 lease/return cycles = 10 sequenced events, of
+    // which the first 2 are evicted by the wrap.  Surviving events have
+    // sequences {3, 4, 5, 6, 7, 8, 9, 10}.
+    effects::ColdInitCtx init{};
+    effects::BgDrainCtx bg{};
+    auto id = remote(10);
+    auto pool = cntp::mint_connection_pool<
+        cntp::TransportClass::MtlsTcp, 2, 2>(init);
+
+    assert(pool.add_connection(bg, connection(40, id, 1), 100).has_value());
+    assert(pool.add_connection(bg, connection(41, id, 2), 100).has_value());
+    for (int i = 0; i < 4; ++i) {
+        auto lease = pool.lease(bg, id, std::uint64_t{200} + std::uint64_t(i));
+        assert(lease.has_value());
+        // Scope-exit drives LeaseGuard::~LeaseGuard → Returned event.
+    }
+
+    assert(pool.event_count() == 8u);
+
+    auto oldest = pool.event_at(0);
+    auto newest = pool.event_at(7);
+    assert(oldest.has_value());
+    assert(newest.has_value());
+    // Pre-fix the buggy form returned events_[0] (an Add from the original
+    // pre-wrap write that has since been overwritten by a post-wrap event).
+    assert(oldest->value().sequence == 3u);
+    assert(newest->value().sequence == 10u);
+
+    std::uint64_t prev = 0;
+    for (std::size_t k = 0; k < pool.event_count(); ++k) {
+        auto e = pool.event_at(k);
+        assert(e.has_value());
+        assert(e->value().sequence > prev);
+        prev = e->value().sequence;
+    }
+    assert(prev == 10u);
+
+    auto out_of_range = pool.event_at(8);
+    assert(!out_of_range.has_value());
+    assert(out_of_range.error() == cntp::PoolError::InvalidConnectionId);
+
+    std::printf("  test_event_ring_wrap_chronological_order: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -187,6 +240,7 @@ int main() {
     test_lease_return_and_capacity();
     test_unhealthy_idle_and_quarantine_eviction();
     test_configured_per_remote_limit();
+    test_event_ring_wrap_chronological_order();
     std::printf("test_cntp_connection_pool: all PASSED\n");
     return 0;
 }
