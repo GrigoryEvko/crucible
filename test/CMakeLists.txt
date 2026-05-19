@@ -9653,6 +9653,25 @@ crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_open_view_re
 crucible_neg_compile_bridges_test(neg_mint_persisted_session_handle_ctx_row_insufficient
     "constraints not satisfied|CtxAdmits|no matching function")
 
+# fixy-A2-006b — HS14 floor for the Delegate<DelegatedSession<P, IPS>, K>
+# specialization on RecordingPermissionedSessionHandle.  The class spec
+# adds .delegate() and .delegate_local() methods.  The .delegate() method
+# binds the delegated handle to PSH<InnerProto, ...> (InnerProto = class-
+# fixed, NOT deducible) and carries a two-conjunct requires-clause:
+#   !is_stop_v<InnerProto>                                  (1st conjunct)
+#   std::is_invocable_v<Transport, Resource&, DelegatedResource&&>
+#                                                            (2nd conjunct)
+# Each fixture witnesses one mismatch class:
+#   wrong_inner_proto         — delegated handle's protocol != InnerProto
+#                                rejects parameter binding (signature gate)
+#   transport_not_invocable   — Transport = int rejects 2nd requires conjunct
+# Distinct layers: #1 = signature shape, #2 = requires-clause body.
+# Mirrors the bare-handle Delegate spec at RecordingSessionHandle.h:916.
+crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_delegate_wrong_inner_proto
+    "no matching function|cannot convert|PermissionedSessionHandle|delegate")
+crucible_neg_compile_bridges_test(neg_mint_recording_session_psh_delegate_transport_not_invocable
+    "constraints not satisfied|is_invocable|no matching function|delegate")
+
 # fixy-A2-019 — HS14 floor for the renamed mint_atomic_session<Proto>(cell).
 # Two fixtures witness the two-conjunct requires-clause:
 #   AtomicMachineCell<Cell>          — non-cell argument fails the concept
