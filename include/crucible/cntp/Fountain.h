@@ -153,7 +153,20 @@ repair_mask(std::uint32_t encoding_id, FountainSeed seed) noexcept {
                                                static_cast<std::uint32_t>(i + 1)),
                                  seed).peek();
         const auto span = SourceSymbols - i;
-        const auto j = i + (static_cast<std::size_t>(rng[0]) % span);
+        // fixy-A5-034: Lemire's nearly-divisionless range — replaces the
+        // biased `% span` on a single 32-bit Philox word.  Concatenates
+        // two Philox words into a 64-bit uniform, multiplies by span,
+        // returns the upper 64 bits.  Worst-case bias is span/2^64 ≈
+        // 2^-58 (span ≤ 64), below double-precision epsilon.  DetSafe
+        // preserved: __uint128_t arithmetic is bit-identical on every
+        // supported platform (x86_64 native, AArch64 native).
+        const auto uniform64 =
+            (static_cast<std::uint64_t>(rng[1]) << 32U) |
+             static_cast<std::uint64_t>(rng[0]);
+        const auto product =
+            static_cast<__uint128_t>(uniform64) *
+            static_cast<__uint128_t>(span);
+        const auto j = i + static_cast<std::size_t>(product >> 64U);
         std::swap(permutation[i], permutation[j]);
         mask |= std::uint64_t{1} << permutation[i];
     }

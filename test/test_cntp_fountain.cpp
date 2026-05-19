@@ -108,6 +108,53 @@ int main() {
     }
 
     {
+        // fixy-A5-034 regression: repair_mask must select source symbols
+        // without modulo bias.  Source had `rng[0] % span` on uint32 input
+        // — on non-power-of-2 spans (e.g. SourceSymbols=7 with span 7,6,5,
+        // 4,3,2,1) some symbols would be marginally favored.  Lemire's
+        // 128-bit method keeps the distribution structurally uniform.
+        //
+        // Sanity rather than chi-square: sweep encoding_ids across the
+        // pure-repair range, count per-symbol inclusion across all repair
+        // masks, and assert every source symbol participates.  Pre-fix
+        // this still passed (the bias was small) — but determinism is the
+        // load-bearing claim: two independent runs with the same seed
+        // produce byte-identical masks.
+        using Probe = ci::FountainEncoder<7, 8>;
+        auto probe = ci::mint_fountain_encoder<7, 8>(
+            crucible::effects::testing::init());
+        constexpr auto probe_payload = payload_seed<Probe::max_source_bytes>();
+        assert(probe.start_encoding(
+            std::span<const std::byte>{probe_payload}, key).has_value());
+
+        std::array<std::uint32_t, 7> inclusion{};
+        std::array<std::uint64_t, 256> masks_a{};
+        for (std::uint32_t id = 0; id < masks_a.size(); ++id) {
+            auto packet = probe.next_packet();
+            assert(packet.has_value());
+            masks_a[id] = packet->mask;
+            for (std::size_t bit = 0; bit < 7; ++bit) {
+                if ((packet->mask >> bit) & 1ULL) {
+                    inclusion[bit] += 1;
+                }
+            }
+        }
+        for (auto count : inclusion) {
+            assert(count > 0);
+        }
+
+        auto probe_again = ci::mint_fountain_encoder<7, 8>(
+            crucible::effects::testing::init());
+        assert(probe_again.start_encoding(
+            std::span<const std::byte>{probe_payload}, key).has_value());
+        for (std::uint32_t id = 0; id < masks_a.size(); ++id) {
+            auto packet = probe_again.next_packet();
+            assert(packet.has_value());
+            assert(packet->mask == masks_a[id]);
+        }
+    }
+
+    {
         constexpr auto payload = payload_seed<16>();
         auto a = encoder.encode_packet(std::span<const std::byte>{payload},
                                        key,
