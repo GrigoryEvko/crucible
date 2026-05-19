@@ -306,6 +306,7 @@ void reach_sub_namespaces() {
     using namespace fixy::stance;
     using namespace fixy::grant;
     using namespace fixy::dim;
+    using namespace fixy::algebra::dim;          // FIXY-U-061 (#1744)
     (void)0;
 }
 

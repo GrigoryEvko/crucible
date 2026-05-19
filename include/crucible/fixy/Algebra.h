@@ -62,6 +62,12 @@
                                            // Modality + AllLattices
 #include <crucible/algebra/GradedTrait.h>  // GradedWrapper concept +
                                            // IsGraded probe
+#include <crucible/safety/DimensionTraits.h>  // FIXY-U-061: wrapper_*
+                                              // accessors + verify_quadruple
+                                              // (transitively pulls every
+                                              // safety/ wrapper that ships a
+                                              // wrapper_dimension<W>
+                                              // partial specialization)
 
 namespace crucible::fixy::algebra {
 
@@ -176,6 +182,90 @@ using ::crucible::algebra::verify_semiring_axioms_at;
 
 namespace lattices = ::crucible::algebra::lattices;
 
+// ── dim:: — wrapper-side dimension/tier/modality accessors ─────────
+//
+// FIXY-U-061 (#1744).  The 21-axis × 5-Tier × 6-Modality classification
+// catalog lives in safety/DimensionTraits.h.  fixy::dim:: (separate
+// header) re-exports the AXIS-side surface — the enums, name lookups,
+// and tier classification of an axis.  This sub-namespace re-exports
+// the WRAPPER-side surface — what dimension a Graded-backed wrapper
+// covers, what tier its lattice falls under, what modality it carries,
+// and the cross-axis quadruple verifier that ships per-wrapper sentinels.
+//
+// Why nested under fixy::algebra::dim instead of fixy::dim:
+//
+//   fixy::dim::DimensionAxis::Usage         — the axis itself (taxonomy)
+//   fixy::algebra::dim::wrapper_dimension<W> — which axis the wrapper
+//                                              W's grade lives on
+//
+// The wrapper-side accessors depend on `algebra::GradedWrapper` and
+// `algebra::ModalityKind`, so they belong inside the algebra family.
+// fixy::dim:: pure-axis taxonomy compiles standalone (no algebra
+// dependency); fixy::algebra::dim:: depends on the whole algebra tree.
+//
+// ── Re-export discipline (§XXI grep-target preservation) ───────────
+//
+// Each accessor is a using-decl alias, NOT a re-defined template.
+// This means:
+//   (a) `fixy::algebra::dim::wrapper_dimension<Linear<int>>` IS
+//       `safety::wrapper_dimension<safety::Linear<int>>` — partial
+//       specializations propagate through the alias because using-decl
+//       is name aliasing.
+//   (b) `wrapper_dimension_v<W>` is the SAME variable template, not a
+//       wrapping `inline constexpr auto wrapper_dimension_v = ...`
+//       which would lose template-template parameter matching.
+//   (c) Adding a new wrapper specialization to safety/DimensionTraits.h
+//       makes the new wrapper instantly reachable through fixy::algebra::
+//       dim:: with zero further work in this header — the alias does
+//       not capture a closed enumeration of specializations.
+//
+// ── Self-test (within this header) ─────────────────────────────────
+//
+// `crucible::fixy::algebra::dim::self_test::*` static_asserts pin five
+// representative wrappers (Linear/Refined/Tagged/TimeOrdered/EpochVersioned
+// covering Tier-S / Tier-F / Tier-S / Tier-L / Tier-V respectively)
+// such that:
+//   - the alias preserves wrapper_dimension's specialization matching
+//   - wrapper_tier_v through the alias agrees with substrate's per-wrapper
+//     answer
+//   - wrapper_modality_v survives the alias
+//   - verify_quadruple<W>() runs through the alias and returns true on
+//     wrappers the substrate self-test passes
+//   - DimensionedGradedWrapper concept accepts what's classifiable and
+//     rejects bare types
+//
+// These are the load-bearing identity-witness assertions for FIXY-U-061.
+// Cross-coverage with substrate's own DimensionTraits.h self-test gives
+// belt-and-suspenders defense against an alias break.
+
+namespace dim {
+
+// ── Concept gate ───────────────────────────────────────────────────
+using ::crucible::safety::DimensionedGradedWrapper;
+
+// ── Wrapper-side dimension accessor (axis discovery) ───────────────
+using ::crucible::safety::wrapper_dimension;
+using ::crucible::safety::wrapper_dimension_v;
+
+// ── Wrapper-side tier accessor (exact tier from wrapper_dimension) ─
+using ::crucible::safety::wrapper_tier_v;
+
+// ── Wrapper-side modality accessor ─────────────────────────────────
+using ::crucible::safety::wrapper_modality_v;
+
+// ── Wrapper-side lattice projection ────────────────────────────────
+using ::crucible::safety::wrapper_lattice_t;
+
+// ── Best-effort tier classification from a grade type ──────────────
+using ::crucible::safety::tier_for_grade;
+using ::crucible::safety::tier_for_grade_v;
+using ::crucible::safety::dimension_tier_v;
+
+// ── Cross-axis quadruple verifier ──────────────────────────────────
+using ::crucible::safety::verify_quadruple;
+
+}  // namespace dim
+
 }  // namespace crucible::fixy::algebra
 
 // ── Self-test ──────────────────────────────────────────────────────
@@ -243,3 +333,104 @@ static_assert(!IsGraded<int>,
     "not structural / wrapper-level (the latter is GradedWrapper's role).");
 
 }  // namespace crucible::fixy::algebra::self_test
+
+// ─────────────────────────────────────────────────────────────────────
+// ── fixy::algebra::dim self-test — FIXY-U-061 alias-identity witness
+// ─────────────────────────────────────────────────────────────────────
+//
+// Pins five representative wrappers (one per Tier S/L/T-irrelevant/F/V)
+// so a future regression in the using-decl re-export breaks compilation
+// rather than silently producing a different answer than the substrate.
+
+namespace crucible::fixy::algebra::dim::self_test {
+
+namespace fad = ::crucible::fixy::algebra::dim;
+namespace ssaf = ::crucible::safety;
+
+// Tier-F: Refinement.  Refined<positive, int> — `positive` is the
+// canonical predicate lambda from safety/Refined.h:71.
+using WRefined = ssaf::Refined<ssaf::positive, int>;
+
+// Tier-S: Usage (linear).  Linear<int>.
+using WLinear  = ssaf::Linear<int>;
+
+// Tier-S: Provenance.  Tagged<int, source::FromUser>.
+using WTagged  = ssaf::Tagged<int, ssaf::source::FromUser>;
+
+// Tier-L: Representation.  TimeOrdered<int, 4, Tag>.
+struct TimeTag {};
+using WTimeOrdered = ssaf::TimeOrdered<int, 4, TimeTag>;
+
+// Tier-V: Version.  EpochVersioned<int>.
+using WEpochVersioned = ssaf::EpochVersioned<int>;
+
+// ── Concept gate: classifiable wrappers admit, bare types reject ───
+static_assert(fad::DimensionedGradedWrapper<WRefined>);
+static_assert(fad::DimensionedGradedWrapper<WLinear>);
+static_assert(fad::DimensionedGradedWrapper<WTagged>);
+static_assert(fad::DimensionedGradedWrapper<WTimeOrdered>);
+static_assert(fad::DimensionedGradedWrapper<WEpochVersioned>);
+static_assert(!fad::DimensionedGradedWrapper<int>);
+static_assert(!fad::DimensionedGradedWrapper<void*>);
+
+// ── wrapper_dimension_v through the alias agrees with substrate ────
+static_assert(fad::wrapper_dimension_v<WRefined>
+              == ssaf::wrapper_dimension_v<WRefined>);
+static_assert(fad::wrapper_dimension_v<WLinear>
+              == ssaf::wrapper_dimension_v<WLinear>);
+static_assert(fad::wrapper_dimension_v<WTagged>
+              == ssaf::wrapper_dimension_v<WTagged>);
+static_assert(fad::wrapper_dimension_v<WTimeOrdered>
+              == ssaf::wrapper_dimension_v<WTimeOrdered>);
+static_assert(fad::wrapper_dimension_v<WEpochVersioned>
+              == ssaf::wrapper_dimension_v<WEpochVersioned>);
+
+// ── wrapper_tier_v hits the exact tier per substrate self-test ─────
+static_assert(fad::wrapper_tier_v<WLinear>          == ssaf::TierKind::Semiring);
+static_assert(fad::wrapper_tier_v<WRefined>         == ssaf::TierKind::Foundational);
+static_assert(fad::wrapper_tier_v<WTagged>          == ssaf::TierKind::Semiring);
+static_assert(fad::wrapper_tier_v<WTimeOrdered>     == ssaf::TierKind::Lattice);
+static_assert(fad::wrapper_tier_v<WEpochVersioned>  == ssaf::TierKind::Versioned);
+
+// ── wrapper_modality_v survives the alias ──────────────────────────
+static_assert(fad::wrapper_modality_v<WLinear>
+              == ssaf::wrapper_modality_v<WLinear>);
+static_assert(fad::wrapper_modality_v<WTagged>
+              == ssaf::wrapper_modality_v<WTagged>);
+
+// ── wrapper_lattice_t projects to the same lattice type ────────────
+static_assert(std::is_same_v<
+    typename fad::wrapper_lattice_t<WLinear>,
+    typename ssaf::wrapper_lattice_t<WLinear>>);
+static_assert(std::is_same_v<
+    typename fad::wrapper_lattice_t<WTimeOrdered>,
+    typename ssaf::wrapper_lattice_t<WTimeOrdered>>);
+
+// ── tier_for_grade_v works for bare grade types ────────────────────
+//
+// Per safety/DimensionTraits.h:382, tier_for_grade<G> classifies a bare
+// grade type without needing a wrapper.  An int defaults to Foundational
+// (no Lattice/Semiring/Typestate/Versioned shape).
+static_assert(fad::tier_for_grade_v<int> == ssaf::TierKind::Foundational);
+
+// ── verify_quadruple<W>() returns true on every shipped wrapper ────
+//
+// The substrate runs this for 26 wrappers (DimensionTraits.h:856-).
+// We pin five representative samples to confirm the alias preserves
+// consteval semantics — the consteval body runs through the using-decl
+// without losing template-argument deduction or modality matching.
+static_assert(fad::verify_quadruple<WLinear>());
+static_assert(fad::verify_quadruple<WRefined>());
+static_assert(fad::verify_quadruple<WTagged>());
+static_assert(fad::verify_quadruple<WTimeOrdered>());
+static_assert(fad::verify_quadruple<WEpochVersioned>());
+
+// ── dimension_tier_v (best-effort classification) survives alias ──
+//
+// dimension_tier_v<W> classifies a wrapper's lattice via tier_for_grade
+// (the heuristic path).  Differs from wrapper_tier_v above which reads
+// from the wrapper's exact dimension specialization.
+static_assert(fad::dimension_tier_v<WLinear>
+              == ssaf::dimension_tier_v<WLinear>);
+
+}  // namespace crucible::fixy::algebra::dim::self_test
