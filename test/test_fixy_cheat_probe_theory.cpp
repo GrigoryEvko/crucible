@@ -280,14 +280,18 @@ namespace cheat_5_double_security_engagement {
 // removes the binding from the corpus.
 
 namespace cheat_6_declassify_threading {
-    struct AuditPolicy {};
+    // fixy-M-09: declassify<P> now requires DeclassificationPolicy<P>;
+    // sample with a real policy tag from safety/Secret.h's catalog.
+    // A previously-used `struct AuditPolicy {}` no longer satisfies
+    // the gate (witnessed by neg_fixy_grant_declassify_non_policy).
+    namespace sp = ::crucible::safety::secret_policy;
 
     // This pack DOES match the corpus (Secret + IO) but the
     // declassify discharges the audit trail — the binding accepts.
     static_assert(fixy::IsAccepted<int,
         strict<D::Refinement>, strict<D::Usage>,
         gr::with_io,
-        gr::declassify<AuditPolicy>,    // remediation
+        gr::declassify<sp::AuditedLogging>,    // remediation
         strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
         strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,

@@ -1367,6 +1367,20 @@ crucible_neg_compile_fixy_test(neg_fixy_mint_fn_invalid_grant    "AllGrantsWellF
 crucible_neg_compile_fixy_test(neg_fixy_grant_cv_qualified       "AllGrantsWellFormed")
 crucible_neg_compile_fixy_test(neg_fixy_grant_reference          "AllGrantsWellFormed")
 
+# fixy-M-09 — structural-validation concepts for parametric grant
+# tags.  Each fixture demonstrates the requires-clause fires on its
+# OWN gate's distinct rejection class.  Regex matches the named
+# concept OR "constraints not satisfied" (GCC's surface for a
+# requires-clause failure on the class template).
+crucible_neg_compile_fixy_test(neg_fixy_grant_protocol_non_class
+    "constraints not satisfied|IsSessionProtocol|is_class")
+crucible_neg_compile_fixy_test(neg_fixy_grant_refined_with_non_class
+    "constraints not satisfied|IsRefinementPredicate|is_class")
+crucible_neg_compile_fixy_test(neg_fixy_grant_declassify_non_policy
+    "constraints not satisfied|DeclassificationPolicy|secret_policy_base")
+crucible_neg_compile_fixy_test(neg_fixy_grant_from_source_non_empty
+    "constraints not satisfied|IsProvenanceSource|is_empty|is_class")
+
 # fixy-A4-018 — §XXI Universal-Mint-Pattern enforcement.  fixy::fn's
 # value ctor is private; only the three canonical mint factories
 # (mint_fn, mint_fn_for<UnaryStance>, mint_fn_for<BinaryStance>) are

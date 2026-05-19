@@ -61,6 +61,7 @@
 
 #include <crucible/fixy/Dim.h>
 #include <crucible/safety/NotInherited.h>
+#include <crucible/safety/Secret.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Fn.h>
 #include <crucible/effects/Capabilities.h>
@@ -167,6 +168,79 @@ inline constexpr bool IsGrantTag_v =
 
 template <typename G>
 concept IsGrantTag = IsGrantTag_v<G>;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── fixy-M-09: structural-validation concepts for parametric tags ─
+// ═════════════════════════════════════════════════════════════════════
+//
+// Pre-M-09 the four parametric grant tags (`protocol<Proto>`,
+// `refined_with<Pred>`, `declassify<Policy>`, `from_source<Source>`)
+// accepted ANY type as the parameter — `protocol<int>` /
+// `refined_with<void*>` / `from_source<int>` / `declassify<int>` all
+// compiled silently and produced ill-typed downstream resolutions in
+// `fixy/Fn.h`'s resolver.  Each gate below names the substrate-level
+// structural shape the parameter MUST satisfy, so a mistyped grant
+// rejects at the fixy layer with a directed diagnostic.
+//
+// Discipline: each concept is the *minimum* structural bar; tighter
+// gating per-axis can layer on top (e.g. fixy-H-24 already tightened
+// `DeclassificationPolicy` from "any class" to "derives from
+// secret_policy_base").  When a future axis adds a substrate-level
+// concept matching its tag base (e.g. provenance::source_base), point
+// the fixy gate at it without churning call sites.
+//
+// Diagnostic surface: a mistyped grant flows through the same
+// `AllGrantsWellFormed` rejection path as a non-grant type (e.g.
+// `int` in the pack), because the `requires`-clause failure makes
+// the grant template-id ill-formed, which the `IsGrantTag` check
+// catches via SFINAE.  Pairs per-gate with one fixy_neg fixture in
+// `test/fixy_neg/` to witness each rejection class fires (HS14
+// minimum floor) so a future loosening of any concept reddens CI.
+
+// `IsSessionProtocol<Proto>` — gate for `protocol<Proto>`.  Accepts
+// any class type: the substrate's session combinators (End / Continue
+// / Send / Recv / Select / Offer / Loop / Stop_g / VendorPinned)
+// AND the strict-default placeholder `safety::fn::proto::None` are
+// all class types, as are user-defined state-machine tag classes
+// (the doc-block at the relaxation tag explicitly admits both
+// session-type AND machine state-type).  Rejects fundamental types
+// (int / float / void), pointers, references, cv-qualified types,
+// arrays, and function types.  Open-world by design — a tighter
+// gate would require enumerating every legal substrate type and
+// would block legitimate user-defined machine-state classes.
+template <typename Proto>
+concept IsSessionProtocol =
+       std::is_same_v<Proto, std::remove_cvref_t<Proto>>
+    && std::is_class_v<Proto>;
+
+// `IsRefinementPredicate<Pred>` — gate for `refined_with<Pred>`.
+// Accepts any class type: substrate predicates like
+// `safety::fn::pred::True` and `safety::BoundedAbove<Max>` are class
+// types exposing a `check<T>(const T&)` or `operator()(const T&)`
+// member.  Stricter "predicate is invocable on T" gating already
+// fires at construction time via Refined.h's `PredicateInvocableOn`
+// concept (which is per-T, not per-Pred — so it can't be folded into
+// this single-parameter gate).  Open-world by design: any class that
+// exposes a predicate-shaped member is a valid candidate.
+template <typename Pred>
+concept IsRefinementPredicate =
+       std::is_same_v<Pred, std::remove_cvref_t<Pred>>
+    && std::is_class_v<Pred>;
+
+// `IsProvenanceSource<Source>` — gate for `from_source<Source>`.
+// Substrate convention: every `safety::source::*` tag is an empty
+// marker class (`struct FromUser {};`, `struct External {};`,
+// `struct JsonRegistry {};`, etc. — see Tagged.h `namespace source`).
+// The gate enforces the empty-marker shape at the fixy layer so a
+// future source tag that violates the convention (carries state,
+// inherits from a heavyweight base) surfaces here rather than
+// silently breaking downstream resolution.  Stricter than the other
+// two concepts because the substrate's convention IS stricter.
+template <typename Source>
+concept IsProvenanceSource =
+       std::is_same_v<Source, std::remove_cvref_t<Source>>
+    && std::is_class_v<Source>
+    && std::is_empty_v<Source>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── which_dim_v<G> — primary template + per-tag specialization ─────
@@ -295,9 +369,11 @@ using with_test  = with<effects::Effect::Test>;
 //                          Cipher encryption keys, private weights.
 
 template <typename Policy>
+    requires ::crucible::safety::DeclassificationPolicy<Policy>
 struct declassify final : grant_base {};
 
 template <typename Policy>
+    requires ::crucible::safety::DeclassificationPolicy<Policy>
 struct which_dim<declassify<Policy>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
 
@@ -325,9 +401,11 @@ template <> struct which_dim<as_secret>
 // to the `safety::fn::Protocol` slot.
 
 template <typename Proto>
+    requires IsSessionProtocol<Proto>
 struct protocol final : grant_base {};
 
 template <typename Proto>
+    requires IsSessionProtocol<Proto>
 struct which_dim<protocol<Proto>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Protocol> {};
 
@@ -351,9 +429,11 @@ struct which_dim<in_region<RegionTag>>
 // the `safety::fn::source_t` slot.
 
 template <typename Source>
+    requires IsProvenanceSource<Source>
 struct from_source final : grant_base {};
 
 template <typename Source>
+    requires IsProvenanceSource<Source>
 struct which_dim<from_source<Source>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Provenance> {};
 
@@ -517,9 +597,11 @@ template <auto TauMax> struct which_dim<stale_to<TauMax>>
 // `detail::resolve` namespace projects to `Fn<Type, Pred, ...>`.
 
 template <typename Pred>
+    requires IsRefinementPredicate<Pred>
 struct refined_with final : grant_base {};
 
 template <typename Pred>
+    requires IsRefinementPredicate<Pred>
 struct which_dim<refined_with<Pred>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Refinement> {};
 
@@ -552,7 +634,13 @@ static_assert(IsGrantTag<borrow>);
 static_assert(IsGrantTag<capability_usage>);
 static_assert(IsGrantTag<with<effects::Effect::IO>>);
 static_assert(IsGrantTag<with<>>);
-static_assert(IsGrantTag<declassify<int>>);
+// fixy-M-09: declassify<P> now requires DeclassificationPolicy<P>
+// (P derives from secret_policy::secret_policy_base).  Sample with a
+// real policy tag from safety/Secret.h's catalog; `declassify<int>`
+// is rejected at template instantiation (witnessed by the fixy_neg
+// fixture neg_fixy_grant_declassify_non_policy.cpp).
+static_assert(IsGrantTag<declassify<
+    ::crucible::safety::secret_policy::AuditedLogging>>);
 static_assert(IsGrantTag<as_unclassified>);
 static_assert(IsGrantTag<as_public>);
 static_assert(IsGrantTag<as_internal>);
@@ -603,7 +691,8 @@ static_assert(sizeof(accept_default_strict_for<dim::DimensionAxis::Trust>) == 1)
 static_assert(which_dim_v<affine>                                            == dim::DimensionAxis::Usage);
 static_assert(which_dim_v<copy>                                              == dim::DimensionAxis::Usage);
 static_assert(which_dim_v<with<effects::Effect::IO>>                         == dim::DimensionAxis::Effect);
-static_assert(which_dim_v<declassify<int>>                                   == dim::DimensionAxis::Security);
+static_assert(which_dim_v<declassify<
+    ::crucible::safety::secret_policy::AuditedLogging>>                      == dim::DimensionAxis::Security);
 static_assert(which_dim_v<refined_with<safety::fn::pred::True>>              == dim::DimensionAxis::Refinement);
 static_assert(which_dim_v<accept_default_strict_for<dim::DimensionAxis::Trust>> == dim::DimensionAxis::Trust);
 static_assert(which_dim_v<version<3>>                                        == dim::DimensionAxis::Version);

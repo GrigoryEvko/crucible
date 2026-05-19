@@ -110,9 +110,14 @@ static_assert(!std::is_same_v<fixy::rule::R019, fixy::rule::R020>);
 // A binding that omits declassify resolves policy_t to `void`; a
 // binding with declassify<P> exposes P via fn<...>::policy_t.
 
+// fixy-M-09: declassify<P> requires P to derive from
+// secret_policy_base; per-test policy tags now inherit the
+// substrate base.  Naming + project-local discriminators preserved.
 namespace policy_tags {
-struct AuditTrailPolicy {};
-struct InternalLeakPolicy {};
+struct AuditTrailPolicy   final
+    : ::crucible::safety::secret_policy::secret_policy_base {};
+struct InternalLeakPolicy final
+    : ::crucible::safety::secret_policy::secret_policy_base {};
 }  // namespace policy_tags
 
 // No declassify grant → policy_t == void.
@@ -146,7 +151,10 @@ static_assert(fn_with_audit_policy::security_v
 // Effect=IO, policy_t accessor surfaces the named Policy.
 
 namespace b3_policy_tags {
-struct EmitPolicy {};
+// fixy-M-09: EmitPolicy now derives from secret_policy_base to
+// satisfy DeclassificationPolicy<Policy>.
+struct EmitPolicy final
+    : ::crucible::safety::secret_policy::secret_policy_base {};
 }  // namespace b3_policy_tags
 
 static_assert(fixy::stance::CtCrypto<int>::security_v
