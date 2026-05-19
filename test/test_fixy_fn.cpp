@@ -234,17 +234,21 @@ int main() {
         strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>>(7);
     if (v1.value() != 7) return 1;
 
-    // Stance alias smoke
-    fixy::stance::PureLinear<int> v2{11};
+    // Stance alias smoke — fixy-A4-018 migration: stance instances
+    // route through mint_fn_for (the §XXI grep-discoverable factory)
+    // instead of direct construction.  Post-A4-018, fn's value ctor
+    // is private; `fixy::stance::X<int>{value}` is rejected at compile
+    // time with an "inaccessible" diagnostic.
+    auto v2 = fixy::mint_fn_for<fixy::stance::PureLinear>(11);
     if (v2.value() != 11) return 2;
 
-    fixy::stance::IoFunction<int> v3{13};
+    auto v3 = fixy::mint_fn_for<fixy::stance::IoFunction>(13);
     if (v3.value() != 13) return 3;
 
-    fixy::stance::PureCopy<int> v4{17};
+    auto v4 = fixy::mint_fn_for<fixy::stance::PureCopy>(17);
     if (v4.value() != 17) return 4;
 
-    // mint_fn_for runtime witness
+    // Existing mint_fn_for runtime witness (kept for redundancy).
     auto v5 = fixy::mint_fn_for<fixy::stance::PureLinear>(23);
     if (v5.value() != 23) return 5;
 

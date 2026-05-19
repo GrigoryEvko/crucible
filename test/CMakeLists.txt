@@ -1343,6 +1343,17 @@ crucible_neg_compile_fixy_test(neg_fixy_mint_fn_invalid_grant    "AllGrantsWellF
 crucible_neg_compile_fixy_test(neg_fixy_grant_cv_qualified       "AllGrantsWellFormed")
 crucible_neg_compile_fixy_test(neg_fixy_grant_reference          "AllGrantsWellFormed")
 
+# fixy-A4-018 — §XXI Universal-Mint-Pattern enforcement.  fixy::fn's
+# value ctor is private; only the three canonical mint factories
+# (mint_fn, mint_fn_for<UnaryStance>, mint_fn_for<BinaryStance>) are
+# friended to construct.  Two fixtures cover orthogonal call-site
+# shapes the reviewer might see in production:
+#   - direct_ctor_bypass — raw `fixy::fn<T, all-strict-grants>{42}`
+#   - stance_ctor_bypass — alias `fixy::stance::PureLinear<int>{42}`
+# Both reject with "private within this context" / "declared private".
+crucible_neg_compile_fixy_test(neg_fixy_fn_direct_ctor_bypass    "private")
+crucible_neg_compile_fixy_test(neg_fixy_fn_stance_ctor_bypass    "private")
+
 # FIXY-AUDIT-E10 + fixy-H-01 — HS14 floor for mint_fn_for stance-bound
 # mint.  fixy-H-01 hardened mint_fn_for with explicit requires-clauses
 # (`StanceForUnary` for 1-param stances, `StanceForBinary` for 2-param

@@ -527,6 +527,43 @@ using ImplicitTypeMarker =
 // Round-trip witness: `safety_fn_t` IS the directly-spelled
 // safety::fn::Fn<...> equivalent.
 
+// ═════════════════════════════════════════════════════════════════════
+// ── Stance-compatibility concepts — declared BEFORE class fn so its ─
+//    private-ctor friend declarations can name them (fixy-A4-018)    ─
+// ═════════════════════════════════════════════════════════════════════
+//
+// `TypeIsStanceCompatible`, `StanceForUnary`, and `StanceForBinary` were
+// originally defined immediately above `mint_fn_for` (line ~830).  After
+// the fixy-A4-018 mint-discipline tightening privatized fn's value ctor,
+// the class-body friend declarations for `mint_fn_for` must reference
+// these concepts — which means they must be in scope at the friend-
+// declaration site (inside class fn).  Moving them BEFORE class fn is
+// the cleanest fix; the concepts themselves are tiny, depend only on
+// stdlib type-traits, and have no dependency on `fn` or the mint
+// factories that consume them.  The mint_fn_for definitions (line ~840
+// in the original layout) still reference these by name — no semantic
+// change, only reordering.
+
+namespace detail {
+
+template <typename T>
+concept TypeIsStanceCompatible =
+       !std::is_void_v<T>
+    && !std::is_array_v<T>
+    && !std::is_reference_v<T>
+    && !std::is_const_v<T>
+    && !std::is_volatile_v<T>
+    && !std::is_function_v<T>;
+
+}  // namespace detail
+
+template <template<typename> class Stance, typename Type>
+concept StanceForUnary = detail::TypeIsStanceCompatible<Type>;
+
+template <template<typename, typename> class Stance,
+          typename Type, typename Policy>
+concept StanceForBinary = detail::TypeIsStanceCompatible<Type>;
+
 template <typename Type, typename... Grants>
 class fn {
     using ImplicitTypeMarker = detail::resolve::ImplicitTypeMarker;
@@ -752,11 +789,31 @@ public:
     // via `usage_v` and `safety_fn_t::usage_v` at every call site, and
     // downstream code that consumes a Linear-grade binding can require
     // `safety::IsLinear<Type>` to refuse non-linear payloads.
+    //
+    // ── §XXI Universal-Mint-Pattern enforcement (fixy-A4-018) ─────
+    //
+    // The DEFAULT constructor remains public — it produces a zero-state
+    // binding from `Type{}`, carries no per-call authority, and is
+    // required by EBO-collapse probes (`sizeof(fn<int>) == sizeof(int)`)
+    // + standard type-trait surface (`std::is_default_constructible_v`).
+    //
+    // The VALUE constructor is private.  A value-carrying binding IS a
+    // §XXI authorization event: the caller is asserting that this
+    // specific `Type v` should be wrapped in this specific Grants pack.
+    // Per §XXI's "single grep target" discipline, every such event must
+    // route through a `mint_*` factory so `grep "mint_"` finds every
+    // binding in the codebase.  Direct construction
+    // (`fixy::fn<int, ...>{42}` / `fixy::stance::PureLinear<int>{42}`)
+    // would dilute that grep-target — review would have to scan for
+    // both `mint_fn` AND every `fn<.*>{` / `stance::.*<.*>{` shape.
+    //
+    // Resolution: privatize the value ctor and befriend the three
+    // canonical mint factories — `mint_fn`, `mint_fn_for<UnaryStance>`,
+    // `mint_fn_for<BinaryStance>`.  Every value-carrying construction
+    // path now goes through ONE of those three, and the requires-clause
+    // attached to each (IsAcceptedActive / StanceForUnary /
+    // StanceForBinary) is the single load-bearing soundness gate.
     constexpr fn() = default;
-
-    explicit constexpr fn(Type v)
-        noexcept(std::is_nothrow_move_constructible_v<Type>)
-        : value_{std::move(v)} {}
 
     // ── Value access (deducing-this) ──────────────────────────────
     template <typename Self>
@@ -765,6 +822,40 @@ public:
     }
 
 private:
+    // fixy-A4-018: the value constructor is private; only the three
+    // canonical mint factories below can produce a value-carrying
+    // binding.  Direct construction
+    // (`fixy::fn<int, ...>{42}` / `fixy::stance::PureLinear<int>{42}`)
+    // fails with an "inaccessible" diagnostic at the call site.
+    explicit constexpr fn(Type v)
+        noexcept(std::is_nothrow_move_constructible_v<Type>)
+        : value_{std::move(v)} {}
+
+    // Befriend `mint_fn<T, G...>(T)` — the §XXI token-mint factory.
+    // The friend declaration also forward-declares mint_fn at the
+    // enclosing `crucible::fixy` namespace scope; the actual
+    // definition below matches this declaration.
+    template <typename T, typename... G>
+        requires IsAcceptedActive<T, G...>
+    friend constexpr auto mint_fn(T)
+        noexcept(std::is_nothrow_move_constructible_v<T>)
+        -> fn<T, G...>;
+
+    // Befriend `mint_fn_for<UnaryStance>(T)` — unary-stance convenience.
+    template <template<typename> class S, typename T>
+        requires StanceForUnary<S, T>
+    friend constexpr auto mint_fn_for(T)
+        noexcept(std::is_nothrow_move_constructible_v<T>)
+        -> S<T>;
+
+    // Befriend `mint_fn_for<BinaryStance, Policy>(T)` — binary stance
+    // (declassify-policy-bearing) convenience.
+    template <template<typename, typename> class S, typename P, typename T>
+        requires StanceForBinary<S, T, P>
+    friend constexpr auto mint_fn_for(T)
+        noexcept(std::is_nothrow_move_constructible_v<T>)
+        -> S<T, P>;
+
     Type value_{};
 };
 
@@ -820,26 +911,8 @@ template <typename Type, typename... Grants>
 // IsAccepted for the deduced Type fires the same FixyNotEngaged_*
 // diagnostic chain as a direct mint_fn call.
 //
-// ── StanceFor* concept gates ─────────────────────────────────────
-namespace detail {
-
-template <typename T>
-concept TypeIsStanceCompatible =
-       !std::is_void_v<T>
-    && !std::is_array_v<T>
-    && !std::is_reference_v<T>
-    && !std::is_const_v<T>
-    && !std::is_volatile_v<T>
-    && !std::is_function_v<T>;
-
-}  // namespace detail
-
-template <template<typename> class Stance, typename Type>
-concept StanceForUnary = detail::TypeIsStanceCompatible<Type>;
-
-template <template<typename, typename> class Stance,
-          typename Type, typename Policy>
-concept StanceForBinary = detail::TypeIsStanceCompatible<Type>;
+// ── StanceFor* concept gates — defined ABOVE class fn (fixy-A4-018)
+// for friend-declaration visibility.  See header preamble at line ~529.
 
 // ── mint_fn_for — unary stance overload (Type deduced from arg) ──
 template <template<typename> class Stance, typename Type>
