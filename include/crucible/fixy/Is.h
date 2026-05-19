@@ -196,3 +196,53 @@ using ::crucible::safety::extract::is_vendor_v;
 using ::crucible::safety::extract::is_wait_v;
 
 }  // namespace crucible::fixy::is
+
+// ── Self-test ──────────────────────────────────────────────────────
+//
+// fixy-M-03: previously this header had NO self-test block —
+// discipline-inconsistent with the rest of fixy/.  Witnesses lock the
+// alias discipline down: every fixy::is:: concept and `is_x_v` trait
+// agrees with its substrate counterpart in `safety::extract::` (and
+// `safety::witness::` for IsWitness).  The pattern follows fixy/Cap.h
+// — concept-equality on positive AND negative cases proves the alias
+// is a true alias, not a shadowing redefinition with subtly different
+// semantics.  Four witnesses cover the full discipline surface:
+// Graded wrapper recognizers (positive + negative), a second family,
+// a 2-arg parameterized concept, and the cross-namespace witness
+// branch.  Future contributors adding a new IsX/is_x_v pair add one
+// row here; the missing-row is grep-discoverable.
+
+namespace crucible::fixy::is::self_test {
+
+// (1) IsLinear — Graded-backed value wrapper.  Positive case
+//     witnesses that the alias reaches the substrate concept's logic
+//     (`safety::Linear<int>` is pulled in transitively by IsLinear.h),
+//     not just a stub returning false.
+static_assert(IsLinear<::crucible::safety::Linear<int>>,
+    "fixy::is::IsLinear must recognise safety::Linear<int>.");
+static_assert(IsLinear<::crucible::safety::Linear<int>>
+           == ::crucible::safety::extract::IsLinear<
+                  ::crucible::safety::Linear<int>>,
+    "fixy::is::IsLinear must agree with safety::extract::IsLinear on "
+    "every payload (alias, not shadow).");
+static_assert(!IsLinear<int>,
+    "fixy::is::IsLinear must reject bare types.");
+static_assert(is_linear_v<::crucible::safety::Linear<int>>,
+    "fixy::is::is_linear_v trait must mirror the concept alias.");
+
+// (2) IsSecret — second Graded-backed family.  Negative-case
+//     agreement scales the witness pattern across recognizers.
+static_assert(IsSecret<int> == ::crucible::safety::extract::IsSecret<int>);
+static_assert(is_secret_v<int> == ::crucible::safety::extract::is_secret_v<int>);
+
+// (3) IsPermissionFor — 2-arg parameterised concept; proves the
+//     two-template-parameter alias form preserves substrate behaviour.
+static_assert(IsPermissionFor<int, int>
+           == ::crucible::safety::extract::IsPermissionFor<int, int>);
+
+// (4) IsWitness — cross-namespace witness branch.  Substrate lives in
+//     `safety::witness::`, not `safety::extract::`; the alias must
+//     forward to the right substrate concept.
+static_assert(IsWitness<int> == ::crucible::safety::witness::IsWitness<int>);
+
+}  // namespace crucible::fixy::is::self_test
