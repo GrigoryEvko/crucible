@@ -48,6 +48,36 @@ int main() {
                        .counter = UINT32_MAX},
                       9) == HlcTimestamp{.physical_ns = 11, .counter = 0});
 
+    // fixy-A5-033 regression: AtomicPackedHlcState::load() on x86_64 uses
+    // `lock cmpxchg16b` as the atomic 128-bit load idiom.  Two invariants
+    // must hold across the cmpxchg-as-load mechanism:
+    //   (a) Pre-write peek(): on a freshly constructed Hlc, peek() must
+    //       observe the initial zero state.  This is the path where
+    //       cmpxchg16b succeeds (expected==cell_==0) and writes 0 to
+    //       cell_ — a literal-zero write that must not corrupt the
+    //       counter or break determinism.
+    //   (b) Post-write idempotency: after a single now() bumps cell_ to
+    //       a non-zero value, repeated peek() calls must return the
+    //       same value.  Pre-fix mishandling could have manifested as
+    //       cell_ being clobbered to 0 by a stray load.
+    {
+        Hlc fresh_clock;
+        const HlcTimestamp zero_peek = fresh_clock.peek();
+        assert(zero_peek.physical_ns == 0);
+        assert(zero_peek.counter == 0);
+        // Second peek on still-uninitialized state must remain zero.
+        assert(fresh_clock.peek().physical_ns == 0);
+        assert(fresh_clock.peek().counter == 0);
+
+        const HlcTimestamp first = fresh_clock.now();
+        const HlcTimestamp peek_after_first = fresh_clock.peek();
+        assert(first == peek_after_first);
+        // Repeated peek with no intervening now() returns the same
+        // value — proves cmpxchg16b's failure-path load preserves cell_.
+        assert(fresh_clock.peek() == peek_after_first);
+        assert(fresh_clock.peek() == peek_after_first);
+    }
+
     auto clock = crucible::canopy::mint_hlc(crucible::effects::testing::init());
     const HlcTimestamp a = clock.now();
     const HlcTimestamp b = clock.on_send();

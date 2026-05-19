@@ -71,6 +71,22 @@ unpack_hlc_timestamp(uint128_t packed) noexcept {
     };
 }
 
+// fixy-A5-033: x86_64 has no atomic 128-bit MOV instruction.  The portable
+// atomic 128-bit load idiom is `lock cmpxchg16b` with expected=desired=0:
+//   * If cell_ == 0: CAS succeeds, writes desired=0 to cell_ (a literal
+//     write of zero, but cell_ was already zero — semantically no-op).
+//     RDX:RAX stays 0; we return 0.
+//   * If cell_ != 0: CAS fails, hardware loads cell_ into RDX:RAX, no
+//     write to memory.  We return the loaded value.
+// The `lock` prefix is mandatory for both atomicity and acquire-fence
+// semantics.  libatomic implements `std::atomic<__int128>::load` the
+// same way; we inline the asm to avoid the libatomic dependency and to
+// guarantee always-lock-free even on toolchains that link a stub
+// libatomic.  Note: this idiom requires cell_ to be zero-initialized
+// (NSDMI at `cell_ = 0` below).  Any caller that mutates cell_ outside
+// of compare_exchange below (e.g., direct stores) would break the
+// invariant that the first load before any compare_exchange returns 0.
+// DetSafe preserved: cmpxchg16b is bit-identical across x86_64 vendors.
 class alignas(16) AtomicPackedHlcState {
 public:
     constexpr AtomicPackedHlcState() noexcept = default;
