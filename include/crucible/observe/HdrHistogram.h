@@ -101,8 +101,20 @@ template <
 class HdrHistogram {
 public:
     using layout_type = detail::HdrLayout<Significant, MaxValue>;
+    // fixy-A5-008: the lower bound is 0, not 1.  Production transports
+    // emit zero-valued samples on cold paths (RTT before the first
+    // round-trip, bandwidth before the first byte, queue depth on
+    // an idle fd) and the old `in_range<1, MaxValue>` precondition
+    // fired `std::terminate` inside Refined<>'s contract — aborting
+    // the Keeper daemon on first-sample-after-socket-open.  The
+    // bucket math handles zero correctly: counts_index(0) returns 0,
+    // value_from_index(0) returns 0, and percentile() already gates
+    // total == 0.  Widening the refinement is the structural fix;
+    // narrowing it later would require either a separate "zero"
+    // sentinel bucket OR per-call gating in every caller — both
+    // strictly worse than letting zero be a first-class sample value.
     using value_type =
-        safety::Refined<safety::in_range<std::uint64_t{1}, MaxValue>, std::uint64_t>;
+        safety::Refined<safety::in_range<std::uint64_t{0}, MaxValue>, std::uint64_t>;
 
     struct EncodedBucket {
         std::uint32_t index;
@@ -127,6 +139,9 @@ public:
     static constexpr std::uint8_t significant_digits = Significant;
     static constexpr std::uint64_t max_trackable_value = MaxValue;
     static constexpr std::size_t bucket_slots = layout_type::counts_len;
+    static_assert(layout_type::counts_index(std::uint64_t{0}) < bucket_slots,
+                  "fixy-A5-008: bucket 0 must be a valid slot — zero samples "
+                  "are first-class inputs (cold-path RTT/BW/queue-depth)");
     static_assert(layout_type::counts_index(std::uint64_t{1}) < bucket_slots);
     static_assert(layout_type::counts_index(MaxValue) < bucket_slots);
 

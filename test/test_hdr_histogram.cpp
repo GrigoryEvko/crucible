@@ -23,6 +23,49 @@ int main() {
     h.record(Hist::checked_value(1'000'000));
 
     assert(h.total_count() == 4);
+
+    // fixy-A5-008 regression: zero is a first-class sample value.  Pre-fix
+    // the value_type predicate `in_range<1, MaxValue>` rejected zero by
+    // firing Refined<>'s contract — aborting the Keeper daemon the moment
+    // any cold-path transport emitted its first sample (no-RTT-yet on a
+    // fresh socket, no-bytes-yet on an idle fd, zero-queue-depth on
+    // load-shed paths).  After widening to `in_range<0, MaxValue>`:
+    //   (a) construction succeeds (no contract violation),
+    //   (b) the sample lands in bucket 0 (counts_index(0) == 0),
+    //   (c) percentile(100.0) reports a value ≤ existing max — i.e. the
+    //       zero sample does not steal probability mass from positive
+    //       samples already recorded.
+    {
+        Hist zero_h;
+        zero_h.record(Hist::checked_value(0));
+        assert(zero_h.total_count() == 1);
+        assert(zero_h.percentile(100.0) == 0);
+        assert(zero_h.mean() == 0);
+
+        // Recording zero alongside positive samples must not perturb
+        // their bucket counts — the zero sample contributes count 1 to
+        // bucket 0 and that's all.
+        Hist mixed;
+        mixed.record(Hist::checked_value(0));
+        mixed.record(Hist::checked_value(0));
+        mixed.record(Hist::checked_value(100));
+        assert(mixed.total_count() == 3);
+        // Two-thirds of mass is at 0; p50 lands in bucket 0.
+        assert(mixed.percentile(50.0) == 0);
+        // The lone positive sample reaches p100.
+        assert(mixed.percentile(100.0) >= 100);
+
+        std::uint64_t bucket0_count = 0;
+        std::uint64_t total_buckets = 0;
+        mixed.for_each_nonzero([&](Hist::EncodedBucket bucket) noexcept {
+            ++total_buckets;
+            if (bucket.lowest_value == 0) {
+                bucket0_count = bucket.count;
+            }
+        });
+        assert(bucket0_count == 2);
+        assert(total_buckets == 2);  // bucket 0 + the 100-bucket
+    }
     assert(h.percentile(0.0) == 0);
     assert(h.percentile(50.0) >= 20);
     assert(h.percentile(99.0) <= Hist::max_trackable_value);
