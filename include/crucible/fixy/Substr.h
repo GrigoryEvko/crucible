@@ -375,12 +375,12 @@ using PermissionedMpscChannel =
     ::crucible::concurrent::PermissionedMpscChannel<T, Capacity, UserTag>;
 }  // namespace concurrent
 
-// ── fixy-A4-005: mint_substrate_session — the generic substrate→session
-// bridge.  Lives in `concurrent::` (Tier-2→3 bridge per §XXI); the
-// canonical home in fixy/ is here in `substr::` next to every per-
-// substrate sub-namespace's own `mint_*_session` family.  Also exposed
-// at `fixy::pipe::mint_substrate_session` for now (grace window — Pipe.h
-// shipped first); future audit removes the Pipe.h re-export.
+// ── fixy-A4-005 + fixy-M-19: mint_substrate_session — the generic
+// substrate→session bridge.  Lives in `concurrent::` (Tier-2→3 bridge
+// per §XXI); the canonical homes in fixy/ are HERE in `substr::` (next
+// to every per-substrate sub-namespace's own `mint_*_session` family)
+// AND in `sess::` (result-side: it produces a Session handle).  The
+// `pipe::` re-export was a grace-window misplacement; M-19 closed it.
 using ::crucible::concurrent::mint_substrate_session;
 
 }  // namespace crucible::fixy::substr

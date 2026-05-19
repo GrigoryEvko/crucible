@@ -108,20 +108,21 @@ using fixy::perm::mint_permission_share;
 using fixy::perm::mint_permission_split;
 using fixy::perm::mint_permission_split_n;
 
-// ── fixy::pipe (8) ────────────────────────────────────────────────
+// ── fixy::pipe (7) ────────────────────────────────────────────────
 using fixy::pipe::mint_endpoint;
 using fixy::pipe::mint_mpmc_stage_from_endpoints;
 using fixy::pipe::mint_pipeline;
 using fixy::pipe::mint_pipeline_dag;
 using fixy::pipe::mint_stage;
 using fixy::pipe::mint_stage_from_endpoints;
-// mint_substrate_session is dual-exported in fixy::pipe AND
-// fixy::substr (root); both probe rows surface the same substrate
-// symbol.  fixy-M-19 tracks the misplacement of the pipe:: copy.
-namespace probe_pipe_substrate_session {
-using fixy::pipe::mint_substrate_session;
-}  // namespace probe_pipe_substrate_session
 using fixy::pipe::mint_swmr_stage;
+// fixy-M-19: mint_substrate_session was previously re-exported here in
+// a grace window.  It is a substrate→session bridge (Tier-2→3 per §XXI)
+// — Pipe.h is the pipeline/stage layer, not the substrate-bridge
+// layer.  Canonical surfaces are now fixy::sess::mint_substrate_session
+// (probed in the sess section below) AND
+// fixy::substr::mint_substrate_session (probed in the substr-root
+// section below).
 
 // ── fixy::safety (4) ──────────────────────────────────────────────
 using fixy::safety::mint_linear_view;
@@ -137,7 +138,7 @@ using fixy::safety::mint_linear;
 using fixy::safety::mint_secret;
 }  // namespace probe_safety_dual_exports
 
-// ── fixy::sess (7) ────────────────────────────────────────────────
+// ── fixy::sess (8) ────────────────────────────────────────────────
 using fixy::sess::mint_channel;
 // mint_crash_watched_session / mint_recording_session are dual-
 // exported in fixy::sess AND fixy::bridge — same substrate symbol.
@@ -149,15 +150,22 @@ using fixy::sess::mint_permissioned_session;
 using fixy::sess::mint_session;
 using fixy::sess::mint_session_handle;
 using fixy::sess::mint_session_view;
+// fixy-M-19: mint_substrate_session is dual-exported in fixy::sess AND
+// fixy::substr root — same substrate symbol.  The sess:: home is the
+// result-side discovery path (it returns a Session handle).
+namespace probe_sess_substrate_session {
+using fixy::sess::mint_substrate_session;
+}  // namespace probe_sess_substrate_session
 
 // ── fixy::source::federation (1) ─────────────────────────────────
 using fixy::source::federation::mint_federation_admittance;
 
 // ── fixy::substr root (1) ─────────────────────────────────────────
 // fixy::substr::mint_substrate_session lives at the root of the
-// substr:: tree (Substr.h:350) as the canonical placement per the
-// fixy-M-19 resolution.  The fixy::pipe::mint_substrate_session
-// dual-export probe lives above.
+// substr:: tree as the canonical substrate-side placement (next to
+// every per-substrate `mint_*_session` family).  Dual-exported in
+// fixy::sess too (probe above) — same substrate symbol.  fixy-M-19
+// closed the prior fixy::pipe:: misplacement.
 namespace probe_substr_root_substrate_session {
 using fixy::substr::mint_substrate_session;
 }  // namespace probe_substr_root_substrate_session

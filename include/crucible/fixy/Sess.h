@@ -272,6 +272,16 @@ using ::crucible::safety::proto::mint_crash_watched_session;
 // at the call site (the standard §XXI mint-probe idiom).
 using ::crucible::safety::proto::mint_session_view;
 
+// fixy-M-19: mint_substrate_session<Substr, Dir>(ctx, handle) is the
+// generic substrate→session bridge (Tier-2→3 per §XXI).  The mint
+// RETURNS a typed Session handle, so callers discovering it through
+// "I need a session" search begin at fixy::sess::.  The canonical
+// substrate-side home stays in fixy::substr:: (next to every per-
+// substrate `mint_*_session` family); both surfaces resolve to the
+// same `::crucible::concurrent::mint_substrate_session` symbol.  Pipe.h
+// no longer re-exports — the M-19 grace window has closed.
+using ::crucible::concurrent::mint_substrate_session;
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Federation 3-role projection (FederationProtocol.h) ────────────
 // ═════════════════════════════════════════════════════════════════════

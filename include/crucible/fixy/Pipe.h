@@ -23,7 +23,12 @@
 //   concurrent::mint_stage_from_endpoints<FnPtr>(ctx, in_ep, out_ep)
 //   concurrent::mint_mpmc_stage_from_endpoints<FnPtr>(ctx, eps...)
 //   concurrent::mint_swmr_stage(ctx, ...)
-//   concurrent::mint_substrate_session<Substr, Dir>(ctx, handle)
+//
+//   NOTE: concurrent::mint_substrate_session<Substr, Dir>(ctx, handle)
+//   used to be re-exported here in the M-19 grace window.  It now
+//   lives at fixy::sess::mint_substrate_session AND
+//   fixy::substr::mint_substrate_session — Pipe.h is the
+//   pipeline/stage layer, not the substrate-bridge layer.
 //
 // ── Axiom coverage ─────────────────────────────────────────────────
 //
@@ -101,14 +106,17 @@ using ::crucible::concurrent::mint_mpmc_stage_from_endpoints;
 using ::crucible::concurrent::mint_swmr_stage;
 
 // ═════════════════════════════════════════════════════════════════════
-// ── Substrate session bridge ───────────────────────────────────────
+// ── Substrate session bridge — MOVED, fixy-M-19 ────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// `mint_substrate_session<Substr, Dir>(ctx, handle)` — bridges every
-// Permissioned* substrate (SPSC/MPSC/MPMC/ChaseLev/Sharded/
-// CalendarGrid/MetaLog/ChainEdge) to a typed Session handle.
-
-using ::crucible::concurrent::mint_substrate_session;
+// `mint_substrate_session<Substr, Dir>(ctx, handle)` no longer lives
+// here.  It is a substrate→session bridge (Tier-2→3 per §XXI) — Pipe.h
+// is the pipeline/stage layer, not the substrate-bridge layer.  The
+// canonical surfaces are now fixy::sess::mint_substrate_session
+// (result-side: it produces a Session handle) AND
+// fixy::substr::mint_substrate_session (substrate-side: it sits next
+// to every per-substrate `mint_*_session` family).  Callers should
+// fix-up imports accordingly.
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Compile-time coherence helpers (FIXY-AUDIT-C2) ─────────────────
