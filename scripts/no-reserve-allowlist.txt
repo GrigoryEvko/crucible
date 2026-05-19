@@ -7,12 +7,6 @@
 # referenced fixy-A5-* or WRAP-* ticket lands, delete the line —
 # the guard then enforces no regression.
 #
-# ── warden/Registry.h ───────────────────────────────────────────────
-# fixy-A5-020 / FIXY-U-081 (#1753): out.reserve(size()) before
-# emplace-loop.  Migration: inplace_vector when N known, or accept
-# amortization.
-include/crucible/warden/Registry.h:128
-#
 # ── vis/TraceVisualizer.h ───────────────────────────────────────────
 # Trace visualization tools — cold-tier, but still bound by §IV.
 # Migrate to fixed-capacity per-graph buffers when the visualizer

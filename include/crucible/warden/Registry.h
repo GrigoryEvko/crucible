@@ -32,7 +32,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <vector>
+#include <inplace_vector>
 
 namespace crucible::warden {
 
@@ -123,9 +123,13 @@ class HotRegionRegistry {
     // without coupling registry reads to mlock2 syscalls (each ~1 us).
     // New registrations during iteration are handled on the next
     // apply() call.
-    [[nodiscard]] std::vector<HotRegion> snapshot() const noexcept {
-        std::vector<HotRegion> out;
-        out.reserve(size());
+    //
+    // CLAUDE.md §IV: known max → std::inplace_vector<T, N>.  Zero heap,
+    // true O(1) push_back, contract-checked overflow.  Capacity bound
+    // is max_regions; push_back here is structurally bounded by the
+    // outer for-loop (one push per non-empty slot, slots_.size() == N).
+    [[nodiscard]] std::inplace_vector<HotRegion, max_regions> snapshot() const noexcept {
+        std::inplace_vector<HotRegion, max_regions> out;
         for (const auto& slot : slots_) {
             void* addr = slot.addr.load(std::memory_order_acquire);
             if (addr == nullptr || addr == claimed_addr()) continue;
