@@ -268,6 +268,37 @@ struct classified_io_without_declassify {
                "policy.  Insert grant::declassify<Policy> with a named "
                "policy OR drop the IO effect.";
     }
+
+    // fixy-A4-029: per-corpus-entry pre-baked diagnostic.  The
+    // assembled "entry: <name>.  <cite>" surface used by
+    // `corpus_full_diagnostic_v` is computed ONCE per corpus entry at
+    // first call (the static-constexpr-local stores the result for
+    // every subsequent call) rather than ONCE per <Type, Grants...>
+    // instantiation that hits the rejection path.  Cost reduction:
+    // O(N_instantiations · C_assembly) →
+    // O(6 · C_assembly + N_instantiations · C_dispatch).  The single
+    // `std::string` allocation in the lambda is transient (released
+    // at end of constant evaluation per P2670/P0784 dynamic-alloc
+    // rules) and the assembled bytes are promoted to immutable static
+    // storage via P3491R3 `std::define_static_string`.  Note: a
+    // class-scope `static constexpr` data-member initializer cannot
+    // call `name()` / `cite()` on the still-incomplete class — the
+    // local-static form (P2647R1) defers the lambda until after the
+    // class is complete, sidestepping the issue.
+    static constexpr std::string_view full_diagnostic() noexcept {
+        static constexpr std::string_view storage =
+            []() consteval -> std::string_view {
+                std::string msg;
+                msg += "fixy::fn<Type, Grants...> [tier 5: "
+                       "NotInTheoryCorpus]: binding matches §30.14 "
+                       "unsoundness corpus entry: ";
+                msg.append(name().data(), name().size());
+                msg += ".  ";
+                msg.append(cite().data(), cite().size());
+                return std::define_static_string(msg);
+            }();
+        return storage;
+    }
 };
 
 // ── Entry 2: classified_bg_without_declassify ────────────────────
@@ -328,6 +359,22 @@ struct classified_bg_without_declassify {
                "is itself a scheduler-observable event.  Insert "
                "grant::declassify<Policy> OR drop the Bg effect OR "
                "project Security to a less restrictive level.";
+    }
+
+    // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
+    static constexpr std::string_view full_diagnostic() noexcept {
+        static constexpr std::string_view storage =
+            []() consteval -> std::string_view {
+                std::string msg;
+                msg += "fixy::fn<Type, Grants...> [tier 5: "
+                       "NotInTheoryCorpus]: binding matches §30.14 "
+                       "unsoundness corpus entry: ";
+                msg.append(name().data(), name().size());
+                msg += ".  ";
+                msg.append(cite().data(), cite().size());
+                return std::define_static_string(msg);
+            }();
+        return storage;
     }
 };
 
@@ -433,6 +480,22 @@ struct staleness_secret_without_declassify {
                "the stale_to<N> grant (Staleness defaults to Fresh) "
                "OR project Security to a less restrictive level.";
     }
+
+    // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
+    static constexpr std::string_view full_diagnostic() noexcept {
+        static constexpr std::string_view storage =
+            []() consteval -> std::string_view {
+                std::string msg;
+                msg += "fixy::fn<Type, Grants...> [tier 5: "
+                       "NotInTheoryCorpus]: binding matches §30.14 "
+                       "unsoundness corpus entry: ";
+                msg.append(name().data(), name().size());
+                msg += ".  ";
+                msg.append(cite().data(), cite().size());
+                return std::define_static_string(msg);
+            }();
+        return storage;
+    }
 };
 
 // ── Entry 4: ghost_runtime_observable ────────────────────────────
@@ -509,6 +572,22 @@ struct ghost_runtime_observable {
                "OR drop the runtime-observable effects.  Declassify "
                "does not apply (this is a ghost-vs-runtime category "
                "error, not an information-flow channel).";
+    }
+
+    // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
+    static constexpr std::string_view full_diagnostic() noexcept {
+        static constexpr std::string_view storage =
+            []() consteval -> std::string_view {
+                std::string msg;
+                msg += "fixy::fn<Type, Grants...> [tier 5: "
+                       "NotInTheoryCorpus]: binding matches §30.14 "
+                       "unsoundness corpus entry: ";
+                msg.append(name().data(), name().size());
+                msg += ".  ";
+                msg.append(cite().data(), cite().size());
+                return std::define_static_string(msg);
+            }();
+        return storage;
     }
 };
 
@@ -592,6 +671,22 @@ struct internal_io_without_declassify {
                "<Policy> with a named organizational-disclosure "
                "policy OR drop the IO effect OR project Security to "
                "as_public / as_unclassified.";
+    }
+
+    // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
+    static constexpr std::string_view full_diagnostic() noexcept {
+        static constexpr std::string_view storage =
+            []() consteval -> std::string_view {
+                std::string msg;
+                msg += "fixy::fn<Type, Grants...> [tier 5: "
+                       "NotInTheoryCorpus]: binding matches §30.14 "
+                       "unsoundness corpus entry: ";
+                msg.append(name().data(), name().size());
+                msg += ".  ";
+                msg.append(cite().data(), cite().size());
+                return std::define_static_string(msg);
+            }();
+        return storage;
     }
 };
 
@@ -682,6 +777,22 @@ struct internal_bg_without_declassify {
                "(run on the foreground thread where scheduling is "
                "deterministic) OR project Security to as_public / "
                "as_unclassified.";
+    }
+
+    // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
+    static constexpr std::string_view full_diagnostic() noexcept {
+        static constexpr std::string_view storage =
+            []() consteval -> std::string_view {
+                std::string msg;
+                msg += "fixy::fn<Type, Grants...> [tier 5: "
+                       "NotInTheoryCorpus]: binding matches §30.14 "
+                       "unsoundness corpus entry: ";
+                msg.append(name().data(), name().size());
+                msg += ".  ";
+                msg.append(cite().data(), cite().size());
+                return std::define_static_string(msg);
+            }();
+        return storage;
     }
 };
 
@@ -831,43 +942,59 @@ inline constexpr std::string_view corpus_entry_name_for_v =
 // ── corpus_full_diagnostic_v — combined name + cite for tier-5 ─────
 // ═════════════════════════════════════════════════════════════════════
 //
-// fixy-H-16 (cont.): assemble the full rejection diagnostic text by
-// concatenating "matched corpus entry: <name> — <cite>" into static
-// storage via P3491R3 `std::define_static_string`.  Returns an empty
-// `std::string_view` when no entry matches — the rejection path never
-// reaches that case because `NotInTheoryCorpus` accepts the binding.
+// fixy-H-16 (cont.): names the matched §30.14 corpus entry plus its
+// cite() in the tier-5 rejection diagnostic.  fixy-A4-029 (this
+// version): dispatches to the matched corpus entry's
+// `full_diagnostic()` accessor rather than rebuilding the assembled
+// "entry: <name> — <cite>" string per `<Type, Grants...>`
+// instantiation.  Each entry pre-bakes its diagnostic ONCE
+// (static-constexpr-local + P3491R3 `std::define_static_string`); this
+// helper just picks one of N pre-baked string_views.  Cost reduction:
+// O(N_instantiations · C_assembly) → O(6 · C_assembly +
+// N_instantiations · C_dispatch).  Returns an empty `std::string_view`
+// when no entry matches — the rejection path never reaches that case
+// because `NotInTheoryCorpus` accepts the binding.
 //
-// Consumer:
-//   fixy/Fn.h tier-5 `static_assert(fixy_h02_tier5_not_in_corpus, …)`
-//   uses this via P2741R3 so the diagnostic text literally identifies
-//   the matched §30.14 corpus entry by struct name (so a maintainer
-//   can grep Theory.h directly) AND by paper + year + remediation
-//   prose (so a reader knows which literature the rule cites).
-//
-// The doc-block at lines 58-64 of this header claims the diagnostic
-// "names which corpus entry matched (paper + year)".  After this
-// helper lands, the claim is supported in code: the entry's struct
-// name is surfaced via `name()` and the paper+year via `cite()`.
+// Discipline: keep the if-chain ORDER identical to
+// `is_in_unsoundness_corpus`, `corpus_cite_for_v`, and
+// `corpus_entry_name_for_v`.  All four must short-circuit on the same
+// entry for the same Grants pack so the rejection diagnostic is
+// internally consistent.
 
 template <typename Type, typename... Grants>
 inline constexpr std::string_view corpus_full_diagnostic_v =
     []() consteval -> std::string_view {
-        constexpr std::string_view entry_name =
-            corpus_entry_name_for_v<Type, Grants...>;
-        constexpr std::string_view cite_text =
-            corpus_cite_for_v<Type, Grants...>;
-        if constexpr (entry_name.empty()) {
-            // No corpus match — tier-5 succeeds; message unused.
-            return std::string_view{};
-        } else {
-            std::string msg;
-            msg += "fixy::fn<Type, Grants...> [tier 5: NotInTheoryCorpus]: "
-                   "binding matches §30.14 unsoundness corpus entry: ";
-            msg.append(entry_name.data(), entry_name.size());
-            msg += ".  ";
-            msg.append(cite_text.data(), cite_text.size());
-            return std::string_view{std::define_static_string(msg)};
+        if (corpus::classified_io_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::classified_io_without_declassify
+                ::full_diagnostic();
         }
+        if (corpus::classified_bg_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::classified_bg_without_declassify
+                ::full_diagnostic();
+        }
+        if (corpus::staleness_secret_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::staleness_secret_without_declassify
+                ::full_diagnostic();
+        }
+        if (corpus::ghost_runtime_observable
+                ::matches<Type, Grants...>()) {
+            return corpus::ghost_runtime_observable::full_diagnostic();
+        }
+        if (corpus::internal_io_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::internal_io_without_declassify
+                ::full_diagnostic();
+        }
+        if (corpus::internal_bg_without_declassify
+                ::matches<Type, Grants...>()) {
+            return corpus::internal_bg_without_declassify
+                ::full_diagnostic();
+        }
+        // No corpus match — tier-5 succeeds; message unused.
+        return std::string_view{};
     }();
 
 }  // namespace crucible::fixy::theory
