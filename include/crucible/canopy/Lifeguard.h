@@ -138,13 +138,10 @@ public:
         : swim_{swim_config},
           local_{local_peer.value()},
           lifeguard_config_{lifeguard_config} {
-        if (!config_valid_()) [[unlikely]] {
-            __builtin_trap();
-        }
+        // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
+        CRUCIBLE_FATAL_INVARIANT(config_valid_());
         for (SwimPeer const& peer : initial_peers) {
-            if (!add_peer(peer).has_value()) [[unlikely]] {
-                __builtin_trap();
-            }
+            CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());
         }
     }
 

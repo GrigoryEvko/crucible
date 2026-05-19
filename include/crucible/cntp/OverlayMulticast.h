@@ -8,6 +8,7 @@
 // config, deterministic per-stripe parent/child route construction, and
 // bounded message stripe planning.
 
+#include <crucible/Platform.h>   // CRUCIBLE_FATAL_INVARIANT
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
@@ -195,23 +196,18 @@ public:
         std::span<const DeclaredOverlayPeer> initial_peers = {},
         OverlayMulticastConfig config = {}) noexcept
         : config_{config} {
-        if (config_.stripe_count.value() > MaxStripes ||
-            config_.fanout.value() > MaxFanout ||
-            config_.recovery_threshold.value() > config_.stripe_count.value()) {
-            __builtin_trap();
-        }
+        // FIXY-U-080 / fixy-A5-014 + A5-035: was __builtin_trap (silent SIGILL).
+        CRUCIBLE_FATAL_INVARIANT(
+            config_.stripe_count.value() <= MaxStripes &&
+            config_.fanout.value() <= MaxFanout &&
+            config_.recovery_threshold.value() <=
+                config_.stripe_count.value());
         local_ = local_peer.value();
-        if (!add_peer(local_peer).has_value()) [[unlikely]] {
-            __builtin_trap();
-        }
+        CRUCIBLE_FATAL_INVARIANT(add_peer(local_peer).has_value());
         for (DeclaredOverlayPeer const& peer : initial_peers) {
-            if (!add_peer(peer).has_value()) [[unlikely]] {
-                __builtin_trap();
-            }
+            CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());
         }
-        if (!rebuild_routes().has_value()) [[unlikely]] {
-            __builtin_trap();
-        }
+        CRUCIBLE_FATAL_INVARIANT(rebuild_routes().has_value());
     }
 
     [[nodiscard]] std::expected<void, OverlayMulticastError>

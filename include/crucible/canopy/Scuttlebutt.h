@@ -291,14 +291,11 @@ public:
         std::span<const peer_type> initial_peers = {},
         ScuttlebuttConfig config = {}) noexcept
         : config_{config} {
-        if (!add_peer(local_peer).has_value()) [[unlikely]] {
-            __builtin_trap();
-        }
+        // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
+        CRUCIBLE_FATAL_INVARIANT(add_peer(local_peer).has_value());
         local_index_ = std::uint16_t{0};
         for (peer_type const& peer : initial_peers) {
-            if (!add_peer(peer).has_value()) [[unlikely]] {
-                __builtin_trap();
-            }
+            CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());
         }
     }
 

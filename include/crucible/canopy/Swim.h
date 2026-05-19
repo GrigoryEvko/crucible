@@ -141,10 +141,9 @@ public:
         SwimConfig config,
         std::span<const peer_type> initial_peers) noexcept
         : config_{config} {
+        // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
         for (peer_type const& peer : initial_peers) {
-            if (!add_peer(peer).has_value()) [[unlikely]] {
-                __builtin_trap();
-            }
+            CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());
         }
     }
 

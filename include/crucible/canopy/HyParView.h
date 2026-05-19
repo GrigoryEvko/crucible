@@ -130,9 +130,8 @@ public:
 
     explicit HyParViewMembership(HyParViewConfig config = {}) noexcept
         : config_{config} {
-        if (!config_fits_shape_()) [[unlikely]] {
-            __builtin_trap();
-        }
+        // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
+        CRUCIBLE_FATAL_INVARIANT(config_fits_shape_());
     }
 
     HyParViewMembership(
@@ -140,18 +139,12 @@ public:
         std::span<const HyParViewPeer> active_peers,
         std::span<const HyParViewPeer> passive_peers = {}) noexcept
         : config_{config} {
-        if (!config_fits_shape_()) [[unlikely]] {
-            __builtin_trap();
-        }
+        CRUCIBLE_FATAL_INVARIANT(config_fits_shape_());
         for (HyParViewPeer peer : active_peers) {
-            if (!join(peer).has_value()) [[unlikely]] {
-                __builtin_trap();
-            }
+            CRUCIBLE_FATAL_INVARIANT(join(peer).has_value());
         }
         for (HyParViewPeer peer : passive_peers) {
-            if (!add_passive(peer).has_value()) [[unlikely]] {
-                __builtin_trap();
-            }
+            CRUCIBLE_FATAL_INVARIANT(add_passive(peer).has_value());
         }
     }
 

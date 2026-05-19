@@ -363,3 +363,30 @@ namespace crucible::detail {
           }                                                                   \
       } while (0)
 #endif
+
+// CRUCIBLE_FATAL_INVARIANT — always-aborts variant of CRUCIBLE_INVARIANT.
+// Unlike CRUCIBLE_INVARIANT (which is [[assume]] in NDEBUG), this fires
+// in every build mode.  Use when the violation is genuinely unrecoverable
+// and the function body cannot proceed safely if the predicate fails —
+// canonical case is a noexcept constructor that received bad config.
+//
+// Compared to bare __builtin_trap(): emits a stderr diagnostic naming
+// the predicate + file:line so the operator sees what failed before
+// the SIGABRT, instead of a silent crash. Closes fixy-A5-014: "no
+// diagnostic" half of the bug.
+//
+// Cost: zero when cond holds (the [[unlikely]] branch is outlined cold).
+// Not for hot paths — those should use std::expected or sat-arith.
+#define CRUCIBLE_FATAL_INVARIANT(cond)                                        \
+    do {                                                                      \
+        if (!(cond)) [[unlikely]] {                                           \
+            if (!::crucible::detail::is_debugger_present()) {                 \
+                std::fprintf(stderr,                                          \
+                             "crucible: fatal invariant failed: %s "          \
+                             "(%s:%d)\n",                                     \
+                             #cond, __FILE__, __LINE__);                      \
+            }                                                                 \
+            ::crucible::detail::breakpoint_if_debugging();                    \
+            std::abort();                                                     \
+        }                                                                     \
+    } while (0)

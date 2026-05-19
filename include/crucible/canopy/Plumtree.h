@@ -186,9 +186,8 @@ public:
 
     explicit PlumtreeBroadcast(PlumtreeConfig config = {}) noexcept
         : config_{config} {
-        if (!config_fits_shape_()) [[unlikely]] {
-            __builtin_trap();
-        }
+        // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
+        CRUCIBLE_FATAL_INVARIANT(config_fits_shape_());
     }
 
     template <std::size_t HyMaxActive, std::size_t HyMaxPassive>
@@ -197,15 +196,11 @@ public:
         HyParViewMembership<HyMaxActive, HyMaxPassive> const& membership,
         PlumtreeConfig config = {}) noexcept
         : config_{config} {
-        if (!config_fits_shape_()) [[unlikely]] {
-            __builtin_trap();
-        }
+        CRUCIBLE_FATAL_INVARIANT(config_fits_shape_());
         auto active = membership.active_view();
         for (cog::CogIdentity const& peer : active.as_span()) {
-            if (!add_link_(peer, PlumtreeLinkState::Eager).has_value())
-                [[unlikely]] {
-                __builtin_trap();
-            }
+            CRUCIBLE_FATAL_INVARIANT(
+                add_link_(peer, PlumtreeLinkState::Eager).has_value());
         }
     }
 
