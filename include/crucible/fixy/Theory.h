@@ -5,9 +5,10 @@
 // Per misc/16_05_2026_fixy.md §4.  This is the LOAD-BEARING
 // reject-by-default surface that closes
 // the FX §30.14 type-theory unsoundness corpus.  Currently ships
-// FOUR entries — classified_io_without_declassify,
+// SIX entries — classified_io_without_declassify,
 // classified_bg_without_declassify, staleness_secret_without_declassify,
-// and ghost_runtime_observable — each pairs:
+// ghost_runtime_observable, internal_io_without_declassify, and
+// internal_bg_without_declassify — each pairs:
 //
 //   (a) a named pattern detector — a constexpr predicate over
 //       (Type, Grants...) that returns true iff the binding matches
@@ -17,9 +18,11 @@
 //       WHY the pattern is unsound + which substrate primitive
 //       remediates it.
 //
-// The corpus is DATA, not code.  New entries are 10-line additions
-// to the `corpus::` namespace; the closed-set `IsInUnsoundnessCorpus`
-// disjunction picks them up automatically via fold-expression scan.
+// The corpus is DATA, but every new entry has FOUR lockstep
+// touch-points in this header (not just the OR fold).  See the
+// "Discipline" block below — the entry's struct is the cheap part;
+// the maintenance cost is keeping all four diagnostic chains aligned
+// so the rejection surface stays internally consistent.
 //
 // ── Strict-default-Security coverage (fixy-CR-01) ──────────────────
 //
@@ -72,10 +75,32 @@
 // ── Discipline ─────────────────────────────────────────────────────
 //
 // Adding a new corpus entry is one PR with:
-//   1. A `corpus::<paper>_<year>::matches<Type, Grants...>()` predicate
-//   2. A doc-comment explaining the unsoundness + remediation
-//   3. A `theory_neg/` neg-compile fixture exercising it
-//   4. Addition to `IsInUnsoundnessCorpus`'s OR fold
+//   1. A `corpus::<paper>_<year>` struct exposing four accessors —
+//      `matches<Type, Grants...>()` (the constexpr detector),
+//      `cite()` (paper + year + mechanism + remediation),
+//      `name()` (the struct's grep-able identifier as a literal),
+//      `full_diagnostic()` (the pre-baked "entry: <name> — <cite>"
+//      string surfaced by tier-5 static_assert).
+//   2. A doc-comment explaining the unsoundness + remediation.
+//   3. A `theory_neg/` neg-compile fixture exercising it.
+//   4. Four lockstep edits in THIS header, in this exact order:
+//        a. `is_in_unsoundness_corpus()` — add `||
+//           corpus::<entry>::matches<Type, Grants...>()` to the
+//           closed-set OR fold.
+//        b. `corpus_cite_for_v` — add a parallel if-clause returning
+//           `<entry>::cite()` at the SAME position as (a).
+//        c. `corpus_entry_name_for_v` — add a parallel if-clause
+//           returning `<entry>::name()` at the SAME position.
+//        d. `corpus_full_diagnostic_v` — add a parallel if-clause
+//           returning `<entry>::full_diagnostic()` at the SAME
+//           position.
+//      All four chains short-circuit on first match.  Misalignment
+//      between any of them means the rejection surface fires
+//      (binding rejected by NotInTheoryCorpus) but surfaces a stale
+//      / empty diagnostic — the contributor's job is to make the
+//      rejection diagnostic literally true for the new entry.
+//   5. Bump `corpus_size_v` to the new entry count.  The static
+//      sentinel below the constant breaks if the bump is forgotten.
 //
 // The corpus grows monotonically — never delete entries.  Outdated
 // patterns can be marked `[[deprecated]]` with a cite to the
@@ -1041,12 +1066,69 @@ template <typename Type, typename... Grants>
         || corpus::ghost_runtime_observable::matches<Type, Grants...>()
         || corpus::internal_io_without_declassify::matches<Type, Grants...>()
         || corpus::internal_bg_without_declassify::matches<Type, Grants...>();
-    // Future entries: || corpus::<next>::matches<Type, Grants...>()
+    // MAINTENANCE PROTOCOL (fixy-L-09 / fixy-L-10).  Adding a new
+    // corpus entry requires FOUR aligned edits, not just this one:
+    //
+    //   (1) Append `|| corpus::<entry>::matches<...>()` to the OR
+    //       fold above, in the new entry's canonical order.
+    //   (2) Append the matching if-clause to `corpus_cite_for_v`
+    //       (returns `<entry>::cite()`) at the SAME order position.
+    //   (3) Append the matching if-clause to `corpus_entry_name_for_v`
+    //       (returns `<entry>::name()`) at the SAME order position.
+    //   (4) Append the matching if-clause to `corpus_full_diagnostic_v`
+    //       (returns `<entry>::full_diagnostic()`) at the SAME order
+    //       position.
+    //   (5) Bump `corpus_size_v` below.  The static sentinel breaks
+    //       the build if the bump is forgotten.
+    //
+    // All four chains short-circuit on first match.  Order
+    // misalignment between (1) and (2)/(3)/(4) is a SILENT bug —
+    // the binding gets rejected, but the rejection diagnostic
+    // surfaces the WRONG entry's name + cite.
 }
 
 template <typename Type, typename... Grants>
 inline constexpr bool IsInUnsoundnessCorpus_v =
     is_in_unsoundness_corpus<Type, Grants...>();
+
+// ═════════════════════════════════════════════════════════════════════
+// ── corpus_size_v — count sentinel for the maintenance protocol ────
+// ═════════════════════════════════════════════════════════════════════
+//
+// fixy-L-09 / fixy-L-10: the corpus has SIX entries; every entry
+// touches FOUR diagnostic chains.  This constant is the grep-able
+// pin for the entry count — the static_assert sentinel below
+// exercises every entry's `name()` accessor so that adding a corpus
+// struct WITHOUT touching the OR fold + cite/name/full chains (or
+// vice-versa, removing an entry from the fold without removing the
+// struct) cannot pass the build unnoticed.
+//
+// To bump: add `1` and append the new entry's `name()` to the
+// sentinel below.  The discipline block above describes the full
+// 5-step PR shape.
+
+inline constexpr std::size_t corpus_size_v = 6;
+
+namespace detail::corpus_size_sentinel {
+// Witness that every corpus entry exposes its name() — drift between
+// `corpus_size_v` and the actual entry roster will surface as either
+// a missing-name compile error (if `corpus_size_v` was bumped without
+// adding the struct) or a missing-string compile error (if a struct
+// was added without listing its name here).
+inline constexpr std::string_view kRoster[corpus_size_v] = {
+    corpus::classified_io_without_declassify::name(),
+    corpus::classified_bg_without_declassify::name(),
+    corpus::staleness_secret_without_declassify::name(),
+    corpus::ghost_runtime_observable::name(),
+    corpus::internal_io_without_declassify::name(),
+    corpus::internal_bg_without_declassify::name(),
+};
+static_assert(sizeof(kRoster) / sizeof(kRoster[0]) == corpus_size_v,
+    "fixy-L-09/L-10: corpus_size_v drifted from the actual entry "
+    "roster.  Re-audit the OR fold in is_in_unsoundness_corpus, the "
+    "if-chains in corpus_cite_for_v / corpus_entry_name_for_v / "
+    "corpus_full_diagnostic_v, AND this roster array.");
+}  // namespace detail::corpus_size_sentinel
 
 // ═════════════════════════════════════════════════════════════════════
 // ── NotInTheoryCorpus<Type, Grants...> — the gate-side concept ─────
