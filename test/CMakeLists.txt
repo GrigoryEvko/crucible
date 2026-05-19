@@ -9023,6 +9023,21 @@ crucible_neg_compile_fixy_test(neg_fixy_theory_ghost_observable
 crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret_strict_default
     "NotInTheoryCorpus|staleness_secret_without_declassify")
 
+# fixy-A4-015 — per-axis declassify discipline (Hunt-Sands 2008 /
+# Sabelfeld-Myers 2003).  Pre-A4-015 the matcher accepted ANY
+# declassify<Policy> as a universal silencer — the canonical "wrong
+# policy authorizes the wrong axis" footgun.  Post-A4-015 the matcher
+# consults `axes_discharged_of<Policy>` and silences ONLY when the
+# policy's mask carries `DischargeAxis::Staleness` (currently only
+# `AuthorizedReplay`).  Two fixtures (HS14 ≥2 floor) cover distinct
+# wrong-axis policies (AuditedLogging — IO; WireSerialize — IO).
+# Both regex on either NotInTheoryCorpus (concept-fail trace) OR the
+# corpus entry name (corpus_full_diagnostic_v surface).
+crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret_wrong_policy_audited
+    "NotInTheoryCorpus|staleness_secret_without_declassify")
+crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret_wrong_policy_wire
+    "NotInTheoryCorpus|staleness_secret_without_declassify")
+
 # fixy-H-18 — internal_io_without_declassify corpus entry.
 # Two fixtures (HS14 ≥2 floor):
 #   neg_fixy_theory_internal_io          — minimal direct trigger

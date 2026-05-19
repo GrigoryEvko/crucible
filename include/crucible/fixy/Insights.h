@@ -340,8 +340,9 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::safety::diag::Severity::Fatal,
     ::crucible::fixy::theory::corpus::staleness_secret_without_declassify::cite(),
     "Binding engages as_secret/as_classified on Security AND grant::stale_to<τ> "
-    "on Staleness AND omits any grant::declassify<Policy>.",
-    "grant::declassify<secret_policy::FreshnessDischarged>",
+    "on Staleness AND omits any grant::declassify<Policy> whose policy "
+    "discharges the Staleness axis (e.g. secret_policy::AuthorizedReplay).",
+    "grant::declassify<secret_policy::AuthorizedReplay>",   // fixy-A4-015: axis-specific
     "fixy::fn<T, as_secret, grant::stale_to<100>>  // no declassify");
 
 // fixy-A4-003: why_this_matters sourced directly from corpus::cite() to

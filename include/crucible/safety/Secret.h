@@ -86,11 +86,33 @@ namespace secret_policy {
 // CRTP-derived gate.
 struct secret_policy_base {};
 
-struct AuditedLogging final : secret_policy_base {};   // log with audit trail
-struct WireSerialize  final : secret_policy_base {};   // encrypted-channel serialization
-struct HashForCompare final : secret_policy_base {};   // release as hash (not the source)
-struct LengthOnly     final : secret_policy_base {};   // release only size metadata
-struct UserDisplay    final : secret_policy_base {};   // display in UI (e.g., last-4 of card)
+struct AuditedLogging   final : secret_policy_base {};   // log with audit trail
+struct WireSerialize    final : secret_policy_base {};   // encrypted-channel serialization
+struct HashForCompare   final : secret_policy_base {};   // release as hash (not the source)
+struct LengthOnly       final : secret_policy_base {};   // release only size metadata
+struct UserDisplay      final : secret_policy_base {};   // display in UI (e.g., last-4 of card)
+
+// fixy-A4-015: declassification policy that discharges the Hunt-Sands
+// erasure / temporal-replay axis (Staleness, not Security).  Used as
+// the named authorization for a binding that admits `stale_to<TauMax>`
+// on a classified value — the only existing declassify shape that the
+// fixy::theory §30.14 `staleness_secret_without_declassify` corpus
+// entry accepts as a freshness-discharging policy.
+//
+// Per Hunt-Sands 2008 'Just Forget It' (POPL), erasure semantics
+// require the declassification policy to MATCH the axis it discharges.
+// A policy intended for IO export (AuditedLogging / WireSerialize /
+// UserDisplay), Security relaxation (HashForCompare / LengthOnly), or
+// any other channel-specific operation says NOTHING about temporal
+// replay — using one to silence a `stale_to<N>` × `as_secret` reject
+// is exactly the over-broad-discharge footgun the corpus now blocks
+// via per-axis tier (`fixy::theory::detail::axes_discharged_of`).
+//
+// New policies that discharge OTHER axes (IO, Bg, Crash, Reentrancy)
+// can be added here as their corpus matchers are tightened in turn;
+// each pairs with a `axes_discharged_of` specialization in fixy/
+// Theory.h that lifts the corresponding `DischargeAxis::*` bit.
+struct AuthorizedReplay final : secret_policy_base {};   // discharges Hunt-Sands erasure / replay-window axis
 
 }  // namespace secret_policy
 

@@ -379,6 +379,128 @@ namespace cheat_7_strict_default_security_bypass {
     // discharged via declassify.  No new shape to witness here.
 }
 
+// ─── Cheat 8: wrong-axis declassify silences corpus (fixy-A4-015) ──
+//
+// The attacker reasons: "The `declassify<Policy>` grant engages
+// Security (via `which_dim_v<declassify<P>> == Security`, Grant.h:301)
+// AND silences the staleness-secret corpus entry — regardless of
+// WHICH policy is named, the matcher sees a declassify and stops
+// firing.  I can pair `declassify<AuditedLogging>` (intended for IO
+// export audit trails) with `stale_to<100>` and silently pass — the
+// generic `has_declassify` check neutralizes the matcher."
+//
+// This WAS a real bypass pre-A4-015.  The reform is a coupled pair:
+// (1) `is_secret_grant<declassify<Policy>>` is now `true_type` so the
+//     matcher's `has_secret` correctly sees Security engaged via
+//     declassify alone (no `as_secret` needed — Grant.h's `which_dim`
+//     routes declassify to Security, and combining `as_secret` would
+//     double-engage Security and trip UniqueEngagementPerAxis
+//     upstream, never reaching the corpus).
+// (2) The matcher replaces generic `!has_declassify` with per-axis
+//     `!has_declassify_for_axis<DischargeAxis::Staleness, Grants...>`.
+//     Hunt-Sands 2008 'Just Forget It' (POPL) / Sabelfeld-Myers 2003
+//     'Language-based information-flow security' (IEEE J. Sel. Areas)
+//     require the discharge MATCH the axis it authorizes: a policy
+//     for IO export does NOT discharge temporal replay.
+//
+// Defense, shipped in Theory.h §30.14 (A4-015): per-axis
+// `axes_discharged_of<Policy>` trait + matcher consults
+// `has_declassify_for_axis<DischargeAxis::Staleness>` instead of
+// generic `has_declassify`.  Pre-A4-015 policies (AuditedLogging /
+// WireSerialize / HashForCompare / LengthOnly / UserDisplay) default
+// to `DischargeAxis::None` — they don't silence the matcher.  Only
+// `AuthorizedReplay` (newly-shipped) carries the Staleness bit.
+
+namespace cheat_8_wrong_axis_declassify {
+    namespace sp = ::crucible::safety::secret_policy;
+
+    // Pack 1 (attack): declassify<AuditedLogging> + stale_to<100>.
+    // Security engaged via declassify alone (extended is_secret_grant);
+    // Effect engaged via strict<Effect>.  Pre-A4-015 the generic
+    // !has_declassify silenced the matcher (or, equivalently, the
+    // unextended is_secret_grant missed Security engagement); post-
+    // A4-015 the per-axis discipline correctly rejects.
+    static_assert(!fixy::IsAccepted<int,
+        strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Effect>,
+        gr::declassify<sp::AuditedLogging>,   // engages Security (WRONG axis — IO)
+        gr::stale_to<100>,                    // engages Staleness
+        strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+        strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
+        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+        strict<D::Size>, strict<D::Version>, strict<D::Synchronization>, strict<D::Regime>>,
+        "Cheat 8 defense witness (wrong-axis declassify rejected): "
+        "AuditedLogging discharges IO export, not Staleness-replay; "
+        "the corpus correctly rejects this combination per Hunt-Sands "
+        "axis-match discipline.");
+
+    // Pack 2 (counter-witness): same binding shape, RIGHT policy.
+    // `AuthorizedReplay` carries `DischargeAxis::Staleness` per
+    // Theory.h's specialization; this combo accepts.
+    static_assert(fixy::IsAccepted<int,
+        strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Effect>,
+        gr::declassify<sp::AuthorizedReplay>, // RIGHT axis — discharges Staleness
+        gr::stale_to<100>,
+        strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+        strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
+        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+        strict<D::Size>, strict<D::Version>, strict<D::Synchronization>, strict<D::Regime>>,
+        "Cheat 8 counter-witness: AuthorizedReplay correctly "
+        "discharges the staleness axis — the binding ACCEPTS with the "
+        "Secret × stale_to pattern present because the named policy "
+        "carries DischargeAxis::Staleness in its axes_discharged_of "
+        "specialization.");
+
+    // Pack 3 (defense-in-depth): three additional pre-A4-015 policies
+    // all default to DischargeAxis::None and reject this combo.  Each
+    // is a distinct mismatch-class witness against the over-broad
+    // declassify family.
+    static_assert(!fixy::IsAccepted<int,
+        strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Effect>,
+        gr::declassify<sp::HashForCompare>,   // engages Security (WRONG — Security-axis hash)
+        gr::stale_to<50>,
+        strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+        strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
+        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+        strict<D::Size>, strict<D::Version>, strict<D::Synchronization>, strict<D::Regime>>,
+        "Cheat 8 defense witness (HashForCompare doesn't discharge "
+        "Staleness): hash-release is a Security-axis discharge, not "
+        "temporal.");
+
+    static_assert(!fixy::IsAccepted<int,
+        strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Effect>,
+        gr::declassify<sp::LengthOnly>,
+        gr::stale_to<200>,
+        strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+        strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
+        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+        strict<D::Size>, strict<D::Version>, strict<D::Synchronization>, strict<D::Regime>>,
+        "Cheat 8 defense witness (LengthOnly doesn't discharge "
+        "Staleness): length-metadata release is a Security-axis "
+        "discharge, not temporal.");
+
+    static_assert(!fixy::IsAccepted<int,
+        strict<D::Refinement>, strict<D::Usage>,
+        strict<D::Effect>,
+        gr::declassify<sp::UserDisplay>,
+        gr::stale_to<10>,
+        strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+        strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
+        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+        strict<D::Size>, strict<D::Version>, strict<D::Synchronization>, strict<D::Regime>>,
+        "Cheat 8 defense witness (UserDisplay doesn't discharge "
+        "Staleness): UI-display release is an IO-axis discharge, not "
+        "temporal.");
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Summary ────────────────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════

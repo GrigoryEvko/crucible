@@ -84,12 +84,15 @@
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Grant.h>
 #include <crucible/safety/Fn.h>
+#include <crucible/safety/Secret.h>          // fixy-A4-015: AuthorizedReplay et al.
 
 #include <cstddef>
+#include <cstdint>                           // fixy-A4-015: std::uint32_t for DischargeAxis
 #include <meta>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>                           // fixy-A4-015: std::to_underlying
 
 namespace crucible::fixy::theory {
 
@@ -117,6 +120,21 @@ template <typename G> struct is_secret_grant
 template <> struct is_secret_grant<grant::as_secret>
     : std::true_type {};
 template <> struct is_secret_grant<grant::as_classified>
+    : std::true_type {};
+// fixy-A4-015: declassify<Policy> ALSO engages the Security axis
+// (per Grant.h `which_dim_v<declassify<P>> == DimensionAxis::Security`).
+// Pre-A4-015 this specialization was absent — packs that engaged
+// Security ONLY via declassify (no as_secret / as_classified /
+// strict<Security>) bypassed every corpus entry that gates on
+// `has_secret`.  This is the canonical Hunt-Sands bypass that
+// A4-015 closes: the matcher now sees the declassify as a Security
+// engagement AND consults `has_declassify_for_axis<Axis>` to decide
+// whether the discharge is axis-appropriate.  Existing fixtures that
+// engage Security via as_secret / as_classified / strict-default
+// REMAIN rejected (their behaviour is unchanged); only the
+// declassify-only-Security path becomes structurally visible.
+template <typename Policy>
+struct is_secret_grant<grant::declassify<Policy>>
     : std::true_type {};
 
 // Strict-default-Security form (fixy-CR-01).  The grant
@@ -148,6 +166,131 @@ template <typename G> struct is_declassify_grant
 template <typename Policy>
 struct is_declassify_grant<grant::declassify<Policy>>
     : std::true_type {};
+
+// ── fixy-A4-015: per-axis declassify discipline ────────────────────
+//
+// Pre-A4-015 the §30.14 corpus treated `declassify<Policy>` as a
+// universal silencer: any policy tag — even one whose semantic
+// authority lies on an unrelated axis — was enough to silence ANY
+// declassify-discharging corpus reject.  Hunt-Sands 2008 'Just Forget
+// It' (POPL) and Sabelfeld-Myers 2003 'Language-based information-
+// flow security' (IEEE J. Sel. Areas) both require that the
+// declassification policy MATCH the axis it discharges: a policy
+// intended for IO export (e.g. AuditedLogging / WireSerialize)
+// authorizes the export channel and says NOTHING about temporal
+// replay; using it to silence a `stale_to<N>` × `as_secret` reject
+// is the canonical "wrong policy authorizes the wrong axis" footgun.
+//
+// `DischargeAxis` is a bitmask of axes a declassification policy may
+// authoritatively discharge.  Each axis bit lifts ONE corpus matcher
+// from "any declassify silences" to "only policies that explicitly
+// admit this axis silence".  The default specialization of
+// `axes_discharged_of<Policy>` returns `DischargeAxis::None` — the
+// Hunt-Sands safe-default: unknown policies discharge nothing, so
+// pre-existing declassify policies CANNOT silence newly-axis-typed
+// corpus rejects (defends against an over-broad declassify becoming
+// load-bearing for an axis its author never considered).
+//
+// Currently surfaced axes:
+//   - Staleness  — Hunt-Sands erasure / replay-window discharge.
+//                  Authoritative policy: `secret_policy::AuthorizedReplay`.
+// Reserved (placeholder bits for future H-tasks that tighten the
+// corresponding matchers; assigning bits here keeps the mask stable
+// across the lifetime of any field that stores an `axes_discharged_of`
+// value):
+//   - IO         — Volpano-Smith-Irvine 1996 implicit-flow IO discharge.
+//   - Bg         — Smith-Volpano 1998 concurrent-IFC scheduler discharge.
+//   - Crash      — BSYZ22 crash-stop session-protocol audit discharge.
+//   - Reentrancy — re-entrant audit-trail (re-classification) discharge.
+enum class DischargeAxis : std::uint32_t {
+    None       = 0u,
+    Staleness  = 1u << 0,
+    IO         = 1u << 1,  // reserved — see fixy-A4-015 Theory.h
+    Bg         = 1u << 2,  // reserved
+    Crash      = 1u << 3,  // reserved
+    Reentrancy = 1u << 4,  // reserved
+};
+
+[[nodiscard]] constexpr DischargeAxis
+operator|(DischargeAxis a, DischargeAxis b) noexcept {
+    return DischargeAxis{std::to_underlying(a) | std::to_underlying(b)};
+}
+[[nodiscard]] constexpr DischargeAxis
+operator&(DischargeAxis a, DischargeAxis b) noexcept {
+    return DischargeAxis{std::to_underlying(a) & std::to_underlying(b)};
+}
+[[nodiscard]] constexpr bool
+discharge_axis_contains(DischargeAxis mask, DischargeAxis axis) noexcept {
+    return (std::to_underlying(mask) & std::to_underlying(axis)) != 0u;
+}
+
+// `axes_discharged_of<Policy>` — bitmask of axes the named policy is
+// authoritative on.  Defaults to `DischargeAxis::None` per the Hunt-
+// Sands safe-default rule (above).  Specialize per-policy to lift
+// the bits the policy genuinely admits.
+template <typename Policy>
+struct axes_discharged_of
+    : std::integral_constant<DischargeAxis, DischargeAxis::None> {};
+template <typename Policy>
+inline constexpr DischargeAxis axes_discharged_of_v =
+    axes_discharged_of<Policy>::value;
+
+// `secret_policy::AuthorizedReplay` discharges Staleness.  Defined in
+// substrate `safety/Secret.h` (re-exported as
+// `fixy::tags::secret_policy::AuthorizedReplay` via the namespace
+// alias in fixy/Source.h).  This is THE policy that admits
+// `as_secret + stale_to<N>` through the §30.14 corpus.
+template <>
+struct axes_discharged_of<
+        ::crucible::safety::secret_policy::AuthorizedReplay>
+    : std::integral_constant<DischargeAxis, DischargeAxis::Staleness> {};
+
+// `is_declassify_for_axis<Axis, G>` — true iff G is a
+// `grant::declassify<Policy>` AND that policy's
+// `axes_discharged_of_v` mask contains `Axis`.
+template <DischargeAxis Axis, typename G>
+struct is_declassify_for_axis : std::false_type {};
+template <DischargeAxis Axis, typename Policy>
+struct is_declassify_for_axis<Axis, grant::declassify<Policy>>
+    : std::bool_constant<
+          discharge_axis_contains(axes_discharged_of_v<Policy>, Axis)> {};
+
+// `has_declassify_for_axis<Axis, Grants...>()` — fold OR over the
+// pack: does any grant carry a declassify<Policy> that discharges
+// `Axis`?  Distinct from the unscoped `has_grant_of<...,
+// is_declassify_grant, Grants...>` which silences on ANY declassify
+// regardless of policy axis authority.
+template <DischargeAxis Axis, typename... Grants>
+[[nodiscard]] consteval bool has_declassify_for_axis() noexcept {
+    if constexpr (sizeof...(Grants) == 0) {
+        return false;
+    } else {
+        return (is_declassify_for_axis<Axis, Grants>::value || ...);
+    }
+}
+
+// Locked invariants — if the substrate's AuthorizedReplay tag is
+// renamed or removed, or its axis assignment shifts, these fire
+// before any matcher silently breaks.
+static_assert(
+    axes_discharged_of_v<
+        ::crucible::safety::secret_policy::AuthorizedReplay>
+        == DischargeAxis::Staleness,
+    "fixy-A4-015: AuthorizedReplay must discharge Staleness — "
+    "the only currently-surfaced axis-specific policy in the §30.14 "
+    "corpus.  Lifting other axes (IO/Bg/Crash/Reentrancy) requires "
+    "naming new policy tags and specializing axes_discharged_of "
+    "accordingly; existing AuditedLogging / WireSerialize / "
+    "HashForCompare / LengthOnly / UserDisplay tags REMAIN at "
+    "DischargeAxis::None per Hunt-Sands safe-default discipline.");
+static_assert(
+    axes_discharged_of_v<
+        ::crucible::safety::secret_policy::AuditedLogging>
+        == DischargeAxis::None,
+    "fixy-A4-015: pre-A4-015 declassify policies retain the safe "
+    "default DischargeAxis::None — any future axis lift requires an "
+    "explicit specialization with Hunt-Sands-style justification at "
+    "the policy tag's declaration site (substrate safety/Secret.h).");
 
 template <typename G> struct is_io_effect_grant
     : std::false_type {};
@@ -431,9 +574,19 @@ struct classified_bg_without_declassify {
 //
 // Remediation: EITHER (a) project Security to a less restrictive
 // level, (b) drop the stale_to<N> grant (Staleness defaults to Fresh),
-// OR (c) interpose `declassify<Policy>` with a named policy
-// authorizing the staleness-window flow.  The substrate's CtCrypto
-// stance is the canonical (b) form (pins Staleness=Fresh).
+// OR (c) interpose `declassify<secret_policy::AuthorizedReplay>` —
+// the freshness-discharging policy.  The substrate's CtCrypto stance
+// is the canonical (b) form (pins Staleness=Fresh).
+//
+// fixy-A4-015 update: option (c) is NARROW.  ONLY a policy whose
+// `axes_discharged_of` mask contains `DischargeAxis::Staleness`
+// silences this matcher; the existing IO/Security-axis policies
+// (AuditedLogging / WireSerialize / HashForCompare / LengthOnly /
+// UserDisplay) do NOT.  Pre-A4-015 the matcher silenced on ANY
+// declassify, leading to the Hunt-Sands axis-mismatch footgun where
+// a policy intended for IO export silently authorized stale-replay.
+// The discipline is now structurally aligned with Hunt-Sands erasure
+// semantics: discharge MUST match the axis.
 
 struct staleness_secret_without_declassify {
     template <typename Type, typename... Grants>
@@ -442,9 +595,21 @@ struct staleness_secret_without_declassify {
             detail::has_grant_of<detail::is_secret_grant, Grants...>();
         const bool has_stale =
             detail::has_grant_of<detail::is_stale_grant, Grants...>();
-        const bool has_declassify =
-            detail::has_grant_of<detail::is_declassify_grant, Grants...>();
-        return has_secret && has_stale && !has_declassify;
+        // fixy-A4-015: axis-specific discharge.  Pre-A4-015 ANY
+        // declassify grant silenced this matcher — including
+        // policies (AuditedLogging / WireSerialize / ...) whose
+        // semantic authority lies on the IO or Security axis, NOT
+        // Staleness.  Per Hunt-Sands 2008 erasure semantics the
+        // discharge must MATCH the axis: only policies declaring
+        // DischargeAxis::Staleness in `axes_discharged_of` silence
+        // the staleness-replay reject.  `AuthorizedReplay` is
+        // currently the sole such policy; future H-tasks may add
+        // others (each must specialize `axes_discharged_of` to lift
+        // the Staleness bit explicitly).
+        const bool has_staleness_discharge =
+            detail::has_declassify_for_axis<
+                detail::DischargeAxis::Staleness, Grants...>();
+        return has_secret && has_stale && !has_staleness_discharge;
     }
 
     static constexpr std::string_view name() noexcept {
@@ -465,20 +630,33 @@ struct staleness_secret_without_declassify {
         return "Hunt-Sands 2008 'Just Forget It' (POPL) — PRIMARY: "
                "formalizes information-erasure semantics and shows a "
                "classified value reachable through a stale-replay "
-               "window (stale_to<TauMax>) without a declassification "
-               "policy is semantically a FAILED erasure — data the "
-               "policy would require be forgotten remains observable.  "
+               "window (stale_to<TauMax>) without a freshness-"
+               "discharging declassification policy is semantically a "
+               "FAILED erasure — data the policy would require be "
+               "forgotten remains observable.  "
                "Supporting: Askarov-Hunt-Sabelfeld-Sands 2008 "
                "(ESORICS) formalizes the timing/replay channel as an "
                "information leak distinct from data-flow channels.  "
+               "Supporting: Sabelfeld-Myers 2003 'Language-based "
+               "information-flow security' (IEEE J. Sel. Areas) — "
+               "the discharge MUST match the axis it authorizes; a "
+               "policy for IO export does not discharge temporal "
+               "replay (fixy-A4-015 per-axis tier).  "
                "(Orientation only: Sabelfeld-Sands 2009 "
                "'Declassification: dimensions and principles' names "
                "the 'when' dimension — survey identifying the axis, "
                "NOT formalizing this specific pattern; demoted from "
                "primary per fixy-H-17.)  "
-               "Remediation: insert grant::declassify<Policy> OR drop "
-               "the stale_to<N> grant (Staleness defaults to Fresh) "
-               "OR project Security to a less restrictive level.";
+               "Remediation: insert grant::declassify<secret_policy::"
+               "AuthorizedReplay> (the only currently-shipped policy "
+               "whose axes_discharged_of mask carries Staleness) OR "
+               "drop the stale_to<N> grant (Staleness defaults to "
+               "Fresh) OR project Security to a less restrictive "
+               "level.  Note (fixy-A4-015): other declassify policies "
+               "(AuditedLogging / WireSerialize / HashForCompare / "
+               "LengthOnly / UserDisplay) do NOT silence this matcher "
+               "— their authority lies on IO / Security axes, not "
+               "Staleness.";
     }
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.

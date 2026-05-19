@@ -93,11 +93,12 @@ static_assert(std::is_same_v<ft::vessel_trust::Validated,   cvt::Validated>);
 
 // ─── 6. secret_policy::* identity ─────────────────────────────────
 
-static_assert(std::is_same_v<ft::secret_policy::AuditedLogging, csp::AuditedLogging>);
-static_assert(std::is_same_v<ft::secret_policy::WireSerialize,  csp::WireSerialize>);
-static_assert(std::is_same_v<ft::secret_policy::HashForCompare, csp::HashForCompare>);
-static_assert(std::is_same_v<ft::secret_policy::LengthOnly,     csp::LengthOnly>);
-static_assert(std::is_same_v<ft::secret_policy::UserDisplay,    csp::UserDisplay>);
+static_assert(std::is_same_v<ft::secret_policy::AuditedLogging,   csp::AuditedLogging>);
+static_assert(std::is_same_v<ft::secret_policy::WireSerialize,    csp::WireSerialize>);
+static_assert(std::is_same_v<ft::secret_policy::HashForCompare,   csp::HashForCompare>);
+static_assert(std::is_same_v<ft::secret_policy::LengthOnly,       csp::LengthOnly>);
+static_assert(std::is_same_v<ft::secret_policy::UserDisplay,      csp::UserDisplay>);
+static_assert(std::is_same_v<ft::secret_policy::AuthorizedReplay, csp::AuthorizedReplay>);   // fixy-A4-015
 
 // ─── 7. hash_family::* identity ───────────────────────────────────
 

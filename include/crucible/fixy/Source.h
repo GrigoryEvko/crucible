@@ -90,10 +90,13 @@ namespace version = ::crucible::safety::version;
 // `FromPytorch → record` shortcut.
 namespace vessel_trust = ::crucible::safety::vessel_trust;
 
-// ── secret_policy::* — Secret<T> declassification policies (5) ─────
+// ── secret_policy::* — Secret<T> declassification policies (6) ─────
 //
 // `secret.declassify<secret_policy::AuditedLogging>(...)` etc.  Each
 // policy tag carries an audit obligation grep-discoverable by name.
+// AuthorizedReplay (fixy-A4-015) is the freshness-discharging policy
+// — the only shape that admits `as_secret + stale_to<N>` through the
+// Theory.h §30.14 corpus per Hunt-Sands 2008 erasure semantics.
 namespace secret_policy = ::crucible::safety::secret_policy;
 
 // ── hash_family::* — persistence semantics of hashes (2) ───────────
@@ -256,6 +259,14 @@ static_assert(std::is_same_v<vessel_trust::Validated,
 static_assert(std::is_same_v<secret_policy::AuditedLogging,
                              ::crucible::safety::secret_policy::AuditedLogging>,
     "fixy::tags::secret_policy::AuditedLogging must alias the substrate tag");
+
+// fixy-A4-015: AuthorizedReplay is the freshness-discharging policy.
+// Aliasing the substrate tag through the umbrella keeps the discipline
+// "grep secret_policy::AuthorizedReplay" load-bearing even when callers
+// only reach the policy through fixy::tags.
+static_assert(std::is_same_v<secret_policy::AuthorizedReplay,
+                             ::crucible::safety::secret_policy::AuthorizedReplay>,
+    "fixy::tags::secret_policy::AuthorizedReplay must alias the substrate tag");
 
 static_assert(std::is_same_v<hash_family::FamilyA,
                              ::crucible::hash_family::FamilyA>,
