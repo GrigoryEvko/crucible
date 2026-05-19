@@ -504,6 +504,55 @@ static_assert(!is_fixy_diag_v<::crucible::safety::diag::HotPathViolation>,
 static_assert(!is_fixy_diag_v<::crucible::safety::diag::EffectRowMismatch>,
     "Substrate diagnostic tags MUST NOT register as fixy diagnostics.");
 
+// ── fixy-A4-030: exhaustive substrate-catalog disjointness sentinel
+//
+// The two hand-picked spot-checks above witness HotPathViolation and
+// EffectRowMismatch specifically.  Pre-A4-030 that was the entire
+// disjointness proof — substrate-side renames (or new diagnostic
+// additions) were silently uncovered.  The fold below walks EVERY
+// `safety::diag::Catalog` entry via `std::make_index_sequence<
+// safety::diag::catalog_size>` and asserts `!is_fixy_diag_v<...>`
+// for each.  Adding a new substrate diagnostic now auto-extends the
+// witness; renaming an existing one still produces a clean
+// not-found diagnostic at the disjointness check rather than
+// silently passing.
+//
+// Cardinality sentinel (paired with Diagnostic.h's own
+// `static_assert(catalog_size == 31)`): a drift here flags the
+// fixy-side fold needs to be re-evaluated in lockstep with the
+// substrate Category enum (FOUND-E01 closure discipline).
+
+static_assert(::crucible::safety::diag::catalog_size == 31,
+    "fixy-A4-030 cardinality sentinel: safety::diag::catalog_size "
+    "drifted.  Update in lockstep with Diagnostic.h's matching "
+    "static_assert; the disjointness fold below walks every "
+    "substrate Catalog entry and must witness all 31.");
+
+namespace detail::substrate_disjointness {
+
+template <::std::size_t... Is>
+inline constexpr bool no_substrate_in_fixy_catalog(
+    ::std::index_sequence<Is...>) noexcept
+{
+    return (!is_fixy_diag_v<
+                 ::std::tuple_element_t<
+                     Is,
+                     ::crucible::safety::diag::Catalog>>
+            && ...);
+}
+
+}  // namespace detail::substrate_disjointness
+
+static_assert(
+    detail::substrate_disjointness::no_substrate_in_fixy_catalog(
+        ::std::make_index_sequence<
+            ::crucible::safety::diag::catalog_size>{}),
+    "fixy-A4-030: at least one substrate diagnostic in "
+    "safety::diag::Catalog ALSO registers as a fixy diagnostic. "
+    "Substrate Catalog and FixyCatalog are disjoint by design "
+    "(FOUND-E01 + FIXY-AUDIT-C8).  The fold walks every entry; a "
+    "fixy-side dual-export of a substrate tag would trip here.");
+
 static_assert(axis_for_tag_v<FixyNotEngaged_Type>
               == dim::DimensionAxis::Type,
     "axis_for_tag must invert tag_for_axis at the Type axis.");
