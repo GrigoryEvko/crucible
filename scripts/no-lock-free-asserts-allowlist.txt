@@ -1,0 +1,20 @@
+# scripts/no-lock-free-asserts-allowlist.txt — grandfathered atomic-T
+# sites without sibling static_assert(std::atomic<T>::is_always_lock_free).
+#
+# Format: `path::normalized_type` (one per line, relative to project root).
+# Type normalization: whitespace stripped, leading `std::` stripped.
+# Examples:
+#   include/crucible/x/Y.h::uint64_t   # exempts atomic<uint64_t> in Y.h
+#   include/crucible/x/Y.h::SwapState  # exempts atomic<SwapState>
+# Comments start with '#'.  Blank lines ignored.
+#
+# Every entry is a TODO awaiting a tracked migration.  When the
+# referenced fixy-A5-* or WRAP-* ticket lands, delete the line —
+# the guard then enforces no regression.
+#
+# Current state: empty.  The source-level discipline is complete
+# across the canopy/cntp/topology/warden scope (fixy-A5-029 sweep)
+# and this guard exists to prevent future regression.  If you add
+# a new atomic<T> field, either add the sibling static_assert OR
+# add an entry here referencing the migration ticket that will
+# add it.

@@ -508,6 +508,23 @@ add_test(NAME no_reinterpret_cast
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh)
 set_tests_properties(no_reinterpret_cast no_reinterpret_cast_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-105")
+# FIXY-U-086 cross-thread atomic sibling-assert discipline (CLAUDE.md §IX
+# + fixy-A5-029).  scripts/check-lock-free-asserts.sh flags any
+# `std::atomic<T>` declaration in canopy/cntp/topology/warden that lacks
+# a sibling `static_assert(std::atomic<T>::is_always_lock_free)` in the
+# same header — guards against the libatomic-silently-locks-on-prod-ARM
+# class.  Self-test mode plants four axes: covered (must not flag),
+# missing (must flag), inline LOCK-FREE-OK suppression (must not flag),
+# allowlist entry (must not flag).  Allowlist currently empty — the
+# source-level sweep is complete, this guard exists to prevent future
+# regression.
+add_test(NAME lock_free_asserts_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-lock-free-asserts.sh
+          --self-test)
+add_test(NAME lock_free_asserts
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-lock-free-asserts.sh)
+set_tests_properties(lock_free_asserts lock_free_asserts_self_test PROPERTIES
+    LABELS "ci_guard;fixy-U-086")
 # FIXY-U-106 wire: gen-mint-inventory.sh self-test + --check drift gate.
 # Complementary to test_fixy_mint_inventory (the structural CI gate of
 # U-002) — the script surfaces the WHOLE substrate-mint table with §XXI
