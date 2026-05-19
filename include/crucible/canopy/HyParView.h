@@ -7,6 +7,7 @@
 // TCP keepalive sockets and downstream event channels remain transport owners;
 // this substrate exposes typed values those layers can consume.
 
+#include <crucible/Philox.h>
 #include <crucible/Platform.h>
 #include <crucible/canopy/Swim.h>
 #include <crucible/cog/CogIdentity.h>
@@ -233,24 +234,31 @@ public:
             return std::unexpected(HyParViewError::EmptyActiveView);
         }
 
+        // FIXY-U-107 / fixy-A5-013: replace round-robin cursor with
+        // Philox-derived target selection.  Deterministic round-robin
+        // pinned partition-healing — under any persistent network
+        // partition the same peer subset got shuffled-into forever
+        // (the rotation order never breaks the partition).  Philox
+        // gives statistically uniform selection, breaking the pin.
+        // Seed mixes UUIDs of every joined peer (per-node unique,
+        // replay-safe via deterministic per-call counter).
+        const Philox::Ctr rand = next_random_();
         const std::uint16_t target_idx =
-            static_cast<std::uint16_t>(shuffle_cursor_ % active_count_);
-        shuffle_cursor_ = static_cast<std::uint16_t>(
-            (shuffle_cursor_ + std::uint16_t{1}) % active_count_);
+            static_cast<std::uint16_t>(rand[0] % active_count_);
 
         shuffle_plan_type out{.target = active_[target_idx]};
         const std::uint16_t limit = std::min<std::uint16_t>(
             config_.passive_random_walk_length.value(),
             passive_count_);
-        for (std::uint16_t i = 0; i < limit; ++i) {
-            const std::uint16_t idx = static_cast<std::uint16_t>(
-                (passive_cursor_ + i) % passive_count_);
-            out.sample.peers[out.sample.count] = passive_[idx];
-            ++out.sample.count;
-        }
         if (limit != 0) {
-            passive_cursor_ = static_cast<std::uint16_t>(
-                (passive_cursor_ + limit) % passive_count_);
+            const std::uint16_t passive_start = static_cast<std::uint16_t>(
+                rand[1] % passive_count_);
+            for (std::uint16_t i = 0; i < limit; ++i) {
+                const std::uint16_t idx = static_cast<std::uint16_t>(
+                    (passive_start + i) % passive_count_);
+                out.sample.peers[out.sample.count] = passive_[idx];
+                ++out.sample.count;
+            }
         }
         return out;
     }
@@ -335,12 +343,14 @@ private:
         if (active_count_ == config_.active_size.value()) {
             return std::unexpected(HyParViewError::ActiveViewFull);
         }
+        rng_seed_ = mix_uuid_seed_(rng_seed_, id.uuid);
         active_[active_count_] = id;
         ++active_count_;
         return {};
     }
 
     void add_passive_unique_(cog::CogIdentity peer) noexcept {
+        rng_seed_ = mix_uuid_seed_(rng_seed_, peer.uuid);
         if (passive_count_ < config_.passive_size.value()) {
             passive_[passive_count_] = peer;
             ++passive_count_;
@@ -349,10 +359,10 @@ private:
         if (passive_count_ == 0) {
             return;
         }
+        // FIXY-U-107: Philox-derived eviction slot (was passive_cursor_).
+        const Philox::Ctr rand = next_random_();
         const std::uint16_t idx =
-            static_cast<std::uint16_t>(passive_cursor_ % passive_count_);
-        passive_cursor_ = static_cast<std::uint16_t>(
-            (passive_cursor_ + std::uint16_t{1}) % passive_count_);
+            static_cast<std::uint16_t>(rand[0] % passive_count_);
         passive_[idx] = peer;
     }
 
@@ -391,12 +401,41 @@ private:
             active_count_ == config_.active_size.value()) {
             return;
         }
+        // FIXY-U-107: Philox-derived promotion pick (was passive_cursor_).
+        // Same partition-resistance rationale as shuffle_plan_.
+        const Philox::Ctr rand = next_random_();
         const std::uint16_t idx =
-            static_cast<std::uint16_t>(passive_cursor_ % passive_count_);
+            static_cast<std::uint16_t>(rand[0] % passive_count_);
         cog::CogIdentity promoted = passive_[idx];
         (void)remove_passive_(promoted.uuid);
         active_[active_count_] = promoted;
         ++active_count_;
+    }
+
+    // FIXY-U-107 / fixy-A5-013: per-instance Philox RNG state replaces
+    // the old passive_cursor_ / shuffle_cursor_ round-robin pair.
+    // Seed mixes the UUIDs of every peer that joins active or passive
+    // (via add_active_ + add_passive_unique_), so two HyParView
+    // instances seeded with different membership history pick
+    // different shuffle sequences.  Counter increments monotonically
+    // per RNG call; replay is bit-stable for a given event sequence.
+    //
+    // mix_uuid_seed_ uses FNV-1a-style avalanche; cryptographic
+    // quality is not required (the goal is partition-healing, not
+    // adversarial unpredictability — see fixy-A5-013 commentary).
+    [[nodiscard]] static constexpr std::uint64_t
+    mix_uuid_seed_(std::uint64_t seed, cog::Uuid u) noexcept {
+        seed ^= u.lo;
+        seed = seed * 0x100000001b3ULL;
+        seed ^= u.hi;
+        seed = seed * 0x100000001b3ULL;
+        return seed;
+    }
+
+    Philox::Ctr next_random_() noexcept {
+        const Philox::Ctr out = Philox::generate(rng_counter_, rng_seed_);
+        ++rng_counter_;
+        return out;
     }
 
     HyParViewConfig config_{};
@@ -404,8 +443,8 @@ private:
     safety::FixedArray<cog::CogIdentity, MaxPassive> passive_{};
     std::uint16_t active_count_ = 0;
     std::uint16_t passive_count_ = 0;
-    std::uint16_t passive_cursor_ = 0;
-    std::uint16_t shuffle_cursor_ = 0;
+    std::uint64_t rng_seed_ = 0;
+    std::uint64_t rng_counter_ = 0;
 };
 
 static_assert(!std::is_copy_constructible_v<HyParViewMembership<4, 8>>);

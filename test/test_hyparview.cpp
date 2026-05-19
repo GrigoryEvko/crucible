@@ -84,8 +84,13 @@ int main() {
     active_view = membership.active_view();
     bool saw_promoted = false;
     bool saw_dead = false;
+    // FIXY-U-107: promotion is Philox-derived (was passive_[0]).
+    // Invariant: some original passive peer (3/4/5) ends up in active.
     for (crucible::cog::CogIdentity const& id : active_view.as_span()) {
-        saw_promoted = saw_promoted || id.uuid == peer(3).uuid;
+        saw_promoted = saw_promoted ||
+                       id.uuid == peer(3).uuid ||
+                       id.uuid == peer(4).uuid ||
+                       id.uuid == peer(5).uuid;
         saw_dead = saw_dead || id.uuid == peer(2).uuid;
     }
     assert(saw_promoted);
