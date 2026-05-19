@@ -578,9 +578,67 @@ concept StanceForBinary =
        detail::TypeIsStanceCompatible<Type>
     && detail::TypeIsStanceCompatible<Policy>;
 
+// ─────────────────────────────────────────────────────────────────────
+// ── fixy-A4-025: CTAD-blocker sentinel ────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+//
+// `fixy::fn` does NOT support C++17 Class Template Argument Deduction
+// (CTAD).  Per CLAUDE.md §XXI Universal Mint Pattern ("single grep
+// target": `grep "mint_"` must find every value-carrying authorization
+// point), the value constructor is private (fixy-A4-018) and the only
+// way to obtain a value-carrying binding is through one of the three
+// canonical mint factories:
+//
+//   • `fixy::mint_fn<Type, Grants...>(value)` — explicit-grants form.
+//   • `fixy::mint_fn_for<UnaryStance>(value)` — stance-canonical unary.
+//   • `fixy::mint_fn_for<BinaryStance, Policy>(value)` — stance binary.
+//
+// Without a deduction guide, `fixy::fn{42}` fails at the deduction
+// step with an opaque "no viable deduction guide" diagnostic that
+// gives the user no actionable next step.  With the guide below, CTAD
+// succeeds at the deduction step and the resulting class instantiation
+// hits a dedicated tier-0 static_assert whose message names the three
+// mint factories explicitly.
+//
+// The sentinel's CLASS NAME (`fn_ctad_blocked_use_mint_fn_or_mint_fn_for`)
+// is itself the diagnostic — it appears verbatim in the compiler's
+// "required from `fixy::fn<fn_ctad_blocked_use_mint_fn_or_mint_fn_for>`"
+// trail, so even before the user reads the static_assert message they
+// see the sentinel's name in the error chain.
+
+namespace detail::ctad {
+    struct fn_ctad_blocked_use_mint_fn_or_mint_fn_for final {};
+}
+
 template <typename Type, typename... Grants>
 class fn {
     using ImplicitTypeMarker = detail::resolve::ImplicitTypeMarker;
+
+    // fixy-A4-025: tier-0 CTAD-blocker.  Fires when Type is the CTAD
+    // sentinel (set by the deduction guide that maps `fn(T)` to
+    // `fn<sentinel>`).  Placed BEFORE the H-03 diagnostic surface and
+    // the H-02 tier chain so its dedicated message surfaces FIRST in
+    // the compiler diagnostic stream.  Downstream tiers add
+    // `!fixy_a4_025_tier0_not_ctad_sentinel ||` to their silencer chain
+    // so a sentinel-typed instantiation only fires THIS message (not
+    // also tier-3 "missing axis" or tier-1 "non-payload type").
+    static constexpr bool fixy_a4_025_tier0_not_ctad_sentinel =
+        !std::is_same_v<Type,
+            detail::ctad::fn_ctad_blocked_use_mint_fn_or_mint_fn_for>;
+    static_assert(
+        fixy_a4_025_tier0_not_ctad_sentinel,
+        "fixy::fn<Type, Grants...> [tier 0: §XXI Universal Mint Pattern]: "
+        "CTAD (`fixy::fn{value}` / `fixy::fn(value)`) is NOT supported. "
+        "Every value-carrying fixy::fn must be born via a mint_* factory "
+        "so `grep \"mint_\"` finds every binding (CLAUDE.md §XXI). "
+        "Use one of:\n"
+        "  fixy::mint_fn<Type, Grants...>(value)         — explicit grants\n"
+        "  fixy::mint_fn_for<UnaryStance>(value)         — unary stance\n"
+        "  fixy::mint_fn_for<BinaryStance, Policy>(value) — binary stance\n"
+        "See fixy::stance:: for the canonical 12-stance catalog "
+        "(PureLinear/PureCopy/IoFunction/BgWorker/CtCrypto/SecretConsumer/"
+        "NamedSession/CooperativeBg/SyncBlocking/RealtimeHot/InternalRead/"
+        "TestOnly) and CLAUDE.md §XXI for the mint pattern rationale.");
 
     // fixy-H-03: surface the per-axis FixyNotEngaged_<Axis>,
     // FixyDuplicate_<Axis>, and FixyMalformedGrant diagnostic tag
@@ -604,12 +662,23 @@ class fn {
     // tag, instantiates the primary template, fires its inner
     // static_assert AND surfaces the tag in the instantiation chain.
 
-    using fixy_h03_tier2_diag_tag =
-        malformed_grant_or_void_t<ImplicitTypeMarker, Grants...>;
-    using fixy_h03_tier3_diag_tag =
-        missing_tag_or_void_t<ImplicitTypeMarker, Grants...>;
-    using fixy_h03_tier4_diag_tag =
-        duplicate_tag_or_void_t<ImplicitTypeMarker, Grants...>;
+    // fixy-A4-025: when the CTAD sentinel is detected, force every H-03
+    // diag_tag to resolve to `void` so the Diagnose<void> empty
+    // specialization is selected, no inner static_assert fires, and the
+    // user sees ONLY the tier-0 CTAD message above (clean single
+    // diagnostic instead of tier-0 + tier-3 + H-03 wall-of-errors).
+    using fixy_h03_tier2_diag_tag = std::conditional_t<
+        fixy_a4_025_tier0_not_ctad_sentinel,
+        malformed_grant_or_void_t<ImplicitTypeMarker, Grants...>,
+        void>;
+    using fixy_h03_tier3_diag_tag = std::conditional_t<
+        fixy_a4_025_tier0_not_ctad_sentinel,
+        missing_tag_or_void_t<ImplicitTypeMarker, Grants...>,
+        void>;
+    using fixy_h03_tier4_diag_tag = std::conditional_t<
+        fixy_a4_025_tier0_not_ctad_sentinel,
+        duplicate_tag_or_void_t<ImplicitTypeMarker, Grants...>,
+        void>;
 
     struct fixy_h03_tier2_diagnose
         : DiagnoseMalformedGrant<fixy_h03_tier2_diag_tag> {};
@@ -641,8 +710,16 @@ class fn {
     // the specific inspection helper a downstream author should consult
     // to identify the offending entry/axis.
 
+    // fixy-A4-025: tier 1 silences when tier-0 already failed (sentinel-
+    // typed instantiation routes here from the CTAD deduction guide).
+    // The sentinel struct passes type_is_accepted_payload (it's a non-
+    // cv, non-array, non-reference, non-function, non-void object type)
+    // so without this gate tier 1 would pass vacuously and tier 3 would
+    // fire on the empty Grants pack — adding the gate keeps the
+    // diagnostic stream clean (tier-0 alone).
     static constexpr bool fixy_h02_tier1_type_ok =
-        detail::accept::type_is_accepted_payload<Type>();
+        !fixy_a4_025_tier0_not_ctad_sentinel
+        || detail::accept::type_is_accepted_payload<Type>();
     static_assert(fixy_h02_tier1_type_ok,
         "fixy::fn<Type, Grants...> [tier 1: IsAccepted gate]: Type must be "
         "a non-cv, non-array, non-reference, non-function, non-void "
@@ -652,7 +729,8 @@ class fn {
         "(std::function_ref) before instantiating fixy::fn.");
 
     static constexpr bool fixy_h02_tier2_grants_well_formed =
-        !fixy_h02_tier1_type_ok
+        !fixy_a4_025_tier0_not_ctad_sentinel
+        || !fixy_h02_tier1_type_ok
         || AllGrantsWellFormed<ImplicitTypeMarker, Grants...>;
     static_assert(fixy_h02_tier2_grants_well_formed,
         "fixy::fn<Type, Grants...> [tier 2: IsAccepted gate / "
@@ -675,7 +753,8 @@ class fn {
     // modes — sketch mode does NOT bypass correctness, only relaxes
     // the "every axis must be engaged" rule for in-progress migrations.
     static constexpr bool fixy_h02_tier3_all_dims_engaged =
-        !fixy_h02_tier1_type_ok
+        !fixy_a4_025_tier0_not_ctad_sentinel
+        || !fixy_h02_tier1_type_ok
         || !fixy_h02_tier2_grants_well_formed
         || AllDimsEngaged<ImplicitTypeMarker, Grants...>
         || !fixy_is_strict;
@@ -694,7 +773,8 @@ class fn {
         tier3_missing_tag_message_v<ImplicitTypeMarker, Grants...>);
 
     static constexpr bool fixy_h02_tier4_unique_engagement =
-        !fixy_h02_tier1_type_ok
+        !fixy_a4_025_tier0_not_ctad_sentinel
+        || !fixy_h02_tier1_type_ok
         || !fixy_h02_tier2_grants_well_formed
         || !fixy_h02_tier3_all_dims_engaged
         || UniqueEngagementPerAxis<ImplicitTypeMarker, Grants...>;
@@ -718,7 +798,8 @@ class fn {
     // rules (a non-negotiable correctness floor) and basic input
     // shape (Type validity, grant well-formedness).
     static constexpr bool fixy_h02_tier5_not_in_corpus =
-        !fixy_h02_tier1_type_ok
+        !fixy_a4_025_tier0_not_ctad_sentinel
+        || !fixy_h02_tier1_type_ok
         || !fixy_h02_tier2_grants_well_formed
         || !fixy_h02_tier3_all_dims_engaged
         || !fixy_h02_tier4_unique_engagement
@@ -872,6 +953,30 @@ private:
 
     Type value_{};
 };
+
+// ─────────────────────────────────────────────────────────────────────
+// ── fixy-A4-025: CTAD deduction guide (intentional rejection) ─────
+// ─────────────────────────────────────────────────────────────────────
+//
+// This deduction guide INTENTIONALLY routes every CTAD attempt
+// `fixy::fn{value}` to `fn<detail::ctad::fn_ctad_blocked_use_mint_fn_or_mint_fn_for>`,
+// whose class-body tier-0 static_assert fires with a §XXI-naming
+// diagnostic that points the user at the canonical mint factories.
+//
+// Without this guide, `fixy::fn{42}` fails at the deduction step with
+// "no viable deduction guide" — no actionable hint.  With this guide,
+// the deduction step SUCCEEDS, the resulting `fn<sentinel>` instantiation
+// surfaces the sentinel CLASS NAME in the error chain, AND the tier-0
+// static_assert names `mint_fn` / `mint_fn_for<Stance>` explicitly.
+//
+// Detail-namespaced + sentinel-typed: the sentinel never appears in
+// user-facing code paths and can't be back-doored by accident (it's
+// inside `crucible::fixy::detail::ctad::`, not a top-level name).  A
+// dedicated negative-compile fixture (fixy_neg/) exercises BOTH the
+// CTAD route (`fixy::fn{42}`) and the direct-sentinel route
+// (`fixy::fn<sentinel>{}`) per HS14 ≥2 floor.
+template <typename T>
+fn(T) -> fn<detail::ctad::fn_ctad_blocked_use_mint_fn_or_mint_fn_for>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── mint_fn — Universal Mint Pattern (CLAUDE.md §XXI) ──────────────

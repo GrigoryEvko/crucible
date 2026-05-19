@@ -1370,6 +1370,21 @@ crucible_neg_compile_fixy_test(neg_fixy_fn_for_binary_const_type "StanceForBinar
 crucible_neg_compile_fixy_test(neg_fixy_fn_for_binary_void_policy "StanceForBinary")
 crucible_neg_compile_fixy_test(neg_fixy_fn_for_binary_ref_policy  "StanceForBinary")
 
+# fixy-A4-025: CTAD rejection — `fixy::fn{value}` is intentionally
+# non-functional per CLAUDE.md §XXI Universal Mint Pattern.  The
+# deduction guide routes CTAD to a sentinel-typed instantiation that
+# fires a dedicated tier-0 static_assert naming mint_fn / mint_fn_for
+# as the §XXI-correct entry points.  Two fixtures (HS14 ≥2 floor)
+# cover distinct mismatch classes: the deduction-guide route
+# (`fixy::fn{42}`) AND the direct-sentinel back-door
+# (`fixy::fn<sentinel>{}`).  Both regex on the sentinel CLASS NAME
+# (which appears verbatim in the compiler "required from" trail) OR
+# the tier-0 message prefix.
+crucible_neg_compile_fixy_test(neg_fixy_fn_ctad_attempt
+    "fn_ctad_blocked_use_mint_fn|tier 0")
+crucible_neg_compile_fixy_test(neg_fixy_fn_direct_sentinel_use
+    "fn_ctad_blocked_use_mint_fn|tier 0")
+
 # FIXY-AUDIT-E10 — HS14 floor for fixy::sess::mint_federation_channel.
 # Surface-level IsExecCtx<Ctx> gate + downstream protocol-shape gate.
 crucible_neg_compile_fixy_test(neg_fixy_federation_channel_non_ctx
