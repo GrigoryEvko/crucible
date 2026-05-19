@@ -71,6 +71,21 @@ class CreditFlowControl : public safety::Pinned<CreditFlowControl<MaxFlows>> {
     static_assert(sizeof(std::array<FlowSlot, 2>) >= 128,
                   "Two adjacent FlowSlots must span at least two cache lines");
 
+    // fixy-A5-029: cross-thread atomics on the backpressure RMW path must be
+    // lock-free on every supported target.  libstdc++ silently substitutes
+    // mutex-backed atomic ops on ISAs lacking the required intrinsic — a
+    // hidden mutex inside grant / consume would invert the credit-flow-control
+    // latency budget by 100-1000×.  Refuse to build instead of regressing.
+    static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
+                  "std::atomic<uint32_t> must be lock-free on this target — "
+                  "fixy-A5-029");
+    static_assert(std::atomic<std::uint16_t>::is_always_lock_free,
+                  "std::atomic<uint16_t> must be lock-free on this target — "
+                  "fixy-A5-029");
+    static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+                  "std::atomic<uint64_t> must be lock-free on this target — "
+                  "fixy-A5-029");
+
     class SpinGuard {
         std::atomic_flag& flag_;
 

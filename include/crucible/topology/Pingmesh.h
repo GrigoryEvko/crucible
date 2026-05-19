@@ -164,6 +164,15 @@ static_assert(sizeof(AtomicPingmeshPairCounters) >= 64,
               "AtomicPingmeshPairCounters occupies a full cache line; trailing "
               "padding is intentional — see false-sharing rationale above");
 
+// fixy-A5-029: cross-thread atomics on the canopy hot path must be lock-free
+// on every supported target.  libstdc++ silently substitutes mutex-backed
+// atomic ops on ISAs lacking the required intrinsic — a hidden mutex on the
+// per-pair RMW path would tank latency by 100-1000× (~10-40 ns MESI floor →
+// 1-5 μs futex).  Refuse to build instead of regressing silently.
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+              "std::atomic<uint64_t> must be lock-free on this target — see "
+              "fixy-A5-029");
+
 [[nodiscard]] constexpr std::uint32_t
 zscore_milli(std::uint64_t value,
              std::uint64_t mean,

@@ -168,6 +168,25 @@ class HotRegionRegistry {
         std::atomic<const char*> label{""};
     };
 
+    // fixy-A5-029: HotRegionRegistry::Slot is published by registration
+    // threads and read by every observer / Hardening consumer.  Each atomic
+    // member MUST be lock-free — libstdc++ silently substitutes mutex-backed
+    // atomic ops on ISAs lacking the required intrinsic, which would turn
+    // every read of the hot-region table into a mutex hop.  Refuse to build
+    // instead of regressing silently.
+    static_assert(std::atomic<void*>::is_always_lock_free,
+                  "std::atomic<void*> must be lock-free on this target — "
+                  "fixy-A5-029");
+    static_assert(std::atomic<size_t>::is_always_lock_free,
+                  "std::atomic<size_t> must be lock-free on this target — "
+                  "fixy-A5-029");
+    static_assert(std::atomic<bool>::is_always_lock_free,
+                  "std::atomic<bool> must be lock-free on this target — "
+                  "fixy-A5-029");
+    static_assert(std::atomic<const char*>::is_always_lock_free,
+                  "std::atomic<const char*> must be lock-free on this target "
+                  "— fixy-A5-029");
+
     [[nodiscard]] static void* claimed_addr() noexcept {
         return std::bit_cast<void*>(uintptr_t{1});
     }

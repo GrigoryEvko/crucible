@@ -204,6 +204,18 @@ static_assert(sizeof(AtomicProbeStats) >= 64,
               "AtomicProbeStats occupies a full cache line; trailing padding "
               "is intentional — see false-sharing rationale above");
 
+// fixy-A5-029: cross-thread atomics on the probe-recording path must be
+// lock-free on every supported target.  libstdc++ silently substitutes
+// mutex-backed atomic ops on ISAs lacking the required intrinsic — a hidden
+// mutex inside every probe outcome's fetch_add would invert the observe
+// hot-path latency budget.  Refuse to build instead of regressing silently.
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+              "std::atomic<uint64_t> must be lock-free on this target — "
+              "fixy-A5-029");
+static_assert(std::atomic<std::uint8_t>::is_always_lock_free,
+              "std::atomic<uint8_t> must be lock-free on this target — "
+              "fixy-A5-029");
+
 }  // namespace detail
 
 template <std::size_t MaxPeers>

@@ -409,6 +409,20 @@ private:
     std::atomic<bool> has_timestamp_{false};
 };
 
+// fixy-A5-029: cross-thread atomics on the PTP control path must be lock-free
+// on every supported target.  libstdc++ silently substitutes mutex-backed
+// atomic ops on ISAs lacking the required intrinsic — a hidden mutex inside
+// status snapshot publication would serialize every Senses reader against the
+// servo update loop.  Refuse to build instead of regressing silently.
+static_assert(std::atomic<std::uint8_t>::is_always_lock_free,
+              "std::atomic<uint8_t> must be lock-free on this target — fixy-A5-029");
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+              "std::atomic<uint64_t> must be lock-free on this target — fixy-A5-029");
+static_assert(std::atomic<std::int64_t>::is_always_lock_free,
+              "std::atomic<int64_t> must be lock-free on this target — fixy-A5-029");
+static_assert(std::atomic<bool>::is_always_lock_free,
+              "std::atomic<bool> must be lock-free on this target — fixy-A5-029");
+
 template <effects::IsExecCtx Ctx>
     requires CtxFitsPtpMint<Ctx>
 [[nodiscard]] PtpHandle

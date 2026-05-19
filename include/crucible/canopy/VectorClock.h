@@ -371,6 +371,16 @@ private:
 static_assert(!std::is_copy_constructible_v<VectorClock<1>>);
 static_assert(!std::is_move_constructible_v<VectorClock<1>>);
 static_assert(alignof(VectorClock<1>) == 64);
+
+// fixy-A5-029: VectorClock entries are RMW'd concurrently from every peer's
+// gossip handler — they MUST be lock-free.  libstdc++ silently substitutes
+// mutex-backed atomic ops on ISAs lacking the required intrinsic; a hidden
+// mutex on the per-entry fetch_max / store path would serialize every peer
+// against every other peer, defeating the entire CRDT-merge design.  Refuse
+// to build instead of regressing silently.
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+              "std::atomic<uint64_t> must be lock-free on this target — "
+              "fixy-A5-029");
 static_assert(std::is_trivially_copyable_v<VectorClockSnapshot<4>>);
 static_assert(std::is_trivially_destructible_v<VectorClockSnapshot<4>>);
 static_assert(sizeof(VectorClockSnapshot<4>) == 4 * sizeof(std::uint64_t));

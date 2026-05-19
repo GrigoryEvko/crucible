@@ -311,6 +311,15 @@ private:
     alignas(64) std::atomic<std::uint64_t> total_count_{0};
 };
 
+// fixy-A5-029: cross-thread atomics on the HDR record / percentile path must
+// be lock-free on every supported target.  libstdc++ silently substitutes
+// mutex-backed atomic ops on ISAs lacking the required intrinsic — a hidden
+// mutex inside every record() / total_count() would invert the observe
+// histogram's microsecond budget.  Refuse to build instead of regressing.
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+              "std::atomic<uint64_t> must be lock-free on this target — "
+              "fixy-A5-029");
+
 template <
     std::uint8_t Significant = 3,
     std::uint64_t MaxValue = 3'600'000'000'000ull,
