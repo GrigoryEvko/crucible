@@ -9,48 +9,5 @@
 # Stale entries (no reinterpret_cast at the listed line) red CI at
 # exit 2 so the allowlist drains in lockstep with substrate fixes.
 #
-# ── cntp/Fec.h (16 sites) ────────────────────────────────────────────
-# FIXY-U-082 / fixy-A5-028 (#1754, #1700): SIMD intrinsic loads/stores
-# in Reed-Solomon erasure-coding kernels.  AVX2 path uses
-# _mm256_loadu_si256 / _mm256_storeu_si256 / _mm256_shuffle_epi8 (all
-# take __m256i* arguments); NEON path uses vld1q_u8 / vst1q_u8 on
-# std::uint8_t*.  Migration target: replace with `<simd>` first-class
-# intrinsic interop (CLAUDE.md §IV) — `basic_vec` has operator __m256i
-# conversion so the cast disappears entirely.
-include/crucible/cntp/Fec.h:236
-include/crucible/cntp/Fec.h:238
-include/crucible/cntp/Fec.h:240
-include/crucible/cntp/Fec.h:262
-include/crucible/cntp/Fec.h:264
-include/crucible/cntp/Fec.h:270
-include/crucible/cntp/Fec.h:277
-include/crucible/cntp/Fec.h:279
-include/crucible/cntp/Fec.h:294
-include/crucible/cntp/Fec.h:296
-include/crucible/cntp/Fec.h:297
-include/crucible/cntp/Fec.h:324
-include/crucible/cntp/Fec.h:330
-include/crucible/cntp/Fec.h:331
-include/crucible/cntp/Fec.h:376
-include/crucible/cntp/Fec.h:385
-#
-# ── cntp/AfXdp.h (2 sites) ───────────────────────────────────────────
-# fixy-A5-028 + fixy-A5-023 (#1700, #1695): pointer-to-uintptr_t in
-# AfXdpSocket packet-address arithmetic.  Migration target:
-# `std::bit_cast<std::uintptr_t>(ptr)` — same semantics, no
-# strict-aliasing risk, allowed in constexpr context.
-include/crucible/cntp/AfXdp.h:340
-include/crucible/cntp/AfXdp.h:341
-#
-# ── cntp/Integrity.h (1 site) ────────────────────────────────────────
-# fixy-A5-028 (#1700): pointer-to-std::byte* for checksum-byte view.
-# Migration target: drop the cast — the underlying API accepts
-# `std::span<std::byte const>` constructible from any T* / size pair
-# via `std::as_bytes(std::span{ptr, n})`.
-include/crucible/cntp/Integrity.h:263
-#
-# ── cntp/_wip/GpuDirect.h (1 site) ───────────────────────────────────
-# fixy-A5-028 (#1700): pointer-to-uintptr_t for GPU peer-mapping
-# address registration (cuMemHostRegister-style ABI).  Migration
-# target: `std::bit_cast<std::uintptr_t>(ptr)`.
-include/crucible/cntp/_wip/GpuDirect.h:135
+# (No active grandfathered sites — FIXY-U-082 drained the cntp/Fec +
+# AfXdp + Integrity + GpuDirect cluster.)

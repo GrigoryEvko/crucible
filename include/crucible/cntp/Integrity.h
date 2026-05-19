@@ -259,9 +259,10 @@ template <ByteContiguousPayload Payload>
 payload_bytes(Payload const& payload) noexcept {
     auto const* ptr = std::data(payload);
     auto const count = static_cast<std::size_t>(std::size(payload));
-    return std::span<const std::byte>{
-        reinterpret_cast<std::byte const*>(ptr),
-        count};
+    // FIXY-U-082 / fixy-A5-028: std::as_bytes is the C++20 idiom for
+    // typed-span → byte-span — strict-aliasing-safe, zero-cost, no cast
+    // required.  Drops the reinterpret_cast entirely.
+    return std::as_bytes(std::span{ptr, count});
 }
 
 }  // namespace detail

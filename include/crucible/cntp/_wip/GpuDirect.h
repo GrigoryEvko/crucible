@@ -17,6 +17,7 @@
 #include <crucible/safety/RefinedAlgebra.h>
 #include <crucible/safety/Tagged.h>
 
+#include <bit>          // FIXY-U-082: std::bit_cast for pointer↔uintptr_t
 #include <cstdint>
 #include <expected>
 #include <string_view>
@@ -131,8 +132,10 @@ admit_gpu_virtual_address(std::uintptr_t address) noexcept {
 
 [[nodiscard]] inline std::expected<GpuVirtualAddress, GpuDirectError>
 admit_gpu_virtual_address(void const* address) noexcept {
+    // FIXY-U-082 / fixy-A5-028: std::bit_cast — C++26 idiom for
+    // pointer↔uintptr_t value reinterpretation, no strict-aliasing risk.
     return admit_gpu_virtual_address(
-        reinterpret_cast<std::uintptr_t>(address));
+        std::bit_cast<std::uintptr_t>(address));
 }
 
 [[nodiscard]] constexpr std::expected<GpuDirectByteCount, GpuDirectError>

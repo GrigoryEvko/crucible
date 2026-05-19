@@ -25,6 +25,7 @@
 #include <crucible/safety/Tagged.h>
 
 #include <array>
+#include <bit>          // FIXY-U-082: std::bit_cast for pointer↔uintptr_t
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -337,8 +338,11 @@ public:
             return std::unexpected(AfXdpError::PacketTooLarge);
         }
         byte_type* base = umem_.peek_mut().data();
-        const auto base_addr = reinterpret_cast<std::uintptr_t>(base);
-        const auto packet_addr = reinterpret_cast<std::uintptr_t>(packet.data());
+        // FIXY-U-082 / fixy-A5-028: std::bit_cast is the C++26 idiom for
+        // pointer↔uintptr_t value reinterpretation; same machine code as
+        // reinterpret_cast but constexpr-friendly + no strict-aliasing risk.
+        const auto base_addr = std::bit_cast<std::uintptr_t>(base);
+        const auto packet_addr = std::bit_cast<std::uintptr_t>(packet.data());
         if (packet_addr < base_addr) {
             return std::unexpected(AfXdpError::InvalidFrameAddress);
         }

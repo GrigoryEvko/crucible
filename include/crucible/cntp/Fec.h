@@ -23,6 +23,7 @@
 #include <expected>
 #include <iterator>
 #include <limits>
+#include <memory>        // FIXY-U-082: std::start_lifetime_as for SIMD type-pun
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -227,17 +228,24 @@ make_nibble_tables(std::uint8_t coeff) noexcept {
 #endif
 
 #if defined(__AVX2__)
+// FIXY-U-082 / fixy-A5-028: std::start_lifetime_as is the C++23 idiom for
+// safely type-punning byte storage to an intrinsic vector type — no UB
+// from strict aliasing, no reinterpret_cast at the kernel level.  Full
+// std::simd migration deferred: <simd> is __SSE2__-gated (empty on ARM)
+// and the kernels here use AVX2/NEON-exclusive shuffle ops (_mm256_shuffle_epi8
+// / vqtbl1q_u8) for GF(2^8) nibble-table lookup that std::simd doesn't
+// expose at this level of detail.
 CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst,
                                  std::byte const* src,
                                  std::size_t len) noexcept {
     std::size_t i = 0;
     for (; i + 32 <= len; i += 32) {
         auto const a = _mm256_loadu_si256(
-            reinterpret_cast<__m256i const*>(dst + i));
+            std::start_lifetime_as<const __m256i>(dst + i));
         auto const b = _mm256_loadu_si256(
-            reinterpret_cast<__m256i const*>(src + i));
+            std::start_lifetime_as<const __m256i>(src + i));
         _mm256_storeu_si256(
-            reinterpret_cast<__m256i*>(dst + i),
+            std::start_lifetime_as<__m256i>(dst + i),
             _mm256_xor_si256(a, b));
     }
     for (; i < len; ++i) {
@@ -259,24 +267,24 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst,
 
     const auto tables = make_nibble_tables(coeff);
     const auto lo_table = _mm256_load_si256(
-        reinterpret_cast<__m256i const*>(tables.lo.data()));
+        std::start_lifetime_as<const __m256i>(tables.lo.data()));
     const auto hi_table = _mm256_load_si256(
-        reinterpret_cast<__m256i const*>(tables.hi.data()));
+        std::start_lifetime_as<const __m256i>(tables.hi.data()));
     const auto mask = _mm256_set1_epi8(0x0f);
 
     std::size_t i = 0;
     for (; i + 32 <= len; i += 32) {
         const auto bytes = _mm256_loadu_si256(
-            reinterpret_cast<__m256i const*>(src + i));
+            std::start_lifetime_as<const __m256i>(src + i));
         const auto lo = _mm256_and_si256(bytes, mask);
         const auto hi = _mm256_and_si256(_mm256_srli_epi16(bytes, 4), mask);
         const auto prod = _mm256_xor_si256(
             _mm256_shuffle_epi8(lo_table, lo),
             _mm256_shuffle_epi8(hi_table, hi));
         const auto old = _mm256_loadu_si256(
-            reinterpret_cast<__m256i const*>(dst + i));
+            std::start_lifetime_as<const __m256i>(dst + i));
         _mm256_storeu_si256(
-            reinterpret_cast<__m256i*>(dst + i),
+            std::start_lifetime_as<__m256i>(dst + i),
             _mm256_xor_si256(old, prod));
     }
     for (; i < len; ++i) {
@@ -285,16 +293,18 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst,
     }
 }
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
+// FIXY-U-082 / fixy-A5-028: same start_lifetime_as discipline as AVX2 path.
 CRUCIBLE_HOT void xor_bytes_neon(std::byte* dst,
                                  std::byte const* src,
                                  std::size_t len) noexcept {
     std::size_t i = 0;
     for (; i + 16 <= len; i += 16) {
         auto const a = vld1q_u8(
-            reinterpret_cast<std::uint8_t const*>(dst + i));
+            std::start_lifetime_as<const std::uint8_t>(dst + i));
         auto const b = vld1q_u8(
-            reinterpret_cast<std::uint8_t const*>(src + i));
-        vst1q_u8(reinterpret_cast<std::uint8_t*>(dst + i), veorq_u8(a, b));
+            std::start_lifetime_as<const std::uint8_t>(src + i));
+        vst1q_u8(std::start_lifetime_as<std::uint8_t>(dst + i),
+                 veorq_u8(a, b));
     }
     for (; i < len; ++i) {
         dst[i] ^= src[i];
@@ -321,14 +331,14 @@ CRUCIBLE_HOT void mul_xor_neon(std::byte* dst,
     std::size_t i = 0;
     for (; i + 16 <= len; i += 16) {
         const auto bytes = vld1q_u8(
-            reinterpret_cast<std::uint8_t const*>(src + i));
+            std::start_lifetime_as<const std::uint8_t>(src + i));
         const auto lo = vandq_u8(bytes, mask);
         const auto hi = vandq_u8(vshrq_n_u8(bytes, 4), mask);
         const auto prod = veorq_u8(vqtbl1q_u8(lo_table, lo),
                                    vqtbl1q_u8(hi_table, hi));
         const auto old = vld1q_u8(
-            reinterpret_cast<std::uint8_t const*>(dst + i));
-        vst1q_u8(reinterpret_cast<std::uint8_t*>(dst + i),
+            std::start_lifetime_as<const std::uint8_t>(dst + i));
+        vst1q_u8(std::start_lifetime_as<std::uint8_t>(dst + i),
                  veorq_u8(old, prod));
     }
     for (; i < len; ++i) {
@@ -372,19 +382,19 @@ CRUCIBLE_HOT void mul_xor(std::byte* dst,
 template <ByteContiguousBuffer Buffer>
 [[nodiscard]] inline std::span<const std::byte>
 bytes(Buffer const& buffer) noexcept {
-    return {
-        reinterpret_cast<std::byte const*>(std::data(buffer)),
-        static_cast<std::size_t>(std::size(buffer)),
-    };
+    // FIXY-U-082 / fixy-A5-028: std::as_bytes is the C++20 typed-span →
+    // byte-span idiom; strict-aliasing-safe, zero-cost.
+    return std::as_bytes(std::span{
+        std::data(buffer),
+        static_cast<std::size_t>(std::size(buffer))});
 }
 
 template <MutableByteContiguousBuffer Buffer>
 [[nodiscard]] inline std::span<std::byte>
 mutable_bytes(Buffer& buffer) noexcept {
-    return {
-        reinterpret_cast<std::byte*>(std::data(buffer)),
-        static_cast<std::size_t>(std::size(buffer)),
-    };
+    return std::as_writable_bytes(std::span{
+        std::data(buffer),
+        static_cast<std::size_t>(std::size(buffer))});
 }
 
 }  // namespace detail
