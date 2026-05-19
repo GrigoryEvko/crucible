@@ -114,6 +114,8 @@
 
 #include <crucible/Platform.h>              // CRUCIBLE_PURE for getters
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
+#include <crucible/effects/EffectRow.h>     // row_contains_v
+#include <crucible/effects/ExecCtx.h>       // IsExecCtx, row_type_of_t
 #include <crucible/perf/Senses.h>           // Senses + SchedSwitch facade
 #include <crucible/warden/Policy.h>             // Policy + SchedClass + budget
 #include <crucible/safety/Checked.h>        // crucible::sat::sub_sat
@@ -347,6 +349,44 @@ static_assert(sizeof(DeadlineWatchdog) <= 64,
 // the order.  Stops at SchedClass::Other — once we're already on the
 // time-shared class, further demotion is meaningless (Idle is a
 // different semantic, not a "weaker" RT class).
+// ── §XXI Universal Mint Pattern — mint_deadline_watchdog (FIXY-U-084) ─
+//
+// Wraps the explicit `DeadlineWatchdog(Senses*, Policy, Init)` ctor
+// with a Ctx-bound §XXI factory.  The bare ctor remains callable
+// during the migration period (a sweep of in-tree callers belongs to
+// later production-side fixy tasks), but new sites should mint via
+// this factory so the Init-row admission is enforced at the type
+// system, not just by passing an `effects::Init{}` cap-tag.
+//
+// Concept: CtxFitsDeadlineWatchdogMint = IsExecCtx<Ctx> ∧
+//          row_contains_v<row_type_of_t<Ctx>, Effect::Init>.
+//
+// Why Init: construction reads Senses + steady_clock + Policy fields
+// to baseline the rolling window.  Hot foreground / Bg-drain contexts
+// must not stand up a fresh watchdog (they should observe one minted
+// at Init time by the Keeper / bench harness).
+//
+// Body is constexpr-noexcept and constructs in place; no allocation.
+
+template <class Ctx>
+concept CtxFitsDeadlineWatchdogMint =
+       effects::IsExecCtx<Ctx>
+    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
+                               effects::Effect::Init>;
+
+template <effects::IsExecCtx Ctx>
+    requires CtxFitsDeadlineWatchdogMint<Ctx>
+[[nodiscard]] constexpr DeadlineWatchdog
+mint_deadline_watchdog(Ctx const&,
+                       const ::crucible::perf::Senses* senses,
+                       const Policy& policy) noexcept {
+    return DeadlineWatchdog{senses, policy, ::crucible::effects::Init{}};
+}
+
+static_assert(CtxFitsDeadlineWatchdogMint<effects::ColdInitCtx>);
+static_assert(!CtxFitsDeadlineWatchdogMint<effects::BgDrainCtx>);
+static_assert(!CtxFitsDeadlineWatchdogMint<effects::HotFgCtx>);
+
 [[nodiscard, gnu::const]] inline SchedClass
 demote_one_step(SchedClass c) noexcept {
     switch (c) {

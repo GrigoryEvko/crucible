@@ -61,7 +61,7 @@ if ! command -v rg >/dev/null 2>&1; then
 fi
 
 scan_root="${CRUCIBLE_MINT_INVENTORY_TEST_ROOT:-$root}"
-trees=(safety effects algebra concurrent sessions permissions bridges handles cipher)
+trees=(safety effects algebra concurrent sessions permissions bridges handles cipher warden)
 
 # ── Extract qualifiers for one declaration site ──────────────────────
 # Inputs: file path (absolute), line number.

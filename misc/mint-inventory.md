@@ -26,7 +26,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-19T21:04:10Z`.
+Snapshot generated: `2026-05-19T21:36:03Z`.
 
 ## bridges/
 
@@ -156,8 +156,17 @@ Snapshot generated: `2026-05-19T21:04:10Z`.
 | `mint_writer_runtime_session` | `include/crucible/sessions/SwmrSession.h:241` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:139` | HS14: 0 ⚠ |
 | `mint_writer_session` | `include/crucible/sessions/SwmrSession.h:222` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:137` | HS14: 1 ⚠ |
 
+## warden/
+
+| mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h:380` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_hardening` | `include/crucible/warden/Hardening.h:494` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h:272` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h:466` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 0 ⚠ |
+
 ## Summary
 
-- Total substrate mints: 93
-- Missing fixy re-export: 15
+- Total substrate mints: 97
+- Missing fixy re-export: 19
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

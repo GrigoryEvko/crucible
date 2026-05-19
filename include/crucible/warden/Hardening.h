@@ -25,6 +25,10 @@
 #include "Registry.h"
 #include "CpuTopology.h"
 
+#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/ExecCtx.h>
+
 #include <bit>
 #include <cerrno>
 #include <cstdint>
@@ -466,5 +470,33 @@ class Hardening {
 [[nodiscard]] inline AppliedPolicy apply(const Policy& p) noexcept {
     return Hardening::apply(p);
 }
+
+// ── §XXI Universal Mint Pattern — mint_hardening (FIXY-U-084) ─────────
+//
+// CtxFitsHardeningMint admits only contexts whose effect row carries the
+// Init capability.  Hardening::apply() performs Linux syscalls
+// (sched_setaffinity, sched_setattr, mlock2, madvise(MADV_HUGEPAGE/
+// MADV_COLLAPSE), prctl(PR_SET_THP_DISABLE)) which are process-wide
+// state mutations belonging to the startup-only Init row.  Hot foreground
+// and background-drain contexts must not engage this surface.
+//
+// The mint is the §XXI authorization point; downstream apply() callers
+// can continue to use the bare free function during the migration period.
+template <class Ctx>
+concept CtxFitsHardeningMint =
+       effects::IsExecCtx<Ctx>
+    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
+                               effects::Effect::Init>;
+
+template <effects::IsExecCtx Ctx>
+    requires CtxFitsHardeningMint<Ctx>
+[[nodiscard]] inline AppliedPolicy
+mint_hardening(Ctx const&, const Policy& policy) noexcept {
+    return Hardening::apply(policy);
+}
+
+static_assert(CtxFitsHardeningMint<effects::ColdInitCtx>);
+static_assert(!CtxFitsHardeningMint<effects::BgDrainCtx>);
+static_assert(!CtxFitsHardeningMint<effects::HotFgCtx>);
 
 } // namespace crucible::warden

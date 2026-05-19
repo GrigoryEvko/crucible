@@ -2956,6 +2956,23 @@ crucible_neg_compile_warden_test(neg_quarantine_override_missing_permission
 crucible_neg_compile_warden_test(neg_quarantine_zero_slots
     "static assertion failed|QuarantinePolicy requires Cog slots|MaxCogs > 0")
 
+# ─── FIXY-U-084 §XXI Universal Mint Pattern for warden/ hubs ──────
+# Three new mints (mint_hardening / mint_hot_region_registry_handle /
+# mint_deadline_watchdog) each ship two HS14 neg-compile fixtures
+# proving the CtxFits* concept gates fire on missing Init.
+crucible_neg_compile_warden_test(neg_hardening_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsHardeningMint|Init|Bg")
+crucible_neg_compile_warden_test(neg_hardening_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsHardeningMint|Init|HotFgCtx")
+crucible_neg_compile_warden_test(neg_hot_region_registry_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsHotRegionRegistryMint|Init|Bg")
+crucible_neg_compile_warden_test(neg_hot_region_registry_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsHotRegionRegistryMint|Init|HotFgCtx")
+crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsDeadlineWatchdogMint|Init|Bg")
+crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsDeadlineWatchdogMint|Init|HotFgCtx")
+
 # ─── GAPS-130 cntp/dataplane/Xdp.h soundness gates ────────────────
 #
 #   * neg_xdp_raw_program_spec — NIC admission requires source::Xdp

@@ -26,6 +26,11 @@
 // runs — that's the Policy's job via `apply()`. Self-registration is
 // cheap (one slot CAS) and safe in every build configuration.
 
+#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/ExecCtx.h>
+#include <crucible/safety/Pinned.h>
+
 #include <array>
 #include <atomic>
 #include <bit>
@@ -206,5 +211,70 @@ inline void register_hot_region(void*       addr,
 inline void unregister_hot_region(void* addr) noexcept {
     HotRegionRegistry::instance().unregister_region(addr);
 }
+
+// ── §XXI Universal Mint Pattern — mint_hot_region_registry_handle ─────
+//
+// HotRegionRegistry is a Pinned singleton; the mint can't synthesize a
+// fresh instance.  Instead it returns a HotRegionRegistryHandle — a thin
+// 1-byte Pinned RAII handle that admits registry access only with proof
+// of an Init-row Ctx.  Converts what was previously an implicit global
+// access (`HotRegionRegistry::instance()` at any call site) into a
+// type-gated authorization with a single grep target (`mint_hot_region_
+// registry_handle`).
+//
+// Why Init: every public mutating member (register_region /
+// unregister_region) writes to the process-wide registry table backing
+// `Hardening::apply()`.  Hot-path code must not register/unregister hot
+// regions; that work belongs to Init-row Keeper/component init paths.
+// snapshot() / size() are also routed through the handle for grep
+// uniformity, even though they're const — the handle's existence is the
+// proof, not its usage.
+
+class HotRegionRegistryHandle final
+    : public ::crucible::safety::Pinned<HotRegionRegistryHandle> {
+ public:
+    HotRegionRegistryHandle() noexcept = default;
+
+    void register_region(void*       addr,
+                         size_t      len,
+                         bool        huge_hint = false,
+                         const char* label     = "") const noexcept {
+        HotRegionRegistry::instance().register_region(addr, len, huge_hint, label);
+    }
+
+    void unregister_region(void* addr) const noexcept {
+        HotRegionRegistry::instance().unregister_region(addr);
+    }
+
+    [[nodiscard]] std::inplace_vector<HotRegion, HotRegionRegistry::max_regions>
+    snapshot() const noexcept {
+        return HotRegionRegistry::instance().snapshot();
+    }
+
+    [[nodiscard]] size_t size() const noexcept {
+        return HotRegionRegistry::instance().size();
+    }
+};
+
+static_assert(sizeof(HotRegionRegistryHandle) == 1,
+    "HotRegionRegistryHandle must be the 1-byte authorization token; "
+    "the underlying registry state lives in the Pinned singleton.");
+
+template <class Ctx>
+concept CtxFitsHotRegionRegistryMint =
+       effects::IsExecCtx<Ctx>
+    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
+                               effects::Effect::Init>;
+
+template <effects::IsExecCtx Ctx>
+    requires CtxFitsHotRegionRegistryMint<Ctx>
+[[nodiscard]] constexpr HotRegionRegistryHandle
+mint_hot_region_registry_handle(Ctx const&) noexcept {
+    return HotRegionRegistryHandle{};
+}
+
+static_assert(CtxFitsHotRegionRegistryMint<effects::ColdInitCtx>);
+static_assert(!CtxFitsHotRegionRegistryMint<effects::BgDrainCtx>);
+static_assert(!CtxFitsHotRegionRegistryMint<effects::HotFgCtx>);
 
 } // namespace crucible::warden
