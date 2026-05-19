@@ -1651,8 +1651,12 @@ crucible_neg_compile_fixy_test(neg_fixy_cap_mint_from_ctx_wrong_effect
 # splits_into / splits_into_pack):
 crucible_neg_compile_fixy_test(neg_fixy_perm_root_no_row_admission
     "CtxAdmitsPermission|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perm_root_non_exec_ctx
+    "IsExecCtx|constraints not satisfied|associated constraints are not satisfied|no matching function")
 crucible_neg_compile_fixy_test(neg_fixy_perm_fork_ctx_no_bg
     "CtxFitsPermissionFork|row_contains_v|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perm_fork_no_splits_into_pack
+    "CtxFitsPermissionFork|splits_into_pack|constraints not satisfied|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_perm_split_undeclared
     "splits_into")
 crucible_neg_compile_fixy_test(neg_fixy_perm_combine_undeclared
@@ -1673,8 +1677,12 @@ crucible_neg_compile_fixy_test(neg_fixy_perm_combine_n_undeclared
 # reject identically to the substrate:
 crucible_neg_compile_fixy_test(neg_fixy_contract_promote_wrong_direction
     "PromotableTier|can_promote_tier|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_contract_promote_source_tier_mismatch
+    "no matching function|could not match|deduced conflicting|cannot convert.*CipherTier")
 crucible_neg_compile_fixy_test(neg_fixy_contract_demote_wrong_direction
     "DemotableTier|can_demote_tier|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_contract_demote_source_tier_mismatch
+    "no matching function|could not match|deduced conflicting|cannot convert.*CipherTier")
 
 # ── FIXY-MINT-Sess — fixy/Sess.h re-export of session minters
 # (mint_session=deleted, mint_permissioned_session, mint_channel,
