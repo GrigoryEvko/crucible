@@ -1,0 +1,89 @@
+# scripts/syscall-capability-allowlist.txt — grandfathered syscall sites (FIXY-U-100).
+#
+# Each entry: `path:line — <effects::* capability proof>`.
+#
+# Discipline (fixy-A5-016 + CLAUDE.md §1): every line below documents
+# WHICH effects::* capability the caller holds (Init / IO / Block / Bg).
+# A reviewer reading the allowlist confirms each grandfathered site's
+# capability admission is sound; new sites added to the production
+# code without a corresponding entry here fail the CI guard.
+#
+# Format:
+#   <path>:<line> — <prose explaining the capability admission>
+#   # comment lines start with `#`
+#   blank lines ignored
+#
+# When a syscall site is REMOVED or RELOCATED, prune / update the
+# corresponding entry.  The bench harness check-syscall-capability.sh
+# --self-test verifies the allowlist mechanism on every run.
+
+# ── warden/Hardening.h ────────────────────────────────────────────────
+# Init-row process hardening: sched_setattr, sched_setaffinity, mlock2,
+# munlock, madvise, prctl.  All sites are inside Hardening::apply() or
+# its detail helpers, reachable only from mint_hardening() (FIXY-U-084)
+# which gates on CtxFitsHardeningMint = IsExecCtx ∧ row_contains<Init>.
+include/crucible/warden/Hardening.h:86  — effects::Init via Hardening::apply (mint_hardening ctx-bound)
+include/crucible/warden/Hardening.h:90  — effects::Init via Hardening::apply
+include/crucible/warden/Hardening.h:95  — effects::Init via Hardening::apply
+include/crucible/warden/Hardening.h:166 — effects::Init via AppliedPolicy::revert (RAII pair of apply)
+include/crucible/warden/Hardening.h:171 — effects::Init via AppliedPolicy::revert
+include/crucible/warden/Hardening.h:176 — effects::Init via AppliedPolicy::revert (prctl THP re-enable)
+include/crucible/warden/Hardening.h:241 — effects::Init via Hardening::apply (sched_getaffinity)
+include/crucible/warden/Hardening.h:248 — effects::Init via Hardening::apply (sched_setaffinity)
+include/crucible/warden/Hardening.h:342 — effects::Init via Hardening::apply (prctl THP disable)
+include/crucible/warden/Hardening.h:388 — effects::Init via Hardening::lock_region (mlock fallback)
+include/crucible/warden/Hardening.h:416 — effects::Init via Hardening::hint_hugepage (madvise MADV_HUGEPAGE)
+include/crucible/warden/Hardening.h:441 — effects::Init via Hardening::collapse_hugepage (madvise MADV_COLLAPSE)
+
+# ── perf/ — BPF program load + perf_event_open ────────────────────────
+# Init-row BPF loaders and perf event setup.  All sites belong to
+# load_subset() / detail::load_* helpers reachable only from
+# Senses::load_subset(effects::Init), which gates the row at the
+# function signature (fixy-A5-026, FIXY-U-088).
+include/crucible/perf/detail/BpfLoader.h:147 — effects::Init via BpfLoader (kernel BPF program upload)
+src/perf/LockContention.cpp:89  — effects::Init via LockContention::attach
+src/perf/LockContention.cpp:223 — effects::Init via LockContention::detach
+src/perf/PmuSample.cpp:137 — effects::Init via PmuSample::open
+src/perf/PmuSample.cpp:257 — effects::Init via PmuSample::poll (ioctl PERF_EVENT_IOC_ENABLE)
+src/perf/PmuSample.cpp:472 — effects::Init via PmuSample::close
+src/perf/SchedSwitch.cpp:140 — effects::Init via SchedSwitch::attach
+src/perf/SchedSwitch.cpp:284 — effects::Init via SchedSwitch::detach
+src/perf/SchedTpBtf.cpp:85  — effects::Init via SchedTpBtf::attach
+src/perf/SchedTpBtf.cpp:218 — effects::Init via SchedTpBtf::detach
+src/perf/SenseHub.cpp:134 — effects::Init via SenseHub::load_subset
+src/perf/SenseHub.cpp:293 — effects::Init via SenseHub::detach
+src/perf/SyscallLatency.cpp:82  — effects::Init via SyscallLatency::attach
+src/perf/SyscallLatency.cpp:213 — effects::Init via SyscallLatency::detach
+src/perf/SyscallTpBtf.cpp:78  — effects::Init via SyscallTpBtf::attach
+src/perf/SyscallTpBtf.cpp:204 — effects::Init via SyscallTpBtf::detach
+
+# ── cntp/ — congestion telemetry + pacing ─────────────────────────────
+# IO-row socket option / netlink syscalls.  Bg-drain context paths
+# (Pacing.cpp netlink loop hardened in fixy-A5-004 + A5-036, FIXY-U-089).
+src/cntp/CongestionControl.cpp:197 — effects::IO via CongestionControl::query (TCP_CC_INFO getsockopt)
+src/cntp/CongestionControl.cpp:223 — effects::IO via CongestionControl::query (TCP_INFO getsockopt)
+src/cntp/IncastControl.cpp:33 — effects::IO via IncastControl::apply (TCP_QUICKACK setsockopt)
+src/cntp/Pacing.cpp:160 — effects::IO+Block via Pacing::netlink_open (socket AF_NETLINK)
+src/cntp/Pacing.cpp:175 — effects::IO via Pacing::netlink_open (bind to PID, fixy-A5-036)
+src/cntp/Pacing.cpp:189 — effects::IO via Pacing::query (NETLINK send)
+src/cntp/Pacing.cpp:204 — effects::IO+Block via Pacing::query (NETLINK recv, SO_RCVTIMEO-bounded fixy-A5-004)
+src/cntp/Pacing.cpp:212 — effects::IO via Pacing::netlink_close (close fd)
+src/cntp/Pacing.cpp:293 — effects::IO via Pacing::set (NETLINK setsockopt)
+
+# ── topology/ — link telemetry + PTP ──────────────────────────────────
+# IO-row socket / device ioctl.  Per-link RTT + bandwidth telemetry
+# (CongestionTelemetry hardened in fixy-A5-041, FIXY-U-089).
+src/topology/CongestionTelemetry.cpp:230 — effects::IO via CongestionTelemetry::harvest_socket (TCP_INFO getsockopt)
+src/topology/CongestionTelemetry.cpp:254 — effects::IO via CongestionTelemetry::harvest_socket (TCP_CC_INFO getsockopt)
+src/topology/Ptp.cpp:221 — effects::IO via Ptp::open (socket SOCK_PACKET)
+src/topology/Ptp.cpp:259 — effects::IO via Ptp::open (SIOCETHTOOL ioctl, IFNAMSIZ bounded fixy-A5-027)
+src/topology/Ptp.cpp:296 — effects::IO via Ptp::close (PTP_CLOCK_UNREGISTER ioctl)
+src/topology/Ptp.cpp:326 — effects::IO via Ptp::close (close fd)
+
+# ── sessions/SessionEventLog.h — durable session event journal ────────
+# IO-row mmap/munmap for log file backing.  Reachable only from
+# Init-row Cipher.warm_tier setup; mmap site IS the durability proof.
+include/crucible/sessions/SessionEventLog.h:173 — effects::IO via SessionEventLog::open (mmap PROT_READ|PROT_WRITE)
+include/crucible/sessions/SessionEventLog.h:174 — effects::IO via SessionEventLog::open (mmap MAP_SHARED)
+include/crucible/sessions/SessionEventLog.h:183 — effects::IO via SessionEventLog::close (munmap)
+include/crucible/sessions/SessionEventLog.h:191 — effects::IO via SessionEventLog::truncate (munmap on resize)

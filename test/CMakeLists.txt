@@ -508,6 +508,23 @@ add_test(NAME no_reinterpret_cast
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh)
 set_tests_properties(no_reinterpret_cast no_reinterpret_cast_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-105")
+# FIXY-U-100 syscall capability discipline (closes fixy-A5-016
+# regression-prevention surface).  scripts/check-syscall-capability.sh
+# flags every NEW direct Linux syscall invocation outside the allowlist
+# (sched_setattr, mmap, ioctl, socket family, prctl, madvise, ...).
+# 47 grandfathered sites live in scripts/syscall-capability-allowlist.txt,
+# each with explicit effects::* capability proof (Init/IO/Bg/Block);
+# new sites must be added with cap proof, forcing review through the
+# capability-discipline surface.  Self-test verifies drift detection,
+# allowlist exemption, inline `// SYSCALL-CAP-OK` marker, and comment
+# filter all work.
+add_test(NAME syscall_capability_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.sh
+          --self-test)
+add_test(NAME syscall_capability
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.sh)
+set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
+    LABELS "ci_guard;fixy-U-100")
 # FIXY-U-104 fixy::is:: alias-parity enforcement (closes fixy-L-05 +
 # fixy-L-06 going forward).  scripts/check-isx-parity.sh diffs the
 # public `_v` traits + `_t` slot-extractor aliases in safety/Is*.h
