@@ -28,15 +28,15 @@
 //   RecordingPermissionedSessionHandle<CheckpointedSession<B, R>, PS, Res, L>
 //
 // Phase 2 (fixy-A2-006b/c/d/e) ships the delegation family — Delegate /
-// Accept / EpochedDelegate / EpochedAccept.  Delegate (fixy-A2-006b),
-// Accept (fixy-A2-006c), and EpochedDelegate (fixy-A2-006d) ship in
-// this header; EpochedAccept follows as fixy-A2-006e.  Design decision
-// for the delegation family: the inner-handle PSH (whether handed off
-// by Delegate or produced by Accept) is passed THROUGH the wrapper
-// unchanged.  Recipient-side auditing on the delegated channel is
-// opt-in via a separate mint_recording_session call on the inner PSH
-// — auto-wrapping would impose a hidden log/role assignment the
-// recipient may not want.
+// Accept / EpochedDelegate / EpochedAccept.  All four ship in this
+// header: Delegate (fixy-A2-006b), Accept (fixy-A2-006c),
+// EpochedDelegate (fixy-A2-006d), EpochedAccept (fixy-A2-006e).
+// Design decision for the delegation family: the inner-handle PSH
+// (whether handed off by Delegate or produced by Accept) is passed
+// THROUGH the wrapper unchanged.  Recipient-side auditing on the
+// delegated channel is opt-in via a separate mint_recording_session
+// call on the inner PSH — auto-wrapping would impose a hidden
+// log/role assignment the recipient may not want.
 //
 // Epoch gates (fixy-A2-006d/e EpochedDelegate / EpochedAccept) are
 // enforced by the INNER PSH at construction time via a class-body
@@ -1069,6 +1069,137 @@ public:
 };
 
 // ═════════════════════════════════════════════════════════════════════
+// ── RecordingPermissionedSessionHandle<
+// ──        EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
+// ──                      MinEpoch, MinGeneration>,
+// ──        PS, Resource, LoopCtx>
+// ═════════════════════════════════════════════════════════════════════
+//
+// fixy-A2-006e — PSH EpochedAccept specialization.  Closes the A2-006
+// delegation family.  Structurally identical to the plain Accept spec
+// at fixy-A2-006c: forwards through inner_.accept(...) /
+// inner_.accept_with(...), emits SessionEvent::accept_handoff(self,
+// peer, default_proto_hash<InnerProto>, inner_perm_set) AFTER the
+// inner PSH produces the delegated handle, and wraps the next-state
+// PSH preserving log + role context.
+//
+// What changes vs Accept: the inner PSH adds a class-level
+//   static_assert(session_loop_ctx_epoch_satisfies_v<
+//                 LoopCtx, MinEpoch, MinGeneration>);
+// which fires AT CARRIER CONSTRUCTION TIME (during the carrier's
+// mint_permissioned_session call, before any recording wrapper is
+// involved).  The recording wrapper transparently inherits this gate
+// — a stale-epoch ctx fails to mint the carrier PSH, so the wrapper
+// is never constructed.  Distinct from EpochedDelegate's matching
+// gate (`_matches_v`, exact equality): EpochedAccept uses the
+// satisfies-relation (recipient may be newer than the declared
+// minimum but must not be stale or unannotated).
+//
+// Inner-handle wrapping decision (parity with Accept spec): the
+// returned delegated PermissionedSessionHandle is passed THROUGH to
+// the caller unwrapped — they may audit it via a separate
+// mint_recording_session call if recipient-side auditing is desired.
+
+template <typename InnerProto, typename InnerPS, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename PS, typename Resource, typename LoopCtx>
+class [[nodiscard]]
+RecordingPermissionedSessionHandle<
+    EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
+                  MinEpoch, MinGeneration>,
+    PS, Resource, LoopCtx>
+    : public SessionHandleBase<
+          EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
+                        MinEpoch, MinGeneration>,
+          RecordingPermissionedSessionHandle<
+              EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
+                            MinEpoch, MinGeneration>,
+              PS, Resource, LoopCtx>>
+{
+    using Protocol = EpochedAccept<
+        DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>;
+
+    PermissionedSessionHandle<Protocol, PS, Resource, LoopCtx> inner_;
+    SessionEventLog* log_      = nullptr;
+    RoleTagId        self_role_{};
+    RoleTagId        peer_role_{};
+
+public:
+    using protocol          = Protocol;
+    using delegated_proto   = InnerProto;
+    using delegated_payload = DelegatedSession<InnerProto, InnerPS>;
+    using inner_perm_set    = InnerPS;
+    using continuation      = K;
+    using perm_set          = PS;
+    using resource_type     = Resource;
+    using loop_ctx          = LoopCtx;
+    using inner_type        =
+        PermissionedSessionHandle<Protocol, PS, Resource, LoopCtx>;
+    static constexpr std::uint64_t min_epoch      = MinEpoch;
+    static constexpr std::uint64_t min_generation = MinGeneration;
+
+    constexpr RecordingPermissionedSessionHandle(
+        inner_type inner,
+        SessionEventLog& log,
+        RoleTagId self,
+        RoleTagId peer,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<
+              Protocol,
+              RecordingPermissionedSessionHandle<
+                  Protocol, PS, Resource, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, log_{&log},
+          self_role_{self}, peer_role_{peer} {}
+
+    constexpr RecordingPermissionedSessionHandle(
+        RecordingPermissionedSessionHandle&&) noexcept = default;
+    constexpr RecordingPermissionedSessionHandle& operator=(
+        RecordingPermissionedSessionHandle&&) noexcept = default;
+    ~RecordingPermissionedSessionHandle() = default;
+
+    // Wire variant — Transport projects the carrier resource into the
+    // delegated resource.  Mirror of inner PSH's requires clause.
+    template <typename Transport,
+              typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
+        requires std::is_invocable_v<Transport, Resource&>
+    [[nodiscard]] constexpr auto accept(
+        Transport transport,
+        InnerPermSetHash inner_ps_hash = {}) &&
+    {
+        auto [delegated_handle, next] =
+            std::move(inner_).accept(std::move(transport));
+        log_->append_event(SessionEvent::accept_handoff(
+            self_role_, peer_role_,
+            default_proto_hash<InnerProto>, inner_ps_hash));
+        this->mark_consumed_();
+        auto wrapped_next = detail::wrap_next_permissioned_(
+            std::move(next), *log_, self_role_, peer_role_);
+        return std::pair{std::move(delegated_handle), std::move(wrapped_next)};
+    }
+
+    // In-memory variant — caller supplies the delegated resource directly.
+    template <typename DelegatedResource>
+    [[nodiscard]] constexpr auto accept_with(
+        DelegatedResource delegated_res,
+        InnerPermSetHash inner_ps_hash = {}) &&
+    {
+        auto [delegated_handle, next] =
+            std::move(inner_).accept_with(std::move(delegated_res));
+        log_->append_event(SessionEvent::accept_handoff(
+            self_role_, peer_role_,
+            default_proto_hash<InnerProto>, inner_ps_hash));
+        this->mark_consumed_();
+        auto wrapped_next = detail::wrap_next_permissioned_(
+            std::move(next), *log_, self_role_, peer_role_);
+        return std::pair{std::move(delegated_handle), std::move(wrapped_next)};
+    }
+
+    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
+};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── mint_recording_session — PSH overload (Phase 1) ─────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -1076,13 +1207,9 @@ public:
 // overload so permissioned channels can be audited.  Returns a
 // RecordingPermissionedSessionHandle wrapping the passed PSH, with
 // log + role context attached.  fixy-A2-006b shipped Delegate;
-// fixy-A2-006c shipped Accept; fixy-A2-006d (this file) ships
-// EpochedDelegate.  EpochedAccept remains deferred to fixy-A2-006e —
-// attempting `mint_recording_session(psh)` on an EpochedAccept-headed
-// PSH falls back to the generic PSH wrapper, which works structurally
-// (the event log + role context still attaches) but does NOT carry
-// the epoch-specific accept_handoff emission until that Phase 2 spec
-// lands.
+// fixy-A2-006c shipped Accept; fixy-A2-006d shipped EpochedDelegate;
+// fixy-A2-006e (this file) ships EpochedAccept — completing the
+// delegation family.
 
 // fixy-A2-026: explicit §XXI requires-clause.  Tautologically true
 // because PermissionedSessionHandle<...> inherits from
