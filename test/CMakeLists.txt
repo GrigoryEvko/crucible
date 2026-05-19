@@ -1843,6 +1843,20 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_wrong_handle
 crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_unfit_snap
     "constraints not satisfied|SnapshotSessionSurface|no matching function")
 
+# fixy-A4-030 — substrate-vs-fixy disjointness discriminator witness.
+# Reject.h's main guard is the std::index_sequence fold that walks every
+# safety::diag::Catalog entry and asserts !is_fixy_diag_v<entry>; these
+# fixtures witness the discriminator from the user side on two
+# orthogonal Catalog axes (hot-path tier vs Met(X) effect row).  Both
+# fixtures invert the discriminator's correct verdict and watch the
+# static_assert fire — the fold can't be tripped from outside source
+# without forking headers, so the HS14 witness is the discriminator
+# itself.
+crucible_neg_compile_fixy_test(neg_fixy_reject_hotpath_misclassified
+    "static assertion failed|is_fixy_diag|HotPathViolation|fixy-A4-030")
+crucible_neg_compile_fixy_test(neg_fixy_reject_effectrow_misclassified
+    "static assertion failed|is_fixy_diag|EffectRowMismatch|fixy-A4-030")
+
 # ── FIXY-MINT-Mach + FIXY-MINT-Safety — fixy/Mach.h + fixy/Safety.h
 # re-export of state-machine + safety-wrapper token mints
 # (mint_machine, transition_to, mint_linear, mint_secret, mint_view).
