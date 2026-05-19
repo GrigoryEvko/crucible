@@ -1,8 +1,10 @@
 #include <crucible/cntp/PathSwap.h>
 
+#include <atomic>
 #include <cassert>
 #include <cstdio>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 
 namespace cntp = crucible::cntp;
@@ -93,6 +95,59 @@ void test_state_machine_and_session_resource_transition() {
     std::printf("  test_state_machine_and_session_resource_transition: PASSED\n");
 }
 
+void test_concurrent_observer_sees_only_valid_states() {
+    // fixy-A5-038 regression: PathSwapper inherits Pinned, advertising
+    // address-stable cross-thread sharing.  Pre-fix the state_ field was a
+    // plain `SwapState` enum read non-atomically by state() — a foreground
+    // observer racing against a Bg-context transition_to would see torn
+    // bytes and TSan would flame.  Atomic state_ + acquire/release pairing
+    // makes the observation sound.
+    crucible::effects::ColdInitCtx init{};
+    crucible::effects::BgDrainCtx bg{};
+
+    auto swapper = cntp::mint_path_swapper<16>(init);
+
+    std::atomic<bool> writer_done{false};
+    std::atomic<std::uint32_t> torn_observations{0};
+    std::atomic<std::uint32_t> total_observations{0};
+    std::thread observer{[&]() noexcept {
+        // do-while ensures at least one observation even if writer races to
+        // completion before the observer thread first wakes — the structural
+        // claim is "no torn read", not "observer wins the start-up race".
+        do {
+            const auto observed = swapper.state();
+            total_observations.fetch_add(1, std::memory_order_relaxed);
+            switch (observed) {
+                case cntp::SwapState::Stable:
+                case cntp::SwapState::Draining:
+                case cntp::SwapState::BidirReceive:
+                case cntp::SwapState::NewPathFlushing:
+                case cntp::SwapState::Complete:
+                case cntp::SwapState::Failed:
+                    break;
+                default:
+                    torn_observations.fetch_add(1, std::memory_order_relaxed);
+            }
+        } while (!writer_done.load(std::memory_order_acquire));
+    }};
+
+    auto plan = make_plan();
+    for (std::uint32_t cycle = 0; cycle < 2000; ++cycle) {
+        const std::uint64_t base = static_cast<std::uint64_t>(cycle) * 100;
+        assert(swapper.begin_swap(bg, plan, base + 1).has_value());
+        assert(swapper.receiver_accepts_bidir(bg, base + 2).has_value());
+        assert(swapper.sender_observed_drain_ack(bg, base + 3).has_value());
+        assert(swapper.complete_receiver(bg, base + 4).has_value());
+    }
+
+    writer_done.store(true, std::memory_order_release);
+    observer.join();
+    assert(torn_observations.load(std::memory_order_acquire) == 0);
+    assert(total_observations.load(std::memory_order_acquire) > 0);
+
+    std::printf("  test_concurrent_observer_sees_only_valid_states: PASSED\n");
+}
+
 void test_invalid_transition_and_timeout() {
     crucible::effects::ColdInitCtx init{};
     crucible::effects::BgDrainCtx bg{};
@@ -132,6 +187,7 @@ int main() {
     std::printf("test_cntp_path_swap:\n");
     test_admission();
     test_state_machine_and_session_resource_transition();
+    test_concurrent_observer_sees_only_valid_states();
     test_invalid_transition_and_timeout();
     std::printf("test_cntp_path_swap: all PASSED\n");
     return 0;

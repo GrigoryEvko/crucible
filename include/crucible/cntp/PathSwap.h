@@ -17,6 +17,7 @@
 #include <crucible/sessions/Session.h>
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -127,8 +128,16 @@ mint_path_swap_plan(PositivePathId flow_id,
 template <std::size_t MaxEvents = 16>
 class PathSwapper : public safety::Pinned<PathSwapper<MaxEvents>> {
     static_assert(MaxEvents > 0, "PathSwapper requires an audit-event ring");
+    static_assert(std::atomic<SwapState>::is_always_lock_free,
+                  "PathSwapper observers need a lock-free state load on every "
+                  "supported platform; the target ISA does not provide one");
 
-    SwapState state_ = SwapState::Stable;
+    // fixy-A5-038: state_ is published by a single Bg-context writer and
+    // observed concurrently by foreground threads through state(). The
+    // Pinned base advertises address-stable cross-thread sharing — the
+    // field must be atomic to back that contract.  Plain `SwapState`
+    // would tear under concurrent transition_to/state() races.
+    std::atomic<SwapState> state_{SwapState::Stable};
     PathSwapPlan plan_{};
     std::array<PathSwapEvent, MaxEvents> events_{};
     std::size_t next_event_ = 0;
@@ -155,20 +164,21 @@ class PathSwapper : public safety::Pinned<PathSwapper<MaxEvents>> {
         }
     }
 
-    constexpr void transition_to(SwapState next, std::uint64_t at_ns) noexcept {
-        const SwapState prev = state_;
-        state_ = next;
+    void transition_to(SwapState next, std::uint64_t at_ns) noexcept {
+        const SwapState prev = state_.load(std::memory_order_relaxed);
+        state_.store(next, std::memory_order_release);
         append_event(prev, next, at_ns);
     }
 
-    [[nodiscard]] constexpr bool expired(std::uint64_t now_ns) const noexcept {
-        return state_ != SwapState::Stable &&
-               state_ != SwapState::Complete &&
-               state_ != SwapState::Failed &&
+    [[nodiscard]] bool expired(std::uint64_t now_ns) const noexcept {
+        const SwapState cur = state_.load(std::memory_order_acquire);
+        return cur != SwapState::Stable &&
+               cur != SwapState::Complete &&
+               cur != SwapState::Failed &&
                now_ns > deadline_ns_;
     }
 
-    [[nodiscard]] constexpr std::expected<void, SwapError>
+    [[nodiscard]] std::expected<void, SwapError>
     check_live(std::uint64_t now_ns) noexcept {
         if (expired(now_ns)) {
             transition_to(SwapState::Failed, now_ns);
@@ -180,7 +190,9 @@ class PathSwapper : public safety::Pinned<PathSwapper<MaxEvents>> {
 public:
     constexpr PathSwapper() noexcept = default;
 
-    [[nodiscard]] constexpr SwapState state() const noexcept { return state_; }
+    [[nodiscard]] SwapState state() const noexcept {
+        return state_.load(std::memory_order_acquire);
+    }
     [[nodiscard]] constexpr PathSwapPlan plan() const noexcept { return plan_; }
     [[nodiscard]] constexpr std::uint64_t deadline_ns() const noexcept {
         return deadline_ns_;
@@ -198,11 +210,12 @@ public:
 
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
-    [[nodiscard]] constexpr std::expected<void, SwapError>
+    [[nodiscard]] std::expected<void, SwapError>
     begin_swap(Ctx const&,
                DeclaredPathSwapPlan plan,
                std::uint64_t now_ns) noexcept {
-        if (state_ != SwapState::Stable && state_ != SwapState::Complete) {
+        const SwapState cur = state_.load(std::memory_order_acquire);
+        if (cur != SwapState::Stable && cur != SwapState::Complete) {
             return std::unexpected(SwapError::InvalidTransition);
         }
         auto const& raw = plan.value();
@@ -218,12 +231,12 @@ public:
 
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
-    [[nodiscard]] constexpr std::expected<void, SwapError>
+    [[nodiscard]] std::expected<void, SwapError>
     receiver_accepts_bidir(Ctx const&, std::uint64_t now_ns) noexcept {
         if (auto live = check_live(now_ns); !live.has_value()) {
             return live;
         }
-        if (state_ != SwapState::Draining) {
+        if (state_.load(std::memory_order_acquire) != SwapState::Draining) {
             return std::unexpected(SwapError::InvalidTransition);
         }
         transition_to(SwapState::BidirReceive, now_ns);
@@ -232,12 +245,12 @@ public:
 
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
-    [[nodiscard]] constexpr std::expected<void, SwapError>
+    [[nodiscard]] std::expected<void, SwapError>
     sender_observed_drain_ack(Ctx const&, std::uint64_t now_ns) noexcept {
         if (auto live = check_live(now_ns); !live.has_value()) {
             return live;
         }
-        if (state_ != SwapState::BidirReceive) {
+        if (state_.load(std::memory_order_acquire) != SwapState::BidirReceive) {
             return std::unexpected(SwapError::InvalidTransition);
         }
         transition_to(SwapState::NewPathFlushing, now_ns);
@@ -251,7 +264,7 @@ public:
               typename NewResource>
         requires CtxFitsPathSwapTransition<Ctx> &&
                  PathSwapSessionResource<NewResource>
-    [[nodiscard]] constexpr auto commit_sender(
+    [[nodiscard]] auto commit_sender(
         Ctx const&,
         safety::proto::SessionHandle<Proto, OldResource, LoopCtx>&& current,
         NewResource&& new_resource,
@@ -263,7 +276,7 @@ public:
         if (auto live = check_live(now_ns); !live.has_value()) {
             return std::unexpected(live.error());
         }
-        if (state_ != SwapState::NewPathFlushing) {
+        if (state_.load(std::memory_order_acquire) != SwapState::NewPathFlushing) {
             return std::unexpected(SwapError::InvalidTransition);
         }
 
@@ -276,13 +289,14 @@ public:
 
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
-    [[nodiscard]] constexpr std::expected<void, SwapError>
+    [[nodiscard]] std::expected<void, SwapError>
     complete_receiver(Ctx const&, std::uint64_t now_ns) noexcept {
         if (auto live = check_live(now_ns); !live.has_value()) {
             return live;
         }
-        if (state_ != SwapState::BidirReceive &&
-            state_ != SwapState::NewPathFlushing) {
+        const SwapState cur = state_.load(std::memory_order_acquire);
+        if (cur != SwapState::BidirReceive &&
+            cur != SwapState::NewPathFlushing) {
             return std::unexpected(SwapError::InvalidTransition);
         }
         transition_to(SwapState::Complete, now_ns);
