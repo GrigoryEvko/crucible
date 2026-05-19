@@ -22,8 +22,13 @@
 #include <crucible/fixy/Diag.h>
 #include <crucible/fixy/Reject.h>
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace fd = crucible::fixy::diag;
 namespace cd = crucible::safety::diag;
@@ -163,6 +168,45 @@ static_assert(cd::stable_type_id<fd::FixyNotEngaged_Effect>
               != cd::stable_type_id<fd::FixyNotEngaged_Security>);
 static_assert(cd::stable_type_id<fd::FixyNotEngaged_Staleness>
               != cd::stable_type_id<fd::FixyNotEngaged_Type>);
+
+// ─── 10. fixy-M-13: exhaustive 22×21/2 = 231 pair-wise distinctness
+//
+// Section 9 spot-checks 3 of the 231 unordered pairs.  FNV-1a + fmix64
+// over the type-display-string gives ~64 effective bits of entropy,
+// so a collision in 22 entries is cryptographically near-zero today —
+// but the spot-check would NOT catch a future tag rename that happens
+// to hash-collide with an existing entry.  This fold builds the full
+// std::array of stable_type_ids from FixyCatalog, sorts, then asserts
+// adjacent_find finds nothing.  A regression fires at compile time at
+// the catalog site, not at runtime when collision causes routing bugs.
+
+namespace fixy_id_distinct_witness {
+
+template <std::size_t... Is>
+[[nodiscard]] inline consteval std::array<std::uint64_t,
+                                          fd::fixy_catalog_size>
+collect_fixy_ids(std::index_sequence<Is...>) noexcept
+{
+    return {cd::stable_type_id<
+                std::tuple_element_t<Is, fd::FixyCatalog>>...};
+}
+
+[[nodiscard]] inline consteval bool every_fixy_tag_id_distinct() noexcept
+{
+    auto ids = collect_fixy_ids(
+        std::make_index_sequence<fd::fixy_catalog_size>{});
+    std::sort(ids.begin(), ids.end());
+    return std::adjacent_find(ids.begin(), ids.end()) == ids.end();
+}
+
+}  // namespace fixy_id_distinct_witness
+
+static_assert(fixy_id_distinct_witness::every_fixy_tag_id_distinct(),
+    "fixy-M-13: two FixyCatalog entries share the same "
+    "stable_type_id.  FNV-1a + fmix64 collisions in 22 entries are "
+    "cryptographically near-zero, so this fires only on a rename "
+    "regression that introduced a colliding tag name.  Resolve by "
+    "renaming the offending tag to break the hash collision.");
 
 int main() {
     return 0;
