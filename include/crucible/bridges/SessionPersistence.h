@@ -695,7 +695,7 @@ template <typename Proto,
     SessionTagId session,
     RoleTagId self,
     RoleTagId peer,
-    SessionPersistencePolicy policy = {})
+    SessionPersistencePolicy policy = {}) noexcept
 {
     using CallerRow = typename Ctx::row_type;
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
@@ -749,7 +749,7 @@ template <::crucible::effects::IsExecCtx Ctx,
     SessionTagId session,
     RoleTagId self,
     RoleTagId peer,
-    SessionPersistencePolicy policy = {})
+    SessionPersistencePolicy policy = {}) noexcept
 {
     using CallerRow = typename Ctx::row_type;
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
@@ -806,7 +806,7 @@ template <::crucible::effects::IsExecCtx Ctx,
     SessionTagId session,
     RoleTagId self,
     RoleTagId peer,
-    SessionPersistencePolicy policy = {})
+    SessionPersistencePolicy policy = {}) noexcept
 {
     using CallerRow = typename Ctx::row_type;
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(

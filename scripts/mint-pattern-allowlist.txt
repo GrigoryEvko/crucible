@@ -39,7 +39,9 @@
 #
 # Cross-references:
 #   fixy-M-22 (#1507) — CLOSED: mint_vigil_mode_bridge gained constexpr.
-#   fixy-M-23 (#1508) tracks mint_persisted_session noexcept drift.
+#   fixy-M-23 (#1508) — CLOSED: mint_persisted_session gained noexcept on
+#       all three live overloads.  constexpr-ok exemptions retained (§XXI
+#       carves out allocating mints).
 #   fixy-A4-027 (#1666) tracks mint_federation_admittance nodiscard drift.
 
 # ── Structural exemption: passkey ctor ───────────────────────────────
@@ -54,7 +56,6 @@ include/crucible/permissions/PermissionInherit.h:135
 
 # ── §XXI grandfathered drift (TODO — trim as sites migrate) ──────────
 include/crucible/bridges/SessionPersistence.h:690:constexpr-ok
-include/crucible/bridges/SessionPersistence.h:690:noexcept-ok
 include/crucible/bridges/SessionPersistence.h:711:constexpr-ok
 include/crucible/bridges/SessionPersistence.h:711:nodiscard-ok
 include/crucible/bridges/SessionPersistence.h:711:noexcept-ok
@@ -64,7 +65,6 @@ include/crucible/bridges/SessionPersistence.h:726:nodiscard-ok
 include/crucible/bridges/SessionPersistence.h:726:noexcept-ok
 include/crucible/bridges/SessionPersistence.h:726:requires-ok
 include/crucible/bridges/SessionPersistence.h:744:constexpr-ok
-include/crucible/bridges/SessionPersistence.h:744:noexcept-ok
 include/crucible/bridges/SessionPersistence.h:767:constexpr-ok
 include/crucible/bridges/SessionPersistence.h:767:nodiscard-ok
 include/crucible/bridges/SessionPersistence.h:767:noexcept-ok
@@ -74,7 +74,6 @@ include/crucible/bridges/SessionPersistence.h:776:nodiscard-ok
 include/crucible/bridges/SessionPersistence.h:776:noexcept-ok
 include/crucible/bridges/SessionPersistence.h:776:requires-ok
 include/crucible/bridges/SessionPersistence.h:801:constexpr-ok
-include/crucible/bridges/SessionPersistence.h:801:noexcept-ok
 include/crucible/bridges/SessionPersistence.h:825:constexpr-ok
 include/crucible/bridges/SessionPersistence.h:825:nodiscard-ok
 include/crucible/bridges/SessionPersistence.h:825:noexcept-ok
