@@ -1411,6 +1411,18 @@ crucible_neg_compile_fixy_test(neg_fixy_stance_async_endpoint_array    "IsAccept
 crucible_neg_compile_fixy_test(neg_fixy_stance_ctcrypto_void           "IsAccepted")
 crucible_neg_compile_fixy_test(neg_fixy_stance_publicemit_ref          "IsAccepted")
 
+# FIXY-U-041 — HS14 floor for the 4 new stance aliases.  2 fixtures
+# per stance, each a distinct Type-axis rejection class (void vs
+# array vs reference).
+crucible_neg_compile_fixy_test(neg_fixy_stance_named_session_void      "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_named_session_array     "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_cooperative_bg_void     "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_cooperative_bg_ref      "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_sync_blocking_void      "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_sync_blocking_array     "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_realtime_hot_void       "IsAccepted")
+crucible_neg_compile_fixy_test(neg_fixy_stance_realtime_hot_ref        "IsAccepted")
+
 # FIXY-AUDIT-A3 — HS14 floor for UniqueEngagementPerAxis.
 crucible_neg_compile_fixy_test(neg_fixy_duplicate_engagement     "UniqueEngagementPerAxis")
 

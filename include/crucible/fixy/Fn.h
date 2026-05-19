@@ -49,7 +49,8 @@
 //
 //   mint_fn<Type, Grants...>(value) — Universal Mint Pattern factory
 //
-// Eight stance aliases (misc/16_05_2026_fixy.md §5 catalog):
+// Twelve stance aliases (misc/16_05_2026_fixy.md §5 catalog +
+// FIXY-U-041 extension):
 //
 //   stance::PureLinear        — every axis strict-default
 //   stance::PureCopy          — copy usage, otherwise strict
@@ -60,6 +61,18 @@
 //   stance::SecretConsumer    — Security=Public via declassify<Policy>
 //   stance::PublicEmit        — IO + declassify<Policy> audit trail
 //   stance::AsyncEndpoint     — Reentrancy=Coroutine + Effect={IO}
+//   stance::NamedSession      — Protocol=<Proto>, otherwise strict
+//                                (binds a session protocol type to
+//                                 the Protocol axis)
+//   stance::CooperativeBg     — Effect={Bg,Alloc} + Reentrancy=Coroutine
+//                                + as_public — cooperative bg worker
+//                                yielding via coroutine
+//   stance::SyncBlocking      — Effect={IO,Block} + as_public —
+//                                synchronous blocking-syscall path
+//   stance::RealtimeHot       — Effect=<empty> + as_public + strict
+//                                Reentrancy — hot-loop discipline:
+//                                NO IO, NO Alloc, NO Block, no
+//                                coroutine yield
 //
 // ── Axiom coverage ─────────────────────────────────────────────────
 //
@@ -1167,6 +1180,168 @@ using AsyncEndpoint = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>>;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-U-041 stance extension — 4 additional canonical aliases ─
+// ═════════════════════════════════════════════════════════════════════
+//
+// Closes fixy-A4-020: pre-extension the stance:: namespace shipped 8
+// aliases but lacked the four common patterns below.  Production
+// callers were forced to either (a) hand-author a 20-axis fn<>
+// instantiation per call site (high churn, easy to drift) or (b)
+// compose existing stances ineffectively.
+//
+//   NamedSession<T, Proto>  — session-typed function: pins Protocol
+//                              to <Proto>.  All other axes strict.
+//   CooperativeBg<T>        — Effect={Bg,Alloc} + Reentrancy=Coroutine
+//                              + as_public.  Cooperative-scheduling
+//                              variant of BgWorker that yields via
+//                              coroutine instead of running to
+//                              completion.
+//   SyncBlocking<T>         — Effect={IO,Block} + as_public.  Pins
+//                              the synchronous-blocking discipline
+//                              for syscall-heavy paths (read/write
+//                              on blocking fd, file open, sleep).
+//                              Reentrancy stays strict (NonReentrant)
+//                              — blocking calls cannot interleave.
+//   RealtimeHot<T>          — Effect=<empty> + as_public + strict
+//                              Reentrancy.  Hot-loop discipline: NO
+//                              IO, NO Alloc, NO Block, no coroutine
+//                              yield.  The empty Effect row pins the
+//                              `with<>` engagement so a future audit
+//                              cannot accidentally widen to IO/Alloc.
+
+// ── NamedSession<Type, Proto> — pins the Protocol axis ──────────────
+//
+// `Proto` is the session-protocol type the function operates over.
+// `fixy/Fn.h`'s `detail::resolve::resolve_protocol_t` projects
+// `grant::protocol<Proto>` to `safety::fn::Protocol<Proto>`.
+
+template <typename Type, typename Proto>
+using NamedSession = ::crucible::fixy::fn<Type,
+    detail_stance::strict<dim::DimensionAxis::Refinement>,
+    detail_stance::strict<dim::DimensionAxis::Usage>,
+    detail_stance::strict<dim::DimensionAxis::Effect>,
+    detail_stance::strict<dim::DimensionAxis::Security>,
+    grant::protocol<Proto>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>,
+    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>,
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
+
+// ── CooperativeBg<Type> — Bg + coroutine + as_public ──────────────
+//
+// Mirror of BgWorker (Effect={Bg, Alloc} + as_public) plus a
+// coroutine-yielding Reentrancy axis.  Use for cooperative-
+// scheduling bg pipelines that yield to the scheduler at well-
+// defined points instead of running to completion.
+
+template <typename Type>
+using CooperativeBg = ::crucible::fixy::fn<Type,
+    detail_stance::strict<dim::DimensionAxis::Refinement>,
+    detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with<effects::Effect::Bg, effects::Effect::Alloc>,
+    grant::as_public,
+    detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>,
+    grant::coroutine,
+    detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>,
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
+
+// ── SyncBlocking<Type> — IO + Block + as_public ────────────────────
+//
+// Pins the synchronous-blocking syscall discipline: Effect carries
+// both IO and Block so the type signature makes the blocking
+// nature explicit.  Used for read/write on blocking fd, file
+// open, sleep, blocking lock acquisition — paths the hot-path
+// audit (§30.x) reads to refuse compilation when invoked from a
+// real-time context.  Reentrancy stays strict (NonReentrant) —
+// blocking calls cannot interleave at the same stack frame.
+
+template <typename Type>
+using SyncBlocking = ::crucible::fixy::fn<Type,
+    detail_stance::strict<dim::DimensionAxis::Refinement>,
+    detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with<effects::Effect::IO, effects::Effect::Block>,
+    grant::as_public,
+    detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>,
+    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>,
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
+
+// ── RealtimeHot<Type> — empty Effect row + as_public + strict ─────
+//
+// Hot-loop discipline pinned at the signature: Effect=<empty> means
+// the function MUST NOT do IO, allocate, or block; Reentrancy stays
+// strict (NonReentrant); Security is pinned `as_public` (hot path
+// emits public computation, no secret consumption).  The explicit
+// `with<>` engagement is what distinguishes RealtimeHot from
+// PureLinear: PureLinear uses the strict-default for Effect (which
+// also resolves to Row<> but via the implicit
+// accept_default_strict_for marker); RealtimeHot uses `with<>`
+// EXPLICITLY so a future widening of the default cannot silently
+// relax the discipline.
+
+template <typename Type>
+using RealtimeHot = ::crucible::fixy::fn<Type,
+    detail_stance::strict<dim::DimensionAxis::Refinement>,
+    detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with<>,
+    grant::as_public,
+    detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>,
+    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>,
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>>;
+
 }  // namespace stance
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1344,6 +1519,79 @@ constexpr auto minted = mint_fn<int,
     grant::accept_default_strict_for<dim::DimensionAxis::Regime>>(42);
 static_assert(minted.value() == 42,
     "mint_fn must construct fixy::fn carrying the supplied value.");
+
+// ── FIXY-U-041 positive self-test witnesses ──────────────────────
+//
+// One per new stance, asserting its DEFINING axis projects to the
+// expected substrate resolution plus EBO collapse.  Mirrors the
+// PureLinear / PureCopy / IoFunction / AsyncEndpoint discipline
+// above (each existing stance has one EBO witness + one
+// axis-projection witness).
+
+// 10a. NamedSession pins the Protocol axis to the supplied proto.
+namespace fixy_u_041 {
+struct FakeProto {};  // local witness — protocol value is type-level
+                       // here; resolution must thread it through to
+                       // safety_fn_t::protocol_t verbatim.
+}  // namespace fixy_u_041
+
+static_assert(std::is_same_v<
+    typename stance::NamedSession<int, fixy_u_041::FakeProto>::protocol_t,
+    fixy_u_041::FakeProto>,
+    "stance::NamedSession<int, Proto>::protocol_t must thread Proto "
+    "through to the substrate's protocol_t.");
+
+static_assert(sizeof(stance::NamedSession<int, fixy_u_041::FakeProto>)
+    == sizeof(int),
+    "stance::NamedSession<int, Proto> must EBO-collapse to sizeof(int) "
+    "— grant::protocol<Proto> is an empty type-level tag.");
+
+// 10b. CooperativeBg engages Effect={Bg, Alloc} AND
+//      Reentrancy=Coroutine simultaneously.
+static_assert(std::is_same_v<
+    typename stance::CooperativeBg<int>::effect_row_t,
+    effects::Row<effects::Effect::Bg, effects::Effect::Alloc>>,
+    "stance::CooperativeBg's Effect row must contain Bg and Alloc.");
+
+static_assert(stance::CooperativeBg<int>::reentrancy_v
+    == safety::fn::ReentrancyMode::Coroutine,
+    "stance::CooperativeBg must resolve Reentrancy to Coroutine — "
+    "cooperative bg yields to the scheduler, unlike plain BgWorker.");
+
+static_assert(sizeof(stance::CooperativeBg<int>) == sizeof(int),
+    "stance::CooperativeBg<int> must EBO-collapse to sizeof(int).");
+
+// 10c. SyncBlocking pins Effect={IO, Block} + Security=Public.
+static_assert(std::is_same_v<
+    typename stance::SyncBlocking<int>::effect_row_t,
+    effects::Row<effects::Effect::IO, effects::Effect::Block>>,
+    "stance::SyncBlocking's Effect row must contain IO and Block.");
+
+static_assert(stance::SyncBlocking<int>::security_v
+    == safety::fn::SecLevel::Public,
+    "stance::SyncBlocking must resolve Security to Public via "
+    "grant::as_public.");
+
+static_assert(sizeof(stance::SyncBlocking<int>) == sizeof(int),
+    "stance::SyncBlocking<int> must EBO-collapse to sizeof(int).");
+
+// 10d. RealtimeHot pins Effect=<empty> + Security=Public.
+//      Distinguishing from PureLinear: RealtimeHot uses an
+//      EXPLICIT grant::with<> rather than the strict-default
+//      marker, so a future widening of the strict default cannot
+//      silently relax the discipline.
+static_assert(std::is_same_v<
+    typename stance::RealtimeHot<int>::effect_row_t,
+    effects::Row<>>,
+    "stance::RealtimeHot's Effect row must be empty — hot-loop "
+    "discipline forbids IO/Alloc/Block at the signature.");
+
+static_assert(stance::RealtimeHot<int>::security_v
+    == safety::fn::SecLevel::Public,
+    "stance::RealtimeHot must resolve Security to Public.");
+
+static_assert(sizeof(stance::RealtimeHot<int>) == sizeof(int),
+    "stance::RealtimeHot<int> must EBO-collapse to sizeof(int).");
 
 }  // namespace detail::fn_self_test
 
