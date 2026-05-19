@@ -1,13 +1,48 @@
 # scripts/mint-pattern-allowlist.txt — §XXI scanner grandfather list.
 #
-# One `path:line` entry per line.  Files listed here are exempted from
-# the check-mint-pattern.sh [[nodiscard]] rule.  Lines beginning with
+# Each entry is `path:line` (exempts all four checks) OR
+# `path:line:<check>-ok` where <check> ∈ {nodiscard, noexcept,
+# constexpr, requires} (exempts ONE check).  Lines beginning with
 # '#' are comments.
 #
-# Trim discipline: every entry is either a structural-false-positive
-# annotation OR a TODO.  When the listed site migrates or the regex
-# learns to recognize the false-positive shape, REMOVE the line.
+# Trim discipline: every entry is either a structural-exempt
+# annotation (passkey constructor, allocating mint, class method,
+# friend-forward edge case) OR a TODO awaiting migration.  When
+# the listed site migrates to the canonical §XXI shape (or the
+# regex learns to recognize a new structural false-positive), the
+# allowlist line MUST be removed; the goal is for this file to
+# trend toward the structural-exempt minimum.
+#
+# Naming convention for the TODO half:
+#   `requires-ok` on a templated `mint_*` whose gate is
+#     expressed as `static_assert(...)` in the body rather than a
+#     `requires` clause on the signature.  §XXI rule (4) demands
+#     a `requires` clause.  Migration shape: lift the in-body
+#     static_assert to a concept and add the requires clause.
+#
+#   `constexpr-ok` on an allocating mint or class-method mint
+#     whose factory cannot be `constexpr` for structural reasons
+#     (returns a ScopedView, allocates a runtime channel, threads
+#     a non-constexpr resource).  §XXI rule (3) explicitly permits
+#     dropping `constexpr` "in favour of plain [[nodiscard]]
+#     noexcept" for genuinely-allocating mints.
+#
+#   `noexcept-ok` on a mint that legitimately throws OR is being
+#     migrated.  §XXI rule (2) demands noexcept of every mint
+#     (even allocating ones) — so this category is mostly
+#     migration-TODO, not structural-exempt.
+#
+#   `nodiscard-ok` on a mint whose return value can legitimately
+#     be discarded (e.g. an inheritance-thread mint that mutates
+#     ambient state).  §XXI rule (1) demands [[nodiscard]] on
+#     every mint, so this category is also mostly migration-TODO.
+#
+# Cross-references:
+#   fixy-M-22 (#1507) tracks mint_vigil_mode_bridge constexpr drift.
+#   fixy-M-23 (#1508) tracks mint_persisted_session noexcept drift.
+#   fixy-A4-027 (#1666) tracks mint_federation_admittance nodiscard drift.
 
+# ── Structural exemption: passkey ctor ───────────────────────────────
 # Passkey class constructor (Passkey idiom).  The identifier
 # `mint_permission_inherit_key` is a class name (a passkey token)
 # whose constructor uses `constexpr ... noexcept = default`.  The
@@ -16,3 +51,155 @@
 # the real mint sits in `mint_permission_inherit_minter_::mint()`
 # and IS [[nodiscard]] (line 143-144).
 include/crucible/permissions/PermissionInherit.h:135
+
+# ── §XXI grandfathered drift (TODO — trim as sites migrate) ──────────
+include/crucible/bridges/SessionPersistence.h:690:constexpr-ok
+include/crucible/bridges/SessionPersistence.h:690:noexcept-ok
+include/crucible/bridges/SessionPersistence.h:711:constexpr-ok
+include/crucible/bridges/SessionPersistence.h:711:nodiscard-ok
+include/crucible/bridges/SessionPersistence.h:711:noexcept-ok
+include/crucible/bridges/SessionPersistence.h:711:requires-ok
+include/crucible/bridges/SessionPersistence.h:726:constexpr-ok
+include/crucible/bridges/SessionPersistence.h:726:nodiscard-ok
+include/crucible/bridges/SessionPersistence.h:726:noexcept-ok
+include/crucible/bridges/SessionPersistence.h:726:requires-ok
+include/crucible/bridges/SessionPersistence.h:744:constexpr-ok
+include/crucible/bridges/SessionPersistence.h:744:noexcept-ok
+include/crucible/bridges/SessionPersistence.h:767:constexpr-ok
+include/crucible/bridges/SessionPersistence.h:767:nodiscard-ok
+include/crucible/bridges/SessionPersistence.h:767:noexcept-ok
+include/crucible/bridges/SessionPersistence.h:767:requires-ok
+include/crucible/bridges/SessionPersistence.h:776:constexpr-ok
+include/crucible/bridges/SessionPersistence.h:776:nodiscard-ok
+include/crucible/bridges/SessionPersistence.h:776:noexcept-ok
+include/crucible/bridges/SessionPersistence.h:776:requires-ok
+include/crucible/bridges/SessionPersistence.h:801:constexpr-ok
+include/crucible/bridges/SessionPersistence.h:801:noexcept-ok
+include/crucible/bridges/SessionPersistence.h:825:constexpr-ok
+include/crucible/bridges/SessionPersistence.h:825:nodiscard-ok
+include/crucible/bridges/SessionPersistence.h:825:noexcept-ok
+include/crucible/bridges/SessionPersistence.h:825:requires-ok
+include/crucible/bridges/SessionPersistence.h:834:constexpr-ok
+include/crucible/bridges/SessionPersistence.h:834:nodiscard-ok
+include/crucible/bridges/SessionPersistence.h:834:noexcept-ok
+include/crucible/bridges/SessionPersistence.h:834:requires-ok
+include/crucible/canopy/Hlc.h:281:constexpr-ok
+include/crucible/canopy/HyParView.h:428:constexpr-ok
+include/crucible/canopy/Lifeguard.h:578:constexpr-ok
+include/crucible/canopy/Plumtree.h:496:constexpr-ok
+include/crucible/canopy/Scuttlebutt.h:630:constexpr-ok
+include/crucible/canopy/Swim.h:487:constexpr-ok
+include/crucible/canopy/VectorClock.h:381:constexpr-ok
+include/crucible/Cipher.h:242:constexpr-ok
+include/crucible/CKernel.h:453:constexpr-ok
+include/crucible/CKernel.h:459:constexpr-ok
+include/crucible/cntp/AfXdp.h:394:constexpr-ok
+include/crucible/cntp/AfXdp.h:394:noexcept-ok
+include/crucible/cntp/dataplane/Xdp.h:192:requires-ok
+include/crucible/cntp/OverlayMulticast.h:373:constexpr-ok
+include/crucible/cntp/_wip/QuicTransport.h:201:noexcept-ok
+include/crucible/concurrent/Pipeline.h:365:constexpr-ok
+include/crucible/concurrent/Pipeline.h:365:nodiscard-ok
+include/crucible/concurrent/Pipeline.h:561:constexpr-ok
+include/crucible/concurrent/Pipeline.h:561:nodiscard-ok
+include/crucible/concurrent/StageEndpointBridge.h:393:constexpr-ok
+include/crucible/concurrent/StageEndpointBridge.h:393:nodiscard-ok
+include/crucible/concurrent/StageEndpointBridge.h:394:constexpr-ok
+include/crucible/concurrent/StageEndpointBridge.h:394:nodiscard-ok
+include/crucible/CrucibleContext.h:301:constexpr-ok
+include/crucible/observe/Metrics.h:67:constexpr-ok
+include/crucible/observe/Metrics.h:75:constexpr-ok
+include/crucible/observe/Metrics.h:81:constexpr-ok
+include/crucible/observe/SdcDetect.h:338:constexpr-ok
+include/crucible/observe/SyntheticProbe.h:336:constexpr-ok
+include/crucible/permissions/FederationPermission.h:610:nodiscard-ok
+include/crucible/permissions/FederationPermission.h:672:noexcept-ok
+include/crucible/permissions/PermissionFork.h:320:constexpr-ok
+include/crucible/permissions/Permission.h:581:requires-ok
+include/crucible/permissions/Permission.h:614:requires-ok
+include/crucible/permissions/Permission.h:639:noexcept-ok
+include/crucible/permissions/Permission.h:656:noexcept-ok
+include/crucible/permissions/Permission.h:668:requires-ok
+include/crucible/permissions/Permission.h:691:noexcept-ok
+include/crucible/permissions/Permission.h:703:requires-ok
+include/crucible/permissions/Permission.h:725:noexcept-ok
+include/crucible/permissions/Permission.h:747:requires-ok
+include/crucible/permissions/Permission.h:770:noexcept-ok
+include/crucible/permissions/Permission.h:1239:requires-ok
+include/crucible/permissions/Permission.h:1241:noexcept-ok
+include/crucible/permissions/Permission.h:1241:requires-ok
+include/crucible/permissions/Permission.h:1243:noexcept-ok
+include/crucible/permissions/Permission.h:1243:requires-ok
+include/crucible/permissions/PermissionInherit.h:287:requires-ok
+include/crucible/permissions/ReadView.h:156:requires-ok
+include/crucible/PoolAllocator.h:286:constexpr-ok
+include/crucible/ReplayEngine.h:402:constexpr-ok
+include/crucible/safety/Diagnostic.h:1476:constexpr-ok
+include/crucible/safety/Diagnostic.h:1476:noexcept-ok
+include/crucible/safety/Fn.h:577:constexpr-ok
+include/crucible/safety/Fn.h:577:nodiscard-ok
+include/crucible/safety/Fn.h:577:noexcept-ok
+include/crucible/safety/ScopedView.h:161:requires-ok
+include/crucible/safety/ScopedView.h:200:requires-ok
+include/crucible/SchemaTable.h:145:constexpr-ok
+include/crucible/SchemaTable.h:151:constexpr-ok
+include/crucible/sessions/CalendarGridSession.h:56:requires-ok
+include/crucible/sessions/CalendarGridSession.h:66:requires-ok
+include/crucible/sessions/CalendarGridSession.h:79:requires-ok
+include/crucible/sessions/CalendarGridSession.h:90:requires-ok
+include/crucible/sessions/ChainEdgeSession.h:60:requires-ok
+include/crucible/sessions/ChainEdgeSession.h:68:requires-ok
+include/crucible/sessions/ChainEdgeSession.h:77:requires-ok
+include/crucible/sessions/ChainEdgeSession.h:85:requires-ok
+include/crucible/sessions/ChaseLevDequeSession.h:86:requires-ok
+include/crucible/sessions/ChaseLevDequeSession.h:94:constexpr-ok
+include/crucible/sessions/ChaseLevDequeSession.h:94:requires-ok
+include/crucible/sessions/ChaseLevDequeSession.h:99:constexpr-ok
+include/crucible/sessions/ChaseLevDequeSession.h:99:requires-ok
+include/crucible/sessions/ChaseLevDequeSession.h:109:requires-ok
+include/crucible/sessions/ChaseLevDequeSession.h:118:requires-ok
+include/crucible/sessions/FederationProtocol.h:209:requires-ok
+include/crucible/sessions/MetaLogSession.h:67:requires-ok
+include/crucible/sessions/MetaLogSession.h:75:requires-ok
+include/crucible/sessions/MetaLogSession.h:84:requires-ok
+include/crucible/sessions/MetaLogSession.h:92:requires-ok
+include/crucible/sessions/MpmcChannelSession.h:239:constexpr-ok
+include/crucible/sessions/MpmcChannelSession.h:239:requires-ok
+include/crucible/sessions/MpmcChannelSession.h:246:constexpr-ok
+include/crucible/sessions/MpmcChannelSession.h:246:requires-ok
+include/crucible/sessions/MpmcChannelSession.h:271:requires-ok
+include/crucible/sessions/MpmcChannelSession.h:281:requires-ok
+include/crucible/sessions/PermissionedSession.h:1916:requires-ok
+include/crucible/sessions/PermissionedSession.h:1963:requires-ok
+include/crucible/sessions/Session.h:2422:requires-ok
+include/crucible/sessions/Session.h:2496:constexpr-ok
+include/crucible/sessions/Session.h:2496:nodiscard-ok
+include/crucible/sessions/Session.h:2496:requires-ok
+include/crucible/sessions/SessionMint.h:977:constexpr-ok
+include/crucible/sessions/SessionMint.h:977:nodiscard-ok
+include/crucible/sessions/SessionMint.h:977:requires-ok
+include/crucible/sessions/SessionMint.h:986:constexpr-ok
+include/crucible/sessions/SessionMint.h:986:nodiscard-ok
+include/crucible/sessions/SessionMint.h:986:requires-ok
+include/crucible/sessions/ShardedCalendarGridSession.h:54:requires-ok
+include/crucible/sessions/ShardedCalendarGridSession.h:63:requires-ok
+include/crucible/sessions/ShardedCalendarGridSession.h:75:requires-ok
+include/crucible/sessions/ShardedCalendarGridSession.h:87:requires-ok
+include/crucible/sessions/ShardedGridSession.h:57:requires-ok
+include/crucible/sessions/ShardedGridSession.h:67:requires-ok
+include/crucible/sessions/ShardedGridSession.h:80:requires-ok
+include/crucible/sessions/ShardedGridSession.h:91:requires-ok
+include/crucible/sessions/SpscSession.h:215:requires-ok
+include/crucible/sessions/SpscSession.h:224:requires-ok
+include/crucible/sessions/SwmrSession.h:199:requires-ok
+include/crucible/sessions/SwmrSession.h:207:constexpr-ok
+include/crucible/sessions/SwmrSession.h:207:requires-ok
+include/crucible/sessions/SwmrSession.h:212:constexpr-ok
+include/crucible/sessions/SwmrSession.h:212:requires-ok
+include/crucible/sessions/SwmrSession.h:222:requires-ok
+include/crucible/sessions/SwmrSession.h:231:requires-ok
+include/crucible/sessions/SwmrSession.h:241:requires-ok
+include/crucible/sessions/SwmrSession.h:250:requires-ok
+include/crucible/topology/Pingmesh.h:415:constexpr-ok
+include/crucible/topology/Ptp.h:415:constexpr-ok
+include/crucible/Vigil.h:1115:constexpr-ok
