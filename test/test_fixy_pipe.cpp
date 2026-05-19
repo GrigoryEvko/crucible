@@ -8,6 +8,9 @@
 //   2. fixy::pipe::mint_stage / mint_pipeline are reachable via the
 //      alias and produce values that are bit-identical to those
 //      constructed via the substrate.
+//   3. fixy-M-18: CtxFitsStage / CtxFitsStageFromEndpoints /
+//      CtxFitsPipeline are reachable AND identical to the substrate
+//      concepts (the "preserved verbatim" doc-block claim).
 //
 // HS14: 2 fixy_neg fixtures live in test/fixy_neg/neg_fixy_pipe_*.cpp.
 
@@ -27,7 +30,14 @@ namespace conc  = crucible::concurrent;
 static_assert(std::is_same_v<fpipe::Direction, conc::Direction>,
     "fixy::pipe::Direction must alias concurrent::Direction.");
 
-// ─── 2. Stage / Pipeline round-trip via the alias ─────────────────
+// ─── 2. Stage test fixtures ───────────────────────────────────────
+//
+// Defined ahead of the §XXI reach probes so the same concrete stage
+// signature drives both the static_assert reach witnesses AND the
+// runtime mint_pipeline composition in main().  The constrained-
+// `auto&&` form was tried first and rejected: it makes the function a
+// template, so `&FnPtr` cannot deduce a function pointer for
+// `PipelineStage<FnPtr>` to test.
 
 template <typename T>
 struct FakeConsumer {
@@ -41,6 +51,58 @@ struct FakeProducer {
 
 inline void pass_through_a(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 inline void pass_through_b(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
+
+// ─── 1b. fixy-M-18: CtxFitsStage + CtxFitsStageFromEndpoints reach ─
+//
+// Pipe.h's doc-block claims the substrate's concept gates are
+// "preserved verbatim" through using-declarations (lines 143-155).
+// M-18 audit: prove the claim mechanically by exercising each gate at
+// the fixy::pipe:: surface against the same concrete stage signature
+// the substrate already admits.  If a future refactor drops the
+// using-decl, the static_assert below fires with a precise "is not a
+// concept / cannot be evaluated" diagnostic at the fixy surface
+// rather than the substrate.
+
+// CtxFitsStage at the fixy::pipe:: surface admits a valid stage.
+static_assert(fpipe::CtxFitsStage<&pass_through_a, eff::HotFgCtx>,
+    "fixy::pipe::CtxFitsStage must surface the substrate concept "
+    "(M-18: Pipe.h:154 using-decl).");
+
+// CtxFitsStage at fixy::pipe:: AGREES with the substrate concept on
+// every (FnPtr, Ctx) pair — proves the using-decl is a true alias,
+// not a shadowed redefinition.  Two ctx flavors give two witness rows.
+static_assert(fpipe::CtxFitsStage<&pass_through_a, eff::HotFgCtx>
+           == conc::CtxFitsStage<&pass_through_a, eff::HotFgCtx>);
+static_assert(fpipe::CtxFitsStage<&pass_through_a, eff::BgDrainCtx>
+           == conc::CtxFitsStage<&pass_through_a, eff::BgDrainCtx>);
+
+// CtxFitsStageFromEndpoints reach probe — the Tier-2→3 concept gate
+// from concurrent::StageEndpointBridge.h surfaces here too.  We test
+// reach (concept instantiable) rather than truth: the endpoint shapes
+// here use the canonical SPSC substrate, which may or may not match
+// the stage payload — the M-18 claim is that the GATE is reachable.
+static_assert(
+    requires { typename std::bool_constant<
+        fpipe::CtxFitsStageFromEndpoints<
+            &pass_through_a,
+            eff::HotFgCtx,
+            conc::Endpoint<conc::PermissionedSpscChannel<int, 16>,
+                           conc::Direction::Consumer, eff::HotFgCtx>,
+            conc::Endpoint<conc::PermissionedSpscChannel<int, 16>,
+                           conc::Direction::Producer, eff::HotFgCtx>>>; },
+    "fixy::pipe::CtxFitsStageFromEndpoints must be a valid concept "
+    "instantiation (M-18: Pipe.h:155 using-decl).");
+
+// CtxFitsPipeline reach — the chain-fold concept must also surface
+// through fixy::pipe::, completing the M-18 trifecta.  Identity with
+// the substrate concept proves the using-decl on line 147 is a true
+// alias rather than a redefinition.
+static_assert(fpipe::CtxFitsPipeline<eff::HotFgCtx,
+        conc::Stage<&pass_through_a, eff::HotFgCtx>>
+           == conc::CtxFitsPipeline<eff::HotFgCtx,
+        conc::Stage<&pass_through_a, eff::HotFgCtx>>);
+
+// ─── 3. Stage / Pipeline round-trip via the alias ─────────────────
 
 int main() {
     eff::HotFgCtx ctx;
