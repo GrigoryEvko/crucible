@@ -909,6 +909,40 @@ namespace detail::accept {
 // weren't.  The new name mirrors the `IsAccepted` / `IsAcceptedGrants` /
 // `IsAcceptedDirect` family and says exactly what the body checks: is
 // T an accepted payload for safety::fn::Fn<T, ...>?
+//
+// fixy-L-07: invariant block below documents the standard exclusions
+// `std::is_object_v` already provides — pinning the assumption so a
+// future C++ language change (loosening is_object_v to admit refs /
+// void / functions) reddens HERE, not at 40 downstream call sites.
+
+// ── fixy-L-07 invariant block ─────────────────────────────────────
+//
+// `std::is_object_v<T>` is defined by C++ [meta.unary.cat] as
+// "T is an object type", which excludes (a) reference types, (b)
+// function types, (c) cv-qualified void.  The composition below
+// relies on that exclusion to keep the body short — there is no
+// explicit `!std::is_reference_v<T>` line because `is_object_v`
+// already rejects references.  Pin the standard's guarantee at
+// compile time so the simplification is self-defending.
+
+static_assert(!std::is_object_v<int&>,
+    "fixy-L-07 invariant: is_object_v must exclude lvalue references "
+    "(C++ [meta.unary.cat]).  Body of type_is_accepted_payload below "
+    "drops !is_reference_v on this basis.");
+
+static_assert(!std::is_object_v<int&&>,
+    "fixy-L-07 invariant: is_object_v must exclude rvalue references "
+    "(C++ [meta.unary.cat]).  Body of type_is_accepted_payload below "
+    "drops !is_reference_v on this basis.");
+
+static_assert(!std::is_object_v<void>,
+    "fixy-L-07 invariant: is_object_v must exclude void "
+    "(C++ [meta.unary.cat]).");
+
+static_assert(!std::is_object_v<int(int)>,
+    "fixy-L-07 invariant: is_object_v must exclude bare function "
+    "types (C++ [meta.unary.cat]).");
+
 template <typename T>
 [[nodiscard]] consteval bool type_is_accepted_payload() noexcept {
     // Mirror of safety/Fn.h's Type constraints:
@@ -920,11 +954,16 @@ template <typename T>
     // Function POINTERS / callables are accepted (they are object types).
     // Bare function types are not — wrap them as pointers or callables
     // before instantiating fixy::fn.
+    //
+    // fixy-L-07: `!std::is_reference_v<T>` is structurally subsumed by
+    // `std::is_object_v<T>` (see C++ [meta.unary.cat] and the invariant
+    // block above).  Removed from the AND chain — every reference type
+    // still rejects via is_object_v, and the `int&` / `int&&` self-test
+    // rows below still hit on the same false-from-is_object path.
     return  std::is_object_v<T>
         && !std::is_const_v<T>
         && !std::is_volatile_v<T>
-        && !std::is_array_v<T>
-        && !std::is_reference_v<T>;
+        && !std::is_array_v<T>;
 }
 
 // fixy-H-10 self-tests: pin the rejection set at the definition site so
