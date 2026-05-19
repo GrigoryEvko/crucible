@@ -70,24 +70,46 @@ void test_name_admission() {
 }
 
 void test_availability_parse_and_recommendation() {
+    // fixy-A5-018: upstream Linux exposes BBRv1 as "bbr"; "bbr3" is the
+    // out-of-tree variant.  Parsing must keep them distinct.
     auto parsed = cntp::parse_available_congestion_control(
         "reno cubic bbr dctcp vegas\n");
     assert(parsed.has_value());
     assert(parsed->contains(cntp::CcAlgorithm::Reno));
     assert(parsed->contains(cntp::CcAlgorithm::Cubic));
-    assert(parsed->contains(cntp::CcAlgorithm::Bbr3));
     assert(parsed->contains(cntp::CcAlgorithm::Bbr1));
+    assert(!parsed->contains(cntp::CcAlgorithm::Bbr3));
+    assert(!parsed->contains(cntp::CcAlgorithm::Bbr2));
     assert(parsed->contains(cntp::CcAlgorithm::Dctcp));
 
     auto cross = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*parsed);
     assert(cross.has_value());
-    assert(cross->value().algorithm == cntp::CcAlgorithm::Bbr3);
+    assert(cross->value().algorithm == cntp::CcAlgorithm::Bbr1);
     assert(cross->value().kernel_name.view() == "bbr");
 
     auto fabric =
         cntp::recommend_cc<cntp::LinkClass::LosslessDatacenterFabric>(*parsed);
     assert(fabric.has_value());
     assert(fabric->value().algorithm == cntp::CcAlgorithm::Dctcp);
+
+    auto bbr3_only = cntp::parse_available_congestion_control(
+        "reno cubic bbr3\n");
+    assert(bbr3_only.has_value());
+    assert(bbr3_only->contains(cntp::CcAlgorithm::Bbr3));
+    assert(!bbr3_only->contains(cntp::CcAlgorithm::Bbr1));
+    auto bbr3_cross =
+        cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*bbr3_only);
+    assert(bbr3_cross.has_value());
+    assert(bbr3_cross->value().algorithm == cntp::CcAlgorithm::Bbr3);
+    assert(bbr3_cross->value().kernel_name.view() == "bbr3");
+
+    auto bbr2_only = cntp::parse_available_congestion_control(
+        "reno cubic bbr2\n");
+    assert(bbr2_only.has_value());
+    auto bbr2_cross =
+        cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*bbr2_only);
+    assert(bbr2_cross.has_value());
+    assert(bbr2_cross->value().algorithm == cntp::CcAlgorithm::Bbr2);
 
     auto legacy = cntp::parse_available_congestion_control("reno cubic\n");
     assert(legacy.has_value());
@@ -140,9 +162,10 @@ void test_live_socket_roundtrip_if_available() {
 
     auto queried = cntp::query_cc_for_socket(*fd);
     assert(queried.has_value());
-    assert(*queried == choice->value().algorithm ||
-           (*queried == cntp::CcAlgorithm::Bbr3 &&
-            choice->value().kernel_name.view() == "bbr"));
+    // fixy-A5-018: kernel echoes the name we set; the reverse map is
+    // now bijective per BBR variant ("bbr" → Bbr1, "bbr3" → Bbr3), so
+    // the OR-clause that masked the misread is gone.
+    assert(*queried == choice->value().algorithm);
 
     auto selection = cntp::query_cc_selection_for_socket(*fd);
     assert(selection.has_value());

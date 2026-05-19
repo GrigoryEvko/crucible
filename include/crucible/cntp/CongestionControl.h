@@ -135,8 +135,12 @@ admit_socket_fd(int fd) noexcept {
 
 [[nodiscard]] constexpr std::expected<KernelCcName, CcError>
 kernel_name_for(CcAlgorithm algorithm) noexcept {
+    // fixy-A5-018: Bbr3 is registered under "bbr3" by the out-of-tree
+    // Google patchset (drivers/net/tcp_bbr3.c).  Mapping Bbr3 → "bbr"
+    // was a misread of upstream Linux: the in-tree "bbr" module is
+    // BBRv1, not v3.  Bbr1 owns the literal "bbr" name.
     switch (algorithm) {
-        case CcAlgorithm::Bbr3:  return KernelCcName::from("bbr");
+        case CcAlgorithm::Bbr3:  return KernelCcName::from("bbr3");
         case CcAlgorithm::Cubic: return KernelCcName::from("cubic");
         case CcAlgorithm::Dctcp: return KernelCcName::from("dctcp");
         case CcAlgorithm::Reno:  return KernelCcName::from("reno");
@@ -191,8 +195,18 @@ recommend_cc(CcAvailability availability) noexcept {
         }
     }
 
+    // fixy-A5-018: cascade across the BBR family before degrading to
+    // loss-based.  Without Bbr2/Bbr1 fallthrough, a fleet running only
+    // out-of-tree BBRv2 or stock upstream BBRv1 would silently land on
+    // Cubic and lose the BBR-class throughput properties.
     if (availability.contains(CcAlgorithm::Bbr3)) {
         return mint_cc_choice<CcAlgorithm::Bbr3, Link>();
+    }
+    if (availability.contains(CcAlgorithm::Bbr2)) {
+        return mint_cc_choice<CcAlgorithm::Bbr2, Link>();
+    }
+    if (availability.contains(CcAlgorithm::Bbr1)) {
+        return mint_cc_choice<CcAlgorithm::Bbr1, Link>();
     }
     if (availability.contains(CcAlgorithm::Cubic)) {
         return mint_cc_choice<CcAlgorithm::Cubic, Link>();

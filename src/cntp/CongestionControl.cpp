@@ -61,10 +61,13 @@ private:
 
 void add_algorithm(CcAvailability& availability,
                    CcAlgorithm algorithm) noexcept {
+    // fixy-A5-018: BBR variants do NOT imply each other.  BBRv3 patches
+    // typically REPLACE the in-tree "bbr" module rather than coexisting
+    // — a kernel that registers "bbr3" usually does not also expose
+    // "bbr" as BBRv1, and vice versa.  Each enum value reflects exactly
+    // one kernel-registered name; the recommendation engine handles
+    // cross-variant fallback in recommend_cc.
     availability.algorithms.set(algorithm);
-    if (algorithm == CcAlgorithm::Bbr3) {
-        availability.algorithms.set(CcAlgorithm::Bbr1);
-    }
 }
 
 }  // namespace
@@ -96,7 +99,18 @@ std::string_view link_class_name(LinkClass link) noexcept {
 
 std::expected<CcAlgorithm, CcError>
 algorithm_from_kernel_name(std::string_view name) noexcept {
+    // fixy-A5-018: upstream Linux registers BBRv1 as "bbr".  BBRv2 and
+    // BBRv3 are out-of-tree (Google-maintained) and register under their
+    // own distinct names "bbr2" and "bbr3".  Mapping "bbr" → Bbr3 was a
+    // misread: a kernel that exposes plain "bbr" is running BBRv1 in the
+    // overwhelming majority of production fleets.
     if (name == "bbr") {
+        return CcAlgorithm::Bbr1;
+    }
+    if (name == "bbr2") {
+        return CcAlgorithm::Bbr2;
+    }
+    if (name == "bbr3") {
         return CcAlgorithm::Bbr3;
     }
     if (name == "cubic") {
@@ -110,9 +124,6 @@ algorithm_from_kernel_name(std::string_view name) noexcept {
     }
     if (name == "vegas") {
         return CcAlgorithm::Vegas;
-    }
-    if (name == "bbr2") {
-        return CcAlgorithm::Bbr2;
     }
     if (KernelCcName::from(name).has_value()) {
         return CcAlgorithm::Custom;
