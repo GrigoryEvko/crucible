@@ -238,6 +238,67 @@ void test_policy_dev_quiet_pins_and_reverts() {
 #endif
 }
 
+// fixy-A5-017 regression: revert() must leave the AppliedPolicy fully
+// disarmed — not just `reverted_=true` but with every observer reporting
+// the post-revert truth.  And operator=(&&)'s `revert(); swap_(o);` dance
+// must propagate that disarmed state into the moved-from source: a
+// handle that observers report as "still active" after move would be a
+// stale-tracking bug even though the `reverted_` flag short-circuits the
+// dtor's revert syscall.
+void test_revert_clears_observers() {
+    using namespace crucible::warden;
+
+#ifdef __linux__
+    ::setenv("CRUCIBLE_WARDEN_QUIET", "1", 1);
+
+    // Path 1: explicit early-revert.  After revert(), every observer
+    // that was true before must now be false.
+    {
+        auto g = apply(Policy::dev_quiet());
+        const bool had_affinity = g.affinity_applied();
+        const int  had_pin      = g.pinned_cpu();
+        (void)had_pin;
+        // Pre-A5-017 these would lie post-revert; verify the fix.
+        g.revert();
+        CHECK(!g.scheduler_applied(),
+              "scheduler_applied() must be false after revert");
+        CHECK(!g.affinity_applied(),
+              "affinity_applied() must be false after revert (was "
+              "leaking stale prior_affinity_set_ pre-A5-017)");
+        CHECK(g.regions_locked() == 0,
+              "regions_locked() must be zero after revert");
+        CHECK(g.pinned_cpu() == -1,
+              "pinned_cpu() must be -1 after revert (was leaking pre-A5-017)");
+        (void)had_affinity;
+    }
+
+    // Path 2: move-assignment.  The source (rhs) should be fully
+    // disarmed — its dtor short-circuits AND observers honestly report
+    // the disarmed state.  Pre-A5-017 the source kept prior_*_set_=true
+    // from the swap-after-revert dance because revert() didn't clear
+    // those flags.
+    {
+        auto lhs = apply(Policy::dev_quiet());
+        auto rhs = apply(Policy::dev_quiet());
+        lhs = std::move(rhs);
+        // NOLINTNEXTLINE(bugprone-use-after-move) — intentional: this is
+        // the bug under test.  A correctly disarmed moved-from object
+        // must report not-applied for every observer.
+        CHECK(!rhs.scheduler_applied(),
+              "moved-from rhs must NOT report scheduler_applied");
+        CHECK(!rhs.affinity_applied(),
+              "moved-from rhs must NOT report affinity_applied "
+              "(pre-A5-017 the stale flag propagated through swap)");
+        CHECK(rhs.regions_locked() == 0,
+              "moved-from rhs must report zero locked regions");
+        CHECK(rhs.pinned_cpu() == -1,
+              "moved-from rhs must report pinned_cpu == -1");
+    }
+
+    ::unsetenv("CRUCIBLE_WARDEN_QUIET");
+#endif
+}
+
 // `Policy::production()` degrades cleanly when capabilities are missing.
 void test_policy_production_degrades_gracefully() {
     using namespace crucible::warden;
@@ -335,6 +396,7 @@ int main() {
     test_core_selector_avoids_exclude();
     test_policy_none_is_noop();
     test_policy_dev_quiet_pins_and_reverts();
+    test_revert_clears_observers();
     test_policy_production_degrades_gracefully();
     test_registry_basic();
     test_registry_applies_on_apply();

@@ -134,6 +134,19 @@ class AppliedPolicy {
     ~AppliedPolicy() noexcept { revert(); }
 
     // Manual early-revert. Idempotent.
+    //
+    // fixy-A5-017: each tracking flag is cleared IMMEDIATELY after its
+    // syscall runs, not just at the top via `reverted_=true`.  The old
+    // code left `prior_sched_set_` / `prior_affinity_set_` /
+    // `thp_globally_disabled_` / `pinned_cpu_` set after revert; the
+    // operator=(&&) `revert(); swap_(o);` dance then propagated those
+    // stale flags into the moved-from object — so the source reported
+    // `scheduler_applied()==true` AND `affinity_applied()==true` on a
+    // handle that had already undone its work.  The `reverted_` guard
+    // at the top prevents LITERAL double-revert, but observers lied
+    // about the post-revert state.  Self-clearing here means the
+    // post-swap moved-from object is fully disarmed: every observer
+    // returns the disarmed answer.
     void revert() noexcept {
 #ifdef __linux__
         if (reverted_) return;
@@ -142,10 +155,12 @@ class AppliedPolicy {
         // Undo sched policy / nice in reverse order.
         if (prior_sched_set_) {
             (void)sched_setattr_sys(0, &prior_sched_, 0);
+            prior_sched_set_ = false;
         }
         // sched_setaffinity restore (only if we changed it).
         if (prior_affinity_set_) {
             (void)::sched_setaffinity(0, sizeof(prior_affinity_), &prior_affinity_);
+            prior_affinity_set_ = false;
         }
         // Unlock any regions we locked.
         for (const auto& r : locked_) {
@@ -155,7 +170,11 @@ class AppliedPolicy {
         // Re-enable THP if we turned it off.
         if (thp_globally_disabled_) {
             (void)::prctl(PR_SET_THP_DISABLE, 0, 0, 0, 0);
+            thp_globally_disabled_ = false;
         }
+        // pinned_cpu_ is a derived observable — once affinity is restored
+        // the "we pinned to CPU N" assertion no longer holds.
+        pinned_cpu_ = -1;
 #endif
     }
 
