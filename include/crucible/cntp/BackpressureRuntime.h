@@ -47,10 +47,29 @@ class CreditFlowControl : public safety::Pinned<CreditFlowControl<MaxFlows>> {
         static_cast<std::uint32_t>(std::numeric_limits<int>::max()) + 1u;
     static constexpr std::uint32_t kReservedFd = kEmptyFd + 1u;
 
-    struct FlowSlot {
+    // fixy-A5-011 follow-up: same false-sharing pattern as the A5-011 named
+    // structs (AtomicPingmeshPairCounters, AtomicProbeStats).  FlowSlot is
+    // embedded in `std::array<FlowSlot, MaxFlows> flows_` where independent
+    // flow producers concurrently fetch_sub on credit_bytes via grant /
+    // consume paths.  Without the alignment two adjacent FlowSlots fit on
+    // one 64-byte line and contend on every RMW (CLAUDE.md §VIII).  The two
+    // intra-struct atomics (fd_bits + credit_bytes = 8 bytes) are intentionally
+    // co-located — both belong to the SAME flow's producer; only inter-flow
+    // contention is the bug.
+    struct alignas(64) FlowSlot {
         std::atomic<std::uint32_t> fd_bits{kEmptyFd};
         std::atomic<std::uint32_t> credit_bytes{0};
     };
+
+    static_assert(alignof(FlowSlot) >= 64,
+                  "FlowSlot must be cache-line-aligned so that adjacent slots "
+                  "in CreditFlowControl::flows_ land on distinct cache lines "
+                  "under concurrent grant/consume from independent flows");
+    static_assert(sizeof(FlowSlot) >= 64,
+                  "FlowSlot occupies a full cache line; trailing padding is "
+                  "intentional — see false-sharing rationale above");
+    static_assert(sizeof(std::array<FlowSlot, 2>) >= 128,
+                  "Two adjacent FlowSlots must span at least two cache lines");
 
     class SpinGuard {
         std::atomic_flag& flag_;
