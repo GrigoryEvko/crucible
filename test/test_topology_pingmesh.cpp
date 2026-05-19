@@ -3,6 +3,8 @@
 #include "test_assert.h"
 
 #include <array>
+#include <bit>
+#include <cstdint>
 #include <cstdio>
 #include <string_view>
 
@@ -118,17 +120,43 @@ static void test_unknown_and_out_of_range_rejected() {
     std::printf("  test_unknown_and_out_of_range_rejected: PASSED\n");
 }
 
+// fixy-A5-011 regression: AtomicPingmeshPairCounters has alignas(64), so an
+// `std::array<AtomicPingmeshPairCounters, N>` (the per-pair grid embedded in
+// Pingmesh::counters_) must place every element on a distinct cache line.
+// Without the fix, a 4×4 fleet's 16-pair grid fit inside ~10 cache lines
+// and adjacent producer threads contended on every fetch_add.
+static void test_pair_counter_layout_invariants() {
+    using PairCounters = topology::detail::AtomicPingmeshPairCounters;
+    static_assert(alignof(PairCounters) >= 64,
+                  "AtomicPingmeshPairCounters must be cache-line-aligned");
+    static_assert(sizeof(PairCounters) >= 64,
+                  "AtomicPingmeshPairCounters occupies a full cache line");
+
+    std::array<PairCounters, 16> grid{};
+    constexpr std::uintptr_t LINE = 64;
+    for (std::size_t i = 0; i < grid.size(); ++i) {
+        auto const addr = std::bit_cast<std::uintptr_t>(&grid[i]);
+        assert((addr % LINE) == 0);
+        if (i > 0) {
+            auto const prev_addr = std::bit_cast<std::uintptr_t>(&grid[i - 1]);
+            assert(addr - prev_addr >= LINE);
+        }
+    }
+    std::printf("  test_pair_counter_layout_invariants: PASSED\n");
+}
+
 int main() {
     static_assert(topology::CtxFitsPingmeshMint<effects::ColdInitCtx>);
     static_assert(!topology::CtxFitsPingmeshMint<effects::BgDrainCtx>);
     static_assert(topology::CtxFitsPingmeshRecord<effects::BgDrainCtx>);
     static_assert(!topology::CtxFitsPingmeshRecord<effects::HotFgCtx>);
 
-    std::printf("test_topology_pingmesh: 4 groups\n");
+    std::printf("test_topology_pingmesh: 5 groups\n");
     test_names();
     test_register_and_record_pairs();
     test_loss_and_rejection_accounting();
     test_unknown_and_out_of_range_rejected();
+    test_pair_counter_layout_invariants();
     std::printf("test_topology_pingmesh: all passed\n");
     return 0;
 }

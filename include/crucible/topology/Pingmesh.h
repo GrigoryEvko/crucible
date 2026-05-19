@@ -139,13 +139,30 @@ concept CtxFitsPingmeshRecord =
 
 namespace detail {
 
-struct AtomicPingmeshPairCounters {
+// fixy-A5-011: alignas(64) is load-bearing.  The struct is embedded in a
+// MaxPeers×MaxPeers `std::array<AtomicPingmeshPairCounters, max_pairs>` grid
+// (Pingmesh::counters_) where adjacent pair slots are recorded concurrently
+// by per-peer probe threads under BgDrainCtx.  Without the alignment the
+// 40-byte struct lets two pairs share one 64-byte line — the classic
+// false-sharing trap (CLAUDE.md §VIII).  The five intra-struct atomics are
+// co-mutated by the SAME producer (whoever recorded this pair's outcome),
+// so packing them on one line is intentional and beneficial; the alignment
+// only isolates ACROSS pairs.
+struct alignas(64) AtomicPingmeshPairCounters {
     std::atomic<std::uint64_t> sent{0};
     std::atomic<std::uint64_t> delivered{0};
     std::atomic<std::uint64_t> lost{0};
     std::atomic<std::uint64_t> rejected{0};
     std::atomic<std::uint64_t> last_sequence{0};
 };
+
+static_assert(alignof(AtomicPingmeshPairCounters) >= 64,
+              "AtomicPingmeshPairCounters must be cache-line-aligned so that "
+              "adjacent slots in the Pingmesh counters_ grid land on distinct "
+              "lines under concurrent per-pair recording");
+static_assert(sizeof(AtomicPingmeshPairCounters) >= 64,
+              "AtomicPingmeshPairCounters occupies a full cache line; trailing "
+              "padding is intentional — see false-sharing rationale above");
 
 [[nodiscard]] constexpr std::uint32_t
 zscore_milli(std::uint64_t value,

@@ -174,7 +174,17 @@ metric_id_for(std::uint32_t base,
         + lane;
 }
 
-struct AtomicProbeStats {
+// fixy-A5-011: alignas(64) is load-bearing.  The struct is embedded in a
+// 2D `std::array<std::array<AtomicProbeStats, transport_kind_count>, MaxPeers>`
+// grid (SyntheticProbeRunner::stats_) where adjacent (peer, kind) slots are
+// recorded concurrently by per-transport probe threads under BgDrainCtx.
+// Without the alignment the ~57-byte struct lets two slots share one 64-byte
+// line — the classic false-sharing trap (CLAUDE.md §VIII).  The eight
+// intra-struct atomics are co-mutated by the SAME producer (whoever recorded
+// this peer-kind outcome), so packing them on one line is intentional and
+// beneficial for last-write-wins reads; the alignment only isolates ACROSS
+// (peer, kind) slots.
+struct alignas(64) AtomicProbeStats {
     std::atomic<std::uint64_t> scheduled{0};
     std::atomic<std::uint64_t> succeeded{0};
     std::atomic<std::uint64_t> failed{0};
@@ -185,6 +195,14 @@ struct AtomicProbeStats {
     std::atomic<std::uint8_t> last_failure{
         static_cast<std::uint8_t>(SyntheticProbeFailureClass::None)};
 };
+
+static_assert(alignof(AtomicProbeStats) >= 64,
+              "AtomicProbeStats must be cache-line-aligned so that adjacent "
+              "(peer, transport_kind) slots in the SyntheticProbeRunner "
+              "stats_ grid land on distinct lines under concurrent recording");
+static_assert(sizeof(AtomicProbeStats) >= 64,
+              "AtomicProbeStats occupies a full cache line; trailing padding "
+              "is intentional — see false-sharing rationale above");
 
 }  // namespace detail
 

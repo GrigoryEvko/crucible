@@ -2,6 +2,9 @@
 
 #include "test_assert.h"
 
+#include <array>
+#include <bit>
+#include <cstdint>
 #include <cstdio>
 #include <string_view>
 
@@ -109,17 +112,48 @@ static void test_rejects_unregistered_or_disabled() {
     std::printf("  test_rejects_unregistered_or_disabled: PASSED\n");
 }
 
+// fixy-A5-011 regression: AtomicProbeStats has alignas(64), so the 2D
+// stats_ grid `std::array<std::array<AtomicProbeStats, K>, M>` (peer × kind)
+// must place every (peer, kind) cell on a distinct cache line.  Without
+// the fix, the ~57-byte struct let adjacent transport-kind probes share
+// a line and contend on every fetch_add under concurrent recording.
+static void test_probe_stats_layout_invariants() {
+    using Stats = observe::detail::AtomicProbeStats;
+    static_assert(alignof(Stats) >= 64,
+                  "AtomicProbeStats must be cache-line-aligned");
+    static_assert(sizeof(Stats) >= 64,
+                  "AtomicProbeStats occupies a full cache line");
+
+    std::array<std::array<Stats, 4>, 4> grid{};
+    constexpr std::uintptr_t LINE = 64;
+    for (std::size_t p = 0; p < grid.size(); ++p) {
+        for (std::size_t k = 0; k < grid[p].size(); ++k) {
+            auto const addr = std::bit_cast<std::uintptr_t>(&grid[p][k]);
+            assert((addr % LINE) == 0);
+            if (p > 0 || k > 0) {
+                std::size_t const prev_p = (k == 0) ? p - 1 : p;
+                std::size_t const prev_k = (k == 0) ? grid[p].size() - 1 : k - 1;
+                auto const prev_addr =
+                    std::bit_cast<std::uintptr_t>(&grid[prev_p][prev_k]);
+                assert(addr - prev_addr >= LINE);
+            }
+        }
+    }
+    std::printf("  test_probe_stats_layout_invariants: PASSED\n");
+}
+
 int main() {
     static_assert(observe::CtxFitsSyntheticProbeMint<eff::ColdInitCtx>);
     static_assert(!observe::CtxFitsSyntheticProbeMint<eff::BgDrainCtx>);
     static_assert(observe::CtxFitsSyntheticProbeRecord<eff::BgDrainCtx>);
     static_assert(!observe::CtxFitsSyntheticProbeRecord<eff::HotFgCtx>);
 
-    std::printf("test_synthetic_probe: 4 groups\n");
+    std::printf("test_synthetic_probe: 5 groups\n");
     test_name_accessors();
     test_register_and_record_success();
     test_failure_accounting();
     test_rejects_unregistered_or_disabled();
+    test_probe_stats_layout_invariants();
     std::printf("test_synthetic_probe: all passed\n");
     return 0;
 }
