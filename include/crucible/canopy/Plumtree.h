@@ -190,6 +190,16 @@ public:
         CRUCIBLE_FATAL_INVARIANT(config_fits_shape_());
     }
 
+    // fixy-A5-032: transient HyParView shape inconsistency must not
+    // abort the daemon.  HyParView's active_view can transiently
+    // overshoot MaxPeers (or expose a duplicate / zero-uuid) during
+    // a concurrent join+shuffle race window — the snapshot we take
+    // here is read-only but not race-free.  Pre-fix the per-peer
+    // FATAL_INVARIANT killed the Keeper on every such window.  Now
+    // peers that fail to admit increment `transient_skipped_count_`
+    // and the constructor proceeds with the peers that did admit.
+    // Callers detect overshoot via `transient_skipped_count()` and
+    // can rebuild after the HyParView shuffle settles.
     template <std::size_t HyMaxActive, std::size_t HyMaxPassive>
         requires HyParViewShape<HyMaxActive, HyMaxPassive>
     explicit PlumtreeBroadcast(
@@ -199,8 +209,13 @@ public:
         CRUCIBLE_FATAL_INVARIANT(config_fits_shape_());
         auto active = membership.active_view();
         for (cog::CogIdentity const& peer : active.as_span()) {
-            CRUCIBLE_FATAL_INVARIANT(
-                add_link_(peer, PlumtreeLinkState::Eager).has_value());
+            auto rc = add_link_(peer, PlumtreeLinkState::Eager);
+            if (!rc.has_value()) {
+                if (transient_skipped_count_ <
+                    std::numeric_limits<std::uint16_t>::max()) {
+                    ++transient_skipped_count_;
+                }
+            }
         }
     }
 
@@ -227,6 +242,16 @@ public:
         return PlumtreeCount<MaxPeers>{
             static_cast<std::uint16_t>(link_count_ - eager_count_),
             typename PlumtreeCount<MaxPeers>::Trusted{}};
+    }
+
+    // fixy-A5-032: how many active-view peers were rejected by
+    // add_link_ during membership-ctor iteration.  Non-zero means
+    // the HyParView snapshot was inconsistent at capture time
+    // (concurrent join+shuffle race); rebuild after the shuffle
+    // settles.  Stays zero for the in-bounds steady-state.
+    [[nodiscard]] std::uint16_t
+    transient_skipped_count() const noexcept {
+        return transient_skipped_count_;
     }
 
     [[nodiscard]] PlumtreeCount<MaxHistory>
@@ -476,6 +501,11 @@ private:
     std::uint16_t eager_count_ = 0;
     std::uint16_t history_count_ = 0;
     std::uint16_t history_cursor_ = 0;
+    // fixy-A5-032: per-construction count of active peers rejected
+    // by add_link_ (CapacityExceeded / DuplicatePeer / ZeroUuid)
+    // during ctor iteration.  Saturates at uint16_t max — non-zero
+    // means the snapshot was inconsistent at the moment of capture.
+    std::uint16_t transient_skipped_count_ = 0;
 };
 
 static_assert(!std::is_copy_constructible_v<PlumtreeBroadcast<4, 8>>);

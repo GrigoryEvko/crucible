@@ -68,6 +68,9 @@ int main() {
     assert(broadcast.link_count().value() == 3);
     assert(broadcast.eager_count().value() == 2);
     assert(broadcast.lazy_count().value() == 1);
+    // fixy-A5-032: in-bounds steady-state membership snapshot
+    // must report zero transient skips.
+    assert(broadcast.transient_skipped_count() == 0);
     assert(broadcast.add_lazy_peer(hp(4)).has_value());
     assert(broadcast.link_count().value() == 4);
 
@@ -249,6 +252,46 @@ int main() {
         assert(rc.error() == cc::PlumtreeError::CapacityExceeded);
         // Broadcast stays empty — early reject avoided partial fill.
         assert(b.link_count().value() == 0);
+    }
+
+    // fixy-A5-032 regression: membership ctor must soft-skip
+    // peers that fail to admit (CapacityExceeded /
+    // DuplicatePeer / ZeroUuid) during a transient HyParView
+    // shape inconsistency window — and expose the count so the
+    // caller can rebuild after the shuffle settles.  Pre-fix the
+    // per-peer add_link_ CRUCIBLE_FATAL_INVARIANT killed the
+    // daemon during any concurrent join+shuffle race.
+    {
+        // HyParView with 5 active peers, but Plumtree only has
+        // MaxPeers = 3 link slots → 2 peers must be soft-skipped,
+        // ctor must not trap, and transient_skipped_count() must
+        // report exactly the overshoot.
+        std::array overshoot_active{hp(80), hp(81), hp(82),
+                                    hp(83), hp(84)};
+        cc::HyParViewConfig overshoot_hy{
+            .active_size = cc::HyParViewPositiveCount{5},
+            .passive_size = cc::HyParViewPositiveCount{6},
+            .active_random_walk_length = cc::HyParViewPositiveCount{3},
+            .passive_random_walk_length = cc::HyParViewPositiveCount{2},
+            .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
+            .shuffle_period_ns = cc::HyParViewDurationNs{30'000'000'000ULL},
+        };
+        auto overshoot_membership = cc::mint_hyparview<5, 6>(
+            crucible::effects::testing::init(),
+            std::span<const cc::HyParViewPeer>{overshoot_active},
+            {},
+            overshoot_hy);
+
+        cc::PlumtreeConfig small_cfg{
+            .ihave_timeout_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .repair_timeout_ns = cc::PlumtreeDurationNs{200'000'000ULL},
+            .lazy_push_period_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .max_eager_fanout = cc::PlumtreePositiveCount{2},
+        };
+        // This construction would have trapped pre-fix.
+        cc::PlumtreeBroadcast<3, 8> b{overshoot_membership, small_cfg};
+        assert(b.link_count().value() == 3);
+        assert(b.transient_skipped_count() == 2);
     }
 
     // Happy path: small membership + valid config → succeeds.
