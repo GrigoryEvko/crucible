@@ -2,10 +2,11 @@
 
 // ── crucible::algebra::ModalityKind ─────────────────────────────────
 //
-// The four modality forms parameterizing `Graded<M, L, T>` per Orchard,
-// Liepelt, Eades 2023 (arXiv:2309.04324) and 25_04_2026.md §2.2.  Every
-// safety wrapper that decorates a value has a graded-modality reading;
-// the table below maps each existing wrapper to its modality form.
+// The six modality forms parameterizing `Graded<M, L, T>` per Orchard,
+// Liepelt, Eades 2023 (arXiv:2309.04324), 25_04_2026.md §2.2, and the
+// FIXY-G10 (Quotient) / FIXY-G11 (Coeffect) extensions.  Every safety
+// wrapper that decorates a value has a graded-modality reading; the
+// table below maps each existing wrapper to its modality form.
 //
 //   ModalityKind        | Existing wrapper(s)                 | Operation
 //   --------------------+-------------------------------------+----------
@@ -19,6 +20,16 @@
 //                       | Budgeted<budget, T>                 |
 //   Relative            | RESERVED                            | cross-region
 //                       |                                     | flow
+//   Quotient            | Version<N>, Vendor<V>,              | equivalence-
+//                       | ForgePhase<P>                       | class name
+//   Coeffect            | dim::Cost grants                    | resource
+//                       |                                     | consumption
+//
+// Cardinality is pinned to six by the load-bearing static_assert in
+// `detail::modality_self_test` (search `modality_kind_count == 6`).  A
+// future enumerator MUST extend the table above in lockstep with the
+// enum, switch, concept gates, predicate-exclusivity tests, and tag-
+// type round-trips — otherwise the cardinality sentinel fires.
 //
 //   Axiom coverage: TypeSafe — ModalityKind is a strong enum with
 //                   explicit underlying type; no implicit conversion to
@@ -170,8 +181,11 @@ namespace detail::modality_self_test {
 static_assert(modality_kind_count == 6,
     "Modality count diverged from the six-member set "
     "(Comonad/RelativeMonad/Absolute/Relative/Quotient/Coeffect) — "
-    "confirm the addition is intentional and the name-coverage "
-    "assertion below still fires for the new enumerator.");
+    "confirm the addition is intentional, the name-coverage "
+    "assertion below still fires for the new enumerator, AND the "
+    "modality-form table at the top of this file gains a matching "
+    "row (the docstring claims 'six modality forms' so the prose "
+    "rots if it isn't extended in lockstep).");
 
 // Name coverage via reflection — every enumerator MUST have a
 // non-sentinel name from modality_name().  If an enumerator is added
