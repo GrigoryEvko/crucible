@@ -1,0 +1,18 @@
+# scripts/mint-pattern-allowlist.txt — §XXI scanner grandfather list.
+#
+# One `path:line` entry per line.  Files listed here are exempted from
+# the check-mint-pattern.sh [[nodiscard]] rule.  Lines beginning with
+# '#' are comments.
+#
+# Trim discipline: every entry is either a structural-false-positive
+# annotation OR a TODO.  When the listed site migrates or the regex
+# learns to recognize the false-positive shape, REMOVE the line.
+
+# Passkey class constructor (Passkey idiom).  The identifier
+# `mint_permission_inherit_key` is a class name (a passkey token)
+# whose constructor uses `constexpr ... noexcept = default`.  The
+# regex catches it as a mint factory because the syntactic shape
+# (`constexpr <name>(...)`) is identical.  Not actually a mint —
+# the real mint sits in `mint_permission_inherit_minter_::mint()`
+# and IS [[nodiscard]] (line 143-144).
+include/crucible/permissions/PermissionInherit.h:135

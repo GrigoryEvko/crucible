@@ -443,6 +443,17 @@ add_test(NAME fixy_discipline_self_test
           --self-test)
 add_test(NAME fixy_discipline
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.sh)
+# FIXY-U-003 §XXI Universal Mint Pattern compliance scanner.  Today's
+# Phase 1 check: every mint_<noun>( factory definition MUST carry the
+# [[nodiscard]] attribute on the same line or the immediately
+# preceding line.  Phase 2 (deferred) will extend to constexpr /
+# noexcept / requires-clause checks.  Self-test mode plants both a
+# canonical mint and a drift case to guard against regex regression.
+add_test(NAME mint_pattern_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.sh
+          --self-test)
+add_test(NAME mint_pattern
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.sh)
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
