@@ -125,7 +125,15 @@ private:
 #if defined(__x86_64__)
     mutable uint128_t cell_ = 0;
 #else
+    // fixy-A5-015: libstdc++ silently falls back to a mutex-locked
+    // implementation when the target ISA lacks a native 128-bit atomic
+    // (notably AArch64 without LSE-128 / Apple Silicon).  Hlc is on the
+    // canopy hot path; a hidden mutex would tank `now()` latency by
+    // orders of magnitude.  Refuse to build instead.
     mutable std::atomic<uint128_t> cell_{0};
+    static_assert(std::atomic<uint128_t>::is_always_lock_free,
+                  "Hlc requires a lock-free 128-bit atomic on non-x86 "
+                  "platforms; the target ISA does not provide one");
 #endif
 };
 
