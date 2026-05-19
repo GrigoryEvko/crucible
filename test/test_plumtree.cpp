@@ -38,6 +38,11 @@ int main() {
 
     assert(cc::plumtree_error_name(cc::PlumtreeError::UnknownPeer) ==
            std::string_view{"UnknownPeer"});
+    // fixy-A5-032: new explicit-race error code must round-trip
+    // through the name function so diagnostics surface it.
+    assert(cc::plumtree_error_name(
+               cc::PlumtreeError::TransientShapeInconsistency) ==
+           std::string_view{"TransientShapeInconsistency"});
 
     std::array active{hp(1), hp(2), hp(3)};
     cc::HyParViewConfig hy_config{

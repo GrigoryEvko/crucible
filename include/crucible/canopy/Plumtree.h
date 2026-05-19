@@ -70,6 +70,14 @@ enum class PlumtreeError : std::uint8_t {
     EmptyMessage,
     InvalidConfig,
     PeerNotFound,
+    // fixy-A5-032: explicit signal that a populate-from-membership
+    // attempt observed a racy HyParView snapshot (per-peer admission
+    // failure mid-iteration — duplicate or zero-uuid that wouldn't
+    // be there in a quiescent snapshot).  Callers branch on this
+    // code to apply backoff + retry; CapacityExceeded stays
+    // reserved for the structural static-overshoot signal so the
+    // two semantics never conflate.
+    TransientShapeInconsistency,
     UnknownPeer,
     ZeroUuid,
 };
@@ -560,16 +568,25 @@ populate_plumtree_from_membership(
     HyParViewMembership<HyMaxActive, HyMaxPassive> const& membership) noexcept {
     auto active = membership.active_view();
     if (active.as_span().size() > MaxPeers) {
+        // Static overshoot — caller's config is wrong, not a race.
         return std::unexpected(PlumtreeError::CapacityExceeded);
     }
+    // fixy-A5-032: per-peer admission failures during iteration
+    // signal a racy HyParView snapshot (a peer that wouldn't be
+    // present in a quiescent view — duplicate / zero-uuid).
+    // Remap to TransientShapeInconsistency so callers branch on
+    // a single explicit "retry with backoff" code instead of
+    // pattern-matching on multiple per-peer error variants.
     for (cog::CogIdentity const& peer : active.as_span()) {
         auto admitted = admit_hyparview_peer(peer);
         if (!admitted.has_value()) {
-            return std::unexpected(PlumtreeError::ZeroUuid);
+            return std::unexpected(
+                PlumtreeError::TransientShapeInconsistency);
         }
         auto rc = broadcast.add_eager_peer(*admitted);
         if (!rc.has_value()) {
-            return std::unexpected(rc.error());
+            return std::unexpected(
+                PlumtreeError::TransientShapeInconsistency);
         }
     }
     return {};

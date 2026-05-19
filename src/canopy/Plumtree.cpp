@@ -14,6 +14,8 @@ std::string_view plumtree_error_name(PlumtreeError error) noexcept {
             return "InvalidConfig";
         case PlumtreeError::PeerNotFound:
             return "PeerNotFound";
+        case PlumtreeError::TransientShapeInconsistency:
+            return "TransientShapeInconsistency";
         case PlumtreeError::UnknownPeer:
             return "UnknownPeer";
         case PlumtreeError::ZeroUuid:
