@@ -6,9 +6,12 @@
 // effect-row machinery — `Row<Es...>`, `Computation<R, T>`, the
 // Subrow concept, row set algebra, F* aliases (Pure/Tot/Ghost/Div/
 // ST/All), capability tokens, ExecCtx, OsUniverse, EffectMask
-// projection, ConcurrentRow, 21+ Resource budget tags — under
+// projection, ConcurrentRow, 23 ResourceKind budget tags — under
 // `fixy::eff::` so callers who include only the fixy umbrella never
-// have to descend into the effects/ tree.
+// have to descend into the effects/ tree.  Cardinality is pinned by
+// the substrate's `static_assert(resource_kind_count == 23)` in
+// effects/Resources.h:430 AND mirrored by the fixy-side witness in
+// the self-test block below.
 //
 // Per CLAUDE.md §XXI Universal Mint Pattern: there are no mints in
 // this header — the carrier types (`Row`, `Computation`,
@@ -78,14 +81,16 @@
 //                       / alloc_class_of_t / hot_path_tier_of_t /
 //                       residency_of_t / row_type_of_t /
 //                       workload_hint_of_t + mint_from_ctx
-//     Resources.h     — 21+ ResourceKind tags (SmBudget,
-//                       WarpSchedulerSlots, RegistersPerWarp,
-//                       SmemBytes, L2Bytes, HbmBytes, HbmBandwidth,
-//                       NvlinkBandwidth, PcieBandwidth, NicQueueBudget,
-//                       NicRingDepth, NicQp, NicCq, NicMr,
-//                       SwitchEgressBw, SwitchBufferCells, TcamEntries,
-//                       CpuCoreBudget, LlcBytes, PowerWatts,
-//                       ThermalCelsius, RackPowerKw, CarbonGramsPerKwh)
+//     Resources.h     — 23 resource::* budget tag templates (SmBudget,
+//                       WarpSchedulerSlots, RegistersPerWarp, SmemBytes,
+//                       L2Bytes, HbmBytes, HbmBandwidth, NvlinkBandwidth,
+//                       PcieBandwidth, NicQueueBudget, NicRingDepth,
+//                       NicQp, NicCq, NicMr, SwitchEgressBw,
+//                       SwitchBufferCells, TcamEntries, CpuCoreBudget,
+//                       LlcBytes, PowerWatts, ThermalCelsius,
+//                       RackPowerKw, CarbonGramsPerKwh) over 23
+//                       ResourceKind atoms (Sm, WarpScheduler, ...
+//                       same atom list — see effects/Resources.h:140)
 //                       + ResourceTag concept + resource_kind_count
 //     Concurrent.h    — ConcurrentRow<Tags...> + concurrent_row_value_v
 //     CtxWrapperLift.h — HotPathFromCtx / AllocClassFromCtx /
@@ -194,5 +199,47 @@ static_assert(::crucible::fixy::eff::IsFgCtx<::crucible::fixy::eff::HotFgCtx>);
 static_assert(sizeof(::crucible::fixy::eff::Bg)   == 1);
 static_assert(sizeof(::crucible::fixy::eff::Init) == 1);
 static_assert(sizeof(::crucible::fixy::eff::Test) == 1);
+
+// fixy-M-05: ResourceKind cardinality witness — couples the docstring
+// claim "23 ResourceKind budget tags" to the substrate truth.  The
+// substrate already pins resource_kind_count via reflection, but a
+// fixy-side mirror guarantees that an underbump in the substrate (or a
+// new enumerator without a docstring update) breaks the build at the
+// fixy layer too.  Adding a 24th ResourceKind requires extending BOTH
+// the eff_self_test block AND the docstring tag list above.
+static_assert(::crucible::fixy::eff::resource_kind_count == 23,
+    "fixy::eff::resource_kind_count diverged from 23 — extend the "
+    "ResourceKind tag list in the Eff.h docstring in lockstep with "
+    "the substrate change.");
+
+// Per-tag identity for every resource::* budget template — proves
+// the namespace alias surfaces every shipped tag (not just a sampled
+// subset) and that adding a new tag forces a parallel update here
+// for the new fixy::eff::resource::*<N> instantiation to resolve.
+// Each tag is instantiated with N=1 as a witness — the structural
+// identity holds independent of N.
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::SmBudget<1>,           ::crucible::effects::resource::SmBudget<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::WarpSchedulerSlots<1>, ::crucible::effects::resource::WarpSchedulerSlots<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::RegistersPerWarp<1>,   ::crucible::effects::resource::RegistersPerWarp<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::SmemBytes<1>,          ::crucible::effects::resource::SmemBytes<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::L2Bytes<1>,            ::crucible::effects::resource::L2Bytes<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::HbmBytes<1>,           ::crucible::effects::resource::HbmBytes<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::HbmBandwidth<1>,       ::crucible::effects::resource::HbmBandwidth<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::NvlinkBandwidth<1>,    ::crucible::effects::resource::NvlinkBandwidth<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::PcieBandwidth<1>,      ::crucible::effects::resource::PcieBandwidth<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicQueueBudget<1>,     ::crucible::effects::resource::NicQueueBudget<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicRingDepth<1>,       ::crucible::effects::resource::NicRingDepth<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicQp<1>,              ::crucible::effects::resource::NicQp<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicCq<1>,              ::crucible::effects::resource::NicCq<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicMr<1>,              ::crucible::effects::resource::NicMr<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::SwitchEgressBw<1>,     ::crucible::effects::resource::SwitchEgressBw<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::SwitchBufferCells<1>,  ::crucible::effects::resource::SwitchBufferCells<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::TcamEntries<1>,        ::crucible::effects::resource::TcamEntries<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::CpuCoreBudget<1>,      ::crucible::effects::resource::CpuCoreBudget<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::LlcBytes<1>,           ::crucible::effects::resource::LlcBytes<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::PowerWatts<1>,         ::crucible::effects::resource::PowerWatts<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::ThermalCelsius<1>,     ::crucible::effects::resource::ThermalCelsius<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::RackPowerKw<1>,        ::crucible::effects::resource::RackPowerKw<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::CarbonGramsPerKwh<1>,  ::crucible::effects::resource::CarbonGramsPerKwh<1>>);
 
 }  // namespace crucible::fixy::eff_self_test
