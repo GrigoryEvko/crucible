@@ -112,6 +112,7 @@
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/Secret.h>          // fixy-A4-015: AuthorizedReplay et al.
 
+#include <array>                             // fixy-L-09/L-10: std::array CTAD for kRoster drift sentinel
 #include <cstddef>
 #include <cstdint>                           // fixy-A4-015: std::uint32_t for DischargeAxis
 #include <meta>
@@ -1097,37 +1098,97 @@ inline constexpr bool IsInUnsoundnessCorpus_v =
 //
 // fixy-L-09 / fixy-L-10: the corpus has SIX entries; every entry
 // touches FOUR diagnostic chains.  This constant is the grep-able
-// pin for the entry count — the static_assert sentinel below
-// exercises every entry's `name()` accessor so that adding a corpus
-// struct WITHOUT touching the OR fold + cite/name/full chains (or
-// vice-versa, removing an entry from the fold without removing the
-// struct) cannot pass the build unnoticed.
+// pin for the entry count — the std::array CTAD sentinel below
+// derives its size from the initializer count (NOT from the
+// declared bound), so drift in EITHER direction breaks the build:
 //
-// To bump: add `1` and append the new entry's `name()` to the
-// sentinel below.  The discipline block above describes the full
-// 5-step PR shape.
+//   (a) Bump `corpus_size_v` to 7 + forget to append the 7th entry
+//       to `kRoster`  →  `kRoster.size() = 6 ≠ corpus_size_v = 7`
+//       → static_assert fires.  (A C-style `T arr[N] = {…}` would
+//       value-initialize the missing slots silently — std::array
+//       CTAD makes the initializer-count load-bearing.)
+//
+//   (b) Append a 7th initializer to `kRoster` + forget to bump
+//       `corpus_size_v`  →  `kRoster.size() = 7 ≠ corpus_size_v = 6`
+//       → static_assert fires.
+//
+//   (c) Add a corpus struct missing one of {name, cite,
+//       full_diagnostic} accessors  →  `kRoster` init fails to
+//       compile at the missing-accessor call site.  Exercising all
+//       three accessors per entry (via the `entry_witness` row
+//       below) closes the "added struct with `name()` but forgot
+//       `cite()` / `full_diagnostic()`" drift class right at the
+//       roster, NOT three chains away.
+//
+// To bump: increment `corpus_size_v` AND append a new
+// `entry_witness{...::name(), ...::cite(), ...::full_diagnostic()}`
+// row.  Forgetting either side is a hard compile error.  The
+// 5-step PR shape lives in the Discipline block at the top of this
+// header.
 
 inline constexpr std::size_t corpus_size_v = 6;
 
 namespace detail::corpus_size_sentinel {
-// Witness that every corpus entry exposes its name() — drift between
-// `corpus_size_v` and the actual entry roster will surface as either
-// a missing-name compile error (if `corpus_size_v` was bumped without
-// adding the struct) or a missing-string compile error (if a struct
-// was added without listing its name here).
-inline constexpr std::string_view kRoster[corpus_size_v] = {
-    corpus::classified_io_without_declassify::name(),
-    corpus::classified_bg_without_declassify::name(),
-    corpus::staleness_secret_without_declassify::name(),
-    corpus::ghost_runtime_observable::name(),
-    corpus::internal_io_without_declassify::name(),
-    corpus::internal_bg_without_declassify::name(),
+
+// One row per corpus entry — exercises the three string-returning
+// accessors that the cite/name/full if-chains consume.  Missing
+// any accessor on a corpus struct surfaces as a compile error at
+// the roster initializer below (in addition to the chain-side
+// failure), so the discipline gap is visible in ONE place.
+struct entry_witness {
+    std::string_view name;
+    std::string_view cite;
+    std::string_view full;
 };
-static_assert(sizeof(kRoster) / sizeof(kRoster[0]) == corpus_size_v,
+
+// CTAD: size deduced from initializer count.  `kRoster.size()`
+// returns 6 because there are 6 row-initializers, regardless of
+// what `corpus_size_v` is declared to be.  This is what makes the
+// drift static_assert below load-bearing rather than tautological.
+inline constexpr std::array kRoster = {
+    entry_witness{corpus::classified_io_without_declassify::name(),
+                  corpus::classified_io_without_declassify::cite(),
+                  corpus::classified_io_without_declassify::full_diagnostic()},
+    entry_witness{corpus::classified_bg_without_declassify::name(),
+                  corpus::classified_bg_without_declassify::cite(),
+                  corpus::classified_bg_without_declassify::full_diagnostic()},
+    entry_witness{corpus::staleness_secret_without_declassify::name(),
+                  corpus::staleness_secret_without_declassify::cite(),
+                  corpus::staleness_secret_without_declassify::full_diagnostic()},
+    entry_witness{corpus::ghost_runtime_observable::name(),
+                  corpus::ghost_runtime_observable::cite(),
+                  corpus::ghost_runtime_observable::full_diagnostic()},
+    entry_witness{corpus::internal_io_without_declassify::name(),
+                  corpus::internal_io_without_declassify::cite(),
+                  corpus::internal_io_without_declassify::full_diagnostic()},
+    entry_witness{corpus::internal_bg_without_declassify::name(),
+                  corpus::internal_bg_without_declassify::cite(),
+                  corpus::internal_bg_without_declassify::full_diagnostic()},
+};
+static_assert(kRoster.size() == corpus_size_v,
     "fixy-L-09/L-10: corpus_size_v drifted from the actual entry "
     "roster.  Re-audit the OR fold in is_in_unsoundness_corpus, the "
     "if-chains in corpus_cite_for_v / corpus_entry_name_for_v / "
-    "corpus_full_diagnostic_v, AND this roster array.");
+    "corpus_full_diagnostic_v, AND this roster array.  The "
+    "discipline block at the top of Theory.h enumerates the "
+    "5-step PR shape.");
+
+// Roster entries must each surface a NON-EMPTY name + cite — every
+// corpus struct ships these via `define_static_string` literals.
+// An empty view would indicate either (a) a malformed entry struct
+// or (b) a `define_static_string` linkage problem.  The full
+// diagnostic IS allowed to be empty under specific structural
+// conditions (see corpus::ghost_runtime_observable doc-block), so
+// we only constrain name + cite here.
+static_assert([] consteval {
+    for (auto const& w : kRoster) {
+        if (w.name.empty() || w.cite.empty()) { return false; }
+    }
+    return true;
+}(), "fixy-L-09/L-10: a corpus entry shipped empty name() or "
+     "cite() — every entry must surface a non-empty diagnostic "
+     "string for the tier-5 rejection message.");
+
 }  // namespace detail::corpus_size_sentinel
 
 // ═════════════════════════════════════════════════════════════════════
