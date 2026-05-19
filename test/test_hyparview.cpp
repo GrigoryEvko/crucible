@@ -3,6 +3,7 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <span>
 #include <string_view>
 #include <type_traits>
 
@@ -125,6 +126,74 @@ int main() {
     auto missing = membership.mark_failed(peer(99).uuid);
     assert(!missing.has_value());
     assert(missing.error() == cc::HyParViewError::PeerNotFound);
+
+    // fixy-A5-030 regression: recoverable admission path must reject
+    // over-capacity config and over-capacity peer spans WITHOUT
+    // aborting the process via CRUCIBLE_FATAL_INVARIANT.  Pre-fix the
+    // only way to construct from untrusted input was the trapping
+    // constructor; now callers can pre-validate and recover.
+
+    // Config too large for template params: active_size > MaxActive.
+    {
+        cc::HyParViewConfig too_big{
+            .active_size = cc::HyParViewPositiveCount{99},
+            .passive_size = cc::HyParViewPositiveCount{200},
+        };
+        auto admitted = cc::admit_hyparview_config<3, 6>(too_big);
+        assert(!admitted.has_value());
+        assert(admitted.error() == cc::HyParViewError::InvalidConfig);
+    }
+
+    // Config valid → returns the config unchanged.
+    {
+        cc::HyParViewConfig ok{
+            .active_size = cc::HyParViewPositiveCount{2},
+            .passive_size = cc::HyParViewPositiveCount{4},
+        };
+        auto admitted = cc::admit_hyparview_config<3, 6>(ok);
+        assert(admitted.has_value());
+        assert(admitted->active_size.value() == 2);
+    }
+
+    // Active span larger than config.active_size → ActiveViewFull
+    // (would have trapped pre-fix via the peer-list constructor).
+    {
+        cc::HyParViewConfig small_cfg{
+            .active_size = cc::HyParViewPositiveCount{1},
+            .passive_size = cc::HyParViewPositiveCount{4},
+        };
+        auto admitted = cc::admit_hyparview_config<3, 6>(small_cfg);
+        assert(admitted.has_value());
+        cc::HyParViewMembership<3, 6> m{*admitted};
+        std::array over_capacity{hp(50), hp(51), hp(52)};  // 3 > 1
+        auto rc = cc::populate_hyparview_membership(
+            m,
+            std::span<const cc::HyParViewPeer>{over_capacity});
+        assert(!rc.has_value());
+        assert(rc.error() == cc::HyParViewError::ActiveViewFull);
+        // Membership stays empty — early reject avoided partial fill.
+        assert(m.active_size().value() == 0);
+    }
+
+    // Happy path: well-sized span + valid peers → succeeds.
+    {
+        cc::HyParViewConfig cfg{
+            .active_size = cc::HyParViewPositiveCount{2},
+            .passive_size = cc::HyParViewPositiveCount{4},
+        };
+        auto admitted = cc::admit_hyparview_config<3, 6>(cfg);
+        assert(admitted.has_value());
+        cc::HyParViewMembership<3, 6> m{*admitted};
+        std::array good_active{hp(60), hp(61)};
+        std::array good_passive{hp(70), hp(71), hp(72)};
+        auto rc = cc::populate_hyparview_membership(
+            m,
+            std::span<const cc::HyParViewPeer>{good_active},
+            std::span<const cc::HyParViewPeer>{good_passive});
+        assert(rc.has_value());
+        assert(m.active_size().value() == 2);
+        assert(m.passive_size().value() == 3);
+    }
 
     return 0;
 }

@@ -495,4 +495,54 @@ mint_plumtree(
     return PlumtreeBroadcast<MaxPeers, MaxHistory>{membership, config};
 }
 
+// fixy-A5-030: recoverable admission path for Plumtree construction.
+// The two existing constructors trap via CRUCIBLE_FATAL_INVARIANT on
+// configs whose fanout exceeds MaxPeers OR when a passed membership has
+// more active peers than MaxPeers can accept — daemon-killing for any
+// caller that hasn't pre-checked.  These helpers expose the same
+// checks as a std::expected return so callers recover instead of abort.
+//
+// Usage pattern:
+//   auto admitted = admit_plumtree_config<MaxPeers>(config);
+//   if (!admitted) { return diagnose(admitted.error()); }
+//   PlumtreeBroadcast<MaxPeers, MaxHistory> b{*admitted};
+//   auto pop = populate_plumtree_from_membership(b, membership);
+//   if (!pop) { return diagnose(pop.error()); }
+template <std::size_t MaxPeers>
+    requires (MaxPeers > 0)
+[[nodiscard]] constexpr std::expected<PlumtreeConfig, PlumtreeError>
+admit_plumtree_config(PlumtreeConfig config) noexcept {
+    if (config.max_eager_fanout.value() > MaxPeers) {
+        return std::unexpected(PlumtreeError::InvalidConfig);
+    }
+    return config;
+}
+
+template <std::size_t MaxPeers,
+          std::size_t MaxHistory,
+          std::size_t HyMaxActive,
+          std::size_t HyMaxPassive>
+    requires PlumtreeShape<MaxPeers, MaxHistory> &&
+             HyParViewShape<HyMaxActive, HyMaxPassive>
+[[nodiscard]] std::expected<void, PlumtreeError>
+populate_plumtree_from_membership(
+    PlumtreeBroadcast<MaxPeers, MaxHistory>& broadcast,
+    HyParViewMembership<HyMaxActive, HyMaxPassive> const& membership) noexcept {
+    auto active = membership.active_view();
+    if (active.as_span().size() > MaxPeers) {
+        return std::unexpected(PlumtreeError::CapacityExceeded);
+    }
+    for (cog::CogIdentity const& peer : active.as_span()) {
+        auto admitted = admit_hyparview_peer(peer);
+        if (!admitted.has_value()) {
+            return std::unexpected(PlumtreeError::ZeroUuid);
+        }
+        auto rc = broadcast.add_eager_peer(*admitted);
+        if (!rc.has_value()) {
+            return std::unexpected(rc.error());
+        }
+    }
+    return {};
+}
+
 }  // namespace crucible::canopy

@@ -184,5 +184,104 @@ int main() {
     assert(!unknown.has_value());
     assert(unknown.error() == cc::PlumtreeError::UnknownPeer);
 
+    // fixy-A5-030 regression: recoverable admission path must reject
+    // over-capacity Plumtree config and over-capacity membership WITHOUT
+    // aborting the process via CRUCIBLE_FATAL_INVARIANT.  Pre-fix the
+    // only way to construct from untrusted input was the trapping
+    // ctor; now callers can pre-validate and recover.
+
+    // Config too large for template params: max_eager_fanout > MaxPeers.
+    {
+        cc::PlumtreeConfig too_big{
+            .ihave_timeout_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .repair_timeout_ns = cc::PlumtreeDurationNs{200'000'000ULL},
+            .lazy_push_period_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .max_eager_fanout = cc::PlumtreePositiveCount{99},
+        };
+        auto admitted = cc::admit_plumtree_config<4>(too_big);
+        assert(!admitted.has_value());
+        assert(admitted.error() == cc::PlumtreeError::InvalidConfig);
+    }
+
+    // Config valid → returns the config unchanged.
+    {
+        cc::PlumtreeConfig ok{
+            .ihave_timeout_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .repair_timeout_ns = cc::PlumtreeDurationNs{200'000'000ULL},
+            .lazy_push_period_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .max_eager_fanout = cc::PlumtreePositiveCount{2},
+        };
+        auto admitted = cc::admit_plumtree_config<4>(ok);
+        assert(admitted.has_value());
+        assert(admitted->max_eager_fanout.value() == 2);
+    }
+
+    // Membership active view larger than Plumtree MaxPeers →
+    // CapacityExceeded (would have trapped pre-fix via the membership
+    // ctor's CRUCIBLE_FATAL_INVARIANT on the per-peer add_link_).
+    {
+        std::array big_active{hp(60), hp(61), hp(62), hp(63), hp(64)};
+        cc::HyParViewConfig big_hy{
+            .active_size = cc::HyParViewPositiveCount{5},
+            .passive_size = cc::HyParViewPositiveCount{6},
+            .active_random_walk_length = cc::HyParViewPositiveCount{3},
+            .passive_random_walk_length = cc::HyParViewPositiveCount{2},
+            .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
+            .shuffle_period_ns = cc::HyParViewDurationNs{30'000'000'000ULL},
+        };
+        auto big_membership = cc::mint_hyparview<5, 6>(
+            crucible::effects::testing::init(),
+            std::span<const cc::HyParViewPeer>{big_active},
+            {},
+            big_hy);
+
+        cc::PlumtreeConfig small_pt{
+            .ihave_timeout_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .repair_timeout_ns = cc::PlumtreeDurationNs{200'000'000ULL},
+            .lazy_push_period_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .max_eager_fanout = cc::PlumtreePositiveCount{2},
+        };
+        auto admitted = cc::admit_plumtree_config<3>(small_pt);
+        assert(admitted.has_value());
+        cc::PlumtreeBroadcast<3, 8> b{*admitted};
+        auto rc = cc::populate_plumtree_from_membership(b, big_membership);
+        assert(!rc.has_value());
+        assert(rc.error() == cc::PlumtreeError::CapacityExceeded);
+        // Broadcast stays empty — early reject avoided partial fill.
+        assert(b.link_count().value() == 0);
+    }
+
+    // Happy path: small membership + valid config → succeeds.
+    {
+        std::array good_active{hp(70), hp(71)};
+        cc::HyParViewConfig good_hy{
+            .active_size = cc::HyParViewPositiveCount{2},
+            .passive_size = cc::HyParViewPositiveCount{4},
+            .active_random_walk_length = cc::HyParViewPositiveCount{3},
+            .passive_random_walk_length = cc::HyParViewPositiveCount{2},
+            .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
+            .shuffle_period_ns = cc::HyParViewDurationNs{30'000'000'000ULL},
+        };
+        auto good_membership = cc::mint_hyparview<2, 4>(
+            crucible::effects::testing::init(),
+            std::span<const cc::HyParViewPeer>{good_active},
+            {},
+            good_hy);
+
+        cc::PlumtreeConfig good_pt{
+            .ihave_timeout_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .repair_timeout_ns = cc::PlumtreeDurationNs{200'000'000ULL},
+            .lazy_push_period_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .max_eager_fanout = cc::PlumtreePositiveCount{2},
+        };
+        auto admitted = cc::admit_plumtree_config<4>(good_pt);
+        assert(admitted.has_value());
+        cc::PlumtreeBroadcast<4, 8> b{*admitted};
+        auto rc = cc::populate_plumtree_from_membership(b, good_membership);
+        assert(rc.has_value());
+        assert(b.link_count().value() == 2);
+        assert(b.eager_count().value() == 2);
+    }
+
     return 0;
 }

@@ -466,4 +466,69 @@ mint_hyparview(
         config, active_peers, passive_peers};
 }
 
+// fixy-A5-030: recoverable admission path for HyParView construction.
+// `mint_hyparview` (above) and the peer-list constructor trap via
+// CRUCIBLE_FATAL_INVARIANT on input that violates capacity or peer-shape
+// preconditions — a daemon-killing surface for any caller that hasn't
+// pre-checked.  These two helpers expose the same checks as a
+// std::expected return so the caller can recover from over-capacity
+// inputs or malformed peer spans without aborting the process.
+//
+// Usage pattern (replaces the trapping ctor for untrusted inputs):
+//   auto admitted = admit_hyparview_config<MaxA, MaxP>(config);
+//   if (!admitted) { return diagnose(admitted.error()); }
+//   HyParViewMembership<MaxA, MaxP> m{*admitted};
+//   auto pop = populate_hyparview_membership(m, active_peers, passive_peers);
+//   if (!pop) { return diagnose(pop.error()); }
+//
+// `mint_hyparview` stays as the trusted-input convenience for sites that
+// have already validated (e.g. internal calls from a Cipher-restored
+// snapshot whose invariants are guaranteed by Crucible's persistence
+// discipline).
+template <std::size_t MaxActive, std::size_t MaxPassive>
+    requires HyParViewShape<MaxActive, MaxPassive>
+[[nodiscard]] constexpr std::expected<HyParViewConfig, HyParViewError>
+admit_hyparview_config(HyParViewConfig config) noexcept {
+    if (config.active_size.value() > MaxActive) {
+        return std::unexpected(HyParViewError::InvalidConfig);
+    }
+    if (config.passive_size.value() > MaxPassive) {
+        return std::unexpected(HyParViewError::InvalidConfig);
+    }
+    if (config.active_size.value() > config.passive_size.value()) {
+        return std::unexpected(HyParViewError::InvalidConfig);
+    }
+    return config;
+}
+
+template <std::size_t MaxActive, std::size_t MaxPassive>
+    requires HyParViewShape<MaxActive, MaxPassive>
+[[nodiscard]] std::expected<void, HyParViewError>
+populate_hyparview_membership(
+    HyParViewMembership<MaxActive, MaxPassive>& membership,
+    std::span<const HyParViewPeer> active_peers,
+    std::span<const HyParViewPeer> passive_peers = {}) noexcept {
+    // Pre-check capacities against the admitted config so a partial-fill
+    // failure can't leave the membership in a half-populated state.
+    if (active_peers.size() > membership.config().active_size.value()) {
+        return std::unexpected(HyParViewError::ActiveViewFull);
+    }
+    if (passive_peers.size() > membership.config().passive_size.value()) {
+        return std::unexpected(HyParViewError::ActiveViewFull);
+    }
+    for (HyParViewPeer peer : active_peers) {
+        auto rc = membership.join(peer);
+        if (!rc.has_value()) {
+            return std::unexpected(rc.error());
+        }
+    }
+    for (HyParViewPeer peer : passive_peers) {
+        auto rc = membership.add_passive(peer);
+        if (!rc.has_value()) {
+            return std::unexpected(rc.error());
+        }
+    }
+    return {};
+}
+
 }  // namespace crucible::canopy
