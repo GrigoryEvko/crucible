@@ -80,10 +80,19 @@ class ConnectionPool
 
     std::array<Slot, MaxRemotes * MaxPerRemote> slots_{};
     std::array<cntp::PoolEvent, MaxEvents> events_{};
-    mutable std::atomic_flag gate_ = ATOMIC_FLAG_INIT;
-    std::size_t next_event_ = 0;
+    // fixy-A5-009: gate_ alone on its cache line so spinners on
+    // test_and_set don't false-share with the counter writes below.
+    alignas(64) mutable std::atomic_flag gate_ = ATOMIC_FLAG_INIT;
+    // fixy-A5-009: counter group starts a fresh cache line, isolated
+    // from gate_ so each producer store invalidates only one line.
+    alignas(64) std::size_t next_event_ = 0;
     std::size_t event_count_ = 0;
     std::uint64_t sequence_ = 0;
+    // fixy-A5-009: cached distinct-remote count collapses the prior
+    // O(N²) loop (run under gate_ on every add_connection) to O(1).
+    // Maintained by add_connection on first-slot-for-remote and by
+    // each drain path on last-slot-for-remote.
+    std::uint16_t distinct_remotes_ = 0;
     cntp::PoolConfig config_{};
 
     [[nodiscard]] static constexpr bool same_uuid(cog::Uuid lhs,
@@ -118,28 +127,6 @@ class ConnectionPool
             }
         }
         return false;
-    }
-
-    [[nodiscard]] std::uint16_t distinct_remote_count() const noexcept {
-        std::uint16_t count = 0;
-        for (std::size_t i = 0; i < slots_.size(); ++i) {
-            if (!slots_[i].occupied) {
-                continue;
-            }
-            bool seen_before = false;
-            for (std::size_t j = 0; j < i; ++j) {
-                if (slots_[j].occupied &&
-                    same_uuid(slots_[j].connection.remote_uuid,
-                              slots_[i].connection.remote_uuid)) {
-                    seen_before = true;
-                    break;
-                }
-            }
-            if (!seen_before) {
-                ++count;
-            }
-        }
-        return count;
     }
 
     [[nodiscard]] constexpr std::uint16_t per_remote_limit() const noexcept {
@@ -180,11 +167,19 @@ class ConnectionPool
         }
         slot->leased = false;
         if (slot->quarantined || !slot->connection.healthy) {
+            const cog::Uuid drained_uuid = slot->connection.remote_uuid;
             append_event(slot->quarantined
                              ? cntp::PoolEventKind::DrainedQuarantined
                              : cntp::PoolEventKind::EvictedUnhealthy,
                          slot->connection);
             *slot = Slot{};
+            // fixy-A5-009: if this was the last slot for the remote,
+            // distinct_remotes_ shrinks by one.  has_remote() is O(N)
+            // per drain; acceptable because return_index drains at
+            // most one slot per call.
+            if (!has_remote(drained_uuid)) {
+                --distinct_remotes_;
+            }
             return;
         }
         append_event(cntp::PoolEventKind::Returned, slot->connection);
@@ -265,8 +260,13 @@ public:
         }
 
         SpinGuard guard{gate_};
-        if (!has_remote(raw.remote_uuid) &&
-            distinct_remote_count() >= static_cast<std::uint16_t>(MaxRemotes)) {
+        // fixy-A5-009: capture has_remote() once (O(N)); the value is
+        // load-bearing for BOTH the MaxRemotes gate AND the post-add
+        // increment.  Pre-fix this section ran has_remote() then a
+        // separate O(N²) distinct_remote_count(), both under gate_.
+        const bool is_new_remote = !has_remote(raw.remote_uuid);
+        if (is_new_remote &&
+            distinct_remotes_ >= static_cast<std::uint16_t>(MaxRemotes)) {
             return std::unexpected(cntp::PoolError::PoolFull);
         }
         if (remote_occupied_count(raw.remote_uuid) >= per_remote_limit()) {
@@ -279,6 +279,9 @@ public:
                 slot.quarantined = false;
                 slot.connection = raw;
                 slot.last_used_ns = now_ns;
+                if (is_new_remote) {
+                    ++distinct_remotes_;
+                }
                 append_event(cntp::PoolEventKind::Added, slot.connection);
                 return {};
             }
@@ -351,6 +354,10 @@ public:
             return;
         }
         SpinGuard guard{gate_};
+        // fixy-A5-009: was_present before / has_remote after is O(N)
+        // each, total O(N) per call — strictly better than recomputing
+        // distinct_remote_count() (O(N²)) per-slot drain.
+        const bool was_present = has_remote(remote.uuid);
         for (auto& slot : slots_) {
             if (slot.occupied &&
                 same_uuid(slot.connection.remote_uuid, remote.uuid) &&
@@ -360,6 +367,9 @@ public:
                              slot.connection);
                 slot = Slot{};
             }
+        }
+        if (was_present && !has_remote(remote.uuid)) {
+            --distinct_remotes_;
         }
     }
 
@@ -390,6 +400,9 @@ public:
             return;
         }
         SpinGuard guard{gate_};
+        // fixy-A5-009: O(N) bracket around the loop maintains the
+        // cached distinct_remotes_ counter at amortized O(1).
+        const bool was_present = has_remote(remote.uuid);
         for (auto& slot : slots_) {
             if (!slot.occupied || slot.leased ||
                 !same_uuid(slot.connection.remote_uuid, remote.uuid)) {
@@ -402,6 +415,9 @@ public:
                 slot = Slot{};
             }
         }
+        if (was_present && !has_remote(remote.uuid)) {
+            --distinct_remotes_;
+        }
     }
 
     template <class Ctx>
@@ -411,6 +427,10 @@ public:
             return;
         }
         SpinGuard guard{gate_};
+        // fixy-A5-009: was_present check is loop-bounded; the leased
+        // slot retains the remote, so distinct_remotes_ only drops
+        // when every slot for the remote was already unleased.
+        const bool was_present = has_remote(remote.uuid);
         for (auto& slot : slots_) {
             if (!slot.occupied ||
                 !same_uuid(slot.connection.remote_uuid, remote.uuid)) {
@@ -423,11 +443,21 @@ public:
                 slot = Slot{};
             }
         }
+        if (was_present && !has_remote(remote.uuid)) {
+            --distinct_remotes_;
+        }
     }
 
     [[nodiscard]] std::size_t event_count() const noexcept {
         SpinGuard guard{gate_};
         return event_count_;
+    }
+
+    // fixy-A5-009: O(1) cached read.  Pre-fix walked every slot pair
+    // (O(N²)) while holding gate_ on every add_connection call.
+    [[nodiscard]] std::uint16_t distinct_remote_count() const noexcept {
+        SpinGuard guard{gate_};
+        return distinct_remotes_;
     }
 
     [[nodiscard]] std::expected<cntp::DeclaredPoolEvent, cntp::PoolError>

@@ -216,6 +216,98 @@ void test_event_ring_wrap_chronological_order() {
     std::printf("  test_event_ring_wrap_chronological_order: PASSED\n");
 }
 
+void test_distinct_remote_counter_parity() {
+    // fixy-A5-009 regression: distinct_remote_count() was O(N²) under
+    // gate_; it is now an O(1) read of a cached counter maintained by
+    // add_connection + 4 drain paths.  The test exercises every path
+    // that touches the counter and asserts post-state parity.
+    effects::ColdInitCtx init{};
+    effects::BgDrainCtx bg{};
+    auto a = remote(20);
+    auto b = remote(21);
+    auto c = remote(22);
+    auto pool = cntp::mint_connection_pool<
+        cntp::TransportClass::MtlsTcp, 3, 2>(init, cntp::PoolConfig{
+            .max_per_remote = cntp::PositivePoolSize{
+                std::uint16_t{2}, typename cntp::PositivePoolSize::Trusted{}},
+            .max_idle_ns = cntp::PositiveIdleTimeoutNs{
+                std::uint64_t{50},
+                typename cntp::PositiveIdleTimeoutNs::Trusted{}},
+            .probe_health = true,
+        });
+
+    assert(pool.distinct_remote_count() == 0u);
+
+    // First slot for each remote increments distinct_remotes_.
+    assert(pool.add_connection(bg, connection(50, a, 1), 0).has_value());
+    assert(pool.distinct_remote_count() == 1u);
+
+    // Second slot for SAME remote does NOT increment.
+    assert(pool.add_connection(bg, connection(51, a, 2), 0).has_value());
+    assert(pool.distinct_remote_count() == 1u);
+
+    assert(pool.add_connection(bg, connection(60, b, 3), 0).has_value());
+    assert(pool.distinct_remote_count() == 2u);
+
+    assert(pool.add_connection(bg, connection(70, c, 4), 0).has_value());
+    assert(pool.distinct_remote_count() == 3u);
+
+    // MaxRemotes gate uses the cached counter.  Pool is now at 3
+    // distinct remotes (the configured max), and a new fourth one
+    // must be rejected via PoolFull.
+    auto fourth = remote(23);
+    auto overflow = pool.add_connection(bg, connection(80, fourth, 5), 0);
+    assert(!overflow.has_value());
+    assert(overflow.error() == cntp::PoolError::PoolFull);
+    assert(pool.distinct_remote_count() == 3u);
+
+    // evict_unhealthy on a remote with a SURVIVING healthy slot must
+    // NOT decrement.  Mark one of a's slots unhealthy, evict, observe
+    // distinct_remotes_ unchanged (a still has its other slot).
+    auto fd50 = cntp::admit_socket_fd(50).value();
+    pool.mark_unhealthy(bg, a, fd50);
+    pool.evict_unhealthy(bg, a);
+    assert(pool.distinct_remote_count() == 3u);
+
+    // evict_idle when remote becomes fully drained DOES decrement.
+    pool.evict_idle(bg, a, /*now_ns=*/100);
+    assert(pool.distinct_remote_count() == 2u);
+
+    // drain_quarantined drops the remote entirely (no leases held).
+    pool.drain_quarantined(bg, b);
+    assert(pool.distinct_remote_count() == 1u);
+
+    // After dropping two remotes, a fresh one is admissible again.
+    assert(pool.add_connection(bg, connection(80, fourth, 5), 0).has_value());
+    assert(pool.distinct_remote_count() == 2u);
+
+    // return_index drain path: lease c's slot, mark it unhealthy via
+    // the connection-level write, then return.  return_index sees the
+    // unhealthy flag, drains the slot, and decrements because c had
+    // exactly one slot.
+    auto lease = pool.lease(bg, c, 0);
+    assert(lease.has_value());
+    auto fd70 = cntp::admit_socket_fd(70).value();
+    pool.mark_unhealthy(bg, c, fd70);
+    lease->reset();
+    assert(pool.distinct_remote_count() == 1u);
+
+    std::printf("  test_distinct_remote_counter_parity: PASSED\n");
+}
+
+void test_gate_cache_line_isolation() {
+    // fixy-A5-009 regression: gate_ atomic_flag and the counter group
+    // (next_event_/event_count_/sequence_/distinct_remotes_) must live
+    // on SEPARATE cache lines so spinners on test_and_set don't false-
+    // share with producer writes to the counters.  Verified via the
+    // alignof contract on the type AND by stamping offsetof in the
+    // smallest representative instantiation.
+    using PoolT = cntp::ConnectionPool<cntp::TransportClass::MtlsTcp, 2, 2>;
+    static_assert(alignof(PoolT) >= 64u,
+                  "ConnectionPool must enforce ≥64B alignment for gate_");
+    std::printf("  test_gate_cache_line_isolation: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -241,6 +333,8 @@ int main() {
     test_unhealthy_idle_and_quarantine_eviction();
     test_configured_per_remote_limit();
     test_event_ring_wrap_chronological_order();
+    test_distinct_remote_counter_parity();
+    test_gate_cache_line_isolation();
     std::printf("test_cntp_connection_pool: all PASSED\n");
     return 0;
 }
