@@ -13,6 +13,15 @@
 //             trust::Unverified → trust::Tested
 //             refinement: pred::True → pred::ValidCntpFrame
 //
+// USAGE AXIS is `Borrow` here, not `Linear`: the Fn is a non-owning
+// view over storage held by the NetworkBuffer (whose lifetime the
+// `lifetime::In<NetworkBufferTag>` axis already documents).  A
+// `Linear` × `lifetime::In<Tag>` composition without a threaded
+// `Permission<Tag>` proof fires CollisionCatalog rule L004 (Linear
+// resource in a tagged region whose ownership is unproven).  See
+// neg_collision_L004_linear_region_lifetime in test/safety_neg/
+// for the compile-time witness of the catalog enforcement.
+//
 // Until step 3 succeeds, the frame must NOT cross any sanitized-only
 // API.  The Fn<...> wrapper carries the per-axis trust state at the
 // type level, so a function that demands `Source = source::Sanitized`
@@ -94,7 +103,11 @@ struct NetworkBufferTag {};
 //
 //   Type        : CntpHeader                          — POD struct
 //   Refinement  : pred::True                          — no compile-time gate yet
-//   Usage       : Linear                              — frame is consumed once
+//   Usage       : Borrow                              — non-owning view over
+//                                                       NetworkBuffer storage
+//                                                       (Linear × lifetime::In
+//                                                        without a Permission
+//                                                        proof would fire L004)
 //   EffectRow   : Row<>                               — pure data, no effects
 //   Security    : SecLevel::Public                    — wire-visible header
 //   Protocol    : proto::None                         — no session yet (handshake pending)
@@ -115,7 +128,7 @@ struct NetworkBufferTag {};
 using UnvalidatedCntpFrame = fn::Fn<
     CntpHeader,                                       // 1 Type
     fn::pred::True,                                   // 2 Refinement (none yet)
-    fn::UsageMode::Linear,                            // 3 Usage
+    fn::UsageMode::Borrow,                            // 3 Usage
     fx::Row<>,                                        // 4 EffectRow (pure data)
     fn::SecLevel::Public,                             // 5 Security
     fn::proto::None,                                  // 6 Protocol
@@ -159,7 +172,7 @@ using UnvalidatedCntpFrame = fn::Fn<
 using ValidatedCntpFrame = fn::Fn<
     CntpHeader,
     fn::pred::True,                                   // would be ValidCntpFrame in prod
-    fn::UsageMode::Linear,
+    fn::UsageMode::Borrow,                            // 3 same Borrow rationale as above
     fx::Row<>,
     fn::SecLevel::Public,
     fn::proto::None,

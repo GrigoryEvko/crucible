@@ -3572,6 +3572,8 @@ crucible_neg_compile_test(neg_collision_N002_decimal_overflow_wrap
   "N002:")
 crucible_neg_compile_test(neg_collision_L003_unscoped_spawn_borrow_capture
   "L003:")
+crucible_neg_compile_test(neg_collision_L004_linear_region_lifetime
+  "L004:")
 crucible_neg_compile_test(neg_collision_M011_linear_fail_no_cleanup
   "M011:")
 crucible_neg_compile_test(neg_collision_S010_stale_ct
