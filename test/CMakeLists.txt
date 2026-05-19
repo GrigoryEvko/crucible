@@ -9353,6 +9353,17 @@ crucible_neg_compile_fixy_test(neg_fixy_theory_staleness_secret
 crucible_neg_compile_fixy_test(neg_fixy_theory_ghost_observable
     "NotInTheoryCorpus|ghost_runtime_observable")
 
+# fixy-M-14 — HS14 ≥2 floor for the ghost_runtime_observable corpus
+# entry.  First fixture uses with_io to demonstrate the IO branch.
+# This second fixture uses with_alloc to demonstrate the runtime-
+# presence rule fires on a structurally distinct effect (heap, not
+# external side effect).  Together they show the rule generalizes
+# across the runtime-observable effect set; a future regression that
+# accidentally narrowed the matcher to IO-only would still fail the
+# first fixture but pass this one, naming the gap precisely.
+crucible_neg_compile_fixy_test(neg_fixy_theory_ghost_observable_alloc
+    "NotInTheoryCorpus|ghost_runtime_observable")
+
 # fixy-CR-01 — staleness-secret strict-default closure.
 # Second fixture mirroring the classified_io / classified_bg pair
 # above, this time anchored on the staleness_secret_without_declassify
