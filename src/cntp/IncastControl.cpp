@@ -21,7 +21,7 @@ std::string_view incast_error_name(IncastError error) noexcept {
         case IncastError::TooManyFlows:             return "TooManyFlows";
         case IncastError::FlowNotStarted:           return "FlowNotStarted";
         case IncastError::CreditOverflow:           return "CreditOverflow";
-        case IncastError::CreditTimeout:            return "CreditTimeout";
+        case IncastError::CreditUnavailable:        return "CreditUnavailable";
         default:                                    return "<unknown IncastError>";
     }
 }

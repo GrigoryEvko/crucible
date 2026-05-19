@@ -47,8 +47,8 @@ private:
 };
 
 void test_admission_and_names() {
-    assert(cntp::incast_error_name(cntp::IncastError::CreditTimeout) ==
-           std::string_view{"CreditTimeout"});
+    assert(cntp::incast_error_name(cntp::IncastError::CreditUnavailable) ==
+           std::string_view{"CreditUnavailable"});
 
     auto credit = cntp::admit_credit_bytes(64 * 1024);
     assert(credit.has_value());
@@ -119,13 +119,11 @@ void test_credit_pacing_state() {
     auto fd2 = cntp::admit_socket_fd(12);
     auto initial = cntp::admit_credit_bytes(4096);
     auto extra = cntp::admit_credit_bytes(1024);
-    auto timeout = cntp::admit_rto_min_usec(1000);
     assert(fd0.has_value());
     assert(fd1.has_value());
     assert(fd2.has_value());
     assert(initial.has_value());
     assert(extra.has_value());
-    assert(timeout.has_value());
 
     auto started = controller.start_credit_flow(init, *fd0, *initial);
     assert(started.has_value());
@@ -139,12 +137,25 @@ void test_credit_pacing_state() {
     assert(grant->bytes.value() == extra->value());
     assert(grant->sequence == 7);
 
-    auto received = controller.await_credit(bg, *fd0, *timeout);
+    // fixy-A5-005: try_consume_credit polls once, never blocks.  First
+    // call drains the 5120-byte balance (initial 4096 + issued 1024);
+    // second call returns CreditUnavailable immediately because no
+    // additional credit has been issued.
+    auto received = controller.try_consume_credit(bg, *fd0);
     assert(received.has_value());
     assert(received->value() == 5120);
-    auto empty = controller.await_credit(bg, *fd0, *timeout);
+    auto empty = controller.try_consume_credit(bg, *fd0);
     assert(!empty.has_value());
-    assert(empty.error() == cntp::IncastError::CreditTimeout);
+    assert(empty.error() == cntp::IncastError::CreditUnavailable);
+
+    // Pre-fix regression guard: await_credit took a PositiveRtoMinUsec
+    // parameter that was completely ignored.  Confirm the renamed
+    // method's signature drops that parameter (compile-time check via
+    // pointer-to-member-function type assignment).
+    using ConsumeFn = std::expected<cntp::PositiveCreditBytes, cntp::IncastError>
+        (cntp::IncastController<2>::*)(effects::BgDrainCtx const&, cntp::SocketFd) noexcept;
+    static_cast<void>(static_cast<ConsumeFn>(
+        &cntp::IncastController<2>::try_consume_credit<effects::BgDrainCtx>));
 
     assert(controller.start_credit_flow(init, *fd1, *initial).has_value());
     auto overflow = controller.start_credit_flow(init, *fd2, *initial);

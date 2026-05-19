@@ -33,7 +33,13 @@ enum class IncastError : std::uint8_t {
     TooManyFlows,
     FlowNotStarted,
     CreditOverflow,
-    CreditTimeout,
+    // fixy-A5-005: this error means "no credit currently issued for this
+    // flow" — try_consume_credit polls once and returns immediately.  It
+    // is NOT a timeout (the controller never blocks); the previous name
+    // CreditTimeout falsely implied a wait that the design rejects.  The
+    // BG drain thread is the sole credit consumer per flow, so a wait
+    // would be a single-threaded self-deadlock.
+    CreditUnavailable,
 };
 
 [[nodiscard]] std::string_view incast_error_name(IncastError error) noexcept;

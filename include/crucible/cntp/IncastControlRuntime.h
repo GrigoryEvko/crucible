@@ -152,19 +152,27 @@ public:
         };
     }
 
+    // fixy-A5-005: poll-once-fast consume of issued credit.  The
+    // previous name `await_credit` falsely promised a blocking wait —
+    // no waiting happens; the controller is a single-threaded BG-drain
+    // state machine and a real wait would be a self-deadlock against
+    // its own issue_credit call site.  The unused PositiveRtoMinUsec
+    // parameter (which encoded a timeout that nothing observed) is
+    // dropped.  Callers that want producer-consumer queueing wire
+    // PermissionedSpscChannel<PositiveCreditBytes, ...> over this
+    // accessor and block on the channel side, never inside the flow
+    // controller.
     template <class Ctx>
         requires CtxFitsIncastCredit<Ctx>
     [[nodiscard]] constexpr std::expected<
         cntp::PositiveCreditBytes, cntp::IncastError>
-    await_credit(Ctx const&,
-                 cntp::SocketFd fd,
-                 cntp::PositiveRtoMinUsec) noexcept {
+    try_consume_credit(Ctx const&, cntp::SocketFd fd) noexcept {
         FlowSlot* flow = find(fd);
         if (flow == nullptr) {
             return std::unexpected(cntp::IncastError::FlowNotStarted);
         }
         if (flow->credit_bytes == 0) {
-            return std::unexpected(cntp::IncastError::CreditTimeout);
+            return std::unexpected(cntp::IncastError::CreditUnavailable);
         }
         const std::uint32_t granted = flow->credit_bytes;
         flow->credit_bytes = 0;
@@ -180,7 +188,7 @@ public:
             return std::unexpected(cntp::IncastError::FlowNotStarted);
         }
         if (flow->credit_bytes == 0) {
-            return std::unexpected(cntp::IncastError::CreditTimeout);
+            return std::unexpected(cntp::IncastError::CreditUnavailable);
         }
         return cntp::PositiveCreditBytes{
             flow->credit_bytes, typename cntp::PositiveCreditBytes::Trusted{}};
