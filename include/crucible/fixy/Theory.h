@@ -353,9 +353,30 @@ template <> struct is_ghost_grant<grant::ghost>
 
 // `is_observable_effect_grant<G>` — true iff G is `grant::with<...>`
 // and its effect pack contains ANY effect with a runtime observability
-// footprint: Alloc, IO, Block, or Bg.  (Init and Test are compile-
-// time / one-shot tags that ghost code is allowed to coexist with —
-// the discipline only bans runtime presence.)
+// footprint per the ghost-elision boundary: Alloc, IO, Block, or Bg.
+//
+// fixy-M-11: Init and Test are EXCLUDED from this set; the choice
+// is deliberate, but the rationale was previously soft (the doc-block
+// waved at "one-shot" without a concrete boundary).  Concrete reading:
+//
+//   - `Init` is the program-construction effect.  Ghost-code elision
+//     is a TYPE-LEVEL discipline applied at TU compile time, BEFORE
+//     any Init-typed body executes; a ghost binding tagged with Init
+//     means "this ghost spec participates in compile-time
+//     initialization computation," not "this ghost code runs at
+//     startup."  Genuine ghost-runs-at-startup mistakes (ghost code
+//     in a module-loader path that DOES allocate) are still caught —
+//     by the Alloc/IO/Block/Bg gate, not by Init.
+//
+//   - `Test` is the test-context effect.  Ghost code in tests is
+//     legitimate (specifications evaluated under test harnesses);
+//     excluding Test admits this pattern without weakening the
+//     ghost-vs-production discipline.
+//
+// If a future ghost-with-Init audit reveals genuine runtime-presence
+// contradictions, the fix is to elevate Init into the observable
+// set here AND add a new §30.14 corpus entry for the specific
+// contradiction — never silently broaden the predicate.
 template <typename G> struct is_observable_effect_grant
     : std::false_type {};
 template <effects::Effect... Es>
@@ -365,6 +386,25 @@ struct is_observable_effect_grant<grant::with<Es...>>
          (Es == effects::Effect::IO)    ||
          (Es == effects::Effect::Block) ||
          (Es == effects::Effect::Bg))   || ...)> {};
+
+// fixy-M-11: structural witnesses lock the IN/OUT membership in.
+// If a future contributor changes the predicate, the corresponding
+// assertion fires and forces a lockstep update to the rationale
+// doc-block above (and a new corpus entry where applicable).
+static_assert(!is_observable_effect_grant<grant::with<effects::Effect::Init>>::value,
+    "fixy-M-11: Init must remain EXCLUDED from observable effects.  "
+    "Update the rationale doc-block AND add a corpus entry if "
+    "the boundary changes.");
+static_assert(!is_observable_effect_grant<grant::with<effects::Effect::Test>>::value,
+    "fixy-M-11: Test must remain EXCLUDED from observable effects.");
+static_assert( is_observable_effect_grant<grant::with<effects::Effect::Alloc>>::value,
+    "fixy-M-11: Alloc must remain IN the observable set.");
+static_assert( is_observable_effect_grant<grant::with<effects::Effect::IO>>::value,
+    "fixy-M-11: IO must remain IN the observable set.");
+static_assert( is_observable_effect_grant<grant::with<effects::Effect::Block>>::value,
+    "fixy-M-11: Block must remain IN the observable set.");
+static_assert( is_observable_effect_grant<grant::with<effects::Effect::Bg>>::value,
+    "fixy-M-11: Bg must remain IN the observable set.");
 
 }  // namespace detail
 
