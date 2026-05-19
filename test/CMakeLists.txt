@@ -1657,6 +1657,9 @@ crucible_neg_compile_fixy_test(neg_fixy_contract_demote_wrong_direction
 # pin the deleted-overload diagnostic and the channel ctx-fit gate:
 crucible_neg_compile_fixy_test(neg_fixy_sess_mint_session_deleted
     "is removed|mint_permissioned_session|use of deleted function")
+# fixy-A4-014: bare mint_session<Proto>(resource) — second deleted overload.
+crucible_neg_compile_fixy_test(neg_fixy_sess_mint_session_bare_deleted
+    "is removed|mint_permissioned_session|use of deleted function")
 crucible_neg_compile_fixy_test(neg_fixy_sess_channel_recv_row_drift
     "CtxFitsChannel|CtxFitsPermissionedProtocol|constraints not satisfied|associated constraints are not satisfied")
 

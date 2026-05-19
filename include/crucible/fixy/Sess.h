@@ -226,14 +226,34 @@ static_assert(::crucible::safety::diag::is_diagnostic_class_v<
 // ── Mint factories (CLAUDE.md §XXI Universal Mint Pattern) ─────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Note: bare `mint_session<Proto>(ctx, resource)` is `=delete`d in
-// sessions/SessionMint.h — production code uses
+// Note: both `mint_session<Proto>(ctx, resource)` AND the bare
+// `mint_session<Proto>(resource)` overloads are `=delete`d in
+// sessions/SessionMint.h (lines 977, 986) — production code uses
 // `mint_permissioned_session<Proto>(ctx, resource, perms...)` for
 // both the empty-PermSet shim AND the non-empty form.  The deleted
-// declaration is re-exported so stale call sites surface the
+// declarations are re-exported so stale call sites surface the
 // canonical diagnostic via the fixy:: path.  The structured
 // diagnostic tag for the removal lives at `fixy::sess::diag::
 // FixyMintSessionRemoved` (FIXY-AUDIT-B6).
+//
+// ── fixy-A4-014: §XXI grep-discipline structural pin ──────────────
+//
+// `grep "mint_session<"` is the canonical §XXI discovery query for
+// every authorization point named `mint_session`.  The using-decl
+// below re-exports the substrate's =delete`d family — by design,
+// because stale call sites must surface the structured deletion
+// diagnostic via the fixy:: path.  But the re-export means the §XXI
+// grep target is structurally a CANARY surface, not a live mint
+// surface: every match at `fixy::sess::mint_session<...>` is a
+// pointer to the deletion, not to an authorization point.
+//
+// The structural pin lives in the sentinel TU below (search
+// "fixy-A4-014" in test/test_fixy_sess_mint_removed_diag.cpp): a
+// `static_assert(!requires { ... })` that breaks the build if
+// EITHER deleted overload ever silently un-deletes.  Two HS14
+// neg-compile fixtures (test/fixy_neg/neg_fixy_sess_mint_session_
+// {deleted,bare_deleted}.cpp) witness the deletion diagnostic
+// surfaces through the fixy:: path for BOTH overloads.
 
 using ::crucible::safety::proto::mint_session;
 using ::crucible::safety::proto::mint_permissioned_session;
