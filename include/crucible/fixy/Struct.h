@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::struct_ — Structural-wrapper re-exports ────────
 //
-// Phase C re-export.  Surfaces every NON-Graded "structural" wrapper
+// Re-export.  Surfaces every NON-Graded "structural" wrapper
 // under `fixy::struct_::` so callers who include only the fixy
 // umbrella never have to descend into the safety/ tree to reach a
 // structural primitive.  Companion to:

@@ -2,7 +2,7 @@
 
 // ── crucible::fixy — Profile.h — strict / sketch mode selector ─────
 //
-// Phase D scaffold per misc/16_05_2026_fixy.md §82, §132, §347-369.
+// Scaffold per misc/16_05_2026_fixy.md §82, §132, §347-369.
 //
 // fixy ships in TWO acceptance modes, selected at CMake configure time
 // via the cache var `CRUCIBLE_FIXY_STRICT` (default ON):

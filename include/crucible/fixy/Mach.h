@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::mach — Machine minter under fixy:: ─────────────
 //
-// Phase C re-export per misc/16_05_2026_fixy.md.  Surfaces the
+// Re-export per misc/16_05_2026_fixy.md.  Surfaces the
 // safety/Machine.h state-machine carrier and its mint factory under
 // `fixy::mach::` so callers who include only the fixy umbrella never
 // have to descend into the safety/ tree to mint a typed state

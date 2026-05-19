@@ -2,7 +2,7 @@
 
 // ── crucible::fixy — Reject.h — the IsAccepted engagement gate ─────
 //
-// Phase A of the clean reimplementation per misc/16_05_2026_fixy.md §4.
+// Clean reimplementation per misc/16_05_2026_fixy.md §4.
 //
 // THIS IS THE LOAD-BEARING FIXY HEADER.  Every fixy:: binding gates
 // through `IsAccepted<Type, Grants...>` which combines:
@@ -67,7 +67,7 @@
 // ── Runtime cost ───────────────────────────────────────────────────
 //
 // Zero.  Every concept evaluates at template instantiation; the
-// fixy::fn<> wrapper (Phase B) carries no runtime state.
+// fixy::fn<> wrapper carries no runtime state.
 
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>

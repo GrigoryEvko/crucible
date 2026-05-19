@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::decide — Named VC predicates under fixy:: ─────
 //
-// Phase C re-export surface for `crucible::decide::` named VC
+// Re-export surface for `crucible::decide::` named VC
 // predicates (catalog of 23 predicates + Interval<T> type as of
 // 2026-05-19).  Surfaces every catalog predicate under fixy::decide::
 // so callers who include only the fixy umbrella never have to

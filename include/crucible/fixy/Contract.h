@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::contract — Contract macros + Cipher migration ──
 //
-// Phase C re-export per misc/16_05_2026_fixy.md §B9 / §C.  Surfaces
+// Re-export per misc/16_05_2026_fixy.md §B9 / §C.  Surfaces
 // the consteval-aware contract macro pair (`CRUCIBLE_PRE` /
 // `CRUCIBLE_POST`) AND the Cipher migration discipline (tier
 // promotion / demotion / restore + epoch-pinned delegate + persisted

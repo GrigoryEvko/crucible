@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::wrap — Value wrappers under fixy:: ─────────────
 //
-// Phase C re-export.  Surfaces every remaining value-level safety
+// Re-export.  Surfaces every remaining value-level safety
 // wrapper under `fixy::wrap::` so callers who include only the fixy
 // umbrella never have to descend into the safety/ tree to wrap a
 // value.  Companion to:

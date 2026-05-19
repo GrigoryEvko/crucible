@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::eff — Met(X) effect-row substrate ──────────────
 //
-// Phase D re-export per misc/16_05_2026_fixy.md.  Surfaces the full
+// Re-export per misc/16_05_2026_fixy.md.  Surfaces the full
 // effect-row machinery — `Row<Es...>`, `Computation<R, T>`, the
 // Subrow concept, row set algebra, F* aliases (Pure/Tot/Ghost/Div/
 // ST/All), capability tokens, ExecCtx, OsUniverse, EffectMask

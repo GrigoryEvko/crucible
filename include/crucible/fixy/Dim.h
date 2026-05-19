@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::dim — alias over safety::DimensionAxis ──────────
 //
-// Phase A of the clean reimplementation per misc/16_05_2026_fixy.md §4.
+// Clean reimplementation per misc/16_05_2026_fixy.md §4.
 //
 // THIS HEADER MUST NOT REDEFINE THE DIMENSION TAXONOMY.  The 20-axis
 // enum + 5-Tier classification is owned by `safety/DimensionTraits.h`

@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::sess — Session minters under fixy:: ────────────
 //
-// Phase C re-export per misc/16_05_2026_fixy.md §4.  Stable surface
+// Re-export per misc/16_05_2026_fixy.md §4.  Stable surface
 // names for the binary + MPST session-type combinators under
 // `crucible::safety::proto::*` plus the canonical mint factories
 // from `sessions/SessionMint.h`.
@@ -26,7 +26,7 @@
 //
 // ── References ──────────────────────────────────────────────────────
 //
-//   misc/16_05_2026_fixy.md §4 Phase C
+//   misc/16_05_2026_fixy.md §4
 //   sessions/Session.h            Send/Recv/Select/Offer/Loop/Continue/End
 //   sessions/SessionCrash.h       Stop_g, Stop = Stop_g<Abort>, CrashClass
 //   sessions/SessionDelegate.h    Delegate, Accept, EpochedDelegate

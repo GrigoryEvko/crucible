@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::tags — Source/Trust/Access/Version/Secret/Hash ──
 //
-// Phase D re-export per misc/16_05_2026_fixy.md.  Surfaces every
+// Re-export per misc/16_05_2026_fixy.md.  Surfaces every
 // load-bearing PROVENANCE / TRUST / ACCESS / VERSION / SECRET-POLICY /
 // HASH-FAMILY tag tree under `fixy::tags::<axis>::` so callers who
 // include only the fixy umbrella never have to descend into the

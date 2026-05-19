@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::fn — Type + Grants → safety::fn::Fn aggregator ─
 //
-// Phase B of the clean reimplementation per misc/16_05_2026_fixy.md §4.
+// Clean reimplementation per misc/16_05_2026_fixy.md §4.
 //
 // This header is THE universal integration point for fixy::: every
 // production binding spells `fixy::fn<Type, Grants...>` and the
@@ -174,9 +174,9 @@ struct project<grant::with<Es...>> { using type = effects::Row<Es...>; };
 
 // ── Dim 5 Security (enum-valued via declassify) ───────────────────
 //
-// Phase B convention: declassify<Policy> projects to SecLevel::Public.
+// Convention: declassify<Policy> projects to SecLevel::Public.
 // The Policy parameter is captured for audit trails (consumed by
-// Phase C's declassification call sites) but the substrate's
+// downstream declassification call sites) but the substrate's
 // security-lattice slot only needs the post-declassification level.
 template <typename Policy>
 struct project<grant::declassify<Policy>> {

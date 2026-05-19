@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::pipe — Pipeline/Stage/Endpoint minters ──────────
 //
-// Phase C re-export per misc/16_05_2026_fixy.md.  Surfaces the Tier-3
+// Re-export per misc/16_05_2026_fixy.md.  Surfaces the Tier-3
 // composition primitives (Endpoint → Stage → Pipeline) plus the
 // Endpoint↔Stage bridge mints under `fixy::pipe::` so callers who
 // include only the fixy umbrella never have to descend into the

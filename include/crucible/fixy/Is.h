@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::is — Concept-gate aliases under fixy:: ─────────
 //
-// Phase C re-export.  Surfaces every safety/Is*.h concept gate under
+// Re-export.  Surfaces every safety/Is*.h concept gate under
 // `fixy::is::IsX` so callers who include only the fixy umbrella never
 // have to descend into the safety/ tree to constrain a template
 // parameter.  Companion to:

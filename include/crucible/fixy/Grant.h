@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::grant — engagement markers + relaxation tags ───
 //
-// Phase A of the clean reimplementation per misc/16_05_2026_fixy.md §4.
+// Clean reimplementation per misc/16_05_2026_fixy.md §4.
 //
 // Every fixy:: binding's `Grants` pack consists of tags from this
 // header.  Each tag:

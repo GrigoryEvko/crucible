@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::bridge — Bridge minters under fixy:: ───────────
 //
-// Phase C re-export per misc/16_05_2026_fixy.md.  Surfaces the
+// Re-export per misc/16_05_2026_fixy.md.  Surfaces the
 // failure-recovery / persistence / mode-bridge wrap factories under
 // `fixy::bridge::` so callers who include only the fixy umbrella
 // never have to descend into the bridges/ tree to wrap a handle.

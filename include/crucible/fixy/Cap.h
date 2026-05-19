@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::cap — Capability minters under fixy:: ──────────
 //
-// Phase C re-export per misc/16_05_2026_fixy.md.  Surfaces the two
+// Re-export per misc/16_05_2026_fixy.md.  Surfaces the two
 // effects/Capability.h minters under `fixy::cap::` so callers who
 // include only the fixy umbrella never have to descend into the
 // effects/ tree to mint a Capability token.

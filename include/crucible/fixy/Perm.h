@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::perm — Permission minters under fixy:: ─────────
 //
-// Phase C re-export per misc/16_05_2026_fixy.md.  Surfaces the CSL
+// Re-export per misc/16_05_2026_fixy.md.  Surfaces the CSL
 // permission token mints (root / split / combine / split_n /
 // combine_n / share / fork / inherit) under `fixy::perm::` so
 // callers who include only the fixy umbrella never have to descend

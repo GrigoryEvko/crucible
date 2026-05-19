@@ -2,7 +2,7 @@
 
 // ── crucible::fixy — Default.h — per-dim strict defaults ───────────
 //
-// Phase A of the clean reimplementation per misc/16_05_2026_fixy.md §4.
+// Clean reimplementation per misc/16_05_2026_fixy.md §4.
 //
 // THIS HEADER MUST NOT DEFINE STRICT DEFAULTS LOCALLY.  The 20-axis
 // strict defaults are owned by `safety/Fn.h::Fn<Type, ...>`'s template

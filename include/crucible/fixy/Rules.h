@@ -2,11 +2,11 @@
 
 // ── crucible::fixy::rule — R001..R020 alias projection ─────────────
 //
-// Phase B of misc/16_05_2026_fixy.md §4.  Re-exports the 20 §6.8
+// Per misc/16_05_2026_fixy.md §4.  Re-exports the 20 §6.8
 // collision rule tags from safety/CollisionCatalog.h under the
 // grep-discoverable `fixy::rule::R<NNN>` namespace.
 //
-// Phase B convention: every production binding that wants to reference
+// Convention: every production binding that wants to reference
 // a §6.8 rule by its compact numeric code writes `fixy::rule::R001`
 // (etc.) rather than the longer
 // `safety::fn::collision::I002_ClassifiedFailPayload`.  The R<NNN>
@@ -48,7 +48,7 @@
 // ── Substrate added by this header ─────────────────────────────────
 //
 // NONE.  Twenty `using` aliases and a bijection self-test.  No new
-// trait, no new diagnostic.  If a Phase B reviewer adds a rule tag
+// trait, no new diagnostic.  If a reviewer adds a rule tag
 // here without also adding it to safety/CollisionCatalog.h, the
 // static_asserts below fail because the substrate's RuleCode enum
 // doesn't grow alongside.
@@ -88,7 +88,7 @@ namespace crucible::fixy::rule {
 //     with `usage_v == Linear`.  Backs R017 / L005.
 //
 //   safety::fn::collision::pack::frame_axis_consistent_v<Fs...>
-//     — Phase B security-seed: every F in the pack agrees on
+//     — security-seed: every F in the pack agrees on
 //     `security_v`.  Backs R018 / F001.
 //
 //   safety::fn::collision::pack::is_linear_in_region_v<F>

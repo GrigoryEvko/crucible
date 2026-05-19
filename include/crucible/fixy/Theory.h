@@ -2,8 +2,8 @@
 
 // ── crucible::fixy — Theory.h — §30.14 known-unsoundness corpus ────
 //
-// Phase D of the fixy reimplementation per misc/16_05_2026_fixy.md
-// §4.  This is the LOAD-BEARING reject-by-default surface that closes
+// Per misc/16_05_2026_fixy.md §4.  This is the LOAD-BEARING
+// reject-by-default surface that closes
 // the FX §30.14 type-theory unsoundness corpus.  Currently ships
 // FOUR entries — classified_io_without_declassify,
 // classified_bg_without_declassify, staleness_secret_without_declassify,

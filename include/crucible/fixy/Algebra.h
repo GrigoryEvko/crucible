@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::algebra — Graded substrate + 30 lattices ───────
 //
-// Phase D re-export per misc/16_05_2026_fixy.md.  Surfaces the full
+// Re-export per misc/16_05_2026_fixy.md.  Surfaces the full
 // Graded<Modality, Lattice, T> algebraic substrate plus every
 // concrete lattice from algebra/lattices/ under `fixy::algebra::` so
 // callers who include only the fixy umbrella never have to descend
@@ -26,7 +26,7 @@
 //   algebra/lattices/AllLattices.h
 //                              — pulls in all 30 concrete lattices
 //
-// ── Lattice catalog (30 entries, Phase C+ in flight) ───────────────
+// ── Lattice catalog (30 entries, in flight) ────────────────────────
 //
 //   QttSemiring, BoolLattice<Pred>, ConfLattice, TrustLattice<Src>,
 //   FractionalLattice, MonotoneLattice<T,Cmp>, SeqPrefixLattice<E>,

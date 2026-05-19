@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::diag — Diagnostic infrastructure ───────────────
 //
-// Phase D re-export per misc/16_05_2026_fixy.md.  Surfaces the
+// Re-export per misc/16_05_2026_fixy.md.  Surfaces the
 // classified-diagnostic substrate — `Category` enum, `tag_base`,
 // the 30-entry `Catalog` tuple, bidirectional `tag_of_t` /
 // `category_of_v` map, `Diagnostic<DiagnosticClass, Ctx...>`

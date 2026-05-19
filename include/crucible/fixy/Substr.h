@@ -2,7 +2,7 @@
 
 // ── crucible::fixy::substr — Substrate session minters ─────────────
 //
-// Phase C re-export per misc/16_05_2026_fixy.md.  Surfaces the
+// Re-export per misc/16_05_2026_fixy.md.  Surfaces the
 // per-substrate typed-session factories (SPSC, SWMR, Snapshot,
 // ChaseLev, MetaLog, ChainEdge, MPMC, CalendarGrid,
 // ShardedCalendarGrid, ShardedGrid) under `fixy::substr::` so callers
