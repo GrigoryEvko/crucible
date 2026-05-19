@@ -48,6 +48,22 @@
 //
 // Zero.  Concept aliases evaluate to the substrate concept at compile
 // time; the alias is a name-lookup directive, not a runtime cost.
+//
+// ── Surface (fixy-L-06) ────────────────────────────────────────────
+//
+// THREE re-export tiers under one namespace:
+//   (a) concept aliases     — fixy::is::IsX (template alias delegating
+//                             to safety::extract::IsX);
+//   (b) trait re-exports    — fixy::is::is_x_v (using-decl to
+//                             safety::extract::is_x_v);
+//   (c) type-alias helpers  — fixy::is::x_value_t / x_tag_t / x_proto_t
+//                             / x_source_t / x_predicate_type_t / ...
+//                             (using-decl to safety::extract::x_*).
+//
+// fixy-L-06 closes the (c) parity gap: every public *_t alias shipped
+// by safety/IsX.h is re-exported here.  Adding a new IsX.h MUST add
+// one row in each of (a), (b), (c) — the self_test block witnesses
+// the load-bearing path for each tier.
 
 #include <crucible/safety/IsAllocClass.h>
 #include <crucible/safety/IsBits.h>
@@ -195,6 +211,76 @@ using ::crucible::safety::extract::is_tagged_v;
 using ::crucible::safety::extract::is_vendor_v;
 using ::crucible::safety::extract::is_wait_v;
 
+// ─── Substrate type-alias re-exports (fixy-L-06) ──────────────────
+//
+// Each safety/IsX.h ships a slot-extractor alias template alongside
+// its concept + `is_x_v` trait:  e.g. IsLinear.h ships `IsLinear<T>`,
+// `is_linear_v<T>`, AND `linear_value_t<T>` (returns Linear<T>'s
+// inner payload type).  fixy::is::IsX + is_x_v have been mirrored
+// since the file was authored; the *_t slot extractors had drifted
+// out of parity (fixy-L-06: "Is.h re-exports incomplete vs available
+// IsX.h headers").  Re-export FULL parity here — partial parity is
+// its own form of drift, since every new IsX.h would silently leave
+// its extractor stranded behind the umbrella.
+//
+// Each `using` preserves the substrate's `requires is_x_v<T>`
+// constraint (using-decls name the template, not the unconstrained
+// shape); fixy::is::linear_value_t<int> still SFINAE-rejects with the
+// substrate's diagnostic.  Ordered alphabetically so new entries
+// land in their lexical home with no churn.
+
+using ::crucible::safety::extract::alloc_class_value_t;
+using ::crucible::safety::extract::bits_enum_t;
+using ::crucible::safety::extract::bits_underlying_t;
+using ::crucible::safety::extract::borrowed_ref_value_t;
+using ::crucible::safety::extract::borrowed_source_t;
+using ::crucible::safety::extract::borrowed_value_t;
+using ::crucible::safety::extract::budgeted_value_t;
+using ::crucible::safety::extract::cipher_tier_value_t;
+using ::crucible::safety::extract::consistency_value_t;
+using ::crucible::safety::extract::consumer_handle_value_t;
+using ::crucible::safety::extract::crash_value_t;
+using ::crucible::safety::extract::det_safe_value_t;
+using ::crucible::safety::extract::epoch_versioned_value_t;
+using ::crucible::safety::extract::hot_path_value_t;
+using ::crucible::safety::extract::linear_value_t;
+using ::crucible::safety::extract::mem_order_value_t;
+using ::crucible::safety::extract::numa_placement_value_t;
+using ::crucible::safety::extract::numerical_tier_value_t;
+using ::crucible::safety::extract::opaque_lifetime_value_t;
+using ::crucible::safety::extract::owned_region_tag_t;
+using ::crucible::safety::extract::owned_region_value_t;
+using ::crucible::safety::extract::permission_tag_t;
+using ::crucible::safety::extract::producer_handle_value_t;
+using ::crucible::safety::extract::progress_value_t;
+using ::crucible::safety::extract::recipe_spec_value_t;
+using ::crucible::safety::extract::reduce_into_accumulator_t;
+using ::crucible::safety::extract::reduce_into_reducer_t;
+using ::crucible::safety::extract::refined_predicate_type_t;
+using ::crucible::safety::extract::refined_value_t;
+using ::crucible::safety::extract::residency_heat_value_t;
+using ::crucible::safety::extract::secret_value_t;
+using ::crucible::safety::extract::session_handle_proto_t;
+using ::crucible::safety::extract::shared_permission_tag_t;
+using ::crucible::safety::extract::stale_semiring_t;
+using ::crucible::safety::extract::stale_staleness_t;
+using ::crucible::safety::extract::stale_value_t;
+using ::crucible::safety::extract::swmr_reader_value_t;
+using ::crucible::safety::extract::swmr_writer_value_t;
+using ::crucible::safety::extract::tagged_tag_t;
+using ::crucible::safety::extract::tagged_value_t;
+using ::crucible::safety::extract::vendor_value_t;
+using ::crucible::safety::extract::wait_value_t;
+
+// ─── Witness-namespace trait re-export (fixy-L-06) ────────────────
+//
+// IsWitness.h ships `safety::witness::is_valid_witness_v<W>` — the
+// runtime-correlated witness-registry check (Tested/CrossValidated
+// active vs Revoked/Stale/Expired).  Not concept-equivalent (validity
+// is a registry lookup, not a typestate) but fits the trait surface.
+
+using ::crucible::safety::witness::is_valid_witness_v;
+
 }  // namespace crucible::fixy::is
 
 // ── Self-test ──────────────────────────────────────────────────────
@@ -244,5 +330,39 @@ static_assert(IsPermissionFor<int, int>
 //     `safety::witness::`, not `safety::extract::`; the alias must
 //     forward to the right substrate concept.
 static_assert(IsWitness<int> == ::crucible::safety::witness::IsWitness<int>);
+
+// (5) linear_value_t — substrate type-alias parity (fixy-L-06).
+//     Witnesses that the slot-extractor alias re-export resolves to
+//     the substrate template, identity preserved at instantiation.
+static_assert(std::is_same_v<
+    linear_value_t<::crucible::safety::Linear<int>>,
+    ::crucible::safety::extract::linear_value_t<
+        ::crucible::safety::Linear<int>>>,
+    "fixy-L-06: fixy::is::linear_value_t must alias "
+    "safety::extract::linear_value_t (same template, not a shadow).");
+
+// (6) tagged_tag_t — second slot-extractor family.  Two-parameter
+//     wrapper (Tagged<T, Source>) extractor — exercises the path
+//     where the extracted slot is the SECOND template argument.
+namespace L06_TaggedProbe {
+struct ProbeSource {};
+}  // namespace L06_TaggedProbe
+
+static_assert(std::is_same_v<
+    tagged_tag_t<::crucible::safety::Tagged<int,
+        L06_TaggedProbe::ProbeSource>>,
+    ::crucible::safety::extract::tagged_tag_t<
+        ::crucible::safety::Tagged<int, L06_TaggedProbe::ProbeSource>>>,
+    "fixy-L-06: fixy::is::tagged_tag_t must alias "
+    "safety::extract::tagged_tag_t (two-arg wrapper, second-slot "
+    "extractor).");
+
+// (7) is_valid_witness_v — witness-registry trait re-export.  Bare
+//     types fall through to the primary template (= true); the path
+//     identity is what we witness, not the value.
+static_assert(is_valid_witness_v<int>
+           == ::crucible::safety::witness::is_valid_witness_v<int>,
+    "fixy-L-06: fixy::is::is_valid_witness_v must alias the substrate "
+    "safety::witness::is_valid_witness_v trait, not a shadowing redef.");
 
 }  // namespace crucible::fixy::is::self_test
