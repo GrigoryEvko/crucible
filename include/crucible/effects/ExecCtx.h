@@ -934,6 +934,100 @@ template <class Ctx, Effect Cap>
 concept CtxOwnsCapability = IsExecCtx<Ctx>
                          && row_contains_v<row_type_of_t<Ctx>, Cap>;
 
+// CtxOwnsAnyOf<Ctx, Es...> / CtxOwnsAllOf<Ctx, Es...> — variadic
+// disjunctive / conjunctive lifts of CtxOwnsCapability.  Used by call
+// sites whose authorization expression is "one of these effect atoms
+// must be present" or "every one of these effect atoms must be
+// present".  Both reduce to a single row_contains_v fold; cost is
+// identical to writing the expansion by hand, naming is the win.
+//
+// fixy-A5-039 discipline-scaling gap: across ~17 substrate headers
+// (cntp/, topology/, warden/, canopy/, perf/) the inline-expansion
+// form
+//
+//     requires effects::IsExecCtx<Ctx>
+//           && (effects::row_contains_v<effects::row_type_of_t<Ctx>,
+//                                       effects::Effect::Init>
+//               || effects::row_contains_v<effects::row_type_of_t<Ctx>,
+//                                          effects::Effect::Bg>)
+//
+// appears 34+ times.  The named form
+//
+//     requires effects::CtxOwnsAnyOf<Ctx, effects::Effect::Init,
+//                                         effects::Effect::Bg>
+//
+// is grep-discoverable, absorbs renames of row_type_of_t, and lets a
+// reviewer recognize the authorization shape at one glance instead of
+// parsing four template substitutions.  The empty-pack case is
+// admitted as a documented identity:
+//   • CtxOwnsAnyOf<Ctx>  ≡ false    (no atom can satisfy the OR)
+//   • CtxOwnsAllOf<Ctx>  ≡ true     (vacuously all atoms in {} satisfy)
+// Existing inline-expansion sites are queued for the FIXY-U-101 sweep;
+// new authorization sites SHOULD use these named concepts on first
+// write.
+//
+// Example — IncastControlRuntime.h::CtxFitsIncastConfigure:
+//
+//     template <class Ctx>
+//     concept CtxFitsIncastConfigure = effects::CtxOwnsAnyOf<
+//         Ctx, effects::Effect::Init, effects::Effect::Bg>;
+template <class Ctx, Effect... Es>
+concept CtxOwnsAnyOf = IsExecCtx<Ctx>
+                    && (row_contains_v<row_type_of_t<Ctx>, Es> || ...);
+
+template <class Ctx, Effect... Es>
+concept CtxOwnsAllOf = IsExecCtx<Ctx>
+                    && (row_contains_v<row_type_of_t<Ctx>, Es> && ...);
+
+// ── fixy-A5-039 self-test ───────────────────────────────────────────
+//
+// Lock the variadic-lift semantics with positive AND negative
+// witnesses against the canonical Ctx aliases.  These static_asserts
+// double as HS14 fixture #1 (compile-time) — see test/test_effects.cpp
+// for the runtime smoke and grep-discoverability fixture.
+
+// CtxOwnsAnyOf — disjunctive membership.  At least one Effect in Es
+// must appear in Ctx::row_type.
+static_assert(CtxOwnsAnyOf<BgDrainCtx, Effect::Bg, Effect::IO>,
+    "fixy-A5-039: BgDrainCtx::row = Row<Bg, Alloc> — disjunctive lift "
+    "must accept the row because Bg is present");
+static_assert(CtxOwnsAnyOf<ColdInitCtx, Effect::Bg, Effect::Init>,
+    "fixy-A5-039: ColdInitCtx::row = Row<Init, Alloc, IO> — must "
+    "accept because Init is present in the disjunction");
+static_assert(!CtxOwnsAnyOf<HotFgCtx, Effect::Bg, Effect::IO,
+                                       Effect::Init>,
+    "fixy-A5-039: HotFgCtx::row = Row<> (empty) — disjunctive lift "
+    "must reject because no Effect atom is present");
+static_assert(!CtxOwnsAnyOf<BgDrainCtx>,
+    "fixy-A5-039: empty-pack disjunction ≡ false — vacuously no atom "
+    "can satisfy the OR fold");
+
+// CtxOwnsAllOf — conjunctive membership.  Every Effect in Es must
+// appear in Ctx::row_type.
+static_assert(CtxOwnsAllOf<BgDrainCtx, Effect::Bg, Effect::Alloc>,
+    "fixy-A5-039: BgDrainCtx::row = Row<Bg, Alloc> — conjunctive "
+    "lift must accept the row because both atoms are present");
+static_assert(!CtxOwnsAllOf<BgDrainCtx, Effect::Bg, Effect::IO>,
+    "fixy-A5-039: BgDrainCtx::row = Row<Bg, Alloc> — conjunctive "
+    "lift must reject because IO is NOT in the row (would require "
+    "in_row<> promotion first)");
+static_assert(CtxOwnsAllOf<BgDrainCtx>,
+    "fixy-A5-039: empty-pack conjunction ≡ true — vacuous AND over "
+    "no atoms; matches std::conjunction_v on empty pack");
+static_assert(!CtxOwnsAllOf<HotFgCtx, Effect::Bg>,
+    "fixy-A5-039: HotFgCtx::row = Row<> — conjunctive lift must "
+    "reject any non-empty pack because no atoms are present");
+
+// Cross-check: CtxOwnsAnyOf with a single atom degenerates to
+// CtxOwnsCapability — keeps the single-atom call sites bit-equivalent
+// between the two surfaces.
+static_assert(CtxOwnsAnyOf<BgDrainCtx, Effect::Bg> ==
+              CtxOwnsCapability<BgDrainCtx, Effect::Bg>,
+    "fixy-A5-039: single-atom AnyOf must agree with CtxOwnsCapability");
+static_assert(CtxOwnsAllOf<BgDrainCtx, Effect::Bg> ==
+              CtxOwnsCapability<BgDrainCtx, Effect::Bg>,
+    "fixy-A5-039: single-atom AllOf must agree with CtxOwnsCapability");
+
 // CtxCanMint<Ctx, E>: the Cap-source associated with this Ctx is
 // authorized to mint Effect E.  Reduces to membership in the Ctx's
 // cap-permitted row (NOT the Ctx's row — those are different: row

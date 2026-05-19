@@ -21,19 +21,17 @@
 
 namespace crucible::cntp {
 
+// fixy-A5-039 worked-example migration: the named CtxOwnsAnyOf /
+// CtxOwnsCapability lift in effects/ExecCtx.h replaces the verbose
+// row_contains_v<row_type_of_t<Ctx>, ...> expansion.  Same predicate,
+// same cost, grep-discoverable authorization shape.
 template <class Ctx>
 concept CtxFitsIncastConfigure =
-       effects::IsExecCtx<Ctx>
-    && (effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                                effects::Effect::Init>
-        || effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                                   effects::Effect::Bg>);
+    effects::CtxOwnsAnyOf<Ctx, effects::Effect::Init, effects::Effect::Bg>;
 
 template <class Ctx>
 concept CtxFitsIncastCredit =
-       effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Bg>;
+    effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
 
 struct IncastCreditGrant {
     cntp::SocketFd fd{0, typename cntp::SocketFd::Trusted{}};

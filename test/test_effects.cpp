@@ -9,6 +9,7 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/EffectRow.h>
+#include <crucible/effects/ExecCtx.h>
 
 #include "test_assert.h"
 
@@ -130,6 +131,69 @@ static void test_metx_substrate_accessible() {
     std::printf("  test_metx_substrate:            PASSED\n");
 }
 
+// fixy-A5-039 HS14 fixture #2: runtime witness for the variadic
+// row-membership lifts.  Concept-constrained function templates only
+// instantiate when their requires-clause holds, so this test EITHER
+// compiles AND prints PASSED, OR fails to compile when the gate is
+// broken — there is no third outcome.  The point is the function-
+// signature-level naming: a reviewer reading `requires CtxOwnsAnyOf
+// <Ctx, Effect::Init, Effect::Bg>` sees the authorization shape at
+// one glance; the verbose row_contains_v<row_type_of_t<Ctx>, ...>
+// expansion needs four substitutions to parse.
+template <class Ctx>
+    requires CtxOwnsAnyOf<Ctx, Effect::Init, Effect::Bg>
+[[nodiscard]] constexpr int needs_init_or_bg(Ctx const&) noexcept {
+    return 42;
+}
+
+template <class Ctx>
+    requires CtxOwnsAllOf<Ctx, Effect::Bg, Effect::Alloc>
+[[nodiscard]] constexpr int needs_bg_and_alloc(Ctx const&) noexcept {
+    return 99;
+}
+
+static void test_variadic_row_membership_lifts() {
+    // POSITIVE path: a Ctx whose row contains a required atom calls
+    // through the concept-constrained template successfully.  The
+    // returned value is irrelevant — what we're proving is that the
+    // overload resolves at all.
+    BgDrainCtx  bg{};
+    ColdInitCtx init{};
+    assert(needs_init_or_bg(bg)   == 42);  // Bg ∈ Row<Bg, Alloc>
+    assert(needs_init_or_bg(init) == 42);  // Init ∈ Row<Init, Alloc, IO>
+    assert(needs_bg_and_alloc(bg) == 99);  // Bg ∧ Alloc both ∈ row
+
+    // NEGATIVE path: assert the concept ITSELF evaluates to false at
+    // compile time for Ctx whose row lacks the required atom(s).  This
+    // is the SAME predicate the function template's requires-clause
+    // consults — proving the concept rejects is sufficient evidence
+    // the call site would also fail to instantiate.  (We avoid the
+    // requires-expression-around-a-call form because GCC 16 treats an
+    // unresolved constrained-template call as a hard error inside the
+    // discarded requires-expression body, rather than as substitution
+    // failure as the standard would suggest.)
+    static_assert(CtxOwnsAnyOf<BgDrainCtx,  Effect::Init, Effect::Bg>);
+    static_assert(CtxOwnsAnyOf<ColdInitCtx, Effect::Init, Effect::Bg>);
+    static_assert(!CtxOwnsAnyOf<HotFgCtx,   Effect::Init, Effect::Bg>,
+        "fixy-A5-039: HotFgCtx (empty row) must NOT satisfy "
+        "CtxOwnsAnyOf<Ctx, Init, Bg> — concept gate must reject");
+
+    static_assert(CtxOwnsAllOf<BgDrainCtx, Effect::Bg, Effect::Alloc>);
+    static_assert(!CtxOwnsAllOf<ColdInitCtx, Effect::Bg, Effect::Alloc>,
+        "fixy-A5-039: ColdInitCtx::row = Row<Init, Alloc, IO> — "
+        "conjunctive lift must REJECT because Bg is not in the row, "
+        "even though Alloc is");
+    static_assert(!CtxOwnsAllOf<HotFgCtx, Effect::Bg>,
+        "fixy-A5-039: empty-row Ctx must fail the conjunctive gate "
+        "for any non-empty atom pack");
+
+    // Cross-axis identity: empty-pack edge cases.
+    static_assert(!CtxOwnsAnyOf<BgDrainCtx>);  // OR over {} is false
+    static_assert( CtxOwnsAllOf<BgDrainCtx>);  // AND over {} is true
+
+    std::printf("  test_variadic_row_membership_lifts: PASSED\n");
+}
+
 int main() {
     test_context_sizes_are_one_byte();
     test_top_level_aliases();
@@ -137,6 +201,7 @@ int main() {
     test_context_member_access();
     test_cap_param_propagation();
     test_metx_substrate_accessible();
-    std::printf("test_effects: 6 groups, all passed\n");
+    test_variadic_row_membership_lifts();
+    std::printf("test_effects: 7 groups, all passed\n");
     return 0;
 }
