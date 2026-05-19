@@ -491,6 +491,23 @@ add_test(NAME no_reserve
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reserve.sh)
 set_tests_properties(no_reserve no_reserve_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-097")
+# FIXY-U-105 reinterpret_cast ban enforcement (CLAUDE.md §III opt-out
+# matrix).  scripts/check-no-reinterpret-cast.sh flags every NEW
+# `reinterpret_cast<` call site outside the allowlist; 20 grandfathered
+# sites are tracked in scripts/no-reinterpret-allowlist.txt with their
+# migration tickets (FIXY-U-082, fixy-A5-028).  Self-test mode plants
+# five axes: drift, allowlist exempt, inline marker exempt, comment
+# filter exempt, and stale allowlist entry detection (stale entries
+# red CI at exit 2 so the allowlist drains in lockstep with substrate
+# fixes — every FIXY-U-082 site removal forces a same-PR allowlist
+# trim, preventing dead entries from masking future drift).
+add_test(NAME no_reinterpret_cast_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh
+          --self-test)
+add_test(NAME no_reinterpret_cast
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh)
+set_tests_properties(no_reinterpret_cast no_reinterpret_cast_self_test PROPERTIES
+    LABELS "ci_guard;fixy-U-105")
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
