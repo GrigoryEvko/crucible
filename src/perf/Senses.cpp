@@ -10,26 +10,11 @@
 
 namespace crucible::perf {
 
-// ─── State — holds 7 std::optional<facade> ──────────────────────────
-//
-// Each facade is move-only and owns its own BPF object + mmap.
-// std::optional gives us the "loaded vs not-loaded" discriminator
-// without an extra bool.  Order doesn't matter for correctness;
-// kept sense_hub-first to match the documented program order.
-// BTF variants (GAPS-004f) appended at end so the existing 5
-// facades' field offsets are preserved.
+// State definition moved into Senses.h to eliminate the noexcept-path
+// heap allocation (fixy-A5-026 / FIXY-U-088).  See the policy block
+// at the State definition site for the discipline rationale.
 
-struct Senses::State {
-    std::optional<SenseHub>       sense_hub;
-    std::optional<SchedSwitch>    sched_switch;
-    std::optional<PmuSample>      pmu_sample;
-    std::optional<LockContention> lock_contention;
-    std::optional<SyscallLatency> syscall_latency;
-    std::optional<SchedTpBtf>     sched_tp_btf;
-    std::optional<SyscallTpBtf>   syscall_tp_btf;
-};
-
-Senses::Senses(std::unique_ptr<State> s) noexcept : state_{std::move(s)} {}
+Senses::Senses(std::optional<State> s) noexcept : state_{std::move(s)} {}
 
 Senses::Senses(Senses&&) noexcept            = default;
 Senses& Senses::operator=(Senses&&) noexcept = default;
@@ -44,32 +29,23 @@ Senses::~Senses() noexcept                   = default;
 
 Senses Senses::load_subset(::crucible::effects::Init init,
                            SensesMask which) noexcept {
-    // GAPS-004g-AUDIT-5: nothrow-new (was std::make_unique).  load_subset
-    // is marked noexcept and the docstring promises "never fails
-    // wholesale" — but std::make_unique uses throwing new under
-    // -fexceptions (the project's default), so an OOM here would invoke
-    // std::terminate via the noexcept boundary, contradicting the
-    // promise.  nothrow new returns nullptr on OOM, the existing
-    // !s branch handles it, and the caller gets an empty Senses that
-    // reports coverage().attached_count() == 0.
-    auto* raw = new (std::nothrow) State();
-    std::unique_ptr<State> s{raw};
-    if (!s) {
-        // OOM at startup → return empty Senses; caller's coverage()
-        // will report all-false.  Preferable to abort or terminate —
-        // Senses is supposed to never fail wholesale.
-        return Senses{nullptr};
-    }
+    // fixy-A5-026 / FIXY-U-088: State is stack-constructed (was nothrow
+    // new + unique_ptr).  noexcept Init-path forbids heap allocation:
+    // even nothrow-new is a system-call boundary that can fail under
+    // pressure, and silently degrading to all-false coverage on OOM
+    // was a hidden failure mode.  Stack construction never fails;
+    // NRVO moves the State into the returned Senses without copy.
+    State s{};
 
-    if (which.sense_hub)       s->sense_hub       = SenseHub::load(init);
-    if (which.sched_switch)    s->sched_switch    = SchedSwitch::load(init);
-    if (which.pmu_sample)      s->pmu_sample      = PmuSample::load(init);
-    if (which.lock_contention) s->lock_contention = LockContention::load(init);
-    if (which.syscall_latency) s->syscall_latency = SyscallLatency::load(init);
-    if (which.sched_tp_btf)    s->sched_tp_btf    = SchedTpBtf::load(init);
-    if (which.syscall_tp_btf)  s->syscall_tp_btf  = SyscallTpBtf::load(init);
+    if (which.sense_hub)       s.sense_hub       = SenseHub::load(init);
+    if (which.sched_switch)    s.sched_switch    = SchedSwitch::load(init);
+    if (which.pmu_sample)      s.pmu_sample      = PmuSample::load(init);
+    if (which.lock_contention) s.lock_contention = LockContention::load(init);
+    if (which.syscall_latency) s.syscall_latency = SyscallLatency::load(init);
+    if (which.sched_tp_btf)    s.sched_tp_btf    = SchedTpBtf::load(init);
+    if (which.syscall_tp_btf)  s.syscall_tp_btf  = SyscallTpBtf::load(init);
 
-    return Senses{std::move(s)};
+    return Senses{std::optional<State>{std::move(s)}};
 }
 
 // ─── load_all — convenience wrapper ──────────────────────────────────

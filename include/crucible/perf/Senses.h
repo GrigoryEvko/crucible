@@ -67,7 +67,6 @@
 #include <crucible/perf/SyscallTpBtf.h>
 
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -201,10 +200,28 @@ public:
     ~Senses() noexcept;
 
 private:
-    struct State;
-    std::unique_ptr<State> state_;
+    // State holds 7 std::optional<facade>, each move-only and owning a
+    // BPF object + mmap.  Inlined into Senses (not pImpl-heap) because
+    // the noexcept Init-path discipline forbids heap-allocation: a
+    // pImpl + new (even nothrow new) breaks the discipline at a
+    // structural level and is gratuitous given the public surface of
+    // this header already #includes all 7 facade headers — pImpl was
+    // not hiding compile-time dependencies, it was hiding nothing.
+    // sizeof(State) ≈ 7 × sizeof(optional<facade>); Senses is built
+    // once at process startup so the larger handle is a one-time
+    // stack cost paid through NRVO, never copied.  See fixy-A5-026.
+    struct State {
+        std::optional<SenseHub>       sense_hub;
+        std::optional<SchedSwitch>    sched_switch;
+        std::optional<PmuSample>      pmu_sample;
+        std::optional<LockContention> lock_contention;
+        std::optional<SyscallLatency> syscall_latency;
+        std::optional<SchedTpBtf>     sched_tp_btf;
+        std::optional<SyscallTpBtf>   syscall_tp_btf;
+    };
+    std::optional<State> state_;
 
-    explicit Senses(std::unique_ptr<State>) noexcept;
+    explicit Senses(std::optional<State>) noexcept;
 };
 
 } // namespace crucible::perf
