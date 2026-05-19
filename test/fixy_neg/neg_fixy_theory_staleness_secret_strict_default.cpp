@@ -25,7 +25,7 @@
 // erasure — independent of whether the Security grant is spelled
 // `as_secret` or `strict<Security>`.
 //
-// Reject sequence: IsAcceptedFn → IsAccepted → NotInTheoryCorpus →
+// Reject sequence: IsAccepted → IsAcceptedDirect → NotInTheoryCorpus →  // fixy-A4-023: post-H-05 chain.
 // `!staleness_secret_without_declassify::matches<>()` evaluates false →
 // IsAccepted concept fails → mint_fn signature substitution fails.
 //

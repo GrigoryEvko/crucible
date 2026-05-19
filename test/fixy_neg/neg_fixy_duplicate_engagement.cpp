@@ -23,7 +23,7 @@ int main() {
     // strict<D::Usage> duplicating the Usage axis.  Type is
     // implicit (mint_fn injects ImplicitTypeMarker), so every
     // axis is engaged; the duplication on Usage is the load-
-    // bearing rejection cause.  IsAcceptedFn → IsAcceptedGrants →
+    // bearing rejection cause.  IsAccepted → IsAcceptedGrants →
     // UniqueEngagementPerAxis must fire.
     auto bad = fixy::mint_fn<int,
         strict<D::Refinement>, strict<D::Usage>, strict<D::Usage>,

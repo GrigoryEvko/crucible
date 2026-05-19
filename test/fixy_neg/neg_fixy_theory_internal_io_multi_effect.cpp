@@ -8,7 +8,7 @@
 // accidentally narrows `is_io_effect_grant` to "with<IO>" exact-match
 // instead of the current "with<E...> contains IO" semantics.
 //
-// Reject sequence: IsAcceptedFn → IsAccepted → NotInTheoryCorpus →
+// Reject sequence: IsAccepted → IsAcceptedDirect → NotInTheoryCorpus →  // fixy-A4-023: post-H-05 chain.
 // `is_io_effect_grant<with<Alloc, IO>>::value` returns true → matches
 // fires → IsAccepted concept fails.
 

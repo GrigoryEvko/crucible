@@ -8,7 +8,7 @@
 // default Classified = 3) that emits to I/O without a declassify
 // policy is the same audit-discharge violation, just lower-severity.
 //
-// Reject sequence: IsAcceptedFn → IsAccepted → NotInTheoryCorpus →
+// Reject sequence: IsAccepted → IsAcceptedDirect → NotInTheoryCorpus →  // fixy-A4-023: post-H-05 chain.
 // `!internal_io_without_declassify::matches<>()` evaluates false →
 // IsAccepted concept fails → mint_fn signature substitution fails.
 //

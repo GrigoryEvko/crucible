@@ -1,7 +1,7 @@
 // fixy_neg: mint_fn rejects an unengaged-axis Grants pack.
 //
 // HS14 floor for FIXY-AUDIT-D2.  mint_fn's `requires
-// IsAcceptedFn<Type, Grants...>` clause must fire constraint
+// IsAccepted<Type, Grants...>` clause must fire constraint  // fixy-A4-023: post-H-05 IsAccepted (was IsAcceptedFn).
 // satisfaction failure on `AllDimsEngaged<Grants...>` when the pack
 // omits any axis.  This pins the constraint pathway distinct from
 // fn<>'s class-body static_assert: the diagnostic surfaces inside
@@ -20,7 +20,7 @@ template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
 
 int main() {
-    // 19-axis pack omitting Usage — IsAcceptedFn must reject via
+    // 19-axis pack omitting Usage — IsAccepted must reject via
     // AllDimsEngaged constraint failure.
     auto bad = fixy::mint_fn<int,
         strict<D::Refinement>, /* strict<D::Usage> omitted */

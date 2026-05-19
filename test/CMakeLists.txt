@@ -9187,7 +9187,8 @@ crucible_neg_compile_fixy_test(neg_fixy_grant_missing_which_dim
 #
 # Architectural finding (round-2 report): `IsAcceptedActive` is shipped
 # but UNCONSUMED today — `fixy::fn`'s class-body static_assert still
-# routes through `IsAcceptedFn` (strict-only).  The B2 ship explicitly
+# routes through `IsAccepted` (strict-only) — post fixy-H-05 rename.
+# The B2 ship explicitly
 # defers the production rewire to a follow-up commit (Profile.h
 # §"Scope note (B2 ship)").  The fixture below pins the infrastructure
 # behavior so the eventual rewire cannot regress silently.

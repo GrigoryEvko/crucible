@@ -1,6 +1,6 @@
 // fixy_neg: mint_fn rejects a non-grant type in the Grants pack.
 //
-// HS14 floor for FIXY-AUDIT-D2.  mint_fn's `requires IsAcceptedFn`
+// HS14 floor for FIXY-AUDIT-D2.  mint_fn's `requires IsAccepted`  // fixy-A4-023: post-H-05 rename.
 // chains to `AllGrantsWellFormed<Grants...>` which requires every
 // pack element to satisfy `grant::IsGrantTag`.  Threading `int`
 // (a plain type, NOT a grant tag) through the pack fires the
@@ -19,7 +19,7 @@ template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
 
 int main() {
-    // 19-grant pack with `int` substituted for Usage — IsAcceptedFn
+    // 19-grant pack with `int` substituted for Usage — IsAccepted
     // must reject via AllGrantsWellFormed: int does not satisfy
     // grant::IsGrantTag.
     auto bad = fixy::mint_fn<int,

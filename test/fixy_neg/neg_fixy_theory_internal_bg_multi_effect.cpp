@@ -11,7 +11,7 @@
 // Internal-tier value through scheduler-observable progress and
 // liveness regardless of what other effects share the row with Bg.
 //
-// Reject sequence: IsAcceptedFn → IsAccepted → NotInTheoryCorpus →
+// Reject sequence: IsAccepted → IsAcceptedDirect → NotInTheoryCorpus →  // fixy-A4-023: post-H-05 chain.
 // `is_bg_effect_grant<with<Alloc, Bg>>::value` returns true → matches
 // fires → IsAccepted concept fails.
 

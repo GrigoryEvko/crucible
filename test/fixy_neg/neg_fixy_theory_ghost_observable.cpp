@@ -24,7 +24,7 @@
 // row — no external trait needed.  Defense-in-depth: a binding
 // rejected here never reaches the R006 use-site check.
 //
-// Reject sequence: IsAcceptedFn → IsAccepted → NotInTheoryCorpus →
+// Reject sequence: IsAccepted → IsAcceptedDirect → NotInTheoryCorpus →  // fixy-A4-023: post-H-05 chain.
 // `!ghost_runtime_observable::matches<>()` evaluates false → IsAccepted
 // concept fails → mint_fn signature substitution fails.
 //

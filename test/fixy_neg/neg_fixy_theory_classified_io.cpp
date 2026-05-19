@@ -6,7 +6,7 @@
 // (Security=Secret) AND `with_io` (Effect=IO) without interposing
 // `declassify<Policy>` to discharge the audit trail.
 //
-// Reject sequence: IsAcceptedFn → IsAccepted → NotInTheoryCorpus →
+// Reject sequence: IsAccepted → IsAcceptedDirect → NotInTheoryCorpus →  // fixy-A4-023: post-H-05 chain.
 // `!classified_io_without_declassify::matches<>()` evaluates false →
 // IsAccepted concept fails → mint_fn signature substitution fails.
 //

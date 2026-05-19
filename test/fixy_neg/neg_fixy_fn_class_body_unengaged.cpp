@@ -1,7 +1,7 @@
 // fixy_neg: fixy::fn class-body static_assert rejects unengaged pack.
 //
 // HS14 floor for FIXY-AUDIT-D3.  The wrapper's class-body
-// static_assert(IsAcceptedFn<Type, Grants...>, ...) fires when fixy::fn
+// static_assert(IsAccepted<Type, Grants...>, ...) fires when fixy::fn
 // is INSTANTIATED directly (not through mint_fn or a stance::*) with an
 // unengaged-axis pack.  This pathway is distinct from mint_fn's
 // requires-clause: the class-body assert lives inside class-template
@@ -13,7 +13,7 @@
 // Expected diagnostic: "FixyNotEngaged_Usage" — the class-body
 // static_assert message names the per-axis diagnostic tag prefix
 // AND triggers the per-axis FIXY_NEG_FIXTURE machinery indirectly via
-// the IsAcceptedFn → AllDimsEngaged → first_missing_axis chain.
+// the IsAccepted → AllDimsEngaged → first_missing_axis chain.  // fixy-A4-023: post-H-05 rename.
 
 #include <crucible/fixy/Fn.h>
 

@@ -13,7 +13,7 @@
 // concurrent-channel dual of the Bell-LaPadula no-write-down
 // violation.
 //
-// Reject sequence: IsAcceptedFn → IsAccepted → NotInTheoryCorpus →
+// Reject sequence: IsAccepted → IsAcceptedDirect → NotInTheoryCorpus →  // fixy-A4-023: post-H-05 chain.
 // `!internal_bg_without_declassify::matches<>()` evaluates false →
 // IsAccepted concept fails → mint_fn signature substitution fails.
 //

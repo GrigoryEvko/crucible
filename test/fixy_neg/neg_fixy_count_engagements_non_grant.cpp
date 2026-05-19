@@ -54,7 +54,7 @@ int main() {
     // Inject the non-grant alongside the full 19-axis strict cover
     // so every axis is engaged once; the rejection cause is purely
     // the non-grant pack member, which cleanly fails
-    // AllGrantsWellFormed → IsAcceptedGrants → IsAcceptedFn → the
+    // AllGrantsWellFormed → IsAcceptedGrants → IsAccepted → the
     // class-body static_assert in fixy::fn.
     using NG = neg_count_engagements_non_grant::NotAGrant;
     auto bad = fixy::mint_fn<double,

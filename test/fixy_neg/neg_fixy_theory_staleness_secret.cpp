@@ -18,7 +18,7 @@
 // catches the pattern at the type level WITHOUT requiring an external
 // `marks_ct` trait specialization.  Defense-in-depth.
 //
-// Reject sequence: IsAcceptedFn → IsAccepted → NotInTheoryCorpus →
+// Reject sequence: IsAccepted → IsAcceptedDirect → NotInTheoryCorpus →  // fixy-A4-023: post-H-05 chain.
 // `!staleness_secret_without_declassify::matches<>()` evaluates false →
 // IsAccepted concept fails → mint_fn signature substitution fails.
 //

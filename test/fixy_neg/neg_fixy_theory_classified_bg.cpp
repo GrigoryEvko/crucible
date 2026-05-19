@@ -11,7 +11,7 @@
 // 2012.  The spawn itself is a scheduler-observable event; secret-
 // dependent spawning leaks via thread-interleaving observability.
 //
-// Reject sequence: IsAcceptedFn → IsAccepted → NotInTheoryCorpus →
+// Reject sequence: IsAccepted → IsAcceptedDirect → NotInTheoryCorpus →  // fixy-A4-023: post-H-05 chain.
 // `!classified_bg_without_declassify::matches<>()` evaluates false →
 // IsAccepted concept fails → mint_fn signature substitution fails.
 //
