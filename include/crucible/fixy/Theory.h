@@ -102,9 +102,37 @@
 //   5. Bump `corpus_size_v` to the new entry count.  The static
 //      sentinel below the constant breaks if the bump is forgotten.
 //
-// The corpus grows monotonically — never delete entries.  Outdated
-// patterns can be marked `[[deprecated]]` with a cite to the
-// substrate-level fix that retired them.
+// The corpus grows monotonically by DEFAULT.  Retirement (when a
+// substrate-level fix makes a §30.14 pattern impossible to express
+// at the type level) is the REVERSE of the 5-step PR shape above:
+// remove the entry from the OR fold + the three if-chains + the
+// kRoster + decrement `corpus_size_v`.  The struct itself may be
+// kept as a historical record — either commented-out next to its
+// origin position, or moved into a `corpus::retired::` sub-namespace
+// — with a cite to the substrate fix that obsoleted it.  Either
+// form preserves audit trail without keeping the predicate active.
+//
+// `[[deprecated]]` on `matches<...>()` is INSUFFICIENT as a
+// retirement mechanism (fixy-L-12).  Three reasons:
+//
+//   (a) `-Wdeprecated-declarations` fires at every OR-fold call
+//       site — once per `<Type, Grants...>` instantiation that
+//       reaches Theory.h — flooding the build with warnings
+//       unrelated to whether THIS binding matches THIS retired
+//       entry.
+//
+//   (b) The OR fold still EVALUATES `matches<>()` regardless of
+//       deprecation — the binding still gets rejected by
+//       NotInTheoryCorpus, contradicting "retired."
+//
+//   (c) GCC's deprecation message is a fixed string per attribute
+//       site; it cannot consult `<Type, Grants...>` to explain why
+//       the OLD retirement no longer applies to the CURRENT
+//       binding.
+//
+// The OR-fold / if-chain / roster removal IS the retirement.
+// `[[deprecated]]` is at most a documentation hint while a
+// transitional period is active.
 
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
