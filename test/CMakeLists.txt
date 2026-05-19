@@ -1848,6 +1848,26 @@ crucible_neg_compile_fixy_test(neg_fixy_bridge_recording_endpoint_non_endpoint
 crucible_neg_compile_fixy_test(neg_fixy_bridge_recording_endpoint_wrong_log_type
     "no matching function|mint_recording_endpoint|cannot bind|could not convert|SessionEventLog")
 
+# fixy-HS14-04 — mint_crash_watched_endpoint HS14 floor (≥2 fixtures
+# via the fixy::bridge:: re-export).  Two distinct mismatch classes,
+# mirroring the HS14-03 pair structure but on the crash-watched
+# wrapper family:
+# (#1) non_endpoint — first-param `Endpoint<Substr, Dir, Ctx>&&`
+#      template deduction fails when passed `int`; PeerTag is
+#      explicit, so substitution still bails out.
+# (#2) wrong_flag_type — first-param deduces successfully (a real
+#      Endpoint built via fpipe::mint_endpoint), PeerTag has
+#      survivor_registry specialization (body static_assert
+#      passes), and the failure is the second-parameter
+#      `OneShotFlag&` reference binding rejecting `int`.
+# Distinct from HS14-02 fixtures: HS14-02 covers the substrate
+# session-level mint (mint_crash_watched_session); HS14-04 covers
+# the endpoint wrapper mint surface (mint_crash_watched_endpoint).
+crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_endpoint_non_endpoint
+    "no matching function|mint_crash_watched_endpoint|could not deduce|no matching template|deduction failed")
+crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_endpoint_wrong_flag_type
+    "no matching function|mint_crash_watched_endpoint|cannot bind|could not convert|OneShotFlag")
+
 # ── FIXY-AUDIT-D6 — mint_vigil_mode_bridge HS14 floor.
 #
 # `mint_vigil_mode_bridge(const Vigil&)` is a parameter-typed token
