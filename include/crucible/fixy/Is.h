@@ -64,6 +64,26 @@
 // by safety/IsX.h is re-exported here.  Adding a new IsX.h MUST add
 // one row in each of (a), (b), (c) — the self_test block witnesses
 // the load-bearing path for each tier.
+//
+// ── 4-path equivalence invariant (fixy-L-05) ──────────────────────
+//
+// Recognizing whether T is an `IsX` shape has FOUR syntactic paths:
+//
+//   (P1) ::crucible::safety::extract::IsX<T>      — substrate concept
+//   (P2) ::crucible::safety::extract::is_x_v<T>   — substrate trait
+//   (P3) ::crucible::fixy::is::IsX<T>             — fixy concept alias
+//   (P4) ::crucible::fixy::is::is_x_v<T>          — fixy trait re-export
+//
+// P1↔P2 holds by construction at the substrate: every safety/IsX.h
+// defines `concept IsX = is_x_v<T>`.  P3↔P1 and P4↔P2 are pinned by
+// the existing self_test entries (alias-not-shadow witnesses).  The
+// fourth edge — P3↔P4 within `fixy::is::` — is the load-bearing
+// invariant for umbrella consumers who freely mix `requires IsX<T>`
+// SFINAE constraints with `if constexpr (is_x_v<T>)` runtime branches.
+// fixy-L-05 closes this edge with a per-family witness; a substrate
+// refactor that decouples the substrate's own `IsX` from `is_x_v`
+// would surface as a fixy-side failure here, not silently diverge
+// across the alias boundary.
 
 #include <crucible/safety/IsAllocClass.h>
 #include <crucible/safety/IsBits.h>
@@ -364,5 +384,63 @@ static_assert(is_valid_witness_v<int>
            == ::crucible::safety::witness::is_valid_witness_v<int>,
     "fixy-L-06: fixy::is::is_valid_witness_v must alias the substrate "
     "safety::witness::is_valid_witness_v trait, not a shadowing redef.");
+
+// (8) fixy-L-05: cross-axis 4-path closure within fixy::is::.
+//
+//     Each of the 13 Graded-backed recognizer families ships BOTH a
+//     concept alias `IsX<T>` AND a trait re-export `is_x_v<T>` under
+//     `fixy::is::`.  The substrate defines `IsX = is_x_v<T>` by
+//     construction; if a future refactor decouples them at the
+//     substrate, the fixy umbrella alias-vs-trait edges would silently
+//     diverge.  Lock the 4th edge of the commutative square: P3 ↔ P4
+//     within `fixy::is::`, on positive AND negative cases per family.
+//
+//     Pattern: `IsX<T> == is_x_v<T>` for one positive witness type
+//     (the canonical wrapper) and one negative witness type (a bare
+//     primitive).  Adding a new IsX.h family adds one row here; the
+//     missing row is grep-discoverable by family-name parity with the
+//     using-decl block above.
+
+// 13 Graded-backed value-wrapper recognizers (positive + negative each).
+static_assert(IsLinear        <::crucible::safety::Linear<int>>
+           == is_linear_v     <::crucible::safety::Linear<int>>);
+static_assert(IsLinear<int>         == is_linear_v<int>);
+static_assert(IsSecret<int>         == is_secret_v<int>);
+static_assert(IsTagged<int>         == is_tagged_v<int>);
+static_assert(IsRefined<int>        == is_refined_v<int>);
+static_assert(IsStale<int>          == is_stale_v<int>);
+static_assert(IsHotPath<int>        == is_hot_path_v<int>);
+static_assert(IsDetSafe<int>        == is_det_safe_v<int>);
+static_assert(IsNumericalTier<int>  == is_numerical_tier_v<int>);
+static_assert(IsVendor<int>         == is_vendor_v<int>);
+static_assert(IsResidencyHeat<int>  == is_residency_heat_v<int>);
+static_assert(IsCipherTier<int>     == is_cipher_tier_v<int>);
+static_assert(IsAllocClass<int>     == is_alloc_class_v<int>);
+static_assert(IsWait<int>           == is_wait_v<int>);
+static_assert(IsMemOrder<int>       == is_mem_order_v<int>);
+static_assert(IsProgress<int>       == is_progress_v<int>);
+static_assert(IsBudgeted<int>       == is_budgeted_v<int>);
+static_assert(IsBits<int>           == is_bits_v<int>);
+static_assert(IsBorrowed<int>       == is_borrowed_v<int>);
+static_assert(IsBorrowedRef<int>    == is_borrowed_ref_v<int>);
+static_assert(IsConsistency<int>    == is_consistency_v<int>);
+static_assert(IsCrash<int>          == is_crash_v<int>);
+static_assert(IsEpochVersioned<int> == is_epoch_versioned_v<int>);
+static_assert(IsNumaPlacement<int>  == is_numa_placement_v<int>);
+static_assert(IsOpaqueLifetime<int> == is_opaque_lifetime_v<int>);
+static_assert(IsRecipeSpec<int>     == is_recipe_spec_v<int>);
+static_assert(IsReduceInto<int>     == is_reduce_into_v<int>);
+
+// Structural-wrapper + Permission + Session + SPSC/SWMR-handle
+// recognizers (one negative witness each — positive cases live in the
+// substrate header self_tests; we only witness fixy-side path agreement).
+static_assert(IsOwnedRegion<int>     == is_owned_region_v<int>);
+static_assert(IsPermission<int>      == is_permission_v<int>);
+static_assert(IsSharedPermission<int> == is_shared_permission_v<int>);
+static_assert(IsSessionHandle<int>   == is_session_handle_v<int>);
+static_assert(IsConsumerHandle<int>  == is_consumer_handle_v<int>);
+static_assert(IsProducerHandle<int>  == is_producer_handle_v<int>);
+static_assert(IsSwmrReader<int>      == is_swmr_reader_v<int>);
+static_assert(IsSwmrWriter<int>      == is_swmr_writer_v<int>);
 
 }  // namespace crucible::fixy::is::self_test
