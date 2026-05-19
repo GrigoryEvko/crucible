@@ -405,19 +405,33 @@ struct staleness_secret_without_declassify {
     }
 
     static constexpr std::string_view cite() noexcept {
-        return "Hunt-Sands 2008 'Just Forget It' (POPL) primary — "
-               "stale-replay as failed erasure: classified value is "
-               "reachable through a non-Fresh Staleness window "
-               "(stale_to<TauMax>) without a declassification "
-               "policy; the replay-window keeps observable what an "
-               "erasure policy would require be forgotten.  "
-               "Askarov-Hunt-Sabelfeld-Sands 2008 (ESORICS) supports "
-               "the timing/replay-channel formalization; Sabelfeld-"
-               "Sands 2009 (J.Comp.Sec.) is the 'when'-dimension "
-               "survey frame.  Insert grant::declassify<Policy> OR "
-               "drop the stale_to<N> grant (Staleness defaults to "
-               "Fresh) OR project Security to a less restrictive "
-               "level.";
+        // fixy-A4-024: prose hierarchy made explicit.  Pre-A4-024 all
+        // three citations read as a flat sequence of clauses ("primary"
+        // / "supports" / "survey frame") with roughly equal prose
+        // weight — reader could not tell at a glance which paper is
+        // the load-bearing formalization.  Tightened form: PRIMARY in
+        // caps as a header, supporting cite as a brief follow-on,
+        // survey cite relegated to a parenthetical orientation note
+        // with an explicit "NOT formalizing this pattern" disclaimer
+        // (fixy-H-17 demotion rationale).  Remediation block separated
+        // from the cite proper.
+        return "Hunt-Sands 2008 'Just Forget It' (POPL) — PRIMARY: "
+               "formalizes information-erasure semantics and shows a "
+               "classified value reachable through a stale-replay "
+               "window (stale_to<TauMax>) without a declassification "
+               "policy is semantically a FAILED erasure — data the "
+               "policy would require be forgotten remains observable.  "
+               "Supporting: Askarov-Hunt-Sabelfeld-Sands 2008 "
+               "(ESORICS) formalizes the timing/replay channel as an "
+               "information leak distinct from data-flow channels.  "
+               "(Orientation only: Sabelfeld-Sands 2009 "
+               "'Declassification: dimensions and principles' names "
+               "the 'when' dimension — survey identifying the axis, "
+               "NOT formalizing this specific pattern; demoted from "
+               "primary per fixy-H-17.)  "
+               "Remediation: insert grant::declassify<Policy> OR drop "
+               "the stale_to<N> grant (Staleness defaults to Fresh) "
+               "OR project Security to a less restrictive level.";
     }
 };
 
