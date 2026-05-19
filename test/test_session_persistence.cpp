@@ -3,6 +3,9 @@
 // complete class.
 #include <crucible/Cipher.h>
 #include <crucible/bridges/SessionPersistence.h>
+#include <crucible/sessions/PermissionedSession.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include "test_assert.h"
 
@@ -11,6 +14,7 @@
 #include <string>
 #include <type_traits>
 #include <unistd.h>
+#include <utility>
 
 namespace proto = crucible::safety::proto;
 namespace eff = crucible::effects;
@@ -32,6 +36,61 @@ using PersistProto = proto::Loop<
 static void send_value(CounterResource& r, int value) noexcept {
     r.last = value;
 }
+
+// fixy-M-23 audit-fixup: noexcept regression sentinels per §XXI.
+// mint_persisted_session is an allocating mint (std::make_unique); under
+// -fno-exceptions OOM terminates rather than throws, so noexcept is
+// semantically truthful.  One sentinel per live overload form pins the
+// contract so future signature edits cannot silently drop noexcept.
+//
+// SessionHandle<Loop<B>, ...> has no specialization — Loop unrolls into
+// its body at mint time.  We obtain the actual unrolled inner-handle
+// types via decltype of the constructor mints, which is well-formed in
+// the unevaluated noexcept-operand context.
+using BareSH = decltype(proto::mint_session_handle<PersistProto>(
+    std::declval<CounterResource>()));
+using BarePSH = decltype(proto::mint_permissioned_session<PersistProto>(
+    std::declval<eff::TestRunnerCtx const&>(),
+    std::declval<CounterResource>()));
+
+static_assert(
+    noexcept(proto::mint_persisted_session<PersistProto>(
+        std::declval<eff::TestRunnerCtx const&>(),
+        std::declval<crucible::Cipher&>(),
+        std::declval<crucible::CipherOpenView const&>(),
+        std::declval<CounterResource>(),
+        std::declval<proto::SessionTagId>(),
+        std::declval<proto::RoleTagId>(),
+        std::declval<proto::RoleTagId>(),
+        std::declval<proto::SessionPersistencePolicy>())),
+    "fixy-M-23: mint_persisted_session<Proto>(Ctx, Cipher&, OpenView, "
+    "Resource&&, ...) must be noexcept per §XXI Universal Mint Pattern.");
+
+static_assert(
+    noexcept(proto::mint_persisted_session(
+        std::declval<eff::TestRunnerCtx const&>(),
+        std::declval<BareSH>(),
+        std::declval<crucible::Cipher&>(),
+        std::declval<crucible::CipherOpenView const&>(),
+        std::declval<proto::SessionTagId>(),
+        std::declval<proto::RoleTagId>(),
+        std::declval<proto::RoleTagId>(),
+        std::declval<proto::SessionPersistencePolicy>())),
+    "fixy-M-23: mint_persisted_session(Ctx, SessionHandle, Cipher&, "
+    "OpenView, ...) must be noexcept per §XXI Universal Mint Pattern.");
+
+static_assert(
+    noexcept(proto::mint_persisted_session(
+        std::declval<eff::TestRunnerCtx const&>(),
+        std::declval<BarePSH>(),
+        std::declval<crucible::Cipher&>(),
+        std::declval<crucible::CipherOpenView const&>(),
+        std::declval<proto::SessionTagId>(),
+        std::declval<proto::RoleTagId>(),
+        std::declval<proto::RoleTagId>(),
+        std::declval<proto::SessionPersistencePolicy>())),
+    "fixy-M-23: mint_persisted_session(Ctx, PSH, Cipher&, OpenView, ...) "
+    "must be noexcept per §XXI Universal Mint Pattern.");
 
 template <proto::SessionTagId Session>
 void drive_5000_events(crucible::Cipher& cipher) {
