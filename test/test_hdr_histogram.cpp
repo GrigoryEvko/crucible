@@ -170,6 +170,89 @@ int main() {
     c.reset();
     assert(c.total_count() == 0);
 
+    // fixy-A5-007 regression: N producers + concurrent reader must never
+    // observe sum(counts_) < total_count.  Pre-fix the producer-side
+    // total_count_.fetch_add used release-only, which on weakly-ordered
+    // targets (ARM / Apple Silicon / Graviton) failed to publish the
+    // FIRST producer's counts_ writes to a reader who saw the SECOND
+    // producer's release — the second RMW's read side has no acquire
+    // semantics under release-only, breaking the happens-before chain.
+    //
+    // The invariant guarded: at every snapshot, sum(visible counts_) ≥
+    // total_count_observed.  Violation surfaces as percentile() falling
+    // off the end of its loop and returning MaxValue when rank ≤ total
+    // would otherwise have landed in a bucket.  On x86 the producer code
+    // generates LOCK XADD either way (full barrier) so this test
+    // accumulates statistical confidence rather than a hard repro, but
+    // the regression guard catches any future change that drops the
+    // acq_rel discipline (e.g. someone reverting to release-only).
+    {
+        crucible::observe::HdrHistogram<2, 1'000'000> shared;
+        std::atomic<bool> ready_flag{false};
+        std::atomic<bool> stop_flag{false};
+        std::atomic<std::uint64_t> torn_observations{0};
+        std::atomic<std::uint64_t> reader_iterations{0};
+
+        constexpr std::size_t kProducerCount = 4;
+        constexpr std::size_t kSamplesPerProducer = 8192;
+        using HRegress = decltype(shared);
+
+        std::array<std::jthread, kProducerCount> producers{};
+        for (std::size_t p = 0; p < kProducerCount; ++p) {
+            producers[p] = std::jthread{[&shared, &ready_flag, p]{
+                while (!ready_flag.load(std::memory_order_acquire)) {
+                    CRUCIBLE_SPIN_PAUSE;
+                }
+                for (std::size_t i = 0; i < kSamplesPerProducer; ++i) {
+                    const std::uint64_t v =
+                        (static_cast<std::uint64_t>(p) * 1000) + ((i % 90) + 10);
+                    shared.record(HRegress::checked_value(v));
+                }
+            }};
+        }
+
+        std::jthread reader{[&shared, &ready_flag, &stop_flag,
+                             &torn_observations, &reader_iterations]{
+            while (!ready_flag.load(std::memory_order_acquire)) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+            while (!stop_flag.load(std::memory_order_acquire)) {
+                const std::uint64_t total = shared.total_count();
+                if (total == 0) {
+                    continue;
+                }
+                std::uint64_t bucket_sum = 0;
+                shared.for_each_nonzero(
+                    [&](const HRegress::EncodedBucket& bucket) noexcept {
+                        bucket_sum += bucket.count;
+                    });
+                // Invariant: bucket_sum ≥ total observed at this snapshot.
+                // bucket_sum may exceed total when more producers updated
+                // counts_ but not yet total_count_ — that's expected; the
+                // bug is bucket_sum < total.
+                if (bucket_sum < total) {
+                    torn_observations.fetch_add(1, std::memory_order_relaxed);
+                }
+                reader_iterations.fetch_add(1, std::memory_order_relaxed);
+            }
+        }};
+
+        ready_flag.store(true, std::memory_order_release);
+        for (auto& t : producers) {
+            t.join();
+        }
+        stop_flag.store(true, std::memory_order_release);
+        reader.join();
+
+        assert(shared.total_count() ==
+               kProducerCount * kSamplesPerProducer);
+        // At least one reader pass must have observed a nonzero total;
+        // otherwise the regression guard is vacuous.
+        assert(reader_iterations.load(std::memory_order_relaxed) > 0);
+        // Strict invariant under acq_rel: zero torn observations.
+        assert(torn_observations.load(std::memory_order_relaxed) == 0);
+    }
+
     using Channel = crucible::observe::HdrRecordChannel<2, 1'000'000, 8, HistStreamTag>;
     Channel channel;
     auto whole = crucible::safety::mint_permission_root<typename Channel::whole_tag>();

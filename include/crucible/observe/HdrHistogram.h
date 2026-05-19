@@ -156,7 +156,21 @@ public:
     CRUCIBLE_HOT void record(value_type value) noexcept {
         const std::size_t index = layout_type::counts_index(value.value());
         counts_[index].fetch_add(1, std::memory_order_relaxed);
-        total_count_.fetch_add(1, std::memory_order_release);
+        // fixy-A5-007: acq_rel (was release-only) is load-bearing for
+        // N-producer races on weakly-ordered targets (ARM, Apple
+        // Silicon, Graviton).  A release-only RMW does NOT synchronize
+        // with a SECOND producer's release-only RMW: producer-Y reads
+        // producer-X's incremented value but the read part of Y's RMW
+        // has no acquire semantics, so X's prior counts_ stores are
+        // not happens-before Y's release.  A reader whose acquire-
+        // load reads Y's release sees Y's counts_ updates but NOT X's
+        // → sum(counts_) < total_count, observable as a torn percentile
+        // (loop falls off the end and returns MaxValue).  acq_rel
+        // builds the transitive chain: X's counts_ → X's release → Y's
+        // acquire-RMW → Y's release → Reader's acquire.  On x86 the
+        // generated code is unchanged (LOCK XADD is already full-
+        // barrier); ARM gains the missing DMB-ISH fence.
+        total_count_.fetch_add(1, std::memory_order_acq_rel);
     }
 
     [[nodiscard]] std::uint64_t total_count() const noexcept {
@@ -235,23 +249,27 @@ public:
                 counts_[i].fetch_add(count, std::memory_order_relaxed);
             }
         }
-        total_count_.fetch_add(other.total_count(), std::memory_order_release);
+        // fixy-A5-007: acq_rel (was release) for the same N-producer
+        // race reasoning as `record` — concurrent merge_from calls into
+        // the same `this` histogram form an RMW chain on total_count_
+        // that needs acquire-side to publish prior bucket writes.
+        total_count_.fetch_add(other.total_count(), std::memory_order_acq_rel);
     }
 
     void add_from(const HdrHistogram& other) noexcept {
         merge_from(other);
     }
 
-    // fixy-A5-019: publish discipline matches merge_from — per-bucket
-    // writes use relaxed RMW, then total_count_ is updated with release
-    // to publish all preceding bucket writes to readers doing
-    // total_count_.load(acquire).  Pre-fix this site used acq_rel, which
-    // was strictly stronger (acquire + release) but added a wasted
-    // acquire fence on the producer side: no value read after the CAS
-    // success in saturating_sub depends on other threads' writes, so the
-    // acquire was dead weight.  Aligning with merge_from also closes a
-    // documentation drift gap (one publish op per histogram, one
-    // memory-order convention).
+    // fixy-A5-007 supersedes fixy-A5-019: publish discipline matches
+    // merge_from and record — acq_rel on total_count_ updates.  The
+    // prior A5-019 rationale that "no value read after the CAS depends
+    // on other threads' writes" missed the N-producer publishing case:
+    // two concurrent subtract_from calls (or one subtract + one merge)
+    // form an RMW chain on total_count_ that needs acquire-side
+    // semantics to publish prior bucket writes across the chain.
+    // saturating_sub's CAS-retry loop already uses an implicit acquire
+    // on its read side, but the SUCCESS ordering decides the publish
+    // semantics — acq_rel is the load-bearing case.
     void subtract_from(const HdrHistogram& other) noexcept {
         for (std::size_t i = 0; i < counts_.size(); ++i) {
             const std::uint64_t count = other.counts_[i].load(std::memory_order_relaxed);
@@ -259,7 +277,7 @@ public:
                 saturating_sub(counts_[i], count);
             }
         }
-        saturating_sub(total_count_, other.total_count(), std::memory_order_release);
+        saturating_sub(total_count_, other.total_count(), std::memory_order_acq_rel);
     }
 
     void reset() noexcept {
