@@ -55,6 +55,7 @@
 //
 // Zero.  using-declarations are pure name-lookup directives.
 
+#include <crucible/permissions/FederationPermission.h>  // FIXY-U-071: policy::admit_orgs
 #include <crucible/permissions/Permission.h>
 #include <crucible/permissions/PermissionFork.h>
 #include <crucible/permissions/PermissionInherit.h>
@@ -113,6 +114,25 @@ using ::crucible::safety::mint_permission_fork;
 
 using ::crucible::permissions::mint_permission_inherit;
 using ::crucible::permissions::mint_permission_inherit_t;
+
+// ── fixy-A4-011 dual-export: federation admission policy ───────────
+//
+// `policy::admit_orgs<Orgs...>` lives in `permissions::policy::*` and
+// is the canonical admission predicate for cross-org federation: it
+// gates `mint_federation_admittance<Org, Policy>` so only the
+// declared peer orgs may handshake.
+//
+// FIXY-U-071: surface it ALSO under `fixy::perm::policy::` (as the
+// CSL permission directory).  The pre-existing
+// `fixy::source::federation::policy::admit_orgs` (Source.h:208-210)
+// is the federation-axis carve-out; this perm:: mirror is the
+// permission-axis carve-out.  Both paths alias the SAME substrate
+// symbol — verified by the type-identity static_asserts in the
+// self_test:: sentinel block below.
+
+namespace policy {
+using ::crucible::permissions::policy::admit_orgs;
+}  // namespace policy
 
 }  // namespace crucible::fixy::perm
 
@@ -181,5 +201,41 @@ struct mint_permission_inherit_t_name_reach_witness_ {
 static_assert(mint_permission_inherit_t_name_reach_witness_<>::ok,
     "fixy::perm::mint_permission_inherit_t must be reachable as an "
     "alias template — drift in the using-decl breaks fixy-A1-029.");
+
+// ── FIXY-U-071 dual-export: policy::admit_orgs identity ────────────
+//
+// `admit_orgs<Orgs...>` is reachable through TWO fixy paths:
+//   - fixy::source::federation::policy::admit_orgs (Source.h:208-210)
+//   - fixy::perm::policy::admit_orgs              (this header)
+//
+// Both must name the SAME substrate symbol
+// `permissions::policy::admit_orgs`.  Drift between paths breaks the
+// fixy-A4-011 dual-export discipline AND silently routes call sites
+// through divergent definitions depending on import path.  Probe with
+// a fresh tag struct to avoid coupling to existing test fixtures.
+
+struct DualExportOrgProbeA {};
+struct DualExportOrgProbeB {};
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA>,
+    ::crucible::permissions::policy::admit_orgs<DualExportOrgProbeA>>,
+    "fixy::perm::policy::admit_orgs must alias permissions::policy::admit_orgs");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA,
+                                                DualExportOrgProbeB>,
+    ::crucible::permissions::policy::admit_orgs<DualExportOrgProbeA,
+                                                DualExportOrgProbeB>>,
+    "Variadic instantiation must preserve substrate identity.");
+
+// Behavioral witness: the substrate predicate flows through the alias.
+static_assert(::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA>
+              ::template admits<DualExportOrgProbeA>);
+static_assert(!::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA>
+              ::template admits<DualExportOrgProbeB>);
+static_assert(::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA,
+                                                          DualExportOrgProbeB>
+              ::template admits<DualExportOrgProbeB>);
 
 }  // namespace crucible::fixy::perm::self_test
