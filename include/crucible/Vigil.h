@@ -59,6 +59,34 @@
 #include <type_traits>
 #include <utility>  // std::unreachable
 
+// FIXY-U-030a (S1-Vigil, U-030): Vigil spells its safety WRAPPERS through
+// fixy::wrap:: / fixy::handle::, never safety::* — see the usages below.
+// Vigil is the foundation/model hub (reimplement-reserved, FIXY-U-030); it
+// deliberately does NOT pull the fixy/Wrap.h umbrella.  Mirror the Arena.h
+// (096y) / TraceRing (031b) populate precedent: re-open the fixy namespaces
+// to install the using-decls Vigil references (all already visible via the
+// narrow safety/ includes above — no new include).  fixy/Wrap.h +
+// fixy/Handle.h re-declare these independently — idempotent.
+//
+// EXCEPTION: safety::mint_atomic_session<ModeProtocol> (mode_session(),
+// ~line 419) is a SUBSTRATE session-mint (bridges/MachineSessionBridge.h),
+// NOT a wrapper.  Its fixy surface is the higher-level mint_vigil_mode_bridge
+// (fixy::bridge, #1507) — a behavioral wrapper, not a spelling alias.
+// Routing Vigil through that bridge is a deeper U-030 reimplement step, out
+// of this S1-spelling slice's scope; the substrate call stays safety::-spelled.
+// This irreducible ::crucible::safety:: plumbing + the documented mint keep
+// Vigil.h absent from scripts/fixy-clean-headers.txt.
+namespace crucible::fixy::wrap {
+using ::crucible::safety::AtomicMonotonic;
+using ::crucible::safety::bounded_above;
+using ::crucible::safety::NonNull;
+using ::crucible::safety::no_scoped_view_field_check;
+using ::crucible::safety::Refined;
+}  // namespace crucible::fixy::wrap
+namespace crucible::fixy::handle {
+using ::crucible::safety::PublishSlot;
+}  // namespace crucible::fixy::handle
+
 namespace crucible {
 
 class Vigil {
@@ -179,8 +207,8 @@ class Vigil {
     static_assert(ALIGNMENT_K <= UINT8_MAX,
         "ALIGNMENT_POS_MAX must fit in uint8_t — bump AlignmentPos's "
         "underlying type if ALIGNMENT_K is ever raised past 255");
-    using AlignmentPos = ::crucible::safety::Refined<
-        ::crucible::safety::bounded_above<ALIGNMENT_POS_MAX>, uint8_t>;
+    using AlignmentPos = ::crucible::fixy::wrap::Refined<
+        ::crucible::fixy::wrap::bounded_above<ALIGNMENT_POS_MAX>, uint8_t>;
 
     // ─── Construction / Destruction ────────────────────────────────
 
@@ -416,6 +444,9 @@ class Vigil {
     [[nodiscard]] bool is_compiled() const noexcept { return mode() == Mode::COMPILED; }
 
     [[nodiscard]] constexpr ModeSessionHandle mode_session() const noexcept {
+        // substrate session-mint (not a wrapper); fixy surface is the
+        // higher-level mint_vigil_mode_bridge (fixy::bridge, #1507) — see
+        // the FIXY-U-030a header note.  Deeper U-030 reimplement, not S1.
         return safety::mint_atomic_session<ModeProtocol>(mode_);
     }
 
@@ -581,7 +612,7 @@ class Vigil {
     }
 
     // Register an external tensor's data pointer with the pool.
-    void register_external(SlotId sid, crucible::safety::NonNull<void*> ptr) {
+    void register_external(SlotId sid, crucible::fixy::wrap::NonNull<void*> ptr) {
         auto compiled_view = ctx_.mint_compiled_view();
         ctx_.register_external(sid, ptr, compiled_view);
     }
@@ -924,7 +955,7 @@ class Vigil {
                 // call sites of register_externals_from_region_, so we
                 // know it's in COMPILED mode.  Mint the view inline.
                 auto compiled_view = ctx_.mint_compiled_view();
-                ctx_.register_external(target, crucible::safety::NonNull<void*>{ptr}, compiled_view);
+                ctx_.register_external(target, crucible::fixy::wrap::NonNull<void*>{ptr}, compiled_view);
             }
         }
     }
@@ -1012,7 +1043,7 @@ class Vigil {
     // transition; AtomicMonotonic lifts the monotonicity invariant to
     // the type level (no decrement, no reset, no stale CAS).
     ModeCell                        mode_;
-    safety::AtomicMonotonic<uint64_t> step_{0};
+    fixy::wrap::AtomicMonotonic<uint64_t> step_{0};
     Arena                           load_arena_{1 << 20}; // for Cipher::load()
 
     // ─── Tier 1 dispatch state (fg thread only, except pending_region_) ─
@@ -1021,7 +1052,7 @@ class Vigil {
     // publish(release). fg's observe/consume(acquire) in dispatch_op
     // must see it.  This is reusable latest-wins publication, not
     // PublishOnce: divergence recovery can publish multiple regions.
-    safety::PublishSlot<RegionNode> pending_region_;
+    fixy::handle::PublishSlot<RegionNode> pending_region_;
     RegionNode*                     pending_activation_{nullptr}; // fg-only: waiting for alignment
     AlignmentPos                    alignment_pos_{uint8_t{0}};   // consecutive matched ops from region start (#1077)
     CrucibleContext                 ctx_;               // fg-only replay
@@ -1077,8 +1108,8 @@ class Vigil {
 
 // Tier 2 opt-in: nothing inside Vigil may be a ScopedView.  The
 // reflection walk proves that neither Vigil nor any of its fields
-// (transitively, through known wrappers) stores a safety::ScopedView —
+// (transitively, through known wrappers) stores a fixy::wrap::ScopedView —
 // views must not escape their construction scope.
-static_assert(crucible::safety::no_scoped_view_field_check<Vigil>());
+static_assert(crucible::fixy::wrap::no_scoped_view_field_check<Vigil>());
 
 } // namespace crucible
