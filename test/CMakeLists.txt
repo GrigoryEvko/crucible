@@ -2218,6 +2218,21 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_reader_non_surface
 crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_reader_near_miss_surface
     "SnapshotSessionSurface|constraints not satisfied|no matching function")
 
+# FIXY-U-074k HS14 floor: the MPMC ENDPOINT token mints (single-arg,
+# surface-only gated on MpmcChannelSessionSurface, no permission param).
+# Same shape as snapshot_reader → two surface-failure modes each: bare
+# non-surface (fails first nested-type clause) vs near-miss (the relevant
+# factory — producer()/consumer() — returns the handle directly instead of
+# optional<Handle>, failing exactly one method-signature clause).
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_producer_endpoint_non_surface
+    "MpmcChannelSessionSurface|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_producer_endpoint_near_miss
+    "MpmcChannelSessionSurface|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_endpoint_non_surface
+    "MpmcChannelSessionSurface|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_endpoint_near_miss
+    "MpmcChannelSessionSurface|constraints not satisfied|no matching function")
+
 # FIXY-U-074d HS14 floor: fixy::substr::mint_substrate_session sat at
 # HS14:0.  Two distinct rejection conjuncts of its requires-clause
 # (IsBridgeableDirection ∧ SubstrateFitsCtxResidency ∧
