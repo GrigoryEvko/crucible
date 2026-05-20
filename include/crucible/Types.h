@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/fixy/Wrap.h>     // FIXY-U-096p: Refined + bounded_above through fixy::
 
 #include <compare>
 #include <cstddef>
@@ -36,7 +36,7 @@ struct ElementBytes {
     // construction.  Default-init to 0 (matches ScalarType::Undefined
     // semantics; bounded_above<16>(0) = true so the NSDMI does not
     // trip the construction predicate).
-    safety::Refined<safety::bounded_above<uint8_t{16}>, uint8_t>
+    fixy::wrap::Refined<fixy::wrap::bounded_above<uint8_t{16}>, uint8_t>
         value_{uint8_t{0}};
 
     constexpr ElementBytes() noexcept = default;
@@ -285,8 +285,8 @@ struct FamilyB {};
 
 // ═══════════════════════════════════════════════════════════════════
 // Hash taxonomy — TWO DISJOINT FAMILIES with different persistence
-// semantics.  Hash-producing fields should use `safety::Tagged<...,
-// hash_family::FamilyA>` or `safety::Tagged<..., hash_family::FamilyB>`
+// semantics.  Hash-producing fields should use `fixy::wrap::Tagged<...,
+// hash_family::FamilyA>` or `fixy::wrap::Tagged<..., hash_family::FamilyB>`
 // where layout permits; legacy strong-hash IDs remain bare newtypes
 // until their call-site migrations land.
 //
