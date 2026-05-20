@@ -26,7 +26,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-20T15:50:33Z`.
+Snapshot generated: `2026-05-20T15:56:07Z`.
 
 ## bridges/
 
@@ -70,7 +70,6 @@ Snapshot generated: `2026-05-20T15:50:33Z`.
 | `mint_cap` | `include/crucible/effects/Capability.h:164` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:100` | HS14: 11 |
 | `mint_from_ctx` | `include/crucible/effects/Capability.h:319` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Cap.h:106` | HS14: 3 |
 | `mint_init_context` | `include/crucible/effects/Capabilities.h:366` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_key` | `include/crucible/effects/Capability.h:160` | - | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_test_context` | `include/crucible/effects/Capabilities.h:381` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
 
 ## perf/
@@ -124,7 +123,6 @@ Snapshot generated: `2026-05-20T15:50:33Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_boundary` | `include/crucible/sessions/FederationProtocol.h:71` | - | - | Y | - | ctx | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_calendar_grid_consumer` | `include/crucible/sessions/CalendarGridSession.h:66` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:271` | HS14: 2 |
 | `mint_calendar_grid_producer` | `include/crucible/sessions/CalendarGridSession.h:56` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:270` | HS14: 2 |
 | `mint_chainedge_signaler` | `include/crucible/sessions/ChainEdgeSession.h:60` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:218` | HS14: 2 |
@@ -181,6 +179,6 @@ Snapshot generated: `2026-05-20T15:50:33Z`.
 
 ## Summary
 
-- Total substrate mints: 106
-- Missing fixy re-export: 26
+- Total substrate mints: 104
+- Missing fixy re-export: 24
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

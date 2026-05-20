@@ -109,8 +109,18 @@ scan_substrate() {
 
         # Extract mint name from the matched line.  awk avoids head -1 +
         # pipefail traps; rg's pattern guarantees at least one match.
+        # The `(^|[^A-Za-z0-9_])` prefix is a word-boundary guard: without
+        # it, `cap_mint_key()` mis-extracts as `mint_key` and
+        # `…_mint_boundary(` as `mint_boundary` (substring matches inside a
+        # larger identifier).  The trailing `[[:space:]]*\(` anchors to the
+        # actual factory call, so type-qualified return lines that also
+        # contain an unrelated `_mint_` token pick the real callee.
         local name
-        name="$(awk 'match($0, /mint_[a-z0-9_]+/) { print substr($0, RSTART, RLENGTH); exit }' <<<"$text")"
+        name="$(awk 'match($0, /(^|[^A-Za-z0-9_])mint_[a-z0-9_]+[[:space:]]*\(/) {
+                         s = substr($0, RSTART, RLENGTH);
+                         sub(/^[^A-Za-z0-9_]*/, "", s);
+                         sub(/[[:space:]]*\(.*$/, "", s);
+                         print s; exit }' <<<"$text")"
         [[ -z "$name" ]] && continue
 
         # Get qualifiers.
@@ -124,7 +134,7 @@ scan_substrate() {
            --no-heading \
            --type=cpp \
            --glob '!_*.h' \
-           'mint_[a-z0-9_]+\s*\(' "$dir" 2>/dev/null || true
+           '\bmint_[a-z0-9_]+\s*\(' "$dir" 2>/dev/null || true
     )
 }
 
