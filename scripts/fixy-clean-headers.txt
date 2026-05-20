@@ -1,0 +1,47 @@
+# scripts/fixy-clean-headers.txt — FIXY-U-096* certified-clean registry.
+#
+# Each path below is a top-level include/crucible/*.h header that the
+# FIXY-U-096* migration sweep brought to LITERAL ZERO `safety::`
+# namespace references: it reaches the safety:: substrate only through
+# the fixy:: umbrella (fixy::wrap::, fixy::tags::source::, fixy::handle::,
+# fixy::sess::, ...).  check-fixy-clean-headers.sh asserts every entry
+# stays at zero `safety::` tokens — code AND comments (a migrated header
+# describes its wrappers as `fixy::wrap::Tagged`, never `safety::Tagged`;
+# prose that writes `safety::` is the regression signal that bit the
+# DimHash comment near-miss in FIXY-U-096v).
+#
+# `safety/` include PATHS are NOT matched — `\bsafety::` is the namespace
+# token only.  Headers that legitimately retain `safety/Decide.h`,
+# `safety/Pre.h`, or `safety/Simd.h` includes (CRUCIBLE_PRE macro +
+# crucible::decide predicates + crucible::simd facade — primitives that
+# live outside the safety:: namespace) can still be registered: those are
+# include paths, not namespace refs.
+#
+# POSITIVE registry, not an exemption allowlist.  A path here is a
+# promise the file is clean; the guard fails if the promise breaks.  The
+# registry only GROWS — add a header the moment it reaches literal-zero.
+# Deliberately ABSENT (and why):
+#   - Arena.h / Saturate.h — circular-blocked; they POPULATE
+#     namespace crucible::fixy::wrap from narrow substrate headers
+#     rather than consume the umbrella, so they carry irreducible
+#     `::crucible::safety::` re-export plumbing (documented in-header).
+#   - Vigil.h / TraceRing.h / MetaLog.h / CrucibleContext.h —
+#     reimplement-reserved (FIXY-U-030/031/032), not yet migrated.
+#   - MerkleDag.h / PoolAllocator.h / CKernel.h / ... — code-clean but
+#     still carry doc-comment prose mentioning `safety::*`; they join
+#     the registry once that residue is reworded to fixy:: spellings.
+#
+include/crucible/BackgroundThread.h
+include/crucible/Cipher.h
+include/crucible/CostModel.h
+include/crucible/DimHash.h
+include/crucible/ExprPool.h
+include/crucible/Graph.h
+include/crucible/NumericalRecipe.h
+include/crucible/Philox.h
+include/crucible/ReplayEngine.h
+include/crucible/Serialize.h
+include/crucible/SymbolTable.h
+include/crucible/TensorMeta.h
+include/crucible/TraceLoader.h
+include/crucible/Types.h

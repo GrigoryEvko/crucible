@@ -512,6 +512,23 @@ add_test(NAME no_reinterpret_cast
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh)
 set_tests_properties(no_reinterpret_cast no_reinterpret_cast_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-105")
+# FIXY-U-096z migration lock-in.  The FIXY-U-096* sweep brought 14
+# top-level include/crucible/*.h headers to literal-zero `safety::`
+# (reaching the substrate only through the fixy:: umbrella).
+# scripts/check-fixy-clean-headers.sh asserts every header in the
+# positive registry scripts/fixy-clean-headers.txt stays safety::-free
+# in code AND comments — a regression (a re-added safety::Tagged, or
+# doc prose that writes safety::) reds CI at exit 1.  Self-test plants
+# one dirty + one clean registered header to prove the pattern catches
+# drift and spares umbrella spellings.  Positive registry, not an
+# exemption allowlist: the list only grows as more headers migrate.
+add_test(NAME fixy_clean_headers_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-clean-headers.sh
+          --self-test)
+add_test(NAME fixy_clean_headers
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-clean-headers.sh)
+set_tests_properties(fixy_clean_headers fixy_clean_headers_self_test PROPERTIES
+    LABELS "ci_guard;fixy-U-096z")
 # FIXY-U-100 syscall capability discipline (closes fixy-A5-016
 # regression-prevention surface).  scripts/check-syscall-capability.sh
 # flags every NEW direct Linux syscall invocation outside the allowlist
