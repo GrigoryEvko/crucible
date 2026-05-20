@@ -466,6 +466,38 @@ static_assert(fsq::queue_contains_v<fsq::Queue<u052f_reach::Msg>,
                                     u052f_reach::RoleA, u052f_reach::RoleB>);
 static_assert(fsq::is_queue_state_v<fsq::EmptyQueue>);
 
+// ─── 6g. SessDiagnostic.h reach — fixy::sess::diagnostic:: (U-052g) ──
+//
+// Witness that the session manifest-bug catalog (tag_base + 23 tags +
+// classifier/accessors + Diagnostic<> wrapper + Catalog) reaches the
+// consumer through the umbrella include alone.  If a future regression
+// strips `#include <crucible/fixy/SessDiagnostic.h>` from Fixy.h's
+// Phase-C block, the next claims fail to compile — the in-header
+// sentinels inside SessDiagnostic.h fire only at direct-include sites,
+// so the umbrella-reach gate lives here.
+//
+// NOTE: this is the SESSION diagnostic catalog (proto::diagnostic),
+// distinct from fixy::diag:: (the FOUND-E01 safety::diag Category).
+
+namespace fsdiag = ::crucible::fixy::sess::diagnostic;
+
+// 6g-a. Tag + Catalog types resolve through the umbrella to substrate.
+static_assert(std::is_same_v<fsdiag::SubtypeMismatch,
+    ::crucible::safety::proto::diagnostic::SubtypeMismatch>,
+    "umbrella reach: fixy::sess::diagnostic::SubtypeMismatch must alias "
+    "safety::proto::diagnostic::SubtypeMismatch.  If this red-lights, "
+    "fixy/SessDiagnostic.h is not pulled in by <crucible/Fixy.h>.");
+static_assert(std::is_same_v<fsdiag::Catalog,
+    ::crucible::safety::proto::diagnostic::Catalog>);
+
+// 6g-b. Classifier + catalog size route through.
+static_assert(fsdiag::is_diagnostic_class_v<fsdiag::SubtypeMismatch>);
+static_assert(!fsdiag::is_diagnostic_class_v<int>);
+static_assert(fsdiag::catalog_size == 23);
+
+// 6g-c. Diagnostic<> wrapper reaches the consumer.
+static_assert(fsdiag::is_diagnostic_v<fsdiag::Diagnostic<fsdiag::SubtypeMismatch, int>>);
+
 // ─── 7. fixy::wrap:: saturating-arithmetic free functions (FIXY-U-096b) ──
 //
 // Witness that the saturating-arithmetic primitives required by
