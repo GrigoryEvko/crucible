@@ -15,12 +15,20 @@
 // (the writes use seq-cst via std::atomic where needed — here we keep it
 // simple since both reader and writer are the same background thread).
 
+// FIXY-U-096e production migration: Tagged<RegionNode*, source::Arena>
+// + Monotonic / BoundedMonotonic reached through the fixy:: umbrella
+// instead of safety::* directly.  Transaction.h has a single production
+// fan-in (Vigil.h) and no substrate-to-Transaction edge, so the full
+// Wrap.h + Source.h umbrella is cycle-safe here.  `crucible::decide::
+// is_non_zero` is namespaced at top-level (not under safety::) so its
+// substrate path stays — the migration is wrapper-types-only.
+// CRUCIBLE_POST is a macro substrate dep; safety/Post.h stays.
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
+#include <crucible/fixy/Source.h>
+#include <crucible/fixy/Wrap.h>
 #include <crucible/safety/Decide.h>
-#include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
-#include <crucible/safety/Tagged.h>
 
 #include <cassert>
 #include <chrono>
@@ -51,8 +59,8 @@ enum class TxStatus : uint8_t {
 //                      total 48B
 
 struct Transaction {
-    using ArenaRegion = ::crucible::safety::Tagged<
-        RegionNode*, ::crucible::safety::source::Arena>;
+    using ArenaRegion = ::crucible::fixy::wrap::Tagged<
+        RegionNode*, ::crucible::fixy::tags::source::Arena>;
 
     static_assert(sizeof(ArenaRegion) == sizeof(RegionNode*));
 
@@ -68,7 +76,7 @@ struct Transaction {
     // monotonicity is reset deliberately at slot recycling, the global
     // monotonicity is enforced by TransactionLog::count_'s
     // BoundedMonotonic gate (#1064 WRAP-Transaction-5).
-    ::crucible::safety::Monotonic<uint64_t> step_id{0};
+    ::crucible::fixy::wrap::Monotonic<uint64_t> step_id{0};
     ContentHash  content_hash;        // default (0) until COMMITTED
     MerkleHash   merkle_root;         // default (0) until COMMITTED
     ArenaRegion  region{nullptr};     // null until COMMITTED; arena-owned
@@ -107,7 +115,7 @@ class TransactionLog {
     //
     // Zero-cost: regime-2 collapse — sizeof(CountCounter) ==
     // sizeof(uint32_t) == 4 B; TransactionLog layout preserved.
-    using CountCounter = ::crucible::safety::BoundedMonotonic<uint32_t, N>;
+    using CountCounter = ::crucible::fixy::wrap::BoundedMonotonic<uint32_t, N>;
 
     TransactionLog() = default;
     TransactionLog(const TransactionLog&)            = delete("TransactionLog holds ring-internal pointers");
