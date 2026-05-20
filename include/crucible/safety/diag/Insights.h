@@ -1225,6 +1225,88 @@ struct insight_provider<WaitStrategyViolation> {
         "flag.wait(false);  // Wait<AcquireWait> in a SpinPause caller";
 };
 
+// ── SharedPermissionPoolSaturated (fixy-A1-007) ────────────────────
+template <>
+struct insight_provider<SharedPermissionPoolSaturated> {
+    static constexpr Severity         severity = Severity::Fatal;
+    static constexpr std::string_view why_this_matters =
+        "SharedPermissionPool<Tag> encodes Boyland 2003 fractional "
+        "permissions in a single atomic state word: low 63 bits count "
+        "outstanding borrows, top bit signals exclusive-upgrade in "
+        "progress.  Saturation at COUNT_MASK (2^63 - 1) means the next "
+        "lend would either alias the upgrade bit (silently marking the "
+        "pool busy while admitting a phantom borrower) or wrap to zero "
+        "(losing every outstanding guard's ledger entry).  Either "
+        "outcome breaks CSL frame discipline — the type system loses "
+        "its proof that read borrows are disjoint from writes.  Pre-fix "
+        "the saturation site std::abort()ed with no breadcrumb; "
+        "post-fix this tag is emitted before terminating.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces in long-lived pools after a leaked SharedPermission"
+        "Guard (orphaned worker, exception during construct, missing "
+        "RAII).  Reaching 2^63 lifetime lends on a single pool requires "
+        "either a guard leak or genuinely unbounded reuse — the fix "
+        "depends on which.";
+    static constexpr std::string_view correct_example =
+        "{ auto guard = pool.lend(); use(guard); }  // RAII drop releases";
+    static constexpr std::string_view violating_example =
+        "auto* leak = new SharedPermissionGuard(pool.lend());  // never freed";
+};
+
+// ── HugePageAllocationFailed (fixy-A1-022) ─────────────────────────
+template <>
+struct insight_provider<HugePageAllocationFailed> {
+    static constexpr Severity         severity = Severity::Fatal;
+    static constexpr std::string_view why_this_matters =
+        "Crucible's SPSC backings (TraceRing, MetaLog) require "
+        "2-MB-aligned regions for TLB efficiency — every page miss on "
+        "the recording hot path is amortized across 512 small pages.  "
+        "std::aligned_alloc(2 MB, n) returns nullptr when the kernel "
+        "cannot satisfy a 2-MB-aligned extent: depleted "
+        "/proc/sys/vm/nr_hugepages, fragmented address space, or "
+        "RLIMIT_AS / cgroup memory.max exhaustion.  Bootstrap cannot "
+        "complete without these buffers — recording is structural to "
+        "the runtime, not an optional optimization.";
+    static constexpr std::string_view symptom_pattern =
+        "First-boot failure on a host where nr_hugepages was never "
+        "tuned, or a container where the hugepage cgroup controller "
+        "zeroed the per-cgroup reservation.  /proc/meminfo:HugePages_Free "
+        "shows 0 at the moment of failure.";
+    static constexpr std::string_view correct_example =
+        "// Tune host: echo 256 > /proc/sys/vm/nr_hugepages then start";
+    static constexpr std::string_view violating_example =
+        "auto* ring = HugePageBuffer<T>::allocate(n);  // no host pool tune";
+};
+
+// ── PublishOnceDoublePublish (fixy-A1-031) ─────────────────────────
+template <>
+struct insight_provider<PublishOnceDoublePublish> {
+    static constexpr Severity         severity = Severity::Fatal;
+    static constexpr std::string_view why_this_matters =
+        "handles::PublishOnce<T> is a one-shot publication primitive — "
+        "exactly one publisher across the slot's lifetime, arbitrarily "
+        "many observers.  The publish CAS goes nullptr → ptr and the "
+        "single-publisher invariant is a soundness gate: a second "
+        "successful publish would silently overwrite the channel "
+        "payload, racing against observers that already acquired the "
+        "prior value.  Pre-fix the post-CAS check was contract_assert "
+        "only — under -fcontract-evaluation-semantic=ignore (the "
+        "hot-path default per CLAUDE.md §V) the assert is elided, so "
+        "the collision was silent.  Post-fix the publish path emits "
+        "this tag before terminating, restoring the gate independent "
+        "of contract semantic.";
+    static constexpr std::string_view symptom_pattern =
+        "Two threads racing to establish the same channel without an "
+        "outer Once / OneShotFlag guard.  Or a retry loop that "
+        "re-enters publish after a transient error instead of failing "
+        "upward.  When PublishOnce backs a federation-cache slot, the "
+        "tag fires on a cache-key collision or duplicate compile entry.";
+    static constexpr std::string_view correct_example =
+        "Once::call_once(latch, [&]{ slot.publish(p); });  // serialized";
+    static constexpr std::string_view violating_example =
+        "if (need_publish) slot.publish(p);  // no outer serialization";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Trait: does this Tag have non-trivial insights? ────────────────
 // ═════════════════════════════════════════════════════════════════════

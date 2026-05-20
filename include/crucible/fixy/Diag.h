@@ -29,7 +29,7 @@
 //
 // ── FixyCatalog reconciliation surface ─────────────────────────────
 //
-// Substrate `Catalog` (28 entries) and `Category` enum are CLOSED to
+// Substrate `Catalog` (31 entries) and `Category` enum are CLOSED to
 // the foundation per FOUND-E01.  Fixy's twenty `FixyNotEngaged_*`
 // per-axis diagnostic tags live in a parallel closed enumeration
 // `fixy::diag::FixyCatalog` defined in `fixy/Reject.h` (because the
@@ -75,7 +75,7 @@ namespace crucible::fixy::diag {
 
 using ::crucible::safety::diag::tag_base;
 
-// 28 diagnostic tag classes.
+// 31 diagnostic tag classes (FOUND-E01 Catalog, closed enumeration).
 using ::crucible::safety::diag::EffectRowMismatch;
 using ::crucible::safety::diag::UnknownParameterShape;
 using ::crucible::safety::diag::GradedWrapperViolation;
@@ -104,6 +104,9 @@ using ::crucible::safety::diag::StateBudgetViolation;
 using ::crucible::safety::diag::InsufficientWitness;
 using ::crucible::safety::diag::ModalityMismatch;
 using ::crucible::safety::diag::LinearAliasViolation;
+using ::crucible::safety::diag::SharedPermissionPoolSaturated;
+using ::crucible::safety::diag::HugePageAllocationFailed;
+using ::crucible::safety::diag::PublishOnceDoublePublish;
 
 // Catalog tuple + cardinality.
 using ::crucible::safety::diag::Catalog;
@@ -253,5 +256,51 @@ static_assert(!stable_name_of<DiagSentinelStableName_TypeA>.empty());
 // EMPTY_ROW_HASH passes through.
 static_assert(EMPTY_ROW_HASH ==
               ::crucible::safety::diag::detail::EMPTY_ROW_HASH);
+
+// ── FIXY-U-064: full 31-tag coverage witness ───────────────────────
+//
+// Closes the regression where the substrate added 3 tags (28-30)
+// without surfacing through fixy::diag::.  The 3 new tags MUST resolve
+// to substrate identity AND round-trip through the bidirectional map.
+
+static_assert(std::is_same_v<SharedPermissionPoolSaturated,
+                             ::crucible::safety::diag::SharedPermissionPoolSaturated>,
+    "fixy::diag::SharedPermissionPoolSaturated must alias substrate tag");
+static_assert(std::is_same_v<HugePageAllocationFailed,
+                             ::crucible::safety::diag::HugePageAllocationFailed>,
+    "fixy::diag::HugePageAllocationFailed must alias substrate tag");
+static_assert(std::is_same_v<PublishOnceDoublePublish,
+                             ::crucible::safety::diag::PublishOnceDoublePublish>,
+    "fixy::diag::PublishOnceDoublePublish must alias substrate tag");
+
+// Bidirectional map round-trips for the 3 new entries.
+static_assert(category_of_v<SharedPermissionPoolSaturated> ==
+              Category::SharedPermissionPoolSaturated);
+static_assert(category_of_v<HugePageAllocationFailed> ==
+              Category::HugePageAllocationFailed);
+static_assert(category_of_v<PublishOnceDoublePublish> ==
+              Category::PublishOnceDoublePublish);
+static_assert(std::is_same_v<tag_of_t<Category::SharedPermissionPoolSaturated>,
+                             SharedPermissionPoolSaturated>);
+static_assert(std::is_same_v<tag_of_t<Category::HugePageAllocationFailed>,
+                             HugePageAllocationFailed>);
+static_assert(std::is_same_v<tag_of_t<Category::PublishOnceDoublePublish>,
+                             PublishOnceDoublePublish>);
+
+// is_diagnostic_class_v witnesses.
+static_assert(is_diagnostic_class_v<SharedPermissionPoolSaturated>);
+static_assert(is_diagnostic_class_v<HugePageAllocationFailed>);
+static_assert(is_diagnostic_class_v<PublishOnceDoublePublish>);
+
+// insight_provider non-empty witnesses — the 3 new tags MUST carry
+// substantive content per the U-064 "sweep" requirement.  Empty
+// defaults would indicate the substrate-side insight_provider
+// specializations regressed.
+static_assert(!insight_provider<SharedPermissionPoolSaturated>::why_this_matters.empty(),
+    "SharedPermissionPoolSaturated insight_provider must be specialized");
+static_assert(!insight_provider<HugePageAllocationFailed>::why_this_matters.empty(),
+    "HugePageAllocationFailed insight_provider must be specialized");
+static_assert(!insight_provider<PublishOnceDoublePublish>::why_this_matters.empty(),
+    "PublishOnceDoublePublish insight_provider must be specialized");
 
 }  // namespace crucible::fixy::diag::self_test

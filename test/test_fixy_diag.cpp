@@ -32,21 +32,90 @@ static_assert(fd::Category::DetSafeLeak            == cd::Category::DetSafeLeak)
 static_assert(fd::Category::LinearityViolation     == cd::Category::LinearityViolation);
 static_assert(fd::Category::LinearAliasViolation   == cd::Category::LinearAliasViolation);
 
+// FIXY-U-064: full 31-tag Category coverage table.  Every Category
+// value MUST round-trip — tag_of_t<C>'s back-pointer through
+// category_of_v MUST equal C.  This catches any future enum / Catalog
+// / specialization drift in a single static_assert per entry.
 static_assert(fd::catalog_size == cd::catalog_size);
 static_assert(fd::catalog_size == 31);
 
 static_assert(std::is_same_v<fd::Catalog, cd::Catalog>);
 
+// All 31 Category values reachable through fd::Category.
+static_assert(fd::Category::EffectRowMismatch              == cd::Category::EffectRowMismatch);
+static_assert(fd::Category::UnknownParameterShape         == cd::Category::UnknownParameterShape);
+static_assert(fd::Category::GradedWrapperViolation        == cd::Category::GradedWrapperViolation);
+static_assert(fd::Category::LinearityViolation            == cd::Category::LinearityViolation);
+static_assert(fd::Category::RefinementViolation           == cd::Category::RefinementViolation);
+static_assert(fd::Category::HotPathViolation              == cd::Category::HotPathViolation);
+static_assert(fd::Category::DetSafeLeak                   == cd::Category::DetSafeLeak);
+static_assert(fd::Category::NumericalTierMismatch         == cd::Category::NumericalTierMismatch);
+static_assert(fd::Category::MemOrderViolation             == cd::Category::MemOrderViolation);
+static_assert(fd::Category::AllocClassViolation           == cd::Category::AllocClassViolation);
+static_assert(fd::Category::VendorBackendMismatch         == cd::Category::VendorBackendMismatch);
+static_assert(fd::Category::CrashClassMismatch            == cd::Category::CrashClassMismatch);
+static_assert(fd::Category::ConsistencyMismatch           == cd::Category::ConsistencyMismatch);
+static_assert(fd::Category::LifetimeViolation             == cd::Category::LifetimeViolation);
+static_assert(fd::Category::WaitStrategyViolation         == cd::Category::WaitStrategyViolation);
+static_assert(fd::Category::ProgressClassViolation        == cd::Category::ProgressClassViolation);
+static_assert(fd::Category::CipherTierViolation           == cd::Category::CipherTierViolation);
+static_assert(fd::Category::ResidencyHeatViolation        == cd::Category::ResidencyHeatViolation);
+static_assert(fd::Category::EpochMismatch                 == cd::Category::EpochMismatch);
+static_assert(fd::Category::BudgetExceeded                == cd::Category::BudgetExceeded);
+static_assert(fd::Category::NumaPlacementMismatch         == cd::Category::NumaPlacementMismatch);
+static_assert(fd::Category::RecipeSpecMismatch            == cd::Category::RecipeSpecMismatch);
+static_assert(fd::Category::PureFunctionViolation         == cd::Category::PureFunctionViolation);
+static_assert(fd::Category::DivergenceBudgetViolation     == cd::Category::DivergenceBudgetViolation);
+static_assert(fd::Category::StateBudgetViolation          == cd::Category::StateBudgetViolation);
+static_assert(fd::Category::InsufficientWitness           == cd::Category::InsufficientWitness);
+static_assert(fd::Category::ModalityMismatch              == cd::Category::ModalityMismatch);
+static_assert(fd::Category::LinearAliasViolation          == cd::Category::LinearAliasViolation);
+static_assert(fd::Category::SharedPermissionPoolSaturated == cd::Category::SharedPermissionPoolSaturated);
+static_assert(fd::Category::HugePageAllocationFailed      == cd::Category::HugePageAllocationFailed);
+static_assert(fd::Category::PublishOnceDoublePublish      == cd::Category::PublishOnceDoublePublish);
+
 // ─── 2. Bidirectional map round-trip ──────────────────────────────
+//
+// Exhaustive — every Category value MUST resolve through tag_of_t back
+// to a tag whose category_of_v matches.  31 round-trips.
 
-static_assert(fd::category_of_v<fd::HotPathViolation>   == fd::Category::HotPathViolation);
-static_assert(fd::category_of_v<fd::DetSafeLeak>        == fd::Category::DetSafeLeak);
-static_assert(fd::category_of_v<fd::EffectRowMismatch>  == fd::Category::EffectRowMismatch);
+#define DIAG_ROUNDTRIP(name) \
+    static_assert(fd::category_of_v<fd::name> == fd::Category::name); \
+    static_assert(std::is_same_v<fd::tag_of_t<fd::Category::name>, fd::name>)
 
-static_assert(std::is_same_v<fd::tag_of_t<fd::Category::HotPathViolation>,
-                             fd::HotPathViolation>);
-static_assert(std::is_same_v<fd::tag_of_t<fd::Category::EffectRowMismatch>,
-                             fd::EffectRowMismatch>);
+DIAG_ROUNDTRIP(EffectRowMismatch);
+DIAG_ROUNDTRIP(UnknownParameterShape);
+DIAG_ROUNDTRIP(GradedWrapperViolation);
+DIAG_ROUNDTRIP(LinearityViolation);
+DIAG_ROUNDTRIP(RefinementViolation);
+DIAG_ROUNDTRIP(HotPathViolation);
+DIAG_ROUNDTRIP(DetSafeLeak);
+DIAG_ROUNDTRIP(NumericalTierMismatch);
+DIAG_ROUNDTRIP(MemOrderViolation);
+DIAG_ROUNDTRIP(AllocClassViolation);
+DIAG_ROUNDTRIP(VendorBackendMismatch);
+DIAG_ROUNDTRIP(CrashClassMismatch);
+DIAG_ROUNDTRIP(ConsistencyMismatch);
+DIAG_ROUNDTRIP(LifetimeViolation);
+DIAG_ROUNDTRIP(WaitStrategyViolation);
+DIAG_ROUNDTRIP(ProgressClassViolation);
+DIAG_ROUNDTRIP(CipherTierViolation);
+DIAG_ROUNDTRIP(ResidencyHeatViolation);
+DIAG_ROUNDTRIP(EpochMismatch);
+DIAG_ROUNDTRIP(BudgetExceeded);
+DIAG_ROUNDTRIP(NumaPlacementMismatch);
+DIAG_ROUNDTRIP(RecipeSpecMismatch);
+DIAG_ROUNDTRIP(PureFunctionViolation);
+DIAG_ROUNDTRIP(DivergenceBudgetViolation);
+DIAG_ROUNDTRIP(StateBudgetViolation);
+DIAG_ROUNDTRIP(InsufficientWitness);
+DIAG_ROUNDTRIP(ModalityMismatch);
+DIAG_ROUNDTRIP(LinearAliasViolation);
+DIAG_ROUNDTRIP(SharedPermissionPoolSaturated);
+DIAG_ROUNDTRIP(HugePageAllocationFailed);
+DIAG_ROUNDTRIP(PublishOnceDoublePublish);
+
+#undef DIAG_ROUNDTRIP
 
 // ─── 3. is_diagnostic_class_v ─────────────────────────────────────
 
@@ -65,6 +134,10 @@ static_assert(fd::is_diagnostic_class_v<fd::NumericalTierMismatch>);
 static_assert(fd::is_diagnostic_class_v<fd::EffectRowMismatch>);
 static_assert(fd::is_diagnostic_class_v<fd::CipherTierViolation>);
 static_assert(fd::is_diagnostic_class_v<fd::ResidencyHeatViolation>);
+// FIXY-U-064: 3 new tags from substrate (entries 28-30).
+static_assert(fd::is_diagnostic_class_v<fd::SharedPermissionPoolSaturated>);
+static_assert(fd::is_diagnostic_class_v<fd::HugePageAllocationFailed>);
+static_assert(fd::is_diagnostic_class_v<fd::PublishOnceDoublePublish>);
 
 // Accessors return non-empty strings.
 static_assert(!fd::diagnostic_name_v<fd::HotPathViolation>.empty());
@@ -120,6 +193,27 @@ static_assert(sizeof(DiagSentinel_DefaultInsight) >= 1);
 // Specialized for a shipped tag.
 using DiagSentinel_HotpathInsight = fd::insight_provider<fd::HotPathViolation>;
 static_assert(sizeof(DiagSentinel_HotpathInsight) >= 1);
+
+// FIXY-U-064: 3 new tag insight_providers must be substantively
+// populated (NOT the empty primary template).  Empty defaults would
+// indicate the substrate-side insight_provider sweep regressed.
+static_assert(!fd::insight_provider<fd::SharedPermissionPoolSaturated>::why_this_matters.empty(),
+    "SharedPermissionPoolSaturated insight_provider must be specialized");
+static_assert(!fd::insight_provider<fd::HugePageAllocationFailed>::why_this_matters.empty(),
+    "HugePageAllocationFailed insight_provider must be specialized");
+static_assert(!fd::insight_provider<fd::PublishOnceDoublePublish>::why_this_matters.empty(),
+    "PublishOnceDoublePublish insight_provider must be specialized");
+// All 4 prose fields populated — the "sweep" calls for substantive
+// content per CRUCIBLE_DEFINE_INSIGHTS macro discipline.
+static_assert(!fd::insight_provider<fd::SharedPermissionPoolSaturated>::symptom_pattern.empty());
+static_assert(!fd::insight_provider<fd::SharedPermissionPoolSaturated>::correct_example.empty());
+static_assert(!fd::insight_provider<fd::SharedPermissionPoolSaturated>::violating_example.empty());
+static_assert(!fd::insight_provider<fd::HugePageAllocationFailed>::symptom_pattern.empty());
+static_assert(!fd::insight_provider<fd::HugePageAllocationFailed>::correct_example.empty());
+static_assert(!fd::insight_provider<fd::HugePageAllocationFailed>::violating_example.empty());
+static_assert(!fd::insight_provider<fd::PublishOnceDoublePublish>::symptom_pattern.empty());
+static_assert(!fd::insight_provider<fd::PublishOnceDoublePublish>::correct_example.empty());
+static_assert(!fd::insight_provider<fd::PublishOnceDoublePublish>::violating_example.empty());
 
 // ─── 9. Runtime sanity — emit a Category through the alias ────────
 
