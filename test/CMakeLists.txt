@@ -2198,6 +2198,19 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_session_wrong_handle
 crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_session_non_ctx
     "IsExecCtx|constraints not satisfied|no matching function")
 
+# FIXY-U-074f HS14 floor: SWMR runtime-session mints (writer/reader),
+# both HS14:0.  Same handle types + IsExecCtx constraint as the typed
+# session variants (SwmrSession.h:241/250) → same two distinct classes
+# (role-swap wrong-handle + non-ExecCtx) bring both to 2.
+crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_writer_runtime_session_wrong_handle
+    "cannot convert|no matching function|WriterHandle|ReaderHandle")
+crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_writer_runtime_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_runtime_session_wrong_handle
+    "cannot convert|no matching function|WriterHandle|ReaderHandle")
+crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_runtime_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function")
+
 # fixy-HS14-07 — Substr.h re-export of ChaseLevDeque mints
 # (mint_chaselev_owner / mint_chaselev_thief / mint_owner_session /
 # mint_thief_session).  Four mints × two distinct mismatch classes
