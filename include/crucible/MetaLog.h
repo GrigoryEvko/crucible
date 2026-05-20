@@ -16,6 +16,7 @@
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/Stale.h>
 
 // FIXY-U-031a (S1 of #1736): MetaLog spells its safety wrappers through
 // fixy::wrap::, never safety::* — see the usages below.  MetaLog is a
@@ -39,6 +40,7 @@ using ::crucible::safety::HotPathTier_v;
 using ::crucible::safety::HugePageBuffer;
 using ::crucible::safety::Monotonic;
 using ::crucible::safety::Refined;
+using ::crucible::safety::Stale;
 }  // namespace crucible::fixy::wrap
 
 namespace crucible {
@@ -417,9 +419,15 @@ struct CRUCIBLE_OWNER MetaLog {
     tail.advance(new_tail);
   }
 
-  // Approximate count — deliberately racy (diagnostic only).
-  [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
-    return head.get() - tail.get();
+  // Approximate count — deliberately racy (diagnostic only).  The
+  // Stale<uint32_t> return type-documents the race (WRAP-MetaLog-4 #947,
+  // S2 of #1736): head.get() and tail.get() are read at different
+  // instants under concurrent producer/consumer advance, so the
+  // difference may never have been simultaneously true.  at_infinity =
+  // "unknown lag relative to the current step" — callers must .peek() to
+  // acknowledge the snapshot is unsynchronized.
+  [[nodiscard]] crucible::fixy::wrap::Stale<uint32_t> size() const CRUCIBLE_NO_THREAD_SAFETY {
+    return crucible::fixy::wrap::Stale<uint32_t>::at_infinity(head.get() - tail.get());
   }
 
   // Only when both threads are quiescent (join/stop).

@@ -93,7 +93,7 @@ public:
         }
 
         [[nodiscard]] std::uint32_t size_approx() const {
-            return log_.size();
+            return log_.size().peek();
         }
     };
 
@@ -174,7 +174,7 @@ public:
         }
 
         [[nodiscard]] std::uint32_t size_approx() const {
-            return log_.size();
+            return log_.size().peek();
         }
     };
 

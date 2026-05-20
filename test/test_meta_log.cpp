@@ -38,7 +38,7 @@ static TensorMeta make_meta(void* ptr, int64_t d0 = 128, int64_t d1 = 256) {
 
 static void test_empty_state() {
     MetaLog log;
-    assert(log.size() == 0);
+    assert(log.size().peek() == 0);
     // Zero-length append short-circuits to none().
     assert(!log.try_append(nullptr, 0).is_valid());
     std::printf("  test_empty:                     PASSED\n");
@@ -50,7 +50,7 @@ static void test_single_append_returns_index_zero() {
     auto idx = log.try_append(&m, 1);
     assert(idx.is_valid());
     assert(idx.raw() == 0);
-    assert(log.size() == 1);
+    assert(log.size().peek() == 1);
     // Read back the stored meta.
     const auto& got = log.at(0);
     assert(raw_data_ptr(got) == raw_data_ptr(m));
@@ -70,7 +70,7 @@ static void test_batch_append_and_monotonic() {
     assert(idx1.is_valid() && idx2.is_valid());
     assert(idx1.raw() == 0);
     assert(idx2.raw() == 3);
-    assert(log.size() == 8);
+    assert(log.size().peek() == 8);
 
     // Contiguous span access covers the whole range on a fresh buffer.
     const TensorMeta* span = log.try_contiguous(0, 8);
@@ -86,9 +86,9 @@ static void test_tail_advance_frees_capacity() {
     MetaLog log;
     TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x2000)));
     auto idx = log.try_append(&m, 1);
-    assert(log.size() == 1);
+    assert(log.size().peek() == 1);
     log.advance_tail(idx.raw() + 1);
-    assert(log.size() == 0);
+    assert(log.size().peek() == 0);
     // Buffer is now logically empty; new append returns index 1
     // (monotonic, not reset).
     auto idx2 = log.try_append(&m, 1);
@@ -102,7 +102,7 @@ static void test_reset_zeroes_both_pointers() {
     for (int i = 0; i < 10; ++i) (void)log.try_append(&m, 1);
     log.advance_tail(5);
     log.reset();
-    assert(log.size() == 0);
+    assert(log.size().peek() == 0);
     // Fresh append returns index 0 again.
     auto idx = log.try_append(&m, 1);
     assert(idx.raw() == 0);
@@ -119,7 +119,7 @@ static void test_try_contiguous_wrap_returns_null() {
     std::vector<TensorMeta> junk(near_end, m);
     (void)log.try_append(junk.data(), near_end);
     log.advance_tail(near_end);   // free everything
-    assert(log.size() == 0);
+    assert(log.size().peek() == 0);
 
     // Now append 5 — wraps past CAPACITY - 3 → 2.
     std::vector<TensorMeta> tail5(5, m);
@@ -182,10 +182,10 @@ static void test_spsc_concurrent_integrity() {
     std::thread consumer{[&]{
         uint32_t next = 0;  // next expected sequence number (0-based)
         while (next < N) {
-            const uint32_t avail = log.size();
+            const uint32_t avail = log.size().peek();
             if (avail == 0) {
                 if (producer_done.load(std::memory_order_acquire) &&
-                    log.size() == 0) {
+                    log.size().peek() == 0) {
                     break;  // producer finished and we drained everything
                 }
                 CRUCIBLE_SPIN_PAUSE;
@@ -243,7 +243,7 @@ static void test_try_append_pure_FOUND_I17() {
         auto idx = log.try_append_pure(&m, 1);
         assert(idx.is_valid());
         assert(idx.raw() == 0);
-        assert(log.size() == 1);
+        assert(log.size().peek() == 1);
         const auto& got = log.at(idx);
         assert(raw_data_ptr(got) == raw_data_ptr(m));
     }
@@ -258,7 +258,7 @@ static void test_try_append_pure_FOUND_I17() {
         assert(idx1.is_valid() && idx2.is_valid());
         assert(idx1.raw() == 0);
         assert(idx2.raw() == 1);
-        assert(log.size() == 2);
+        assert(log.size().peek() == 2);
     }
 
     // (c) — interleave try_append + try_append_pure.  Both must
@@ -275,7 +275,7 @@ static void test_try_append_pure_FOUND_I17() {
         assert(i1.raw() == 1);
         assert(i2.raw() == 2);
         assert(i3.raw() == 3);
-        assert(log.size() == 4);
+        assert(log.size().peek() == 4);
     }
 
     // (d) — concept-fence positive witnesses.  Pin the IsPure
@@ -338,10 +338,10 @@ static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
     std::thread consumer{[&]{
         uint32_t next = 0;
         while (next < N) {
-            const uint32_t avail = log.size();
+            const uint32_t avail = log.size().peek();
             if (avail == 0) {
                 if (producer_done.load(std::memory_order_acquire) &&
-                    log.size() == 0) {
+                    log.size().peek() == 0) {
                     break;
                 }
                 CRUCIBLE_SPIN_PAUSE;
