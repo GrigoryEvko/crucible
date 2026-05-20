@@ -2211,6 +2211,19 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_runtime_session_wrong
 crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_runtime_session_non_ctx
     "IsExecCtx|constraints not satisfied|no matching function")
 
+# FIXY-U-074g HS14 floor: MPMC session mints (producer/consumer), both
+# HS14:0.  ctx-bound, take Channel::{Producer,Consumer}Handle&
+# (MpmcChannelSession.h:271/281) — same two distinct classes
+# (role-swap wrong-handle + non-ExecCtx) bring both to 2.
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_producer_session_wrong_handle
+    "cannot convert|no matching function|ProducerHandle|ConsumerHandle")
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_producer_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_session_wrong_handle
+    "cannot convert|no matching function|ProducerHandle|ConsumerHandle")
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function")
+
 # fixy-HS14-07 — Substr.h re-export of ChaseLevDeque mints
 # (mint_chaselev_owner / mint_chaselev_thief / mint_owner_session /
 # mint_thief_session).  Four mints × two distinct mismatch classes
