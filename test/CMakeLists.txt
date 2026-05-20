@@ -1995,6 +1995,12 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_endpoint_non_bridgeable
     "IsBridgeableDirection|constraints not satisfied|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_pipe_pipeline_non_stage
     "CtxFitsPipeline|pipeline_chain|IsStage|constraints not satisfied|associated constraints are not satisfied")
+# FIXY-U-074c HS14 floor: mint_pipeline sat at HS14:1 (only non_stage).
+# Second distinct class — two valid Stages that fail the stages_chain
+# adjacent-compatibility fold (int->int then double->double), distinct
+# from non_stage's IsStage-conjunct failure.  Brings mint_pipeline to 2.
+crucible_neg_compile_fixy_test(neg_fixy_pipe_pipeline_chain_break
+    "CtxFitsPipeline|pipeline_chain|stages_chain|constraints not satisfied|associated constraints are not satisfied")
 
 # ── FIXY-AUDIT-D7 — mint_pipeline_dag / mint_mpmc_stage_from_endpoints
 # / mint_swmr_stage HS14 floor.
