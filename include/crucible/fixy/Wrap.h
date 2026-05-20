@@ -215,6 +215,14 @@ using ::crucible::safety::BorrowedRef;
 // surfaced here per FIXY-U-093 (MerkleDag.h compute_storage_nbytes).
 using ::crucible::safety::Saturated;
 
+// add_sat_checked / sub_sat_checked / mul_sat_checked — saturating
+// arithmetic primitives returning Saturated<T>{value, was_clamped}.
+// safety/Saturated.h free functions — surfaced here per FIXY-U-096b
+// (Saturate.h migration of crucible::sat::*_det / *_from variants).
+using ::crucible::safety::add_sat_checked;
+using ::crucible::safety::sub_sat_checked;
+using ::crucible::safety::mul_sat_checked;
+
 // SharedPermission<Tag> — fractional permission carrier.  The
 // substrate lives in permissions/Permission.h but is re-exported
 // into crucible::safety via the permissions namespace, so it is
@@ -726,6 +734,28 @@ static_assert(std::is_same_v<
     ::crucible::fixy::wrap::FixedArray<int, 8>,
     ::crucible::safety::FixedArray<int, 8>>,
     "fixy::wrap::FixedArray must alias safety::FixedArray.");
+
+// add_sat_checked / sub_sat_checked / mul_sat_checked identity — exercised
+// by FIXY-U-096b (Saturate.h migration).  Function-template identity is
+// witnessed by decltype-equality on the function-pointer type: a using-
+// declaration does not introduce a new function entity, so `&fwrap::fn<T>`
+// and `&safety::fn<T>` are the same expression spelled two ways, with
+// identical decltype.  Same pattern as the predicate-lambda sentinels
+// above.  (Pointer-equality `==` triggers `-Werror=tautological-compare`
+// because GCC folds both sides to the same address — the type-identity
+// rail dodges that and proves what we need.)
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::add_sat_checked<std::uint64_t>),
+    decltype(&::crucible::safety::add_sat_checked<std::uint64_t>)>,
+    "fixy::wrap::add_sat_checked must alias safety::add_sat_checked.");
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::sub_sat_checked<std::uint64_t>),
+    decltype(&::crucible::safety::sub_sat_checked<std::uint64_t>)>,
+    "fixy::wrap::sub_sat_checked must alias safety::sub_sat_checked.");
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mul_sat_checked<std::uint64_t>),
+    decltype(&::crucible::safety::mul_sat_checked<std::uint64_t>)>,
+    "fixy::wrap::mul_sat_checked must alias safety::mul_sat_checked.");
 
 // ─── Per-tier sub-namespace aliases (13 cells, FIXY-U-093 follow-up) ──
 //

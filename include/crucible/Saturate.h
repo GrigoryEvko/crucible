@@ -19,9 +19,32 @@
 // ~1 cycle) plus a branchless clamp.  Constexpr-capable.
 
 #include <crucible/Platform.h>
+// FIXY-U-096b production migration: safety wrappers (Saturated /
+// DetSafe / DetSafeTier_v) and the {add,sub,mul}_sat_checked free
+// functions referenced through fixy::wrap:: instead of safety::*.
+//
+// NOTE: Saturate.h is included transitively by Arena.h (an upstream
+// substrate header reached through safety/OwnedRegion.h:72), so it
+// CANNOT pull in the full <crucible/fixy/Wrap.h> umbrella — that path
+// cycles through Arena.h.  Instead we (a) include the narrow substrate
+// headers Saturate.h actually needs, and (b) re-open
+// `crucible::fixy::wrap` below to install the 6 using-decls Saturate.h
+// references.  fixy/Wrap.h's own using-decls (re-declared independently
+// in its TU) are idempotent — multiple using-decls naming the same
+// entity in the same namespace are not a redeclaration error.  The
+// dual-export sentinels in fixy/Wrap.h continue to witness identity.
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/Saturated.h>
 #include <version>
+
+namespace crucible::fixy::wrap {
+using ::crucible::safety::DetSafe;
+using ::crucible::safety::DetSafeTier_v;
+using ::crucible::safety::Saturated;
+using ::crucible::safety::add_sat_checked;
+using ::crucible::safety::sub_sat_checked;
+using ::crucible::safety::mul_sat_checked;
+}  // namespace crucible::fixy::wrap
 
 #include <concepts>
 #include <limits>
@@ -30,9 +53,9 @@
 namespace crucible::sat {
 
 template <std::integral T>
-using DetSatPure = ::crucible::safety::DetSafe<
-    ::crucible::safety::DetSafeTier_v::Pure,
-    ::crucible::safety::Saturated<T>>;
+using DetSatPure = ::crucible::fixy::wrap::DetSafe<
+    ::crucible::fixy::wrap::DetSafeTier_v::Pure,
+    ::crucible::fixy::wrap::Saturated<T>>;
 
 // gnu::const: takes two values, no memory access, no side effects.
 // Optimizer may CSE freely across statements (no aliasing concerns).
@@ -91,39 +114,39 @@ CRUCIBLE_CONST constexpr T mul_sat(T a, T b) noexcept {
 
 template <std::integral T>
 CRUCIBLE_CONST constexpr DetSatPure<T> add_sat_det(T a, T b) noexcept {
-    return DetSatPure<T>{::crucible::safety::add_sat_checked(a, b)};
+    return DetSatPure<T>{::crucible::fixy::wrap::add_sat_checked(a, b)};
 }
 
 template <std::integral T>
 CRUCIBLE_CONST constexpr DetSatPure<T> sub_sat_det(T a, T b) noexcept {
-    return DetSatPure<T>{::crucible::safety::sub_sat_checked(a, b)};
+    return DetSatPure<T>{::crucible::fixy::wrap::sub_sat_checked(a, b)};
 }
 
 template <std::integral T>
 CRUCIBLE_CONST constexpr DetSatPure<T> mul_sat_det(T a, T b) noexcept {
-    return DetSatPure<T>{::crucible::safety::mul_sat_checked(a, b)};
+    return DetSatPure<T>{::crucible::fixy::wrap::mul_sat_checked(a, b)};
 }
 
 template <std::integral T>
-CRUCIBLE_PURE constexpr ::crucible::safety::Saturated<T>
+CRUCIBLE_PURE constexpr ::crucible::fixy::wrap::Saturated<T>
 add_sat_from(T const& counter, T value) noexcept {
-    return ::crucible::safety::add_sat_checked(counter, value);
+    return ::crucible::fixy::wrap::add_sat_checked(counter, value);
 }
 
 template <std::integral T>
-CRUCIBLE_PURE constexpr ::crucible::safety::Saturated<T>
+CRUCIBLE_PURE constexpr ::crucible::fixy::wrap::Saturated<T>
 sub_sat_from(T const& counter, T value) noexcept {
-    return ::crucible::safety::sub_sat_checked(counter, value);
+    return ::crucible::fixy::wrap::sub_sat_checked(counter, value);
 }
 
 template <std::integral T>
-CRUCIBLE_PURE constexpr ::crucible::safety::Saturated<T>
+CRUCIBLE_PURE constexpr ::crucible::fixy::wrap::Saturated<T>
 mul_sat_from(T const& counter, T value) noexcept {
-    return ::crucible::safety::mul_sat_checked(counter, value);
+    return ::crucible::fixy::wrap::mul_sat_checked(counter, value);
 }
 
 template <std::integral T>
-[[nodiscard]] constexpr ::crucible::safety::Saturated<T>
+[[nodiscard]] constexpr ::crucible::fixy::wrap::Saturated<T>
 add_sat_into(T& dest, T value) noexcept {
     auto result = add_sat_from(dest, value);
     dest = result.value();
@@ -131,7 +154,7 @@ add_sat_into(T& dest, T value) noexcept {
 }
 
 template <std::integral T>
-[[nodiscard]] constexpr ::crucible::safety::Saturated<T>
+[[nodiscard]] constexpr ::crucible::fixy::wrap::Saturated<T>
 sub_sat_into(T& dest, T value) noexcept {
     auto result = sub_sat_from(dest, value);
     dest = result.value();
@@ -139,7 +162,7 @@ sub_sat_into(T& dest, T value) noexcept {
 }
 
 template <std::integral T>
-[[nodiscard]] constexpr ::crucible::safety::Saturated<T>
+[[nodiscard]] constexpr ::crucible::fixy::wrap::Saturated<T>
 mul_sat_into(T& dest, T value) noexcept {
     auto result = mul_sat_from(dest, value);
     dest = result.value();

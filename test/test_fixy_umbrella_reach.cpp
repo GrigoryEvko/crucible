@@ -273,6 +273,73 @@ static_assert(std::is_same_v<
     "umbrella reach: fixy::sess::ct::ct_payload_value_type_t must "
     "pass non-CTPayload types through unchanged.");
 
+// ─── 7. fixy::wrap:: saturating-arithmetic free functions (FIXY-U-096b) ──
+//
+// Witness that the saturating-arithmetic primitives required by
+// Saturate.h's *_det / *_from / *_into variants (add_sat_checked /
+// sub_sat_checked / mul_sat_checked) reach the consumer through the
+// fixy::wrap:: umbrella alone.  These are free functions rather than
+// type templates, so we prove identity via decltype-equality on the
+// function-pointer type — the same technique used in fixy/Wrap.h's
+// in-header sentinels (pointer-equality `==` triggers `-Werror=
+// tautological-compare` because GCC folds both sides; the type-identity
+// rail dodges that and witnesses what we need).  A using-declaration
+// does not introduce a new function entity, so decltype-identity is
+// the right structural witness for the using-decl path.
+
+namespace fwrap = ::crucible::fixy::wrap;
+
+// 7a. add_sat_checked through the umbrella resolves to the substrate
+//     primary template — proves the using-decl path is identity-preserving
+//     for free-function templates.
+static_assert(std::is_same_v<
+    decltype(&fwrap::add_sat_checked<std::uint32_t>),
+    decltype(&::crucible::safety::add_sat_checked<std::uint32_t>)>,
+    "umbrella reach: fixy::wrap::add_sat_checked must alias "
+    "safety::add_sat_checked when reached via the umbrella.  If this "
+    "red-lights, fixy/Wrap.h dropped the using-decl or Fixy.h fails "
+    "to pull in fixy/Wrap.h.");
+
+// 7b. sub_sat_checked through the umbrella.
+static_assert(std::is_same_v<
+    decltype(&fwrap::sub_sat_checked<std::int32_t>),
+    decltype(&::crucible::safety::sub_sat_checked<std::int32_t>)>,
+    "umbrella reach: fixy::wrap::sub_sat_checked must alias "
+    "safety::sub_sat_checked when reached via the umbrella.");
+
+// 7c. mul_sat_checked through the umbrella.
+static_assert(std::is_same_v<
+    decltype(&fwrap::mul_sat_checked<std::uint16_t>),
+    decltype(&::crucible::safety::mul_sat_checked<std::uint16_t>)>,
+    "umbrella reach: fixy::wrap::mul_sat_checked must alias "
+    "safety::mul_sat_checked when reached via the umbrella.");
+
+// 7d. Runtime behavioral witness through the umbrella path:
+//     no-overflow returns clamped=false, overflow returns clamped=true.
+//     Performed in a consteval context so the runner does not depend
+//     on linker resolution of the substrate symbol.
+namespace u096b_reach_probe {
+consteval bool fixy_wrap_sat_smoke() noexcept {
+    auto a = fwrap::add_sat_checked<std::uint8_t>(std::uint8_t{200},
+                                                  std::uint8_t{100});  // 300>255
+    if (a.value() != std::uint8_t{255}) return false;
+    if (!a.was_clamped()) return false;
+    auto b = fwrap::sub_sat_checked<std::uint8_t>(std::uint8_t{10},
+                                                  std::uint8_t{50});   // -40<0
+    if (b.value() != std::uint8_t{0}) return false;
+    if (!b.was_clamped()) return false;
+    auto c = fwrap::mul_sat_checked<std::uint8_t>(std::uint8_t{2},
+                                                  std::uint8_t{3});    // 6, no clamp
+    if (c.value() != std::uint8_t{6}) return false;
+    if (c.was_clamped()) return false;
+    return true;
+}
+static_assert(fixy_wrap_sat_smoke(),
+    "umbrella reach: fixy::wrap:: saturating-arithmetic free functions "
+    "must produce the substrate's behavioral semantics through the "
+    "umbrella path.");
+}  // namespace u096b_reach_probe
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }
