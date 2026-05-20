@@ -145,12 +145,23 @@ fixy_reexport_for() {
     printf '%s\n' "$raw" | sort | head -1 | awk -F: '{print $1 ":" $2}'
 }
 
-# ── Count fixy_neg fixtures mentioning a mint_name ───────────────────
+# ── Count neg-compile fixtures mentioning a mint_name ────────────────
+# HS14 fixtures live in the neg-test tree matching the mint's substrate
+# (warden_neg for warden/, perf_neg for perf/, effects_neg / safety_neg /
+# sessions_neg / fixy_neg / ...), NOT only fixy_neg.  A substrate-only
+# mint (no fixy:: re-export) is still HS14-covered if its own tree holds
+# the fixtures — counting only fixy_neg falsely flagged ~33 such mints.
+# Span every test/*_neg/ tree so the count reflects ACTUAL coverage; the
+# separate NO-FIXY cell still records whether the mint is fixy-re-exported.
 hs14_count_for() {
     local name="$1"
+    local dirs=() d
+    for d in "$scan_root"/test/*_neg/; do
+        [[ -d "$d" ]] && dirs+=("$d")
+    done
+    [[ ${#dirs[@]} -eq 0 ]] && { printf '0'; return; }
     local raw
-    raw="$(rg -lP --no-heading "\b${name}\b" \
-              "$scan_root/test/fixy_neg/" 2>/dev/null || true)"
+    raw="$(rg -lP --no-heading "\b${name}\b" "${dirs[@]}" 2>/dev/null || true)"
     if [[ -z "$raw" ]]; then
         printf '0'
     else
@@ -265,7 +276,7 @@ factory is named \`mint_<noun>\`.  Each row records:
 | \`file:line\` | Substrate declaration site (canonical). |
 | \`nd cx ne rq cb\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause / ctx-bound (vs token). \`Y\` = present, \`-\` = absent. |
 | \`fixy\` | fixy:: re-export site (\`include/crucible/fixy/...\`) or \`[✗ NO-FIXY]\` gap. |
-| \`HS14\` | Count of \`test/fixy_neg/\` fixtures mentioning this mint (HS14 floor is 2). |
+| \`HS14\` | Count of neg-compile fixtures across all \`test/*_neg/\` trees (fixy_neg, warden_neg, perf_neg, effects_neg, safety_neg, …) mentioning this mint (HS14 floor is 2). |
 
 Gap markers: \`[✗ NO-FIXY]\` (substrate mint not re-exported through fixy::),
 \`[⚠ <2 HS14]\` (HS14 fixture floor not met).  §XXI compliance shortfalls
