@@ -524,6 +524,41 @@ static_assert(!fss::is_subsort_v<
     "trust-boundary discipline must reach the umbrella consumer: "
     "External provenance does not flow to bare T.");
 
+// ─── 6i. SessContext.h reach — fixy::sess::context:: (FIXY-U-052i) ───
+//
+// Witness that the L2 typing-context Γ surface (Entry/Context carriers +
+// lookup/update/remove/compose + domain projection + permission balance)
+// reaches the consumer through the umbrella include alone.  If a future
+// regression strips `#include <crucible/fixy/SessContext.h>` from Fixy.h's
+// Phase-C block, the next claims fail to compile.
+
+namespace fsctx = ::crucible::fixy::sess::context;
+
+namespace u052i_reach {
+struct Sess {};
+struct RoleP {};
+struct RoleC {};
+struct TyP {};
+struct TyC {};
+using Ctx = fsctx::Context<fsctx::Entry<Sess, RoleP, TyP>,
+                           fsctx::Entry<Sess, RoleC, TyC>>;
+}  // namespace u052i_reach
+
+// 6i-a. Carrier types resolve through the umbrella to the substrate.
+static_assert(std::is_same_v<fsctx::EmptyContext,
+                             ::crucible::safety::proto::EmptyContext>,
+    "umbrella reach: fixy::sess::context::EmptyContext must alias "
+    "safety::proto::EmptyContext.  If this red-lights, fixy/SessContext.h "
+    "is not pulled in by <crucible/Fixy.h>.");
+
+// 6i-b. Core Γ operations route through (size, lookup, contains).
+static_assert(fsctx::context_size_v<u052i_reach::Ctx> == 2);
+static_assert(std::is_same_v<
+    fsctx::lookup_context_t<u052i_reach::Ctx, u052i_reach::Sess, u052i_reach::RoleP>,
+    u052i_reach::TyP>);
+static_assert(fsctx::contains_key_v<u052i_reach::Ctx,
+                                    u052i_reach::Sess, u052i_reach::RoleC>);
+
 // ─── 7. fixy::wrap:: saturating-arithmetic free functions (FIXY-U-096b) ──
 //
 // Witness that the saturating-arithmetic primitives required by
