@@ -26,7 +26,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-20T06:51:44Z`.
+Snapshot generated: `2026-05-20T07:35:46Z`.
 
 ## bridges/
 
@@ -136,7 +136,7 @@ Snapshot generated: `2026-05-20T06:51:44Z`.
 | `mint_chaselev_thief` | `include/crucible/sessions/ChaseLevDequeSession.h:94` | Y | - | Y | - | token | `include/crucible/fixy/Substr.h:168` | HS14: 2 |
 | `mint_consumer_session` | `include/crucible/sessions/CalendarGridSession.h:90` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:103` | HS14: 6 |
 | `mint_coord` | `include/crucible/sessions/FederationProtocol.h:289` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:24` | HS14: 3 |
-| `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h:209` | Y | Y | Y | - | token | `include/crucible/fixy/Sess.h:302` | HS14: 10 |
+| `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h:209` | Y | Y | Y | - | token | `include/crucible/fixy/Sess.h:404` | HS14: 10 |
 | `mint_metalog_consumer` | `include/crucible/sessions/MetaLogSession.h:75` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:195` | HS14: 2 |
 | `mint_metalog_consumer_session` | `include/crucible/sessions/MetaLogSession.h:92` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:197` | HS14: 2 |
 | `mint_metalog_producer` | `include/crucible/sessions/MetaLogSession.h:67` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:194` | HS14: 2 |
@@ -153,9 +153,9 @@ Snapshot generated: `2026-05-20T06:51:44Z`.
 | `mint_reader_session` | `include/crucible/sessions/SwmrSession.h:231` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:142` | HS14: 0 ⚠ |
 | `mint_receiver` | `include/crucible/sessions/FederationProtocol.h:245` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:23` | HS14: 5 |
 | `mint_sender` | `include/crucible/sessions/FederationProtocol.h:221` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:22` | HS14: 9 |
-| `mint_session` | `include/crucible/sessions/SessionMint.h:977` | - | - | Y | - | ctx | `include/crucible/fixy/Sess.h:172` | HS14: 2 |
+| `mint_session` | `include/crucible/sessions/SessionMint.h:977` | - | - | Y | - | ctx | `include/crucible/fixy/Sess.h:274` | HS14: 2 |
 | `mint_session_handle` | `include/crucible/sessions/SessionCheckpoint.h:456` | - | Y | Y | - | token | `include/crucible/fixy/Sess.h:17` | HS14: 3 |
-| `mint_session_view` | `include/crucible/sessions/SessionView.h:279` | Y | Y | Y | Y | token | `include/crucible/fixy/Sess.h:272` | HS14: 0 ⚠ |
+| `mint_session_view` | `include/crucible/sessions/SessionView.h:279` | Y | Y | Y | Y | token | `include/crucible/fixy/Sess.h:374` | HS14: 0 ⚠ |
 | `mint_sharded_calendar_grid_consumer` | `include/crucible/sessions/ShardedCalendarGridSession.h:63` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:297` | HS14: 2 |
 | `mint_sharded_calendar_grid_producer` | `include/crucible/sessions/ShardedCalendarGridSession.h:54` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:296` | HS14: 2 |
 | `mint_sharded_grid_consumer` | `include/crucible/sessions/ShardedGridSession.h:67` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:323` | HS14: 2 |

@@ -40,16 +40,19 @@
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/effects/EffectRow.h>
+#include <crucible/permissions/PermSet.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/diag/RowMismatch.h>
 #include <crucible/sessions/FederationProtocol.h>
+#include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/SessionPatterns.h>
+#include <crucible/sessions/SessionPermPayloads.h>
 #include <crucible/sessions/SessionView.h>
 
 #include <string_view>
@@ -91,10 +94,88 @@ using ::crucible::safety::proto::EpochedDelegate;
 using ::crucible::safety::proto::EpochedAccept;
 
 // ═════════════════════════════════════════════════════════════════════
+// ── Epoch contexts (sessions/Session.h + PermissionedSession.h) ────
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-U-012.  EpochCtx threads (CurrentEpoch, GenerationCount) plus an
+// optional inner ctx through EpochedDelegate/EpochedAccept, gating swap
+// to the new protocol only when both monotonic counters cross the
+// declared thresholds.  Production callers instantiate EpochCtx<E, G>
+// or EpochCtx<E, G, InnerCtx> directly at their site.
+
+using ::crucible::safety::proto::EpochCtx;
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Checkpoint (sessions/SessionCheckpoint.h) ──────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
 using ::crucible::safety::proto::CheckpointedSession;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Protocol-shape predicates (sessions/Session.h) ─────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-U-012.  Boolean variable templates that classify a protocol's
+// HEAD constructor shape.  Used by combinator metafunctions, pattern
+// matchers, and the per-production-call-site assertions documented at
+// the top of fixy::sess::pattern::.  No new logic — pure re-export.
+
+using ::crucible::safety::proto::is_send_v;
+using ::crucible::safety::proto::is_recv_v;
+using ::crucible::safety::proto::is_select_v;
+using ::crucible::safety::proto::is_offer_v;
+using ::crucible::safety::proto::is_loop_v;
+using ::crucible::safety::proto::is_head_v;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── PermSet (permissions/PermSet.h) ────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-U-012.  Type-level permission set threaded through every
+// PermissionedSessionHandle.  Send<Transferable<T, X>, K> consumes
+// Permission<X> from PS; Recv<Transferable<T, X>, K> produces it;
+// close() requires PS == EmptyPermSet.  PermSet is the carrier;
+// perm_set_insert_t / perm_set_remove_t evolve it; perm_set_contains_v
+// / perm_set_subset_v / perm_set_disjoint_v query it.
+
+using ::crucible::safety::proto::PermSet;
+using ::crucible::safety::proto::EmptyPermSet;
+using ::crucible::safety::proto::perm_set_contains_v;
+using ::crucible::safety::proto::perm_set_insert;
+using ::crucible::safety::proto::perm_set_insert_t;
+using ::crucible::safety::proto::perm_set_remove;
+using ::crucible::safety::proto::perm_set_remove_t;
+using ::crucible::safety::proto::perm_set_subset_v;
+using ::crucible::safety::proto::perm_set_disjoint_v;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Payload permission markers (sessions/SessionPermPayloads.h) ────
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-U-012.  Markers that classify the permission-flow shape of a
+// payload value carried over Send/Recv:
+//
+//   Transferable<T, Tag>    sender LOSES Permission<Tag>; recipient
+//                           GAINS Permission<Tag>.
+//   Borrowed<T, Tag>        sender LENDS scoped read access; PermSet
+//                           unchanged at both ends.
+//   Returned<T, Tag>        sender RETURNS a previously-borrowed token;
+//                           recipient re-GAINS Permission<Tag>.
+//   DelegatedSession<P, PS> sender LOSES every token in PS; recipient
+//                           GAINS that inner PermSet with inner Proto.
+//
+// Each marker is [[nodiscard]] and the token field is [[no_unique_address]]
+// so sizeof(Transferable<T, X>) == sizeof(T) under -O3 EBO.
+
+using ::crucible::safety::proto::Transferable;
+using ::crucible::safety::proto::Borrowed;
+using ::crucible::safety::proto::Returned;
+using ::crucible::safety::proto::DelegatedSession;
+
+using ::crucible::safety::proto::is_transferable_v;
+using ::crucible::safety::proto::is_borrowed_v;
+using ::crucible::safety::proto::is_returned_v;
+using ::crucible::safety::proto::is_delegated_session_v;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── φ-predicate re-exports (FIXY-AUDIT-B5, fixy-CR-12) ─────────────
@@ -164,6 +245,27 @@ using ::crucible::safety::proto::is_dual_v;
 
 using ::crucible::safety::proto::RecordingSessionHandle;
 using ::crucible::safety::proto::CrashWatchedHandle;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Core session-handle carriers (sessions/Session.h + Perm.h) ─────
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-U-012.  The base + concrete + permissioned handle templates the
+// mint family produces.  Every fixy::sess::mint_session_handle<Proto>
+// / mint_permissioned_session<Proto>(ctx, res, perms...) call site
+// returns a SessionHandle / PermissionedSessionHandle by value; making
+// the type carrier itself reachable through fixy::sess:: completes the
+// surface so production callers can name return types without reaching
+// past the umbrella.  PSH is the §XVI canonical alias for PermissionedSessionHandle.
+
+using ::crucible::safety::proto::SessionHandleBase;
+using ::crucible::safety::proto::SessionHandle;
+using ::crucible::safety::proto::PermissionedSessionHandle;
+
+template <typename Proto, typename PS, typename Resource,
+          typename LoopCtx = void>
+using PSH = ::crucible::safety::proto::PermissionedSessionHandle<
+    Proto, PS, Resource, LoopCtx>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── FixyMintSessionRemoved — structured deletion diagnostic ────────
@@ -486,6 +588,158 @@ static_assert(std::is_same_v<
     "fixy::sess::EpochedDelegate alias must be identical to "
     "safety::proto::EpochedDelegate.");
 
+// ── FIXY-U-012 sentinels ──────────────────────────────────────────
+// Dual-export discipline (FIXY-U-020): every new re-export gets an
+// identity static_assert INSIDE this header so substrate-side rename
+// drift breaks the build at the umbrella, not three TUs deep.
+
+// EpochCtx — value-template identity through a sample instantiation.
+static_assert(std::is_same_v<EpochCtx<5, 3>,
+                             ::crucible::safety::proto::EpochCtx<5, 3>>,
+    "fixy::sess::EpochCtx alias must be identical to safety::proto::EpochCtx.");
+
+// Protocol-shape predicates — value identity through a representative
+// protocol head.
+static_assert(is_send_v<Send<int, End>> ==
+              ::crucible::safety::proto::is_send_v<
+                  ::crucible::safety::proto::Send<
+                      int, ::crucible::safety::proto::End>>,
+    "fixy::sess::is_send_v must mirror safety::proto::is_send_v.");
+
+static_assert(is_recv_v<Recv<int, End>> ==
+              ::crucible::safety::proto::is_recv_v<
+                  ::crucible::safety::proto::Recv<
+                      int, ::crucible::safety::proto::End>>,
+    "fixy::sess::is_recv_v must mirror safety::proto::is_recv_v.");
+
+static_assert(is_loop_v<Loop<End>> ==
+              ::crucible::safety::proto::is_loop_v<
+                  ::crucible::safety::proto::Loop<
+                      ::crucible::safety::proto::End>>,
+    "fixy::sess::is_loop_v must mirror safety::proto::is_loop_v.");
+
+// PermSet — empty + insert + remove + contains + subset + disjoint.
+static_assert(std::is_same_v<EmptyPermSet,
+                             ::crucible::safety::proto::EmptyPermSet>,
+    "fixy::sess::EmptyPermSet alias must be identical to "
+    "safety::proto::EmptyPermSet.");
+
+namespace u012_permset_witness {
+struct TagA {};
+struct TagB {};
+using PS  = PermSet<TagA>;
+using PS2 = perm_set_insert_t<PS, TagB>;
+using PS3 = perm_set_remove_t<PS2, TagA>;
+static_assert(perm_set_contains_v<PS, TagA>,
+    "fixy::sess::perm_set_contains_v must agree with substrate.");
+static_assert(!perm_set_contains_v<PS, TagB>,
+    "fixy::sess::perm_set_contains_v must reject missing tag.");
+static_assert(perm_set_subset_v<PS, PS2>,
+    "fixy::sess::perm_set_subset_v must accept PS ⊆ PS ∪ {TagB}.");
+static_assert(perm_set_disjoint_v<PermSet<TagA>, PermSet<TagB>>,
+    "fixy::sess::perm_set_disjoint_v must accept disjoint PermSets.");
+static_assert(std::is_same_v<PS3, PermSet<TagB>>,
+    "fixy::sess::perm_set_remove_t<PS+TagB, TagA> must yield {TagB}.");
+}  // namespace u012_permset_witness
+
+// Payload permission markers — Transferable / Borrowed / Returned /
+// DelegatedSession identity.
+static_assert(std::is_same_v<
+    Transferable<int, u012_permset_witness::TagA>,
+    ::crucible::safety::proto::Transferable<
+        int, u012_permset_witness::TagA>>,
+    "fixy::sess::Transferable alias must be identical to "
+    "safety::proto::Transferable.");
+
+static_assert(std::is_same_v<
+    Borrowed<int, u012_permset_witness::TagA>,
+    ::crucible::safety::proto::Borrowed<
+        int, u012_permset_witness::TagA>>,
+    "fixy::sess::Borrowed alias must be identical to "
+    "safety::proto::Borrowed.");
+
+static_assert(std::is_same_v<
+    Returned<int, u012_permset_witness::TagA>,
+    ::crucible::safety::proto::Returned<
+        int, u012_permset_witness::TagA>>,
+    "fixy::sess::Returned alias must be identical to "
+    "safety::proto::Returned.");
+
+static_assert(is_transferable_v<
+    Transferable<int, u012_permset_witness::TagA>>,
+    "fixy::sess::is_transferable_v must accept Transferable<T, Tag>.");
+static_assert(is_borrowed_v<
+    Borrowed<int, u012_permset_witness::TagA>>,
+    "fixy::sess::is_borrowed_v must accept Borrowed<T, Tag>.");
+static_assert(is_returned_v<
+    Returned<int, u012_permset_witness::TagA>>,
+    "fixy::sess::is_returned_v must accept Returned<T, Tag>.");
+static_assert(!is_transferable_v<int>,
+    "fixy::sess::is_transferable_v must reject plain T.");
+
+// SessionHandle / SessionHandleBase / PermissionedSessionHandle (PSH)
+// identity.  Use the same template-arg shape the substrate exposes —
+// SessionHandleBase<Proto, Derived=void> and SessionHandle<Proto, Resource, LoopCtx=void>.
+static_assert(std::is_same_v<
+    SessionHandleBase<Send<int, End>>,
+    ::crucible::safety::proto::SessionHandleBase<
+        ::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>>>,
+    "fixy::sess::SessionHandleBase alias must be identical to "
+    "safety::proto::SessionHandleBase.");
+
+static_assert(std::is_same_v<
+    PSH<Send<int, End>, EmptyPermSet, int>,
+    ::crucible::safety::proto::PermissionedSessionHandle<
+        ::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>,
+        ::crucible::safety::proto::EmptyPermSet, int, void>>,
+    "fixy::sess::PSH alias must yield "
+    "safety::proto::PermissionedSessionHandle<Proto, PS, Resource, void>.");
+
 }  // namespace self_test
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Runtime smoke test (FIXY-U-103 discipline) ─────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Forces TU instantiation of the U-012 surface so clangd/cc1plus walks
+// every using-decl beyond the static_assert-only fast path.  Bodies are
+// pure type-witnessing — no runtime allocation, no side effects, all
+// expressions are consteval-foldable but referenced at runtime to keep
+// the optimizer from elision.
+
+inline void runtime_smoke_test() noexcept {
+    // PermSet ops — type-witness evolution path; the static_assert
+    // references the using-decls so cc1plus must instantiate them.
+    struct WitnessTag {};
+    using PS0 = EmptyPermSet;
+    using PS1 = perm_set_insert_t<PS0, WitnessTag>;
+    using PS2 = perm_set_remove_t<PS1, WitnessTag>;
+    static_assert(std::is_same_v<PS0, PS2>,
+        "fixy::sess::runtime_smoke_test: insert+remove round-trips.");
+    static_assert(perm_set_contains_v<PS1, WitnessTag>,
+        "fixy::sess::runtime_smoke_test: contains after insert.");
+    static_assert(!perm_set_contains_v<PS0, WitnessTag>,
+        "fixy::sess::runtime_smoke_test: empty PermSet contains nothing.");
+
+    // Payload markers — type-witness via predicates (markers carry
+    // non-default-constructible token fields, so we exercise the
+    // is_*_v predicates instead of constructing instances).
+    static_assert(is_transferable_v<Transferable<int, WitnessTag>>,
+        "fixy::sess::runtime_smoke_test: is_transferable_v accepts marker.");
+    static_assert(is_borrowed_v<Borrowed<int, WitnessTag>>,
+        "fixy::sess::runtime_smoke_test: is_borrowed_v accepts marker.");
+    static_assert(is_returned_v<Returned<int, WitnessTag>>,
+        "fixy::sess::runtime_smoke_test: is_returned_v accepts marker.");
+    static_assert(!is_transferable_v<int>,
+        "fixy::sess::runtime_smoke_test: is_transferable_v rejects plain T.");
+
+    // Protocol predicates — exercise variable templates.
+    static_assert(is_send_v<Send<int, End>>,
+        "fixy::sess::runtime_smoke_test: is_send_v identifies Send head.");
+    static_assert(!is_send_v<End>,
+        "fixy::sess::runtime_smoke_test: is_send_v rejects End.");
+    static_assert(is_loop_v<Loop<End>>,
+        "fixy::sess::runtime_smoke_test: is_loop_v identifies Loop head.");
+}
 
 }  // namespace crucible::fixy::sess
