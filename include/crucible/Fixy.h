@@ -182,6 +182,7 @@
 #include <crucible/fixy/SessCT.h>
 #include <crucible/fixy/SessContentAddr.h>
 #include <crucible/fixy/SessEventLog.h>
+#include <crucible/fixy/SessSubtype.h>
 #include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/fixy/Wrap.h>

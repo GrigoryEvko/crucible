@@ -381,6 +381,49 @@ static_assert(std::is_same_v<fsel::SessionEvent,
     "dual-export: fixy::sess::eventlog::SessionEvent and "
     "fixy::contract::cipher::SessionEvent must be the same substrate type.");
 
+// ─── 6e. SessSubtype.h reach — fixy::sess::subtype:: (FIXY-U-052e) ───
+//
+// Witness that the Gay-Hole subtype-layer surface (the synchronous
+// subtype relation + its ergonomic concepts/assertions + the
+// failure-reason diagnostics) reaches the consumer through the umbrella
+// include alone.  If a future regression strips
+// `#include <crucible/fixy/SessSubtype.h>` from Fixy.h's Phase-C block,
+// the next claims fail to compile — the in-header sentinels inside
+// SessSubtype.h fire only at direct-include sites, so the umbrella-reach
+// gate lives here.
+//
+// Production consumers: Vessel adapter `assert_subtype_sync<>` checks
+// and protocol-evolution boundaries reach the relation through this
+// fixy path.
+
+namespace fss = ::crucible::fixy::sess::subtype;
+
+// 6e-a. Relation _v aliases resolve through the umbrella to the substrate.
+static_assert(fss::is_subtype_sync_v<::crucible::safety::proto::End,
+                                     ::crucible::safety::proto::End>,
+    "umbrella reach: fixy::sess::subtype::is_subtype_sync_v must reach "
+    "safety::proto.  If this red-lights, fixy/SessSubtype.h is not "
+    "pulled in by <crucible/Fixy.h>.");
+static_assert(!fss::is_subtype_sync_v<
+                  ::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>,
+                  ::crucible::safety::proto::Recv<int, ::crucible::safety::proto::End>>,
+    "umbrella reach: Send/Recv shape mismatch must be rejected through "
+    "the fixy path too.");
+
+// 6e-b. Concept reaches the consumer and holds on a reflexive pair.
+static_assert(fss::SubtypeSync<::crucible::safety::proto::End,
+                               ::crucible::safety::proto::End>);
+
+// 6e-c. Reason result types route through and alias the substrate.
+static_assert(std::is_same_v<fss::SubtypeOk,
+                             ::crucible::safety::proto::SubtypeOk>);
+static_assert(std::is_same_v<
+    fss::subtype_rejection_reason_t<::crucible::safety::proto::End,
+                                    ::crucible::safety::proto::End>,
+    fss::SubtypeOk>,
+    "umbrella reach: End ⩽ End yields the SubtypeOk sentinel through "
+    "the fixy::sess::subtype path.");
+
 // ─── 7. fixy::wrap:: saturating-arithmetic free functions (FIXY-U-096b) ──
 //
 // Witness that the saturating-arithmetic primitives required by
