@@ -34,21 +34,21 @@
 #include <crucible/cipher/FederationProtocol.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/effects/EffectRow.h>           // FOUND-I09
-#include <crucible/handles/FileHandle.h>
-#include <crucible/safety/diag/RowHashFold.h>
-#include <crucible/safety/CipherTier.h>
+// FIXY-U-092: safety wrappers reached through the fixy umbrella headers,
+// not direct safety/ includes.  safety/Decide.h + Post.h + Pre.h are
+// retained (CRUCIBLE_PRE/POST macros + crucible::decide predicate catalog)
+// — fixy/Contract.h re-exports the macros but transitively includes this
+// header, so it cannot be pulled in here without a circular include.
+#include <crucible/fixy/Diag.h>             // row_hash_contribution_v
+#include <crucible/fixy/Handle.h>           // open_read / FileHandle
+#include <crucible/fixy/Is.h>               // is_opaque_lifetime_v
+#include <crucible/fixy/SessContentAddr.h>  // ContentAddressed / is_content_addressed_v
+#include <crucible/fixy/SessEventLog.h>     // SessionEvent / StepId / SessionTagId / KeyFn / Less
+#include <crucible/fixy/Source.h>           // tags::source::Durable
+#include <crucible/fixy/Wrap.h>             // Tagged / WriteOnce / OrderedAppendOnly / Positive / Refined / Wait / CipherTier(Tag_v) / cipher_tier / Lifetime_v / mint_view / ScopedView / no_scoped_view_field_check
 #include <crucible/safety/Decide.h>
-#include <crucible/safety/IsOpaqueLifetime.h>
-#include <crucible/safety/Mutation.h>
-#include <crucible/safety/OpaqueLifetime.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/ScopedView.h>
-#include <crucible/safety/Tagged.h>
-#include <crucible/safety/Wait.h>
-#include <crucible/sessions/SessionContentAddressed.h>
-#include <crucible/sessions/SessionEventLog.h>
 
 #include <array>
 #include <charconv>
@@ -75,7 +75,7 @@ template <typename T>
 class [[nodiscard]] ContentAddressedPayload {
  public:
     using value_type = T;
-    using payload_type = safety::proto::ContentAddressed<T>;
+    using payload_type = crucible::fixy::sess::contentaddr::ContentAddressed<T>;
 
     constexpr explicit ContentAddressedPayload(const T* value) noexcept
         : value_(value) {}
@@ -93,7 +93,7 @@ template <typename T>
 class [[nodiscard]] LoadedContentAddressedPayload {
  public:
     using value_type = T;
-    using payload_type = safety::proto::ContentAddressed<T>;
+    using payload_type = crucible::fixy::sess::contentaddr::ContentAddressed<T>;
 
     constexpr LoadedContentAddressedPayload() noexcept = default;
     constexpr LoadedContentAddressedPayload(std::nullptr_t) noexcept {}
@@ -141,7 +141,7 @@ class CRUCIBLE_OWNER Cipher {
         cipher::ContentAddressedPayload<RegionNode>;
     using LoadedContentAddressedRegionPayload =
         cipher::LoadedContentAddressedPayload<RegionNode>;
-    using SessionEvent = safety::proto::SessionEvent;
+    using SessionEvent = crucible::fixy::sess::eventlog::SessionEvent;
 
     // fixy-A2-014: alias the namespace-scope row alias from
     // SessionPersistenceSurface.h.  Lifting the typedef out lets
@@ -151,7 +151,7 @@ class CRUCIBLE_OWNER Cipher {
         ::crucible::CipherSessionEventPersistenceRow;
 
     inline static constexpr RowHash SESSION_EVENT_FEDERATION_ROW_HASH{
-        ::crucible::safety::diag::row_hash_contribution_v<
+        ::crucible::fixy::diag::row_hash_contribution_v<
             persist_session_events_required_row>};
 
     static_assert(static_cast<bool>(SESSION_EVENT_FEDERATION_ROW_HASH));
@@ -183,8 +183,8 @@ class CRUCIBLE_OWNER Cipher {
         // (e.g. calling open on a Cipher that already has a root) would
         // contract-fire; reassignment via `=` is a compile error.
         [[maybe_unused]] const bool root_set = c.root_.try_set(
-            crucible::safety::Tagged<std::string,
-                                     crucible::safety::source::Durable>{root});
+            crucible::fixy::wrap::Tagged<std::string,
+                                     crucible::fixy::tags::source::Durable>{root});
         [[assume(root_set)]];
         std::filesystem::create_directories(root + "/objects");
 
@@ -200,7 +200,7 @@ class CRUCIBLE_OWNER Cipher {
         // fixy-A1-013: open_read returns std::expected<FileHandle,
         // std::error_code>; a missing HEAD file (ENOENT) is the normal
         // boot case and falls through to the log-tail fallback below.
-        auto hf_e = crucible::safety::open_read(head_path.c_str());
+        auto hf_e = crucible::fixy::handle::open_read(head_path.c_str());
         bool head_from_file = false;
         if (hf_e && hf_e->is_open()) {
             auto& hf = *hf_e;
@@ -242,7 +242,7 @@ class CRUCIBLE_OWNER Cipher {
     [[nodiscard]] OpenView mint_open_view() const noexcept
         pre (is_open())
     {
-        return crucible::safety::mint_view<cipher_state::Open>(*this);
+        return crucible::fixy::wrap::mint_view<cipher_state::Open>(*this);
     }
 
     [[nodiscard]] friend constexpr bool view_ok(
@@ -315,11 +315,11 @@ class CRUCIBLE_OWNER Cipher {
     // into the wrong context.
 
     // Block-tier-pinned store — for new bg / IO-classified call sites.
-    [[nodiscard]] safety::Wait<safety::WaitStrategy_v::Block, ContentHash>
+    [[nodiscard]] crucible::fixy::wrap::Wait<crucible::fixy::wrap::WaitStrategy_v::Block, ContentHash>
     store_pinned(OpenView const& view,
                  ContentAddressedRegionPayload payload,
                  const MetaLog* meta_log) {
-        return safety::Wait<safety::WaitStrategy_v::Block, ContentHash>{
+        return crucible::fixy::wrap::Wait<crucible::fixy::wrap::WaitStrategy_v::Block, ContentHash>{
             store(view, payload, meta_log)};
     }
 
@@ -388,11 +388,11 @@ class CRUCIBLE_OWNER Cipher {
     // only Cold (bottom of chain).
 
     // Warm-tier publish — REAL implementation (forwards to store()).
-    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
+    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Warm<ContentHash>
     publish_warm(OpenView const& view,
                  ContentAddressedRegionPayload payload,
                  const MetaLog* meta_log) {
-        return safety::cipher_tier::Warm<ContentHash>{
+        return crucible::fixy::wrap::cipher_tier::Warm<ContentHash>{
             store(view, payload, meta_log)};
     }
 
@@ -403,7 +403,7 @@ class CRUCIBLE_OWNER Cipher {
     // false positive.  When Phase 5 ships peer-RAM RAID replication,
     // the body grows to perform the actual replication; no caller
     // change required because the type signature is stable.
-    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
+    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Hot<ContentHash>
     publish_hot(OpenView const&,
                 ContentAddressedRegionPayload /*payload*/,
                 const MetaLog* /*meta_log*/) noexcept {
@@ -412,9 +412,9 @@ class CRUCIBLE_OWNER Cipher {
         // stub returns the none-hash — callers must check
         // `static_cast<bool>(h)` to detect "Hot tier not yet wired".
         return cipher::mint_promote<
-            safety::CipherTierTag_v::Cold,
-            safety::CipherTierTag_v::Hot>(
-            safety::cipher_tier::Cold<ContentHash>{ContentHash{}});
+            crucible::fixy::wrap::CipherTierTag_v::Cold,
+            crucible::fixy::wrap::CipherTierTag_v::Hot>(
+            crucible::fixy::wrap::cipher_tier::Cold<ContentHash>{ContentHash{}});
     }
 
     // Cold-tier publish — Phase 5 STUB.
@@ -422,15 +422,15 @@ class CRUCIBLE_OWNER Cipher {
     // Today: returns CipherTier<Cold, ContentHash{}>.  When Phase 5
     // ships the S3/GCS backend, the body grows to PUT the serialized
     // region into durable storage; no caller change required.
-    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
+    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Cold<ContentHash>
     publish_cold(OpenView const&,
                  ContentAddressedRegionPayload /*payload*/,
                  const MetaLog* /*meta_log*/) noexcept {
         // Phase 5: durable-storage PUT here.
         return cipher::mint_demote<
-            safety::CipherTierTag_v::Hot,
-            safety::CipherTierTag_v::Cold>(
-            safety::cipher_tier::Hot<ContentHash>{ContentHash{}});
+            crucible::fixy::wrap::CipherTierTag_v::Hot,
+            crucible::fixy::wrap::CipherTierTag_v::Cold>(
+            crucible::fixy::wrap::cipher_tier::Hot<ContentHash>{ContentHash{}});
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -489,9 +489,9 @@ class CRUCIBLE_OWNER Cipher {
     // also satisfy and are accepted (their availability subsumes
     // the request scope).
     template <typename W>
-        requires (safety::extract::is_opaque_lifetime_v<W>
-                  && W::template satisfies<safety::Lifetime_v::PER_REQUEST>)
-    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
+        requires (crucible::fixy::is::is_opaque_lifetime_v<W>
+                  && W::template satisfies<crucible::fixy::wrap::Lifetime_v::PER_REQUEST>)
+    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Hot<ContentHash>
     commit_per_request(OpenView const& view,
                        W lifetime_pinned_region,
                        const MetaLog* meta_log) noexcept {
@@ -506,9 +506,9 @@ class CRUCIBLE_OWNER Cipher {
     // REJECTS PER_REQUEST: a request-scoped value cannot promise
     // program-long persistence.  Routes to publish_warm (NVMe).
     template <typename W>
-        requires (safety::extract::is_opaque_lifetime_v<W>
-                  && W::template satisfies<safety::Lifetime_v::PER_PROGRAM>)
-    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
+        requires (crucible::fixy::is::is_opaque_lifetime_v<W>
+                  && W::template satisfies<crucible::fixy::wrap::Lifetime_v::PER_PROGRAM>)
+    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Warm<ContentHash>
     commit_per_program(OpenView const& view,
                        W lifetime_pinned_region,
                        const MetaLog* meta_log) {
@@ -523,9 +523,9 @@ class CRUCIBLE_OWNER Cipher {
     // publish_cold (S3/GCS).  THIS IS THE LOAD-BEARING REJECTION
     // SITE for the inferlet cross-request leak bug class.
     template <typename W>
-        requires (safety::extract::is_opaque_lifetime_v<W>
-                  && W::template satisfies<safety::Lifetime_v::PER_FLEET>)
-    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
+        requires (crucible::fixy::is::is_opaque_lifetime_v<W>
+                  && W::template satisfies<crucible::fixy::wrap::Lifetime_v::PER_FLEET>)
+    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Cold<ContentHash>
     commit_per_fleet(OpenView const& view,
                      W lifetime_pinned_region,
                      const MetaLog* meta_log) noexcept {
@@ -549,8 +549,8 @@ class CRUCIBLE_OWNER Cipher {
     // has proven the disk file size is within the ceiling, then
     // feeds the Refined value into the allocation path.  Downstream
     // code can treat the size as [[assume]]-bounded.
-    using ValidatedObjectSize = crucible::safety::Refined<
-        crucible::safety::bounded_above<MAX_OBJECT_BYTES>, size_t>;
+    using ValidatedObjectSize = crucible::fixy::wrap::Refined<
+        crucible::fixy::wrap::bounded_above<MAX_OBJECT_BYTES>, size_t>;
 
     // Typed: caller has proved Open.  const because deserialize does
     // not mutate the durable Cipher state. The resident byte cache is
@@ -681,7 +681,7 @@ class CRUCIBLE_OWNER Cipher {
         // Append log entry.
         const uint64_t ts = now_ns();
         log_.emplace(LogEntry::cipher_store_committed(
-            safety::proto::StepId{step_id}, content_hash, ts));
+            crucible::fixy::sess::eventlog::StepId{step_id}, content_hash, ts));
         {
             std::ofstream lf(root_str() + "/log", std::ios::app);
             write_u64_dec_(lf, step_id);
@@ -868,7 +868,7 @@ class CRUCIBLE_OWNER Cipher {
             return ContentHash{};
         }
 
-        const safety::proto::SessionTagId session = events.front().session;
+        const crucible::fixy::sess::eventlog::SessionTagId session = events.front().session;
         for (std::size_t i = 1; i < events.size(); ++i) {
             if (events[i].session != session) [[unlikely]] {
                 return ContentHash{};
@@ -942,8 +942,8 @@ class CRUCIBLE_OWNER Cipher {
 
     [[nodiscard]] std::vector<SessionEvent> load_session_events(
         OpenView const&,
-        safety::proto::SessionTagId session,
-        safety::proto::StepId from_step = {}) const
+        crucible::fixy::sess::eventlog::SessionTagId session,
+        crucible::fixy::sess::eventlog::StepId from_step = {}) const
     {
         std::vector<SessionEvent> out;
         std::ifstream index(session_event_dir(session) + "/index");
@@ -1083,9 +1083,9 @@ class CRUCIBLE_OWNER Cipher {
     [[nodiscard]] const std::string& root()  const CRUCIBLE_LIFETIMEBOUND { return root_str(); }
 
  private:
-    using LogEntry = safety::proto::SessionEvent;
+    using LogEntry = crucible::fixy::sess::eventlog::SessionEvent;
 
-    static_assert(std::is_same_v<LogEntry, safety::proto::SessionEvent>);
+    static_assert(std::is_same_v<LogEntry, crucible::fixy::sess::eventlog::SessionEvent>);
     static_assert(sizeof(LogEntry) == 72);
     static_assert(std::is_trivially_copyable_v<LogEntry>);
 
@@ -1101,15 +1101,15 @@ class CRUCIBLE_OWNER Cipher {
     static constexpr size_t MAX_SESSION_EVENT_BATCH_EVENTS =
         MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES / sizeof(SessionEvent);
 
-    using LogEntryByStepId = safety::proto::StepIdKeyFn;
-    using LogEntryStepLess = safety::proto::StepIdLess;
+    using LogEntryByStepId = crucible::fixy::sess::eventlog::StepIdKeyFn;
+    using LogEntryStepLess = crucible::fixy::sess::eventlog::StepIdLess;
 
     // root_ is write-once (set by open, never reassigned) and carries
     // the provenance tag source::Durable at the type level.  Reassigning
     // via `=` is a compile error (WriteOnce); a second set() would
     // contract-fire.  Internal code unwraps via root_str().
-    crucible::safety::WriteOnce<
-        crucible::safety::Tagged<std::string, crucible::safety::source::Durable>>
+    crucible::fixy::wrap::WriteOnce<
+        crucible::fixy::wrap::Tagged<std::string, crucible::fixy::tags::source::Durable>>
                                              root_;
     ContentHash                              head_{};
 
@@ -1122,7 +1122,7 @@ class CRUCIBLE_OWNER Cipher {
     // backward.  OrderedAppendOnly<> fuses both invariants into one
     // type; .erase() / .clear() / out-of-order .append() all fail at
     // compile time (the first two) or contract-terminate (the third).
-    crucible::safety::OrderedAppendOnly<
+    crucible::fixy::wrap::OrderedAppendOnly<
         LogEntry, LogEntryByStepId, LogEntryStepLess> log_;
     mutable std::vector<CachedObjectBytes> resident_cache_;
     mutable size_t resident_cache_bytes_ = 0;
@@ -1157,7 +1157,7 @@ class CRUCIBLE_OWNER Cipher {
     }
 
     std::string session_event_dir(
-        safety::proto::SessionTagId session) const {
+        crucible::fixy::sess::eventlog::SessionTagId session) const {
         char hex[16];
         hex16_(session.value, hex);
         const std::string& root = root_str();
@@ -1169,7 +1169,7 @@ class CRUCIBLE_OWNER Cipher {
     }
 
     std::string session_event_batch_path(
-        safety::proto::SessionTagId session,
+        crucible::fixy::sess::eventlog::SessionTagId session,
         ContentHash hash) const {
         char hex[16];
         hex16_(hash.raw(), hex);
@@ -1349,7 +1349,7 @@ class CRUCIBLE_OWNER Cipher {
             if (!parse_u64(begin + p2 + 1, begin + line.size(), 10, ts_ns)) continue;
 
             log_.emplace(LogEntry::cipher_store_committed(
-                safety::proto::StepId{step_id}, ContentHash{raw_hash}, ts_ns));
+                crucible::fixy::sess::eventlog::StepId{step_id}, ContentHash{raw_hash}, ts_ns));
         }
     }
 
@@ -1368,7 +1368,7 @@ class CRUCIBLE_OWNER Cipher {
     //
     // Callers unwrap via `.value()` at the `std::vector<uint8_t>`
     // construction site — explicit, grep-discoverable, zero cost.
-    static crucible::safety::Positive<std::size_t>
+    static crucible::fixy::wrap::Positive<std::size_t>
     estimate_serial_size(const RegionNode* region) {
         size_t sz = 64; // header
         sz += 32;       // region fixed fields
@@ -1387,7 +1387,7 @@ class CRUCIBLE_OWNER Cipher {
             sz += n_in           * sizeof(uint32_t); // input_slot_ids
             sz += n_out          * sizeof(uint32_t); // output_slot_ids
         }
-        return crucible::safety::Positive<std::size_t>{sz + 256}; // headroom
+        return crucible::fixy::wrap::Positive<std::size_t>{sz + 256}; // headroom
     }
 
     static uint64_t now_ns() {
@@ -1427,8 +1427,8 @@ class CRUCIBLE_OWNER Cipher {
 //
 // Cost: regime-1 EBO collapse — sizeof(ValidCipherHead) ==
 // sizeof(ContentHash) == sizeof(uint64_t) == 8 B.
-using ValidCipherHead = ::crucible::safety::Refined<
-    ::crucible::safety::non_zero, ContentHash>;
+using ValidCipherHead = ::crucible::fixy::wrap::Refined<
+    ::crucible::fixy::wrap::non_zero, ContentHash>;
 
 [[nodiscard, gnu::const]] inline constexpr
 ContentHash make_cipher_head(ValidCipherHead raw) noexcept {
@@ -1436,12 +1436,12 @@ ContentHash make_cipher_head(ValidCipherHead raw) noexcept {
 }
 
 // Tier 2 opt-in: nothing inside Cipher may be a ScopedView.
-static_assert(crucible::safety::no_scoped_view_field_check<Cipher>());
+static_assert(crucible::fixy::wrap::no_scoped_view_field_check<Cipher>());
 static_assert(sizeof(Cipher::ContentAddressedRegionPayload)
               == sizeof(const RegionNode*));
-static_assert(crucible::safety::proto::is_content_addressed_v<
+static_assert(crucible::fixy::sess::contentaddr::is_content_addressed_v<
     typename Cipher::ContentAddressedRegionPayload::payload_type>);
-static_assert(crucible::safety::proto::is_content_addressed_v<
+static_assert(crucible::fixy::sess::contentaddr::is_content_addressed_v<
     typename Cipher::LoadedContentAddressedRegionPayload::payload_type>);
 
 } // namespace crucible
