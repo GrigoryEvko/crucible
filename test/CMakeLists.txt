@@ -2177,6 +2177,15 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_wrong_handle
 crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_unfit_snap
     "constraints not satisfied|SnapshotSessionSurface|no matching function")
 
+# FIXY-U-074h HS14 floor: mint_snapshot_reader_session was HS14:0 (the
+# writer_session variant is covered by snapshot_wrong_handle).  Role-swap
+# (WriterHandle->reader_session) + non-ExecCtx → HS14:2.  Closes the last
+# ctx-bound substr session mint below floor.
+crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_reader_session_wrong_handle
+    "cannot convert|no matching function|WriterHandle|ReaderHandle")
+crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_reader_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function")
+
 # FIXY-U-074d HS14 floor: fixy::substr::mint_substrate_session sat at
 # HS14:0.  Two distinct rejection conjuncts of its requires-clause
 # (IsBridgeableDirection ∧ SubstrateFitsCtxResidency ∧
