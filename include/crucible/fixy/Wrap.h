@@ -24,9 +24,9 @@
 //   • 5 Mutation.h derivative wrappers
 //     (WriteOnce, WriteOnceNonNull, BoundedMonotonic,
 //      OrderedAppendOnly, AtomicMonotonic)
-//   • 7 structural (deliberately not Graded) wrappers
+//   • 8 structural (deliberately not Graded) wrappers
 //     (Pinned, NonMovable, ScopedView, OwnedRegion,
-//      NotInherited, FinalBy, ct::* primitives)
+//      FixedArray, NotInherited, FinalBy, ct::* primitives)
 //
 // Three of the canonical wrappers (Linear, Secret, SharedPermission)
 // also ship via Safety.h / Perm.h; they are re-exported here too so
