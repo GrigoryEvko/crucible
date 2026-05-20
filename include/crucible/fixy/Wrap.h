@@ -796,6 +796,17 @@ static_assert(std::is_same_v<
     ::crucible::safety::Cyclic<std::uint32_t, 8>>,
     "fixy::wrap::Cyclic must alias safety::Cyclic.");
 
+// CyclicBuffer identity — exercised by the WRAP-Transaction-4 (#1063) and
+// WRAP-RegionCache-4 (#989) ring migrations.  CyclicBuffer<T, N> is a
+// non-Graded structural composition (FixedArray + Cyclic +
+// BoundedMonotonic); the re-export must preserve type identity so a
+// `CyclicBuffer<Transaction, N>` ring field stays layout-compatible with
+// the substrate primary and the claim()/recent() invariants are one type.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::CyclicBuffer<int, 8>,
+    ::crucible::safety::CyclicBuffer<int, 8>>,
+    "fixy::wrap::CyclicBuffer must alias safety::CyclicBuffer.");
+
 // Bits identity — exercised by FIXY-U-096o Graph.h migration.  Bits<E, Inv...>
 // is a non-Graded structural newtype (typed bit-field over a scoped enum);
 // the re-export must preserve type identity so Graph::Node::flags stays
