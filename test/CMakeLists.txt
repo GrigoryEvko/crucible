@@ -1944,6 +1944,16 @@ crucible_neg_compile_fixy_test(neg_fixy_perm_split_witness_missing
     "splits_into_authoring_witness")
 crucible_neg_compile_fixy_test(neg_fixy_perm_split_n_witness_missing
     "splits_into_pack_authoring_witness")
+# FIXY-U-074b HS14 floor: combine is the symmetric inverse of split and
+# reads the SAME witness-trait pair (Permission.h:753 / :850), so the
+# combine minters need the same two distinct mismatch classes split has.
+# These two bring mint_permission_combine / _n from HS14:1 -> 2: the
+# witness-missing class (splits_into[_pack] true but the M-29 authoring
+# witness absent), companion to the existing *_undeclared fixtures.
+crucible_neg_compile_fixy_test(neg_fixy_perm_combine_witness_missing
+    "splits_into_authoring_witness")
+crucible_neg_compile_fixy_test(neg_fixy_perm_combine_n_witness_missing
+    "splits_into_pack_authoring_witness")
 
 # ── FIXY-MINT-Contract — fixy/Contract.h re-export of Cipher tier
 # migration mints (mint_promote, mint_demote, mint_restore).  HS14
