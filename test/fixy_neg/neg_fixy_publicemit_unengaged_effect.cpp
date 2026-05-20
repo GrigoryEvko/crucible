@@ -8,6 +8,7 @@
 // Expected diagnostic: "FixyNotEngaged_Effect".
 
 #include <crucible/fixy/Fn.h>
+#include <crucible/safety/Secret.h>
 
 namespace fixy = crucible::fixy;
 namespace gr   = crucible::fixy::grant;
@@ -17,7 +18,17 @@ template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
 
 namespace pe_neg_policies {
-struct EmitPolicy {};
+// fixy-M-09 tightened gr::declassify<Policy> to require
+// DeclassificationPolicy<Policy> — i.e. Policy must derive from
+// secret_policy::secret_policy_base.  Without the base the
+// substitution into gr::declassify fails BEFORE reaching the
+// IsAcceptedActive engagement gate this fixture wants to exercise
+// (FixyNotEngaged_Effect on the Effect axis); the engagement
+// diagnostic never fires and the fixture's expected-stderr regex
+// doesn't match.  Deriving from the substrate base puts the policy
+// past the type-system gate so the per-axis engagement check is
+// reached.
+struct EmitPolicy final : ::crucible::safety::secret_policy::secret_policy_base {};
 }  // namespace pe_neg_policies
 
 int main() {
