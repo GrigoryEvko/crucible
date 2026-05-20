@@ -2177,6 +2177,16 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_wrong_handle
 crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_unfit_snap
     "constraints not satisfied|SnapshotSessionSurface|no matching function")
 
+# FIXY-U-074d HS14 floor: fixy::substr::mint_substrate_session sat at
+# HS14:0.  Two distinct rejection conjuncts of its requires-clause
+# (IsBridgeableDirection ∧ SubstrateFitsCtxResidency ∧
+# CtxFitsPermissionedProtocol ∧ IsExecCtx Ctx): non-bridgeable direction
+# (Snapshot+Producer) and non-ExecCtx first argument.  Brings it to 2.
+crucible_neg_compile_fixy_test(neg_fixy_substr_substrate_session_non_bridgeable
+    "IsBridgeableDirection|constraints not satisfied|no matching function|handle_for")
+crucible_neg_compile_fixy_test(neg_fixy_substr_substrate_session_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function")
+
 # fixy-HS14-07 — Substr.h re-export of ChaseLevDeque mints
 # (mint_chaselev_owner / mint_chaselev_thief / mint_owner_session /
 # mint_thief_session).  Four mints × two distinct mismatch classes
