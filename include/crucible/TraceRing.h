@@ -53,6 +53,32 @@
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
 
+// FIXY-U-031b (S1-TraceRing of #1736): TraceRing spells its safety
+// wrappers through fixy::wrap:: / fixy::tags:: , never safety::* — see
+// the usages below.  TraceRing is a foundation hot-path header (the
+// ~5ns/op recording ring); it deliberately does NOT pull the
+// fixy/Wrap.h umbrella.  Mirror the Arena.h (FIXY-U-096y) populate
+// precedent: include the NARROW substrate headers TraceRing already
+// needs (above) and re-open the fixy namespaces to install the
+// using-decls / alias TraceRing references.  fixy/Wrap.h + fixy/Source.h
+// re-declare these independently in their own TUs — idempotent (a
+// using-decl / namespace-alias naming one entity is not a redeclaration
+// error).  This irreducible ::crucible::safety:: re-export plumbing is
+// why TraceRing.h stays absent from scripts/fixy-clean-headers.txt.
+namespace crucible::fixy::wrap {
+using ::crucible::safety::AtomicMonotonic;
+using ::crucible::safety::bounded_above;
+using ::crucible::safety::FixedArray;
+using ::crucible::safety::HotPath;
+using ::crucible::safety::HotPathTier_v;
+using ::crucible::safety::Monotonic;
+using ::crucible::safety::Refined;
+using ::crucible::safety::Tagged;
+}  // namespace crucible::fixy::wrap
+namespace crucible::fixy::tags {
+namespace vessel_trust = ::crucible::safety::vessel_trust;
+}  // namespace crucible::fixy::tags
+
 namespace crucible {
 
 // Packed flags in Entry::op_flags — preserves the 64 B cache-line Entry.
@@ -134,11 +160,11 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // float 1.5 (bit_cast(0x3FF8000000000000)) from int 0x3FF8000000000000.
     //
     // #1057 WRAP-TraceRing-5: the raw `int64_t[5]` is wrapped in
-    // safety::FixedArray<int64_t, 5> so callers cannot index past the
+    // fixy::wrap::FixedArray<int64_t, 5> so callers cannot index past the
     // structural bound without dropping to .data() + raw arithmetic.
     // sizeof(FixedArray<int64_t, 5>) == sizeof(int64_t[5]) — Entry stays
     // exactly one 64-B cache line; ABI / serialize layout unchanged.
-    ::crucible::safety::FixedArray<int64_t, 5> scalar_values{};
+    ::crucible::fixy::wrap::FixedArray<int64_t, 5> scalar_values{};
 
     // ── Scalar type accessors ──────────────────────────────────────
     //
@@ -204,10 +230,10 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // Pointer-based Tagged keeps the call site zero-copy: the underlying
   // 64-B Entry stays in the caller's stack/ring, and only an 8-B const*
   // is tagged and passed.  `vouch(e)` is the idiomatic internal wrap.
-  using FromPytorchEntryPtr = crucible::safety::Tagged<
-      const Entry*, crucible::safety::vessel_trust::FromPytorch>;
-  using ValidatedEntryPtr   = crucible::safety::Tagged<
-      const Entry*, crucible::safety::vessel_trust::Validated>;
+  using FromPytorchEntryPtr = crucible::fixy::wrap::Tagged<
+      const Entry*, crucible::fixy::tags::vessel_trust::FromPytorch>;
+  using ValidatedEntryPtr   = crucible::fixy::wrap::Tagged<
+      const Entry*, crucible::fixy::tags::vessel_trust::Validated>;
 
 
   static constexpr uint32_t CAPACITY = 1u << 16; // 65 536 entries = 4 MB
@@ -226,12 +252,12 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // raw atomic — peek_relaxed compiles to a plain MOV; advance's pre()
   // collapses to [[assume]] under hot-TU contract semantics, body is
   // store(release).
-  alignas(64) crucible::safety::AtomicMonotonic<uint64_t> head{0};
+  alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint64_t> head{0};
 
   // Consumer-owned.  Same discipline: consumer publishes via advance,
   // producer reads via get for cross-thread acquire on the full-ring
   // path; consumer reads its own tail via peek_relaxed.
-  alignas(64) crucible::safety::AtomicMonotonic<uint64_t> tail{0};
+  alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint64_t> tail{0};
 
   // Consumer-owned hot cursor. The consumer is the only reader/writer, so
   // drain paths use this plain value and publish the new value to tail only
@@ -248,7 +274,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // structurally — the consumer only increments tail, so each
   // tail.load(acquire) observes a value ≥ the previous observation;
   // any reverse move would be an acquire-semantics bug worth catching.
-  alignas(64) crucible::safety::Monotonic<uint64_t> cached_tail_{0};
+  alignas(64) crucible::fixy::wrap::Monotonic<uint64_t> cached_tail_{0};
 
   // 4 MB contiguous ring plus the three parallel arrays.
   alignas(64) Entry         entries[CAPACITY]{};
@@ -342,13 +368,13 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // call try_append_pinned().
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE
-  crucible::safety::HotPath<crucible::safety::HotPathTier_v::Hot, bool>
+  crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Hot, bool>
   try_append_pinned(
       const Entry& e,
       MetaIndex    meta_start    = MetaIndex::none(),
       ScopeHash    scope_hash    = {},
       CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-    return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Hot, bool>{
+    return crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Hot, bool>{
         try_append(e, meta_start, scope_hash, callsite_hash)};
   }
 
@@ -490,7 +516,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // ADDITIVE: existing drain() callers stay unchanged.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard, gnu::hot]]
-  crucible::safety::HotPath<crucible::safety::HotPathTier_v::Warm, uint32_t>
+  crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Warm, uint32_t>
   drain_pinned(
       Entry*        out,
       uint32_t      max_count,
@@ -501,7 +527,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
           max_count, std::uint32_t{0}, CAPACITY))
       pre (::crucible::decide::valid_span(max_count, out))
   {
-    return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Warm, uint32_t>{
+    return crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Warm, uint32_t>{
         drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes)};
   }
 
@@ -652,7 +678,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // cached_tail_ goes "backward" to 0, which would fire Monotonic's
     // pre() if we advanced.  Valid here because both threads are
     // quiescent — reconstruct the Monotonic in place to reset cleanly.
-    cached_tail_ = crucible::safety::Monotonic<uint64_t>{0};
+    cached_tail_ = crucible::fixy::wrap::Monotonic<uint64_t>{0};
   }
 };
 
@@ -696,8 +722,8 @@ static_assert(sizeof(TraceRing) >= (5u * 1024u * 1024u) &&
 // Cost claim: regime-1 EBO collapse — Refined<bounded_above<N>,
 // uint32_t> erases to a bare uint32_t in -O3 codegen.  The
 // gnu::const factory lifts to a single register move.
-using ValidDrainCount = ::crucible::safety::Refined<
-    ::crucible::safety::bounded_above<TraceRing::CAPACITY>, uint32_t>;
+using ValidDrainCount = ::crucible::fixy::wrap::Refined<
+    ::crucible::fixy::wrap::bounded_above<TraceRing::CAPACITY>, uint32_t>;
 
 [[nodiscard, gnu::const]] inline constexpr
 uint32_t make_drain_count(ValidDrainCount raw) noexcept {
