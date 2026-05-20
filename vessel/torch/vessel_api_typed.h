@@ -59,7 +59,8 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Source.h>
+#include <crucible/fixy/Wrap.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -69,7 +70,7 @@ namespace crucible::vessel {
 
 // ── Vigil typed handle ────────────────────────────────────────────
 
-using TypedHandle = safety::Tagged<Vigil*, safety::source::ABIBoundary>;
+using TypedHandle = fixy::wrap::Tagged<Vigil*, fixy::tags::source::ABIBoundary>;
 
 static_assert(sizeof(TypedHandle) == sizeof(CrucibleHandle));
 static_assert(alignof(TypedHandle) == alignof(CrucibleHandle));
@@ -77,7 +78,7 @@ static_assert(std::is_trivially_copy_constructible_v<TypedHandle>);
 
 // ── TensorMeta typed view ─────────────────────────────────────────
 
-using TypedMeta = safety::Tagged<const TensorMeta*, safety::source::ABIBoundary>;
+using TypedMeta = fixy::wrap::Tagged<const TensorMeta*, fixy::tags::source::ABIBoundary>;
 
 static_assert(sizeof(TypedMeta) == sizeof(const CrucibleMeta*));
 static_assert(alignof(TypedMeta) == alignof(const CrucibleMeta*));
@@ -202,7 +203,7 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas,
 // the C ABI).  Debug builds tighten this with a contract.
 
 using TypedDataPtr =
-    safety::Tagged<void*, safety::source::External>;
+    fixy::wrap::Tagged<void*, fixy::tags::source::External>;
 
 static_assert(sizeof(TypedDataPtr) == sizeof(void*));
 static_assert(alignof(TypedDataPtr) == alignof(void*));
