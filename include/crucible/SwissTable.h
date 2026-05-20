@@ -26,8 +26,18 @@
 // This saves 2 instructions on every probe step — ~0.5ns per probe.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/fixy/Wrap.h>              // FIXY-U-096i: PowerOfTwo + Refined + bounded_above
+#include <crucible/safety/Decide.h>          // decide::* lives at top-level, not under safety::
+
+// FIXY-U-096i production migration: PowerOfTwo / Refined / bounded_above
+// reached through the fixy:: umbrella instead of safety::* directly.
+// SwissTable.h is foundational (fan-in: ExprPool + 1 positive test + 4 neg-
+// compile fixtures, all runtime-tier).  The fixy/Wrap.h umbrella's transitive
+// Arena.h pull is redundant — Arena.h has no edge back to SwissTable.h —
+// not cyclic.  GroupWidth + BitMask::Mask type identity preserved via the
+// using-decl re-exports in fixy/Wrap.h, so existing tests + neg-compile
+// fixtures that reference detail::GroupWidth / BitMask::Mask still compile
+// unchanged.
 
 #include <bit>
 #include <cstdint>
@@ -50,7 +60,7 @@ namespace detail {
 
 static constexpr int8_t kEmpty = static_cast<int8_t>(0x80);
 
-using GroupWidth = ::crucible::safety::PowerOfTwo<std::size_t>;
+using GroupWidth = ::crucible::fixy::wrap::PowerOfTwo<std::size_t>;
 
 #if defined(__AVX512BW__)
 static constexpr GroupWidth kGroupWidth{std::size_t{64}};
@@ -141,8 +151,8 @@ static_assert(h2_tag(0x8000000000000000ULL) == 64,
 // Each set bit corresponds to a slot offset (0..kGroupWidth-1).
 // Iterate: while (m) { use m.lowest(); m.clear_lowest(); }
 struct BitMask {
-  using Mask = ::crucible::safety::Refined<
-      ::crucible::safety::bounded_above<kGroupMaskCeiling>, uint64_t>;
+  using Mask = ::crucible::fixy::wrap::Refined<
+      ::crucible::fixy::wrap::bounded_above<kGroupMaskCeiling>, uint64_t>;
 
   static_assert(sizeof(Mask) == sizeof(uint64_t));
   static_assert(std::is_trivially_copyable_v<Mask>);
