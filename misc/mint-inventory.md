@@ -26,7 +26,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-20T15:04:24Z`.
+Snapshot generated: `2026-05-20T15:11:34Z`.
 
 ## bridges/
 
@@ -97,7 +97,7 @@ Snapshot generated: `2026-05-20T15:04:24Z`.
 | `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:321` | Y | - | Y | - | ctx | `include/crucible/fixy/Perm.h:104` | HS14: 2 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:287` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:108` | HS14: 3 |
 | `mint_permission_inherit_key` | `include/crucible/permissions/PermissionInherit.h:135` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/Perm.h:31` | HS14: 64 |
+| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/Perm.h:31` | HS14: 67 |
 | `mint_permission_share` | `include/crucible/permissions/Permission.h:1038` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:19` | HS14: 2 |
 | `mint_permission_split` | `include/crucible/permissions/Permission.h:484` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 7 |
 | `mint_permission_split_n` | `include/crucible/permissions/Permission.h:516` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:34` | HS14: 3 |
@@ -160,9 +160,9 @@ Snapshot generated: `2026-05-20T15:04:24Z`.
 | `mint_sharded_calendar_grid_producer` | `include/crucible/sessions/ShardedCalendarGridSession.h:54` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:296` | HS14: 2 |
 | `mint_sharded_grid_consumer` | `include/crucible/sessions/ShardedGridSession.h:67` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:323` | HS14: 2 |
 | `mint_sharded_grid_producer` | `include/crucible/sessions/ShardedGridSession.h:57` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:322` | HS14: 2 |
-| `mint_snapshot_reader` | `include/crucible/sessions/SnapshotSession.h:110` | Y | - | Y | - | token | `include/crucible/fixy/Substr.h:356` | HS14: 0 ⚠ |
+| `mint_snapshot_reader` | `include/crucible/sessions/SnapshotSession.h:110` | Y | - | Y | - | token | `include/crucible/fixy/Substr.h:356` | HS14: 2 |
 | `mint_snapshot_reader_session` | `include/crucible/sessions/SnapshotSession.h:127` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:358` | HS14: 2 |
-| `mint_snapshot_writer` | `include/crucible/sessions/SnapshotSession.h:102` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:355` | HS14: 0 ⚠ |
+| `mint_snapshot_writer` | `include/crucible/sessions/SnapshotSession.h:102` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:355` | HS14: 2 |
 | `mint_snapshot_writer_session` | `include/crucible/sessions/SnapshotSession.h:118` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:357` | HS14: 3 |
 | `mint_swmr_reader` | `include/crucible/sessions/SwmrSession.h:207` | Y | - | Y | - | token | `include/crucible/fixy/Substr.h:140` | HS14: 2 |
 | `mint_swmr_writer` | `include/crucible/sessions/SwmrSession.h:199` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:139` | HS14: 2 |

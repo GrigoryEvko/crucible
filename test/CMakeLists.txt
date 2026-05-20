@@ -2202,6 +2202,22 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_non_surface
 crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_exclusive_perm
     "cannot convert|no matching function|SharedPermission|reader_tag")
 
+# FIXY-U-074j HS14 floor: the SNAPSHOT TOKEN mints (no ctx param).
+# mint_snapshot_writer gates on SnapshotSessionSurface + an exact-type
+# Permission<writer_tag>&& proof → wrong-perm-tag vs non-surface.
+# mint_snapshot_reader is single-overload surface-gated (no SharedPermission
+# variant, unlike SWMR) → two surface-failure modes: bare non-surface (fails
+# first nested-type clause) vs near-miss (reader() returns ReaderHandle not
+# optional<ReaderHandle>, failing exactly one method-signature clause).
+crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_writer_wrong_perm_tag
+    "cannot convert|no matching function|writer_tag|Permission")
+crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_writer_non_surface
+    "SnapshotSessionSurface|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_reader_non_surface
+    "SnapshotSessionSurface|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_reader_near_miss_surface
+    "SnapshotSessionSurface|constraints not satisfied|no matching function")
+
 # FIXY-U-074d HS14 floor: fixy::substr::mint_substrate_session sat at
 # HS14:0.  Two distinct rejection conjuncts of its requires-clause
 # (IsBridgeableDirection ∧ SubstrateFitsCtxResidency ∧
