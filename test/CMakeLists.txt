@@ -2186,6 +2186,22 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_reader_session_wrong_han
 crucible_neg_compile_fixy_test(neg_fixy_substr_snapshot_reader_session_non_ctx
     "IsExecCtx|constraints not satisfied|no matching function")
 
+# FIXY-U-074i HS14 floor: the SWMR TOKEN mints (no ctx param, so the
+# non-ExecCtx class does not apply).  mint_swmr_writer gates on
+# SwmrSessionSurface + an exact-type Permission<writer_tag>&& proof;
+# mint_swmr_reader gates on SwmrSessionSurface (1-arg) and takes a
+# fractional SharedPermission<reader_tag> proof (2-arg).  Two bespoke
+# distinct classes each: wrong-perm-tag vs non-surface (writer);
+# non-surface vs exclusive-vs-shared permission mode (reader).
+crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_writer_wrong_perm_tag
+    "cannot convert|no matching function|writer_tag|Permission")
+crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_writer_non_surface
+    "SwmrSessionSurface|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_non_surface
+    "SwmrSessionSurface|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_substr_swmr_reader_exclusive_perm
+    "cannot convert|no matching function|SharedPermission|reader_tag")
+
 # FIXY-U-074d HS14 floor: fixy::substr::mint_substrate_session sat at
 # HS14:0.  Two distinct rejection conjuncts of its requires-clause
 # (IsBridgeableDirection ∧ SubstrateFitsCtxResidency ∧
