@@ -45,6 +45,8 @@
 // proceeds without sensory data — ns/cycles latencies are unaffected.
 
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
+#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
 #include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
 #include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
 
@@ -298,5 +300,31 @@ class SenseHub {
 
     std::unique_ptr<State> state_;
 };
+
+// ── §XXI Universal Mint Pattern — mint_sense_hub (FIXY-U-083) ─────────
+//
+// CtxFitsSenseHubMint admits only contexts whose effect row carries
+// the Init capability.  SenseHub::load() performs BPF program loading
+// + tracepoint attach via bpf()/perf_event_open syscalls and mmap —
+// startup-only operations belonging to the Init row.  Hot foreground
+// and background-drain contexts must not engage this surface; the
+// Ctx-fit gate enforces that at the type level.
+template <class Ctx>
+concept CtxFitsSenseHubMint =
+       ::crucible::effects::IsExecCtx<Ctx>
+    && ::crucible::effects::row_contains_v<
+           ::crucible::effects::row_type_of_t<Ctx>,
+           ::crucible::effects::Effect::Init>;
+
+template <::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsSenseHubMint<Ctx>
+[[nodiscard]] inline std::optional<SenseHub>
+mint_sense_hub(Ctx const&, ::crucible::effects::Init init) noexcept {
+    return SenseHub::load(init);
+}
+
+static_assert(CtxFitsSenseHubMint<::crucible::effects::ColdInitCtx>);
+static_assert(!CtxFitsSenseHubMint<::crucible::effects::BgDrainCtx>);
+static_assert(!CtxFitsSenseHubMint<::crucible::effects::HotFgCtx>);
 
 }  // namespace crucible::perf

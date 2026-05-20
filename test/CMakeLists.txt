@@ -1389,6 +1389,24 @@ function(crucible_neg_compile_warden_test name expected_diag)
     LABELS "warden_neg")
 endfunction()
 
+# Sister harness for perf_neg/. Per-perf-hub Ctx-fit negative tests
+# (FIXY-U-083) live here — mint_<hub> rejects BgDrainCtx / HotFgCtx
+# because the BPF program load + perf_event_open + mmap path is an
+# Init-row-only startup operation.
+function(crucible_neg_compile_perf_test name expected_diag)
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/perf_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/perf_neg/${name}.cpp
+            ${name}
+            "${expected_diag}")
+  set_tests_properties(${name} PROPERTIES
+    LABELS "perf_neg")
+endfunction()
+
 # Sister harness for dataplane_neg/. XDP/TC negative tests live beside the
 # CNT-P dataplane ownership boundary instead of Warden.
 function(crucible_neg_compile_dataplane_test name expected_diag)
@@ -3010,6 +3028,22 @@ crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_bg_ctx
     "constraint|constraints not satisfied|CtxFitsDeadlineWatchdogMint|Init|Bg")
 crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
     "constraint|constraints not satisfied|CtxFitsDeadlineWatchdogMint|Init|HotFgCtx")
+
+# ─── FIXY-U-083 §XXI Universal Mint Pattern for perf/ hubs ────────
+# Per-perf-hub mint_<hub> (Init-row-gated startup factory) ships HS14
+# floor: ≥2 neg-compile fixtures per mint demonstrating BgDrainCtx and
+# HotFgCtx are both rejected by the CtxFits<Hub>Mint concept.  Batch 1
+# of 2: SenseHub + SenseHubV2 (the two ABI-stable hubs; BPF facade
+# hubs ship in batch 2).
+crucible_neg_compile_perf_test(neg_sense_hub_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsSenseHubMint|Init|Bg")
+crucible_neg_compile_perf_test(neg_sense_hub_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsSenseHubMint|Init|HotFgCtx")
+crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsSenseHubV2Mint|Init|Bg")
+crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsSenseHubV2Mint|Init|HotFgCtx")
+
 # 3 strengthening fixtures: SECOND mismatch class per mint = non-IsExecCtx.
 # CtxFitsXMint = IsExecCtx<Ctx> ∧ row_contains_v<…, Init>; fixtures
 # above exercise the row half (different Init-less ExecCtx shapes);

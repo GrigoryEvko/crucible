@@ -25,7 +25,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-20T06:30:37Z`.
+Snapshot generated: `2026-05-20T06:37:44Z`.
 
 ## bridges/
 

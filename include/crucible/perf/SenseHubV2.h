@@ -57,6 +57,8 @@
 //                                                  must be a compile error
 
 #include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Refined.h>
 
@@ -557,5 +559,31 @@ static_assert(sizeof(SenseHubV2) == sizeof(std::unique_ptr<DummyStateV2>),
     "SenseHubV2 must be EBO-equivalent to unique_ptr<State> — regression "
     "indicates a non-EBO field crept in (likely a missing [[no_unique_address]] "
     "or a polymorphic vptr).");
+
+// ── §XXI Universal Mint Pattern — mint_sense_hub_v2 (FIXY-U-083) ─────
+//
+// CtxFitsSenseHubV2Mint admits only contexts whose effect row carries
+// the Init capability.  SenseHubV2::load() performs BPF program loading
+// + tracepoint attach via bpf()/perf_event_open syscalls and mmap —
+// startup-only operations belonging to the Init row.  Hot foreground
+// and background-drain contexts must not engage this surface; the
+// Ctx-fit gate enforces that at the type level.
+template <class Ctx>
+concept CtxFitsSenseHubV2Mint =
+       ::crucible::effects::IsExecCtx<Ctx>
+    && ::crucible::effects::row_contains_v<
+           ::crucible::effects::row_type_of_t<Ctx>,
+           ::crucible::effects::Effect::Init>;
+
+template <::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsSenseHubV2Mint<Ctx>
+[[nodiscard]] inline std::optional<SenseHubV2>
+mint_sense_hub_v2(Ctx const&, ::crucible::effects::Init init) noexcept {
+    return SenseHubV2::load(init);
+}
+
+static_assert(CtxFitsSenseHubV2Mint<::crucible::effects::ColdInitCtx>);
+static_assert(!CtxFitsSenseHubV2Mint<::crucible::effects::BgDrainCtx>);
+static_assert(!CtxFitsSenseHubV2Mint<::crucible::effects::HotFgCtx>);
 
 } // namespace crucible::perf
