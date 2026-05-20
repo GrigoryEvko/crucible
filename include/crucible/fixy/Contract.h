@@ -88,8 +88,9 @@
 #include <crucible/Cipher.h>
 #include <crucible/bridges/SessionPersistence.h>
 #include <crucible/cipher/CipherTierPromotion.h>
-#include <crucible/cipher/ComputationCache.h>   // FIXY-U-015: dispatcher cache surface
-#include <crucible/cipher/FederationProtocol.h> // FIXY-U-015: federation entry wire format
+#include <crucible/cipher/ComputationCache.h>           // FIXY-U-015: dispatcher cache surface
+#include <crucible/cipher/ComputationCacheFederation.h> // FIXY-U-015: cache federation wire-keys
+#include <crucible/cipher/FederationProtocol.h>         // FIXY-U-015: federation entry wire format
 #include <crucible/safety/Contract.h>
 
 #include <chrono>      // FIXY-U-015: drain_computation_cache signature
@@ -367,16 +368,56 @@ using ::crucible::cipher::federation::FederationEntryView;
 using ::crucible::cipher::federation::FederationError;
 using ::crucible::cipher::federation::federation_error_name;
 
-// Serializer + deserializers.
+// Serializer + deserializers (FederationProtocol.h).
 //   serialize_federation_entry              — write entry into buffer.
-//   deserialize_untrusted_federation_entry  — parse + validate.
+//   deserialize_federation_header           — parse just the 32-B head.
+//   deserialize_untrusted_federation_entry  — parse + validate full entry.
 //   deserialize_federation_entry            — parse + validate +
-//                                              error-bind shortcut.
-//   federation_entry_blob_layout_disjoint   — layout-disjoint check.
+//                                              error-bind via peer
+//                                              permission (template on Org).
 using ::crucible::cipher::federation::serialize_federation_entry;
+using ::crucible::cipher::federation::deserialize_federation_header;
 using ::crucible::cipher::federation::deserialize_untrusted_federation_entry;
 using ::crucible::cipher::federation::deserialize_federation_entry;
+
+// Layout / cardinality predicates.
 using ::crucible::cipher::federation::federation_entry_blob_layout_disjoint;
+using ::crucible::cipher::federation::cold_blob_regions_pairwise_disjoint;
+using ::crucible::cipher::federation::federation_accepts_cardinality;
+
+// ── ComputationCacheFederation.h additions ────────────────────────
+//
+// Federation wire-format extensions for the dispatcher's
+// ComputationCache: a per-(FnPtr, Row, Args...) federation key tag,
+// per-role MPST protocol projections, and content-addressed payload
+// wrappers that elide redundant bytes on the wire when both sides
+// share the kernel.
+
+using ::crucible::cipher::federation::ComputationCacheFederationKeyTag;
+using ::crucible::cipher::federation::ComputationCacheFederationSenderProto;
+using ::crucible::cipher::federation::ComputationCacheFederationReceiverProto;
+using ::crucible::cipher::federation::ComputationCacheFederationCoordProto;
+
+// Content-addressed payload wrapper (template on Payload).  Used by
+// federation entries to elide redundant payload bytes when the peer
+// can recover the payload from a content hash.
+using ::crucible::cipher::federation::ContentAddressedFederationPayload;
+
+// Per-(FnPtr, Row, Args...) payload aliases — one for raw bytes, one
+// for content-addressed.
+using ::crucible::cipher::federation::ComputationCacheFederationPayload;
+using ::crucible::cipher::federation::ComputationCacheFederationContentAddressedPayload;
+
+// Hash helpers — used by federation entry construction to derive
+// the (content_hash, row_hash) keys on a per-(FnPtr, Row, Args...)
+// basis without consulting the runtime cache.
+using ::crucible::cipher::federation::federation_content_hash;
+using ::crucible::cipher::federation::federation_row_hash;
+using ::crucible::cipher::federation::federation_key;
+
+// Serializer specialized for ComputationCache entries.  Two overloads
+// — one taking the payload by span, one taking it by reference.
+using ::crucible::cipher::federation::serialize_computation_cache_federation_entry;
 
 }  // namespace federation
 
@@ -566,6 +607,8 @@ static_assert(std::is_same_v<decltype(&cipher::federation::federation_error_name
                              decltype(&::crucible::cipher::federation::federation_error_name)>);
 static_assert(std::is_same_v<decltype(&cipher::federation::serialize_federation_entry),
                              decltype(&::crucible::cipher::federation::serialize_federation_entry)>);
+static_assert(std::is_same_v<decltype(&cipher::federation::deserialize_federation_header),
+                             decltype(&::crucible::cipher::federation::deserialize_federation_header)>);
 static_assert(std::is_same_v<decltype(&cipher::federation::deserialize_untrusted_federation_entry),
                              decltype(&::crucible::cipher::federation::deserialize_untrusted_federation_entry)>);
 
@@ -578,10 +621,96 @@ static_assert(std::is_same_v<
 
 static_assert(std::is_same_v<decltype(&cipher::federation::federation_entry_blob_layout_disjoint),
                              decltype(&::crucible::cipher::federation::federation_entry_blob_layout_disjoint)>);
+static_assert(std::is_same_v<decltype(&cipher::federation::federation_accepts_cardinality),
+                             decltype(&::crucible::cipher::federation::federation_accepts_cardinality)>);
+
+// cold_blob_regions_pairwise_disjoint is a function template on MaxRegions;
+// instantiate explicitly to compare fn-pointer types.
+static_assert(std::is_same_v<
+    decltype(&cipher::federation::cold_blob_regions_pairwise_disjoint<8>),
+    decltype(&::crucible::cipher::federation::cold_blob_regions_pairwise_disjoint<8>)>);
+
+// ─── ComputationCacheFederation.h surface identity ────────────────
+
+// Probe types for instantiating templates without coupling to a
+// production FnPtr / Row / Args triple.
+namespace u015_ccfed_probe {
+inline void probe_kernel(int) noexcept {}
+}  // namespace u015_ccfed_probe
+using U015ProbeRow = ::crucible::effects::Row<>;
+
+// Per-(FnPtr, Row, Args...) key tag identity.
+static_assert(std::is_same_v<
+    cipher::federation::ComputationCacheFederationKeyTag<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+    ::crucible::cipher::federation::ComputationCacheFederationKeyTag<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
+
+// Per-role MPST projection aliases.
+static_assert(std::is_same_v<
+    cipher::federation::ComputationCacheFederationSenderProto<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+    ::crucible::cipher::federation::ComputationCacheFederationSenderProto<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
+static_assert(std::is_same_v<
+    cipher::federation::ComputationCacheFederationReceiverProto<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+    ::crucible::cipher::federation::ComputationCacheFederationReceiverProto<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
+static_assert(std::is_same_v<
+    cipher::federation::ComputationCacheFederationCoordProto<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+    ::crucible::cipher::federation::ComputationCacheFederationCoordProto<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
+
+// Content-addressed payload wrapper identity.
+static_assert(std::is_same_v<
+    cipher::federation::ContentAddressedFederationPayload<int>,
+    ::crucible::cipher::federation::ContentAddressedFederationPayload<int>>);
+
+// Per-(FnPtr, Row, Args...) payload aliases.
+static_assert(std::is_same_v<
+    cipher::federation::ComputationCacheFederationPayload<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+    ::crucible::cipher::federation::ComputationCacheFederationPayload<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
+static_assert(std::is_same_v<
+    cipher::federation::ComputationCacheFederationContentAddressedPayload<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+    ::crucible::cipher::federation::ComputationCacheFederationContentAddressedPayload<
+        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
+
+// Hash-derivation function-pointer identity (templates instantiated
+// on the probe triple).
+static_assert(std::is_same_v<
+    decltype(&cipher::federation::federation_content_hash<
+                &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>),
+    decltype(&::crucible::cipher::federation::federation_content_hash<
+                &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>)>);
+static_assert(std::is_same_v<
+    decltype(&cipher::federation::federation_row_hash<U015ProbeRow>),
+    decltype(&::crucible::cipher::federation::federation_row_hash<U015ProbeRow>)>);
+static_assert(std::is_same_v<
+    decltype(&cipher::federation::federation_key<
+                &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>),
+    decltype(&::crucible::cipher::federation::federation_key<
+                &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>)>);
+
+// serialize_computation_cache_federation_entry has TWO overloads on
+// the same template signature (Args differ in payload param type:
+// ComputationCacheFederationPayload<...>& vs std::span<const u8>).
+// `decltype(&fn)` cannot disambiguate without the full callable type,
+// so reach is proven by the using-decl being well-formed at parse
+// time PLUS the namespace-scope `using ::crucible::...` directive
+// resolving in the compiled object (witnessed by this TU compiling).
+// Explicit-overload identity probes via static_cast<RetType(*)(...)>(&fn)
+// would couple this sentinel to substrate parameter signatures —
+// brittle vs the payload-template's evolution.  The reach-via-using
+// witness is sufficient for the §XVII drift-catch.
 
 // ── Cardinality witness ───────────────────────────────────────────
 //
-// 28 surface items added for FIXY-U-015.  Future drift forces an
+// 42 surface items added for FIXY-U-015.  Future drift forces an
 // update to both the using-decl block AND this constant.
 //
 // Breakdown:
@@ -595,21 +724,36 @@ static_assert(std::is_same_v<decltype(&cipher::federation::federation_entry_blob
 //       insert_computation_cache, computation_cache_key_in_row,
 //       lookup_computation_cache_in_row,
 //       insert_computation_cache_in_row, drain_computation_cache)
-//   D. federation:: sub-namespace                                  12
-//      (FEDERATION_MAGIC / FEDERATION_PROTOCOL_V1 /
-//       FEDERATION_HEADER_BYTES; FederationEntryHeader /
-//       ColdBlobRegion / FederationEntryView; FederationError /
-//       federation_error_name; serialize_federation_entry /
-//       deserialize_untrusted_federation_entry /
-//       deserialize_federation_entry /
-//       federation_entry_blob_layout_disjoint)
+//   D. federation:: from FederationProtocol.h                      15
+//      Constants:     FEDERATION_MAGIC / FEDERATION_PROTOCOL_V1 /
+//                     FEDERATION_HEADER_BYTES                       3
+//      Structs:       FederationEntryHeader / ColdBlobRegion /
+//                     FederationEntryView                           3
+//      Error:         FederationError + federation_error_name       2
+//      Serdes:        serialize_federation_entry /
+//                     deserialize_federation_header /
+//                     deserialize_untrusted_federation_entry /
+//                     deserialize_federation_entry                  4
+//      Predicates:    federation_entry_blob_layout_disjoint /
+//                     cold_blob_regions_pairwise_disjoint /
+//                     federation_accepts_cardinality                3
+//   E. federation:: from ComputationCacheFederation.h              11
+//      Key tag:       ComputationCacheFederationKeyTag              1
+//      Protocols:     ComputationCacheFederationSenderProto /
+//                     ...ReceiverProto / ...CoordProto              3
+//      Payloads:      ContentAddressedFederationPayload /
+//                     ComputationCacheFederationPayload /
+//                     ComputationCacheFederationContentAddressedPayload  3
+//      Hash helpers:  federation_content_hash / federation_row_hash /
+//                     federation_key                                3
+//      Serdes:        serialize_computation_cache_federation_entry  1
 //                                                                 ───
-//                                                                  28
+//                                                                  42
 
-constexpr int u015_surface_cardinality = 28;
-static_assert(u015_surface_cardinality == 28,
-    "FIXY-U-015 surface (Cipher + ComputationCache + federation) "
-    "drifted from 28 — Contract.h U-015 block and this sentinel "
+constexpr int u015_surface_cardinality = 42;
+static_assert(u015_surface_cardinality == 42,
+    "FIXY-U-015 surface (Cipher + ComputationCache + federation full) "
+    "drifted from 42 — Contract.h U-015 block and this sentinel "
     "must update in lockstep.");
 
 }  // namespace u015

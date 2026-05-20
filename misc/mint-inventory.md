@@ -25,7 +25,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-20T06:23:32Z`.
+Snapshot generated: `2026-05-20T06:30:37Z`.
 
 ## bridges/
 
@@ -44,9 +44,9 @@ Snapshot generated: `2026-05-20T06:23:32Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_demote` | `include/crucible/cipher/CipherTierPromotion.h:126` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:132` | HS14: 2 |
-| `mint_promote` | `include/crucible/cipher/CipherTierPromotion.h:117` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:131` | HS14: 2 |
-| `mint_restore` | `include/crucible/cipher/CipherTierPromotion.h:161` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:149` | HS14: 3 |
+| `mint_demote` | `include/crucible/cipher/CipherTierPromotion.h:126` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:133` | HS14: 2 |
+| `mint_promote` | `include/crucible/cipher/CipherTierPromotion.h:117` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:132` | HS14: 2 |
+| `mint_restore` | `include/crucible/cipher/CipherTierPromotion.h:161` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:150` | HS14: 3 |
 
 ## concurrent/
 
