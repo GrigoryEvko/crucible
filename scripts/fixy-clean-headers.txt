@@ -26,7 +26,14 @@
 #     rather than consume the umbrella, so they carry irreducible
 #     `::crucible::safety::` re-export plumbing (documented in-header).
 #   - Vigil.h / TraceRing.h / MetaLog.h / CrucibleContext.h —
-#     reimplement-reserved (FIXY-U-030/031/032), not yet migrated.
+#     S1-spelling-migrated via the populate pattern (FIXY-U-031a-d /
+#     032a / 030a), same as Arena.h/Saturate.h above: they POPULATE
+#     crucible::fixy::wrap (+ fixy::handle / fixy::tags) and carry
+#     irreducible `::crucible::safety::` re-export plumbing, so they stay
+#     OFF this registry.  The DEEPER reimplement (FIXY-U-030/031/032 —
+#     SPSC->PermissionedSpscChannel, WRAP-CCtx field refactors, Vigil
+#     mode_session->mint_vigil_mode_bridge) remains; Vigil also keeps one
+#     documented substrate-mint call (safety::mint_atomic_session).
 #   - MerkleDag.h / PoolAllocator.h / CKernel.h / ... — code-clean but
 #     still carry doc-comment prose mentioning `safety::*`; they join
 #     the registry once that residue is reworded to fixy:: spellings.
