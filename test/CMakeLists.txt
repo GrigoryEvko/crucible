@@ -192,6 +192,7 @@ crucible_test(test_fixy_fn)
 crucible_test(test_fixy_profile)
 crucible_test(test_fixy_rule_helpers)
 crucible_test(test_fixy_rules_compose)  # FIXY-U-062 — §6.8 aggregator surface
+crucible_test(test_fixy_modality)       # FIXY-U-060 — top-level modality surface
 crucible_test(test_fixy_cap)
 crucible_test(test_fixy_perm)
 crucible_test(test_fixy_handle)  # FIXY-U-016 — per-namespace test_fixy_handle sentinel TU

@@ -165,4 +165,5 @@
 #include <crucible/fixy/Diag.h>
 #include <crucible/fixy/Eff.h>
 #include <crucible/fixy/Insights.h>
+#include <crucible/fixy/Modality.h>
 #include <crucible/fixy/Source.h>
