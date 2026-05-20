@@ -219,4 +219,51 @@ inline constexpr bool can_transition_v =
 // composition (Refined per state + `can_transition_v` per step) is
 // the canonical pattern.
 
+// ─── FIXY-U-103 in-header sentinel ───────────────────────────────
+//
+// Drift-catch for the 3 using-decls (Machine / mint_machine /
+// transition_to) + 3 in-place helpers (state_of_t / is_machine_v /
+// can_transition_v) defined in this header.  Same recipe as
+// fixy/Pipe.h / fixy/Safety.h sentinels.
+
+namespace self_test {
+
+// ── Substrate type-identity witnesses ────────────────────────────
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::mach::Machine<int>,
+    ::crucible::safety::Machine<int>>,
+    "fixy::mach::Machine must alias safety::Machine");
+
+// ── In-place helpers reach + behave correctly ────────────────────
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::mach::state_of_t<
+        ::crucible::safety::Machine<int>&>,
+    int>,
+    "state_of_t<Machine<int>&> must project to int");
+
+static_assert(::crucible::fixy::mach::is_machine_v<
+    ::crucible::safety::Machine<int>>);
+static_assert(::crucible::fixy::mach::is_machine_v<
+    ::crucible::safety::Machine<int>&>);
+static_assert(!::crucible::fixy::mach::is_machine_v<int>);
+static_assert(!::crucible::fixy::mach::is_machine_v<void>);
+
+// can_transition_v rejects non-Machine cleanly via the is_machine_v gate.
+static_assert(!::crucible::fixy::mach::can_transition_v<int, double>,
+    "can_transition_v must reject non-Machine M without substitution-failing.");
+
+// ── Cardinality witness ──────────────────────────────────────────
+
+constexpr int mach_using_cardinality   = 3;  // Machine, mint_machine, transition_to
+constexpr int mach_helper_cardinality  = 3;  // state_of_t, is_machine_v, can_transition_v
+
+static_assert(mach_using_cardinality  == 3,
+    "fixy::mach:: using-decl surface drifted from 3.");
+static_assert(mach_helper_cardinality == 3,
+    "fixy::mach:: in-place helper surface drifted from 3.");
+
+}  // namespace self_test
+
 }  // namespace crucible::fixy::mach

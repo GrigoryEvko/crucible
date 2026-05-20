@@ -61,6 +61,8 @@
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Secret.h>
 
+#include <type_traits>  // FIXY-U-103 sentinel uses std::is_same_v
+
 namespace crucible::fixy::safety {
 
 // ── Linear (move-only consume-once) ───────────────────────────────
@@ -81,3 +83,47 @@ using ::crucible::safety::mint_view;
 using ::crucible::safety::mint_linear_view;
 
 }  // namespace crucible::fixy::safety
+
+// ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
+//
+// Drift-catch for the 8 using-decls above: Linear / mint_linear / drop
+// (Linear axis), Secret / mint_secret (Classification axis), ScopedView
+// / mint_view / mint_linear_view (Borrow-lifetime axis).  Same recipe
+// as fixy/Pipe.h / fixy/Struct.h / fixy/Substr.h sentinels.
+//
+// Type-identity witnesses for each substrate-aliased template; mint
+// reachability is implicit (using-declarations carry the function
+// templates' name into the namespace; consumers exercise them via
+// test/test_fixy_umbrella.cpp).
+//
+// Note the dual-export with fixy::wrap:: (fixy-A4-011): identity-equal
+// because both paths name the SAME substrate symbol.  Drift between
+// the two paths is caught by test_fixy_umbrella.cpp's cross-namespace
+// static_asserts; this sentinel only checks fixy::safety:: ↔ substrate.
+
+namespace crucible::fixy::safety::self_test {
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::safety::Linear<int>,
+    ::crucible::safety::Linear<int>>,
+    "fixy::safety::Linear must alias safety::Linear");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::safety::Secret<int>,
+    ::crucible::safety::Secret<int>>,
+    "fixy::safety::Secret must alias safety::Secret");
+
+// ScopedView is template <typename C, typename Tag>; use void/void.
+static_assert(std::is_same_v<
+    ::crucible::fixy::safety::ScopedView<int, void>,
+    ::crucible::safety::ScopedView<int, void>>,
+    "fixy::safety::ScopedView must alias safety::ScopedView");
+
+// ── Cardinality witness ──────────────────────────────────────────
+
+constexpr int safety_using_cardinality = 8;
+static_assert(safety_using_cardinality == 8,
+    "fixy::safety:: surface drifted from 8 using-decls — Safety.h "
+    "and its sentinel must update in lockstep.");
+
+}  // namespace crucible::fixy::safety::self_test
