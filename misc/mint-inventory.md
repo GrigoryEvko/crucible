@@ -26,7 +26,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-20T15:34:10Z`.
+Snapshot generated: `2026-05-20T15:40:31Z`.
 
 ## bridges/
 
@@ -53,12 +53,12 @@ Snapshot generated: `2026-05-20T15:34:10Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_endpoint` | `include/crucible/concurrent/Endpoint.h:361` | - | Y | Y | - | token | `include/crucible/fixy/Pipe.h:185` | HS14: 5 |
+| `mint_endpoint` | `include/crucible/concurrent/Endpoint.h:361` | - | Y | Y | - | token | `include/crucible/fixy/Pipe.h:185` | HS14: 7 |
 | `mint_mpmc_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:529` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:106` | HS14: 2 |
 | `mint_pipeline` | `include/crucible/concurrent/Pipeline.h:951` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:126` | HS14: 2 |
 | `mint_pipeline_dag` | `include/crucible/concurrent/Pipeline.h:1002` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:206` | HS14: 2 |
 | `mint_stage` | `include/crucible/concurrent/Stage.h:631` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:151` | HS14: 4 |
-| `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:510` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:105` | HS14: 0 ⚠ |
+| `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:510` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:105` | HS14: 2 |
 | `mint_substrate_session` | `include/crucible/concurrent/SubstrateSessionBridge.h:737` | Y | Y | Y | - | ctx | `include/crucible/fixy/Pipe.h:113` | HS14: 2 |
 | `mint_swmr_stage` | `include/crucible/concurrent/StageEndpointBridge.h:559` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:107` | HS14: 2 |
 
@@ -97,9 +97,9 @@ Snapshot generated: `2026-05-20T15:34:10Z`.
 | `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:321` | Y | - | Y | - | ctx | `include/crucible/fixy/Perm.h:104` | HS14: 2 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:287` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:108` | HS14: 3 |
 | `mint_permission_inherit_key` | `include/crucible/permissions/PermissionInherit.h:135` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/Perm.h:31` | HS14: 67 |
+| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/Perm.h:31` | HS14: 69 |
 | `mint_permission_share` | `include/crucible/permissions/Permission.h:1038` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:19` | HS14: 2 |
-| `mint_permission_split` | `include/crucible/permissions/Permission.h:484` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 7 |
+| `mint_permission_split` | `include/crucible/permissions/Permission.h:484` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 9 |
 | `mint_permission_split_n` | `include/crucible/permissions/Permission.h:516` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:34` | HS14: 3 |
 | `mint_read_view` | `include/crucible/permissions/ReadView.h:156` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:138` | HS14: 2 |
 | `mint_self_signed_handshake` | `include/crucible/permissions/FederationPermission.h:634` | Y | Y | Y | Y | token | `include/crucible/fixy/Source.h:226` | HS14: 2 |

@@ -2268,6 +2268,17 @@ crucible_neg_compile_fixy_test(neg_fixy_source_mint_self_signed_non_class_org
 crucible_neg_compile_fixy_test(neg_fixy_source_mint_self_signed_non_empty_org
     "constraints not satisfied|FederationOrgTag|no matching function|is_empty")
 
+# FIXY-U-074o HS14 floor: fixy::pipe::mint_stage_from_endpoints — the last
+# fixy-re-exported mint below floor (4-conjunct CtxFitsStageFromEndpoints
+# gate + IsExecCtx Ctx template constraint).  (Substrate equivalents in
+# test/effects_neg/ don't count toward the fixy umbrella.)  Two orthogonal
+# classes: non-ExecCtx ctx (ctx axis, valid endpoints) vs swapped endpoint
+# directions (endpoint-shape axis, valid ctx).
+crucible_neg_compile_fixy_test(neg_fixy_pipe_stage_from_endpoints_non_ctx
+    "IsExecCtx|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_pipe_stage_from_endpoints_swapped_direction
+    "associated constraints are not satisfied|CtxFitsStageFromEndpoints|IsConsumerEndpoint|IsProducerEndpoint")
+
 # FIXY-U-074d HS14 floor: fixy::substr::mint_substrate_session sat at
 # HS14:0.  Two distinct rejection conjuncts of its requires-clause
 # (IsBridgeableDirection ∧ SubstrateFitsCtxResidency ∧
