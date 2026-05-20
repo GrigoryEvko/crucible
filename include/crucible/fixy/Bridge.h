@@ -105,6 +105,9 @@
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/bridges/SessionPersistence.h>
 #include <crucible/bridges/VigilModeHandle.h>
+#include <crucible/permissions/PermissionInherit.h>  // FIXY-U-070 sentinel
+                                                     //   uses survivor_registry
+#include <type_traits>                                // FIXY-U-070 sentinel
 
 namespace crucible::fixy::bridge {
 
@@ -130,6 +133,69 @@ using ::crucible::safety::proto::RecordingSessionHandle;
 
 using ::crucible::safety::proto::mint_crash_watched_session;
 using ::crucible::safety::proto::CrashWatchedHandle;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Crash-event surface (FIXY-U-070 / GAPS-045) ────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// The crash-watched session wrap (above) produces a `Stop_g<C>` on
+// peer.crashed() and routes recovery through the substrate's
+// `wrap_crash_return` friend factory.  That factory bundles the
+// inner protocol's would-have-been return value with the surviving
+// PermSet into a `CrashEvent<PeerTag, Resource, SurvivorTags...>` —
+// a structured-return type that callers pattern-match on at the
+// stop boundary to drive Cipher roll-forward / Canopy peer-replace.
+//
+// Pre-U-070, every consumer that wanted to write a stop-handler had
+// to descend into `<crucible/bridges/CrashTransport.h>` directly,
+// because `fixy::bridge::` surfaced ONLY the `CrashWatchedHandle`
+// wrap and the `mint_crash_watched_session` factory — never the
+// `CrashEvent` family itself.  GAPS-045 was filed when the
+// observability sweep noticed that the umbrella's "fixy:: covers
+// the bridge tree" promise was vacuous for the stop-handler side.
+//
+// The six items below close the surface gap:
+//   wrap_crash_return            — friend factory authoritative for
+//                                  CrashEvent construction
+//   CrashEvent                   — structured-return carrier
+//   crash_event_from_survivors   — helper trait projecting an
+//                                  inheritance_list onto CrashEvent
+//   crash_event_for_t            — canonical type alias for the
+//                                  PeerTag's CrashEvent
+//   crash_event_matches_survivors      — predicate trait
+//   crash_event_matches_survivors_v    — predicate variable template
+//
+// These are pure substrate-identity using-declarations; the
+// `CrashEvent` ctor remains friend-gated to `wrap_crash_return`, so
+// the surface gain is "you can name the type without crucible/bridges/
+// include," NOT "you can construct it from any call site."  Hot-path
+// stop-handler is type-name-only:
+//
+//   auto evt_or = ::crucible::fixy::bridge::wrap_crash_return(
+//                     handle.detach(), recovery_return_value);
+//   if (auto* evt = std::get_if<fixy::bridge::crash_event_for_t<
+//                                  PeerTag, MyResource>>(&evt_or))
+//   { /* roll-forward via evt->survivors() */ }
+//
+// Discipline (FIXY-A4-011 dual-export): the substrate identity is
+// witnessed inline below (self_test block) AND in test_fixy_bridge.cpp
+// to defend against silent substrate rename — same recipe as the
+// fixy::handle:: + fixy::diag:: surfaces.
+
+using ::crucible::safety::proto::wrap_crash_return;
+using ::crucible::safety::proto::CrashEvent;
+// The next four live in `safety::proto::detail::` in the substrate.
+// They are nonetheless the documented stop-handler pattern (see
+// CrashTransport.h doc-block on CrashEvent line 178+); surfacing them
+// here promotes the documented-public-but-detail-namespaced helpers
+// to consumer-discoverable position WITHOUT requiring a substrate
+// refactor.  If the substrate later promotes them out of detail::,
+// these using-decls will adapt seamlessly (using-decl preserves the
+// substrate path on each re-resolution).
+using ::crucible::safety::proto::detail::crash_event_from_survivors;
+using ::crucible::safety::proto::detail::crash_event_for_t;
+using ::crucible::safety::proto::detail::crash_event_matches_survivors;
+using ::crucible::safety::proto::detail::crash_event_matches_survivors_v;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Persisted session — Cipher cold-tier roll-forward wrapper ──────
@@ -167,3 +233,112 @@ using ::crucible::bridges::mint_crash_watched_endpoint;
 using ::crucible::mint_vigil_mode_bridge;
 
 }  // namespace crucible::fixy::bridge
+
+// ─── Dual-export sentinel — FIXY-U-070 ─────────────────────────────
+//
+// Header-internal identity sentinels for the crash-event surface.
+// Every alias resolves to its substrate type, not a shadowed local.
+// Same recipe as fixy/Handle.h::self_test + fixy/Diag.h::self_test —
+// drift surfaces here at every consumer's include time, NOT only in
+// test_fixy_bridge.cpp.  Cardinality witness at the tail catches a
+// future contributor adding (or removing) a crash-event item without
+// updating both the using-decl block AND this sentinel.
+
+namespace crucible::fixy::bridge::self_test {
+
+// Probe peer tag with a declared `survivors_t` projection so
+// crash_event_for_t can resolve in the sentinel context.  Real
+// production peer tags would specialize at the tag declaration site.
+struct BridgeProbePeer {};
+struct BridgeProbeResource {};
+struct BridgeProbeSurvivorA {};
+struct BridgeProbeSurvivorB {};
+
+}  // namespace crucible::fixy::bridge::self_test
+
+namespace crucible::permissions {
+
+// Specialize survivor_registry for the probe peer so survivors_t
+// (used by crash_event_for_t) resolves to a non-empty list at
+// sentinel-evaluation time.  Production peer tags carry analogous
+// specializations next to their `struct PeerTag {};` declaration.
+template <>
+struct survivor_registry<
+    ::crucible::fixy::bridge::self_test::BridgeProbePeer>
+{
+    using type = inheritance_list<
+        ::crucible::fixy::bridge::self_test::BridgeProbeSurvivorA,
+        ::crucible::fixy::bridge::self_test::BridgeProbeSurvivorB>;
+};
+
+}  // namespace crucible::permissions
+
+namespace crucible::fixy::bridge::self_test {
+
+// 1. Function-template identity — `wrap_crash_return` is a free
+//    function template; reaching it via fixy::bridge:: at concrete
+//    template args is witnessed in test_fixy_bridge.cpp (where the
+//    full type context is available).  The using-decl above is the
+//    structural change; the test TU is the runtime witness.
+
+// 2. CrashEvent template identity.
+static_assert(std::is_same_v<
+    ::crucible::fixy::bridge::CrashEvent<
+        BridgeProbePeer, BridgeProbeResource,
+        BridgeProbeSurvivorA, BridgeProbeSurvivorB>,
+    ::crucible::safety::proto::CrashEvent<
+        BridgeProbePeer, BridgeProbeResource,
+        BridgeProbeSurvivorA, BridgeProbeSurvivorB>>,
+    "fixy::bridge::CrashEvent must alias safety::proto::CrashEvent");
+
+// 3. crash_event_from_survivors helper identity.  Substrate lives in
+//    proto::detail::; the fixy::bridge:: alias resolves to the same.
+static_assert(std::is_same_v<
+    typename ::crucible::fixy::bridge::crash_event_from_survivors<
+        BridgeProbePeer, BridgeProbeResource,
+        ::crucible::permissions::inheritance_list<
+            BridgeProbeSurvivorA, BridgeProbeSurvivorB>>::type,
+    typename ::crucible::safety::proto::detail::crash_event_from_survivors<
+        BridgeProbePeer, BridgeProbeResource,
+        ::crucible::permissions::inheritance_list<
+            BridgeProbeSurvivorA, BridgeProbeSurvivorB>>::type>,
+    "fixy::bridge::crash_event_from_survivors must alias substrate");
+
+// 4. crash_event_for_t resolves through the alias.
+static_assert(std::is_same_v<
+    ::crucible::fixy::bridge::crash_event_for_t<
+        BridgeProbePeer, BridgeProbeResource>,
+    ::crucible::safety::proto::detail::crash_event_for_t<
+        BridgeProbePeer, BridgeProbeResource>>,
+    "fixy::bridge::crash_event_for_t must alias substrate");
+
+// 5. crash_event_matches_survivors predicate true on canonical shape.
+using ProbeCanonicalEvent = ::crucible::fixy::bridge::crash_event_for_t<
+    BridgeProbePeer, BridgeProbeResource>;
+static_assert(::crucible::fixy::bridge::crash_event_matches_survivors<
+    ProbeCanonicalEvent>::value,
+    "predicate must fire true on the canonical CrashEvent for the peer");
+static_assert(::crucible::fixy::bridge::crash_event_matches_survivors_v<
+    ProbeCanonicalEvent>,
+    "variable template must fire true on the canonical CrashEvent");
+
+// 6. Predicate false on a manually-constructed mismatched event.
+using ProbeMismatchEvent = ::crucible::fixy::bridge::CrashEvent<
+    BridgeProbePeer, BridgeProbeResource,
+    BridgeProbeSurvivorA>;  // only one survivor, registry has two
+static_assert(!::crucible::fixy::bridge::crash_event_matches_survivors_v<
+    ProbeMismatchEvent>,
+    "predicate must reject events whose survivor list doesn't match "
+    "the peer's registered survivors_t");
+
+// Cardinality witness: 6 items surfaced (wrap_crash_return /
+// CrashEvent / crash_event_from_survivors / crash_event_for_t /
+// crash_event_matches_survivors / crash_event_matches_survivors_v).
+// A future addition / removal MUST bump this number AND extend the
+// sentinel block above.
+constexpr int crash_event_surface_cardinality = 6;
+static_assert(crash_event_surface_cardinality == 6,
+    "fixy::bridge:: crash-event surface cardinality drifted — update "
+    "Bridge.h sentinel block to match the substrate.");
+
+}  // namespace crucible::fixy::bridge::self_test

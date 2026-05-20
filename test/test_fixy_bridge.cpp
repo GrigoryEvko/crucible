@@ -59,8 +59,80 @@ FIXY_BRIDGE_NAME_REACHABLE(fb::mint_crash_watched_endpoint);
 FIXY_BRIDGE_NAME_REACHABLE(fb::mint_vigil_mode_bridge);
 FIXY_BRIDGE_NAME_REACHABLE(fb::mint_persisted_session);
 FIXY_BRIDGE_NAME_REACHABLE(fb::mint_crash_watched_session);
+// FIXY-U-070 crash-event surface (6 items).  Name reachability +
+// substrate identity for the 5 type-level items below.  The function
+// template `wrap_crash_return` is name-reach-only here; runtime call
+// happens inside the substrate's own CrashWatchedHandle tests.
+FIXY_BRIDGE_NAME_REACHABLE(fb::wrap_crash_return);
 
 #undef FIXY_BRIDGE_NAME_REACHABLE
+
+// ─── 5. FIXY-U-070 crash-event surface identity ───────────────────
+//
+// The 5 type-level aliases (CrashEvent / crash_event_from_survivors
+// / crash_event_for_t / crash_event_matches_survivors /
+// crash_event_matches_survivors_v) preserve substrate identity.  The
+// substrate places the helper traits in `safety::proto::detail::`
+// while the carrier `CrashEvent` sits at `safety::proto::` level;
+// fixy::bridge:: surfaces both without exposing the detail boundary.
+
+namespace test_fixy_bridge {
+struct BridgeTestPeer {};
+struct BridgeTestRes {};
+struct BridgeTestSurvivor {};
+}  // namespace test_fixy_bridge
+
+namespace crucible::permissions {
+template <>
+struct survivor_registry<::test_fixy_bridge::BridgeTestPeer> {
+    using type = inheritance_list<::test_fixy_bridge::BridgeTestSurvivor>;
+};
+}  // namespace crucible::permissions
+
+// CrashEvent alias preserves substrate identity (proto:: level).
+static_assert(std::is_same_v<
+    fb::CrashEvent<test_fixy_bridge::BridgeTestPeer,
+                   test_fixy_bridge::BridgeTestRes,
+                   test_fixy_bridge::BridgeTestSurvivor>,
+    proto::CrashEvent<test_fixy_bridge::BridgeTestPeer,
+                      test_fixy_bridge::BridgeTestRes,
+                      test_fixy_bridge::BridgeTestSurvivor>>,
+    "fb::CrashEvent must alias proto::CrashEvent (no detail:: wrapping).");
+
+// crash_event_from_survivors alias preserves substrate (detail:: scope).
+static_assert(std::is_same_v<
+    typename fb::crash_event_from_survivors<
+        test_fixy_bridge::BridgeTestPeer,
+        test_fixy_bridge::BridgeTestRes,
+        ::crucible::permissions::inheritance_list<
+            test_fixy_bridge::BridgeTestSurvivor>>::type,
+    typename proto::detail::crash_event_from_survivors<
+        test_fixy_bridge::BridgeTestPeer,
+        test_fixy_bridge::BridgeTestRes,
+        ::crucible::permissions::inheritance_list<
+            test_fixy_bridge::BridgeTestSurvivor>>::type>,
+    "fb::crash_event_from_survivors must alias proto::detail::");
+
+// crash_event_for_t alias (detail::) resolves with the test peer's
+// survivor_registry specialization above.
+static_assert(std::is_same_v<
+    fb::crash_event_for_t<test_fixy_bridge::BridgeTestPeer,
+                          test_fixy_bridge::BridgeTestRes>,
+    proto::detail::crash_event_for_t<test_fixy_bridge::BridgeTestPeer,
+                                     test_fixy_bridge::BridgeTestRes>>,
+    "fb::crash_event_for_t must alias proto::detail::");
+
+// crash_event_matches_survivors predicate identity (true on canonical).
+using TestCanonicalEvent = fb::crash_event_for_t<
+    test_fixy_bridge::BridgeTestPeer, test_fixy_bridge::BridgeTestRes>;
+static_assert(fb::crash_event_matches_survivors<TestCanonicalEvent>::value);
+static_assert(fb::crash_event_matches_survivors_v<TestCanonicalEvent>);
+
+// Cardinality mirror — must match Bridge.h sentinel's crash_event_surface_cardinality.
+static_assert(
+    ::crucible::fixy::bridge::self_test::crash_event_surface_cardinality == 6,
+    "fixy::bridge:: crash-event surface cardinality drifted from 6 — "
+    "Bridge.h sentinel block and this TU must update in lockstep.");
 
 int main() {
     // The substrate's own tests exercise the wrap round-trip.  This
