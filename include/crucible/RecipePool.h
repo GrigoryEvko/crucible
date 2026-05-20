@@ -45,29 +45,35 @@
 #include <crucible/effects/EffectRow.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
-#include <crucible/safety/Borrowed.h>
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/IsBorrowedRef.h>
-#include <crucible/safety/Mutation.h>
-#include <crucible/safety/Post.h>
-#include <crucible/safety/Pre.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/fixy/Wrap.h>             // FIXY-U-096j: BorrowedRef + PowerOfTwo + Monotonic + IsBorrowedRef
+#include <crucible/safety/Decide.h>         // decide::* lives at top-level, not under safety::
+#include <crucible/safety/Post.h>           // CRUCIBLE_POST macro (substrate dep)
+#include <crucible/safety/Pre.h>            // CRUCIBLE_PRE macro (substrate dep)
 
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
+// FIXY-U-096j production migration: BorrowedRef / PowerOfTwo / Monotonic /
+// IsBorrowedRef reached through the fixy:: umbrella instead of safety::*
+// directly.  RecipePool.h is runtime-tier (fan-in: RecipeRegistry.h + 4
+// positive tests + 4 neg-compile fixtures, all runtime-tier).  The
+// fixy/Wrap.h umbrella's transitive Arena.h pull is redundant — RecipePool
+// already includes Arena.h directly above — not cyclic.  Bug class:
+// interned-by-hash NumericalRecipe pool + Swiss-table backing + arena-
+// borrow lifetime.
+
 namespace crucible {
 
 class CRUCIBLE_OWNER RecipePool {
  public:
-  using ArenaBorrow = safety::BorrowedRef<Arena>;
-  using Capacity = safety::PowerOfTwo<uint32_t>;
-  using Size     = safety::Monotonic<uint32_t>;
+  using ArenaBorrow = fixy::wrap::BorrowedRef<Arena>;
+  using Capacity = fixy::wrap::PowerOfTwo<uint32_t>;
+  using Size     = fixy::wrap::Monotonic<uint32_t>;
   using init_required_row = effects::Row<effects::Effect::Init>;
 
-  static_assert(safety::extract::IsBorrowedRef<ArenaBorrow>);
+  static_assert(fixy::wrap::IsBorrowedRef<ArenaBorrow>);
 
   // Initial slot capacity.  Must be a power of two and ≥ 8.  Load
   // factor is capped at 50%, so `initial_capacity` accommodates
