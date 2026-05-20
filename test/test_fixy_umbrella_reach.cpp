@@ -157,6 +157,58 @@ static_assert(umbrella_reach_contract_demo(7) == 14,
     "umbrella reach: CRUCIBLE_PRE/CRUCIBLE_POST must expand cleanly "
     "from <crucible/Fixy.h>.");
 
+// ─── 5. SessDecl.h reach — fixy::sess::declassify:: (FIXY-U-052a) ─
+//
+// Witness that the wire-policy payload-marker surface
+// (DeclassifyOnSend + 7 traits/concept) reaches the consumer through
+// the umbrella include alone.  If a future regression strips
+// `#include <crucible/fixy/SessDecl.h>` from Fixy.h's Phase-C block,
+// the next claims fail to compile — the in-header sentinels inside
+// SessDecl.h would NOT catch that drift (they fire only at direct-
+// include sites), so the umbrella-reach gate lives here.
+
+namespace fsd = ::crucible::fixy::sess::declassify;
+
+namespace u052a_reach_probe {
+struct WirePayload {};
+using WireMsg = fsd::DeclassifyOnSend<WirePayload,
+    ::crucible::safety::secret_policy::WireSerialize>;
+}
+
+// 5a. DeclassifyOnSend wrapper resolves through the umbrella.
+static_assert(std::is_same_v<u052a_reach_probe::WireMsg,
+    ::crucible::safety::DeclassifyOnSend<u052a_reach_probe::WirePayload,
+        ::crucible::safety::secret_policy::WireSerialize>>,
+    "umbrella reach: fixy::sess::declassify::DeclassifyOnSend must "
+    "alias safety::DeclassifyOnSend when reached via the umbrella.  "
+    "If this red-lights, fixy/SessDecl.h is not pulled in by "
+    "<crucible/Fixy.h>.");
+
+// 5b. DeclassifyOnSendable concept routes through the umbrella.
+static_assert( fsd::DeclassifyOnSendable<u052a_reach_probe::WireMsg>,
+    "umbrella reach: fixy::sess::declassify::DeclassifyOnSendable "
+    "must accept DeclassifyOnSend specialisations.");
+static_assert(!fsd::DeclassifyOnSendable<u052a_reach_probe::WirePayload>,
+    "umbrella reach: fixy::sess::declassify::DeclassifyOnSendable "
+    "must reject bare payloads.");
+
+// 5c. wire_payload_type_t extracts inner T (with passthrough fallback).
+static_assert(std::is_same_v<
+    fsd::wire_payload_type_t<u052a_reach_probe::WireMsg>,
+    u052a_reach_probe::WirePayload>,
+    "umbrella reach: fixy::sess::declassify::wire_payload_type_t must "
+    "extract the inner payload through the umbrella.");
+static_assert(std::is_same_v<fsd::wire_payload_type_t<int>, int>,
+    "umbrella reach: fixy::sess::declassify::wire_payload_type_t must "
+    "pass non-DeclassifyOnSend types through unchanged.");
+
+// 5d. wire_policy_t extracts the wire-policy tag.
+static_assert(std::is_same_v<
+    fsd::wire_policy_t<u052a_reach_probe::WireMsg>,
+    ::crucible::safety::secret_policy::WireSerialize>,
+    "umbrella reach: fixy::sess::declassify::wire_policy_t must "
+    "extract the wire-policy tag through the umbrella.");
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }
