@@ -24,7 +24,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/safety/Bits.h>
+#include <crucible/fixy/Wrap.h>     // FIXY-U-096w: Bits via the fixy umbrella
 
 #include <bit>
 #include <cstdint>
@@ -187,7 +187,7 @@ struct alignas(16) NumericalRecipe {
   // compile error: Bits<NodeFlags> and Bits<RecipeFlags> are distinct
   // template instantiations and the friend operators only match the
   // same instantiation.
-  safety::Bits<RecipeFlags> flags{};                                    // 1B
+  fixy::wrap::Bits<RecipeFlags> flags{};                                // 1B
   // hash is Family-A (persistent) per Types.h taxonomy.  Computed at
   // intern time in the RecipePool.  Drives Phase E recipe picker,
   // kernel CSE, and L1 cache keys.
