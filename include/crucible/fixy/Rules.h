@@ -136,6 +136,95 @@ using region_tag_of_t =
 
 }  // namespace pack
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-U-062: §6.8 ValidComposition + RuleCode aggregator surface
+// ═════════════════════════════════════════════════════════════════════
+//
+// The 20 rule tags (R001..R020) below name the §6.8 collision rules,
+// but the AGGREGATOR that decides whether a given `Fn<...>` instance
+// passes all 20 simultaneously was previously reachable only via
+// `safety::fn::ValidComposition<F>` (the `concept` gate at
+// safety/Fn.h line 327) and `safety::fn::CollisionRules<F>` (the
+// trait it consults).  Likewise `RuleCode` (the numeric enum
+// projection of the rule tags) and its bijection helpers lived only
+// inside the `safety::fn::collision::` namespace, requiring callers
+// who wanted to query "which rule does this tag map to?" to descend
+// into the substrate.
+//
+// This block surfaces the aggregator + bijection at `fixy::rule::`
+// alongside the rule tags themselves, completing the §6.8 surface so
+// callers can spell every layer of the composition contract through
+// the fixy umbrella:
+//
+//   * RuleCode                  — numeric enum (20 entries + None)
+//   * ValidComposition<F>       — primary `concept` gate (used by
+//                                 `safety::Fn<...>` class-body
+//                                 static_assert and by every direct
+//                                 `Fn<Bad>` instantiation)
+//   * CollisionRules<F>         — backing trait that ValidComposition
+//                                 reads `::valid` from
+//   * rule_code_of<Tag>         — Tag → RuleCode map (struct)
+//   * rule_code_of_v<Tag>       — Tag → RuleCode (variable template)
+//   * rule_tag_t<RuleCode>      — RuleCode → Tag (reverse map)
+//   * rule_bijection_v<R>       — variable template asserting bijection
+//   * I002_OK..F002_OK          — 20 per-rule concepts (positive form;
+//                                 each evaluates true iff its rule's
+//                                 collision predicate does NOT fire)
+//   * AllRulesOK<F>             — aggregate of all 20 (== ValidComposition,
+//                                 spelled as the conjunction for
+//                                 debugging which rule fires)
+//
+// ── Why per-rule concepts ─────────────────────────────────────────
+//
+// Direct `safety::Fn<Bad...>` instantiation fires the class-body
+// `static_assert(ValidComposition<Fn>)`.  But when a downstream
+// metaprogram wants to ask "is rule R013 satisfied for this
+// particular Fn?" without computing the whole composition,
+// `fixy::rule::L004_OK<F>` is the cheapest, most legible cite.  The
+// 20 per-rule concepts are also useful for negative-compile fixtures
+// that test individual rule firings.
+//
+// ── Substrate location ────────────────────────────────────────────
+//
+//   safety::fn::          ValidComposition, CollisionRules
+//   safety::fn::collision::  RuleCode, rule_code_of[_v],
+//                            rule_tag_t, rule_bijection_v,
+//                            I002_OK..F002_OK, AllRulesOK
+
+// ─── RuleCode enum + bijection helpers ────────────────────────────
+using ::crucible::safety::fn::collision::RuleCode;
+using ::crucible::safety::fn::collision::rule_code_of;
+using ::crucible::safety::fn::collision::rule_code_of_v;
+using ::crucible::safety::fn::collision::rule_tag_t;
+using ::crucible::safety::fn::collision::rule_bijection_v;
+
+// ─── ValidComposition concept gate + backing trait ────────────────
+using ::crucible::safety::fn::ValidComposition;
+using ::crucible::safety::fn::CollisionRules;
+
+// ─── 20 per-rule concepts + AllRulesOK aggregate ──────────────────
+using ::crucible::safety::fn::collision::I002_OK;
+using ::crucible::safety::fn::collision::L002_OK;
+using ::crucible::safety::fn::collision::E044_OK;
+using ::crucible::safety::fn::collision::I003_OK;
+using ::crucible::safety::fn::collision::M012_OK;
+using ::crucible::safety::fn::collision::P002_OK;
+using ::crucible::safety::fn::collision::I004_OK;
+using ::crucible::safety::fn::collision::N002_OK;
+using ::crucible::safety::fn::collision::L003_OK;
+using ::crucible::safety::fn::collision::M011_OK;
+using ::crucible::safety::fn::collision::S010_OK;
+using ::crucible::safety::fn::collision::S011_OK;
+using ::crucible::safety::fn::collision::L004_OK;
+using ::crucible::safety::fn::collision::B001_OK;
+using ::crucible::safety::fn::collision::H001_OK;
+using ::crucible::safety::fn::collision::H002_OK;
+using ::crucible::safety::fn::collision::L005_OK;
+using ::crucible::safety::fn::collision::F001_OK;
+using ::crucible::safety::fn::collision::H003_OK;
+using ::crucible::safety::fn::collision::F002_OK;
+using ::crucible::safety::fn::collision::AllRulesOK;
+
 // ─── R001..R020 aliases ───────────────────────────────────────────
 
 using R001 = ::crucible::safety::fn::collision::I002_ClassifiedFailPayload;
@@ -193,5 +282,96 @@ static_assert(rule_code_of_v<R019> == RuleCode::H003);
 static_assert(rule_code_of_v<R020> == RuleCode::F002);
 
 }  // namespace detail::rule_self_test
+
+// ── FIXY-U-062: in-header sentinel for the §6.8 aggregator surface ─
+//
+// Same dual-export discipline as fixy/Bridge.h::self_test +
+// fixy/Diag.h::self_test + fixy/Handle.h::self_test.  Drift in the
+// substrate's ValidComposition / RuleCode / per-rule concepts
+// surfaces here at every consumer's include time, NOT only inside
+// test_fixy_rule_helpers.cpp.
+
+namespace u062_self_test {
+
+// 1. RuleCode enum reaches through the alias and the catalog
+//    cardinality is exactly 20 + None (sentinel).
+static_assert(RuleCode::I002 == ::crucible::safety::fn::collision::RuleCode::I002);
+static_assert(RuleCode::F002 == ::crucible::safety::fn::collision::RuleCode::F002);
+static_assert(RuleCode::None == ::crucible::safety::fn::collision::RuleCode::None);
+
+// 2. ValidComposition resolves through the alias for the canonical
+//    well-formed Fn<int> probe (substrate's own positive witness at
+//    safety/Fn.h:572).  This pins both ValidComposition's identity
+//    AND that the using-decl correctly imports the concept (not just
+//    a name).
+static_assert(ValidComposition<::crucible::safety::fn::Fn<int>>,
+    "fixy::rule::ValidComposition must accept the Fn<int> positive "
+    "probe — substrate identity for the §6.8 gate.");
+
+// 3. CollisionRules<F>::valid reaches through the alias and agrees
+//    with ValidComposition (the concept reads `::valid` from the
+//    trait — bypassing the concept lets us check the trait alone).
+static_assert(CollisionRules<::crucible::safety::fn::Fn<int>>::valid,
+    "fixy::rule::CollisionRules<F>::valid must alias substrate trait");
+
+// 4. AllRulesOK aggregate evaluates true on the positive probe — the
+//    conjunction of 20 per-rule concepts equals ValidComposition.
+static_assert(AllRulesOK<::crucible::safety::fn::Fn<int>>,
+    "fixy::rule::AllRulesOK must hold on the canonical probe");
+
+// 5. bijection — rule_code_of(rule_tag_t<R>) == R, witnessed via the
+//    alias.  Spot-check three rules from different catalog regions
+//    (Phase-0, Phase-B-early, Phase-B-late).
+static_assert(rule_bijection_v<RuleCode::I002>);
+static_assert(rule_bijection_v<RuleCode::L004>);
+static_assert(rule_bijection_v<RuleCode::F002>);
+
+// 6. rule_tag_t alias resolves to the substrate's tag class.
+static_assert(std::is_same_v<
+    rule_tag_t<RuleCode::I002>,
+    ::crucible::safety::fn::collision::I002_ClassifiedFailPayload>,
+    "fixy::rule::rule_tag_t alias must resolve to substrate tag");
+
+// 7. Per-rule concepts I002_OK..F002_OK reach through the alias on
+//    the positive probe.  All 20 evaluate true for Fn<int>.
+static_assert(I002_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(L002_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(E044_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(I003_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(M012_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(P002_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(I004_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(N002_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(L003_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(M011_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(S010_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(S011_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(L004_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(B001_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(H001_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(H002_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(L005_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(F001_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(H003_OK<::crucible::safety::fn::Fn<int>>);
+static_assert(F002_OK<::crucible::safety::fn::Fn<int>>);
+
+// 8. Cardinality witness — count of items surfaced by U-062 (in
+//    addition to the 20 R001..R020 tag aliases already shipped).
+//    Drift in either direction (substrate adds a new rule, or a
+//    using-decl above is removed) must update this number.
+//
+//      RuleCode + rule_code_of + rule_code_of_v + rule_tag_t +
+//        rule_bijection_v                                   = 5
+//      ValidComposition + CollisionRules                    = 2
+//      I002_OK..F002_OK (20 per-rule concepts)              = 20
+//      AllRulesOK                                            = 1
+//                                                          ----
+//                                                            28
+constexpr int u062_surface_cardinality = 28;
+static_assert(u062_surface_cardinality == 28,
+    "fixy::rule:: U-062 surface cardinality drifted — update Rules.h "
+    "using-decls AND this sentinel in lockstep.");
+
+}  // namespace u062_self_test
 
 }  // namespace crucible::fixy::rule
