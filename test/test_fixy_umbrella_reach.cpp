@@ -498,6 +498,32 @@ static_assert(fsdiag::catalog_size == 23);
 // 6g-c. Diagnostic<> wrapper reaches the consumer.
 static_assert(fsdiag::is_diagnostic_v<fsdiag::Diagnostic<fsdiag::SubtypeMismatch, int>>);
 
+// ─── 6h. SessPayloadSubsort.h reach — payload axioms (FIXY-U-052h) ───
+//
+// SessPayloadSubsort.h ships only is_subsort<...> specialisations (no
+// new names).  The load-bearing reach claim is VISIBILITY: pulling the
+// umbrella must make the payload-subsort specialisations visible, so
+// `fixy::sess::subtype::is_subsort_v<Refined<positive,int>, int>`
+// resolves to the NARROWING specialisation (true) — not the primary
+// template (false).  If Fixy.h stops pulling fixy/SessPayloadSubsort.h,
+// these flip to false and the static_asserts fire.  (`fss` is the
+// fixy::sess::subtype alias from §6e.)
+
+// 6h-a. Narrowing axiom reaches through the umbrella (true, not false).
+static_assert(fss::is_subsort_v<
+    ::crucible::safety::Refined<::crucible::safety::positive, int>, int>,
+    "umbrella reach: the Refined<P,T> ⩽ T narrowing axiom must be "
+    "visible — if false, fixy/SessPayloadSubsort.h is not pulled by "
+    "<crucible/Fixy.h> and the primary template silently won.");
+
+// 6h-b. Safe-to-erase provenance flows; unsafe provenance does NOT.
+static_assert(fss::is_subsort_v<
+    ::crucible::safety::Tagged<int, ::crucible::safety::source::Sanitized>, int>);
+static_assert(!fss::is_subsort_v<
+    ::crucible::safety::Tagged<int, ::crucible::safety::source::External>, int>,
+    "trust-boundary discipline must reach the umbrella consumer: "
+    "External provenance does not flow to bare T.");
+
 // ─── 7. fixy::wrap:: saturating-arithmetic free functions (FIXY-U-096b) ──
 //
 // Witness that the saturating-arithmetic primitives required by
