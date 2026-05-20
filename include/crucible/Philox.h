@@ -37,7 +37,7 @@
 //
 // `Philox::generate_det` / `to_uniform_det` / `to_uniform_d_det` /
 // `box_muller_det` / `op_key_det` are DetSafe-PINNED surfaces — they
-// return `safety::DetSafe<DetSafeTier_v::PhiloxRng, T>` (or `Pure`
+// return `crucible::fixy::wrap::DetSafe<DetSafeTier_v::PhiloxRng, T>` (or `Pure`
 // for `op_key_det` whose inputs are themselves Pure).  Production
 // callers (kernel emit, dropout op, sampling op, normal-init op,
 // Box-Muller-based gradient noise) MUST use the `_det` variants;
@@ -51,7 +51,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/safety/DetSafe.h>
+#include <crucible/fixy/Wrap.h>   // FIXY-U-096q: DetSafe / DetSafeTier_v / DetSafeLattice via the fixy umbrella
 
 #include <array>
 #include <cmath>
@@ -150,7 +150,7 @@ struct Philox {
     // FOUND-G17: DetSafe-pinned production surface
     // ═══════════════════════════════════════════════════════════════
     //
-    // These wrappers return `safety::DetSafe<DetSafeTier_v::PhiloxRng,
+    // These wrappers return `crucible::fixy::wrap::DetSafe<DetSafeTier_v::PhiloxRng,
     // T>` (or `Pure` for `op_key_det`).  Production callers MUST
     // route through the `_det` surface; the type-level pin is what
     // the Cipher write-fence consumes to refuse non-deterministic
@@ -213,16 +213,16 @@ struct Philox {
     // caveat: they perform a single IEEE 754 multiplication that
     // is bit-stable across all conforming implementations.
 
-    using DetSafePhiloxCtr = safety::DetSafe<
-        safety::DetSafeTier_v::PhiloxRng, Ctr>;
-    using DetSafePhiloxFloat = safety::DetSafe<
-        safety::DetSafeTier_v::PhiloxRng, float>;
-    using DetSafePhiloxDouble = safety::DetSafe<
-        safety::DetSafeTier_v::PhiloxRng, double>;
-    using DetSafePhiloxFloatPair = safety::DetSafe<
-        safety::DetSafeTier_v::PhiloxRng, std::pair<float, float>>;
-    using DetSafePureKey = safety::DetSafe<
-        safety::DetSafeTier_v::Pure, uint64_t>;
+    using DetSafePhiloxCtr = crucible::fixy::wrap::DetSafe<
+        crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, Ctr>;
+    using DetSafePhiloxFloat = crucible::fixy::wrap::DetSafe<
+        crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, float>;
+    using DetSafePhiloxDouble = crucible::fixy::wrap::DetSafe<
+        crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, double>;
+    using DetSafePhiloxFloatPair = crucible::fixy::wrap::DetSafe<
+        crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, std::pair<float, float>>;
+    using DetSafePureKey = crucible::fixy::wrap::DetSafe<
+        crucible::fixy::wrap::DetSafeTier_v::Pure, uint64_t>;
 
     [[nodiscard]] static constexpr DetSafePhiloxCtr
     generate_det(Ctr ctr, Key key) {
@@ -251,12 +251,12 @@ struct Philox {
     // stronger gate.  This is the LOAD-BEARING REJECTION at the
     // chain composition surface.
 
-    template <safety::DetSafeTier_v KeyTier>
-        requires (safety::DetSafeLattice::leq(
-            safety::DetSafeTier_v::PhiloxRng, KeyTier))
+    template <crucible::fixy::wrap::DetSafeTier_v KeyTier>
+        requires (crucible::fixy::wrap::DetSafeLattice::leq(
+            crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, KeyTier))
     [[nodiscard]] static constexpr DetSafePhiloxCtr
     generate_det(uint64_t offset,
-                 safety::DetSafe<KeyTier, uint64_t> key) {
+                 crucible::fixy::wrap::DetSafe<KeyTier, uint64_t> key) {
         return DetSafePhiloxCtr{generate(offset, std::move(key).consume())};
     }
 
