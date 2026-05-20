@@ -51,11 +51,19 @@ static_assert(std::is_same_v<
     fhand::PublishCommitCell<th::ProbeT, th::ProbeProto>,
     safe::PublishCommitCell<th::ProbeT, th::ProbeProto>>);
 
+// FIXY-U-016c — open_read + open_write_truncate free-function identity.
+static_assert(std::is_same_v<
+    decltype(&fhand::open_read),
+    decltype(&safe::open_read)>);
+static_assert(std::is_same_v<
+    decltype(&fhand::open_write_truncate),
+    decltype(&safe::open_write_truncate)>);
+
 // ─── 2. Cardinality witness mirror (drift catches at TU + header) ─
 
 static_assert(
-    ::crucible::fixy::handle::self_test::handle_alias_cardinality == 11,
-    "fixy::handle:: cardinality drifted from 11 — Handle.h's sentinel "
+    ::crucible::fixy::handle::self_test::handle_alias_cardinality == 13,
+    "fixy::handle:: cardinality drifted from 13 — Handle.h's sentinel "
     "block and this TU must update in lockstep.");
 
 // ─── 3. End-to-end RAII through the fixy:: alias ──────────────────

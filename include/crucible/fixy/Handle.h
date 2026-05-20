@@ -104,6 +104,15 @@ using ::crucible::safety::AlignedBuffer;
 // publication.
 using ::crucible::safety::PublishCommitCell;
 
+// ── open_read / open_write_truncate — FileHandle free factories ────
+// (FIXY-U-016c) `std::expected<FileHandle, std::error_code>` factories
+// for read-only / write-create-truncate.  Closes the last fixy-routed
+// gap in Cipher.h's head-load + spill-write paths (FIXY-U-092).  The
+// using-decl brings the entire safety::open_* overload set into
+// fixy::handle::; ADL routes through the substrate symbol unchanged.
+using ::crucible::safety::open_read;
+using ::crucible::safety::open_write_truncate;
+
 }  // namespace crucible::fixy::handle
 
 // ─── Dual-export sentinel — FIXY-U-016 ─────────────────────────────
@@ -183,10 +192,30 @@ static_assert(std::is_same_v<
     "safety::PublishCommitCell — Pinned-channel identity is load-bearing "
     "for cross-thread publish/commit ordering.");
 
-// Cardinality witness: 11 aliases surfaced; future additions to
+// FIXY-U-016c — open_read / open_write_truncate free-function identity.
+// Non-template free functions: identity verified by pointer-of-function
+// decltype equality (same technique as fixy/Wrap.h's saturating-arith
+// sentinels).  If substrate signature changes (e.g., new mode_t default
+// or path-encoding parameter), this sentinel fires before the
+// production Cipher.h call sites notice.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::handle::open_read),
+    decltype(&::crucible::safety::open_read)>,
+    "fixy::handle::open_read must alias safety::open_read — "
+    "FileHandle factory identity is load-bearing for Cipher.h head-load "
+    "+ obj-spill error-channel discipline.");
+
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::handle::open_write_truncate),
+    decltype(&::crucible::safety::open_write_truncate)>,
+    "fixy::handle::open_write_truncate must alias "
+    "safety::open_write_truncate — Cipher spill / federation entry "
+    "write path depends on identity preservation.");
+
+// Cardinality witness: 13 aliases surfaced; future additions to
 // handles/ MUST extend this block + add a substrate type below.
-constexpr int handle_alias_cardinality = 11;
-static_assert(handle_alias_cardinality == 11,
+constexpr int handle_alias_cardinality = 13;
+static_assert(handle_alias_cardinality == 13,
     "fixy::handle:: cardinality changed — update Handle.h sentinel "
     "block to track the substrate handles/ surface.");
 
