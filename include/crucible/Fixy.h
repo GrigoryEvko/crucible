@@ -187,6 +187,7 @@
 #include <crucible/fixy/SessDiagnostic.h>
 #include <crucible/fixy/SessPayloadSubsort.h>
 #include <crucible/fixy/SessContext.h>
+#include <crucible/fixy/SessGrade.h>
 #include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/fixy/Wrap.h>

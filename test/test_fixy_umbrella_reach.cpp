@@ -559,6 +559,44 @@ static_assert(std::is_same_v<
 static_assert(fsctx::contains_key_v<u052i_reach::Ctx,
                                     u052i_reach::Sess, u052i_reach::RoleC>);
 
+// ─── 6j. SessGrade.h reach — fixy::sess::grade:: (FIXY-U-052j) ───────
+//
+// Witness that the Graded-product grade-extraction surface (axis tags +
+// protocol_grade folds + per-axis projections + aggregate satisfaction)
+// reaches the consumer through the umbrella include alone.  Closing
+// slice of the U-052 umbrella (#1742).  If a future regression strips
+// `#include <crucible/fixy/SessGrade.h>` from Fixy.h's Phase-C block,
+// the next claims fail to compile.
+
+namespace fsg = ::crucible::fixy::sess::grade;
+
+namespace u052j_reach {
+struct Payload {};
+using P = ::crucible::safety::proto::Send<
+    ::crucible::safety::NumericalTier<
+        ::crucible::safety::proto::Tolerance::BITEXACT, Payload>,
+    ::crucible::safety::proto::End>;
+}  // namespace u052j_reach
+
+// 6j-a. Axis tag resolves through the umbrella to the substrate.
+static_assert(std::is_same_v<fsg::axis::NumericalTier,
+                             ::crucible::safety::proto::axis::NumericalTier>,
+    "umbrella reach: fixy::sess::grade::axis::NumericalTier must alias "
+    "safety::proto::axis::NumericalTier.  If this red-lights, "
+    "fixy/SessGrade.h is not pulled in by <crucible/Fixy.h>.");
+
+// 6j-b. Grade extraction + per-axis projection route through.
+static_assert(fsg::protocol_grade_numerical_tier_v<u052j_reach::P>
+                  == ::crucible::safety::proto::Tolerance::BITEXACT);
+static_assert(fsg::grade_for_axis_v<fsg::axis::NumericalTier,
+    ::crucible::safety::NumericalTier<
+        ::crucible::safety::proto::Tolerance::BITEXACT, u052j_reach::Payload>>
+                  == ::crucible::safety::proto::Tolerance::BITEXACT);
+
+// 6j-c. Aggregate self-satisfaction routes through.
+static_assert(fsg::protocol_grade_aggregate_satisfies_v<u052j_reach::P,
+                                                        u052j_reach::P>);
+
 // ─── 7. fixy::wrap:: saturating-arithmetic free functions (FIXY-U-096b) ──
 //
 // Witness that the saturating-arithmetic primitives required by
