@@ -2258,6 +2258,16 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_session_view_wrong_position
 crucible_neg_compile_fixy_test(neg_fixy_sess_session_view_non_handle
     "static assertion failed|HandleIsAt|mint_session_view")
 
+# FIXY-U-074n HS14 floor: fixy::source::federation::mint_self_signed_handshake
+# gates via `requires FederationOrgTag<Org>` = is_class_v && is_empty_v.
+# (Substrate-side equivalents are in test/safety_neg/, which gen-mint-inventory
+# does not count toward the fixy umbrella.)  Two distinct classes: non-class
+# Org (int → fails is_class_v) vs non-empty class Org (fails is_empty_v).
+crucible_neg_compile_fixy_test(neg_fixy_source_mint_self_signed_non_class_org
+    "constraints not satisfied|FederationOrgTag|no matching function|is_class")
+crucible_neg_compile_fixy_test(neg_fixy_source_mint_self_signed_non_empty_org
+    "constraints not satisfied|FederationOrgTag|no matching function|is_empty")
+
 # FIXY-U-074d HS14 floor: fixy::substr::mint_substrate_session sat at
 # HS14:0.  Two distinct rejection conjuncts of its requires-clause
 # (IsBridgeableDirection ∧ SubstrateFitsCtxResidency ∧
