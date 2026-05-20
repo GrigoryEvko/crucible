@@ -14,16 +14,25 @@
 // from the foreground replay after init returns. Not movable — ptr_table_
 // entries are interior pointers into pool_.
 
+// FIXY-U-096f production migration: AllocClass / ScopedView / mint_view /
+// NonNull / no_scoped_view_field_check / Refined reached through the
+// fixy::wrap umbrella; saturating_add reached through fixy::struct_
+// (the safety/Checked.h free-function family re-exports under the
+// trailing-underscore namespace because `struct` is a C++ keyword).
+// PoolAllocator.h is a runtime-tier header (fan-in: ReplayEngine.h,
+// CrucibleContext.h) with no substrate-to-PoolAllocator edge — the full
+// fixy/Wrap.h + fixy/Struct.h umbrella is cycle-safe.  safety/Decide.h
+// stays: `crucible::decide::*` lives at top-level (not under safety::).
+// safety/Pre.h + safety/Post.h stay: CRUCIBLE_PRE / CRUCIBLE_POST are
+// macro substrate deps.
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/warden/Registry.h>
-#include <crucible/safety/AllocClass.h>
-#include <crucible/safety/Checked.h>
+#include <crucible/fixy/Struct.h>
+#include <crucible/fixy/Wrap.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/ScopedView.h>
 
 #include <cassert>
 #include <cstdint>
@@ -144,7 +153,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
       // audit that re-derives the bound tightening (e.g., kMaxPoolBytes
       // bumped to 1 TB) can verify the predicate stays true through
       // the same grep target.
-      const uint64_t padded     = safety::saturating_add<uint64_t>(
+      const uint64_t padded     = ::crucible::fixy::struct_::saturating_add<uint64_t>(
           pool_bytes_, page_align - 1);
       const uint64_t alloc_size = padded & ~(page_align - 1);
       pool_ = std::aligned_alloc(page_align, alloc_size);
@@ -279,14 +288,14 @@ struct CRUCIBLE_OWNER PoolAllocator {
   // guarantees slot_ptr / register_external / detach are reachable
   // only when the pool is initialized.
   using InitializedView =
-      crucible::safety::ScopedView<PoolAllocator, pool_state::Initialized>;
+      crucible::fixy::wrap::ScopedView<PoolAllocator, pool_state::Initialized>;
 
   // Factory: mints an InitializedView for `*this`.  Contract fires if
   // the pool is not actually initialized, matching the runtime guard.
   [[nodiscard]] CRUCIBLE_INLINE InitializedView mint_initialized_view() const noexcept
       pre (is_initialized())
   {
-    return crucible::safety::mint_view<pool_state::Initialized>(*this);
+    return crucible::fixy::wrap::mint_view<pool_state::Initialized>(*this);
   }
 
   // Hot path — requires InitializedView proof.
@@ -349,7 +358,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
   // External registration — requires InitializedView proof.
   CRUCIBLE_INLINE void register_external(
       SlotId sid,
-      crucible::safety::NonNull<void*> ptr,
+      crucible::fixy::wrap::NonNull<void*> ptr,
       InitializedView const&) noexcept
   {
     CRUCIBLE_PRE(num_slots_ > 0u);
@@ -436,7 +445,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
   // (no allocator at all), and slot pointers DO go through an
   // allocator at init time.
   [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
-  inline safety::AllocClass<safety::AllocClassTag_v::Pool, void*>
+  inline ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>
   slot_ptr_pinned(SlotId sid, InitializedView const& view) const noexcept
       CRUCIBLE_LIFETIMEBOUND
   {
@@ -444,7 +453,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // (CONTRACT-103 cite); slot_ptr_pinned is a thin wrapper that
     // adds the AllocClass<Pool, void*> EBO-collapsed pin.  No
     // duplicate cite — the inner CRUCIBLE_PRE pair fires once.
-    return safety::AllocClass<safety::AllocClassTag_v::Pool, void*>{
+    return ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>{
         slot_ptr(sid, view)};
   }
 
@@ -457,9 +466,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
   // Returned pointer can be null when pool_bytes_ == 0; callers must
   // discriminate via the AllocClass::peek() result.
   [[nodiscard, gnu::pure]]
-  inline safety::AllocClass<safety::AllocClassTag_v::Pool, void*>
+  inline ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>
   pool_base_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND {
-    return safety::AllocClass<safety::AllocClassTag_v::Pool, void*>{pool_};
+    return ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Pool, void*>{pool_};
   }
 
   // HugePage-tier-pinned base pointer.  Requires pool_bytes_ ≥
@@ -469,11 +478,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
   // memory" use this overload; the precondition fence rejects the
   // small-pool case at the boundary.
   [[nodiscard, gnu::pure]]
-  inline safety::AllocClass<safety::AllocClassTag_v::HugePage, void*>
+  inline ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::HugePage, void*>
   pool_base_huge_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND
       pre (pool_bytes_ >= crucible::warden::kHugePageBytes)
   {
-    return safety::AllocClass<safety::AllocClassTag_v::HugePage, void*>{pool_};
+    return ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::HugePage, void*>{pool_};
   }
 
   // ── ScopedView predicates (ADL-discovered by safety::mint_view) ──
@@ -530,6 +539,6 @@ static_assert(alignof(PoolAllocator) == 8);
 // one in a field would be an escape.  GCC 16 reflection walks the
 // struct at compile time and fails this if any member (even nested
 // through optional / vector / variant / etc.) is a ScopedView.
-static_assert(crucible::safety::no_scoped_view_field_check<PoolAllocator>());
+static_assert(crucible::fixy::wrap::no_scoped_view_field_check<PoolAllocator>());
 
 } // namespace crucible
