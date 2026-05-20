@@ -91,6 +91,14 @@
 //                          underlying/unwrap metafns + depth counter) —
 //                          used by Cipher.h federation entry payload +
 //                          cold-blob region persistence types (FIXY-U-052c)
+//   - fixy/SessEventLog.h — sessions/SessionEventLog.h typed append-only
+//                          event-log surface under fixy::sess::eventlog::*
+//                          (8 strong IDs + SessionOp + 3 classifier enums
+//                          + 3 op helpers + CipherEventPayload + SessionEvent
+//                          + StepIdKeyFn/StepIdLess + 3 hash-helper templates
+//                          + SessionEventLog) — used by Cipher.h HEAD/log
+//                          roll-forward + cold-tier SessionEvent drain
+//                          (FIXY-U-052d)
 //   - fixy/Struct.h      — structural (non-Graded) safety wrappers
 //                          (Pinned / NonMovable / NotInherited /
 //                          FinalBy / Checked.h primitives /
@@ -173,6 +181,7 @@
 #include <crucible/fixy/SessDecl.h>
 #include <crucible/fixy/SessCT.h>
 #include <crucible/fixy/SessContentAddr.h>
+#include <crucible/fixy/SessEventLog.h>
 #include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/fixy/Wrap.h>

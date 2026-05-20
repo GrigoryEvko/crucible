@@ -331,6 +331,56 @@ static_assert(fsca::content_addressed_depth_v<u052c_reach_probe::Payload> == 0);
 static_assert(fsca::content_addressed_depth_v<
     fsca::ContentAddressed<u052c_reach_probe::Payload>> == 1);
 
+// ─── 6d. SessEventLog.h reach — fixy::sess::eventlog:: (FIXY-U-052d) ──
+//
+// Witness that the typed append-only event-log surface (8 strong IDs +
+// SessionOp + classifier enums + SessionEvent + StepIdKeyFn/StepIdLess +
+// SessionEventLog) reaches the consumer through the umbrella include
+// alone.  If a future regression strips
+// `#include <crucible/fixy/SessEventLog.h>` from Fixy.h's Phase-C block,
+// the next claims fail to compile — the in-header sentinels inside
+// SessEventLog.h fire only at direct-include sites, so the umbrella-reach
+// gate lives here.
+//
+// Production consumer: Cipher.h HEAD/log roll-forward + cold-tier
+// SessionEvent drain reach StepId / SessionTagId / StepIdKeyFn /
+// StepIdLess through this fixy path under FIXY-U-092.
+
+namespace fsel = ::crucible::fixy::sess::eventlog;
+
+// 6d-a. Strong-ID types resolve through the umbrella to the substrate.
+static_assert(std::is_same_v<fsel::StepId, ::crucible::safety::proto::StepId>,
+    "umbrella reach: fixy::sess::eventlog::StepId must alias "
+    "safety::proto::StepId.  If this red-lights, fixy/SessEventLog.h is "
+    "not pulled in by <crucible/Fixy.h>.");
+static_assert(std::is_same_v<fsel::SessionTagId,
+                             ::crucible::safety::proto::SessionTagId>);
+static_assert(std::is_same_v<fsel::StepIdKeyFn,
+                             ::crucible::safety::proto::StepIdKeyFn>);
+static_assert(std::is_same_v<fsel::StepIdLess,
+                             ::crucible::safety::proto::StepIdLess>);
+
+// 6d-b. SessionEvent record + 72-byte wire format reach the consumer.
+static_assert(std::is_same_v<fsel::SessionEvent,
+                             ::crucible::safety::proto::SessionEvent>);
+static_assert(sizeof(fsel::SessionEvent) == 72,
+    "umbrella reach: fixy::sess::eventlog::SessionEvent must keep its "
+    "72-byte cold-tier wire format through the umbrella.");
+
+// 6d-c. SessionEventLog primitive + SessionOp enum route through.
+static_assert(std::is_same_v<fsel::SessionEventLog,
+                             ::crucible::safety::proto::SessionEventLog>);
+static_assert(std::is_same_v<fsel::SessionOp,
+                             ::crucible::safety::proto::SessionOp>);
+
+// 6d-d. SessionEvent ALSO surfaces in fixy::contract::cipher:: — both
+// umbrella paths must alias the SAME substrate symbol (fixy-A4-011
+// dual-export discipline).
+static_assert(std::is_same_v<fsel::SessionEvent,
+                             ::crucible::fixy::contract::cipher::SessionEvent>,
+    "dual-export: fixy::sess::eventlog::SessionEvent and "
+    "fixy::contract::cipher::SessionEvent must be the same substrate type.");
+
 // ─── 7. fixy::wrap:: saturating-arithmetic free functions (FIXY-U-096b) ──
 //
 // Witness that the saturating-arithmetic primitives required by
