@@ -59,11 +59,22 @@
 #include <crucible/Platform.h>
 #include <crucible/RecipePool.h>
 #include <crucible/Types.h>
-#include <crucible/safety/Borrowed.h>
-#include <crucible/safety/IsBorrowedRef.h>
-#include <crucible/safety/NumericalTier.h>
-#include <crucible/safety/RecipeSpec.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Source.h>           // FIXY-U-096m: tags::source::JsonRegistry
+#include <crucible/fixy/Wrap.h>             // FIXY-U-096m: BorrowedRef + IsBorrowedRef + NumericalTier + Tolerance + ToleranceLattice + RecipeSpec + RecipeFamily + Tagged
+
+// FIXY-U-096m production migration: BorrowedRef / IsBorrowedRef / Tagged /
+// NumericalTier / Tolerance / ToleranceLattice / RecipeSpec / RecipeFamily /
+// source::JsonRegistry reached through the fixy:: umbrella instead of
+// safety::* directly.  RecipeRegistry.h is top-of-tree scaffold (fan-in: 0
+// — only tests consume it).  fixy/Wrap.h's transitive Arena.h pull is
+// redundant (RecipePool already pulls Arena, RecipeRegistry includes
+// RecipePool) — not cyclic.  Bug class: read-only-after-init registry +
+// JSON-parsed tagged Entries (Tagged<span, source::JsonRegistry>) +
+// NumericalTier<Tolerance, T> precision-axis projection + RecipeSpec<T>
+// recipe-family composition + ToleranceLattice partial ordering across
+// the 9-tier Tolerance enum.  fixy::tags::source::JsonRegistry path (NOT
+// fixy::source::JsonRegistry) per the federation-namespace reservation
+// (fixy-A4-013).
 
 #include <array>
 #include <cstddef>
@@ -104,7 +115,7 @@ enum class RecipeError : uint8_t {
 // ─── tolerance_for_dtype — output-precision → Tolerance tier mapping ─
 //
 // Static helper.  Used by tolerance_of() below to map a recipe's
-// out_dtype + determinism into the canonical safety::Tolerance class.
+// out_dtype + determinism into the canonical fixy::wrap::Tolerance class.
 // Exposed at namespace scope so call sites verifying the mapping
 // against an external recipe file can re-use it.
 //
@@ -113,18 +124,18 @@ enum class RecipeError : uint8_t {
 // budgets (e.g. ORDERED's ≤4 ULP at FP16) MUST NOT collapse into the
 // per-dtype 1-ULP class — that would defeat the load-bearing
 // admission-gate rejection.
-[[nodiscard, gnu::const]] constexpr safety::Tolerance
+[[nodiscard, gnu::const]] constexpr fixy::wrap::Tolerance
 tolerance_for_dtype(ScalarType dtype) noexcept {
   switch (dtype) {
-    case ScalarType::Double:        return safety::Tolerance::ULP_FP64;
-    case ScalarType::Float:         return safety::Tolerance::ULP_FP32;
-    case ScalarType::Half:          return safety::Tolerance::ULP_FP16;
-    case ScalarType::BFloat16:      return safety::Tolerance::ULP_FP16;
-    case ScalarType::Float8_e4m3fn: return safety::Tolerance::ULP_FP8;
-    case ScalarType::Float8_e5m2:   return safety::Tolerance::ULP_FP8;
+    case ScalarType::Double:        return fixy::wrap::Tolerance::ULP_FP64;
+    case ScalarType::Float:         return fixy::wrap::Tolerance::ULP_FP32;
+    case ScalarType::Half:          return fixy::wrap::Tolerance::ULP_FP16;
+    case ScalarType::BFloat16:      return fixy::wrap::Tolerance::ULP_FP16;
+    case ScalarType::Float8_e4m3fn: return fixy::wrap::Tolerance::ULP_FP8;
+    case ScalarType::Float8_e5m2:   return fixy::wrap::Tolerance::ULP_FP8;
     case ScalarType::Char:
-    case ScalarType::Byte:          return safety::Tolerance::ULP_INT8;
-    default:                        return safety::Tolerance::RELAXED;
+    case ScalarType::Byte:          return fixy::wrap::Tolerance::ULP_INT8;
+    default:                        return fixy::wrap::Tolerance::RELAXED;
   }
 }
 
@@ -147,13 +158,13 @@ tolerance_for_dtype(ScalarType dtype) noexcept {
 // for an FP16 recipe would let a 4-ULP recipe silently flow into a
 // consumer asking for 1-ULP-tolerance — the load-bearing bug class
 // the wrapper exists to prevent.  Conservative is correct.
-[[nodiscard, gnu::const]] constexpr safety::Tolerance
+[[nodiscard, gnu::const]] constexpr fixy::wrap::Tolerance
 tolerance_of(NumericalRecipe const& r) noexcept {
   switch (r.determinism) {
     case ReductionDeterminism::BITEXACT_STRICT:
       // 0 ULP byte-identical across every supported chip.  The only
       // recipe class that can claim BITEXACT.
-      return safety::Tolerance::BITEXACT;
+      return fixy::wrap::Tolerance::BITEXACT;
     case ReductionDeterminism::BITEXACT_TC:
       // 0-1 ULP cross-vendor at TC fragment level; admit at the
       // out_dtype's 1-ULP class.  Strictly stronger than ORDERED but
@@ -164,20 +175,20 @@ tolerance_of(NumericalRecipe const& r) noexcept {
       // ≤4 ULP (ORDERED) or unbounded (UNORDERED); coarser than any
       // 1-ULP class.  Conservative: admit only at RELAXED (lattice
       // bottom).  See header comment for rationale.
-      return safety::Tolerance::RELAXED;
+      return fixy::wrap::Tolerance::RELAXED;
     default:
       // Defensive: -Werror=switch-default requires this arm even
       // though the four-tier enum is exhaustive above.  Future
       // ReductionDeterminism additions land here as RELAXED until
       // their tolerance class is explicitly mapped.
-      return safety::Tolerance::RELAXED;
+      return fixy::wrap::Tolerance::RELAXED;
   }
 }
 
 // ─── recipe_family_of — recipe → RecipeFamily category ─────────────
 //
 // Maps a NumericalRecipe's `reduction_algo` to the RecipeFamily
-// algebraic-category label used by safety::RecipeSpec.  Unlike
+// algebraic-category label used by fixy::wrap::RecipeSpec.  Unlike
 // tolerance_of() this mapping is 1:1 categorical: each ReductionAlgo
 // is its own incomparable family (Linear / Pairwise / Kahan /
 // BlockStable are SIBLINGS in the partial-order RecipeFamilyLattice,
@@ -198,13 +209,13 @@ tolerance_of(NumericalRecipe const& r) noexcept {
 // RecipeSelect state, recipe-agnostic data) but never for a
 // concrete registry entry.  The default arm collapses to None as a
 // defensive position for future ReductionAlgo additions.
-[[nodiscard, gnu::const]] constexpr safety::RecipeFamily
+[[nodiscard, gnu::const]] constexpr fixy::wrap::RecipeFamily
 recipe_family_of(NumericalRecipe const& r) noexcept {
   switch (r.reduction_algo) {
-    case ReductionAlgo::PAIRWISE:     return safety::RecipeFamily::Pairwise;
-    case ReductionAlgo::LINEAR:       return safety::RecipeFamily::Linear;
-    case ReductionAlgo::KAHAN:        return safety::RecipeFamily::Kahan;
-    case ReductionAlgo::BLOCK_STABLE: return safety::RecipeFamily::BlockStable;
+    case ReductionAlgo::PAIRWISE:     return fixy::wrap::RecipeFamily::Pairwise;
+    case ReductionAlgo::LINEAR:       return fixy::wrap::RecipeFamily::Linear;
+    case ReductionAlgo::KAHAN:        return fixy::wrap::RecipeFamily::Kahan;
+    case ReductionAlgo::BLOCK_STABLE: return fixy::wrap::RecipeFamily::BlockStable;
     default:
       // Defensive: -Werror=switch-default requires this arm even
       // though the four-algo enum is exhaustive above.  Future
@@ -212,16 +223,16 @@ recipe_family_of(NumericalRecipe const& r) noexcept {
       // their family is explicitly named — strictly safe because
       // None subsumes nothing (admits returns false for any specific
       // family request).
-      return safety::RecipeFamily::None;
+      return fixy::wrap::RecipeFamily::None;
   }
 }
 
 class CRUCIBLE_OWNER RecipeRegistry {
  public:
-  using PoolBorrow = safety::BorrowedRef<RecipePool>;
+  using PoolBorrow = fixy::wrap::BorrowedRef<RecipePool>;
   using pure_projection_row = effects::Row<>;
 
-  static_assert(safety::extract::IsBorrowedRef<PoolBorrow>);
+  static_assert(fixy::wrap::IsBorrowedRef<PoolBorrow>);
 
   // Registry-local (name, recipe*) binding.  name points at a static
   // string literal (the starter table lives in the header's .rodata);
@@ -233,8 +244,8 @@ class CRUCIBLE_OWNER RecipeRegistry {
     const NumericalRecipe* recipe = nullptr;
   };
 
-  using Entries = safety::Tagged<
-      std::span<const Entry>, safety::source::JsonRegistry>;
+  using Entries = fixy::wrap::Tagged<
+      std::span<const Entry>, fixy::tags::source::JsonRegistry>;
 
   // Fixed starter-set size.  New starter recipes bump this; tests
   // assert entries().size() == STARTER_COUNT so a forgotten update
@@ -332,7 +343,7 @@ class CRUCIBLE_OWNER RecipeRegistry {
   //
   // Type-pinned overlay for by_name / by_hash that lifts the
   // recipe's runtime tolerance class into the type system at the
-  // boundary.  A consumer pinned at, e.g., `safety::Tolerance::
+  // boundary.  A consumer pinned at, e.g., `fixy::wrap::Tolerance::
   // BITEXACT` can ONLY obtain a `NumericalTier<BITEXACT, const
   // NumericalRecipe*>` from the registry — registry returns
   // ToleranceMismatch for any recipe whose `tolerance_of(*r)` does
@@ -370,10 +381,10 @@ class CRUCIBLE_OWNER RecipeRegistry {
   // the non-pinned variant.
 
   // ── by_name_pinned — name lookup with tier admission ────────────
-  template <safety::Tolerance T, typename CallerRow = pure_projection_row>
+  template <fixy::wrap::Tolerance T, typename CallerRow = pure_projection_row>
       requires effects::Subrow<CallerRow, pure_projection_row>
   [[nodiscard, gnu::pure]]
-  std::expected<safety::NumericalTier<T, const NumericalRecipe*>, RecipeError>
+  std::expected<fixy::wrap::NumericalTier<T, const NumericalRecipe*>, RecipeError>
   by_name_pinned(std::string_view name) const noexcept {
     auto base = by_name<CallerRow>(name);
     if (!base) return std::unexpected(base.error());
@@ -381,25 +392,25 @@ class CRUCIBLE_OWNER RecipeRegistry {
     // tolerance_of cannot be null (recipe pointer is guaranteed
     // non-null by by_name's contract).  Verify the runtime class
     // subsumes the static request: leq(Required, Actual).
-    if (!safety::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
+    if (!fixy::wrap::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
       return std::unexpected(RecipeError::ToleranceMismatch);
     }
-    return safety::NumericalTier<T, const NumericalRecipe*>{recipe};
+    return fixy::wrap::NumericalTier<T, const NumericalRecipe*>{recipe};
   }
 
   // ── by_hash_pinned — hash lookup with tier admission ────────────
-  template <safety::Tolerance T, typename CallerRow = pure_projection_row>
+  template <fixy::wrap::Tolerance T, typename CallerRow = pure_projection_row>
       requires effects::Subrow<CallerRow, pure_projection_row>
   [[nodiscard, gnu::pure]]
-  std::expected<safety::NumericalTier<T, const NumericalRecipe*>, RecipeError>
+  std::expected<fixy::wrap::NumericalTier<T, const NumericalRecipe*>, RecipeError>
   by_hash_pinned(RecipeHash hash) const noexcept {
     auto base = by_hash<CallerRow>(hash);
     if (!base) return std::unexpected(base.error());
     const NumericalRecipe* recipe = *base;
-    if (!safety::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
+    if (!fixy::wrap::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
       return std::unexpected(RecipeError::ToleranceMismatch);
     }
-    return safety::NumericalTier<T, const NumericalRecipe*>{recipe};
+    return fixy::wrap::NumericalTier<T, const NumericalRecipe*>{recipe};
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -408,7 +419,7 @@ class CRUCIBLE_OWNER RecipeRegistry {
   //
   // Per-instance two-axis recipe specification overlay — pairs a
   // recipe pointer with its (tolerance_tier, recipe_family) at
-  // RUNTIME inside a `safety::RecipeSpec<const NumericalRecipe*>`.
+  // RUNTIME inside a `fixy::wrap::RecipeSpec<const NumericalRecipe*>`.
   // Unlike by_name_pinned / by_hash_pinned (FOUND-G04, regime-1
   // single-axis static admission), RecipeSpec is regime-4 (per-
   // instance grade carried in 2 bytes of runtime state) — so the
@@ -455,12 +466,12 @@ class CRUCIBLE_OWNER RecipeRegistry {
   template <typename CallerRow = pure_projection_row>
       requires effects::Subrow<CallerRow, pure_projection_row>
   [[nodiscard, gnu::pure]]
-  std::expected<safety::RecipeSpec<const NumericalRecipe*>, RecipeError>
+  std::expected<fixy::wrap::RecipeSpec<const NumericalRecipe*>, RecipeError>
   by_name_spec(std::string_view name) const noexcept {
     auto base = by_name<CallerRow>(name);
     if (!base) return std::unexpected(base.error());
     const NumericalRecipe* recipe = *base;
-    return safety::RecipeSpec<const NumericalRecipe*>{
+    return fixy::wrap::RecipeSpec<const NumericalRecipe*>{
         recipe, tolerance_of(*recipe), recipe_family_of(*recipe)};
   }
 
@@ -468,12 +479,12 @@ class CRUCIBLE_OWNER RecipeRegistry {
   template <typename CallerRow = pure_projection_row>
       requires effects::Subrow<CallerRow, pure_projection_row>
   [[nodiscard, gnu::pure]]
-  std::expected<safety::RecipeSpec<const NumericalRecipe*>, RecipeError>
+  std::expected<fixy::wrap::RecipeSpec<const NumericalRecipe*>, RecipeError>
   by_hash_spec(RecipeHash hash) const noexcept {
     auto base = by_hash<CallerRow>(hash);
     if (!base) return std::unexpected(base.error());
     const NumericalRecipe* recipe = *base;
-    return safety::RecipeSpec<const NumericalRecipe*>{
+    return fixy::wrap::RecipeSpec<const NumericalRecipe*>{
         recipe, tolerance_of(*recipe), recipe_family_of(*recipe)};
   }
 
