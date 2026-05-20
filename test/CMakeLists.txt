@@ -9730,6 +9730,22 @@ crucible_neg_compile_fixy_test(neg_fixy_perm_inherit_without_specialization
 crucible_neg_compile_fixy_test(neg_fixy_perm_inherit_self_cycle
     "mint_permission_inherit forbids circular inheritance|static assertion failed")
 
+# ── FIXY-U-014 HS14 floor — mint_read_view + mint_grid_permissions ──
+# Eight using-decls added to fixy/Perm.h surface the
+# Pool/Guard/ReadView/Fair/Grid machinery.  Two of those are §XXI
+# mints — `mint_read_view` and `mint_grid_permissions` — so HS14
+# requires ≥2 fixy_neg fixtures per mint demonstrating the
+# substrate's gates fire IDENTICALLY through the fixy::perm:: alias.
+# Mirrors the safety_neg companions for the substrate symbols.
+crucible_neg_compile_fixy_test(neg_fixy_perm_mint_read_view_non_permission_arg
+    "mint_read_view|Permission|deduction|no matching|substitution failure")
+crucible_neg_compile_fixy_test(neg_fixy_perm_mint_read_view_tag_mismatch
+    "mint_read_view|Permission|no matching|cannot bind|conversion")
+crucible_neg_compile_fixy_test(neg_fixy_perm_mint_grid_permissions_zero_m
+    "can_split_grid|mint_grid_permissions|constraints not satisfied|no matching")
+crucible_neg_compile_fixy_test(neg_fixy_perm_mint_grid_permissions_zero_n
+    "can_split_grid|mint_grid_permissions|constraints not satisfied|no matching")
+
 # ── FIXY-MINT-Contract round 2 — restore + persisted_session ────────
 # Existing contract coverage pins promote/demote chain-direction; this
 # round closes the remaining two mints.  Four fixtures:

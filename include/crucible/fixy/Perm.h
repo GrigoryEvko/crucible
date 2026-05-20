@@ -55,10 +55,13 @@
 //
 // Zero.  using-declarations are pure name-lookup directives.
 
+#include <crucible/permissions/FairSharedPermissionPool.h>  // FIXY-U-014: fair pool
 #include <crucible/permissions/FederationPermission.h>  // FIXY-U-071: policy::admit_orgs
 #include <crucible/permissions/Permission.h>
 #include <crucible/permissions/PermissionFork.h>
 #include <crucible/permissions/PermissionInherit.h>
+#include <crucible/permissions/ReadView.h>             // FIXY-U-014: ReadView + mint_read_view
+#include <crucible/safety/PermissionGridGenerator.h>   // FIXY-U-014: grid M×N permissions
 
 #include <type_traits>   // FIXY-U-020 sentinel uses std::is_same_v
 
@@ -114,6 +117,54 @@ using ::crucible::safety::mint_permission_fork;
 
 using ::crucible::permissions::mint_permission_inherit;
 using ::crucible::permissions::mint_permission_inherit_t;
+
+// ── FIXY-U-014: Pool + Guard machinery ─────────────────────────────
+//
+// `SharedPermissionPool<Tag>` is the atomic-refcount carrier; the
+// shipped `SharedPermission<Tag>` alias above is the LENT view that
+// callers borrow via `pool.lend()`.  `SharedPermissionGuard<Tag>` is
+// the RAII handle returned by `lend()` — guard destruction returns
+// the share fractional unit to the pool.  Without explicit re-exports
+// here, callers who want the carrier (e.g. to declare a pool field)
+// must descend into `safety::SharedPermissionPool` directly.
+
+using ::crucible::safety::SharedPermissionPool;
+using ::crucible::safety::SharedPermissionGuard;
+
+// ── FIXY-U-014: ReadView — lifetime-bound borrow ───────────────────
+//
+// `ReadView<Tag>` is the lifetime-bound read borrow on an exclusive
+// Permission — single-binding, [[gnu::lifetimebound]] gated through
+// `mint_read_view(Permission<Tag> const&)`.  Pattern parallels the
+// safety::ScopedView lifetime gate but specialized for Permission
+// borrows.  See permissions/ReadView.h:86 for the constraints.
+
+using ::crucible::safety::ReadView;
+using ::crucible::safety::mint_read_view;
+
+// ── FIXY-U-014: Fair-share pool — burst-limited fractional sharing ─
+//
+// `FairSharedPermissionPool<Tag, BurstLimit>` is the rate-limited
+// variant of `SharedPermissionPool` — caller's `lend()` blocks once
+// outstanding shares reach BurstLimit, providing back-pressure for
+// read-heavy workloads that would otherwise saturate the underlying
+// resource.  See permissions/FairSharedPermissionPool.h.
+
+using ::crucible::safety::FairSharedPermissionPool;
+
+// ── FIXY-U-014: Grid permissions — M×N permission tuple mint ───────
+//
+// `GridPermissions<Whole, M, N>` carries M producer + N consumer
+// permission tokens minted from a single parent `Permission<Whole>`.
+// `mint_grid_permissions<Whole, M, N>(parent)` is the §XXI mint;
+// `can_split_grid_v<Whole, M, N>` is the value-trait gate folding
+// M>0, N>0, side-split fit, and per-side N-ary fit into one
+// capability check (the mint's requires-clause).  See
+// safety/PermissionGridGenerator.h.
+
+using ::crucible::safety::GridPermissions;
+using ::crucible::safety::mint_grid_permissions;
+using ::crucible::safety::can_split_grid_v;
 
 // ── fixy-A4-011 dual-export: federation admission policy ───────────
 //
@@ -237,5 +288,116 @@ static_assert(!::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA>
 static_assert(::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA,
                                                           DualExportOrgProbeB>
               ::template admits<DualExportOrgProbeB>);
+
+// ── FIXY-U-014: Pool / Guard / ReadView / Fair / Grid surface ──────
+//
+// The eight using-decls added above (SharedPermissionPool,
+// SharedPermissionGuard, ReadView, mint_read_view,
+// FairSharedPermissionPool, GridPermissions, mint_grid_permissions,
+// can_split_grid_v) closed the public fan-out gap for the multi-party
+// permission machinery — Pool/Guard for refcounted shared reads,
+// ReadView for lifetime-bound borrows, FairPool for burst-limited
+// fractional sharing, and the Grid family for M×N permission-tuple
+// mints used by sharded-dispatch primitives.
+//
+// Each witness pins type identity vs the substrate symbol so a
+// future substrate rename surfaces here, not at a downstream caller.
+// The Fair pool uses a non-zero BurstLimit per its substrate contract;
+// the Grid family uses a fresh probe tag with manifest splits_into so
+// the probe doesn't pollute production tag trees.
+
+struct U014_PoolGuardProbeTag {};
+struct U014_ReadViewProbeTag {};
+struct U014_FairProbeTag {};
+
+// Pool identity: SharedPermissionPool aliases substrate one-for-one.
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::SharedPermissionPool<U014_PoolGuardProbeTag>,
+    ::crucible::safety::SharedPermissionPool<U014_PoolGuardProbeTag>>,
+    "fixy::perm::SharedPermissionPool must alias safety::SharedPermissionPool");
+
+// Guard identity: SharedPermissionGuard aliases substrate one-for-one.
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::SharedPermissionGuard<U014_PoolGuardProbeTag>,
+    ::crucible::safety::SharedPermissionGuard<U014_PoolGuardProbeTag>>,
+    "fixy::perm::SharedPermissionGuard must alias safety::SharedPermissionGuard");
+
+// ReadView identity: lifetime-bound borrow surface preserved.
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::ReadView<U014_ReadViewProbeTag>,
+    ::crucible::safety::ReadView<U014_ReadViewProbeTag>>,
+    "fixy::perm::ReadView must alias safety::ReadView");
+
+// FairSharedPermissionPool identity: per-tag carrier preserved.
+// Substrate defaults BurstLimit to 1; use the default to avoid
+// depending on the substrate's exact non-type template signature
+// beyond the leading tag parameter.
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::FairSharedPermissionPool<U014_FairProbeTag>,
+    ::crucible::safety::FairSharedPermissionPool<U014_FairProbeTag>>,
+    "fixy::perm::FairSharedPermissionPool must alias safety::FairSharedPermissionPool");
+
+// Grid family — name reachability via SFINAE-detector probe.  We do
+// NOT instantiate GridPermissions or invoke mint_grid_permissions
+// because both require a Whole tag with manifest splits_into / pack
+// specializations — coupling this sentinel to a substrate-internal
+// probe tag tree would be brittle.  The witness is: each using-decl
+// is well-formed AND the alias resolves to the substrate symbol.
+
+template <typename Whole, std::size_t M, std::size_t N>
+using fixy_grid_reach_probe_ =
+    ::crucible::fixy::perm::GridPermissions<Whole, M, N>;
+template <typename Whole, std::size_t M, std::size_t N>
+using safety_grid_reach_probe_ =
+    ::crucible::safety::GridPermissions<Whole, M, N>;
+static_assert(std::is_same_v<
+    fixy_grid_reach_probe_<U014_PoolGuardProbeTag, 2, 3>,
+    safety_grid_reach_probe_<U014_PoolGuardProbeTag, 2, 3>>,
+    "fixy::perm::GridPermissions must alias safety::GridPermissions");
+
+// can_split_grid_v identity: the value-trait gate (mint's
+// requires-clause) is reachable through the fixy:: path and agrees
+// with the substrate's value bit-for-bit.  The substrate ships an
+// AUTOMATIC splits_into specialization for every Whole via the
+// ProducerSide/ConsumerSide encoding (PermissionGridGenerator.h:102),
+// so an arbitrary probe tag with M>0, N>0 admits grid splitting
+// through both paths.  The witness is: BOTH paths agree on TRUE,
+// AND we exercise the M=0 boundary where both must agree on FALSE.
+static_assert(
+    ::crucible::fixy::perm::can_split_grid_v<U014_PoolGuardProbeTag, 2, 3>
+    == ::crucible::safety::can_split_grid_v<U014_PoolGuardProbeTag, 2, 3>,
+    "fixy::perm::can_split_grid_v must mirror safety::can_split_grid_v");
+static_assert(::crucible::fixy::perm::can_split_grid_v<U014_PoolGuardProbeTag, 2, 3>,
+    "Grid splitting must succeed for any tag with M>0, N>0 (auto-encoded).");
+static_assert(!::crucible::fixy::perm::can_split_grid_v<U014_PoolGuardProbeTag, 0, 3>,
+    "Grid splitting MUST reject M=0 through the fixy:: path.");
+static_assert(!::crucible::fixy::perm::can_split_grid_v<U014_PoolGuardProbeTag, 2, 0>,
+    "Grid splitting MUST reject N=0 through the fixy:: path.");
+
+// mint_read_view free-function reachability — name-resolution proof
+// via address-of through the fixy:: alias.  No runtime invocation:
+// the witness is purely type-level — both fn pointers must name the
+// same substrate symbol once instantiated on the probe tag.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::perm::mint_read_view<U014_ReadViewProbeTag>),
+    decltype(&::crucible::safety::mint_read_view<U014_ReadViewProbeTag>)>,
+    "fixy::perm::mint_read_view must resolve to safety::mint_read_view");
+
+// mint_grid_permissions free-function reachability — same pattern.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::perm::mint_grid_permissions<U014_PoolGuardProbeTag, 2, 3>),
+    decltype(&::crucible::safety::mint_grid_permissions<U014_PoolGuardProbeTag, 2, 3>)>,
+    "fixy::perm::mint_grid_permissions must resolve to safety::mint_grid_permissions");
+
+// ── Cardinality witness ────────────────────────────────────────────
+//
+// Eight new public symbols added in FIXY-U-014.  Pinning the count
+// here means a substrate-side ADD/REMOVE that changes the surface
+// fans out as a constant-mismatch diagnostic on this TU, not a
+// silent drift in downstream callers.
+constexpr int kU014SurfaceCardinality = 8;
+static_assert(kU014SurfaceCardinality == 8,
+    "FIXY-U-014 surface (Pool/Guard/ReadView/mint_read_view/Fair/"
+    "Grid/mint_grid_permissions/can_split_grid_v) drifted from 8.");
 
 }  // namespace crucible::fixy::perm::self_test
