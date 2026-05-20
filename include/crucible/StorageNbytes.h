@@ -76,9 +76,12 @@
 #include <crucible/Platform.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
-#include <crucible/safety/DetSafe.h>
-#include <crucible/safety/FixedArray.h>
-#include <crucible/safety/Saturated.h>
+// FIXY-U-096a production migration: safety wrappers (Saturated /
+// DetSafe / FixedArray) routed through fixy::wrap:: instead of
+// safety::* directly.  safety/Simd.h declares the crucible::simd::*
+// substrate sibling facade (not a safety wrapper); keep the include
+// path until a `fixy::simd::` round-2 surface lands.
+#include <crucible/fixy/Wrap.h>
 #include <crucible/safety/Simd.h>
 
 #include <cstdint>
@@ -98,8 +101,8 @@ namespace crucible::detail {
 // AND update the equivalence fuzzer.
 
 [[nodiscard, gnu::const]] CRUCIBLE_INLINE
-safety::Saturated<uint64_t> compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
-  using Sat = safety::Saturated<uint64_t>;
+fixy::wrap::Saturated<uint64_t> compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
+  using Sat = fixy::wrap::Saturated<uint64_t>;
   const TensorMeta& raw = meta.value();
   if (raw.ndim == 0) {
     return Sat{element_size(raw.dtype).raw()};
@@ -151,11 +154,11 @@ safety::Saturated<uint64_t> compute_storage_nbytes_scalar(ExternalTensorMeta met
 }
 
 [[nodiscard, gnu::const]] CRUCIBLE_INLINE
-safety::DetSafe<safety::DetSafeTier_v::Pure, safety::Saturated<uint64_t>>
+fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>
 compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
-  return safety::DetSafe<
-      safety::DetSafeTier_v::Pure,
-      safety::Saturated<uint64_t>>{compute_storage_nbytes_scalar(meta)};
+  return fixy::wrap::DetSafe<
+      fixy::wrap::DetSafeTier_v::Pure,
+      fixy::wrap::Saturated<uint64_t>>{compute_storage_nbytes_scalar(meta)};
 }
 
 // ── Helper: pre-screen safety check ──────────────────────────────
@@ -234,8 +237,8 @@ bool storage_nbytes_simd_safe_(ExternalTensorMeta meta) noexcept {
 // arithmetic step.
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-safety::Saturated<uint64_t> compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
-  using Sat = safety::Saturated<uint64_t>;
+fixy::wrap::Saturated<uint64_t> compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
+  using Sat = fixy::wrap::Saturated<uint64_t>;
   const TensorMeta& raw = meta.value();
   // Edge case: scalar tensor.  Same as scalar path.
   if (raw.ndim == 0) {
@@ -287,7 +290,7 @@ safety::Saturated<uint64_t> compute_storage_nbytes_simd(ExternalTensorMeta meta)
   //     correctness fix).
   //   - .data() returns int64_t* — drop-in replacement for the
   //     bare-array pointer the SIMD store and operator[] expect.
-  alignas(64) safety::FixedArray<int64_t, 8> extents_buf{};
+  alignas(64) fixy::wrap::FixedArray<int64_t, 8> extents_buf{};
   std::simd::unchecked_store(
       extents, extents_buf.data(), i64x8::size(), std::simd::flag_aligned);
 
@@ -332,11 +335,11 @@ safety::Saturated<uint64_t> compute_storage_nbytes_simd(ExternalTensorMeta meta)
 }
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-safety::DetSafe<safety::DetSafeTier_v::Pure, safety::Saturated<uint64_t>>
+fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>
 compute_storage_nbytes_simd_det(ExternalTensorMeta meta) noexcept {
-  return safety::DetSafe<
-      safety::DetSafeTier_v::Pure,
-      safety::Saturated<uint64_t>>{compute_storage_nbytes_simd(meta)};
+  return fixy::wrap::DetSafe<
+      fixy::wrap::DetSafeTier_v::Pure,
+      fixy::wrap::Saturated<uint64_t>>{compute_storage_nbytes_simd(meta)};
 }
 
 }  // namespace crucible::detail

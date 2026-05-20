@@ -111,6 +111,7 @@
 #include <crucible/safety/Crash.h>             // off-tree (Effect axis)
 #include <crucible/safety/DetSafe.h>           // canonical Tier-S
 #include <crucible/safety/EpochVersioned.h>    // off-tree (Version axis)
+#include <crucible/safety/FixedArray.h>        // structural (bounded stack-array newtype)
 #include <crucible/safety/HotPath.h>           // canonical Tier-S (outermost)
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/MemOrder.h>          // canonical Tier-S
@@ -381,6 +382,19 @@ using ::crucible::safety::extract::IsBorrowedRef;
 
 // OwnedRegion<T, Tag> — arena-backed exclusive region.
 using ::crucible::safety::OwnedRegion;
+
+// FixedArray<T, N> — bounded-capacity stack-allocated array newtype.
+// Replaces raw `T buf[N]` C arrays where the capacity is fixed at
+// compile time and every slot is logically used.  Distinct type
+// identity from std::array<T, N> (catches accidental swaps); NSDMI
+// zero-init (closes the bare-array uninit-before-store window);
+// no exception-throwing accessor (Crucible is -fno-exceptions);
+// Refined<bounded_above<N-1>>-typed at() for proof-token access.
+// Surfaced through fixy::wrap:: so production sites (FIXY-U-096a
+// StorageNbytes.h, future Lower.h FixedArray-1 migration) reach
+// the wrapper through the umbrella instead of descending into
+// crucible/safety/FixedArray.h.
+using ::crucible::safety::FixedArray;
 
 // NotInherited<T> (concept) / FinalBy<T> (CRTP base) — structural
 // non-extensibility.  NotInherited is a `concept`, not a class, so it
@@ -702,6 +716,16 @@ static_assert(std::is_same_v<
     ::crucible::fixy::wrap::Saturated<std::uint64_t>,
     ::crucible::safety::Saturated<std::uint64_t>>,
     "fixy::wrap::Saturated must alias safety::Saturated.");
+
+// FixedArray identity — exercised by FIXY-U-096a StorageNbytes.h migration.
+// FixedArray<T, N> is a non-Graded structural newtype (bounded stack-array);
+// the re-export must preserve type identity bit-for-bit so the
+// `alignas(64) FixedArray<int64_t, 8>` SIMD-aligned site in StorageNbytes.h
+// stays layout-compatible with the substrate primary.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::FixedArray<int, 8>,
+    ::crucible::safety::FixedArray<int, 8>>,
+    "fixy::wrap::FixedArray must alias safety::FixedArray.");
 
 // ─── Per-tier sub-namespace aliases (13 cells, FIXY-U-093 follow-up) ──
 //
