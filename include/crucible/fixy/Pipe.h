@@ -155,6 +155,78 @@ using ::crucible::concurrent::CtxFitsPipeline;
 using ::crucible::concurrent::CtxFitsStage;
 using ::crucible::concurrent::CtxFitsStageFromEndpoints;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-U-050: concept-gate extension (Agent 1 P1 leftover) ───────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Surfaces every concept that gates a `mint_*` call site in
+// concurrent/{Pipeline,Stage,StageEndpointBridge,SubstrateSessionBridge,
+// SubstrateCtxFit}.h.  Production callers writing generic stage / pipeline
+// / endpoint factories need to spell these gates at compile-time pre-check
+// sites without descending into the concurrent/ tree.
+//
+// ── Endpoint family (concurrent::StageEndpointBridge.h:158/161/166) ──
+//
+// IsEndpoint recognises the Endpoint<Substr, Dir, Ctx> shape;
+// IsConsumerEndpoint / IsProducerEndpoint refine by Direction.
+
+using ::crucible::concurrent::IsEndpoint;
+using ::crucible::concurrent::IsConsumerEndpoint;
+using ::crucible::concurrent::IsProducerEndpoint;
+
+// ── Substrate-direction + residency gates ────────────────────────────
+//
+// IsBridgeableDirection (SubstrateSessionBridge.h:682) — the gate that
+// validates Direction::Producer / Direction::Consumer for a given
+// substrate's default_proto_for<> specialization.
+//
+// SubstrateFitsCtxResidency (SubstrateCtxFit.h:119) — checks that the
+// substrate's residency tier admits the Ctx's row.  Together these are
+// the gates that `mint_endpoint<Substr, Dir>(ctx, handle)` fires at its
+// requires-clause; production callers writing generic mint forwarders
+// need both reachable through fixy::pipe::.
+
+using ::crucible::concurrent::IsBridgeableDirection;
+using ::crucible::concurrent::SubstrateFitsCtxResidency;
+
+// ── Stage-shape gates beyond the canonical CtxFitsStage ─────────────
+//
+// CtxFitsVariadicStage   — multi-input/-output stages (Stage.h:303).
+// CtxFitsSwmrPublishStage — SWMR-publication stage fan-out (Stage.h:340).
+//
+// Both are §XXI mint requires-clauses; surfacing them lets factory-
+// generic call sites pre-check the same way `CtxFitsStage` already does.
+
+using ::crucible::concurrent::CtxFitsVariadicStage;
+using ::crucible::concurrent::CtxFitsSwmrPublishStage;
+
+// ── Pipeline-graph gates ────────────────────────────────────────────
+//
+// IsStageEdge / IsStageGraph (Pipeline.h:566/569) — DAG-form pipeline
+// shapes (edges + graph) used by mint_pipeline_dag.
+//
+// CtxFitsPipelineDag (Pipeline.h:583) — the requires-clause gate.
+//
+// CtxFitsPipelineDagMint (Pipeline.h:997) — the variant that the
+// mint_pipeline_dag<auto Graph>(ctx, stages...) factory fires at its
+// own requires-clause.
+
+using ::crucible::concurrent::IsStageEdge;
+using ::crucible::concurrent::IsStageGraph;
+using ::crucible::concurrent::CtxFitsPipelineDag;
+using ::crucible::concurrent::CtxFitsPipelineDagMint;
+
+// ── Endpoint↔Stage bridge gates (variadic + SWMR) ───────────────────
+//
+// CtxFitsMpmcStageFromEndpoints (StageEndpointBridge.h:428) — MPMC
+// fan-in variant of CtxFitsStageFromEndpoints.
+//
+// CtxFitsSwmrStageFromEndpoint (StageEndpointBridge.h:435) — SWMR
+// publish variant.
+
+using ::crucible::concurrent::CtxFitsMpmcStageFromEndpoints;
+using ::crucible::concurrent::CtxFitsSwmrStageFromEndpoint;
+
 }  // namespace crucible::fixy::pipe
 
 // ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
@@ -178,8 +250,14 @@ static_assert(std::is_same_v<
 
 // Cardinality witness — surface count of using-decls in this header.
 // Any add/remove of a using-decl above must update this number.
-constexpr int pipe_surface_cardinality = 18;
-static_assert(pipe_surface_cardinality == 18,
+// U-103 baseline: 18 (Tier-3 mint family + canonical concept gates).
+// U-050 extension: +13 concept gates (IsBridgeableDirection,
+// SubstrateFitsCtxResidency, IsEndpoint/Consumer/Producer family,
+// CtxFitsVariadicStage / CtxFitsSwmrPublishStage, IsStageEdge /
+// IsStageGraph, CtxFitsPipelineDag / CtxFitsPipelineDagMint,
+// CtxFitsMpmcStageFromEndpoints / CtxFitsSwmrStageFromEndpoint).
+constexpr int pipe_surface_cardinality = 31;
+static_assert(pipe_surface_cardinality == 31,
     "fixy::pipe:: surface drifted — update Pipe.h using-decls + "
     "this sentinel + test_fixy_pipe.cpp coverage in lockstep.");
 

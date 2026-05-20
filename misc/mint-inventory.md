@@ -26,7 +26,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-20T04:56:31Z`.
+Snapshot generated: `2026-05-20T05:19:28Z`.
 
 ## bridges/
 
@@ -53,10 +53,10 @@ Snapshot generated: `2026-05-20T04:56:31Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_endpoint` | `include/crucible/concurrent/Endpoint.h:361` | - | Y | Y | - | token | `include/crucible/fixy/Pipe.h:19` | HS14: 5 |
+| `mint_endpoint` | `include/crucible/concurrent/Endpoint.h:361` | - | Y | Y | - | token | `include/crucible/fixy/Pipe.h:185` | HS14: 5 |
 | `mint_mpmc_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:529` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:106` | HS14: 2 |
 | `mint_pipeline` | `include/crucible/concurrent/Pipeline.h:951` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:126` | HS14: 1 ⚠ |
-| `mint_pipeline_dag` | `include/crucible/concurrent/Pipeline.h:1002` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:22` | HS14: 2 |
+| `mint_pipeline_dag` | `include/crucible/concurrent/Pipeline.h:1002` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:206` | HS14: 2 |
 | `mint_stage` | `include/crucible/concurrent/Stage.h:631` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:151` | HS14: 3 |
 | `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:510` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:105` | HS14: 0 ⚠ |
 | `mint_substrate_session` | `include/crucible/concurrent/SubstrateSessionBridge.h:737` | Y | Y | Y | - | ctx | `include/crucible/fixy/Pipe.h:113` | HS14: 0 ⚠ |
