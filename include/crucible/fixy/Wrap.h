@@ -130,6 +130,7 @@
 #include <crucible/safety/Progress.h>          // canonical Tier-S
 #include <crucible/safety/RecipeSpec.h>        // off-tree (Precision axis)
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/RefinedAlgebra.h>    // FIXY-U-096s: all_of predicate combinator
 #include <crucible/safety/ResidencyHeat.h>     // canonical Tier-S
 #include <crucible/safety/ScopedView.h>        // structural (lifetime borrow)
 #include <crucible/safety/SealedRefined.h>
@@ -170,6 +171,9 @@ using ::crucible::safety::non_zero;
 using ::crucible::safety::non_null;
 using ::crucible::safety::power_of_two;
 using ::crucible::safety::non_empty;
+// Predicate combinator (RefinedAlgebra.h) — conjunction of predicates,
+// `all_of<power_of_two, bounded_above<128>>` etc.  FIXY-U-096s.
+using ::crucible::safety::all_of;
 // Parameterised predicate templates.
 using ::crucible::safety::Aligned;
 using ::crucible::safety::InRange;

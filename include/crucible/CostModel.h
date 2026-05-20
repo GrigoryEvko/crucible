@@ -25,8 +25,7 @@
 
 #include <crucible/Types.h>
 #include <crucible/effects/EffectRow.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/RefinedAlgebra.h>
+#include <crucible/fixy/Wrap.h>   // FIXY-U-096s: Refined / bounded_above / in_range / all_of / power_of_two via the fixy umbrella
 
 #include <algorithm>
 #include <cmath>
@@ -59,7 +58,7 @@ namespace crucible {
 // sizeof(ValidRegsPerThread) == sizeof(uint16_t) == 2 B.  The
 // KernelConfig field layout is unchanged.
 using ValidRegsPerThread =
-    safety::Refined<safety::bounded_above<uint16_t{255}>, uint16_t>;
+    fixy::wrap::Refined<fixy::wrap::bounded_above<uint16_t{255}>, uint16_t>;
 static_assert(sizeof(ValidRegsPerThread) == sizeof(uint16_t),
     "ValidRegsPerThread must EBO-collapse to sizeof(uint16_t) — "
     "Refined<bounded_above<255>, uint16_t> is regime-1, the BoolLattice "
@@ -86,7 +85,7 @@ static_assert(sizeof(ValidRegsPerThread) == sizeof(uint16_t),
 //     register pressure is intractable on any plausible silicon).
 //
 // `ValidWarpSize` pins both invariants at the type level via
-// `safety::all_of<power_of_two, bounded_above<128>>`. Construction of
+// `fixy::wrap::all_of<power_of_two, bounded_above<128>>`. Construction of
 // the field with `warp_size = 33` (non-power-of-two) or `warp_size =
 // 256` (power-of-two but past the hardware ceiling) is rejected at the
 // type-system boundary: under semantic=enforce → contract violation
@@ -109,9 +108,9 @@ static_assert(sizeof(ValidRegsPerThread) == sizeof(uint16_t),
 // All access via `.value()` on the field; the layout-bounding gate
 // pin the structural invariant at every preset writer
 // (blackwell_b200 / hopper_h100 / mi300x / ampere_a100).
-using ValidWarpSize = safety::Refined<
-    safety::all_of<safety::power_of_two,
-                   safety::bounded_above<uint16_t{128}>>,
+using ValidWarpSize = fixy::wrap::Refined<
+    fixy::wrap::all_of<fixy::wrap::power_of_two,
+                   fixy::wrap::bounded_above<uint16_t{128}>>,
     uint16_t>;
 static_assert(sizeof(ValidWarpSize) == sizeof(uint16_t),
     "ValidWarpSize must EBO-collapse to sizeof(uint16_t) — "
@@ -156,7 +155,7 @@ static_assert(sizeof(ValidWarpSize) == sizeof(uint16_t),
 // the wrapper carries no extra storage.  HardwareProfile and
 // CostBreakdown layouts are unchanged.
 // ═══════════════════════════════════════════════════════════════════
-using ValidUtilization = safety::Refined<safety::in_range<0.0f, 1.0f>, float>;
+using ValidUtilization = fixy::wrap::Refined<fixy::wrap::in_range<0.0f, 1.0f>, float>;
 static_assert(sizeof(ValidUtilization) == sizeof(float),
     "ValidUtilization must EBO-collapse to sizeof(float) — "
     "Refined<in_range<0.0f, 1.0f>, float> is regime-1, the BoolLattice "
