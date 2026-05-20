@@ -259,6 +259,60 @@ void contract_failed_msg(char const* expr,
   // failing static_assert that uses CRUCIBLE_PRE still fires under
   // NDEBUG. This is the load-bearing property — neg-compile fixtures
   // work the same in release and debug builds.
+  //
+  // Also engaged when CRUCIBLE_CONTRACT_RUNTIME_OFF is defined (see
+  // below at the #else fork) — that macro lets specific static
+  // libraries opt out of the runtime path WITHOUT defining NDEBUG
+  // globally.  Symmetric with the existing per-TU
+  // `-fcontract-evaluation-semantic=ignore` opt-out for P2900
+  // contracts.
+  #define CRUCIBLE_PRE(cond)                                            \
+      do {                                                              \
+          if consteval {                                                \
+              if (!(cond)) [[unlikely]] { __builtin_trap(); }           \
+          }                                                             \
+          CRUCIBLE_CONTRACT_FENCE_();                                   \
+          [[assume(cond)]];                                             \
+      } while (0)
+
+#elif defined(CRUCIBLE_CONTRACT_RUNTIME_OFF)
+
+  // ─── CRUCIBLE_CONTRACT_RUNTIME_OFF escape hatch ──────────────────
+  //
+  // Per-TU opt-out for the CRUCIBLE_PRE / CRUCIBLE_POST runtime path.
+  // Mirrors the existing `-fcontract-evaluation-semantic=ignore` opt-
+  // out for P2900 contracts: type-level discipline persists (Refined<>,
+  // Linear<>, etc.), consteval-fire of static_assert is preserved
+  // ([[assume]] hint to optimizer is preserved), but no runtime call
+  // to `crucible::detail::contract_failed` is emitted.
+  //
+  // Why this is needed: static libraries that link transitively but
+  // don't pull libcrucible.a's `src/ContractHandler.cpp` into their
+  // archive (e.g. libcrucible_perf.a) emit references to
+  // `crucible::detail::contract_failed` through inline header use of
+  // CRUCIBLE_PRE/POST.  When the consumer test exec link order is
+  // `libcrucible.a libcrucible_perf.a libbpf.so`, ld scans left-to-
+  // right and pulls only what main.o directly references from
+  // libcrucible.a; ContractHandler.cpp.o is discarded; the subsequent
+  // libcrucible_perf.a reference is unresolved.  Setting
+  // CRUCIBLE_CONTRACT_RUNTIME_OFF on the inner library elides the
+  // runtime symbol reference there, closing the link gap without
+  // disabling NDEBUG-controlled behavior elsewhere (assert(),
+  // _GLIBCXX_DEBUG, etc.).
+  //
+  // Trade-off: the inner library loses runtime CRUCIBLE_PRE/POST
+  // debug-time enforcement.  Acceptable when:
+  //   * the type system already constrains the call sites (Refined,
+  //     Linear, Tagged guarding inputs), AND
+  //   * the runtime path is exercised by OTHER consumers of the
+  //     same headers (typical for headers shared between libcrucible
+  //     and a downstream library — libcrucible's own TUs preserve
+  //     full runtime enforcement).
+  //
+  // Discipline: only the build system sets this macro, via per-target
+  // `target_compile_definitions(... PRIVATE CRUCIBLE_CONTRACT_RUNTIME_OFF=1)`.
+  // Never #define it inside a header — that would silently disable
+  // runtime contracts for every consumer.
   #define CRUCIBLE_PRE(cond)                                            \
       do {                                                              \
           if consteval {                                                \
@@ -361,8 +415,12 @@ void contract_failed_msg(char const* expr,
 // At consteval the message is unused (the trap diagnostic carries
 // no extra text either way); the macro behaves identically to
 // CRUCIBLE_PRE for static_assert-fired neg-compile fixtures.
-#ifdef NDEBUG
+#if defined(NDEBUG) || defined(CRUCIBLE_CONTRACT_RUNTIME_OFF)
 
+  // NDEBUG and CRUCIBLE_CONTRACT_RUNTIME_OFF share the same emit path —
+  // consteval check + [[assume]] hint, no runtime call to
+  // contract_failed_msg.  See CRUCIBLE_PRE escape-hatch doc-block above
+  // for the per-TU opt-out rationale.
   #define CRUCIBLE_PRE_MSG(cond, msg)                                   \
       do {                                                              \
           if consteval {                                                \

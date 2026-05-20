@@ -335,6 +335,19 @@ if (CRUCIBLE_HAVE_BPF)
     # exercised in the main crucible TUs.
     -fcontract-evaluation-semantic=ignore
   )
+  # Same link-order problem applies to CRUCIBLE_PRE / CRUCIBLE_POST
+  # body-level macros (safety/Pre.h, safety/Post.h).  Under !NDEBUG
+  # they emit references to `crucible::detail::contract_failed`,
+  # which lives in the same libcrucible.a ContractHandler.cpp.o that
+  # gets discarded under the consumer link order.  The
+  # `-fcontract-evaluation-semantic=ignore` flag above only affects
+  # P2900 parser clauses, NOT the body-level macro family.
+  # CRUCIBLE_CONTRACT_RUNTIME_OFF is the symmetric escape hatch:
+  # consteval enforcement + [[assume]] hint preserved, runtime path
+  # elided in this TU only.
+  target_compile_definitions(crucible_perf PRIVATE
+    CRUCIBLE_CONTRACT_RUNTIME_OFF=1
+  )
   if (CRUCIBLE_SENSE_HUB_V2 AND CRUCIBLE_SENSE_HUB_EXTENDED)
     target_compile_definitions(crucible_perf PRIVATE CRUCIBLE_SENSE_HUB_EXTENDED=1)
   endif()
