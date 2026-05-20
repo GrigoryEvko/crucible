@@ -88,7 +88,12 @@
 #include <crucible/Cipher.h>
 #include <crucible/bridges/SessionPersistence.h>
 #include <crucible/cipher/CipherTierPromotion.h>
+#include <crucible/cipher/ComputationCache.h>   // FIXY-U-015: dispatcher cache surface
+#include <crucible/cipher/FederationProtocol.h> // FIXY-U-015: federation entry wire format
 #include <crucible/safety/Contract.h>
+
+#include <chrono>      // FIXY-U-015: drain_computation_cache signature
+#include <type_traits> // FIXY-U-015 sentinel uses std::is_same_v
 
 namespace crucible::fixy::contract {
 
@@ -200,6 +205,181 @@ using EpochedDelegate =
 
 using ::crucible::safety::proto::mint_persisted_session;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-U-015: Cipher class + dispatcher cache + federation wire ──
+// ═════════════════════════════════════════════════════════════════════
+//
+// Pre-U-015 the fixy::contract::cipher:: surface exposed only the
+// tier-promotion machinery (CipherTier wrapper, mint_promote/demote/
+// restore, EpochedDelegate, mint_persisted_session).  Callers who
+// wanted to NAME the Cipher class itself, mint an OpenView, key into
+// the dispatcher's ComputationCache, or read/write a federation entry
+// had to descend into the substrate's Cipher.h / cipher/ComputationCache.h
+// / cipher/FederationProtocol.h headers — three header families
+// outside the "fixy covers cipher" promise.
+//
+// U-015 closes the gap.  Four categories of surface, ~28 items:
+//   A. Top-level Cipher class + companion content-addressed payload
+//      templates + row-hash alias (lives at `::crucible::Cipher`, not
+//      inside `::crucible::cipher::`; alias bridges the two paths).
+//   B. SessionEvent + its 72-byte cold-tier wire format.
+//   C. ComputationCache surface — dispatcher analog of KernelCache
+//      keyed on `(stable_function_id<FnPtr>, stable_type_id<Args>...)`.
+//      Includes IsCacheableFunction + IsEffectRow concept fences,
+//      key + lookup + insert + drain quadruples (both vanilla and
+//      row-aware variants).
+//   D. cipher::federation:: nested namespace — wire format for
+//      cold-tier blob entries (magic / version / header / payload
+//      / view / serialize / deserialize / error enum).
+//
+// All re-exports are pure name-lookup directives; concepts pass
+// through verbatim per C++20 using-decl semantics.  Sentinel
+// witnesses below pin each category's substrate identity, plus a
+// cardinality witness at the tail.
+
+// ── A. Top-level Cipher class + companion templates ────────────────
+
+// The Cipher class itself lives at ::crucible::Cipher (top-level,
+// NOT inside ::crucible::cipher::).  Surfacing it under the migration
+// sub-namespace gives callers a single discovery point for "anything
+// Cipher" — including the class, the migration mints (above), and the
+// federation wire format (below).
+using ::crucible::Cipher;
+
+// The class-scope OpenView alias is reachable through Cipher::OpenView
+// (since the class itself is now aliased), but the namespace-scope
+// CipherOpenView is the bridge-friendly form (used by
+// bridges/SessionPersistence.h to avoid pulling the full Cipher.h
+// transitive set).  Both spellings now reach.
+using ::crucible::CipherOpenView;
+
+// Persistence-row alias — same definition the Cipher class uses
+// internally for persist_session_events_required_row.  Surfaced at
+// fixy::contract::cipher:: scope so the row is grep-discoverable
+// without crucible::Cipher:: prefix.
+using ::crucible::CipherSessionEventPersistenceRow;
+
+// Content-addressed payload templates live in ::crucible::cipher::
+// and are the wrapping that the Cipher class consumes via
+// Cipher::content_addressed(region).  Surface them so callers can
+// declare ContentAddressedPayload<MyType> at non-Cipher call sites.
+template <typename T>
+using ContentAddressedPayload =
+    ::crucible::cipher::ContentAddressedPayload<T>;
+
+template <typename T>
+using LoadedContentAddressedPayload =
+    ::crucible::cipher::LoadedContentAddressedPayload<T>;
+
+// ── B. SessionEvent — 72-byte cold-tier wire format ────────────────
+//
+// Cipher::SessionEvent is an alias of safety::proto::SessionEvent.
+// Surfacing the alias at namespace scope (rather than going through
+// the Cipher class) saves callers a `Cipher::` prefix when they only
+// need the payload type.
+
+using SessionEvent = ::crucible::safety::proto::SessionEvent;
+
+// ── C. ComputationCache surface (FOUND-F09 of 27_04_2026.md §5.13) ─
+//
+// Dispatcher analog of KernelCache.  KernelCache (MerkleDag.h)
+// stores compiled kernel bytecode keyed on `(content_hash,
+// row_hash)`; ComputationCache stores compiled-body objects keyed on
+// `(stable_function_id<FnPtr>, stable_type_id<Args>...)`.  When the
+// dispatcher generates a lowering for `dispatch(fn, args)`, it
+// consults this cache:  hit → use the cached body, miss → generate.
+
+// CompiledBody is opaque-forward-declared in the substrate — the
+// dispatcher provides the concrete definition.  Re-export the
+// forward declaration so call sites can `CompiledBody* body =
+// ...lookup_computation_cache<F, Args...>();` without descending into
+// the cipher/ header.
+using ::crucible::cipher::CompiledBody;
+
+// Concept fences on the template parameters.  IsCacheableFunction
+// rejects non-callable / non-cacheable FnPtr at the requires-clause;
+// IsEffectRow rejects non-Row<E...> Row template arguments.
+using ::crucible::cipher::IsCacheableFunction;
+using ::crucible::cipher::IsEffectRow;
+
+// computation_cache_key<FnPtr, Args...> — canonical 64-bit cache key.
+// Built from stable_function_id<FnPtr> mixed with stable_type_id of
+// each Arg via the family-A FNV-1a fold.  Same args → same key
+// across TUs and across program restarts (within a build).
+template <auto FnPtr, typename... Args>
+    requires ::crucible::cipher::IsCacheableFunction<FnPtr>
+inline constexpr std::uint64_t computation_cache_key =
+    ::crucible::cipher::computation_cache_key<FnPtr, Args...>;
+
+// lookup_computation_cache<FnPtr, Args...>() — acquire-load the
+// current slot.  Returns nullptr on miss; returns a non-null
+// CompiledBody* on hit.  Lock-free.
+using ::crucible::cipher::lookup_computation_cache;
+
+// insert_computation_cache<FnPtr, Args...>(body) — single-writer
+// install via compare_exchange_strong on the slot.  Pre: body !=
+// nullptr.  If the slot is already populated, leaves the existing
+// entry untouched (single-publisher discipline).
+using ::crucible::cipher::insert_computation_cache;
+
+// Row-aware variants — additional template parameter Row threads
+// the effect row through the cache key, so the same FnPtr × Args
+// combination at different Row engagements get different cache
+// slots.  Used by callers that need per-effect-row specialization.
+template <auto FnPtr, typename Row, typename... Args>
+    requires ::crucible::cipher::IsCacheableFunction<FnPtr>
+          && ::crucible::cipher::IsEffectRow<Row>
+inline constexpr std::uint64_t computation_cache_key_in_row =
+    ::crucible::cipher::computation_cache_key_in_row<FnPtr, Row, Args...>;
+
+using ::crucible::cipher::lookup_computation_cache_in_row;
+using ::crucible::cipher::insert_computation_cache_in_row;
+
+// drain_computation_cache(max_age) — Phase 5 eviction stub (today:
+// no-op; signature published so production call sites pre-wire).
+using ::crucible::cipher::drain_computation_cache;
+
+// ── D. cipher::federation:: wire format ────────────────────────────
+//
+// Federation-entry serialization for cold-tier blob exchange between
+// Relays.  Each entry carries a fixed 16-byte header (magic + version
+// + payload-size + checksum) followed by the payload bytes.  Used by
+// Cipher's session-event persistence + RegionNode federation gossip.
+//
+// Surface mirrors safety/proto::federation:: shape from U-072: a
+// nested sub-namespace under fixy::contract::cipher::federation::
+// containing constants, structs, error enum, free functions.
+
+namespace federation {
+
+// Magic and version constants — pinned at the wire-format level so
+// a future ABI bump is grep-discoverable.
+using ::crucible::cipher::federation::FEDERATION_MAGIC;
+using ::crucible::cipher::federation::FEDERATION_PROTOCOL_V1;
+using ::crucible::cipher::federation::FEDERATION_HEADER_BYTES;
+
+// Wire-format structs.
+using ::crucible::cipher::federation::FederationEntryHeader;
+using ::crucible::cipher::federation::ColdBlobRegion;
+using ::crucible::cipher::federation::FederationEntryView;
+
+// Error discriminant + accessor.
+using ::crucible::cipher::federation::FederationError;
+using ::crucible::cipher::federation::federation_error_name;
+
+// Serializer + deserializers.
+//   serialize_federation_entry              — write entry into buffer.
+//   deserialize_untrusted_federation_entry  — parse + validate.
+//   deserialize_federation_entry            — parse + validate +
+//                                              error-bind shortcut.
+//   federation_entry_blob_layout_disjoint   — layout-disjoint check.
+using ::crucible::cipher::federation::serialize_federation_entry;
+using ::crucible::cipher::federation::deserialize_untrusted_federation_entry;
+using ::crucible::cipher::federation::deserialize_federation_entry;
+using ::crucible::cipher::federation::federation_entry_blob_layout_disjoint;
+
+}  // namespace federation
+
 }  // namespace cipher
 
 }  // namespace crucible::fixy::contract
@@ -256,5 +436,182 @@ static_assert(std::is_same_v<
         ::crucible::safety::proto::End, 0, 0>>,
     "fixy::contract::cipher::EpochedDelegate must alias "
     "safety::proto::EpochedDelegate.");
+
+// ─── FIXY-U-015: Cipher class + ComputationCache + federation ──────
+//
+// Surface witnesses for the 28 new re-exports.  Substrate identity
+// is asserted via std::is_same_v on types and value-equality on
+// constants; concept fences are exercised behaviorally (an instance
+// satisfying the substrate concept must satisfy the fixy alias).
+
+namespace u015 {
+
+// ── A. Top-level Cipher class + companion templates ───────────────
+
+static_assert(std::is_same_v<cipher::Cipher, ::crucible::Cipher>,
+    "fixy::contract::cipher::Cipher must alias ::crucible::Cipher.");
+
+static_assert(std::is_same_v<cipher::CipherOpenView,
+                             ::crucible::CipherOpenView>,
+    "fixy::contract::cipher::CipherOpenView must alias the substrate.");
+
+static_assert(std::is_same_v<cipher::CipherSessionEventPersistenceRow,
+                             ::crucible::CipherSessionEventPersistenceRow>);
+
+static_assert(std::is_same_v<cipher::ContentAddressedPayload<int>,
+                             ::crucible::cipher::ContentAddressedPayload<int>>);
+
+static_assert(std::is_same_v<cipher::LoadedContentAddressedPayload<int>,
+                             ::crucible::cipher::LoadedContentAddressedPayload<int>>);
+
+// Class-scope OpenView reachable through cipher::Cipher alias.
+static_assert(std::is_same_v<cipher::Cipher::OpenView,
+                             ::crucible::CipherOpenView>);
+
+// ── B. SessionEvent identity + cold-tier wire size ────────────────
+
+static_assert(std::is_same_v<cipher::SessionEvent,
+                             ::crucible::safety::proto::SessionEvent>,
+    "fixy::contract::cipher::SessionEvent must alias substrate.");
+
+// Pin the wire size — same 72 B that Cipher.h asserts internally.
+static_assert(sizeof(cipher::SessionEvent) == 72,
+    "Cipher session-event wire format pinned at 72 B (Cipher.h:158).");
+
+// ── C. ComputationCache surface ───────────────────────────────────
+
+// CompiledBody is opaque forward-declared; identity check on the
+// pointer type proves the alias resolves to the same incomplete type.
+static_assert(std::is_same_v<cipher::CompiledBody*,
+                             ::crucible::cipher::CompiledBody*>);
+
+// IsCacheableFunction + IsEffectRow concept behavioral equivalence.
+// Probe: an inline noexcept fn ptr satisfies IsCacheableFunction; an
+// effects::Row<> satisfies IsEffectRow.  Both paths must agree.
+namespace u015_cache_probe {
+inline void probe_fn(int) noexcept {}
+}  // namespace u015_cache_probe
+
+static_assert(cipher::IsCacheableFunction<&u015_cache_probe::probe_fn> ==
+              ::crucible::cipher::IsCacheableFunction<&u015_cache_probe::probe_fn>);
+static_assert(cipher::IsCacheableFunction<&u015_cache_probe::probe_fn>,
+    "An inline noexcept fn must satisfy IsCacheableFunction through fixy::.");
+
+static_assert(cipher::IsEffectRow<::crucible::effects::Row<>> ==
+              ::crucible::cipher::IsEffectRow<::crucible::effects::Row<>>);
+static_assert(cipher::IsEffectRow<::crucible::effects::Row<>>);
+static_assert(!cipher::IsEffectRow<int>,
+    "Non-row T must NOT satisfy IsEffectRow through fixy::.");
+
+// computation_cache_key value-equality through the alias.
+static_assert(
+    cipher::computation_cache_key<&u015_cache_probe::probe_fn, int> ==
+    ::crucible::cipher::computation_cache_key<&u015_cache_probe::probe_fn, int>);
+
+// row variant value-equality.
+static_assert(
+    cipher::computation_cache_key_in_row<&u015_cache_probe::probe_fn,
+                                          ::crucible::effects::Row<>, int> ==
+    ::crucible::cipher::computation_cache_key_in_row<
+        &u015_cache_probe::probe_fn,
+        ::crucible::effects::Row<>, int>);
+
+// Function-pointer identity for lookup / insert / drain (witnesses
+// the using-decl resolves to the same overloaded substrate fn).
+static_assert(std::is_same_v<
+    decltype(&cipher::lookup_computation_cache<&u015_cache_probe::probe_fn, int>),
+    decltype(&::crucible::cipher::lookup_computation_cache<
+                &u015_cache_probe::probe_fn, int>)>);
+static_assert(std::is_same_v<
+    decltype(&cipher::insert_computation_cache<&u015_cache_probe::probe_fn, int>),
+    decltype(&::crucible::cipher::insert_computation_cache<
+                &u015_cache_probe::probe_fn, int>)>);
+static_assert(std::is_same_v<
+    decltype(&cipher::lookup_computation_cache_in_row<
+                &u015_cache_probe::probe_fn,
+                ::crucible::effects::Row<>, int>),
+    decltype(&::crucible::cipher::lookup_computation_cache_in_row<
+                &u015_cache_probe::probe_fn,
+                ::crucible::effects::Row<>, int>)>);
+static_assert(std::is_same_v<
+    decltype(&cipher::insert_computation_cache_in_row<
+                &u015_cache_probe::probe_fn,
+                ::crucible::effects::Row<>, int>),
+    decltype(&::crucible::cipher::insert_computation_cache_in_row<
+                &u015_cache_probe::probe_fn,
+                ::crucible::effects::Row<>, int>)>);
+static_assert(std::is_same_v<decltype(&cipher::drain_computation_cache),
+                             decltype(&::crucible::cipher::drain_computation_cache)>);
+
+// ── D. federation:: nested namespace surface ──────────────────────
+
+static_assert(cipher::federation::FEDERATION_MAGIC ==
+              ::crucible::cipher::federation::FEDERATION_MAGIC);
+static_assert(cipher::federation::FEDERATION_PROTOCOL_V1 ==
+              ::crucible::cipher::federation::FEDERATION_PROTOCOL_V1);
+static_assert(cipher::federation::FEDERATION_HEADER_BYTES ==
+              ::crucible::cipher::federation::FEDERATION_HEADER_BYTES);
+
+static_assert(std::is_same_v<cipher::federation::FederationEntryHeader,
+                             ::crucible::cipher::federation::FederationEntryHeader>);
+static_assert(std::is_same_v<cipher::federation::ColdBlobRegion,
+                             ::crucible::cipher::federation::ColdBlobRegion>);
+static_assert(std::is_same_v<cipher::federation::FederationEntryView,
+                             ::crucible::cipher::federation::FederationEntryView>);
+static_assert(std::is_same_v<cipher::federation::FederationError,
+                             ::crucible::cipher::federation::FederationError>);
+
+// Function-pointer identity for non-template federation free fns.
+static_assert(std::is_same_v<decltype(&cipher::federation::federation_error_name),
+                             decltype(&::crucible::cipher::federation::federation_error_name)>);
+static_assert(std::is_same_v<decltype(&cipher::federation::serialize_federation_entry),
+                             decltype(&::crucible::cipher::federation::serialize_federation_entry)>);
+static_assert(std::is_same_v<decltype(&cipher::federation::deserialize_untrusted_federation_entry),
+                             decltype(&::crucible::cipher::federation::deserialize_untrusted_federation_entry)>);
+
+// deserialize_federation_entry is a function TEMPLATE on Org; pick a
+// probe Org and assert the instantiated fn-pointer types match.
+struct U015FederationProbeOrg {};
+static_assert(std::is_same_v<
+    decltype(&cipher::federation::deserialize_federation_entry<U015FederationProbeOrg>),
+    decltype(&::crucible::cipher::federation::deserialize_federation_entry<U015FederationProbeOrg>)>);
+
+static_assert(std::is_same_v<decltype(&cipher::federation::federation_entry_blob_layout_disjoint),
+                             decltype(&::crucible::cipher::federation::federation_entry_blob_layout_disjoint)>);
+
+// ── Cardinality witness ───────────────────────────────────────────
+//
+// 28 surface items added for FIXY-U-015.  Future drift forces an
+// update to both the using-decl block AND this constant.
+//
+// Breakdown:
+//   A. Top-level Cipher class + companion templates                 5
+//      (Cipher, CipherOpenView, CipherSessionEventPersistenceRow,
+//       ContentAddressedPayload<T>, LoadedContentAddressedPayload<T>)
+//   B. SessionEvent alias                                           1
+//   C. ComputationCache surface                                    10
+//      (CompiledBody, IsCacheableFunction, IsEffectRow,
+//       computation_cache_key, lookup_computation_cache,
+//       insert_computation_cache, computation_cache_key_in_row,
+//       lookup_computation_cache_in_row,
+//       insert_computation_cache_in_row, drain_computation_cache)
+//   D. federation:: sub-namespace                                  12
+//      (FEDERATION_MAGIC / FEDERATION_PROTOCOL_V1 /
+//       FEDERATION_HEADER_BYTES; FederationEntryHeader /
+//       ColdBlobRegion / FederationEntryView; FederationError /
+//       federation_error_name; serialize_federation_entry /
+//       deserialize_untrusted_federation_entry /
+//       deserialize_federation_entry /
+//       federation_entry_blob_layout_disjoint)
+//                                                                 ───
+//                                                                  28
+
+constexpr int u015_surface_cardinality = 28;
+static_assert(u015_surface_cardinality == 28,
+    "FIXY-U-015 surface (Cipher + ComputationCache + federation) "
+    "drifted from 28 — Contract.h U-015 block and this sentinel "
+    "must update in lockstep.");
+
+}  // namespace u015
 
 }  // namespace crucible::fixy::contract::self_test
