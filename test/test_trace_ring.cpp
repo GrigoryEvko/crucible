@@ -21,7 +21,7 @@ int main() {
   auto* ring = new crucible::TraceRing();
 
   // Empty ring
-  assert(ring->size() == 0);
+  assert(ring->size().peek() == 0);
 
   // Single append + drain
   crucible::TraceRing::Entry e{};
@@ -29,7 +29,7 @@ int main() {
   e.num_inputs = 2;
   e.num_outputs = 1;
   assert(ring->try_append(e, MetaIndex{42}, ScopeHash{0x1234}, CallsiteHash{0x5678}));
-  assert(ring->size() == 1);
+  assert(ring->size().peek() == 1);
 
   crucible::TraceRing::Entry out[1];
   MetaIndex meta[1];
@@ -43,7 +43,7 @@ int main() {
   assert(meta[0] == MetaIndex{42});
   assert(scope[0] == ScopeHash{0x1234});
   assert(callsite[0] == CallsiteHash{0x5678});
-  assert(ring->size() == 0);
+  assert(ring->size().peek() == 0);
 
   // Batch append + drain
   for (uint32_t i = 0; i < 1000; i++) {
@@ -51,7 +51,7 @@ int main() {
     entry.schema_hash = SchemaHash{i};
     assert(ring->try_append(entry));
   }
-  assert(ring->size() == 1000);
+  assert(ring->size().peek() == 1000);
 
   crucible::TraceRing::Entry batch[2048];
   n = ring->drain(batch, 2048);
@@ -61,7 +61,7 @@ int main() {
 
   // Reset
   ring->reset();
-  assert(ring->size() == 0);
+  assert(ring->size().peek() == 0);
 
   // Entry is exactly 64 bytes (one cache line)
   static_assert(sizeof(crucible::TraceRing::Entry) == 64);
@@ -159,7 +159,7 @@ int main() {
                                 batch_meta, batch_scope, batch_csite);
         if (got == 0) {
           if (producer_done.load(std::memory_order_acquire) &&
-              r->size() == 0) {
+              r->size().peek() == 0) {
             break;
           }
           CRUCIBLE_SPIN_PAUSE;
@@ -203,14 +203,14 @@ int main() {
     e1.schema_hash = SchemaHash{0xCAFE0001};
     assert(r->try_append_pure(e1, MetaIndex{1},
                               ScopeHash{0xC1}, CallsiteHash{0xD1}));
-    assert(r->size() == 1);
+    assert(r->size().peek() == 1);
 
     // (b) Explicit Row<> template arg
     crucible::TraceRing::Entry e2{};
     e2.schema_hash = SchemaHash{0xCAFE0002};
     assert(r->try_append_pure<eff::Row<>>(e2, MetaIndex{2},
                                           ScopeHash{0xC2}, CallsiteHash{0xD2}));
-    assert(r->size() == 2);
+    assert(r->size().peek() == 2);
 
     // (c) Interleaved with raw try_append; FIFO order preserved
     crucible::TraceRing::Entry e3{};
@@ -220,7 +220,7 @@ int main() {
     e4.schema_hash = SchemaHash{0xCAFE0004};
     assert(r->try_append_pure<eff::PureRow>(e4, MetaIndex{4},
                                             ScopeHash{0xC4}, CallsiteHash{0xD4}));
-    assert(r->size() == 4);
+    assert(r->size().peek() == 4);
 
     // (d) drain_pure mirrors drain semantics — default template arg
     {
@@ -237,7 +237,7 @@ int main() {
       assert(meta_i16[0]  == MetaIndex{1}    && meta_i16[3]  == MetaIndex{4});
       assert(scope_i16[0] == ScopeHash{0xC1} && scope_i16[3] == ScopeHash{0xC4});
       assert(csite_i16[0] == CallsiteHash{0xD1} && csite_i16[3] == CallsiteHash{0xD4});
-      assert(r->size() == 0);
+      assert(r->size().peek() == 0);
     }
 
     // (d') drain_pure with explicit Row<> + zero max_count
@@ -337,7 +337,7 @@ int main() {
             pure_out, DRAIN_CAP, pure_meta, pure_scope, pure_csite);
         if (got == 0) {
           if (producer_done.load(std::memory_order_acquire) &&
-              r->size() == 0) {
+              r->size().peek() == 0) {
             break;
           }
           CRUCIBLE_SPIN_PAUSE;
@@ -407,7 +407,7 @@ int main() {
       crucible::TraceRing::Entry e_bare{};
       e_bare.schema_hash = SchemaHash{0xA0AA};
       assert(r->try_append_pure(e_bare));    // all defaults
-      assert(r->size() == 1);
+      assert(r->size().peek() == 1);
 
       // Drain it back via drain_pure(out, max_count) — 2-arg form,
       // no parallel-array outputs.
@@ -415,7 +415,7 @@ int main() {
       uint32_t got_a = r->drain_pure(one_a, 1);
       assert(got_a == 1);
       assert(one_a[0].schema_hash == SchemaHash{0xA0AA});
-      assert(r->size() == 0);
+      assert(r->size().peek() == 0);
     }
 
     // (audit-B) Capacity-full deterministic — fill ring exactly,
@@ -427,14 +427,14 @@ int main() {
         bool ok = r->try_append_pure(full_e);
         assert(ok && "ring should accept CAPACITY entries");
       }
-      assert(r->size() == CAP);
+      assert(r->size().peek() == CAP);
 
       // One more append must fail — ring is at capacity.
       crucible::TraceRing::Entry overflow_e{};
       overflow_e.schema_hash = SchemaHash{0xDEAD'BEEF};
       bool ok_overflow = r->try_append_pure(overflow_e);
       assert(!ok_overflow);
-      assert(r->size() == CAP);  // size unchanged
+      assert(r->size().peek() == CAP);  // size unchanged
 
       // Drain everything back, verify FIFO order.
       std::vector<crucible::TraceRing::Entry> full_drain(CAP);
@@ -443,7 +443,7 @@ int main() {
       for (uint32_t i = 0; i < CAP; ++i) {
         assert(full_drain[i].schema_hash == SchemaHash{0xB000'0000u | i});
       }
-      assert(r->size() == 0);
+      assert(r->size().peek() == 0);
     }
 
     // (audit-C) Wrap-around through drain_pure — drive head/tail past
@@ -526,7 +526,7 @@ int main() {
       assert(got_mix2 == 1);
       assert(mix_out2[0].schema_hash == SchemaHash{0xD2D2});
       assert(mix_scope2[0]           == ScopeHash{0xCAFE});
-      assert(r->size() == 0);
+      assert(r->size().peek() == 0);
     }
 
     delete r;

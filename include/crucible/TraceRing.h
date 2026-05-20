@@ -51,6 +51,7 @@
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
 
 // FIXY-U-031b (S1-TraceRing of #1736): TraceRing spells its safety
@@ -73,6 +74,7 @@ using ::crucible::safety::HotPath;
 using ::crucible::safety::HotPathTier_v;
 using ::crucible::safety::Monotonic;
 using ::crucible::safety::Refined;
+using ::crucible::safety::Stale;
 using ::crucible::safety::Tagged;
 }  // namespace crucible::fixy::wrap
 namespace crucible::fixy::tags {
@@ -649,8 +651,14 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // Approximate count — racy by design (diagnostic only). pure: depends on
   // memory (atomics) but has no side effects — optimizer may CSE adjacent
   // calls, which is fine for a diagnostic. Invariant: head >= tail always.
-  [[nodiscard, gnu::pure]] uint32_t size() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
-    return static_cast<uint32_t>(head.get() - tail.get());
+  // size() reads head/tail at different instants under concurrent
+  // producer/consumer advance (CRUCIBLE_NO_THREAD_SAFETY) — the
+  // Stale<uint32_t> return type-documents the race, symmetric to
+  // MetaLog::size() (WRAP-TraceRing, S2b of #1736).  at_infinity =
+  // "unknown lag"; callers .peek() to acknowledge the unsynchronized snapshot.
+  [[nodiscard, gnu::pure]] crucible::fixy::wrap::Stale<uint32_t> size() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    return crucible::fixy::wrap::Stale<uint32_t>::at_infinity(
+        static_cast<uint32_t>(head.get() - tail.get()));
   }
 
   // Monotonic high-water mark of producer commits. Vigil::flush snapshots
