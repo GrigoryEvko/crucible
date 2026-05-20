@@ -2247,6 +2247,17 @@ crucible_neg_compile_fixy_test(neg_fixy_safety_mint_linear_view_no_view_ok
 crucible_neg_compile_fixy_test(neg_fixy_safety_mint_linear_view_wrong_tag
     "view_ok|no matching function|type_identity")
 
+# FIXY-U-074m HS14 floor: fixy::sess::mint_session_view gates via
+# `requires HandleIsAt<Handle, Tag>`.  Probed with static_assert(requires{...})
+# — the header's own can_mint_session_view discipline, which avoids
+# namespace-scope Send-state handle instances (abandonment-destructor).
+# Two distinct classes: SessionHandle at the WRONG position (Send@AtRecv)
+# vs a non-SessionHandle type (int).
+crucible_neg_compile_fixy_test(neg_fixy_sess_session_view_wrong_position
+    "static assertion failed|HandleIsAt|mint_session_view")
+crucible_neg_compile_fixy_test(neg_fixy_sess_session_view_non_handle
+    "static assertion failed|HandleIsAt|mint_session_view")
+
 # FIXY-U-074d HS14 floor: fixy::substr::mint_substrate_session sat at
 # HS14:0.  Two distinct rejection conjuncts of its requires-clause
 # (IsBridgeableDirection ∧ SubstrateFitsCtxResidency ∧

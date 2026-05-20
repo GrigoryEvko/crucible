@@ -26,7 +26,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-20T15:21:19Z`.
+Snapshot generated: `2026-05-20T15:30:07Z`.
 
 ## bridges/
 
@@ -155,7 +155,7 @@ Snapshot generated: `2026-05-20T15:21:19Z`.
 | `mint_sender` | `include/crucible/sessions/FederationProtocol.h:221` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:22` | HS14: 9 |
 | `mint_session` | `include/crucible/sessions/SessionMint.h:977` | - | - | Y | - | ctx | `include/crucible/fixy/Sess.h:274` | HS14: 2 |
 | `mint_session_handle` | `include/crucible/sessions/SessionCheckpoint.h:456` | - | Y | Y | - | token | `include/crucible/fixy/Sess.h:17` | HS14: 3 |
-| `mint_session_view` | `include/crucible/sessions/SessionView.h:279` | Y | Y | Y | Y | token | `include/crucible/fixy/Sess.h:374` | HS14: 0 ⚠ |
+| `mint_session_view` | `include/crucible/sessions/SessionView.h:279` | Y | Y | Y | Y | token | `include/crucible/fixy/Sess.h:374` | HS14: 2 |
 | `mint_sharded_calendar_grid_consumer` | `include/crucible/sessions/ShardedCalendarGridSession.h:63` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:297` | HS14: 2 |
 | `mint_sharded_calendar_grid_producer` | `include/crucible/sessions/ShardedCalendarGridSession.h:54` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:296` | HS14: 2 |
 | `mint_sharded_grid_consumer` | `include/crucible/sessions/ShardedGridSession.h:67` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:323` | HS14: 2 |
