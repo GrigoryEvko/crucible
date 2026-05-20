@@ -50,6 +50,7 @@
 #include <crucible/concurrent/Stage.h>
 #include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <type_traits>  // FIXY-U-103 sentinel uses std::is_same_v
 
 namespace crucible::fixy::pipe {
 
@@ -155,3 +156,31 @@ using ::crucible::concurrent::CtxFitsStage;
 using ::crucible::concurrent::CtxFitsStageFromEndpoints;
 
 }  // namespace crucible::fixy::pipe
+
+// ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
+//
+// Drift-catch for the 18 using-decls above.  Substrate identity
+// witnessed via std::is_same_v on the four type carriers (Endpoint,
+// Stage, Pipeline, Direction); cardinality witness traps additions
+// or removals at every consumer's include time, not just inside
+// test/test_fixy_pipe.cpp.  Same recipe as fixy/Bridge.h::self_test
+// + fixy/Diag.h::self_test + fixy/Handle.h::self_test.
+
+namespace crucible::fixy::pipe::self_test {
+
+template <typename, typename, typename> class StageProbe {};
+template <typename...> class PipelineProbe {};
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::Direction,
+    ::crucible::concurrent::Direction>,
+    "fixy::pipe::Direction must alias substrate enum");
+
+// Cardinality witness — surface count of using-decls in this header.
+// Any add/remove of a using-decl above must update this number.
+constexpr int pipe_surface_cardinality = 18;
+static_assert(pipe_surface_cardinality == 18,
+    "fixy::pipe:: surface drifted — update Pipe.h using-decls + "
+    "this sentinel + test_fixy_pipe.cpp coverage in lockstep.");
+
+}  // namespace crucible::fixy::pipe::self_test

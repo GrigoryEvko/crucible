@@ -79,6 +79,8 @@
 #include <crucible/safety/Simd.h>
 #include <crucible/safety/Workload.h>
 
+#include <type_traits>  // FIXY-U-103 sentinel uses std::is_same_v
+
 namespace crucible::fixy::struct_ {
 
 // ── Pinned / NonMovable (address-stability mixins) ─────────────────
@@ -221,3 +223,75 @@ using ::crucible::safety::should_parallelize;
 using ::crucible::safety::WorkBudget;
 
 }  // namespace crucible::fixy::struct_
+
+// ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
+//
+// Drift-catch for the 77 outer using-decls + ct:: (6) + simd:: (22)
+// nested re-exports.  Same recipe as fixy/Bridge.h / fixy/Diag.h /
+// fixy/Pipe.h sentinels: type-identity witnesses for representative
+// items + cardinality mirror.  Pulls <type_traits> through Pinned.h
+// transitively; no extra include needed.
+//
+// FIXY-U-103.
+
+namespace crucible::fixy::struct_::self_test {
+
+// ── Representative type-identity witnesses ────────────────────────
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::struct_::Pinned<int>,
+    ::crucible::safety::Pinned<int>>,
+    "fixy::struct_::Pinned must alias safety::Pinned");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::struct_::NonMovable<int>,
+    ::crucible::safety::NonMovable<int>>,
+    "fixy::struct_::NonMovable must alias safety::NonMovable");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::struct_::FinalBy<int>,
+    ::crucible::safety::FinalBy<int>>,
+    "fixy::struct_::FinalBy must alias safety::FinalBy");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::struct_::OwnedRegion<int, void>,
+    ::crucible::safety::OwnedRegion<int, void>>,
+    "fixy::struct_::OwnedRegion must alias safety::OwnedRegion");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::struct_::WorkBudget,
+    ::crucible::safety::WorkBudget>,
+    "fixy::struct_::WorkBudget must alias safety::WorkBudget");
+
+// NotInherited is a concept (template <typename T> concept NotInherited =
+// std::is_final_v<T>), not a type — exercise reachability via concept
+// equivalence on a final probe type.
+struct NotInheritedProbe_ final {};
+static_assert(::crucible::fixy::struct_::NotInherited<NotInheritedProbe_>);
+static_assert(::crucible::fixy::struct_::NotInherited<NotInheritedProbe_>
+              == ::crucible::safety::NotInherited<NotInheritedProbe_>,
+    "fixy::struct_::NotInherited concept must mirror substrate.");
+
+// ── Cardinality witness ──────────────────────────────────────────
+//
+// Outer-namespace using-decls (77) + ct:: nested (6) + simd:: nested
+// (22 using-decls + 1 concept DetSafeSimd).  Any add/remove of a
+// using-decl above must update this number AND the corresponding
+// test_fixy_struct.cpp mirror (when present).
+
+constexpr int struct_outer_cardinality        = 77;
+constexpr int struct_ct_cardinality           = 6;
+constexpr int struct_simd_using_cardinality   = 22;
+constexpr int struct_simd_concept_cardinality = 1;
+
+static_assert(struct_outer_cardinality        == 77,
+    "fixy::struct_:: outer surface drifted from 77 — Struct.h and "
+    "its sentinel must update in lockstep.");
+static_assert(struct_ct_cardinality           == 6,
+    "fixy::struct_::ct:: surface drifted from 6.");
+static_assert(struct_simd_using_cardinality   == 22,
+    "fixy::struct_::simd:: using-decl surface drifted from 22.");
+static_assert(struct_simd_concept_cardinality == 1,
+    "fixy::struct_::simd:: concept surface drifted from 1.");
+
+}  // namespace crucible::fixy::struct_::self_test

@@ -77,6 +77,8 @@
 #include <crucible/sessions/SpscSession.h>
 #include <crucible/sessions/SwmrSession.h>
 
+#include <type_traits>  // FIXY-U-103 sentinel uses std::is_same_v
+
 namespace crucible::fixy::substr {
 
 // ═════════════════════════════════════════════════════════════════════
@@ -498,3 +500,77 @@ mint_mpsc_consumer_session(Ctx const& ctx,
 using ::crucible::concurrent::mint_substrate_session;
 
 }  // namespace crucible::fixy::substr
+
+// ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
+//
+// Drift-catch for the per-substrate sub-namespaces: spsc (2), swmr (6),
+// chaselev (4), metalog (4), chainedge (4), mpmc (4), calendar_grid (4),
+// sharded_calendar_grid (4), sharded_grid (4), snapshot (4), and the
+// outer-level mint_substrate_session re-export (1).  mpsc:: is NOT a
+// pure re-export — it defines its own mint factories (also covered by
+// dedicated test_fixy_substr_mpsc fixtures) so it doesn't contribute
+// to the using-decl cardinality.
+//
+// Same recipe as fixy/Pipe.h / fixy/Struct.h: type-identity witnesses
+// for representative items + per-sub-namespace cardinality mirrors.
+//
+// FIXY-U-103.
+
+namespace crucible::fixy::substr::self_test {
+
+// ── Representative type-identity witnesses ───────────────────────
+
+// MetaLog non-template type-aliases preserve substrate identity.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::metalog::MetaLogRecord,
+    ::crucible::safety::proto::metalog_session::MetaLogRecord>,
+    "fixy::substr::metalog::MetaLogRecord must alias the substrate.");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::metalog::ProducerProto,
+    ::crucible::safety::proto::metalog_session::ProducerProto>,
+    "fixy::substr::metalog::ProducerProto must alias the substrate.");
+
+// ChainEdge non-template aliases preserve substrate identity.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::chainedge::Signal,
+    ::crucible::safety::proto::chainedge_session::Signal>,
+    "fixy::substr::chainedge::Signal must alias the substrate.");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::chainedge::SignalerProto,
+    ::crucible::safety::proto::chainedge_session::SignalerProto>,
+    "fixy::substr::chainedge::SignalerProto must alias the substrate.");
+
+// SPSC template alias preserves identity (parameterized witness).
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::spsc::ProducerProto<int>,
+    ::crucible::safety::proto::spsc_session::ProducerProto<int>>,
+    "fixy::substr::spsc::ProducerProto<T> must alias the substrate.");
+
+// ── Per-sub-namespace cardinality witnesses ──────────────────────
+
+constexpr int substr_spsc_using                  = 2;
+constexpr int substr_swmr_using                  = 6;
+constexpr int substr_chaselev_using              = 4;
+constexpr int substr_metalog_using               = 4;
+constexpr int substr_chainedge_using             = 4;
+constexpr int substr_mpmc_using                  = 4;
+constexpr int substr_calendar_grid_using         = 4;
+constexpr int substr_sharded_calendar_grid_using = 4;
+constexpr int substr_sharded_grid_using          = 4;
+constexpr int substr_snapshot_using              = 4;
+constexpr int substr_outer_using                 = 1;
+
+constexpr int substr_total_using =
+    substr_spsc_using + substr_swmr_using + substr_chaselev_using +
+    substr_metalog_using + substr_chainedge_using + substr_mpmc_using +
+    substr_calendar_grid_using + substr_sharded_calendar_grid_using +
+    substr_sharded_grid_using + substr_snapshot_using +
+    substr_outer_using;
+
+static_assert(substr_total_using == 41,
+    "fixy::substr:: using-decl surface drifted from 41 — Substr.h "
+    "sub-namespace re-exports and this sentinel must update in lockstep.");
+
+}  // namespace crucible::fixy::substr::self_test
