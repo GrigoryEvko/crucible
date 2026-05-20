@@ -15,7 +15,8 @@
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Source.h>   // FIXY-U-096t: tags::source::* provenance
+#include <crucible/fixy/Wrap.h>     // FIXY-U-096t: Tagged via the fixy umbrella
 
 #include <concepts>
 #include <cstdint>
@@ -28,9 +29,9 @@
 namespace crucible {
 
 static constexpr uint32_t CDAG_MAGIC   = 0x43444147u; // 'GDAG' LE
-using CdagFormatVersion = safety::Tagged<uint32_t, safety::source::FormatVersion>;
-using ExternalCdagVersion = safety::Tagged<uint32_t, safety::source::External>;
-using LoadedRegionNode = safety::Tagged<RegionNode*, safety::source::Loaded>;
+using CdagFormatVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::FormatVersion>;
+using ExternalCdagVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::External>;
+using LoadedRegionNode = fixy::wrap::Tagged<RegionNode*, fixy::tags::source::Loaded>;
 static_assert(sizeof(LoadedRegionNode) == sizeof(RegionNode*));
 static_assert(std::is_trivially_copy_constructible_v<LoadedRegionNode>);
 static constexpr CdagFormatVersion CDAG_VERSION{8u};   // v8: Guard::hash reflection-based (full-field fold incl. pad); v7 hashes invalid
@@ -242,7 +243,7 @@ inline Header read_header(Reader& r) {
     w.w(region->num_ops);
     w.w(region->first_op_schema.raw());
     w.w(region->measured_ms);
-    // #942 WRAP-MerkleDag-6: variant_id is safety::Monotonic<uint32_t>
+    // #942 WRAP-MerkleDag-6: variant_id is fixy::wrap::Monotonic<uint32_t>
     // (regime-2 collapse to sizeof(uint32_t)=4B; on-disk format
     // unchanged).  .get() projects the underlying uint32_t for the
     // raw byte writer.
@@ -494,7 +495,7 @@ inline Header read_header(Reader& r) {
     node->num_ops         = num_ops;
     node->first_op_schema = first_op_schema;
     node->measured_ms     = measured_ms;
-    // #942 WRAP-MerkleDag-6: variant_id is safety::Monotonic<uint32_t>.
+    // #942 WRAP-MerkleDag-6: variant_id is fixy::wrap::Monotonic<uint32_t>.
     // The field was already default-constructed to {0u} by the
     // RegionNode{} placement-new above; re-establish the invariant
     // from the disk-supplied value via std::construct_at so the
