@@ -11,11 +11,26 @@
 //   - fixy/Perm.h   — Permission / SharedPermission token mints
 //   - fixy/Mach.h   — Machine token mint
 //
-// This header covers the 11 canonical Graded-backed wrappers
-// (CLAUDE.md L0 §Safety) plus the 5 Mutation.h derivative wrappers.
-// Three of the eleven already ship via Safety.h / Perm.h; they are
-// re-exported here too so `fixy::wrap::` is the single one-stop
-// directory for value-wrapping.
+// This header covers the FULL CLAUDE.md §XVI catalog:
+//
+//   • 16 Tier-S canonical outer→inner Graded wrappers
+//     (HotPath, DetSafe, NumericalTier, Vendor, ResidencyHeat,
+//      CipherTier, AllocClass, Wait, MemOrder, Progress,
+//      Stale, Tagged, Refined, Secret, Linear, Computation)
+//   • 11 off-tree Graded wrappers
+//     (SealedRefined, TimeOrdered, Monotonic, AppendOnly,
+//      Consistency, OpaqueLifetime, Crash, Budgeted,
+//      EpochVersioned, NumaPlacement, RecipeSpec)
+//   • 5 Mutation.h derivative wrappers
+//     (WriteOnce, WriteOnceNonNull, BoundedMonotonic,
+//      OrderedAppendOnly, AtomicMonotonic)
+//   • 7 structural (deliberately not Graded) wrappers
+//     (Pinned, NonMovable, ScopedView, OwnedRegion,
+//      NotInherited, FinalBy, ct::* primitives)
+//
+// Three of the canonical wrappers (Linear, Secret, SharedPermission)
+// also ship via Safety.h / Perm.h; they are re-exported here too so
+// `fixy::wrap::` is the single one-stop directory for value-wrapping.
 //
 // ── Dual-export discipline (fixy-A4-011) ──────────────────────────
 //
@@ -83,19 +98,42 @@
 // helper.  When a wrapper grows a mint factory, add a using-declaration
 // here.
 
+#include <crucible/effects/Computation.h>      // canonical: Computation<R,T>
 #include <crucible/permissions/Permission.h>  // SharedPermission
+#include <crucible/safety/AllocClass.h>        // canonical Tier-S
+#include <crucible/safety/Budgeted.h>          // off-tree (Space axis)
+#include <crucible/safety/CipherTier.h>        // canonical Tier-S
+#include <crucible/safety/Consistency.h>       // off-tree (Version axis)
+#include <crucible/safety/ConstantTime.h>      // structural (ct::* primitives)
+#include <crucible/safety/Crash.h>             // off-tree (Effect axis)
+#include <crucible/safety/DetSafe.h>           // canonical Tier-S
+#include <crucible/safety/EpochVersioned.h>    // off-tree (Version axis)
+#include <crucible/safety/HotPath.h>           // canonical Tier-S (outermost)
 #include <crucible/safety/Linear.h>
+#include <crucible/safety/MemOrder.h>          // canonical Tier-S
 #include <crucible/safety/Mutation.h>          // AppendOnly / Monotonic /
                                                // WriteOnce / WriteOnceNonNull /
                                                // BoundedMonotonic /
                                                // OrderedAppendOnly /
                                                // AtomicMonotonic
+#include <crucible/safety/NotInherited.h>      // structural (NotInherited, FinalBy)
+#include <crucible/safety/NumaPlacement.h>     // off-tree (Representation)
+#include <crucible/safety/NumericalTier.h>     // canonical Tier-S
+#include <crucible/safety/OpaqueLifetime.h>    // off-tree (Lifetime axis)
+#include <crucible/safety/OwnedRegion.h>       // structural (arena-backed region)
+#include <crucible/safety/Pinned.h>            // structural (Pinned + NonMovable)
+#include <crucible/safety/Progress.h>          // canonical Tier-S
+#include <crucible/safety/RecipeSpec.h>        // off-tree (Precision axis)
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/ResidencyHeat.h>     // canonical Tier-S
+#include <crucible/safety/ScopedView.h>        // structural (lifetime borrow)
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
+#include <crucible/safety/Vendor.h>            // canonical Tier-S
+#include <crucible/safety/Wait.h>              // canonical Tier-S
 
 #include <cstdint>       // FIXY-U-020 sentinel uses std::uint64_t
 #include <type_traits>   // FIXY-U-020 sentinel uses std::is_same_v
@@ -185,6 +223,159 @@ using ::crucible::safety::OrderedAppendOnly;
 
 // AtomicMonotonic<T, Cmp> — thread-safe Monotonic over std::atomic<T>.
 using ::crucible::safety::AtomicMonotonic;
+
+// ─── Canonical Tier-S outer→inner (11 missing of 16) ─────────────
+// Order follows CLAUDE.md §XVI canonical wrapper-nesting (outer→inner):
+//   HotPath ⊃ DetSafe ⊃ NumericalTier ⊃ Vendor ⊃ ResidencyHeat ⊃
+//   CipherTier ⊃ AllocClass ⊃ Wait ⊃ MemOrder ⊃ Progress ⊃
+//   Stale ⊃ Tagged ⊃ Refined ⊃ Secret ⊃ Linear ⊃ Computation
+
+// Per-tier convenience aliases (e.g. `HotH`/`PureD`/`SpinW`) live in
+// substrate `detail::*_layout::` namespaces and are intentionally NOT
+// public.  Consumers pick a tier inline: `HotPath<HotPathTier_v::Hot, T>`,
+// `Wait<WaitStrategy_v::SpinPause, T>`, etc.  Public per-tier aliases
+// (with friendlier spellings like `Hot`/`SpinPause`) live in the
+// per-wrapper sub-namespaces under safety::hot_path::, safety::wait::,
+// etc.; access through that path if a tier-shorthand is desired.
+
+// HotPath<HotPathTier, T> — locality-class declaration (outermost).
+using ::crucible::safety::HotPath;
+using ::crucible::safety::HotPathLattice;
+using ::crucible::safety::HotPathTier_v;
+
+// DetSafe<DetSafeTier, T> — replay-determinism class.
+using ::crucible::safety::DetSafe;
+using ::crucible::safety::DetSafeLattice;
+using ::crucible::safety::DetSafeTier_v;
+
+// NumericalTier<Tolerance, T> — recipe-determinism tier.
+using ::crucible::safety::NumericalTier;
+using ::crucible::safety::Tolerance;
+using ::crucible::safety::ToleranceLattice;
+
+// Vendor<VendorBackend, T> — Mimic per-vendor lowering target.
+using ::crucible::safety::Vendor;
+using ::crucible::safety::VendorLattice;
+using ::crucible::safety::VendorBackend_v;
+
+// ResidencyHeat<ResidencyHeatTag, T> — memory-tier residency.
+using ::crucible::safety::ResidencyHeat;
+using ::crucible::safety::ResidencyHeatLattice;
+using ::crucible::safety::ResidencyHeatTag_v;
+
+// CipherTier<CipherTierTag, T> — Cipher hot/warm/cold tier.
+using ::crucible::safety::CipherTier;
+using ::crucible::safety::CipherTierLattice;
+using ::crucible::safety::CipherTierTag_v;
+
+// AllocClass<AllocClassTag, T> — allocation origin (Stack/Arena/Heap/...).
+using ::crucible::safety::AllocClass;
+using ::crucible::safety::AllocClassLattice;
+using ::crucible::safety::AllocClassTag_v;
+
+// Wait<WaitStrategy, T> — spin/park/block strategy for atomic waits.
+using ::crucible::safety::Wait;
+using ::crucible::safety::WaitLattice;
+using ::crucible::safety::WaitStrategy_v;
+
+// MemOrder<MemOrderTag, T> — memory-order discipline (Relaxed/AcqRel/SeqCst).
+using ::crucible::safety::MemOrder;
+using ::crucible::safety::MemOrderLattice;
+using ::crucible::safety::MemOrderTag_v;
+
+// Progress<ProgressClass, T> — Bounded/Productive/MayDiverge termination class.
+using ::crucible::safety::Progress;
+using ::crucible::safety::ProgressLattice;
+using ::crucible::safety::ProgressClass_v;
+
+// Computation<R, T> — Met(X) effect-row carrier (innermost canonical).
+using ::crucible::effects::Computation;
+
+// ─── Off-tree Graded wrappers (7 missing of 11) ───────────────────
+
+// Consistency<Consistency_v, T> — version-axis consistency level.
+// Per-tier aliases under safety::consistency::Strong/BoundedStaleness/Eventual.
+using ::crucible::safety::Consistency;
+using ::crucible::safety::ConsistencyLattice;
+using ::crucible::safety::Consistency_v;
+
+// OpaqueLifetime<Lifetime_v, T> — lifetime-axis scoping.  Per-tier
+// aliases live under safety::opaque_lifetime:: (PerFleet/PerProgram/
+// PerRequest); use them via that path or pick a tier inline.
+using ::crucible::safety::OpaqueLifetime;
+using ::crucible::safety::LifetimeLattice;
+using ::crucible::safety::Lifetime_v;
+
+// Crash<CrashClass, T> — effect-axis crash discipline.  Per-tier
+// aliases live under safety::crash:: (NoThrow/ErrorReturn/Throw/Abort)
+// rather than at top-level; expose the class + lattice + enum here
+// and let consumers pick the tier inline as `Crash<NoThrow, T>`.
+using ::crucible::safety::Crash;
+using ::crucible::safety::CrashLattice;
+using ::crucible::safety::CrashClass_v;
+
+// Budgeted<T> — space-axis bit/byte budget (BitsBudget + PeakBytes).
+using ::crucible::safety::Budgeted;
+using ::crucible::safety::BitsBudget;
+using ::crucible::safety::BitsBudgetLattice;
+using ::crucible::safety::PeakBytes;
+using ::crucible::safety::PeakBytesLattice;
+
+// EpochVersioned<T> — version-axis epoch + generation pair.
+using ::crucible::safety::EpochVersioned;
+using ::crucible::safety::Epoch;
+using ::crucible::safety::EpochLattice;
+using ::crucible::safety::Generation;
+using ::crucible::safety::GenerationLattice;
+
+// NumaPlacement<T> — representation-axis NUMA affinity placement.
+using ::crucible::safety::NumaPlacement;
+using ::crucible::safety::AffinityLattice;
+using ::crucible::safety::AffinityMask;
+using ::crucible::safety::NumaNodeId;
+using ::crucible::safety::NumaNodeLattice;
+
+// RecipeSpec<T> — precision-axis recipe-family pinning.
+using ::crucible::safety::RecipeSpec;
+using ::crucible::safety::RecipeFamily;
+using ::crucible::safety::RecipeFamilyLattice;
+
+// ─── Structural wrappers (deliberately not Graded) ────────────────
+// Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
+// typestate, address-stability, structural constraint) that don't fit
+// the Graded<M, L, T> shape but ARE value-level wrappers.  Surfaced
+// here so consumers don't have to descend into safety/ for them.
+
+// Pinned<T> — address-stability marker (CRTP base).
+using ::crucible::safety::Pinned;
+// NonMovable<T> — Pinned's stronger sibling: also non-movable.
+using ::crucible::safety::NonMovable;
+
+// ScopedView<Carrier, Tag> — lifetime-bounded borrow for inspection.
+using ::crucible::safety::ScopedView;
+
+// OwnedRegion<T, Tag> — arena-backed exclusive region.
+using ::crucible::safety::OwnedRegion;
+
+// NotInherited<T> (concept) / FinalBy<T> (CRTP base) — structural
+// non-extensibility.  NotInherited is a `concept`, not a class, so it
+// is brought in as a name only (no per-tier alias possible).
+using ::crucible::safety::NotInherited;
+using ::crucible::safety::assert_not_inherited;
+using ::crucible::safety::FinalBy;
+
+// ─── ConstantTime primitives (ct:: sub-namespace) ─────────────────
+// Branch-free primitives for crypto paths and Cipher key handling.
+// CLAUDE.md §XVI structural-wrappers entry: ConstantTime<T> — Crucible's
+// ct:: lives at ::crucible::safety::ct (free functions, not a class).
+namespace ct {
+using ::crucible::safety::ct::mask_from_bit;
+using ::crucible::safety::ct::select;
+using ::crucible::safety::ct::eq;
+using ::crucible::safety::ct::less;
+using ::crucible::safety::ct::is_zero;
+using ::crucible::safety::ct::cswap;
+}  // namespace ct
 
 }  // namespace crucible::fixy::wrap
 
@@ -292,4 +483,158 @@ static_assert(std::is_same_v<
     decltype(::crucible::safety::non_null)>,
     "fixy::wrap::non_null must alias safety::non_null.");
 
+// ─── Tier-S canonical outer→inner (11 cells, FIXY-U-010) ──────────
+// Each canonical wrapper is asserted with a concrete grade pick so the
+// substrate's lattice-tier enum AND the wrapper class template both
+// participate in the type identity.  A drift on either rail (wrong
+// enum, wrong substrate parameter order) reds the build at the header.
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::HotPath<::crucible::fixy::wrap::HotPathTier_v::Hot, int>,
+    ::crucible::safety::HotPath<::crucible::safety::HotPathTier_v::Hot, int>>,
+    "fixy::wrap::HotPath must alias safety::HotPath.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::DetSafe<::crucible::fixy::wrap::DetSafeTier_v::Pure, int>,
+    ::crucible::safety::DetSafe<::crucible::safety::DetSafeTier_v::Pure, int>>,
+    "fixy::wrap::DetSafe must alias safety::DetSafe.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::NumericalTier<::crucible::fixy::wrap::Tolerance::BITEXACT, int>,
+    ::crucible::safety::NumericalTier<::crucible::safety::Tolerance::BITEXACT, int>>,
+    "fixy::wrap::NumericalTier must alias safety::NumericalTier.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Vendor<::crucible::fixy::wrap::VendorBackend_v::Portable, int>,
+    ::crucible::safety::Vendor<::crucible::safety::VendorBackend_v::Portable, int>>,
+    "fixy::wrap::Vendor must alias safety::Vendor.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::ResidencyHeat<::crucible::fixy::wrap::ResidencyHeatTag_v::Hot, int>,
+    ::crucible::safety::ResidencyHeat<::crucible::safety::ResidencyHeatTag_v::Hot, int>>,
+    "fixy::wrap::ResidencyHeat must alias safety::ResidencyHeat.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::CipherTier<::crucible::fixy::wrap::CipherTierTag_v::Hot, int>,
+    ::crucible::safety::CipherTier<::crucible::safety::CipherTierTag_v::Hot, int>>,
+    "fixy::wrap::CipherTier must alias safety::CipherTier.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::AllocClass<::crucible::fixy::wrap::AllocClassTag_v::Arena, int>,
+    ::crucible::safety::AllocClass<::crucible::safety::AllocClassTag_v::Arena, int>>,
+    "fixy::wrap::AllocClass must alias safety::AllocClass.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Wait<::crucible::fixy::wrap::WaitStrategy_v::SpinPause, int>,
+    ::crucible::safety::Wait<::crucible::safety::WaitStrategy_v::SpinPause, int>>,
+    "fixy::wrap::Wait must alias safety::Wait.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::MemOrder<::crucible::fixy::wrap::MemOrderTag_v::AcqRel, int>,
+    ::crucible::safety::MemOrder<::crucible::safety::MemOrderTag_v::AcqRel, int>>,
+    "fixy::wrap::MemOrder must alias safety::MemOrder.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Progress<::crucible::fixy::wrap::ProgressClass_v::Bounded, int>,
+    ::crucible::safety::Progress<::crucible::safety::ProgressClass_v::Bounded, int>>,
+    "fixy::wrap::Progress must alias safety::Progress.");
+
+// Computation — innermost canonical (effects:: namespace).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Computation<::crucible::effects::Row<>, int>,
+    ::crucible::effects::Computation<::crucible::effects::Row<>, int>>,
+    "fixy::wrap::Computation must alias effects::Computation.");
+
+// ─── Off-tree Graded wrappers (7 cells, FIXY-U-010) ──────────────
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Consistency<::crucible::fixy::wrap::Consistency_v::STRONG, int>,
+    ::crucible::safety::Consistency<::crucible::safety::Consistency_v::STRONG, int>>,
+    "fixy::wrap::Consistency must alias safety::Consistency.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::OpaqueLifetime<::crucible::fixy::wrap::Lifetime_v::PER_PROGRAM, int>,
+    ::crucible::safety::OpaqueLifetime<::crucible::safety::Lifetime_v::PER_PROGRAM, int>>,
+    "fixy::wrap::OpaqueLifetime must alias safety::OpaqueLifetime.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Crash<::crucible::fixy::wrap::CrashClass_v::NoThrow, int>,
+    ::crucible::safety::Crash<::crucible::safety::CrashClass_v::NoThrow, int>>,
+    "fixy::wrap::Crash must alias safety::Crash.");
+
+// FinalBy<T> + Wait sentinel — Crash sub-namespace `crash::NoThrow` is
+// the user-facing per-tier alias.  Just ensure the class + tier-enum
+// chain through fixy::wrap:: is a single substrate type (above test).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Budgeted<int>,
+    ::crucible::safety::Budgeted<int>>,
+    "fixy::wrap::Budgeted must alias safety::Budgeted.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::EpochVersioned<int>,
+    ::crucible::safety::EpochVersioned<int>>,
+    "fixy::wrap::EpochVersioned must alias safety::EpochVersioned.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::NumaPlacement<int>,
+    ::crucible::safety::NumaPlacement<int>>,
+    "fixy::wrap::NumaPlacement must alias safety::NumaPlacement.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::RecipeSpec<int>,
+    ::crucible::safety::RecipeSpec<int>>,
+    "fixy::wrap::RecipeSpec must alias safety::RecipeSpec.");
+
+// ─── Structural wrappers (7 cells, FIXY-U-010) ────────────────────
+
+struct WrapStructuralTag {};
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Pinned<int>,
+    ::crucible::safety::Pinned<int>>,
+    "fixy::wrap::Pinned must alias safety::Pinned.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::NonMovable<int>,
+    ::crucible::safety::NonMovable<int>>,
+    "fixy::wrap::NonMovable must alias safety::NonMovable.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::ScopedView<int, WrapStructuralTag>,
+    ::crucible::safety::ScopedView<int, WrapStructuralTag>>,
+    "fixy::wrap::ScopedView must alias safety::ScopedView.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::OwnedRegion<int, WrapStructuralTag>,
+    ::crucible::safety::OwnedRegion<int, WrapStructuralTag>>,
+    "fixy::wrap::OwnedRegion must alias safety::OwnedRegion.");
+// NotInherited is a `concept`, not a class — concept-identity is by
+// structural matching; the using-declaration brings the name into
+// fixy::wrap::, and we anchor reach by witnessing that the concept
+// is satisfied by an alias of a final type in both namespaces.
+struct WrapFinalT final {};
+static_assert(::crucible::fixy::wrap::NotInherited<WrapFinalT>,
+    "fixy::wrap::NotInherited must alias safety::NotInherited concept.");
+static_assert(::crucible::safety::NotInherited<WrapFinalT>,
+    "Sentinel: NotInherited concept must accept a `final` class.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::FinalBy<WrapFinalT>,
+    ::crucible::safety::FinalBy<WrapFinalT>>,
+    "fixy::wrap::FinalBy must alias safety::FinalBy.");
+
+// ct:: free-function decltype identity (function templates, so the
+// drift is detectable on the qualified-id type).
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::ct::select<unsigned>),
+    decltype(&::crucible::safety::ct::select<unsigned>)>,
+    "fixy::wrap::ct::select must alias safety::ct::select.");
+
 }  // namespace crucible::fixy::wrap::self_test
+
+namespace crucible::fixy::wrap {
+// ── runtime_smoke_test — FIXY-U-103 discipline ───────────────────
+// Exercise the round-2 surface at runtime to defeat clangd's "static-
+// asserts only" optimization.  Touches one Graded canonical, one
+// off-tree, one structural, and one ct:: primitive to prove the
+// using-declarations are address-resolvable at link time.
+inline void runtime_smoke_test() noexcept {
+    // One Tier-S canonical: HotPath has a public T-arg ctor.
+    HotPath<HotPathTier_v::Hot, int> hot{42};
+    (void) hot;
+
+    // One off-tree: Budgeted has a public default ctor.
+    Budgeted<int> b{};
+    (void) b;
+
+    // ct:: primitive — exercises the constant-time sub-namespace.
+    unsigned const masked = ct::select<unsigned>(1u, 0xAAu, 0x55u);
+    (void) masked;
+
+    // ScopedView / OwnedRegion are friend-gated; the using-decl reach
+    // is anchored by self_test:: static_asserts above without ctor
+    // invocation here (their mint factories need protocol-specific
+    // customization that's out of scope for a smoke test).
+}
+}  // namespace crucible::fixy::wrap
