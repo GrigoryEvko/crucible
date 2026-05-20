@@ -6153,6 +6153,21 @@ crucible_neg_compile_test(neg_cyclic_non_power_of_two
 crucible_neg_compile_test(neg_cyclic_signed_counter
   "constraints not satisfied|associated constraints|no matching|no type named")
 
+# safety::CyclicBuffer<T, N> structural MRU ring — HS14 fixtures (#1084
+# piece).  Two DISTINCT rejection mechanisms:
+#   * neg_cyclic_buffer_non_power_of_two   CLASS-template requires fires —
+#                                          CyclicBuffer<int, 6> has no valid
+#                                          specialization (N must be 2^k so
+#                                          the composed Cyclic mask works).
+#   * neg_cyclic_buffer_push_non_assignable  MEMBER-function requires fires
+#                                          — the class instantiates (claim()
+#                                          works) but both push overloads
+#                                          drop out for a non-assignable T.
+crucible_neg_compile_test(neg_cyclic_buffer_non_power_of_two
+  "constraints not satisfied|associated constraints|no matching|no type named")
+crucible_neg_compile_test(neg_cyclic_buffer_push_non_assignable
+  "constraints not satisfied|associated constraints|no matching|no type named")
+
 # WRAP-Saturate-3 (#1001) — *_sat_det returns
 # DetSafe<Pure, Saturated<T>>. Raw Saturated consumers and implicit
 # cross-tier DetSafe consumers must fail.

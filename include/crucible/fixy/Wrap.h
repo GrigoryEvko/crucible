@@ -111,6 +111,7 @@
 #include <crucible/safety/ConstantTime.h>      // structural (ct::* primitives)
 #include <crucible/safety/Crash.h>             // off-tree (Effect axis)
 #include <crucible/safety/Cyclic.h>            // structural (modular ring-cursor newtype)
+#include <crucible/safety/CyclicBuffer.h>      // structural (bounded MRU ring composition)
 #include <crucible/safety/DetSafe.h>           // canonical Tier-S
 #include <crucible/safety/EpochVersioned.h>    // off-tree (Version axis)
 #include <crucible/safety/FixedArray.h>        // structural (bounded stack-array newtype)
@@ -423,6 +424,17 @@ using ::crucible::safety::FixedArray;
 // wrapper (modular arithmetic has no useful lattice), peer to
 // FixedArray / Saturated.
 using ::crucible::safety::Cyclic;
+
+// CyclicBuffer<T, N> — bounded MRU ring buffer composing FixedArray<T,N>
+// (slots) + Cyclic<size_t,N> (write cursor) + BoundedMonotonic<size_t,N>
+// (saturating fill).  Promotes the recurring "remember the last N
+// events" triple to one audited type: claim() yields the next-write slot
+// for in-place mutation, recent(i) is MRU-first reverse scan, size()
+// saturates at N.  Surfaced through fixy::wrap:: so the ring consumers
+// (WRAP-Transaction-4 #1063 TransactionLog ring, WRAP-RegionCache-4 #989
+// RegionCache slot ring) reach the composition through the umbrella.
+// Deliberately-not-graded structural wrapper, peer to Cyclic.
+using ::crucible::safety::CyclicBuffer;
 
 // NotInherited<T> (concept) / FinalBy<T> (CRTP base) — structural
 // non-extensibility.  NotInherited is a `concept`, not a class, so it
