@@ -32,14 +32,10 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
-#include <crucible/safety/Borrowed.h>
+#include <crucible/fixy/Wrap.h>
 #include <crucible/safety/Decide.h>
-#include <crucible/safety/IsBorrowedRef.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/ScopedView.h>
-#include <crucible/safety/Tagged.h>
 
 #include <cassert>
 #include <cstdint>
@@ -80,9 +76,9 @@ namespace op_role {
 }
 
 struct ReplayEngine {
-  using PoolBorrow = crucible::safety::BorrowedRef<const PoolAllocator>;
+  using PoolBorrow = crucible::fixy::wrap::BorrowedRef<const PoolAllocator>;
 
-  static_assert(crucible::safety::extract::IsBorrowedRef<PoolBorrow>);
+  static_assert(crucible::fixy::wrap::IsBorrowedRef<PoolBorrow>);
 
   ReplayEngine() = default;
 
@@ -337,10 +333,10 @@ struct ReplayEngine {
   // discriminate the two at the type level — an unwrapped OpIndex
   // cannot substitute for either and a Diverged-tagged value cannot
   // substitute for Matched.
-  [[nodiscard]] crucible::safety::Tagged<OpIndex, op_role::Matched>
+  [[nodiscard]] crucible::fixy::wrap::Tagged<OpIndex, op_role::Matched>
   matched_op_index() const {
     assert(current_ && "no matched entry");
-    return crucible::safety::Tagged<OpIndex, op_role::Matched>{
+    return crucible::fixy::wrap::Tagged<OpIndex, op_role::Matched>{
         OpIndex{static_cast<uint32_t>(current_ - ops_)}};
   }
 
@@ -355,21 +351,21 @@ struct ReplayEngine {
   // capacity.  Callers that interpret the result for error reporting
   // pass through .value() once; callers that index ops[diverged] can
   // use the bound as an [[assume]] hint.
-  [[nodiscard]] crucible::safety::Refined<
-      crucible::safety::bounded_above<uint32_t{1u << 22}>,  // CDAG_MAX_OPS
+  [[nodiscard]] crucible::fixy::wrap::Refined<
+      crucible::fixy::wrap::bounded_above<uint32_t{1u << 22}>,  // CDAG_MAX_OPS
       uint32_t>
   diverged_op_index_refined() const {
-    return crucible::safety::Refined<
-        crucible::safety::bounded_above<uint32_t{1u << 22}>,
+    return crucible::fixy::wrap::Refined<
+        crucible::fixy::wrap::bounded_above<uint32_t{1u << 22}>,
         uint32_t>{static_cast<uint32_t>(cursor_ - ops_)};
   }
 
   // Tagged diverged accessor.  Use in preference to the untyped one
   // where the value flows into structures/parameters that could
   // legitimately also receive matched_op_index().
-  [[nodiscard]] crucible::safety::Tagged<OpIndex, op_role::Diverged>
+  [[nodiscard]] crucible::fixy::wrap::Tagged<OpIndex, op_role::Diverged>
   diverged_op_index_tagged() const {
-    return crucible::safety::Tagged<OpIndex, op_role::Diverged>{
+    return crucible::fixy::wrap::Tagged<OpIndex, op_role::Diverged>{
         OpIndex{static_cast<uint32_t>(cursor_ - ops_)}};
   }
 
@@ -391,8 +387,8 @@ struct ReplayEngine {
   // and match state — those are op-scale transient invariants, not
   // block-scoped state the view would cover.
 
-  using ActiveView = crucible::safety::ScopedView<ReplayEngine,
-                                                   engine_state::Active>;
+  using ActiveView = crucible::fixy::wrap::ScopedView<ReplayEngine,
+                                                       engine_state::Active>;
 
   [[nodiscard]] friend constexpr bool view_ok(
       ReplayEngine const& e, std::type_identity<engine_state::Active>) noexcept {
@@ -402,7 +398,7 @@ struct ReplayEngine {
   [[nodiscard]] CRUCIBLE_INLINE ActiveView mint_active_view() const noexcept
       pre (is_initialized())
   {
-    return crucible::safety::mint_view<engine_state::Active>(*this);
+    return crucible::fixy::wrap::mint_view<engine_state::Active>(*this);
   }
 
   // Typed overloads delegate to the untyped bodies.  The ActiveView
@@ -487,6 +483,6 @@ struct ReplayEngine {
 static_assert(sizeof(ReplayEngine) == 64, "ReplayEngine: 8 × 8B = 64 bytes (one cache line)");
 
 // Tier 2 opt-in.
-static_assert(crucible::safety::no_scoped_view_field_check<ReplayEngine>());
+static_assert(crucible::fixy::wrap::no_scoped_view_field_check<ReplayEngine>());
 
 } // namespace crucible

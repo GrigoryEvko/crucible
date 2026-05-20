@@ -102,6 +102,7 @@
 #include <crucible/permissions/Permission.h>  // SharedPermission
 #include <crucible/safety/AllocClass.h>        // canonical Tier-S
 #include <crucible/safety/Borrowed.h>          // non-owning lifetime-tagged view
+#include <crucible/safety/IsBorrowedRef.h>     // IsBorrowedRef concept gate
 #include <crucible/safety/Budgeted.h>          // off-tree (Space axis)
 #include <crucible/safety/Saturated.h>         // {value, was_clamped} carrier
 #include <crucible/safety/CipherTier.h>        // canonical Tier-S
@@ -367,6 +368,16 @@ using ::crucible::safety::NonMovable;
 
 // ScopedView<Carrier, Tag> — lifetime-bounded borrow for inspection.
 using ::crucible::safety::ScopedView;
+// mint_view<Tag>(carrier) — §XXI token mint for ScopedView<Carrier, Tag>.
+// Calls view_ok(carrier, type_identity<Tag>{}) for one runtime state
+// assertion; grep-discoverable via `mint_view<`.
+using ::crucible::safety::mint_view;
+// no_scoped_view_field_check<T>() — Tier-2 reflection audit: static_asserts
+// T has no ScopedView<...> field (whose lifetime would outlive the carrier).
+using ::crucible::safety::no_scoped_view_field_check;
+// IsBorrowedRef<T> — concept witnessing T is a safety::BorrowedRef<U>.
+// Used in static_asserts on member-type aliases (e.g. ReplayEngine::PoolBorrow).
+using ::crucible::safety::extract::IsBorrowedRef;
 
 // OwnedRegion<T, Tag> — arena-backed exclusive region.
 using ::crucible::safety::OwnedRegion;
@@ -629,6 +640,25 @@ static_assert(std::is_same_v<
     ::crucible::fixy::wrap::ScopedView<int, WrapStructuralTag>,
     ::crucible::safety::ScopedView<int, WrapStructuralTag>>,
     "fixy::wrap::ScopedView must alias safety::ScopedView.");
+// mint_view — function-template identity by qualified-id decltype.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_view<
+        WrapStructuralTag, int>),
+    decltype(&::crucible::safety::mint_view<
+        WrapStructuralTag, int>)>,
+    "fixy::wrap::mint_view must alias safety::mint_view.");
+// no_scoped_view_field_check — function-template identity.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::no_scoped_view_field_check<int>),
+    decltype(&::crucible::safety::no_scoped_view_field_check<int>)>,
+    "fixy::wrap::no_scoped_view_field_check must alias safety::"
+    "no_scoped_view_field_check.");
+// IsBorrowedRef — concept identity via positive + negative witness.
+static_assert(::crucible::fixy::wrap::IsBorrowedRef<
+    ::crucible::safety::BorrowedRef<int>>,
+    "fixy::wrap::IsBorrowedRef must accept safety::BorrowedRef<int>.");
+static_assert(!::crucible::fixy::wrap::IsBorrowedRef<int>,
+    "fixy::wrap::IsBorrowedRef must reject plain int.");
 static_assert(std::is_same_v<
     ::crucible::fixy::wrap::OwnedRegion<int, WrapStructuralTag>,
     ::crucible::safety::OwnedRegion<int, WrapStructuralTag>>,
