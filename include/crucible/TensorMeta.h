@@ -15,8 +15,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Source.h>   // FIXY-U-096x: tags::source::External
+#include <crucible/fixy/Wrap.h>     // FIXY-U-096x: Tagged / Refined / bounded_above
 
 #include <cstddef>
 #include <cstdint>
@@ -39,8 +39,8 @@ inline constexpr uint8_t kMaxTensorNDim = 8;
 // from PyTorch / trace / disk boundaries.  The runtime only hashes and
 // compares them as opaque external cookies until a later validator
 // explicitly retags them.
-using ExternalDataPtr = ::crucible::safety::Tagged<
-    void*, ::crucible::safety::source::External>;
+using ExternalDataPtr = ::crucible::fixy::wrap::Tagged<
+    void*, ::crucible::fixy::tags::source::External>;
 
 static_assert(sizeof(ExternalDataPtr) == sizeof(void*),
     "Tagged<void*, source::External> must EBO-collapse so TensorMeta "
@@ -52,7 +52,7 @@ static_assert(std::is_standard_layout_v<ExternalDataPtr>);
 // The value may depend on autograd object identity and must never be
 // treated as a persistent Family-A key.  Tagged keeps the 8-byte layout
 // but forces every consumer to acknowledge the Family-B lane.
-using GradFnHash = ::crucible::safety::Tagged<
+using GradFnHash = ::crucible::fixy::wrap::Tagged<
     uint64_t, ::crucible::hash_family::FamilyB>;
 
 static_assert(sizeof(GradFnHash) == sizeof(uint64_t),
@@ -69,8 +69,8 @@ inline constexpr int64_t kTensorDimElementByteBudget = 16;
 inline constexpr int64_t kMaxTensorDimExtent =
     std::numeric_limits<int64_t>::max() / kTensorDimElementByteBudget;
 
-using TensorDim = ::crucible::safety::Refined<
-    ::crucible::safety::bounded_above<kMaxTensorDimExtent>, int64_t>;
+using TensorDim = ::crucible::fixy::wrap::Refined<
+    ::crucible::fixy::wrap::bounded_above<kMaxTensorDimExtent>, int64_t>;
 
 static_assert(sizeof(TensorDim) == sizeof(int64_t),
     "Refined<bounded_above<kMaxTensorDimExtent>, int64_t> must "
@@ -222,8 +222,8 @@ raw_grad_fn_hash(const TensorMeta& meta) noexcept {
 // Vessel / traces / disk.  Callers must now explicitly mark the input
 // as source::External before compute_storage_nbytes* consumes it.
 // Reference payload keeps the 168-byte TensorMeta layout untouched.
-using ExternalTensorMeta = ::crucible::safety::Tagged<
-    const TensorMeta&, ::crucible::safety::source::External>;
+using ExternalTensorMeta = ::crucible::fixy::wrap::Tagged<
+    const TensorMeta&, ::crucible::fixy::tags::source::External>;
 
 [[nodiscard]] inline constexpr ExternalTensorMeta
 external_tensor_meta(const TensorMeta& meta) noexcept {
@@ -267,8 +267,8 @@ external_tensor_meta(const TensorMeta& meta) noexcept {
 // type-level bound and the runtime path to disagree.
 //
 // Cost: regime-1 EBO collapse — sizeof(ValidNDim) == sizeof(uint8_t).
-using ValidNDim = ::crucible::safety::Refined<
-    ::crucible::safety::bounded_above<kMaxTensorNDim>, uint8_t>;
+using ValidNDim = ::crucible::fixy::wrap::Refined<
+    ::crucible::fixy::wrap::bounded_above<kMaxTensorNDim>, uint8_t>;
 
 [[nodiscard, gnu::const]] inline constexpr
 uint8_t make_ndim(ValidNDim raw) noexcept {
