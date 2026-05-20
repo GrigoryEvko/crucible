@@ -23,6 +23,7 @@
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Tagged.h>
+#include <crucible/safety/WeakRef.h>
 
 int main() {
     using namespace crucible::safety;
@@ -37,6 +38,7 @@ int main() {
     detail::sealed_refined_self_test::runtime_smoke_test();
     detail::secret_self_test::runtime_smoke_test();
     detail::tagged_self_test::runtime_smoke_test();
+    detail::weak_ref_self_test::runtime_smoke_test();
 
     ct::detail::ct_self_test::runtime_smoke_test();
 

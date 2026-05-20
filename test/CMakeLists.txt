@@ -6168,6 +6168,21 @@ crucible_neg_compile_test(neg_cyclic_buffer_non_power_of_two
 crucible_neg_compile_test(neg_cyclic_buffer_push_non_assignable
   "constraints not satisfied|associated constraints|no matching|no type named")
 
+# safety::WeakRef<T> structural nullable non-owning ref — HS14 fixtures
+# (#1084 piece).  Two DISTINCT rejection mechanisms:
+#   * neg_weakref_reference_type   CLASS-template requires fires —
+#                                  is_object_v<int&> is false, so
+#                                  WeakRef<int&> has no specialization
+#                                  (also rejects void / function T).
+#   * neg_weakref_implicit_raw_ptr CONVERSION fires — WeakRef ships no
+#                                  implicit operator T*, so `int* p = wr`
+#                                  has no viable conversion (TypeSafe:
+#                                  the named escapes are try_get/from_raw).
+crucible_neg_compile_test(neg_weakref_reference_type
+  "constraints not satisfied|associated constraints|no matching|no type named")
+crucible_neg_compile_test(neg_weakref_implicit_raw_ptr
+  "cannot convert|no viable conversion|invalid conversion|no match")
+
 # WRAP-Saturate-3 (#1001) — *_sat_det returns
 # DetSafe<Pure, Saturated<T>>. Raw Saturated consumers and implicit
 # cross-tier DetSafe consumers must fail.

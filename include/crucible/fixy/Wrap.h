@@ -143,6 +143,7 @@
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>            // canonical Tier-S
 #include <crucible/safety/Wait.h>              // canonical Tier-S
+#include <crucible/safety/WeakRef.h>           // structural (nullable non-owning ref)
 
 #include <cstdint>       // FIXY-U-020 sentinel uses std::uint64_t
 #include <type_traits>   // FIXY-U-020 sentinel uses std::is_same_v
@@ -217,6 +218,16 @@ using ::crucible::safety::TimeOrdered;
 // migration's MerkleDag.h trace_entry getter signatures.
 using ::crucible::safety::Borrowed;
 using ::crucible::safety::BorrowedRef;
+
+// WeakRef<T> — nullable, non-owning, may-be-evicted reference (the
+// cache-slot / back-pointer primitive).  Complements BorrowedRef (which
+// is must-be-present) by filling the may-be-null quadrant BorrowedRef's
+// own doc delegates away.  Surfaced through fixy::wrap:: so the cache
+// consumers (WRAP-RegionCache-1 #986 regions_[8], WRAP-RE-1 #993
+// ReplayEngine parent back-pointer) reach the wrapper through the
+// umbrella.  Deliberately-not-graded structural wrapper, peer to
+// BorrowedRef.
+using ::crucible::safety::WeakRef;
 
 // Saturated<T> — saturating-arithmetic result carrying {value,
 // was_clamped} discriminant.  safety/Saturated.h primary symbol —
@@ -806,6 +817,17 @@ static_assert(std::is_same_v<
     ::crucible::fixy::wrap::CyclicBuffer<int, 8>,
     ::crucible::safety::CyclicBuffer<int, 8>>,
     "fixy::wrap::CyclicBuffer must alias safety::CyclicBuffer.");
+
+// WeakRef identity — exercised by the WRAP-RegionCache-1 (#986) and
+// WRAP-RE-1 (#993) cache-slot / back-pointer migrations.  WeakRef<T> is
+// a non-Graded structural newtype (nullable non-owning pointer); the
+// re-export must preserve type identity so a `WeakRef<RegionNode>` cache
+// slot stays sizeof(RegionNode*)-compatible with the substrate primary
+// and the null-discipline / guarded-deref is one and the same type.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::WeakRef<int>,
+    ::crucible::safety::WeakRef<int>>,
+    "fixy::wrap::WeakRef must alias safety::WeakRef.");
 
 // Bits identity — exercised by FIXY-U-096o Graph.h migration.  Bits<E, Inv...>
 // is a non-Graded structural newtype (typed bit-field over a scoped enum);
