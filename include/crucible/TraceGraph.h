@@ -7,10 +7,18 @@
 
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/Mutation.h>
-#include <crucible/safety/Post.h>
-#include <crucible/safety/Pre.h>
+#include <crucible/fixy/Wrap.h>           // FIXY-U-096g: WriteOnce / Refined / non_zero
+#include <crucible/safety/Decide.h>       // decide::* lives at top-level, not under safety::
+#include <crucible/safety/Post.h>         // CRUCIBLE_POST macro (substrate dep)
+#include <crucible/safety/Pre.h>          // CRUCIBLE_PRE macro (substrate dep)
+
+// FIXY-U-096g production migration: WriteOnce / Refined / non_zero reached
+// through the fixy:: umbrella instead of safety::* directly.  TraceGraph.h
+// is runtime-tier (fan-in = BackgroundThread.h + Lower.h only, both runtime-
+// tier) — no substrate back-edge so the fixy/Wrap.h umbrella (which pulls
+// safety/OwnedRegion.h → Arena.h) is safe.  TraceGraph already includes
+// Arena.h directly at line 8 above; the umbrella's transitive Arena.h is
+// redundant, not cyclic.
 
 namespace crucible {
 
@@ -105,7 +113,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Edge);
 // ═══════════════════════════════════════════════════════════════════
 
 struct TraceGraph {
-  using BuiltCount = crucible::safety::WriteOnce<uint32_t>;
+  using BuiltCount = crucible::fixy::wrap::WriteOnce<uint32_t>;
 
   // Nodes (ops in trace order).
   TraceEntry* ops = nullptr;
@@ -244,13 +252,13 @@ struct TraceGraph {
   //
   // CONTRACT-106 cite — non-zero hash sentinel via decide::is_non_zero
   // (CONTRACT-072 catalog).
-  [[nodiscard]] crucible::safety::Refined<
-      crucible::safety::non_zero, ContentHash>
+  [[nodiscard]] crucible::fixy::wrap::Refined<
+      crucible::fixy::wrap::non_zero, ContentHash>
   computed_content_hash() const noexcept
       pre (::crucible::decide::is_non_zero(content_hash))
   {
-    return crucible::safety::Refined<
-        crucible::safety::non_zero, ContentHash>{content_hash};
+    return crucible::fixy::wrap::Refined<
+        crucible::fixy::wrap::non_zero, ContentHash>{content_hash};
   }
 };
 
