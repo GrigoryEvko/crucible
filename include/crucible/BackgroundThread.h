@@ -25,12 +25,9 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/permissions/Permission.h>
-#include <crucible/safety/AlignedBuffer.h>
-#include <crucible/safety/Mutation.h>
-#include <crucible/handles/OneShotFlag.h>
-#include <crucible/safety/PublishCommit.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Handle.h>     // FIXY-U-095: AlignedBuffer / OneShotFlag / PublishCommitCell
+#include <crucible/fixy/Source.h>     // FIXY-U-095: tags::source::External
+#include <crucible/fixy/Wrap.h>       // FIXY-U-095: NonNull / WriteOnce / Monotonic / AppendOnly / Tagged / Positive / PowerOfTwo
 #include <crucible/TraceGraph.h>
 
 namespace crucible {
@@ -65,16 +62,16 @@ struct BackgroundThread {
   //       proven non-null at construction, so downstream bg-worker
   //       code dereferences without guards and the optimizer can
   //       [[assume]] it.  `set(nullptr)` is a contract fire.
-  using RingPtr    = crucible::safety::NonNull<TraceRing*>;
-  using MetaLogPtr = crucible::safety::NonNull<MetaLog*>;
-  crucible::safety::WriteOnce<RingPtr>    ring;
+  using RingPtr    = crucible::fixy::wrap::NonNull<TraceRing*>;
+  using MetaLogPtr = crucible::fixy::wrap::NonNull<MetaLog*>;
+  crucible::fixy::wrap::WriteOnce<RingPtr>    ring;
 
   // The MetaLog to read tensor metadata from.  Not owned.  Same
   // installed-once + non-null discipline as ring.  `if (meta_log)`
   // continues to work via WriteOnce::operator bool (checks the
   // has-been-set state, not the pointer itself — the pointer is
   // non-null once set, by construction).
-  crucible::safety::WriteOnce<MetaLogPtr> meta_log;
+  crucible::fixy::wrap::WriteOnce<MetaLogPtr> meta_log;
 
   // Distributed context (set by Vessel adapter at start).
   int32_t rank = -1;
@@ -136,7 +133,7 @@ struct BackgroundThread {
   // iteration count queries).  Co-locating with the preceding per-
   // iteration vectors would have every push_back invalidate fg's copy
   // of iterations_completed.
-  alignas(64) crucible::safety::Monotonic<uint32_t> iterations_completed {0};
+  alignas(64) crucible::fixy::wrap::Monotonic<uint32_t> iterations_completed {0};
   uint32_t last_iteration_length = 0;
 
   // Arena for DAG allocations (TraceEntry, TensorMeta arrays,
@@ -154,11 +151,11 @@ struct BackgroundThread {
   // by the foreground thread once a region is associated with a
   // compiled plan.  AppendOnly enforces the "no in-place removal"
   // invariant in the type.
-  crucible::safety::AppendOnly<RegionNode*> uncompiled_regions;
+  crucible::fixy::wrap::AppendOnly<RegionNode*> uncompiled_regions;
 
   // Per-iteration property graphs (for future fusion/scheduling).
   // Same append-only lifecycle.
-  crucible::safety::AppendOnly<TraceGraph*> iteration_graphs;
+  crucible::fixy::wrap::AppendOnly<TraceGraph*> iteration_graphs;
 
   // Thread control.  stop_requested is a one-way signal for one run()
   // invocation; start() / tests re-arm it under quiescence with
@@ -167,7 +164,7 @@ struct BackgroundThread {
   // The signal has no data dependency beyond termination, but using
   // OneShotFlag keeps the release/acquire discipline structural instead
   // of hand-rolled atomic<bool> loads and stores.
-  alignas(64) crucible::safety::OneShotFlag stop_requested;
+  alignas(64) crucible::fixy::handle::OneShotFlag stop_requested;
   std::jthread pipeline_thread;
 
   // Total entries fully processed by the bg thread.  AtomicMonotonic-
@@ -195,7 +192,7 @@ struct BackgroundThread {
   struct PublishStageAuth;  // friend-only authority; defined below.
   struct PublishStageTag {};
   using TotalProcessedCell =
-      safety::PublishCommitCell<PublishStageTag, PublishStageAuth>;
+      fixy::handle::PublishCommitCell<PublishStageTag, PublishStageAuth>;
   TotalProcessedCell total_processed;
 
   // Divergence signal: fg thread signals this when compiled replay
@@ -213,7 +210,7 @@ struct BackgroundThread {
   // adjacent bg-private fields (arena, uncompiled_regions, thread)
   // would ping-pong every time fg signals — bg would lose its cached
   // copies of the bg-only fields on the same line.
-  alignas(64) crucible::safety::OneShotFlag reset_requested;
+  alignas(64) crucible::fixy::handle::OneShotFlag reset_requested;
 
   static constexpr uint32_t BATCH_SIZE = 4096;
 
@@ -702,7 +699,7 @@ struct BackgroundThread {
     device_capability = device_cap;
     reserve_iteration_buffers_();
     stop_requested.reset_in_quiescent_context(
-        ::crucible::safety::OneShotFlag::QuiescenceProof{});
+        ::crucible::fixy::handle::OneShotFlag::QuiescenceProof{});
     pipeline_thread = std::jthread([this](std::stop_token) noexcept {
       run_in_row<run_required_row>();
     });
@@ -767,8 +764,8 @@ struct BackgroundThread {
   // pointers as internal-pool offsets.  Regime-1 EBO collapse
   // preserves sizeof(PtrSlot) == 24.
 
-  using PtrMapKey = ::crucible::safety::Tagged<void*,
-                       ::crucible::safety::source::External>;
+  using PtrMapKey = ::crucible::fixy::wrap::Tagged<void*,
+                       ::crucible::fixy::tags::source::External>;
 
   struct PtrSlot {
     PtrMapKey key{nullptr};   // 8B (Tagged regime-1 EBO collapse)
@@ -818,16 +815,16 @@ struct BackgroundThread {
   //
   // #876 WRAP-BgThread-5: each raw `T* scratch_*_ = nullptr` paired
   // with a manual std::calloc + std::free is wrapped in
-  // safety::AlignedBuffer<T> for move-only RAII.  The hot drain path
+  // fixy::handle::AlignedBuffer<T> for move-only RAII.  The hot drain path
   // continues to read raw pointers via `local_map = scratch_map_.data()`
   // / `scratch_slots_.data()` / `scratch_edges_.data()` — same single-
   // load shape, no indirection.  Replacement on growth is a buffer move
   // (AlignedBuffer::allocate); the old buffer's dtor frees the prior
   // allocation, eliminating the explicit std::free pairs.
 
-  ::crucible::safety::AlignedBuffer<PtrSlot>  scratch_map_;
-  ::crucible::safety::AlignedBuffer<SlotInfo> scratch_slots_;
-  ::crucible::safety::AlignedBuffer<Edge>     scratch_edges_;
+  ::crucible::fixy::handle::AlignedBuffer<PtrSlot>  scratch_map_;
+  ::crucible::fixy::handle::AlignedBuffer<SlotInfo> scratch_slots_;
+  ::crucible::fixy::handle::AlignedBuffer<Edge>     scratch_edges_;
   uint8_t map_gen_ = 0;
 
   // Current capacities (0 = not yet allocated).  The three *_cap_max_
@@ -835,10 +832,10 @@ struct BackgroundThread {
   // "never shrinks".  Wrapped so that promise is type-enforced.
   // ptr_mask_ is a derived view of map_cap_ kept raw for the inner-loop
   // load on line 608.
-  crucible::safety::Monotonic<uint32_t> map_cap_      {0};  // PtrMap capacity (power of 2)
+  crucible::fixy::wrap::Monotonic<uint32_t> map_cap_      {0};  // PtrMap capacity (power of 2)
   uint32_t                              ptr_mask_     = 0;  // map_cap_ - 1
-  crucible::safety::Monotonic<uint32_t> slot_cap_max_ {0};  // SlotInfo buffer capacity
-  crucible::safety::Monotonic<uint32_t> edge_cap_max_ {0};  // Edge buffer capacity
+  crucible::fixy::wrap::Monotonic<uint32_t> slot_cap_max_ {0};  // SlotInfo buffer capacity
+  crucible::fixy::wrap::Monotonic<uint32_t> edge_cap_max_ {0};  // Edge buffer capacity
 
   // Ensure scratch buffers are large enough for the given workload.
   // Called after Phase 0 scan, which provides exact counts.
@@ -866,18 +863,18 @@ struct BackgroundThread {
       // (calloc-equivalent) for the gen-counter reset path below.
       map_cap_.advance(needed_map);
       ptr_mask_ = map_cap_.get() - 1;
-      scratch_map_ = ::crucible::safety::AlignedBuffer<PtrSlot>::allocate_zeroed(map_cap_.get());
+      scratch_map_ = ::crucible::fixy::handle::AlignedBuffer<PtrSlot>::allocate_zeroed(map_cap_.get());
       map_gen_ = 0; // fresh buffer, reset gen
     }
 
     if (needed_slots > slot_cap_max_.get()) {
       slot_cap_max_.advance(needed_slots);
-      scratch_slots_ = ::crucible::safety::AlignedBuffer<SlotInfo>::allocate_zeroed(slot_cap_max_.get());
+      scratch_slots_ = ::crucible::fixy::handle::AlignedBuffer<SlotInfo>::allocate_zeroed(slot_cap_max_.get());
     }
 
     if (needed_edges > edge_cap_max_.get()) {
       edge_cap_max_.advance(needed_edges);
-      scratch_edges_ = ::crucible::safety::AlignedBuffer<Edge>::allocate_zeroed(edge_cap_max_.get());
+      scratch_edges_ = ::crucible::fixy::handle::AlignedBuffer<Edge>::allocate_zeroed(edge_cap_max_.get());
     }
   }
 
@@ -1306,8 +1303,8 @@ struct BackgroundThread {
         static_cast<size_t>(total_outputs) * sizeof(SlotId);
     char* aux_cursor = (aux_bytes > 0) ?
         static_cast<char*>(arena.alloc(a,
-            crucible::safety::Positive<size_t>{aux_bytes},
-            crucible::safety::PowerOfTwo<size_t>{alignof(int64_t)})) :
+            crucible::fixy::wrap::Positive<size_t>{aux_bytes},
+            crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(int64_t)})) :
         nullptr;
 
     // ── PtrMap: bump generation (zero memset) ──

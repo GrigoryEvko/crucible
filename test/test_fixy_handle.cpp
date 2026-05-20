@@ -44,11 +44,18 @@ static_assert(std::is_same_v<
     fhand::LazyEstablishedChannel<th::ProbeProto, th::ProbeResource>,
     safe::LazyEstablishedChannel<th::ProbeProto, th::ProbeResource>>);
 
+// FIXY-U-016b — AlignedBuffer + PublishCommitCell additions.
+static_assert(std::is_same_v<fhand::AlignedBuffer<th::ProbeT>,
+                             safe::AlignedBuffer<th::ProbeT>>);
+static_assert(std::is_same_v<
+    fhand::PublishCommitCell<th::ProbeT, th::ProbeProto>,
+    safe::PublishCommitCell<th::ProbeT, th::ProbeProto>>);
+
 // ─── 2. Cardinality witness mirror (drift catches at TU + header) ─
 
 static_assert(
-    ::crucible::fixy::handle::self_test::handle_alias_cardinality == 9,
-    "fixy::handle:: cardinality drifted from 9 — Handle.h's sentinel "
+    ::crucible::fixy::handle::self_test::handle_alias_cardinality == 11,
+    "fixy::handle:: cardinality drifted from 11 — Handle.h's sentinel "
     "block and this TU must update in lockstep.");
 
 // ─── 3. End-to-end RAII through the fixy:: alias ──────────────────
