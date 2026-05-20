@@ -13,12 +13,41 @@
 #include "effects/Capabilities.h"
 #include "Platform.h"
 #include "Saturate.h"
+// FIXY-U-096y production migration: Arena spells its safety wrappers
+// (Positive / PowerOfTwo / Monotonic / AppendOnly / AllocClass /
+// AllocClassTag_v) through fixy::wrap::, never safety::* — see the
+// usages below.
+//
+// NOTE: Arena.h sits BELOW the fixy/Wrap.h umbrella in the include
+// graph.  fixy/Wrap.h re-exports OwnedRegion, and safety/OwnedRegion.h
+// (line 72) includes <crucible/Arena.h> and uses a COMPLETE Arena in
+// its template bodies.  Pulling the umbrella here would therefore cycle
+// Arena.h -> fixy/Wrap.h -> safety/OwnedRegion.h -> Arena.h (skipped by
+// #pragma once, leaving `Arena` undeclared) — a hard parse error in
+// EVERY Arena-consuming TU.  So we mirror the Saturate.h (FIXY-U-096b)
+// precedent: (a) include the NARROW substrate headers Arena actually
+// needs, and (b) re-open `crucible::fixy::wrap` below to install the 6
+// using-decls Arena references.  fixy/Wrap.h re-declares the same decls
+// independently in its own TU — idempotent (multiple using-decls naming
+// one entity in one namespace are not a redeclaration error), and
+// Wrap.h's dual-export sentinels continue to witness identity.  This
+// irreducible `::crucible::safety::` re-export plumbing is exactly why
+// Arena.h is deliberately ABSENT from scripts/fixy-clean-headers.txt.
 #include "safety/AllocClass.h"
 #include "safety/Decide.h"
 #include "safety/Mutation.h"
 #include "safety/Post.h"
 #include "safety/Pre.h"
 #include "safety/Refined.h"
+
+namespace crucible::fixy::wrap {
+using ::crucible::safety::AllocClass;
+using ::crucible::safety::AllocClassTag_v;
+using ::crucible::safety::AppendOnly;
+using ::crucible::safety::Monotonic;
+using ::crucible::safety::Positive;
+using ::crucible::safety::PowerOfTwo;
+}  // namespace crucible::fixy::wrap
 
 #include <array>
 #include <bit>
@@ -102,8 +131,8 @@ class CRUCIBLE_OWNER Arena {
   [[nodiscard, gnu::malloc, gnu::returns_nonnull]]
   CRUCIBLE_INLINE
   void* alloc(effects::Alloc,
-              crucible::safety::Positive<size_t>   size,
-              crucible::safety::PowerOfTwo<size_t> align) noexcept CRUCIBLE_LIFETIMEBOUND
+              crucible::fixy::wrap::Positive<size_t>   size,
+              crucible::fixy::wrap::PowerOfTwo<size_t> align) noexcept CRUCIBLE_LIFETIMEBOUND
   {
     const size_t s = size.value();
     const size_t a = align.value();
@@ -127,9 +156,9 @@ class CRUCIBLE_OWNER Arena {
   // Default-align overload — convenience for the common case where the
   // caller doesn't have a stricter alignment constraint.
   [[nodiscard, gnu::malloc, gnu::returns_nonnull]] CRUCIBLE_INLINE
-  void* alloc(effects::Alloc a, crucible::safety::Positive<size_t> size) noexcept CRUCIBLE_LIFETIMEBOUND {
+  void* alloc(effects::Alloc a, crucible::fixy::wrap::Positive<size_t> size) noexcept CRUCIBLE_LIFETIMEBOUND {
     return alloc(a, size,
-                 crucible::safety::PowerOfTwo<size_t>{alignof(std::max_align_t)});
+                 crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(std::max_align_t)});
   }
 
   // Allocate a single default-constructible T. Storage only — caller must
@@ -143,8 +172,8 @@ class CRUCIBLE_OWNER Arena {
                   "alignof(T) must be a power of two — true on every "
                   "ABI we support; assert here to surface ports");
     return static_cast<T*>(alloc(a,
-        crucible::safety::Positive<size_t>{sizeof(T)},
-        crucible::safety::PowerOfTwo<size_t>{alignof(T)}));
+        crucible::fixy::wrap::Positive<size_t>{sizeof(T)},
+        crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(T)}));
   }
 
   // Allocate N elements of T. n == 0 returns nullptr (paired with count=0 at
@@ -156,8 +185,8 @@ class CRUCIBLE_OWNER Arena {
     if (n == 0) [[unlikely]] return nullptr;
     const size_t nbytes = crucible::sat::mul_sat(n, sizeof(T));
     return static_cast<T*>(alloc(a,
-        crucible::safety::Positive<size_t>{nbytes},
-        crucible::safety::PowerOfTwo<size_t>{alignof(T)}));
+        crucible::fixy::wrap::Positive<size_t>{nbytes},
+        crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(T)}));
   }
 
   // Allocate N elements of T where N > 0 is guaranteed by the caller.
@@ -185,15 +214,15 @@ class CRUCIBLE_OWNER Arena {
     [[assume(n > 0)]];
     const size_t nbytes = crucible::sat::mul_sat(n, sizeof(T));
     return static_cast<T*>(alloc(a,
-        crucible::safety::Positive<size_t>{nbytes},
-        crucible::safety::PowerOfTwo<size_t>{alignof(T)}));
+        crucible::fixy::wrap::Positive<size_t>{nbytes},
+        crucible::fixy::wrap::PowerOfTwo<size_t>{alignof(T)}));
   }
 
   // ═══════════════════════════════════════════════════════════════════
   // FOUND-G42: AllocClass-pinned production surface
   // ═══════════════════════════════════════════════════════════════════
   //
-  // These wrappers return `safety::AllocClass<AllocClassTag_v::Arena, T*>`,
+  // These wrappers return `fixy::wrap::AllocClass<AllocClassTag_v::Arena, T*>`,
   // pinning the allocation tier at the type level so consumers can
   // declare `requires AllocClass<...>::satisfies<Arena>` (or stronger)
   // gates that REJECT heap-allocated pointers at compile time.
@@ -227,9 +256,9 @@ class CRUCIBLE_OWNER Arena {
   // pointer inside is always non-null per gnu::returns_nonnull).
   template <typename T>
   [[nodiscard]] CRUCIBLE_INLINE
-  safety::AllocClass<safety::AllocClassTag_v::Arena, T*>
+  fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>
   alloc_obj_pinned(effects::Alloc a) noexcept CRUCIBLE_LIFETIMEBOUND {
-    return safety::AllocClass<safety::AllocClassTag_v::Arena, T*>{
+    return fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>{
         alloc_obj<T>(a)};
   }
 
@@ -237,9 +266,9 @@ class CRUCIBLE_OWNER Arena {
   // produces a wrapper around nullptr (same contract as alloc_array).
   template <typename T>
   [[nodiscard]] CRUCIBLE_INLINE
-  safety::AllocClass<safety::AllocClassTag_v::Arena, T*>
+  fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>
   alloc_array_pinned(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
-    return safety::AllocClass<safety::AllocClassTag_v::Arena, T*>{
+    return fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>{
         alloc_array<T>(a, n)};
   }
 
@@ -248,11 +277,11 @@ class CRUCIBLE_OWNER Arena {
   // non-null.
   template <typename T>
   [[nodiscard]] CRUCIBLE_INLINE
-  safety::AllocClass<safety::AllocClassTag_v::Arena, T*>
+  fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>
   alloc_array_nonzero_pinned(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND
       pre (::crucible::decide::positive(n))
   {
-    return safety::AllocClass<safety::AllocClassTag_v::Arena, T*>{
+    return fixy::wrap::AllocClass<fixy::wrap::AllocClassTag_v::Arena, T*>{
         alloc_array_nonzero<T>(a, n)};
   }
 
@@ -262,8 +291,8 @@ class CRUCIBLE_OWNER Arena {
     if (src == nullptr) return nullptr;
     const size_t len = std::strlen(src) + 1;
     auto* dst = static_cast<char*>(alloc(a,
-        crucible::safety::Positive<size_t>{len},
-        crucible::safety::PowerOfTwo<size_t>{1}));
+        crucible::fixy::wrap::Positive<size_t>{len},
+        crucible::fixy::wrap::PowerOfTwo<size_t>{1}));
     std::memcpy(dst, src, len);
     return dst;
   }
@@ -389,8 +418,8 @@ class CRUCIBLE_OWNER Arena {
   // entry; nothing ever erases in between.  AppendOnly<> makes that a
   // type-level guarantee — a future .erase() would be a build error.
   size_t                                block_size_        = 0;
-  crucible::safety::Monotonic<size_t>   total_block_bytes_ {0};
-  crucible::safety::AppendOnly<char*>   blocks_            {};
+  crucible::fixy::wrap::Monotonic<size_t>   total_block_bytes_ {0};
+  crucible::fixy::wrap::AppendOnly<char*>   blocks_            {};
 };
 
 static_assert(sizeof(Arena) == 64, "Arena must fit within one cache line");
