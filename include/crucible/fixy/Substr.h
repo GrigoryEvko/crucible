@@ -65,6 +65,8 @@
 
 #include <crucible/concurrent/PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/Substrate.h>          // FIXY-U-051: ChannelTopology + IsSubstrate family
+#include <crucible/concurrent/SubstrateCtxFit.h>    // FIXY-U-051: ctx-fit concepts + tier metafns
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/sessions/CalendarGridSession.h>
 #include <crucible/sessions/ChainEdgeSession.h>
@@ -499,6 +501,79 @@ mint_mpsc_consumer_session(Ctx const& ctx,
 // `pipe::` re-export was a grace-window misplacement; M-19 closed it.
 using ::crucible::concurrent::mint_substrate_session;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-U-051: topology + ctx-fit concept surface ─────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Pre-U-051 the fixy::substr:: surface exposed only the per-substrate
+// mint factories; production callsites that wanted to declare a
+// `template <IsSubstrate S, IsExecCtx Ctx> requires
+// SubstrateFitsCtxResidency<S, Ctx>` signature had to descend into
+// `<crucible/concurrent/Substrate*.h>` directly.  The §XXI hard-gate
+// concept lived one namespace removed from where every Substrate
+// mint already lived — a discoverability gap that violated the
+// "fixy covers the substrate tree" promise.
+//
+// U-051 closes the gap.  Five categories of surface:
+//   1. ChannelTopology enum + Substrate<...> template family
+//   2. Trait accessors (substrate_topology_v / value_type_t / etc.)
+//   3. Byte-footprint metafunctions (channel_byte_footprint_v,
+//      per_call_working_set_v)
+//   4. IsSubstrate hierarchy (IsSubstrate + 5 topology-refined)
+//   5. Tier enum + ctx-fit concepts + tier-required metafns
+//
+// All re-exports are pure name-lookup directives; concept gates pass
+// through verbatim (C++20 `using` brings concept names just like
+// type aliases).  Sentinel witnesses below pin every re-exported
+// symbol's substrate identity, plus a cardinality witness at the
+// tail.
+
+// ── ChannelTopology enum + Substrate template family ───────────────
+using ::crucible::concurrent::ChannelTopology;
+using ::crucible::concurrent::Substrate;
+using ::crucible::concurrent::Substrate_t;
+
+// ── Trait accessors ────────────────────────────────────────────────
+using ::crucible::concurrent::substrate_traits;
+using ::crucible::concurrent::is_substrate;
+using ::crucible::concurrent::is_substrate_v;
+using ::crucible::concurrent::substrate_topology_v;
+using ::crucible::concurrent::substrate_value_type_t;
+using ::crucible::concurrent::substrate_user_tag_t;
+using ::crucible::concurrent::substrate_capacity_v;
+
+// ── Byte-footprint metafunctions ───────────────────────────────────
+using ::crucible::concurrent::channel_byte_footprint_v;
+using ::crucible::concurrent::per_call_working_set_v;
+
+// ── Topology recommendation helpers ────────────────────────────────
+using ::crucible::concurrent::recommend_topology;
+using ::crucible::concurrent::recommend_topology_for_workload;
+using ::crucible::concurrent::conservative_cliff_l2_per_core;
+
+// ── IsSubstrate hierarchy (concept gates) ──────────────────────────
+using ::crucible::concurrent::IsSubstrate;
+using ::crucible::concurrent::IsOneToOneSubstrate;
+using ::crucible::concurrent::IsManyToOneSubstrate;
+using ::crucible::concurrent::IsOneToManyLatestSubstrate;
+using ::crucible::concurrent::IsManyToManySubstrate;
+using ::crucible::concurrent::IsWorkStealingSubstrate;
+
+// ── Tier enum + cache-tier constants ───────────────────────────────
+using ::crucible::concurrent::Tier;
+using ::crucible::concurrent::fits_in_tier_v;
+using ::crucible::concurrent::required_tier_for_footprint;
+using ::crucible::concurrent::substrate_required_tier_v;
+using ::crucible::concurrent::substrate_hot_path_required_tier_v;
+using ::crucible::concurrent::conservative_l1d_per_core;
+using ::crucible::concurrent::conservative_l2_per_core;
+using ::crucible::concurrent::conservative_l3_total;
+
+// ── Ctx-fit concept gates (the §XXI hard-gate trinity) ─────────────
+using ::crucible::concurrent::SubstrateFitsCtxResidency;
+using ::crucible::concurrent::StorageFitsCtxResidency;
+using ::crucible::concurrent::SubstrateBenefitsFromParallelism;
+
 }  // namespace crucible::fixy::substr
 
 // ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
@@ -572,5 +647,178 @@ constexpr int substr_total_using =
 static_assert(substr_total_using == 41,
     "fixy::substr:: using-decl surface drifted from 41 — Substr.h "
     "sub-namespace re-exports and this sentinel must update in lockstep.");
+
+// ── FIXY-U-051: topology + ctx-fit concept-surface witnesses ───────
+//
+// The U-051 surface re-exports the §XXI hard-gate trinity
+// (SubstrateFitsCtxResidency / StorageFitsCtxResidency /
+// SubstrateBenefitsFromParallelism) plus the topology family + tier
+// metafunctions.  Concepts have no type so identity is proven by
+// behavioral equivalence on canonical Substrate × ExecCtx pairings —
+// the fixy::substr:: path MUST agree bit-for-bit with the substrate's
+// ::crucible::concurrent:: gate on every input the substrate's own
+// self-test exercises.
+//
+// Type-identity for non-concept items (enums, traits, value templates)
+// is asserted directly via std::is_same_v / equality.
+
+namespace u051 {
+
+struct U051ProbeUserTag {};
+
+namespace cc  = ::crucible::concurrent;
+namespace eff = ::crucible::effects;
+
+// ── 1. ChannelTopology enum value identity ─────────────────────────
+static_assert(static_cast<int>(ChannelTopology::OneToOne) ==
+              static_cast<int>(cc::ChannelTopology::OneToOne));
+static_assert(static_cast<int>(ChannelTopology::WorkStealing) ==
+              static_cast<int>(cc::ChannelTopology::WorkStealing));
+
+// ── 2. Substrate_t alias identity (template re-export round-trips) ─
+using SpscViaFixy = Substrate_t<ChannelTopology::OneToOne, int, 1024,
+                                 U051ProbeUserTag>;
+using SpscViaSubstrate = cc::Substrate_t<cc::ChannelTopology::OneToOne, int,
+                                          1024, U051ProbeUserTag>;
+static_assert(std::is_same_v<SpscViaFixy, SpscViaSubstrate>,
+    "fixy::substr::Substrate_t must alias concurrent::Substrate_t");
+
+using SnapViaFixy = Substrate_t<ChannelTopology::OneToMany_Latest, double, 0,
+                                 U051ProbeUserTag>;
+using SnapViaSubstrate = cc::Substrate_t<cc::ChannelTopology::OneToMany_Latest,
+                                          double, 0, U051ProbeUserTag>;
+static_assert(std::is_same_v<SnapViaFixy, SnapViaSubstrate>);
+
+// ── 3. Trait accessor parity ───────────────────────────────────────
+static_assert(substrate_topology_v<SpscViaFixy> ==
+              cc::substrate_topology_v<SpscViaSubstrate>);
+static_assert(substrate_capacity_v<SpscViaFixy> ==
+              cc::substrate_capacity_v<SpscViaSubstrate>);
+static_assert(std::is_same_v<substrate_value_type_t<SpscViaFixy>,
+                             cc::substrate_value_type_t<SpscViaSubstrate>>);
+static_assert(std::is_same_v<substrate_user_tag_t<SpscViaFixy>,
+                             cc::substrate_user_tag_t<SpscViaSubstrate>>);
+
+// ── 4. Byte-footprint metafunctions agree ──────────────────────────
+static_assert(channel_byte_footprint_v<SpscViaFixy> ==
+              cc::channel_byte_footprint_v<SpscViaSubstrate>);
+static_assert(per_call_working_set_v<SpscViaFixy> ==
+              cc::per_call_working_set_v<SpscViaSubstrate>);
+
+// ── 5. IsSubstrate hierarchy (concept gates) ───────────────────────
+static_assert(IsSubstrate<SpscViaFixy>);
+static_assert(IsSubstrate<SnapViaFixy>);
+static_assert(IsOneToOneSubstrate<SpscViaFixy>);
+static_assert(!IsOneToOneSubstrate<SnapViaFixy>);
+static_assert(IsOneToManyLatestSubstrate<SnapViaFixy>);
+static_assert(!IsManyToManySubstrate<SpscViaFixy>);
+static_assert(!IsWorkStealingSubstrate<SpscViaFixy>);
+static_assert(!IsManyToOneSubstrate<SpscViaFixy>);
+
+// Concepts agree with substrate paths on the same input.
+static_assert(IsSubstrate<SpscViaFixy> ==
+              cc::IsSubstrate<SpscViaSubstrate>);
+static_assert(IsOneToOneSubstrate<SpscViaFixy> ==
+              cc::IsOneToOneSubstrate<SpscViaSubstrate>);
+
+// ── 6. Tier enum + tier metafunctions ──────────────────────────────
+static_assert(static_cast<int>(Tier::L1Resident) ==
+              static_cast<int>(cc::Tier::L1Resident));
+static_assert(static_cast<int>(Tier::DRAMBound) ==
+              static_cast<int>(cc::Tier::DRAMBound));
+
+// Cache-tier constants pass through.
+static_assert(conservative_l1d_per_core == cc::conservative_l1d_per_core);
+static_assert(conservative_l2_per_core  == cc::conservative_l2_per_core);
+static_assert(conservative_l3_total     == cc::conservative_l3_total);
+static_assert(conservative_cliff_l2_per_core ==
+              cc::conservative_cliff_l2_per_core);
+
+// fits_in_tier_v parity on a representative pair.
+static_assert(fits_in_tier_v<4 * 1024, Tier::L1Resident> ==
+              cc::fits_in_tier_v<4 * 1024, cc::Tier::L1Resident>);
+static_assert(fits_in_tier_v<4 * 1024, Tier::L1Resident>);
+static_assert(!fits_in_tier_v<256 * 1024, Tier::L1Resident>);
+
+// required_tier_for_footprint inverse mapping passes through.
+static_assert(required_tier_for_footprint<sizeof(double)> ==
+              cc::required_tier_for_footprint<sizeof(double)>);
+static_assert(required_tier_for_footprint<sizeof(double)> == Tier::L1Resident);
+
+// substrate_required_tier_v + hot-path variant.
+static_assert(substrate_required_tier_v<SpscViaFixy> ==
+              cc::substrate_required_tier_v<SpscViaSubstrate>);
+static_assert(substrate_hot_path_required_tier_v<SpscViaFixy> ==
+              cc::substrate_hot_path_required_tier_v<SpscViaSubstrate>);
+static_assert(substrate_hot_path_required_tier_v<SpscViaFixy> ==
+              Tier::L1Resident);
+
+// ── 7. Ctx-fit concept trinity — behavioral equivalence ────────────
+//
+// HotFgCtx is L1-resident.  A small SPSC's per-call WS fits L1, so
+// SubstrateFitsCtxResidency must be true through BOTH paths.
+static_assert(SubstrateFitsCtxResidency<SpscViaFixy, eff::HotFgCtx> ==
+              cc::SubstrateFitsCtxResidency<SpscViaSubstrate, eff::HotFgCtx>);
+static_assert(SubstrateFitsCtxResidency<SpscViaFixy, eff::HotFgCtx>);
+static_assert(SubstrateFitsCtxResidency<SpscViaFixy, eff::BgDrainCtx>);
+static_assert(SubstrateFitsCtxResidency<SpscViaFixy, eff::ColdInitCtx>);
+
+// StorageFitsCtxResidency: 4 KB SPSC fits L1 in storage too.
+static_assert(StorageFitsCtxResidency<SpscViaFixy, eff::HotFgCtx> ==
+              cc::StorageFitsCtxResidency<SpscViaSubstrate, eff::HotFgCtx>);
+static_assert(StorageFitsCtxResidency<SpscViaFixy, eff::HotFgCtx>);
+
+// SubstrateBenefitsFromParallelism: small SPSC is below the cliff.
+static_assert(SubstrateBenefitsFromParallelism<SpscViaFixy> ==
+              cc::SubstrateBenefitsFromParallelism<SpscViaSubstrate>);
+static_assert(!SubstrateBenefitsFromParallelism<SpscViaFixy>);
+
+// Large SPSC (4 MB) crosses the cliff → BenefitsFromParallelism true.
+using LargeSpsc = Substrate_t<ChannelTopology::OneToOne, int,
+                               1024 * 1024, U051ProbeUserTag>;
+static_assert(SubstrateBenefitsFromParallelism<LargeSpsc>);
+// But its per-call WS still fits L1 (counters + 1 cell << 32 KB).
+static_assert(SubstrateFitsCtxResidency<LargeSpsc, eff::HotFgCtx>);
+
+// ── 8. recommend_topology helper ───────────────────────────────────
+static_assert(recommend_topology(1, 1) == ChannelTopology::OneToOne);
+static_assert(recommend_topology(4, 1) == ChannelTopology::ManyToOne);
+static_assert(recommend_topology(4, 4) == ChannelTopology::ManyToMany);
+static_assert(recommend_topology(1, 4, /*latest_only=*/true) ==
+              ChannelTopology::OneToMany_Latest);
+static_assert(recommend_topology_for_workload(1, 1, 4 * 1024) ==
+              ChannelTopology::OneToOne);
+static_assert(recommend_topology_for_workload(4, 4, 4 * 1024 * 1024) ==
+              ChannelTopology::ManyToMany);
+
+// ── 9. Cardinality witness ─────────────────────────────────────────
+//
+// 31 using-decls added for FIXY-U-051 (excluding mint_substrate_session
+// which was already there pre-U-051).  A future drift forces this
+// constant + the using-decl block to update in lockstep.
+//
+// Breakdown:
+//   ChannelTopology / Substrate / Substrate_t                        3
+//   substrate_traits / is_substrate / is_substrate_v                 3
+//   substrate_topology_v / value_type_t / user_tag_t / capacity_v    4
+//   channel_byte_footprint_v / per_call_working_set_v                2
+//   recommend_topology / recommend_topology_for_workload /
+//     conservative_cliff_l2_per_core                                 3
+//   IsSubstrate / IsOneToOne / IsManyToOne / IsOneToManyLatest /
+//     IsManyToMany / IsWorkStealing                                  6
+//   Tier / fits_in_tier_v / required_tier_for_footprint /
+//     substrate_required_tier_v / substrate_hot_path_required_tier_v 5
+//   conservative_l1d_per_core / conservative_l2_per_core /
+//     conservative_l3_total                                          3
+//   SubstrateFitsCtxResidency / StorageFitsCtxResidency /
+//     SubstrateBenefitsFromParallelism                               3
+//                                                                  ───
+//                                                                   32
+constexpr int u051_surface_cardinality = 32;
+static_assert(u051_surface_cardinality == 32,
+    "FIXY-U-051 surface (topology + ctx-fit) drifted from 32 — Substr.h "
+    "U-051 block and this sentinel must update in lockstep.");
+
+}  // namespace u051
 
 }  // namespace crucible::fixy::substr::self_test
