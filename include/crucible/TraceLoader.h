@@ -43,7 +43,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/TraceRing.h>
-#include <crucible/safety/Refined.h>
+#include <crucible/fixy/Wrap.h>   // FIXY-U-096r: Refined / bounded_above / in_range via the fixy umbrella
 
 namespace crucible {
 
@@ -83,14 +83,14 @@ inline constexpr uint32_t MAX_METAS = 1u << 24;   // 16 M metas
 // Validated count carriers.  `bounded_above<MAX>` admits `v ≤ MAX`
 // (zero is admissible — empty traces are well-formed).  Regime-1 EBO
 // collapse keeps each wrapper zero-cost: sizeof == sizeof(uint32_t).
-using ValidTraceNumOps = ::crucible::safety::Refined<
-    ::crucible::safety::bounded_above<MAX_OPS>, uint32_t>;
+using ValidTraceNumOps = ::crucible::fixy::wrap::Refined<
+    ::crucible::fixy::wrap::bounded_above<MAX_OPS>, uint32_t>;
 
-using ValidTraceNumMetas = ::crucible::safety::Refined<
-    ::crucible::safety::bounded_above<MAX_METAS>, uint32_t>;
+using ValidTraceNumMetas = ::crucible::fixy::wrap::Refined<
+    ::crucible::fixy::wrap::bounded_above<MAX_METAS>, uint32_t>;
 
-using ValidTraceNumNames = ::crucible::safety::Refined<
-    ::crucible::safety::bounded_above<SCHEMA_TABLE_CAP>, uint32_t>;
+using ValidTraceNumNames = ::crucible::fixy::wrap::Refined<
+    ::crucible::fixy::wrap::bounded_above<SCHEMA_TABLE_CAP>, uint32_t>;
 
 // Widening factories.  `gnu::const` documents that the result depends
 // only on the argument and has no side effects; the optimizer can CSE /
@@ -128,7 +128,7 @@ inline constexpr uint16_t SCHEMA_NAME_LEN_MIN = 1;
 inline constexpr uint16_t SCHEMA_NAME_LEN_MAX = 256;
 
 // Validated schema-name length carrier.  Per WRAP-TraceLoader-3 (#1051),
-// ValidSchemaNameLen is safety::Refined<safety::in_range<MIN,MAX>, uint16_t>
+// ValidSchemaNameLen is fixy::wrap::Refined<fixy::wrap::in_range<MIN,MAX>, uint16_t>
 // — the typed gate at every uint16_t → schema-name-length widening
 // site (currently only TraceLoader::load_trace, but future readers
 // of the .crtrace name table inherit the same gate by construction).
@@ -143,8 +143,8 @@ inline constexpr uint16_t SCHEMA_NAME_LEN_MAX = 256;
 // writes consume the value.  Either layer alone catches the bug;
 // together the structural guarantee is doubled and the type-level
 // proof rides into every future call site.
-using ValidSchemaNameLen = ::crucible::safety::Refined<
-    ::crucible::safety::in_range<SCHEMA_NAME_LEN_MIN, SCHEMA_NAME_LEN_MAX>,
+using ValidSchemaNameLen = ::crucible::fixy::wrap::Refined<
+    ::crucible::fixy::wrap::in_range<SCHEMA_NAME_LEN_MIN, SCHEMA_NAME_LEN_MAX>,
     uint16_t>;
 
 // Widening factory for ValidSchemaNameLen → uint16_t in production
