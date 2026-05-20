@@ -11,10 +11,10 @@
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/safety/Bits.h>
-#include <crucible/safety/Decide.h>
-#include <crucible/safety/Pre.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Source.h>   // FIXY-U-096u: tags::source::FromInternal
+#include <crucible/fixy/Wrap.h>     // FIXY-U-096u: Bits / Tagged via the fixy umbrella
+#include <crucible/safety/Decide.h> // CRUCIBLE_PRE predicate catalog (crucible::decide)
+#include <crucible/safety/Pre.h>    // CRUCIBLE_PRE macro
 
 #include <bit>
 #include <cstddef>
@@ -36,7 +36,7 @@ enum class SymKind : uint8_t {
 
 // Per-symbol flags (separate from ExprFlags on Expr nodes).
 //
-// Worn through safety::Bits<SymFlags> on the SymbolEntry field — the
+// Worn through fixy::wrap::Bits<SymFlags> on the SymbolEntry field — the
 // type system rejects mixing this 1-byte slot with any other flag enum
 // (NodeFlags, ExprFlags, RecipeFlags) because each lives in its own
 // Bits<E> instantiation and they do not compose.
@@ -51,7 +51,7 @@ struct SymbolEntry {
   int64_t range_lower = 0;        // lower bound (kIntNegInf = unknown)
   int64_t range_upper = 0;        // upper bound (kIntPosInf = unknown)
   SymKind kind = SymKind::SIZE;   // 1 byte
-  safety::Bits<SymFlags> sym_flags{};  // 1 byte — typed bit-field
+  fixy::wrap::Bits<SymFlags> sym_flags{};  // 1 byte — typed bit-field
   uint16_t expr_flags = 0;        // ExprFlags to stamp on Expr nodes (IS_INTEGER, IS_POSITIVE, etc.)
   // 4 bytes padding to align to 32 bytes (3 × int64_t + 4 × uint8/16)
   uint32_t _pad = 0;
@@ -63,8 +63,8 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SymbolEntry);
 // WRAP-SymTab-4 (#1032): IDs freshly minted by SymbolTable::add()
 // carry internal provenance.  Serialized / FFI SymbolIds must cross a
 // separate source::External validation lane before indexing entries_.
-using InternalSymbolId = ::crucible::safety::Tagged<
-    SymbolId, ::crucible::safety::source::FromInternal>;
+using InternalSymbolId = ::crucible::fixy::wrap::Tagged<
+    SymbolId, ::crucible::fixy::tags::source::FromInternal>;
 static_assert(sizeof(InternalSymbolId) == sizeof(SymbolId));
 
 class CRUCIBLE_OWNER SymbolTable {
