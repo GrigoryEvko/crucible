@@ -17,6 +17,30 @@
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Refined.h>
 
+// FIXY-U-031a (S1 of #1736): MetaLog spells its safety wrappers through
+// fixy::wrap::, never safety::* — see the usages below.  MetaLog is a
+// foundation hot-path header (included by Vigil / BackgroundThread /
+// ReplayEngine); it deliberately does NOT pull the fixy/Wrap.h umbrella
+// (compile-cost on the hot path).  Instead, mirror the Arena.h
+// (FIXY-U-096y) populate precedent: include the NARROW substrate headers
+// MetaLog already needs (above) and re-open crucible::fixy::wrap to
+// install the 7 using-decls MetaLog references.  fixy/Wrap.h re-declares
+// 6 of these independently in its own TU — idempotent (multiple
+// using-decls naming one entity in one namespace are not a redeclaration
+// error); HugePageBuffer is the one structural wrapper outside Wrap.h's
+// value-wrapper surface.  This irreducible ::crucible::safety::
+// re-export plumbing is why MetaLog.h stays absent from
+// scripts/fixy-clean-headers.txt.
+namespace crucible::fixy::wrap {
+using ::crucible::safety::AtomicMonotonic;
+using ::crucible::safety::bounded_above;
+using ::crucible::safety::HotPath;
+using ::crucible::safety::HotPathTier_v;
+using ::crucible::safety::HugePageBuffer;
+using ::crucible::safety::Monotonic;
+using ::crucible::safety::Refined;
+}  // namespace crucible::fixy::wrap
+
 namespace crucible {
 
 // Parallel SPSC buffer for tensor metadata.
@@ -99,12 +123,12 @@ struct CRUCIBLE_OWNER MetaLog {
   // store with monotonicity contract, get for cross-thread acquire,
   // reset_under_quiescence for the rare quiescent reset.  Hot-path
   // cost identical to the prior raw atomic.
-  alignas(64) crucible::safety::AtomicMonotonic<uint32_t> head{0};   // 4B
+  alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint32_t> head{0};   // 4B
   // Producer-only shadow of the consumer's tail.  Monotonic enforces
   // "only advances" at the type level — the consumer only releases tail
   // forward, so each acquire-load observes ≥ the prior observation; any
   // reverse motion would be an acquire-semantics bug worth catching.
-  crucible::safety::Monotonic<uint32_t> cached_tail_{0};  // 4B
+  crucible::fixy::wrap::Monotonic<uint32_t> cached_tail_{0};  // 4B
   // #944 WRAP-MetaLog-1: the hugepage-aligned `TensorMeta[CAPACITY]`
   // backing was raw `aligned_alloc + register_hot_region + free` —
   // producer-side ctor / dtor pair manually balanced a malloc with a
@@ -113,7 +137,7 @@ struct CRUCIBLE_OWNER MetaLog {
   // alloc lifetime in move-only RAII; `entries` is now a raw pointer
   // projection cached from `entries_buffer_.data()` so the hot path
   // (entries[h & MASK]) keeps its single load with no indirection.
-  crucible::safety::HugePageBuffer<TensorMeta> entries_buffer_;  // owner
+  crucible::fixy::wrap::HugePageBuffer<TensorMeta> entries_buffer_;  // owner
   TensorMeta* entries = nullptr;                // 8B — producer-only read; aliases entries_buffer_.data()
   // padding to fill cache line (implicitly provided by alignas on tail)
 
@@ -122,10 +146,10 @@ struct CRUCIBLE_OWNER MetaLog {
   // the producer's head/cached_tail_/entries.  Consumer-owned: bg thread
   // publishes via advance(release); producer reads via get(acquire) on
   // the rare full-path.
-  alignas(64) crucible::safety::AtomicMonotonic<uint32_t> tail{0};   // 4B
+  alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint32_t> tail{0};   // 4B
 
   MetaLog()
-      : entries_buffer_{crucible::safety::HugePageBuffer<TensorMeta>::allocate(CAPACITY)},
+      : entries_buffer_{crucible::fixy::wrap::HugePageBuffer<TensorMeta>::allocate(CAPACITY)},
         entries{entries_buffer_.data()} {
     // PMD alignment: HugePageBuffer::allocate uses the same kHugePageBytes
     // alignment + round_up_huge byte count, so MADV_HUGEPAGE in the
@@ -268,12 +292,12 @@ struct CRUCIBLE_OWNER MetaLog {
   // unchanged.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] CRUCIBLE_INLINE
-  crucible::safety::HotPath<crucible::safety::HotPathTier_v::Hot, MetaIndex>
+  crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Hot, MetaIndex>
   try_append_pinned(const TensorMeta* metas, uint32_t n)
       CRUCIBLE_NO_THREAD_SAFETY
       pre (::crucible::decide::valid_span(n, metas))
   {
-    return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Hot, MetaIndex>{
+    return crucible::fixy::wrap::HotPath<crucible::fixy::wrap::HotPathTier_v::Hot, MetaIndex>{
         try_append(metas, n)};
   }
 
@@ -410,7 +434,7 @@ struct CRUCIBLE_OWNER MetaLog {
     tail.reset_under_quiescence();
     // Rewind to 0 would violate Monotonic's pre() if done via advance().
     // Safe here because both threads are quiescent; reconstruct in place.
-    cached_tail_ = crucible::safety::Monotonic<uint32_t>{0};
+    cached_tail_ = crucible::fixy::wrap::Monotonic<uint32_t>{0};
   }
 };
 
@@ -446,8 +470,8 @@ struct CRUCIBLE_OWNER MetaLog {
 //
 // Regime-1 EBO collapse keeps the wrapper zero-cost:
 // `sizeof(ValidMetaAppendCount) == sizeof(uint32_t) == 4`.
-using ValidMetaAppendCount = ::crucible::safety::Refined<
-    ::crucible::safety::bounded_above<MetaLog::CAPACITY>, uint32_t>;
+using ValidMetaAppendCount = ::crucible::fixy::wrap::Refined<
+    ::crucible::fixy::wrap::bounded_above<MetaLog::CAPACITY>, uint32_t>;
 
 // Widening factory for `ValidMetaAppendCount → uint32_t` at production
 // hot-path call sites.  `gnu::const` documents that the result depends
