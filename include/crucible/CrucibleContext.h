@@ -25,6 +25,25 @@
 #include <optional>
 #include <type_traits>
 
+// FIXY-U-032a (S1-CrucibleContext of #1736 sibling, U-032): CrucibleContext
+// spells its safety wrappers through fixy::wrap::, never safety::* — see
+// the usages below.  CrucibleContext is a foundation/public-API hub
+// (reimplement-reserved, FIXY-U-032); it deliberately does NOT pull the
+// fixy/Wrap.h umbrella.  Mirror the Arena.h (FIXY-U-096y) / MetaLog
+// (031a) populate precedent: re-open crucible::fixy::wrap to install the
+// 5 using-decls CrucibleContext references (all already visible via the
+// narrow safety/ includes above — no new include needed).  fixy/Wrap.h
+// re-declares these independently in its own TU — idempotent.  This
+// irreducible ::crucible::safety:: re-export plumbing keeps
+// CrucibleContext.h absent from scripts/fixy-clean-headers.txt.
+namespace crucible::fixy::wrap {
+using ::crucible::safety::Monotonic;
+using ::crucible::safety::NonNull;
+using ::crucible::safety::no_scoped_view_field_check;
+using ::crucible::safety::mint_view;
+using ::crucible::safety::ScopedView;
+}  // namespace crucible::fixy::wrap
+
 namespace crucible {
 
 enum class ContextMode : uint8_t {
@@ -290,7 +309,7 @@ struct CrucibleContext {
   // in COMPILED; the existing pre()-checked overloads are retained for
   // gradual migration.
 
-  using CompiledView  = crucible::safety::ScopedView<CrucibleContext,
+  using CompiledView  = crucible::fixy::wrap::ScopedView<CrucibleContext,
                                                       ctx_mode::Compiled>;
 
   [[nodiscard]] friend constexpr bool view_ok(
@@ -301,7 +320,7 @@ struct CrucibleContext {
   [[nodiscard]] CRUCIBLE_INLINE CompiledView mint_compiled_view() const noexcept
       pre (mode_ == ContextMode::COMPILED)
   {
-    return crucible::safety::mint_view<ctx_mode::Compiled>(*this);
+    return crucible::fixy::wrap::mint_view<ctx_mode::Compiled>(*this);
   }
 
   // ── Typed mode-specific overloads ────────────────────────────────
@@ -350,7 +369,7 @@ struct CrucibleContext {
   }
 
   CRUCIBLE_INLINE void register_external(SlotId sid,
-                                          crucible::safety::NonNull<void*> ptr,
+                                          crucible::fixy::wrap::NonNull<void*> ptr,
                                           CompiledView const&)
   {
     auto pv = pool_.mint_initialized_view();
@@ -463,8 +482,8 @@ struct CrucibleContext {
   // boundaries / divergence events, never reset.  Wrapped so the
   // invariant is type-enforced (overflow is the only way to violate it
   // and bump() catches that via contract).
-  crucible::safety::Monotonic<uint32_t> compiled_iterations_ {0}; // 4B  — offset 68
-  crucible::safety::Monotonic<uint32_t> diverged_count_      {0}; // 4B  — offset 72
+  crucible::fixy::wrap::Monotonic<uint32_t> compiled_iterations_ {0}; // 4B  — offset 68
+  crucible::fixy::wrap::Monotonic<uint32_t> diverged_count_      {0}; // 4B  — offset 72
   [[maybe_unused]] uint8_t pad2_[4]{};        // 4B  — offset 76
   const RegionNode* active_region_ = nullptr; // 8B  — offset 80
   PoolAllocator pool_;                        // 32B — offset 88
@@ -475,6 +494,6 @@ static_assert(sizeof(CrucibleContext) == 120,
 
 // Tier 2 opt-in: CrucibleContext must not hold a ScopedView field —
 // views mustn't outlive the stack frame that minted them.
-static_assert(crucible::safety::no_scoped_view_field_check<CrucibleContext>());
+static_assert(crucible::fixy::wrap::no_scoped_view_field_check<CrucibleContext>());
 
 } // namespace crucible
