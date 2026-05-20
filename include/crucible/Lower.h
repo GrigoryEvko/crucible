@@ -17,24 +17,32 @@
 #include <crucible/Graph.h>
 #include <crucible/TraceGraph.h>
 #include <crucible/effects/EffectRow.h>
-#include <crucible/safety/FixedArray.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Source.h>            // FIXY-U-096h: tags::source::Recorded/Replayed
+#include <crucible/fixy/Wrap.h>              // FIXY-U-096h: Tagged + FixedArray
 
 #include <concepts>
 #include <cstring>
+
+// FIXY-U-096h production migration: Tagged / FixedArray / source::{Recorded,
+// Replayed} reached through the fixy:: umbrella instead of safety::* directly.
+// Lower.h is runtime-tier (fan-in: BackgroundThread + test_lower + vessel
+// adapter, all runtime-tier).  No substrate back-edge — fixy/Wrap.h's
+// transitive Arena.h is redundant (Lower already reaches Arena via Graph.h /
+// ExprPool.h), not cyclic.  fixy::tags::source::* path (not fixy::source::*)
+// per the federation-namespace reservation discovered in FIXY-U-096c.
 
 namespace crucible {
 
 template <typename Source>
 concept LowerTraceSource =
-    std::same_as<Source, safety::source::Recorded> ||
-    std::same_as<Source, safety::source::Replayed>;
+    std::same_as<Source, fixy::tags::source::Recorded> ||
+    std::same_as<Source, fixy::tags::source::Replayed>;
 
 template <LowerTraceSource Source>
-using LowerTraceGraph = safety::Tagged<const TraceGraph*, Source>;
+using LowerTraceGraph = fixy::wrap::Tagged<const TraceGraph*, Source>;
 
 template <LowerTraceSource Source>
-using LoweredGraph = safety::Tagged<Graph*, Source>;
+using LoweredGraph = fixy::wrap::Tagged<Graph*, Source>;
 
 using lower_trace_required_row =
     effects::Row<effects::Effect::Bg, effects::Effect::Alloc>;
@@ -95,7 +103,7 @@ template <typename CallerRow, LowerTraceSource Source>
       // (the loop fills [0, ndim) and the std::span limits consumers to
       // the populated prefix, so this is defense-in-depth, not correctness).
       const TensorMeta& m = te.input_metas[j];
-      safety::FixedArray<const Expr*, 8> sizes{};
+      fixy::wrap::FixedArray<const Expr*, 8> sizes{};
       const uint8_t ndim = (m.ndim <= 8) ? m.ndim : 8;
       for (uint8_t d = 0; d < ndim; d++)
         sizes[d] = pool.integer(a, raw_tensor_dim(m.sizes[d]));
@@ -121,7 +129,7 @@ template <typename CallerRow, LowerTraceSource Source>
     uint8_t ndim = 0;
     ScalarType dtype = ScalarType::Undefined;
     int8_t dev = -1;
-    safety::FixedArray<const Expr*, 8> sizes{};
+    fixy::wrap::FixedArray<const Expr*, 8> sizes{};
 
     if (te.num_outputs > 0 && te.output_metas) {
       const TensorMeta& m = te.output_metas[0];
