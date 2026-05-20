@@ -1,14 +1,22 @@
 #pragma once
 
+// FIXY-U-096d production migration: Refined<bounded_above> / Monotonic /
+// BoundedMonotonic reached through the fixy:: umbrella instead of
+// safety::* directly.  IterationDetector.h is included by MerkleDag.h
+// and IterationDetectorState.h (both runtime-tier headers), and is NOT
+// reachable from any substrate header — fixy/Wrap.h's transitive pull
+// of safety/OwnedRegion.h → Arena.h does NOT cycle back through
+// IterationDetector.h, so the full Wrap.h umbrella is safe here (no
+// Saturate.h-style inline-namespace dodge needed).  CRUCIBLE_POST is a
+// macro substrate dep; safety/Post.h stays.
 #include <cstdint>
 #include <cstring>
 
 #include <crucible/Platform.h>
 #include <crucible/Saturate.h>
 #include <crucible/Types.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/fixy/Wrap.h>
 #include <crucible/safety/Post.h>
-#include <crucible/safety/Refined.h>
 
 #include <memory>
 
@@ -55,8 +63,8 @@ struct IterationDetector {
   // == sizeof(uint8_t) == 1B — cache layout (line 0 = 64B) preserved
   // by structural guarantee, not by hand.  See the static_assert at
   // the bottom of the struct for the layout invariant.
-  using MatchPos = ::crucible::safety::Refined<
-      ::crucible::safety::bounded_above<MATCH_POS_MAX>, uint8_t>;
+  using MatchPos = ::crucible::fixy::wrap::Refined<
+      ::crucible::fixy::wrap::bounded_above<MATCH_POS_MAX>, uint8_t>;
 
   // Refinement+monotonicity type for signature_len's storage (#928
   // WRAP-IterDet-2).  signature_len's behavior:
@@ -80,7 +88,7 @@ struct IterationDetector {
   // sizeof(uint32_t) == 4B — line-0 layout (offset 56 + 4B pad)
   // preserved by structural guarantee.
   using SignatureLen =
-      ::crucible::safety::BoundedMonotonic<uint32_t, K>;
+      ::crucible::fixy::wrap::BoundedMonotonic<uint32_t, K>;
 
   // Monotonic-with-reset wrapper for ops_since_boundary's storage
   // (#929 WRAP-IterDet-3).  Within a single iteration epoch the
@@ -96,7 +104,7 @@ struct IterationDetector {
   // Zero-cost: Graded's regime-2 (T==element_type) collapse pins
   // sizeof(Monotonic<uint32_t>) == sizeof(uint32_t) == 4B; layout
   // (offset 52) preserved by structural guarantee.
-  using OpsSinceBoundary = ::crucible::safety::Monotonic<uint32_t>;
+  using OpsSinceBoundary = ::crucible::fixy::wrap::Monotonic<uint32_t>;
 
   // ── Cache line 0: hot path data (touched every call) ─────────
   // Expected next hash VALUE (not pointer). One L1d load, zero pointer chase.
@@ -138,7 +146,7 @@ struct IterationDetector {
   // boundaries_detected is structurally monotonic: it only increments
   // on a confirmed iteration boundary.  Wrapped in Monotonic<> so the
   // invariant is enforced by the type, not by convention.
-  crucible::safety::Monotonic<uint32_t> boundaries_detected {0};  // offset 64, 4B
+  crucible::fixy::wrap::Monotonic<uint32_t> boundaries_detected {0};  // offset 64, 4B
   uint32_t last_completed_len = 0;                    // offset 68, 4B
   uint8_t pad2_[56]{};                                // offset 72, pad to 128B
   // ── End cache line 1 (64 bytes) ──────────────────────────────
@@ -213,7 +221,7 @@ struct IterationDetector {
     std::construct_at(&ops_since_boundary, OpsSinceBoundary{0u});
     std::construct_at(&signature_len, SignatureLen{0u});
     std::construct_at(&boundaries_detected,
-                      crucible::safety::Monotonic<uint32_t>{0});
+                      crucible::fixy::wrap::Monotonic<uint32_t>{0});
     last_completed_len = 0;
     // CONTRACT-IterDet-Reset-POST: state-machine reset invariant —
     // after reset(), every observable field is back to its
