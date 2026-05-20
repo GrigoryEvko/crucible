@@ -101,7 +101,9 @@
 #include <crucible/effects/Computation.h>      // canonical: Computation<R,T>
 #include <crucible/permissions/Permission.h>  // SharedPermission
 #include <crucible/safety/AllocClass.h>        // canonical Tier-S
+#include <crucible/safety/Borrowed.h>          // non-owning lifetime-tagged view
 #include <crucible/safety/Budgeted.h>          // off-tree (Space axis)
+#include <crucible/safety/Saturated.h>         // {value, was_clamped} carrier
 #include <crucible/safety/CipherTier.h>        // canonical Tier-S
 #include <crucible/safety/Consistency.h>       // off-tree (Version axis)
 #include <crucible/safety/ConstantTime.h>      // structural (ct::* primitives)
@@ -198,6 +200,18 @@ using ::crucible::safety::Stale;
 
 // TimeOrdered<T, N, Tag> — value paired with N-process vector clock.
 using ::crucible::safety::TimeOrdered;
+
+// Borrowed<T, ParentTag> / BorrowedRef<T, ParentTag> — non-owning
+// lifetime-tagged carriers for span-like views into parent structures.
+// safety/Borrowed.h primary symbols — surfaced here per the FIXY-U-093
+// migration's MerkleDag.h trace_entry getter signatures.
+using ::crucible::safety::Borrowed;
+using ::crucible::safety::BorrowedRef;
+
+// Saturated<T> — saturating-arithmetic result carrying {value,
+// was_clamped} discriminant.  safety/Saturated.h primary symbol —
+// surfaced here per FIXY-U-093 (MerkleDag.h compute_storage_nbytes).
+using ::crucible::safety::Saturated;
 
 // SharedPermission<Tag> — fractional permission carrier.  The
 // substrate lives in permissions/Permission.h but is re-exported
@@ -376,6 +390,35 @@ using ::crucible::safety::ct::less;
 using ::crucible::safety::ct::is_zero;
 using ::crucible::safety::ct::cswap;
 }  // namespace ct
+
+// ─── Per-tier convenience-alias sub-namespaces — FIXY-U-093 follow-up ──
+//
+// Every public Graded-backed wrapper in safety/ ships a peer
+// sub-namespace (e.g., `safety::residency_heat::{Hot,Warm,Cold}`,
+// `safety::wait::{SpinPause,BoundedSpin,...}`) holding the per-tier
+// convenience aliases.  These are public substrate surface but were
+// originally omitted from fixy::wrap:: under the (incorrect) assumption
+// that they lived in `detail::*_layout::` namespaces.  Audit during the
+// MerkleDag.h migration revealed they are public top-level namespaces;
+// re-export them here so consumers can write
+// `fixy::wrap::residency_heat::Hot<CompiledKernel*>` instead of
+// the verbose inline form.  13 sub-namespaces — one per Tier-S canonical
+// wrapper (10) plus the three off-tree Graded wrappers that ship public
+// sub-namespaces (Consistency / OpaqueLifetime / Crash).
+
+namespace hot_path        = ::crucible::safety::hot_path;
+namespace det_safe        = ::crucible::safety::det_safe;
+namespace numerical_tier  = ::crucible::safety::numerical_tier;
+namespace vendor          = ::crucible::safety::vendor;
+namespace residency_heat  = ::crucible::safety::residency_heat;
+namespace cipher_tier     = ::crucible::safety::cipher_tier;
+namespace alloc_class     = ::crucible::safety::alloc_class;
+namespace wait            = ::crucible::safety::wait;
+namespace mem_order       = ::crucible::safety::mem_order;
+namespace progress        = ::crucible::safety::progress;
+namespace consistency     = ::crucible::safety::consistency;
+namespace opaque_lifetime = ::crucible::safety::opaque_lifetime;
+namespace crash           = ::crucible::safety::crash;
 
 }  // namespace crucible::fixy::wrap
 
@@ -611,6 +654,83 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::ct::select<unsigned>)>,
     "fixy::wrap::ct::select must alias safety::ct::select.");
 
+// Borrowed / BorrowedRef identity — exercised by FIXY-U-093 (MerkleDag.h
+// trace_entry getter signatures).  Parent tag is a placeholder struct so
+// the test does not pull a substrate type beyond Borrowed.h.
+struct WrapBorrowedParentT {};
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Borrowed<int, WrapBorrowedParentT>,
+    ::crucible::safety::Borrowed<int, WrapBorrowedParentT>>,
+    "fixy::wrap::Borrowed must alias safety::Borrowed.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::BorrowedRef<int>,
+    ::crucible::safety::BorrowedRef<int>>,
+    "fixy::wrap::BorrowedRef must alias safety::BorrowedRef.");
+
+// Saturated identity — exercised by FIXY-U-093 compute_storage_nbytes.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Saturated<std::uint64_t>,
+    ::crucible::safety::Saturated<std::uint64_t>>,
+    "fixy::wrap::Saturated must alias safety::Saturated.");
+
+// ─── Per-tier sub-namespace aliases (13 cells, FIXY-U-093 follow-up) ──
+//
+// One witness per sub-namespace — pick a representative alias from each
+// and prove it equals the substrate equivalent.  Drift here would mean
+// a typo in the `namespace X = ::crucible::safety::X;` aliases above.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::hot_path::Hot<int>,
+    ::crucible::safety::hot_path::Hot<int>>,
+    "fixy::wrap::hot_path::Hot must alias safety::hot_path::Hot.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::det_safe::Pure<int>,
+    ::crucible::safety::det_safe::Pure<int>>,
+    "fixy::wrap::det_safe::Pure must alias safety::det_safe::Pure.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::numerical_tier::Bitexact<int>,
+    ::crucible::safety::numerical_tier::Bitexact<int>>,
+    "fixy::wrap::numerical_tier::Bitexact must alias substrate.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::vendor::Nv<int>,
+    ::crucible::safety::vendor::Nv<int>>,
+    "fixy::wrap::vendor::Nv must alias safety::vendor::Nv.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::residency_heat::Hot<int>,
+    ::crucible::safety::residency_heat::Hot<int>>,
+    "fixy::wrap::residency_heat::Hot must alias substrate.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::cipher_tier::Hot<int>,
+    ::crucible::safety::cipher_tier::Hot<int>>,
+    "fixy::wrap::cipher_tier::Hot must alias safety::cipher_tier::Hot.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::alloc_class::Arena<int>,
+    ::crucible::safety::alloc_class::Arena<int>>,
+    "fixy::wrap::alloc_class::Arena must alias safety::alloc_class::Arena.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::wait::SpinPause<int>,
+    ::crucible::safety::wait::SpinPause<int>>,
+    "fixy::wrap::wait::SpinPause must alias safety::wait::SpinPause.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::mem_order::AcqRel<int>,
+    ::crucible::safety::mem_order::AcqRel<int>>,
+    "fixy::wrap::mem_order::AcqRel must alias safety::mem_order::AcqRel.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::progress::Terminating<int>,
+    ::crucible::safety::progress::Terminating<int>>,
+    "fixy::wrap::progress::Terminating must alias substrate.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::consistency::Strong<int>,
+    ::crucible::safety::consistency::Strong<int>>,
+    "fixy::wrap::consistency::Strong must alias safety::consistency::Strong.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::opaque_lifetime::PerFleet<int>,
+    ::crucible::safety::opaque_lifetime::PerFleet<int>>,
+    "fixy::wrap::opaque_lifetime::PerFleet must alias substrate.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::crash::NoThrow<int>,
+    ::crucible::safety::crash::NoThrow<int>>,
+    "fixy::wrap::crash::NoThrow must alias safety::crash::NoThrow.");
+
 }  // namespace crucible::fixy::wrap::self_test
 
 namespace crucible::fixy::wrap {
@@ -636,5 +756,11 @@ inline void runtime_smoke_test() noexcept {
     // is anchored by self_test:: static_asserts above without ctor
     // invocation here (their mint factories need protocol-specific
     // customization that's out of scope for a smoke test).
+
+    // Per-tier sub-namespace round-trip — construct via fixy alias path.
+    residency_heat::Hot<int>  hot_int{1};
+    residency_heat::Warm<int> warm_int{2};
+    residency_heat::Cold<int> cold_int{3};
+    (void) hot_int; (void) warm_int; (void) cold_int;
 }
 }  // namespace crucible::fixy::wrap
