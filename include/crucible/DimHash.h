@@ -53,9 +53,8 @@
 #include <crucible/Expr.h>            // detail::kDimMix
 #include <crucible/Platform.h>
 #include <crucible/TensorMeta.h>      // TensorMeta (extracted from MerkleDag.h)
-#include <crucible/safety/DetSafe.h>
-#include <crucible/safety/Simd.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Wrap.h>     // FIXY-U-096v: DetSafe / Tagged via the fixy umbrella
+#include <crucible/safety/Simd.h>   // crucible::simd:: facade (used directly; not a migrated wrapper)
 
 #include <cstdint>
 #include <functional>   // std::bit_xor<>
@@ -69,10 +68,10 @@ namespace crucible {
 // from TensorMeta bytes, but it is not a persistent artifact key by
 // itself.  The nested wrapper forces consumers to acknowledge both
 // facts before mixing or exporting the bits.
-using DimHash = ::crucible::safety::Tagged<
+using DimHash = ::crucible::fixy::wrap::Tagged<
     uint64_t, ::crucible::hash_family::FamilyB>;
-using DimHashDet = ::crucible::safety::DetSafe<
-    ::crucible::safety::DetSafeTier_v::Pure, DimHash>;
+using DimHashDet = ::crucible::fixy::wrap::DetSafe<
+    ::crucible::fixy::wrap::DetSafeTier_v::Pure, DimHash>;
 
 static_assert(sizeof(DimHash) == sizeof(uint64_t),
     "Tagged<uint64_t, hash_family::FamilyB> must EBO-collapse so "
