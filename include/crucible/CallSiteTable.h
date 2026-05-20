@@ -1,9 +1,18 @@
 #pragma once
 
+// FIXY-U-096c production migration: NonNegative / Tagged / AppendOnly /
+// Refined / non_zero / source::* tags reached through the fixy:: umbrella
+// instead of safety::* directly.  CallSiteTable.h has zero production
+// fan-in (only test/* + fuzz/* include sites) so the full Wrap.h umbrella
+// is safe — no Arena.h cycle to dodge here.  fixy/Source.h installs
+// `namespace source = ::crucible::safety::source;` under
+// `crucible::fixy::tags::` (note the `tags::` segment — the top-level
+// `crucible::fixy::source::` slot is reserved for the cross-org
+// federation sub-tree per fixy-A4-013) so the canonical paths here are
+// `fixy::tags::source::{Sanitized, External, FromInternal}`.
 #include <crucible/Types.h>
-#include <crucible/safety/Mutation.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Source.h>
+#include <crucible/fixy/Wrap.h>
 
 #include <cstdint>
 #include <string>
@@ -38,7 +47,7 @@ struct CallSiteTable {
   // time inside insert() — a corrupted FFI lineno of -1 aborts under
   // semantic=enforce; in constexpr context (the neg-compile fixtures)
   // it is rejected as a non-constant expression per P1494R5.
-  using Lineno = ::crucible::safety::NonNegative<int32_t>;
+  using Lineno = ::crucible::fixy::wrap::NonNegative<int32_t>;
 
   // Provenance newtype for the stored filename / funcname strings
   // (#881 WRAP-CallSite-3).  After insert() validates and stores, the
@@ -56,8 +65,8 @@ struct CallSiteTable {
   // SanitizedName) == sizeof(std::string) and Entry's layout +
   // CallSiteTable's footprint static_asserts (lines 155-158) are
   // preserved.
-  using SanitizedName = ::crucible::safety::Tagged<
-      std::string, ::crucible::safety::source::Sanitized>;
+  using SanitizedName = ::crucible::fixy::wrap::Tagged<
+      std::string, ::crucible::fixy::tags::source::Sanitized>;
 
   struct Entry {
     CallsiteHash hash;           // strong-typed callsite identity
@@ -75,7 +84,7 @@ struct CallSiteTable {
   // records, nothing ever erases or reorders.  AppendOnly<> turns the
   // convention into a type-system guarantee — code that tries to .erase()
   // or .clear() this won't compile.
-  crucible::safety::AppendOnly<Entry> entries;
+  ::crucible::fixy::wrap::AppendOnly<Entry> entries;
 
   // Open-addressing hash set for fast "already seen" check.
   // Sentinel: CallsiteHash{} (raw 0) means empty slot.
@@ -102,8 +111,8 @@ struct CallSiteTable {
   // of the Refined at the call site fires a contract if the caller
   // passes the zero sentinel, AND the body here treats the invariant
   // as established: no internal null-check, no early return on zero.
-  using NonZeroHash = crucible::safety::Refined<
-      crucible::safety::non_zero, CallsiteHash>;
+  using NonZeroHash = ::crucible::fixy::wrap::Refined<
+      ::crucible::fixy::wrap::non_zero, CallsiteHash>;
 
   void insert(
       NonZeroHash hash_nz,
@@ -142,10 +151,10 @@ struct CallSiteTable {
   // the CallSiteTable stores the strings for diagnostic output only and
   // never consumes them as paths, shell arguments, or HTML, so the tag
   // acts as provenance documentation rather than a sanitization gate.
-  using ExternalName = crucible::safety::Tagged<
-      std::string, crucible::safety::source::External>;
-  using InternalName = crucible::safety::Tagged<
-      std::string, crucible::safety::source::FromInternal>;
+  using ExternalName = ::crucible::fixy::wrap::Tagged<
+      std::string, ::crucible::fixy::tags::source::External>;
+  using InternalName = ::crucible::fixy::wrap::Tagged<
+      std::string, ::crucible::fixy::tags::source::FromInternal>;
 
   void insert(
       NonZeroHash hash_nz,
