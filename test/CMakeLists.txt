@@ -2925,6 +2925,30 @@ crucible_neg_compile_effects_test(neg_effects_bg_default_ctor_private
 crucible_neg_compile_effects_test(neg_effects_init_default_ctor_private
     "private within this context|fixy-A3-005|is private|explicitly marked as private")
 
+# ─── FIXY-U-109: context-mint passkey-gate witnesses ──────────────
+#
+# The three context mints (mint_bg_context / mint_init_context /
+# mint_test_context) are passkey-gated, not requires-gated: their
+# soundness gate is the private default ctor on bg_key / init_key /
+# test_key (friended only to the runtime-authority classes).  Each
+# mint gets two HS14 fixtures exercising the gate from BOTH attack
+# surfaces — (forge) name a key but fail its private ctor, and
+# (keyless) omit the mandatory key argument.  Unlike the
+# neg_effects_*_default_ctor_private fixtures (which construct the
+# CONTEXT directly), these genuinely CALL the mint factory.
+crucible_neg_compile_effects_test(neg_effects_mint_bg_context_forge_key
+    "is private within this context|private member|bg_key")
+crucible_neg_compile_effects_test(neg_effects_mint_bg_context_keyless
+    "too few arguments|no matching function|mint_bg_context")
+crucible_neg_compile_effects_test(neg_effects_mint_init_context_forge_key
+    "is private within this context|private member|init_key")
+crucible_neg_compile_effects_test(neg_effects_mint_init_context_keyless
+    "too few arguments|no matching function|mint_init_context")
+crucible_neg_compile_effects_test(neg_effects_mint_test_context_forge_key
+    "is private within this context|private member|test_key")
+crucible_neg_compile_effects_test(neg_effects_mint_test_context_keyless
+    "too few arguments|no matching function|mint_test_context")
+
 # ─── P1-AUDIT-2 (#853): composition-point witnesses ─────────────────
 #
 # Four fixtures locking the composition concepts and bridge traits:
@@ -8374,6 +8398,19 @@ crucible_neg_compile_test(neg_diag_non_tag_accessor
     "DiagnosticAccessor_NonTag")
 crucible_neg_compile_test(neg_diag_user_tag_not_in_catalog
     "Tag is not registered in the foundation Catalog")
+
+# ─── FIXY-U-109: mint_diagnostic requires-gate witnesses ──────────
+#
+# mint_diagnostic<Tag>(...) gates on `requires is_diagnostic_class_v<Tag>`
+# (must derive from tag_base, and not BE tag_base).  Two HS14 fixtures
+# exercise the gate from distinct structural angles: (1) a fundamental
+# (non-class) Tag, (2) a well-formed class lacking the tag_base lineage.
+# These call the MINT factory; neg_diag_non_tag_in_diagnostic_wrapper
+# exercises the Diagnostic<> WRAPPER template instead.
+crucible_neg_compile_test(neg_diag_mint_diagnostic_non_class_tag
+    "constraints not satisfied|is_diagnostic_class_v|no matching function")
+crucible_neg_compile_test(neg_diag_mint_diagnostic_non_tag_base_class
+    "constraints not satisfied|is_diagnostic_class_v|no matching function")
 
 # ─── GAPS-094 audit follow-up — Vessel ABI Tagged direction fence ──
 #

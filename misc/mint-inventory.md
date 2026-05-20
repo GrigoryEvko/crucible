@@ -26,7 +26,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-20T15:56:07Z`.
+Snapshot generated: `2026-05-20T16:23:57Z`.
 
 ## bridges/
 
@@ -66,11 +66,11 @@ Snapshot generated: `2026-05-20T15:56:07Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_bg_context` | `include/crucible/effects/Capabilities.h:344` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_bg_context` | `include/crucible/effects/Capabilities.h:344` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 3 |
 | `mint_cap` | `include/crucible/effects/Capability.h:164` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:100` | HS14: 11 |
 | `mint_from_ctx` | `include/crucible/effects/Capability.h:319` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Cap.h:106` | HS14: 3 |
-| `mint_init_context` | `include/crucible/effects/Capabilities.h:366` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_test_context` | `include/crucible/effects/Capabilities.h:381` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_init_context` | `include/crucible/effects/Capabilities.h:366` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 3 |
+| `mint_test_context` | `include/crucible/effects/Capabilities.h:381` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 2 |
 
 ## perf/
 
@@ -95,7 +95,6 @@ Snapshot generated: `2026-05-20T15:56:07Z`.
 | `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:533` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:35` | HS14: 2 |
 | `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:321` | Y | - | Y | - | ctx | `include/crucible/fixy/Perm.h:104` | HS14: 6 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:287` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:108` | HS14: 6 |
-| `mint_permission_inherit_key` | `include/crucible/permissions/PermissionInherit.h:135` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/Perm.h:31` | HS14: 151 |
 | `mint_permission_share` | `include/crucible/permissions/Permission.h:1038` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:19` | HS14: 4 |
 | `mint_permission_split` | `include/crucible/permissions/Permission.h:484` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 25 |
@@ -107,7 +106,7 @@ Snapshot generated: `2026-05-20T15:56:07Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_diagnostic` | `include/crucible/safety/Diagnostic.h:1476` | Y | Y | - | Y | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_diagnostic` | `include/crucible/safety/Diagnostic.h:1476` | Y | Y | - | Y | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_fn` | `include/crucible/safety/Fn.h:503` | Y | Y | Y | Y | token | `include/crucible/fixy/Fn.h:1037` | HS14: 38 |
 | `mint_grid_permissions` | `include/crucible/safety/PermissionGridGenerator.h:219` | Y | Y | Y | Y | token | `include/crucible/fixy/Perm.h:159` | HS14: 12 |
 | `mint_linear` | `include/crucible/safety/Linear.h:275` | Y | Y | Y | Y | token | `include/crucible/fixy/Safety.h:12` | HS14: 4 |
@@ -179,6 +178,6 @@ Snapshot generated: `2026-05-20T15:56:07Z`.
 
 ## Summary
 
-- Total substrate mints: 104
-- Missing fixy re-export: 24
+- Total substrate mints: 103
+- Missing fixy re-export: 23
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

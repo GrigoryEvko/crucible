@@ -105,6 +105,17 @@ scan_substrate() {
         case "$stripped" in
             '//'*|'///'*|'*'*|'/*'*) continue ;;
             'return '*|'return('*|'auto '*=*) continue ;;
+            # Defaulted/deleted special member.  A passkey class named
+            # `mint_*_key` declares its OWN ctor as
+            # `mint_*_key() ... = default;` (or `= delete;`), which
+            # matches `\bmint_…(` but is a CONSTRUCTOR, not a factory
+            # (e.g. PermissionInherit.h's mint_permission_inherit_key —
+            # the real factory there is `mint_permission_inherit`).
+            # `= default` / `= delete` is special-member-only syntax,
+            # never used by a mint factory, so this is a zero-false-
+            # positive drop — the third phantom class after the U-110
+            # word-boundary fix (substring phantoms) closed the first two.
+            *'= default'*|*'=default'*|*'= delete'*|*'=delete'*) continue ;;
         esac
 
         # Extract mint name from the matched line.  awk avoids head -1 +
