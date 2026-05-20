@@ -26,11 +26,21 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/safety/Borrowed.h>
-#include <crucible/safety/Mutation.h>
-#include <crucible/safety/Post.h>
-#include <crucible/safety/ScopedView.h>
-#include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Source.h>          // FIXY-U-096k: tags::source::Sanitized
+#include <crucible/fixy/Wrap.h>            // FIXY-U-096k: BoundedMonotonic + ScopedView + Tagged + Borrowed
+#include <crucible/safety/Post.h>          // CRUCIBLE_POST macro (substrate dep)
+
+// FIXY-U-096k production migration: BoundedMonotonic + ScopedView + mint_view
+// + no_scoped_view_field_check + Tagged + Borrowed + source::Sanitized reached
+// through the fixy:: umbrella instead of safety::* directly.  SchemaTable.h is
+// runtime-tier (fan-in: BackgroundThread + 1 positive test + 2 neg-compile
+// fixtures, all runtime-tier).  fixy/Wrap.h's transitive Arena.h pull is
+// redundant (SchemaTable doesn't otherwise touch Arena) — not cyclic.
+// Bug class: heap-malloc C-string lifetime + Tagged<source::Sanitized>
+// provenance gate + ScopedView Mutable/Sealed state machine + open-
+// addressing hash table.  fixy::tags::source::Sanitized path (NOT
+// fixy::source::Sanitized) per the federation-namespace reservation
+// (fixy-A4-013).
 
 #include <algorithm>
 #include <atomic>
@@ -57,7 +67,7 @@ struct SchemaEntry {
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SchemaEntry);
 
 // ── SchemaTable state tags ──────────────────────────────────────────
-// Tagged with safety::ScopedView so the compiler can prove the table
+// Tagged with fixy::wrap::ScopedView so the compiler can prove the table
 // is in Mutable state before register_name is called.  Mutable is the
 // default (freshly-constructed or cleared); Sealed is entered via
 // seal() and is irreversible for the lifetime of that phase (clear()
@@ -92,7 +102,7 @@ struct SchemaTable {
   //
   // Zero-cost: regime-2 collapse — sizeof(SizeCounter) ==
   // sizeof(uint32_t) == 4 B; SchemaTable layout preserved.
-  using SizeCounter = ::crucible::safety::BoundedMonotonic<
+  using SizeCounter = ::crucible::fixy::wrap::BoundedMonotonic<
       uint32_t, SCHEMA_TABLE_CAP>;
 
   SchemaEntry entries[SCHEMA_TABLE_CAP]{};
@@ -139,19 +149,19 @@ struct SchemaTable {
   }
 
   // ── Typed views (ScopedView discipline) ────────────────────────────
-  using MutableView = crucible::safety::ScopedView<SchemaTable, schema_state::Mutable>;
-  using SealedView  = crucible::safety::ScopedView<SchemaTable, schema_state::Sealed>;
+  using MutableView = crucible::fixy::wrap::ScopedView<SchemaTable, schema_state::Mutable>;
+  using SealedView  = crucible::fixy::wrap::ScopedView<SchemaTable, schema_state::Sealed>;
 
   [[nodiscard]] MutableView mint_mutable_view() const noexcept
       pre (!is_sealed())
   {
-    return crucible::safety::mint_view<schema_state::Mutable>(*this);
+    return crucible::fixy::wrap::mint_view<schema_state::Mutable>(*this);
   }
 
   [[nodiscard]] SealedView mint_sealed_view() const noexcept
       pre (is_sealed())
   {
-    return crucible::safety::mint_view<schema_state::Sealed>(*this);
+    return crucible::fixy::wrap::mint_view<schema_state::Sealed>(*this);
   }
 
   // ADL-discovered predicates for mint_view<>.
@@ -173,11 +183,11 @@ struct SchemaTable {
   // certify they validated the input.  Trusted sources (PyTorch's
   // Operator schema, in-source string literals) construct Sanitized
   // directly; the TraceLoader retags after its length-bounded validation.
-  using SanitizedName = crucible::safety::Tagged<const char*,
-                                                 crucible::safety::source::Sanitized>;
-  using BorrowedName = crucible::safety::Borrowed<const char, SchemaTable>;
-  using LookupName = crucible::safety::Tagged<
-      BorrowedName, crucible::safety::source::Sanitized>;
+  using SanitizedName = crucible::fixy::wrap::Tagged<const char*,
+                                                 crucible::fixy::tags::source::Sanitized>;
+  using BorrowedName = crucible::fixy::wrap::Borrowed<const char, SchemaTable>;
+  using LookupName = crucible::fixy::wrap::Tagged<
+      BorrowedName, crucible::fixy::tags::source::Sanitized>;
 
   static_assert(sizeof(LookupName) == sizeof(BorrowedName));
   static_assert(std::is_trivially_copy_constructible_v<LookupName>);
@@ -351,7 +361,7 @@ struct SchemaTable {
 };
 
 // Tier 2 opt-in: nothing inside SchemaTable may be a ScopedView.
-static_assert(crucible::safety::no_scoped_view_field_check<SchemaTable>());
+static_assert(crucible::fixy::wrap::no_scoped_view_field_check<SchemaTable>());
 
 // Global singleton — same pattern as global_ckernel_table().
 //
