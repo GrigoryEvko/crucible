@@ -156,6 +156,7 @@
 #include <crucible/fixy/Pipe.h>
 #include <crucible/fixy/Safety.h>
 #include <crucible/fixy/Sess.h>
+#include <crucible/fixy/Mpst.h>
 #include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/fixy/Wrap.h>
