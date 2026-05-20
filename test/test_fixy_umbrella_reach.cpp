@@ -273,6 +273,64 @@ static_assert(std::is_same_v<
     "umbrella reach: fixy::sess::ct::ct_payload_value_type_t must "
     "pass non-CTPayload types through unchanged.");
 
+// ─── 6c. SessContentAddr.h reach — fixy::sess::contentaddr:: (FIXY-U-052c) ──
+//
+// Witness that the content-hash-quotient surface (ContentAddressed<T>
+// + is_content_addressed trait family + underlying/unwrap metafns +
+// depth counter) reaches the consumer through the umbrella include
+// alone.  If a future regression strips
+// `#include <crucible/fixy/SessContentAddr.h>` from Fixy.h's Phase-C
+// block, the next claims fail to compile — the in-header sentinels
+// inside SessContentAddr.h would NOT catch that drift (they fire only
+// at direct-include sites), so the umbrella-reach gate lives here.
+//
+// Production consumer: Cipher.h federation entry payload + cold-blob
+// region persistence types reach `is_content_addressed_v<...>` through
+// this fixy path under FIXY-U-092.
+
+namespace fsca = ::crucible::fixy::sess::contentaddr;
+
+namespace u052c_reach_probe {
+struct Payload {};
+}  // namespace u052c_reach_probe
+
+// 6c-a. ContentAddressed wrapper resolves through the umbrella.
+static_assert(std::is_same_v<
+    fsca::ContentAddressed<u052c_reach_probe::Payload>,
+    ::crucible::safety::proto::ContentAddressed<u052c_reach_probe::Payload>>,
+    "umbrella reach: fixy::sess::contentaddr::ContentAddressed must "
+    "alias safety::proto::ContentAddressed when reached via the "
+    "umbrella.  If this red-lights, fixy/SessContentAddr.h is not "
+    "pulled in by <crucible/Fixy.h>.");
+
+// 6c-b. is_content_addressed_v discriminates wrapped vs bare.
+static_assert( fsca::is_content_addressed_v<
+    fsca::ContentAddressed<u052c_reach_probe::Payload>>,
+    "umbrella reach: fixy::sess::contentaddr::is_content_addressed_v "
+    "must observe wrapped payloads through the umbrella.");
+static_assert(!fsca::is_content_addressed_v<u052c_reach_probe::Payload>,
+    "umbrella reach: fixy::sess::contentaddr::is_content_addressed_v "
+    "must reject bare payloads through the umbrella.");
+
+// 6c-c. ContentAddressedType concept routes through the umbrella.
+static_assert( fsca::ContentAddressedType<
+    fsca::ContentAddressed<u052c_reach_probe::Payload>>);
+static_assert(!fsca::ContentAddressedType<u052c_reach_probe::Payload>);
+
+// 6c-d. unwrap_content_addressed_t strips all layers through the umbrella.
+static_assert(std::is_same_v<
+    fsca::unwrap_content_addressed_t<
+        fsca::ContentAddressed<
+            fsca::ContentAddressed<u052c_reach_probe::Payload>>>,
+    u052c_reach_probe::Payload>,
+    "umbrella reach: fixy::sess::contentaddr::unwrap_content_addressed_t "
+    "must strip all wrapper layers through the umbrella.");
+
+// 6c-e. depth counter routes through the umbrella.
+static_assert(fsca::content_addressed_depth_v<u052c_reach_probe::Payload> == 0);
+static_assert(fsca::content_addressed_depth_v<
+    fsca::ContentAddressed<u052c_reach_probe::Payload>> == 1);
+
 // ─── 7. fixy::wrap:: saturating-arithmetic free functions (FIXY-U-096b) ──
 //
 // Witness that the saturating-arithmetic primitives required by

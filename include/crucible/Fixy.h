@@ -84,6 +84,13 @@
 //                          overload + requires_ct trait family +
 //                          is_ct_payload shape predicates +
 //                          ct_payload_value_type metafn)
+//   - fixy/SessContentAddr.h — sessions/SessionContentAddressed.h
+//                          content-hash-quotient surface under
+//                          fixy::sess::contentaddr::* (ContentAddressed<T>
+//                          + is_content_addressed trait family +
+//                          underlying/unwrap metafns + depth counter) —
+//                          used by Cipher.h federation entry payload +
+//                          cold-blob region persistence types (FIXY-U-052c)
 //   - fixy/Struct.h      — structural (non-Graded) safety wrappers
 //                          (Pinned / NonMovable / NotInherited /
 //                          FinalBy / Checked.h primitives /
@@ -165,6 +172,7 @@
 #include <crucible/fixy/Mpst.h>
 #include <crucible/fixy/SessDecl.h>
 #include <crucible/fixy/SessCT.h>
+#include <crucible/fixy/SessContentAddr.h>
 #include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/fixy/Wrap.h>
