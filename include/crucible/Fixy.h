@@ -78,6 +78,12 @@
 //                          decl is re-exported so stale call sites
 //                          surface the canonical diagnostic via the
 //                          `fixy::` path.
+//   - fixy/SessCT.h      — sessions/SessionCT.h CT-required payload
+//                          chokepoint surfaced under
+//                          fixy::sess::ct::* (CTPayload<T> + ct::eq
+//                          overload + requires_ct trait family +
+//                          is_ct_payload shape predicates +
+//                          ct_payload_value_type metafn)
 //   - fixy/Struct.h      — structural (non-Graded) safety wrappers
 //                          (Pinned / NonMovable / NotInherited /
 //                          FinalBy / Checked.h primitives /
@@ -158,6 +164,7 @@
 #include <crucible/fixy/Sess.h>
 #include <crucible/fixy/Mpst.h>
 #include <crucible/fixy/SessDecl.h>
+#include <crucible/fixy/SessCT.h>
 #include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/fixy/Wrap.h>

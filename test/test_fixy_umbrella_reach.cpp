@@ -209,6 +209,70 @@ static_assert(std::is_same_v<
     "umbrella reach: fixy::sess::declassify::wire_policy_t must "
     "extract the wire-policy tag through the umbrella.");
 
+// ─── 6. SessCT.h reach — fixy::sess::ct:: (FIXY-U-052b) ───────────
+//
+// Witness that the CT-required session payload surface (CTPayload<T>
+// + ct::eq overload + 8 traits/concepts/metafns) reaches the consumer
+// through the umbrella include alone.  If a future regression strips
+// `#include <crucible/fixy/SessCT.h>` from Fixy.h's Phase-C block,
+// the next claims fail to compile — the in-header sentinels inside
+// SessCT.h would NOT catch that drift (they fire only at direct-
+// include sites), so the umbrella-reach gate lives here.
+
+namespace fsct = ::crucible::fixy::sess::ct;
+
+namespace u052b_reach_probe {
+struct AuthTag { std::byte bytes[16]{}; };
+struct PlainTag { std::byte bytes[16]{}; };  // NOT opted into requires_ct
+}  // namespace u052b_reach_probe
+
+// requires_ct specialization MUST live in the substrate namespace
+// (standard C++ rule: primary template's namespace is the only
+// specialization site).  Opt the reach-probe placeholder in here.
+namespace crucible::safety::ct {
+template <>
+struct requires_ct<u052b_reach_probe::AuthTag> : std::true_type {};
+}  // namespace crucible::safety::ct
+
+// 6a. CTPayload wrapper resolves through the umbrella.
+static_assert(std::is_same_v<
+    fsct::CTPayload<u052b_reach_probe::AuthTag>,
+    ::crucible::safety::ct::CTPayload<u052b_reach_probe::AuthTag>>,
+    "umbrella reach: fixy::sess::ct::CTPayload must alias "
+    "safety::ct::CTPayload when reached via the umbrella.  If this "
+    "red-lights, fixy/SessCT.h is not pulled in by <crucible/Fixy.h>.");
+
+// 6b. requires_ct trait routes through the umbrella.
+static_assert( fsct::requires_ct_v<u052b_reach_probe::AuthTag>,
+    "umbrella reach: fixy::sess::ct::requires_ct_v must observe the "
+    "opt-in specialization through the umbrella.");
+static_assert(!fsct::requires_ct_v<u052b_reach_probe::PlainTag>,
+    "umbrella reach: fixy::sess::ct::requires_ct_v must reject "
+    "non-opted-in types through the umbrella.");
+
+// 6c. RequiresCT concept conjoins trait + trivial-copyability.
+static_assert( fsct::RequiresCT<u052b_reach_probe::AuthTag>);
+static_assert(!fsct::RequiresCT<u052b_reach_probe::PlainTag>);
+
+// 6d. is_ct_payload shape predicate discriminates wrapper vs raw.
+static_assert( fsct::is_ct_payload_v<
+    fsct::CTPayload<u052b_reach_probe::AuthTag>>);
+static_assert(!fsct::is_ct_payload_v<u052b_reach_probe::AuthTag>);
+static_assert( fsct::CTPayloadType<
+    fsct::CTPayload<u052b_reach_probe::AuthTag>>);
+
+// 6e. ct_payload_value_type_t extracts inner T (with passthrough).
+static_assert(std::is_same_v<
+    fsct::ct_payload_value_type_t<
+        fsct::CTPayload<u052b_reach_probe::AuthTag>>,
+    u052b_reach_probe::AuthTag>,
+    "umbrella reach: fixy::sess::ct::ct_payload_value_type_t must "
+    "extract the inner payload through the umbrella.");
+static_assert(std::is_same_v<
+    fsct::ct_payload_value_type_t<int>, int>,
+    "umbrella reach: fixy::sess::ct::ct_payload_value_type_t must "
+    "pass non-CTPayload types through unchanged.");
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }
