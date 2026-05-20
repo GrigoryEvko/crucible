@@ -15,7 +15,7 @@
 #include <crucible/CKernel.h>
 #include <crucible/Expr.h>
 #include <crucible/Platform.h>
-#include <crucible/safety/Bits.h>
+#include <crucible/fixy/Wrap.h>           // FIXY-U-096o: Bits + Monotonic + Positive + PowerOfTwo
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
@@ -90,7 +90,7 @@ enum class ReduceHint : uint8_t { DEFAULT, INNER, OUTER };
 
 // NodeFlags — scoped enum over the 1-byte GraphNode flag bits.
 //
-// Worn through safety::Bits<NodeFlags> at the field level so the type
+// Worn through fixy::wrap::Bits<NodeFlags> at the field level so the type
 // system rejects the dominant bug class: silent mixing of two unrelated
 // flag enums on the same uint8_t (e.g. a refactor that writes
 // `node.flags |= RecipeFlags::Foo`).  Bits<NodeFlags> and
@@ -277,7 +277,7 @@ struct GraphNode {
   // ── Identity + type (8B) ──────────────────────────
   NodeId id;                    // Unique ID (= buffer name "buf{id}")
   NodeKind kind = NodeKind::NOP; // 1B
-  safety::Bits<NodeFlags> flags{};  // 1B — typed bit-field (sizeof preserved)
+  fixy::wrap::Bits<NodeFlags> flags{};  // 1B — typed bit-field (sizeof preserved)
   uint8_t ndim = 0;             // 1B — output dimensions
   uint8_t nred = 0;             // 1B — reduction dimensions (0 for non-reductions)
 
@@ -1041,8 +1041,8 @@ class CRUCIBLE_OWNER Graph {
       return nullptr;
     size_t len = std::strlen(src) + 1;
     auto* dst = static_cast<char*>(arena_.alloc(a,
-        crucible::safety::Positive<size_t>{len},
-        crucible::safety::PowerOfTwo<size_t>{1}));
+        crucible::fixy::wrap::Positive<size_t>{len},
+        crucible::fixy::wrap::PowerOfTwo<size_t>{1}));
     std::memcpy(dst, src, len);
     return dst;
   }
@@ -1255,7 +1255,7 @@ class CRUCIBLE_OWNER Graph {
   // to compile.  Bonus: bump()'s contract catches uint32_t wraparound.
   // sizeof(Monotonic<uint32_t>) == sizeof(uint32_t) per Mutation.h
   // static_assert; layout-preserving.
-  safety::Monotonic<uint32_t> num_nodes_{0};
+  fixy::wrap::Monotonic<uint32_t> num_nodes_{0};
   uint32_t capacity_;
 
   NodeId* input_ids_;

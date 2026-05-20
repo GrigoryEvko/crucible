@@ -101,6 +101,7 @@
 #include <crucible/effects/Computation.h>      // canonical: Computation<R,T>
 #include <crucible/permissions/Permission.h>  // SharedPermission
 #include <crucible/safety/AllocClass.h>        // canonical Tier-S
+#include <crucible/safety/Bits.h>              // structural (typed bit-field)
 #include <crucible/safety/Borrowed.h>          // non-owning lifetime-tagged view
 #include <crucible/safety/IsBorrowedRef.h>     // IsBorrowedRef concept gate
 #include <crucible/safety/Budgeted.h>          // off-tree (Space axis)
@@ -411,6 +412,14 @@ using ::crucible::safety::FixedArray;
 using ::crucible::safety::NotInherited;
 using ::crucible::safety::assert_not_inherited;
 using ::crucible::safety::FinalBy;
+
+// Bits<E, Invariants...> — typed bit-field over a scoped enum E.  Distinct
+// type identity from raw `uint8_t` / `uint32_t` (catches accidental swaps);
+// const-correct ops (operator| / & / ~); contract-checked invariant traits.
+// Surfaced through fixy::wrap:: so production sites (FIXY-U-096o Graph.h
+// NodeFlags) reach the wrapper through the umbrella instead of descending
+// into crucible/safety/Bits.h.
+using ::crucible::safety::Bits;
 
 // SwissTableBuffer<Slot> — structural RAII open-addressing slot buffer.
 // Replaces raw `void*` + manual aligned_alloc/free dance in interned
@@ -745,6 +754,19 @@ static_assert(std::is_same_v<
     ::crucible::fixy::wrap::FixedArray<int, 8>,
     ::crucible::safety::FixedArray<int, 8>>,
     "fixy::wrap::FixedArray must alias safety::FixedArray.");
+
+// Bits identity — exercised by FIXY-U-096o Graph.h migration.  Bits<E, Inv...>
+// is a non-Graded structural newtype (typed bit-field over a scoped enum);
+// the re-export must preserve type identity so Graph::Node::flags stays
+// layout-compatible with the substrate primary.  Sentinel uses a local
+// scoped-enum tag — type identity holds across any Bits<E> instantiation.
+namespace bits_sentinel_detail {
+    enum class WrapBitsSentinelE : std::uint8_t { kA = 1, kB = 2 };
+}
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Bits<bits_sentinel_detail::WrapBitsSentinelE>,
+    ::crucible::safety::Bits<bits_sentinel_detail::WrapBitsSentinelE>>,
+    "fixy::wrap::Bits must alias safety::Bits.");
 
 // SwissTableBuffer identity — exercised by FIXY-U-096n ExprPool.h migration.
 // SwissTableBuffer<Slot> is a non-Graded structural RAII owner of an
