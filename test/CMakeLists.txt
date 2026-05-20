@@ -2233,6 +2233,20 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_endpoint_non_surfac
 crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_endpoint_near_miss
     "MpmcChannelSessionSurface|constraints not satisfied|no matching function")
 
+# FIXY-U-074l HS14 floor: fixy::safety::mint_view + mint_linear_view.
+# These gate via a `pre(view_ok(c, type_identity<Tag>{}))` contract (NOT a
+# requires-concept) — view_ok is a per-Carrier hidden friend with no global
+# default.  Two distinct classes each: no view_ok at all (ADL miss) vs
+# view_ok wired for a different Tag (overload exists, doesn't match).
+crucible_neg_compile_fixy_test(neg_fixy_safety_mint_view_no_view_ok
+    "view_ok|not declared|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_safety_mint_view_wrong_tag
+    "view_ok|no matching function|type_identity")
+crucible_neg_compile_fixy_test(neg_fixy_safety_mint_linear_view_no_view_ok
+    "view_ok|not declared|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_safety_mint_linear_view_wrong_tag
+    "view_ok|no matching function|type_identity")
+
 # FIXY-U-074d HS14 floor: fixy::substr::mint_substrate_session sat at
 # HS14:0.  Two distinct rejection conjuncts of its requires-clause
 # (IsBridgeableDirection ∧ SubstrateFitsCtxResidency ∧
