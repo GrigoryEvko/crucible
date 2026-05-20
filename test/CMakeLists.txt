@@ -193,6 +193,7 @@ crucible_test(test_fixy_profile)
 crucible_test(test_fixy_rule_helpers)
 crucible_test(test_fixy_cap)
 crucible_test(test_fixy_perm)
+crucible_test(test_fixy_handle)  # FIXY-U-016 — per-namespace test_fixy_handle sentinel TU
 crucible_test(test_fixy_sess)
 crucible_test(test_fixy_sess_phi)
 crucible_test(test_fixy_sess_patterns)  # FIXY-AUDIT-C6
