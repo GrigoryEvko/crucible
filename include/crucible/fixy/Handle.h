@@ -20,6 +20,9 @@
 //   safety::OneShotFlag              — alignas(64) release/acquire flag
 //   safety::PublishOnce<T>           — one-shot publish channel
 //   safety::PublishSlot<T>           — reusable latest-wins slot
+//   safety::PublishCommitCell<Tag, WriteAuth>
+//                                    — typed publish/commit cell (FIXY-U-016b)
+//   safety::AlignedBuffer<T, Align>  — RAII over-aligned heap buffer (FIXY-U-016b)
 //   safety::LazyEstablishedChannel<Proto, Resource>
 //                                    — session-handshake-backed channel
 //
@@ -55,6 +58,8 @@
 #include <crucible/handles/Once.h>
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/handles/PublishOnce.h>
+#include <crucible/safety/AlignedBuffer.h>     // FIXY-U-016b — RAII over-aligned buffer
+#include <crucible/safety/PublishCommit.h>     // FIXY-U-016b — typed publish/commit cell
 
 #include <type_traits>   // dual-export sentinel uses std::is_same_v
 
@@ -86,6 +91,18 @@ using ::crucible::safety::PublishSlot;
 
 // ── LazyEstablishedChannel — session-handshake-backed channel ──────
 using ::crucible::safety::LazyEstablishedChannel;
+
+// ── AlignedBuffer<T, Align> — RAII over-aligned heap buffer ────────
+// (FIXY-U-016b) Move-only, nothrow-move; zero-initialized allocation
+// via `allocate_zeroed(count)`.  Used by BackgroundThread scratch pools.
+using ::crucible::safety::AlignedBuffer;
+
+// ── PublishCommitCell<Tag, WriteAuth> — publish/commit pattern ─────
+// (FIXY-U-016b) Pinned (non-copy / non-move) atomic cell that fuses
+// the standard "atomic store with release → reader acquire" pattern
+// under a Tag-typed identity.  Used by BackgroundThread pipeline-stage
+// publication.
+using ::crucible::safety::PublishCommitCell;
 
 }  // namespace crucible::fixy::handle
 
@@ -151,10 +168,25 @@ static_assert(std::is_same_v<
     "safety::LazyEstablishedChannel<Proto, R> — session-handshake "
     "identity must not drift across the umbrella boundary.");
 
-// Cardinality witness: 9 aliases surfaced; future additions to
+// FIXY-U-016b — AlignedBuffer<T, Align>; default Alignment = alignof(T).
+static_assert(std::is_same_v<
+    ::crucible::fixy::handle::AlignedBuffer<HandleProbeT>,
+    ::crucible::safety::AlignedBuffer<HandleProbeT>>,
+    "fixy::handle::AlignedBuffer<T> must alias safety::AlignedBuffer<T> "
+    "— move-only RAII identity is load-bearing for hot-drain pipelines.");
+
+// FIXY-U-016b — PublishCommitCell<Tag, WriteAuth>.
+static_assert(std::is_same_v<
+    ::crucible::fixy::handle::PublishCommitCell<HandleProbeT, HandleProbeProto>,
+    ::crucible::safety::PublishCommitCell<HandleProbeT, HandleProbeProto>>,
+    "fixy::handle::PublishCommitCell<Tag, WriteAuth> must alias "
+    "safety::PublishCommitCell — Pinned-channel identity is load-bearing "
+    "for cross-thread publish/commit ordering.");
+
+// Cardinality witness: 11 aliases surfaced; future additions to
 // handles/ MUST extend this block + add a substrate type below.
-constexpr int handle_alias_cardinality = 9;
-static_assert(handle_alias_cardinality == 9,
+constexpr int handle_alias_cardinality = 11;
+static_assert(handle_alias_cardinality == 11,
     "fixy::handle:: cardinality changed — update Handle.h sentinel "
     "block to track the substrate handles/ surface.");
 
