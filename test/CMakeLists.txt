@@ -6139,6 +6139,20 @@ crucible_neg_compile_test(neg_saturated_non_arithmetic
 crucible_neg_compile_test(neg_saturated_implicit_to_t
   "cannot convert|no matching function|conversion from|invalid conversion")
 
+# safety::Cyclic<T, N> structural ring-cursor — HS14 fixtures (#1084 piece):
+#   * neg_cyclic_non_power_of_two   Cyclic<uint32_t, 6> must fail — the
+#                                   `(N & (N-1)) == 0` requires-clause is
+#                                   what makes `counter & (N-1)` == `% N`;
+#                                   non-power-of-two N silently mis-slots.
+#   * neg_cyclic_signed_counter     Cyclic<int32_t, 8> must fail — the
+#                                   std::unsigned_integral<T> clause; the
+#                                   free-running `++counter` wrap is only
+#                                   well-defined (DetSafe) for unsigned T.
+crucible_neg_compile_test(neg_cyclic_non_power_of_two
+  "constraints not satisfied|associated constraints|no matching|no type named")
+crucible_neg_compile_test(neg_cyclic_signed_counter
+  "constraints not satisfied|associated constraints|no matching|no type named")
+
 # WRAP-Saturate-3 (#1001) — *_sat_det returns
 # DetSafe<Pure, Saturated<T>>. Raw Saturated consumers and implicit
 # cross-tier DetSafe consumers must fail.

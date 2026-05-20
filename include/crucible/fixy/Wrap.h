@@ -110,6 +110,7 @@
 #include <crucible/safety/Consistency.h>       // off-tree (Version axis)
 #include <crucible/safety/ConstantTime.h>      // structural (ct::* primitives)
 #include <crucible/safety/Crash.h>             // off-tree (Effect axis)
+#include <crucible/safety/Cyclic.h>            // structural (modular ring-cursor newtype)
 #include <crucible/safety/DetSafe.h>           // canonical Tier-S
 #include <crucible/safety/EpochVersioned.h>    // off-tree (Version axis)
 #include <crucible/safety/FixedArray.h>        // structural (bounded stack-array newtype)
@@ -409,6 +410,19 @@ using ::crucible::safety::OwnedRegion;
 // the wrapper through the umbrella instead of descending into
 // crucible/safety/FixedArray.h.
 using ::crucible::safety::FixedArray;
+
+// Cyclic<T, N> — free-running modular-counter newtype for power-of-two
+// ring cursors.  Carries the "this counter is a ring slot, read me
+// mod N" invariant that a bare `uint32_t head_` discards: index() is
+// the masked next-write slot, index_back(i) the i-th most-recent slot,
+// advance() the wrapping increment.  Surfaced through fixy::wrap:: so
+// the ring consumers (WRAP-RegionCache-4 #989 RegionCache::head_,
+// WRAP-Transaction-4 #1063 TransactionLog::head_) reach the wrapper
+// through the umbrella instead of descending into
+// crucible/safety/Cyclic.h.  Deliberately-not-graded structural
+// wrapper (modular arithmetic has no useful lattice), peer to
+// FixedArray / Saturated.
+using ::crucible::safety::Cyclic;
 
 // NotInherited<T> (concept) / FinalBy<T> (CRTP base) — structural
 // non-extensibility.  NotInherited is a `concept`, not a class, so it
@@ -758,6 +772,17 @@ static_assert(std::is_same_v<
     ::crucible::fixy::wrap::FixedArray<int, 8>,
     ::crucible::safety::FixedArray<int, 8>>,
     "fixy::wrap::FixedArray must alias safety::FixedArray.");
+
+// Cyclic identity — exercised by the WRAP-RegionCache-4 (#989) and
+// WRAP-Transaction-4 (#1063) ring-cursor migrations.  Cyclic<T, N> is a
+// non-Graded structural newtype (free-running modular counter); the
+// re-export must preserve type identity so a `Cyclic<uint32_t, 8>`
+// head_ field stays sizeof(uint32_t)-compatible with the substrate
+// primary and the masking/wrap invariant is one and the same type.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Cyclic<std::uint32_t, 8>,
+    ::crucible::safety::Cyclic<std::uint32_t, 8>>,
+    "fixy::wrap::Cyclic must alias safety::Cyclic.");
 
 // Bits identity — exercised by FIXY-U-096o Graph.h migration.  Bits<E, Inv...>
 // is a non-Graded structural newtype (typed bit-field over a scoped enum);

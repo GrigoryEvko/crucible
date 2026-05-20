@@ -14,6 +14,7 @@
 #include <crucible/handles/Once.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/ConstantTime.h>
+#include <crucible/safety/Cyclic.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/OwnedRegion.h>
@@ -26,6 +27,7 @@ int main() {
     using namespace crucible::safety;
 
     detail::borrowed_self_test::runtime_smoke_test();
+    detail::cyclic_self_test::runtime_smoke_test();
     detail::linear_self_test::runtime_smoke_test();
     detail::mutation_self_test::runtime_smoke_test();
     detail::owned_region_self_test::runtime_smoke_test();
