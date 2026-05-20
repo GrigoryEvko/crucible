@@ -27,7 +27,9 @@
 // dispatch_op divergence path.
 
 #include <crucible/MerkleDag.h>
-#include <crucible/safety/WeakRef.h>   // safety::WeakRef — nullable non-owning cache slot
+#include <crucible/safety/Cyclic.h>      // safety::Cyclic — ring write cursor (head_)
+#include <crucible/safety/Mutation.h>    // safety::BoundedMonotonic — saturating fill counter (count_)
+#include <crucible/safety/WeakRef.h>     // safety::WeakRef — nullable non-owning cache slot
 
 #include <cassert>
 #include <cstdint>
@@ -36,8 +38,9 @@ namespace crucible {
 
 struct RegionCache {
     static constexpr uint32_t CAP = 8;
-    static constexpr uint32_t MASK = CAP - 1;
     static_assert((CAP & (CAP - 1)) == 0, "CAP must be a power of 2");
+    // (MASK retired in #989: head_ is now safety::Cyclic<uint32_t, CAP>, which
+    //  owns the & (CAP-1) wrap-mask internally — see index()/index_back().)
 
     RegionCache() = default;
     RegionCache(const RegionCache&)            = delete("embedded in Vigil; no reason to copy");
@@ -57,12 +60,12 @@ struct RegionCache {
         const ContentHash hash = region->content_hash;
 
         // Dedup: scan inline content_hashes_ — zero pointer chasing.
-        for (uint32_t i = 0; i < count_; i++) {
-            if (content_hashes_[(head_ - 1 - i) & MASK] == hash)
+        for (uint32_t i = 0; i < count_.get(); i++) {
+            if (content_hashes_[head_.index_back(i)] == hash)
                 return;
         }
 
-        const uint32_t slot = head_ & MASK;
+        const uint32_t slot = head_.index();
         // WeakRef::from_raw is the populate-from-a-raw-pointer path; `region`
         // is asserted non-null above, but the slot type is deliberately
         // nullable so eviction/empty slots stay representable.
@@ -72,8 +75,11 @@ struct RegionCache {
         // Plan-less regions get num_ops_=0: find_alternate's bounds check
         // (pos >= 0) rejects them without a separate plan check.
         num_ops_[slot]        = region->plan ? region->num_ops : 0;
-        head_++;
-        if (count_ < CAP) count_++;
+        head_.advance();
+        // count_ saturates at CAP: the guard is LOAD-BEARING, not defensive —
+        // BoundedMonotonic::bump() carries CRUCIBLE_PRE(get() < Max) and does
+        // NOT self-saturate, so bumping at CAP would trip the precondition.
+        if (count_.get() < CAP) count_.bump();
     }
 
     // Notify the cache that a region's plan has been set.
@@ -81,8 +87,8 @@ struct RegionCache {
     // the region eligible for find_alternate().
     void notify_plan_ready(const RegionNode* region) {
         assert(region && "null region");
-        for (uint32_t i = 0; i < count_; i++) {
-            const uint32_t idx = (head_ - 1 - i) & MASK;
+        for (uint32_t i = 0; i < count_.get(); i++) {
+            const uint32_t idx = head_.index_back(i);
             if (regions_[idx].try_get() == region) {
                 num_ops_[idx] = region->plan ? region->num_ops : 0;
                 return;
@@ -104,8 +110,8 @@ struct RegionCache {
         SchemaHash schema, ShapeHash shape,
         const RegionNode* exclude = nullptr) const CRUCIBLE_LIFETIMEBOUND
     {
-        for (uint32_t i = 0; i < count_; i++) {
-            const uint32_t idx = (head_ - 1 - i) & MASK;
+        for (uint32_t i = 0; i < count_.get(); i++) {
+            const uint32_t idx = head_.index_back(i);
 
             // Filter: identity comparison + bounds check (inline, no ptr chase).
             if (regions_[idx].try_get() == exclude) continue;
@@ -122,8 +128,8 @@ struct RegionCache {
     // Find by exact content hash.  Scans inline content_hashes_ —
     // zero pointer chasing into RegionNode.
     [[nodiscard]] const RegionNode* find(ContentHash hash) const CRUCIBLE_LIFETIMEBOUND {
-        for (uint32_t i = 0; i < count_; i++) {
-            const uint32_t idx = (head_ - 1 - i) & MASK;
+        for (uint32_t i = 0; i < count_.get(); i++) {
+            const uint32_t idx = head_.index_back(i);
             if (content_hashes_[idx] == hash) return regions_[idx].try_get();
         }
         return nullptr;
@@ -131,8 +137,8 @@ struct RegionCache {
 
     // ── Queries ──
 
-    [[nodiscard]] uint32_t size()  const { return count_; }
-    [[nodiscard]] bool     empty() const { return count_ == 0; }
+    [[nodiscard]] uint32_t size()  const { return count_.get(); }
+    [[nodiscard]] bool     empty() const { return count_.get() == 0; }
 
  private:
     // SoA layout: each field in its own contiguous array.
@@ -157,8 +163,15 @@ struct RegionCache {
     const TraceEntry* ops_[CAP]{};            // cached ops pointer (one fewer ptr chase)
     uint32_t          num_ops_[CAP]{};        // cached op count (bounds check inline)
 
-    uint32_t          head_{0};               // next insertion index (wraps via & MASK)
-    uint32_t          count_{0};              // filled entries (0..CAP)
+    // Ring write cursor (WRAP-RegionCache-4, #989): a free-running counter read
+    // as head_.index() (next-write slot) and head_.index_back(i) (i-th most
+    // recent).  Cyclic carries the & (CAP-1) wrap-mask + advance discipline in
+    // the type, so the open-coded masking that MASK used to express is gone.
+    safety::Cyclic<uint32_t, CAP>           head_{};
+    // Saturating fill counter, 0..CAP (WRAP-RegionCache-4, #989):
+    // BoundedMonotonic enforces BOTH non-decrease and the CAP ceiling; insert()
+    // guards bump() with `get() < CAP` so the saturate-at-CAP semantics hold.
+    safety::BoundedMonotonic<uint32_t, CAP> count_{uint32_t{0}};
 };
 
 // Zero-cost wiring (WRAP-RegionCache-1, #986): WeakRef<const RegionNode>
@@ -168,5 +181,14 @@ struct RegionCache {
 static_assert(sizeof(safety::WeakRef<const RegionNode>[RegionCache::CAP])
               == RegionCache::CAP * sizeof(const RegionNode*),
               "WeakRef cache-slot array must stay layout-identical to raw pointers");
+
+// Zero-cost ring state (WRAP-RegionCache-4, #989): head_ (Cyclic) and count_
+// (BoundedMonotonic) each collapse to one uint32_t, so the 8B cursor+count
+// footprint — and RegionCache's 232B total — is unchanged.  A regression in
+// either wrapper's zero-cost guarantee reddens here.
+static_assert(sizeof(safety::Cyclic<uint32_t, RegionCache::CAP>) == sizeof(uint32_t),
+              "Cyclic ring cursor must stay layout-identical to a raw uint32_t");
+static_assert(sizeof(safety::BoundedMonotonic<uint32_t, RegionCache::CAP>) == sizeof(uint32_t),
+              "BoundedMonotonic fill counter must stay layout-identical to a raw uint32_t");
 
 } // namespace crucible
