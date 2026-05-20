@@ -5,12 +5,10 @@
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/SwissTable.h>
-#include <crucible/safety/Mutation.h>
+#include <crucible/fixy/Source.h>     // FIXY-U-096n: source::Interned through fixy::tags::source::
+#include <crucible/fixy/Wrap.h>        // FIXY-U-096n: Refined/Monotonic/PowerOfTwo/Tagged/SwissTableBuffer/det_safe::Pure
+#include <crucible/safety/Decide.h>    // decide::in_range / bounded_above / is_power_of_two_le predicates
 #include <crucible/safety/Post.h>
-#include <crucible/safety/DetSafe.h>
-#include <crucible/safety/Refined.h>
-#include <crucible/safety/SwissTableBuffer.h>
-#include <crucible/safety/Tagged.h>
 
 #include <algorithm>
 #include <array>
@@ -298,15 +296,15 @@ class CRUCIBLE_OWNER ExprPool {
   static constexpr size_t kIntCacheSize =
       static_cast<size_t>(kIntCacheHigh - kIntCacheLow + 1);
 
-  using IntCacheLiteral = safety::Refined<
-      safety::in_range<kIntCacheLow, kIntCacheHigh>, int64_t>;
-  using IntCacheIndex = safety::Refined<
-      safety::bounded_above<kIntCacheSize - 1>, size_t>;
-  using Capacity = safety::PowerOfTwo<size_t>;
-  using InternCount = safety::Monotonic<size_t>;
+  using IntCacheLiteral = fixy::wrap::Refined<
+      fixy::wrap::in_range<kIntCacheLow, kIntCacheHigh>, int64_t>;
+  using IntCacheIndex = fixy::wrap::Refined<
+      fixy::wrap::bounded_above<kIntCacheSize - 1>, size_t>;
+  using Capacity = fixy::wrap::PowerOfTwo<size_t>;
+  using InternCount = fixy::wrap::Monotonic<size_t>;
   using InternedExpr =
-      safety::Tagged<const Expr*, safety::source::Interned>;
-  using PureInternedExpr = safety::det_safe::Pure<InternedExpr>;
+      fixy::wrap::Tagged<const Expr*, fixy::tags::source::Interned>;
+  using PureInternedExpr = fixy::wrap::det_safe::Pure<InternedExpr>;
 
   static_assert(sizeof(IntCacheLiteral) == sizeof(int64_t));
   static_assert(sizeof(IntCacheIndex) == sizeof(size_t));
@@ -440,8 +438,8 @@ class CRUCIBLE_OWNER ExprPool {
     if (symbol_names_[id.raw()] == nullptr) {
       size_t name_len_with_null = std::strlen(name) + 1;
       char* name_buf = static_cast<char*>(arena_.alloc(a,
-          crucible::safety::Positive<size_t>{name_len_with_null},
-          crucible::safety::PowerOfTwo<size_t>{1}));
+          crucible::fixy::wrap::Positive<size_t>{name_len_with_null},
+          crucible::fixy::wrap::PowerOfTwo<size_t>{1}));
       std::memcpy(name_buf, name, name_len_with_null);
       symbol_names_[id.raw()] = name_buf;
     }
@@ -1634,7 +1632,7 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   // Allocate `ctrl_` + `slots_` in a single contiguous backing buffer
-  // via safety::SwissTableBuffer<const Expr*> (#915 WRAP-ExprPool-1).
+  // via fixy::wrap::SwissTableBuffer<const Expr*> (#915 WRAP-ExprPool-1).
   // The wrapper owns the aligned_alloc lifetime as move-only RAII;
   // ctrl_ and slots_ remain raw projections cached on the hot probe
   // path so SwissTable::CtrlGroup::load(&ctrl_[i]) and slots_[i] keep
@@ -1645,7 +1643,7 @@ class CRUCIBLE_OWNER ExprPool {
   // kGroupWidth (≥ 16) → trivially 8-byte aligned for the pointer array.
   void alloc_tables_(size_t cap) {
     const size_t slot_bytes = cap * sizeof(const Expr*);
-    backing_ = ::crucible::safety::SwissTableBuffer<const Expr*>::allocate(cap);
+    backing_ = ::crucible::fixy::wrap::SwissTableBuffer<const Expr*>::allocate(cap);
     ctrl_  = backing_.ctrl();
     slots_ = backing_.slots();
     std::memset(ctrl_, 0x80, cap);          // kEmpty = 0x80
@@ -1728,7 +1726,7 @@ class CRUCIBLE_OWNER ExprPool {
   // ctrl+slots backing as move-only RAII.  ctrl_/slots_ remain raw
   // projections cached on the hot probe path so SIMD probes keep
   // their single-load shape.
-  ::crucible::safety::SwissTableBuffer<const Expr*> backing_;
+  ::crucible::fixy::wrap::SwissTableBuffer<const Expr*> backing_;
   int8_t* ctrl_;                // Points into backing_ at offset 0.
   const Expr** slots_;          // Points into backing_ at offset capacity_.
   Capacity capacity_;           // Total slots (always power of 2, multiple of kGroupWidth)

@@ -134,6 +134,7 @@
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Stale.h>
+#include <crucible/safety/SwissTableBuffer.h>  // structural (open-addressing slot buffer)
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>            // canonical Tier-S
@@ -410,6 +411,16 @@ using ::crucible::safety::FixedArray;
 using ::crucible::safety::NotInherited;
 using ::crucible::safety::assert_not_inherited;
 using ::crucible::safety::FinalBy;
+
+// SwissTableBuffer<Slot> — structural RAII open-addressing slot buffer.
+// Replaces raw `void*` + manual aligned_alloc/free dance in interned
+// pools (ExprPool, RecipePool) where the Swiss-table backing IS the
+// canonical owner of the aligned coupled allocation.  Move-only with
+// nothrow move (`is_nothrow_move_constructible`).  Surfaced through
+// fixy::wrap:: so production sites (FIXY-U-096n ExprPool.h) reach
+// the wrapper through the umbrella instead of descending into
+// crucible/safety/SwissTableBuffer.h.
+using ::crucible::safety::SwissTableBuffer;
 
 // ─── ConstantTime primitives (ct:: sub-namespace) ─────────────────
 // Branch-free primitives for crypto paths and Cipher key handling.
@@ -734,6 +745,17 @@ static_assert(std::is_same_v<
     ::crucible::fixy::wrap::FixedArray<int, 8>,
     ::crucible::safety::FixedArray<int, 8>>,
     "fixy::wrap::FixedArray must alias safety::FixedArray.");
+
+// SwissTableBuffer identity — exercised by FIXY-U-096n ExprPool.h migration.
+// SwissTableBuffer<Slot> is a non-Graded structural RAII owner of an
+// open-addressing aligned coupled allocation (ctrl bytes + slot array).
+// Move-only by design (deleted copy ctor with reason string); the
+// re-export must preserve type identity so the ExprPool::backing_
+// member field stays layout-compatible with the substrate primary.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::SwissTableBuffer<void*>,
+    ::crucible::safety::SwissTableBuffer<void*>>,
+    "fixy::wrap::SwissTableBuffer must alias safety::SwissTableBuffer.");
 
 // add_sat_checked / sub_sat_checked / mul_sat_checked identity — exercised
 // by FIXY-U-096b (Saturate.h migration).  Function-template identity is
