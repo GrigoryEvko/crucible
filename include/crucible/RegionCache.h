@@ -27,6 +27,7 @@
 // dispatch_op divergence path.
 
 #include <crucible/MerkleDag.h>
+#include <crucible/safety/WeakRef.h>   // safety::WeakRef — nullable non-owning cache slot
 
 #include <cassert>
 #include <cstdint>
@@ -62,7 +63,10 @@ struct RegionCache {
         }
 
         const uint32_t slot = head_ & MASK;
-        regions_[slot]        = region;
+        // WeakRef::from_raw is the populate-from-a-raw-pointer path; `region`
+        // is asserted non-null above, but the slot type is deliberately
+        // nullable so eviction/empty slots stay representable.
+        regions_[slot]        = safety::WeakRef<const RegionNode>::from_raw(region);
         content_hashes_[slot] = hash;
         ops_[slot]            = region->ops;
         // Plan-less regions get num_ops_=0: find_alternate's bounds check
@@ -79,7 +83,7 @@ struct RegionCache {
         assert(region && "null region");
         for (uint32_t i = 0; i < count_; i++) {
             const uint32_t idx = (head_ - 1 - i) & MASK;
-            if (regions_[idx] == region) {
+            if (regions_[idx].try_get() == region) {
                 num_ops_[idx] = region->plan ? region->num_ops : 0;
                 return;
             }
@@ -103,14 +107,14 @@ struct RegionCache {
         for (uint32_t i = 0; i < count_; i++) {
             const uint32_t idx = (head_ - 1 - i) & MASK;
 
-            // Filter: pointer comparison + bounds check (inline, no ptr chase).
-            if (regions_[idx] == exclude) continue;
+            // Filter: identity comparison + bounds check (inline, no ptr chase).
+            if (regions_[idx].try_get() == exclude) continue;
             if (pos >= num_ops_[idx]) continue;
 
             // One pointer chase: ops_[idx] -> TraceEntry at pos.
             if (ops_[idx][pos].schema_hash == schema &&
                 ops_[idx][pos].shape_hash  == shape)
-                return regions_[idx];
+                return regions_[idx].try_get();
         }
         return nullptr;
     }
@@ -120,7 +124,7 @@ struct RegionCache {
     [[nodiscard]] const RegionNode* find(ContentHash hash) const CRUCIBLE_LIFETIMEBOUND {
         for (uint32_t i = 0; i < count_; i++) {
             const uint32_t idx = (head_ - 1 - i) & MASK;
-            if (content_hashes_[idx] == hash) return regions_[idx];
+            if (content_hashes_[idx] == hash) return regions_[idx].try_get();
         }
         return nullptr;
     }
@@ -133,7 +137,7 @@ struct RegionCache {
  private:
     // SoA layout: each field in its own contiguous array.
     //
-    // regions_:        8 * 8B = 64B = 1 cache line  (pointer comparison, return value)
+    // regions_:        8 * 8B = 64B = 1 cache line  (WeakRef slots: identity compare via try_get, return value)
     // content_hashes_: 8 * 8B = 64B = 1 cache line  (find, insert dedup)
     // ops_:            8 * 8B = 64B = 1 cache line  (direct ops[pos] access)
     // num_ops_:        8 * 4B = 32B                  (bounds check)
@@ -143,7 +147,12 @@ struct RegionCache {
     //   find():           content_hashes_ + regions_  = 2 cache lines
     //   insert() dedup:   content_hashes_             = 1 cache line
     //   find_alternate(): regions_ + num_ops_ + ops_  = ~3 cache lines
-    const RegionNode* regions_[CAP]{};        // region pointers
+    // Nullable non-owning cache slots (WRAP-RegionCache-1, #986): each slot
+    // starts empty, is populated with a DAG-owned RegionNode the cache does
+    // NOT own, and is overwritten (evicted) on FIFO wrap.  WeakRef forces
+    // identity access through try_get() so a slot can never be mistaken for
+    // an owning pointer (TypeSafe).  Zero-cost: collapses to one pointer.
+    safety::WeakRef<const RegionNode> regions_[CAP]{};
     ContentHash       content_hashes_[CAP]{}; // dedup + exact lookup (zero ptr chase)
     const TraceEntry* ops_[CAP]{};            // cached ops pointer (one fewer ptr chase)
     uint32_t          num_ops_[CAP]{};        // cached op count (bounds check inline)
@@ -151,5 +160,13 @@ struct RegionCache {
     uint32_t          head_{0};               // next insertion index (wraps via & MASK)
     uint32_t          count_{0};              // filled entries (0..CAP)
 };
+
+// Zero-cost wiring (WRAP-RegionCache-1, #986): WeakRef<const RegionNode>
+// collapses to exactly one pointer, so the regions_[CAP] slot array keeps its
+// 64B (one cache-line) footprint and the SoA byte-accounting above stays
+// exact.  A regression in WeakRef's zero-cost guarantee reddens here.
+static_assert(sizeof(safety::WeakRef<const RegionNode>[RegionCache::CAP])
+              == RegionCache::CAP * sizeof(const RegionNode*),
+              "WeakRef cache-slot array must stay layout-identical to raw pointers");
 
 } // namespace crucible
