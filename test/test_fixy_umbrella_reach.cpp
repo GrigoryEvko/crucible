@@ -424,6 +424,48 @@ static_assert(std::is_same_v<
     "umbrella reach: End ⩽ End yields the SubtypeOk sentinel through "
     "the fixy::sess::subtype path.");
 
+// ─── 6f. SessQueue.h reach — fixy::sess::queue:: (FIXY-U-052f) ───────
+//
+// Witness that the L3 queue-types σ surface (QueuedMsg/Queue carriers
+// + FIFO enqueue/head/tail ops + channel-scoped queries + queue-state
+// predicates) reaches the consumer through the umbrella include alone.
+// If a future regression strips
+// `#include <crucible/fixy/SessQueue.h>` from Fixy.h's Phase-C block,
+// the next claims fail to compile — the in-header sentinels inside
+// SessQueue.h fire only at direct-include sites, so the umbrella-reach
+// gate lives here.
+
+namespace fsq = ::crucible::fixy::sess::queue;
+
+namespace u052f_reach {
+struct RoleA {};
+struct RoleB {};
+using Msg = fsq::QueuedMsg<RoleA, RoleB, int>;
+}  // namespace u052f_reach
+
+// 6f-a. Carrier types resolve through the umbrella to the substrate.
+static_assert(std::is_same_v<fsq::EmptyQueue,
+                             ::crucible::safety::proto::EmptyQueue>,
+    "umbrella reach: fixy::sess::queue::EmptyQueue must alias "
+    "safety::proto::EmptyQueue.  If this red-lights, fixy/SessQueue.h is "
+    "not pulled in by <crucible/Fixy.h>.");
+static_assert(std::is_same_v<
+    fsq::QueuedMsg<u052f_reach::RoleA, u052f_reach::RoleB, int>,
+    ::crucible::safety::proto::QueuedMsg<u052f_reach::RoleA,
+                                         u052f_reach::RoleB, int>>);
+
+// 6f-b. FIFO operation reaches the consumer and reduces correctly.
+static_assert(std::is_same_v<
+    fsq::enqueue_queue_t<fsq::EmptyQueue, u052f_reach::Msg>,
+    fsq::Queue<u052f_reach::Msg>>,
+    "umbrella reach: enqueue right-appends through the fixy path.");
+static_assert(fsq::queue_size_v<fsq::Queue<u052f_reach::Msg, u052f_reach::Msg>> == 2);
+
+// 6f-c. Channel query + queue-state predicate route through.
+static_assert(fsq::queue_contains_v<fsq::Queue<u052f_reach::Msg>,
+                                    u052f_reach::RoleA, u052f_reach::RoleB>);
+static_assert(fsq::is_queue_state_v<fsq::EmptyQueue>);
+
 // ─── 7. fixy::wrap:: saturating-arithmetic free functions (FIXY-U-096b) ──
 //
 // Witness that the saturating-arithmetic primitives required by
