@@ -111,6 +111,8 @@
 //   at GAPS-004d ship time.
 
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
+#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
 #include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
 #include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
 
@@ -289,5 +291,32 @@ class SyscallLatency {
 
     std::unique_ptr<State> state_;
 };
+
+// ── §XXI Universal Mint Pattern — mint_syscall_latency (FIXY-U-083) ───
+//
+// CtxFitsSyscallLatencyMint admits only contexts whose effect row
+// carries the Init capability.  SyscallLatency::load() attaches a
+// BPF program to the raw_syscalls sys_enter/sys_exit tracepoints and
+// mmaps the per-CPU histogram array — startup-only operations
+// belonging to the Init row.  Hot foreground and background-drain
+// contexts must not engage this surface; the Ctx-fit gate enforces
+// that at the type level.
+template <class Ctx>
+concept CtxFitsSyscallLatencyMint =
+       ::crucible::effects::IsExecCtx<Ctx>
+    && ::crucible::effects::row_contains_v<
+           ::crucible::effects::row_type_of_t<Ctx>,
+           ::crucible::effects::Effect::Init>;
+
+template <::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsSyscallLatencyMint<Ctx>
+[[nodiscard]] inline std::optional<SyscallLatency>
+mint_syscall_latency(Ctx const&, ::crucible::effects::Init init) noexcept {
+    return SyscallLatency::load(init);
+}
+
+static_assert(CtxFitsSyscallLatencyMint<::crucible::effects::ColdInitCtx>);
+static_assert(!CtxFitsSyscallLatencyMint<::crucible::effects::BgDrainCtx>);
+static_assert(!CtxFitsSyscallLatencyMint<::crucible::effects::HotFgCtx>);
 
 }  // namespace crucible::perf

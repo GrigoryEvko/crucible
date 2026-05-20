@@ -61,7 +61,7 @@ if ! command -v rg >/dev/null 2>&1; then
 fi
 
 scan_root="${CRUCIBLE_MINT_INVENTORY_TEST_ROOT:-$root}"
-trees=(safety effects algebra concurrent sessions permissions bridges handles cipher warden)
+trees=(safety effects algebra concurrent sessions permissions bridges handles cipher warden perf)
 
 # ── Extract qualifiers for one declaration site ──────────────────────
 # Inputs: file path (absolute), line number.
@@ -110,7 +110,7 @@ scan_substrate() {
         # Extract mint name from the matched line.  awk avoids head -1 +
         # pipefail traps; rg's pattern guarantees at least one match.
         local name
-        name="$(awk 'match($0, /mint_[a-z_]+/) { print substr($0, RSTART, RLENGTH); exit }' <<<"$text")"
+        name="$(awk 'match($0, /mint_[a-z0-9_]+/) { print substr($0, RSTART, RLENGTH); exit }' <<<"$text")"
         [[ -z "$name" ]] && continue
 
         # Get qualifiers.
@@ -124,7 +124,7 @@ scan_substrate() {
            --no-heading \
            --type=cpp \
            --glob '!_*.h' \
-           'mint_[a-z_]+\s*\(' "$dir" 2>/dev/null || true
+           'mint_[a-z0-9_]+\s*\(' "$dir" 2>/dev/null || true
     )
 }
 

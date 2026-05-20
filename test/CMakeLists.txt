@@ -3044,6 +3044,40 @@ crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_bg_ctx
 crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_hot_fg_ctx
     "constraint|constraints not satisfied|CtxFitsSenseHubV2Mint|Init|HotFgCtx")
 
+# FIXY-U-083 batch 2: 7 remaining perf/ hubs.  Six load-based BPF
+# facade hubs (LockContention / PmuSample / SchedSwitch / SchedTpBtf /
+# SyscallLatency / SyscallTpBtf) share the SenseHub-shape gate.
+# WorkloadProfiler is ctor-based but rides the same Init-row Ctx-fit
+# concept.  Two fixtures per hub (BgDrainCtx + HotFgCtx) = 14 total.
+crucible_neg_compile_perf_test(neg_lock_contention_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsLockContentionMint|Init|Bg")
+crucible_neg_compile_perf_test(neg_lock_contention_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsLockContentionMint|Init|HotFgCtx")
+crucible_neg_compile_perf_test(neg_pmu_sample_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsPmuSampleMint|Init|Bg")
+crucible_neg_compile_perf_test(neg_pmu_sample_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsPmuSampleMint|Init|HotFgCtx")
+crucible_neg_compile_perf_test(neg_sched_switch_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsSchedSwitchMint|Init|Bg")
+crucible_neg_compile_perf_test(neg_sched_switch_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsSchedSwitchMint|Init|HotFgCtx")
+crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsSchedTpBtfMint|Init|Bg")
+crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsSchedTpBtfMint|Init|HotFgCtx")
+crucible_neg_compile_perf_test(neg_syscall_latency_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsSyscallLatencyMint|Init|Bg")
+crucible_neg_compile_perf_test(neg_syscall_latency_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsSyscallLatencyMint|Init|HotFgCtx")
+crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsSyscallTpBtfMint|Init|Bg")
+crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsSyscallTpBtfMint|Init|HotFgCtx")
+crucible_neg_compile_perf_test(neg_workload_profiler_mint_bg_ctx
+    "constraint|constraints not satisfied|CtxFitsWorkloadProfilerMint|Init|Bg")
+crucible_neg_compile_perf_test(neg_workload_profiler_mint_hot_fg_ctx
+    "constraint|constraints not satisfied|CtxFitsWorkloadProfilerMint|Init|HotFgCtx")
+
 # 3 strengthening fixtures: SECOND mismatch class per mint = non-IsExecCtx.
 # CtxFitsXMint = IsExecCtx<Ctx> ∧ row_contains_v<…, Init>; fixtures
 # above exercise the row half (different Init-less ExecCtx shapes);

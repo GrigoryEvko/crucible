@@ -1,0 +1,17 @@
+// FIXY-U-083 HS14 neg-compile fixture (2 of 2 for mint_workload_profiler).
+//
+// mint_workload_profiler rejects HotFgCtx — hot foreground context
+// must never engage Senses-borrowing construction.  Distinct mismatch
+// class from BgDrainCtx: hot-path constraint vs background-drain
+// Bg+Alloc engagement.  Exercises the default-Config overload.
+
+#include <crucible/perf/WorkloadProfiler.h>
+
+int main() {
+    auto wp = crucible::perf::mint_workload_profiler(
+        crucible::effects::HotFgCtx{},
+        /*senses=*/nullptr,
+        crucible::effects::testing::init());
+    (void)wp;
+    return 0;
+}

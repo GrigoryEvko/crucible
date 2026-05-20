@@ -112,6 +112,8 @@
 //   saves one helper call (~50 ns per event).
 
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
+#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
 #include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
 #include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
 
@@ -304,5 +306,31 @@ class LockContention {
 
     std::unique_ptr<State> state_;
 };
+
+// ── §XXI Universal Mint Pattern — mint_lock_contention (FIXY-U-083) ───
+//
+// CtxFitsLockContentionMint admits only contexts whose effect row
+// carries the Init capability.  LockContention::load() performs BPF
+// program loading + tracepoint attach via bpf()/perf_event_open
+// syscalls and mmap — startup-only operations belonging to the Init
+// row.  Hot foreground and background-drain contexts must not engage
+// this surface; the Ctx-fit gate enforces that at the type level.
+template <class Ctx>
+concept CtxFitsLockContentionMint =
+       ::crucible::effects::IsExecCtx<Ctx>
+    && ::crucible::effects::row_contains_v<
+           ::crucible::effects::row_type_of_t<Ctx>,
+           ::crucible::effects::Effect::Init>;
+
+template <::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsLockContentionMint<Ctx>
+[[nodiscard]] inline std::optional<LockContention>
+mint_lock_contention(Ctx const&, ::crucible::effects::Init init) noexcept {
+    return LockContention::load(init);
+}
+
+static_assert(CtxFitsLockContentionMint<::crucible::effects::ColdInitCtx>);
+static_assert(!CtxFitsLockContentionMint<::crucible::effects::BgDrainCtx>);
+static_assert(!CtxFitsLockContentionMint<::crucible::effects::HotFgCtx>);
 
 }  // namespace crucible::perf

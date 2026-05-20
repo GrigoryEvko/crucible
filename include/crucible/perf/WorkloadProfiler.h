@@ -100,6 +100,8 @@
 //                   same SenseHub reading) → identical decision.
 
 #include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
 #include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/perf/SenseHub.h>
@@ -297,5 +299,47 @@ private:
     uint64_t       futex_delta_   = 0;
     uint64_t       ctx_vol_delta_ = 0;
 };
+
+// ── §XXI Universal Mint Pattern — mint_workload_profiler (FIXY-U-083) ─
+//
+// CtxFitsWorkloadProfilerMint admits only contexts whose effect row
+// carries the Init capability.  WorkloadProfiler's ctor takes an
+// effects::Init token because constructing the profiler reads the
+// borrowed Senses* once to capture a baseline snapshot, and the
+// Senses surface is itself an Init-row resource.  Hot foreground
+// and background-drain contexts must not construct this object;
+// the Ctx-fit gate enforces that at the type level.
+//
+// Two overloads mirror the ctor pair: default Config and explicit
+// Config.  Both ride the same concept gate.
+template <class Ctx>
+concept CtxFitsWorkloadProfilerMint =
+       ::crucible::effects::IsExecCtx<Ctx>
+    && ::crucible::effects::row_contains_v<
+           ::crucible::effects::row_type_of_t<Ctx>,
+           ::crucible::effects::Effect::Init>;
+
+template <::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsWorkloadProfilerMint<Ctx>
+[[nodiscard]] inline WorkloadProfiler
+mint_workload_profiler(Ctx const&,
+                       const Senses* senses,
+                       ::crucible::effects::Init init) noexcept {
+    return WorkloadProfiler{senses, init};
+}
+
+template <::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsWorkloadProfilerMint<Ctx>
+[[nodiscard]] inline WorkloadProfiler
+mint_workload_profiler(Ctx const&,
+                       const Senses* senses,
+                       ::crucible::effects::Init init,
+                       WorkloadProfiler::Config cfg) noexcept {
+    return WorkloadProfiler{senses, init, cfg};
+}
+
+static_assert(CtxFitsWorkloadProfilerMint<::crucible::effects::ColdInitCtx>);
+static_assert(!CtxFitsWorkloadProfilerMint<::crucible::effects::BgDrainCtx>);
+static_assert(!CtxFitsWorkloadProfilerMint<::crucible::effects::HotFgCtx>);
 
 }  // namespace crucible::perf

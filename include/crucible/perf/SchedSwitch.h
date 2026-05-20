@@ -115,6 +115,8 @@
 //   rather than wishful thinking.
 
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
+#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
 #include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
 #include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
 
@@ -330,5 +332,32 @@ class SchedSwitch {
 
     std::unique_ptr<State> state_;
 };
+
+// ── §XXI Universal Mint Pattern — mint_sched_switch (FIXY-U-083) ──────
+//
+// CtxFitsSchedSwitchMint admits only contexts whose effect row
+// carries the Init capability.  SchedSwitch::load() attaches a BPF
+// program to the sched_switch tracepoint and mmaps the per-CPU
+// histogram array — startup-only operations belonging to the Init
+// row.  Hot foreground and background-drain contexts must not
+// engage this surface; the Ctx-fit gate enforces that at the type
+// level.
+template <class Ctx>
+concept CtxFitsSchedSwitchMint =
+       ::crucible::effects::IsExecCtx<Ctx>
+    && ::crucible::effects::row_contains_v<
+           ::crucible::effects::row_type_of_t<Ctx>,
+           ::crucible::effects::Effect::Init>;
+
+template <::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsSchedSwitchMint<Ctx>
+[[nodiscard]] inline std::optional<SchedSwitch>
+mint_sched_switch(Ctx const&, ::crucible::effects::Init init) noexcept {
+    return SchedSwitch::load(init);
+}
+
+static_assert(CtxFitsSchedSwitchMint<::crucible::effects::ColdInitCtx>);
+static_assert(!CtxFitsSchedSwitchMint<::crucible::effects::BgDrainCtx>);
+static_assert(!CtxFitsSchedSwitchMint<::crucible::effects::HotFgCtx>);
 
 }  // namespace crucible::perf

@@ -71,6 +71,8 @@
 #include <crucible/perf/SyscallLatency.h>
 
 #include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Refined.h>
 
@@ -175,5 +177,32 @@ class SyscallTpBtf {
 
     std::unique_ptr<State> state_;
 };
+
+// ── §XXI Universal Mint Pattern — mint_syscall_tp_btf (FIXY-U-083) ────
+//
+// CtxFitsSyscallTpBtfMint admits only contexts whose effect row
+// carries the Init capability.  SyscallTpBtf::load() attaches a
+// CO-RE BPF program to the raw_syscalls sys_enter/sys_exit raw
+// tracepoints and mmaps the per-CPU histogram array — startup-only
+// operations belonging to the Init row.  Hot foreground and
+// background-drain contexts must not engage this surface; the
+// Ctx-fit gate enforces that at the type level.
+template <class Ctx>
+concept CtxFitsSyscallTpBtfMint =
+       ::crucible::effects::IsExecCtx<Ctx>
+    && ::crucible::effects::row_contains_v<
+           ::crucible::effects::row_type_of_t<Ctx>,
+           ::crucible::effects::Effect::Init>;
+
+template <::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsSyscallTpBtfMint<Ctx>
+[[nodiscard]] inline std::optional<SyscallTpBtf>
+mint_syscall_tp_btf(Ctx const&, ::crucible::effects::Init init) noexcept {
+    return SyscallTpBtf::load(init);
+}
+
+static_assert(CtxFitsSyscallTpBtfMint<::crucible::effects::ColdInitCtx>);
+static_assert(!CtxFitsSyscallTpBtfMint<::crucible::effects::BgDrainCtx>);
+static_assert(!CtxFitsSyscallTpBtfMint<::crucible::effects::HotFgCtx>);
 
 }  // namespace crucible::perf
