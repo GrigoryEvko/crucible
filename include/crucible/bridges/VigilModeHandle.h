@@ -202,8 +202,21 @@ static_assert(std::is_same_v<
 // Synthesizes a fresh authoritative ModeSessionHandle whose
 // authority derives from the carrier ModeCell.  No ctx parameter
 // (token-mint flavor): the cell IS the authority anchor.
+//
+// FIXY-V-020: gated on CanMintVigilModeBridge<Cell> (§XXI single-
+// concept rule) — pins Cell to ModeCell at concept-evaluation time
+// so a wrong-cell call (e.g. an unrelated AtomicMachineCell) is
+// rejected with a clean concept-violation diagnostic, not a deep
+// substitution failure through mint_atomic_session.
+
+template <class Cell>
+concept CanMintVigilModeBridge =
+    std::same_as<std::remove_cvref_t<Cell>, ModeCell>;
+
+template <class Cell>
+    requires CanMintVigilModeBridge<Cell>
 [[nodiscard]] constexpr ModeSessionHandle mint_vigil_mode_bridge(
-    const ModeCell& cell) noexcept
+    Cell const& cell) noexcept
 {
     return safety::mint_atomic_session<ModeProtocol>(cell);
 }

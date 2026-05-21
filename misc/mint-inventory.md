@@ -29,7 +29,7 @@ appear as `-` in the flag columns.  The auditor surface for member-function
 mints lives in a separate "Member-function mints" section after the substrate
 trees (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T16:07:10Z`.
+Snapshot generated: `2026-05-21T16:12:38Z`.
 
 ## bridges/
 
@@ -42,7 +42,7 @@ Snapshot generated: `2026-05-21T16:07:10Z`.
 | `mint_persisted_session` | `include/crucible/bridges/SessionPersistence.h:692` | Y | - | Y | Y | ctx | `include/crucible/fixy/Bridge.h:100` | HS14: 14 |
 | `mint_recording_endpoint` | `include/crucible/bridges/EndpointMint.h:99` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:222` | HS14: 4 |
 | `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:1223` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:119` | HS14: 14 |
-| `mint_vigil_mode_bridge` | `include/crucible/bridges/VigilModeHandle.h:205` | Y | Y | Y | - | token | `include/crucible/fixy/Bridge.h:229` | HS14: 3 |
+| `mint_vigil_mode_bridge` | `include/crucible/bridges/VigilModeHandle.h:218` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:229` | HS14: 4 |
 
 ## cipher/
 

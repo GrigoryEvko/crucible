@@ -426,10 +426,14 @@ static_assert(std::is_same_v<
     "fixy-A4-011: fixy::safety::mint_secret == fixy::wrap::mint_secret.");
 
 // vigil_mode_bridge mint (top-level crucible:: symbol re-exported
-// into fixy::bridge; tightens fixy-M-22)
+// into fixy::bridge; tightens fixy-M-22).  FIXY-V-020: mint is now
+// a function template gated on CanMintVigilModeBridge<Cell>; identity
+// taken on the concrete instantiation.
 static_assert(std::is_same_v<
-    decltype(&fixy::bridge::mint_vigil_mode_bridge),
-    decltype(&::crucible::mint_vigil_mode_bridge)>,
+    decltype(&fixy::bridge::mint_vigil_mode_bridge<
+                 ::crucible::vigil_mode::ModeCell>),
+    decltype(&::crucible::mint_vigil_mode_bridge<
+                 ::crucible::vigil_mode::ModeCell>)>,
     "fixy::bridge::mint_vigil_mode_bridge must alias ::crucible::"
     "mint_vigil_mode_bridge (the top-level symbol from Bridge.h:165).");
 

@@ -52,9 +52,11 @@ namespace cvm    = ::crucible::vigil_mode;
 // using-declaration's name lookup resolves to the same entity — that
 // IS the witness we want).
 
+// FIXY-V-020: mint_vigil_mode_bridge is now a function template gated
+// on CanMintVigilModeBridge<Cell>; pin identity on the concrete Cell.
 static_assert(std::is_same_v<
-    decltype(fb::mint_vigil_mode_bridge),
-    decltype(::crucible::mint_vigil_mode_bridge)>,
+    decltype(&fb::mint_vigil_mode_bridge<cvm::ModeCell>),
+    decltype(&::crucible::mint_vigil_mode_bridge<cvm::ModeCell>)>,
     "fixy::bridge::mint_vigil_mode_bridge must be the substrate "
     "ModeCell-taking mint after the using-declaration.");
 
@@ -63,7 +65,7 @@ static_assert(std::is_same_v<
 // `vigil_mode::ModeSessionHandle`.  This static_assert pins the exact
 // signature in case overload sets grow in the future.
 static_assert(std::is_same_v<
-    decltype(&::crucible::mint_vigil_mode_bridge),
+    decltype(&::crucible::mint_vigil_mode_bridge<cvm::ModeCell>),
     cvm::ModeSessionHandle (*)(const cvm::ModeCell&) noexcept>,
     "post-fixy-H-23: the umbrella-reachable mint_vigil_mode_bridge "
     "is the ModeCell-taking primary surface.");

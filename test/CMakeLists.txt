@@ -11048,6 +11048,9 @@ crucible_neg_compile_bridges_test(neg_mint_atomic_session_non_atomic_machine_cel
     "no matching function for call to|constraints not satisfied|AtomicMachineCell")
 crucible_neg_compile_bridges_test(neg_mint_atomic_session_malformed_proto
     "no matching function for call to|constraints not satisfied|is_well_formed")
+# FIXY-V-020: CanMintVigilModeBridge<Cell> rejects non-ModeCell types.
+crucible_neg_compile_bridges_test(neg_vigil_mode_bridge_wrong_cell
+    "constraints not satisfied|CanMintVigilModeBridge|same_as|ModeCell|uint64_t")
 
 # fixy-A2-021 — HS14 floor for the WrapCrashReturnKey pass-key idiom.
 # Two fixtures witness that external code cannot mint or use the key:
