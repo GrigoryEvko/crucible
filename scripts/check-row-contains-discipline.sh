@@ -45,9 +45,17 @@
 # the canonical pattern fixy-A5-039 was scaling out from.
 #
 # Exit status:
-#   0 — clean (no NEW inline sites beyond the allowlist)
-#   1 — at least one violation
-#   2 — bad invocation / missing dependency
+#   0 — clean (no NEW inline sites, no stale allowlist entries)
+#   1 — at least one violation (takes precedence over stale)
+#   2 — stale allowlist entry (a path:line where row_contains_v no
+#       longer exists — the site moved on a line shift, or was migrated
+#       to a named lift; prune it) OR bad invocation / missing dependency
+#
+# Stale-entry detection (parity with check-no-reinterpret-cast.sh):
+# every allowlist entry must correspond to a LIVE inline site.  A
+# line-shifting edit silently invalidates a grandfather entry; without
+# this gate a migrated-away entry lingers and could re-grandfather a
+# future inline site re-introduced at the same line.
 
 set -euo pipefail
 
@@ -143,7 +151,55 @@ ALLOW
             exit 2
         fi
         rm -f "$result_file"
-        printf 'check-row-contains-discipline: self-test passed — drift caught, allowlist + inline marker + comment filter all honoured.\n' >&2
+
+        # ── Phase 2: stale-allowlist-entry detection ─────────────────
+        # Reuse the planted fixture.  Suppress BOTH live sites (lines 5
+        # and 8) with allowlist entries — each carrying the ` — ticket`
+        # suffix this guard's grammar permits, exercising the same first-
+        # token extraction allowlisted() uses — so the scan reaches the
+        # stale pass with zero violations, then add a stale entry
+        # (line 99 — no row_contains_v there) that MUST be flagged.
+        cat >"$tmp_root/scripts/row-contains-discipline-allowlist.txt" <<'ALLOW'
+# self-test live entries (real inline sites)
+include/crucible/planted/planted_row.h:5 — synthetic live (migration pending)
+include/crucible/planted/planted_row.h:8 — synthetic live (migration pending)
+# self-test stale entry (no row_contains_v at this line)
+include/crucible/planted/planted_row.h:99 — synthetic stale (no site here)
+ALLOW
+        stale_file="$(mktemp)"
+        stale_rc=0
+        CRUCIBLE_ROW_CONTAINS_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$stale_file" || stale_rc=$?
+        if [[ "$stale_rc" -ne 2 ]]; then
+            printf 'check-row-contains-discipline: SELF-TEST FAILED (phase 2) — expected exit 2 (stale), got %d.\n' \
+                "$stale_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$stale_file")" >&2
+            rm -f "$stale_file"
+            exit 2
+        fi
+        # Exactly one stale diagnostic — the live entries (5, 8) must NOT
+        # be flagged (count==1 implies no false positive; also confirms
+        # the ` — ticket` suffix did not break first-token extraction).
+        stale_emitted="$(grep -c '^ROW-CONTAINS stale:' "$stale_file" || true)"
+        if [[ "$stale_emitted" -ne 1 ]]; then
+            printf 'check-row-contains-discipline: SELF-TEST FAILED (phase 2) — expected 1 stale diagnostic, got %s.\n' \
+                "$stale_emitted" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$stale_file")" >&2
+            rm -f "$stale_file"
+            exit 2
+        fi
+        if ! grep -qF -- 'planted_row.h:99' "$stale_file"; then
+            printf 'check-row-contains-discipline: SELF-TEST FAILED (phase 2) — stale entry :99 not flagged.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$stale_file")" >&2
+            rm -f "$stale_file"
+            exit 2
+        fi
+        rm -f "$stale_file"
+
+        printf 'check-row-contains-discipline: self-test passed — drift caught, allowlist + inline marker + comment filter honoured; stale detection flags dead allowlist entries (none on live).\n' >&2
         exit 0
         ;;
     "") ;;
@@ -175,6 +231,16 @@ allowlisted() {
         grep -Fxq -- "$rel:$line"
 }
 
+# ── Live set of (path:line) for stale-entry detection ────────────────
+# Every candidate inline site that survives the comment / inline-marker
+# / effects-exclusion filters records its (rel:line) here, allowlist-
+# blind.  After the scan, every allowlist entry's path:line key must be
+# in this set; entries that aren't (the site moved on a line shift, or
+# was migrated to a named lift) are STALE and flagged — parity with
+# check-no-reinterpret-cast.sh.
+live_set_file="$(mktemp)"
+trap 'rm -f "$live_set_file"' EXIT
+
 violation_count=0
 scan_dirs=("$scan_root/include" "$scan_root/src")
 
@@ -204,6 +270,8 @@ while IFS= read -r match; do
         include/crucible/effects/*) continue ;;
     esac
 
+    printf '%s:%s\n' "$rel" "$line" >> "$live_set_file"
+
     if allowlisted "$rel" "$line"; then
         continue
     fi
@@ -227,7 +295,7 @@ done < <(
        "$candidate_pattern" "${scan_dirs[@]}" 2>/dev/null || true
 )
 
-# ── Outcome ──────────────────────────────────────────────────────────
+# ── Outcome (violations — take precedence over stale) ────────────────
 if [[ "$violation_count" -ne 0 ]]; then
     cat >&2 <<HINT
 
@@ -264,5 +332,41 @@ HINT
     exit 1
 fi
 
-printf 'check-row-contains-discipline: clean — no new inline row_contains_v sites.\n' >&2
+# ── Outcome (stale allowlist entries) ────────────────────────────────
+# Every allowlist entry must correspond to a LIVE inline site.  Entries
+# carry an optional ` — <ticket>` suffix after the path:line key (the
+# same shape allowlisted() parses with awk '{print $1}'), so extract the
+# first whitespace-delimited token before matching the live set.  An
+# entry whose path:line is not live points at a site that moved on a
+# line shift or was migrated to a named lift — flag it so the allowlist
+# drains and can never silently re-grandfather a future inline site.
+stale_count=0
+if [[ -f "$allowlist" ]]; then
+    while IFS= read -r entry; do
+        trimmed="${entry%%#*}"
+        trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
+        [[ -z "$trimmed" ]] && continue
+        key="${trimmed%%[[:space:]]*}"          # path:line, dropping ` — ticket`
+        if ! grep -Fxq -- "$key" "$live_set_file" 2>/dev/null; then
+            printf 'ROW-CONTAINS stale: %s — STALE allowlist entry (no inline row_contains_v at this line; the site moved on a line shift or was migrated to a named lift — remove from allowlist).\n' \
+                "$key" >&2
+            stale_count=$((stale_count + 1))
+        fi
+    done < "$allowlist"
+fi
+
+if [[ "$stale_count" -ne 0 ]]; then
+    cat >&2 <<HINT
+
+check-row-contains-discipline detected ${stale_count} stale allowlist
+entr(y/ies).  Each points at a path:line where effects::row_contains_v
+no longer exists — the site moved (line shift) or was migrated to a
+named lift (CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf).  Prune the
+stale entries from scripts/row-contains-discipline-allowlist.txt so the
+guard regains drift coverage at those lines.
+HINT
+    exit 2
+fi
+
+printf 'check-row-contains-discipline: clean — no new inline row_contains_v sites, no stale allowlist entries.\n' >&2
 exit 0
