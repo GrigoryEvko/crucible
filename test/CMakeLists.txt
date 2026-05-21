@@ -203,6 +203,7 @@ crucible_test(test_fixy_wrap_simd_workload_locality) # FIXY-V-041 — fixy::wrap
 crucible_test(test_fixy_wrap_checked) # FIXY-V-042 — fixy::wrap:: Checked overflow-arithmetic surface
 crucible_test(test_fixy_wrap_pipeline_stage_endpoint) # FIXY-V-043 — fixy::wrap:: PipelineStage + ConsumerEndpoint + ProducerEndpoint surface
 crucible_test(test_fixy_wrap_inferred) # FIXY-V-044 — fixy::wrap:: InferredRow + InferredPermissionTags surface
+crucible_test(test_fixy_substr_spsc_permissioned_spsc_channel) # FIXY-V-045 — fixy::substr::spsc:: PermissionedSpscChannel surface
 crucible_test(test_fixy_sess)
 crucible_test(test_fixy_sess_phi)
 crucible_test(test_fixy_sess_patterns)  # FIXY-AUDIT-C6

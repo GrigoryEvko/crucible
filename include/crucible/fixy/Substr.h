@@ -65,6 +65,8 @@
 
 #include <crucible/concurrent/PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/PermissionedSpscChannel.h>  // FIXY-V-045: substrate-direct SPSC surface
+#include <crucible/concurrent/SpscRing.h>                  // FIXY-V-045: SpscValue concept
 #include <crucible/concurrent/Substrate.h>          // FIXY-U-051: ChannelTopology + IsSubstrate family
 #include <crucible/concurrent/SubstrateCtxFit.h>    // FIXY-U-051: ctx-fit concepts + tier metafns
 #include <crucible/concurrent/SubstrateSessionBridge.h>
@@ -98,7 +100,119 @@ template <typename T>
 using ConsumerProto =
     ::crucible::safety::proto::spsc_session::ConsumerProto<T>;
 
-// Mint factories.
+// ── FIXY-V-045: substrate-direct surface ─────────────────────────
+//
+// Pre-V-045 the spsc:: sub-namespace surfaced only the ctx-bound
+// session mints (mint_producer_session / mint_consumer_session) —
+// callers who wanted to construct a PermissionedSpscChannel, mint
+// its Whole permission, or split into Producer/Consumer halves had
+// to descend into <crucible/concurrent/PermissionedSpscChannel.h>
+// directly.  V-045 closes the discoverability gap by re-exporting
+// the substrate primitive, its permission tag tree, the SpscValue
+// concept, a surface concept gating endpoint mints, and inline
+// endpoint mint shims that lift ch.producer(perm) / ch.consumer(perm)
+// behind a session-side mint name (mirror of mpsc::, lines below).
+//
+// Surface (additive, all alias-template / inline / using-decl —
+// pure name-lookup, zero runtime cost).
+
+// Substrate alias — full re-export including default UserTag = void.
+template <::crucible::concurrent::SpscValue T,
+          std::size_t Capacity,
+          typename UserTag = void>
+using PermissionedSpscChannel =
+    ::crucible::concurrent::PermissionedSpscChannel<T, Capacity, UserTag>;
+
+// SpscValue concept re-export (using-decl form — concepts can be
+// brought in by name).  Bumps substr_spsc_using cardinality 2 → 3.
+using ::crucible::concurrent::SpscValue;
+
+// spsc_tag sub-namespace — Whole / Producer / Consumer permission
+// tag templates.  Callers spell these out at mint_permission_root /
+// mint_permission_split call sites; surfacing them under fixy::
+// substr::spsc::spsc_tag::* removes the descend-into-concurrent
+// requirement.
+namespace spsc_tag {
+template <typename UserTag>
+using Whole =
+    ::crucible::concurrent::spsc_tag::Whole<UserTag>;
+template <typename UserTag>
+using Producer =
+    ::crucible::concurrent::spsc_tag::Producer<UserTag>;
+template <typename UserTag>
+using Consumer =
+    ::crucible::concurrent::spsc_tag::Consumer<UserTag>;
+}  // namespace spsc_tag
+
+// Surface concept — gates the endpoint mints below.  Differs from
+// MpscChannelSessionSurface (in mpsc:: namespace) in two ways:
+//   1. ch.producer(perm) takes a Linear Permission<producer_tag>&&
+//      and returns a bare ProducerHandle (NOT optional).  SPSC's
+//      try_push is single-producer-only; the producer side is
+//      structurally Linear, not Pool-mediated.
+//   2. ch.consumer(perm) is symmetric — Linear Permission<consumer_tag>&&
+//      → bare ConsumerHandle.  Both endpoints linear: the channel
+//      has EXACTLY one producer and EXACTLY one consumer at any time.
+template <typename Channel>
+concept SpscChannelSessionSurface = requires(
+    Channel& ch,
+    typename Channel::ProducerHandle& producer_handle,
+    typename Channel::ConsumerHandle& consumer_handle,
+    ::crucible::safety::Permission<typename Channel::producer_tag>&& prod_perm,
+    ::crucible::safety::Permission<typename Channel::consumer_tag>&& cons_perm,
+    const typename Channel::value_type& sample_payload)
+{
+    typename Channel::value_type;
+    typename Channel::user_tag;
+    typename Channel::whole_tag;
+    typename Channel::producer_tag;
+    typename Channel::consumer_tag;
+    typename Channel::ProducerHandle;
+    typename Channel::ConsumerHandle;
+
+    // Endpoint factories — both Linear.
+    { ch.producer(std::move(prod_perm)) }
+        -> std::same_as<typename Channel::ProducerHandle>;
+    { ch.consumer(std::move(cons_perm)) }
+        -> std::same_as<typename Channel::ConsumerHandle>;
+
+    // Handle method shapes.
+    { producer_handle.try_push(sample_payload) }
+        -> std::same_as<bool>;
+    { consumer_handle.try_pop() }
+        -> std::same_as<std::optional<typename Channel::value_type>>;
+};
+
+// Endpoint mint helpers — pure forwarders to the substrate's
+// .producer() / .consumer() member factories.  Surfaced here so
+// every per-substrate `<substrate>::mint_*_endpoint` follows the
+// same `mint_<substrate>_<role>_endpoint(ch, perm)` shape grep-finds.
+//
+// sessions/SpscSession.h ships only ctx-bound session mints; these
+// endpoint shims are NEW in V-045 and live INLINE in fixy/Substr.h
+// (mirror of mpsc:: precedent which also defines its endpoint shims
+// inline).  Future migration: when sessions/SpscSession.h grows
+// canonical endpoint mints, replace these with using-decls.
+
+template <SpscChannelSessionSurface Channel>
+[[nodiscard]] constexpr auto mint_spsc_producer_endpoint(
+    Channel& ch,
+    ::crucible::safety::Permission<typename Channel::producer_tag>&& perm) noexcept
+    -> typename Channel::ProducerHandle
+{
+    return ch.producer(std::move(perm));
+}
+
+template <SpscChannelSessionSurface Channel>
+[[nodiscard]] constexpr auto mint_spsc_consumer_endpoint(
+    Channel& ch,
+    ::crucible::safety::Permission<typename Channel::consumer_tag>&& perm) noexcept
+    -> typename Channel::ConsumerHandle
+{
+    return ch.consumer(std::move(perm));
+}
+
+// Mint factories (ctx-bound) — already shipped in sessions/SpscSession.h.
 using ::crucible::safety::proto::spsc_session::mint_producer_session;
 using ::crucible::safety::proto::spsc_session::mint_consumer_session;
 }  // namespace spsc
@@ -578,13 +692,14 @@ using ::crucible::concurrent::SubstrateBenefitsFromParallelism;
 
 // ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
 //
-// Drift-catch for the per-substrate sub-namespaces: spsc (2), swmr (6),
+// Drift-catch for the per-substrate sub-namespaces: spsc (3), swmr (6),
 // chaselev (4), metalog (4), chainedge (4), mpmc (4), calendar_grid (4),
 // sharded_calendar_grid (4), sharded_grid (4), snapshot (4), and the
 // outer-level mint_substrate_session re-export (1).  mpsc:: is NOT a
 // pure re-export — it defines its own mint factories (also covered by
 // dedicated test_fixy_substr_mpsc fixtures) so it doesn't contribute
-// to the using-decl cardinality.
+// to the using-decl cardinality.  spsc::SpscValue using-decl added by
+// FIXY-V-045 (substrate-direct surface enrichment) bumped spsc 2 → 3.
 //
 // Same recipe as fixy/Pipe.h / fixy/Struct.h: type-identity witnesses
 // for representative items + per-sub-namespace cardinality mirrors.
@@ -623,9 +738,73 @@ static_assert(std::is_same_v<
     ::crucible::safety::proto::spsc_session::ProducerProto<int>>,
     "fixy::substr::spsc::ProducerProto<T> must alias the substrate.");
 
+// ── FIXY-V-045: SPSC substrate-direct surface witnesses ──────────
+//
+// Pin every V-045 addition to the substrate.  Identity for class
+// templates + tag templates via std::is_same_v; concept admission
+// for SpscChannelSessionSurface against a representative channel
+// instantiation; bare-presence witness for endpoint mint shims via
+// decltype on a synthetic call expression (NOT invoked — would
+// require a real channel instance).
+
+namespace v045 {
+
+struct V045ProbeUserTag {};
+
+// 1. Substrate alias identity — fixy path === concurrent path.
+using SpscViaFixy = ::crucible::fixy::substr::spsc::PermissionedSpscChannel<
+    int, 64, V045ProbeUserTag>;
+using SpscViaConcurrent = ::crucible::concurrent::PermissionedSpscChannel<
+    int, 64, V045ProbeUserTag>;
+static_assert(std::is_same_v<SpscViaFixy, SpscViaConcurrent>,
+    "fixy::substr::spsc::PermissionedSpscChannel must alias the substrate.");
+
+// 2. SpscValue concept admission parity (using-decl preserves
+// concept semantics).
+static_assert(::crucible::fixy::substr::spsc::SpscValue<int> ==
+              ::crucible::concurrent::SpscValue<int>);
+static_assert(::crucible::fixy::substr::spsc::SpscValue<int>);
+
+// 3. Tag template identity — Whole/Producer/Consumer alias the
+// substrate's spsc_tag tree exactly.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::spsc::spsc_tag::Whole<V045ProbeUserTag>,
+    ::crucible::concurrent::spsc_tag::Whole<V045ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::spsc::spsc_tag::Producer<V045ProbeUserTag>,
+    ::crucible::concurrent::spsc_tag::Producer<V045ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::spsc::spsc_tag::Consumer<V045ProbeUserTag>,
+    ::crucible::concurrent::spsc_tag::Consumer<V045ProbeUserTag>>);
+
+// 4. Tag identity propagates through SpscViaFixy's member typedefs.
+static_assert(std::is_same_v<
+    typename SpscViaFixy::whole_tag,
+    ::crucible::fixy::substr::spsc::spsc_tag::Whole<V045ProbeUserTag>>);
+static_assert(std::is_same_v<
+    typename SpscViaFixy::producer_tag,
+    ::crucible::fixy::substr::spsc::spsc_tag::Producer<V045ProbeUserTag>>);
+static_assert(std::is_same_v<
+    typename SpscViaFixy::consumer_tag,
+    ::crucible::fixy::substr::spsc::spsc_tag::Consumer<V045ProbeUserTag>>);
+
+// 5. SpscChannelSessionSurface admits the representative channel.
+static_assert(
+    ::crucible::fixy::substr::spsc::SpscChannelSessionSurface<SpscViaFixy>);
+
+// 6. channel_capacity passes through (value-template parity).
+static_assert(SpscViaFixy::channel_capacity == 64);
+static_assert(SpscViaFixy::channel_capacity ==
+              SpscViaConcurrent::channel_capacity);
+
+// 7. value_type identity — substrate's T == fixy's T.
+static_assert(std::is_same_v<typename SpscViaFixy::value_type, int>);
+
+}  // namespace v045
+
 // ── Per-sub-namespace cardinality witnesses ──────────────────────
 
-constexpr int substr_spsc_using                  = 2;
+constexpr int substr_spsc_using                  = 3;
 constexpr int substr_swmr_using                  = 6;
 constexpr int substr_chaselev_using              = 4;
 constexpr int substr_metalog_using               = 4;
@@ -644,8 +823,8 @@ constexpr int substr_total_using =
     substr_sharded_grid_using + substr_snapshot_using +
     substr_outer_using;
 
-static_assert(substr_total_using == 41,
-    "fixy::substr:: using-decl surface drifted from 41 — Substr.h "
+static_assert(substr_total_using == 42,
+    "fixy::substr:: using-decl surface drifted from 42 — Substr.h "
     "sub-namespace re-exports and this sentinel must update in lockstep.");
 
 // ── FIXY-U-051: topology + ctx-fit concept-surface witnesses ───────
