@@ -7906,6 +7906,85 @@ crucible_neg_compile_test(neg_fixedarray_zero_extent
 crucible_neg_compile_test(neg_fixedarray_compile_time_out_of_range
   "constraints not satisfied|'I < N'|template constraint failure|I < N.*evaluated to.*false|no matching function.*at")
 
+# [FIXY-U-155] safety::Pinned<> / NonMovable<> HS14 audit-remediation —
+# completes the deleted-special-member surface that U-144 left half-
+# covered.  Under strict HS14 reading each wrapper needs ≥2 distinct
+# fixtures.  U-144 shipped Pinned-copy + NonMovable-move (the paired-
+# sibling pattern, which proves the SHAPE is enforced but leaves each
+# wrapper with only ONE fixture).  This batch ships the COMPLEMENTARY
+# pair — Pinned-move + NonMovable-copy — so each wrapper now has TWO
+# fixtures pinning TWO structurally distinct deleted-special-member-
+# function enforcement points with distinct load-bearing reason
+# strings:
+#
+#   Pinned<T> (Pinned.h:52-55):
+#     * Class T-copy (U-144 neg_pinned_copy_rejected):
+#       "stable address — address-as-identity or interior pointers
+#       into own storage"
+#     * Class T-move (U-155 THIS slice neg_pinned_move_rejected):
+#       "stable address — move would invalidate references held by
+#       another thread or by self"
+#
+#   NonMovable<T> (Pinned.h:71-74):
+#     * Class T-move (U-144 neg_nonmovable_move_rejected):
+#       "exclusive ownership — moved-from shell that callers may
+#       mistake for valid"
+#     * Class T-copy (U-155 THIS slice neg_nonmovable_copy_rejected):
+#       "exclusive ownership — copy would duplicate a singleton
+#       resource"
+#
+# Each reason string is independently load-bearing on the production
+# surface — a refactor that softens any one of the four reason
+# strings (or collapses them to a single `=delete` without a reason)
+# slips past a single-fixture audit.  The full 4-fixture matrix locks
+# all four deleted-special-member-function enforcement points across
+# BOTH wrappers in the address-stability / exclusive-ownership CRTP
+# family.
+crucible_neg_compile_test(neg_pinned_move_rejected
+  "stable address|use of deleted function|deleted function")
+crucible_neg_compile_test(neg_nonmovable_copy_rejected
+  "exclusive ownership|use of deleted function|deleted function")
+
+# [FIXY-U-156] safety::HugePageBuffer<T> + safety::SwissTableBuffer
+# <SlotPtr> HS14 audit-remediation — completes the move-only RAII
+# deleted-surface that U-153 left half-covered.  Under strict HS14
+# reading each wrapper needs ≥2 distinct fixtures.  U-153 shipped
+# HugePageBuffer-copy-ctor + SwissTableBuffer-copy-assign (the
+# paired-sibling pattern, which proves the SHAPE is enforced but
+# leaves each wrapper with only ONE fixture).  This batch ships the
+# COMPLEMENTARY pair — HugePageBuffer-copy-assign + SwissTableBuffer-
+# copy-ctor — so each wrapper now has TWO fixtures pinning the two
+# structurally distinct deleted-special-member-function enforcement
+# boundaries (construction vs assignment):
+#
+#   HugePageBuffer<T> (HugePageBuffer.h:102-103):
+#     * Class T-copy-ctor (U-153 neg_hugepagebuffer_copy_rejected):
+#       direct copy construction triggers deleted ctor at the
+#       construction boundary.
+#     * Class T-copy-assign (U-156 THIS slice neg_hugepagebuffer_
+#       copy_assign_rejected): copy-assignment from a const lvalue
+#       triggers deleted operator= at the assignment boundary —
+#       the rebuild()-then-assign production pattern.
+#
+#   SwissTableBuffer<SlotPtr> (SwissTableBuffer.h:82-83):
+#     * Class T-copy-assign (U-153 neg_swisstablebuffer_copy_assign_
+#       rejected): copy-assignment triggers deleted operator= at
+#       the assignment boundary.
+#     * Class T-copy-ctor (U-156 THIS slice neg_swisstablebuffer_
+#       copy_rejected): direct copy construction triggers deleted
+#       ctor at the construction boundary — the rebuild()-return
+#       production pattern.
+#
+# Both boundaries (construction + assignment) are independently
+# load-bearing — a refactor that softens either deleted op on either
+# wrapper slips past a single-fixture audit.  The full 4-fixture
+# matrix locks all four deleted-special-member-function enforcement
+# points across BOTH move-only RAII buffer wrappers.
+crucible_neg_compile_test(neg_hugepagebuffer_copy_assign_rejected
+  "use of deleted function.*HugePageBuffer.*operator=|HugePageBuffer is move-only|deleted")
+crucible_neg_compile_test(neg_swisstablebuffer_copy_rejected
+  "use of deleted function.*SwissTableBuffer.*SwissTableBuffer|SwissTableBuffer is move-only|deleted")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
