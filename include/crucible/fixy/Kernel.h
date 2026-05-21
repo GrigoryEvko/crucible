@@ -3,12 +3,15 @@
 // ── crucible::fixy::kernel — kernel-shape recognizer surface ───────
 //
 // Surfaces the function-pointer-shape recognizers from
-// `include/crucible/safety/{Reduction,reduce_into,IsReduceInto}.h`
-// under `fixy::kernel::`.  Per misc/27_04_2026.md §3.3 +
-// misc/28_04_2026_effects.md §6.1 §10 + FIXY-V-038: closes the
+// `include/crucible/safety/{BinaryTransform,CanonicalShape,Fusion,
+// IsReduceInto,Reduction,UnaryTransform,reduce_into}.h` under
+// `fixy::kernel::`.  Per misc/27_04_2026.md §3.3 +
+// misc/28_04_2026_effects.md §6.1 §10 + FIXY-V-038 (Reduction family)
+// + FIXY-V-039 (Unary/Binary/CanonicalShape/Fusion): closes the
 // umbrella-reach gap where dispatcher / Forge-phase code wanting to
 // recognize "this function is a Reduction" had to descend into
-// `crucible::safety::extract::` (the recognizer's actual namespace).
+// `crucible::safety::extract::` (the recognizer's actual namespace,
+// except Fusion which lives directly in `crucible::safety::`).
 //
 // ── Substrate consumed ─────────────────────────────────────────────
 //
