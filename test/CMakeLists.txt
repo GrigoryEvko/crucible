@@ -2121,6 +2121,42 @@ crucible_neg_compile_fixy_test(neg_fixy_bridge_atomic_session_non_cell
 crucible_neg_compile_fixy_test(neg_fixy_bridge_atomic_session_ill_formed_proto
     "no matching function|mint_atomic_session|is_well_formed|incomplete type|no type named|constraints not satisfied")
 
+# FIXY-U-120b — fixy::warden:: re-export HS14 floor (≥2 fixtures per
+# mint × 4 warden mints; `fixy/Warden.h` landed in FIXY-U-120).
+# Each mint's substrate gate is
+#   CtxFitsXMint = IsExecCtx<Ctx> ∧ CtxOwnsCapability<Ctx, Init>
+# decomposing into two orthogonal soundness conjuncts.  We exercise
+# BOTH via two fixtures so a regression that drops EITHER half
+# (the row-membership check OR the structural IsExecCtx introducer)
+# surfaces in exactly one fixture, naming the failing conjunct in
+# the diagnostic:
+#   (#1 bg_ctx)       — Ctx satisfies IsExecCtx but row lacks Init
+#                       → diagnostic names `Init` / row_contains.
+#   (#2 not_exec_ctx) — Ctx fails the structural IsExecCtx concept
+#                       → diagnostic names `IsExecCtx` / `row_type`.
+# Substrate parity: warden_neg/ ships the same pair shape against
+# `crucible::warden::mint_X`; THESE fixtures route through the
+# `fixy::warden::` using-decl to witness that the wrapper-layer
+# name lookup preserves the substrate gate (a regression that
+# replaced the using-decl with a free-function shim would leave
+# warden_neg/ green while THIS block unexpectedly compiles).
+crucible_neg_compile_fixy_test(neg_fixy_warden_hardening_bg_ctx
+    "no matching function|mint_hardening|CtxFitsHardeningMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_warden_hardening_not_exec_ctx
+    "no matching function|mint_hardening|IsExecCtx|NotAnExecCtx|row_type|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_warden_deadline_watchdog_bg_ctx
+    "no matching function|mint_deadline_watchdog|CtxFitsDeadlineWatchdogMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_warden_deadline_watchdog_not_exec_ctx
+    "no matching function|mint_deadline_watchdog|IsExecCtx|NotAnExecCtx|row_type|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_warden_hot_region_registry_bg_ctx
+    "no matching function|mint_hot_region_registry_handle|CtxFitsHotRegionRegistryMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_warden_hot_region_registry_not_exec_ctx
+    "no matching function|mint_hot_region_registry_handle|IsExecCtx|NotAnExecCtx|row_type|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_warden_quarantine_policy_bg_ctx
+    "no matching function|mint_quarantine_policy|CtxFitsQuarantineMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_warden_quarantine_policy_not_exec_ctx
+    "no matching function|mint_quarantine_policy|IsExecCtx|NotAnExecCtx|row_type|constraints not satisfied")
+
 # fixy-HS14-06 — per-role federation mints HS14 floor (≥2 fixtures
 # each across mint_sender / mint_receiver / mint_coord, all via the
 # `fixy::sess::` re-export — `using federation::mint_{sender,
