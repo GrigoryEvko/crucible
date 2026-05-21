@@ -44,9 +44,16 @@
 # deliberately violate the pattern to demonstrate rejection.
 #
 # Exit status:
-#   0  — no §XXI drift detected
-#   1  — at least one violation
-#   2  — bad invocation / missing dependency
+#   0  — no §XXI drift detected, no stale allowlist entries
+#   1  — at least one violation outside the allowlist (takes precedence)
+#   2  — stale allowlist entry (an entry whose (line, check) no longer
+#        fails — the mint moved on a line shift, was fixed, or renamed;
+#        prune it) OR bad invocation / missing dependency
+#
+# Stale-entry detection (parity with check-no-reinterpret-cast.sh):
+# every allowlist entry must correspond to a LIVE check-failure.  A
+# line-shifting edit silently invalidates a grandfather entry; without
+# this gate the guard cannot tell the entry from a real suppression.
 
 set -euo pipefail
 
@@ -163,7 +170,84 @@ PLANTED
             exit 2
         fi
         rm -f "$result_file"
-        printf 'check-mint-pattern: self-test passed — all four check axes fire on drift, none on canonical.\n' >&2
+
+        # ── Phase 2: stale-allowlist-entry detection ─────────────────
+        # Reuse the planted fixture.  Build an allowlist with FOUR live
+        # per-check entries (one per drift mint, suppressing every
+        # violation so the scan reaches the stale pass) PLUS TWO stale
+        # entries that correspond to NO live failure:
+        #   * a check-suffixed entry on the canonical mint (it passes
+        #     every check, so its `:nodiscard-ok` has no live failure),
+        #   * a dangling `:1:requires-ok` on the `#pragma once` line.
+        # Expect exit 2 with EXACTLY the two stale entries flagged and
+        # none of the four live entries falsely flagged.  Line numbers
+        # are grepped from the fixture so editing it cannot desync them.
+        planted="$tmp_root/include/crucible/planted/planted_violation.h"
+        rel='include/crucible/planted/planted_violation.h'
+        ln_ok="$(grep -n 'mint_token_ok(' "$planted" | head -1 || true)";              ln_ok="${ln_ok%%:*}"
+        ln_nd="$(grep -n 'mint_token_drift_nodiscard(' "$planted" | head -1 || true)"; ln_nd="${ln_nd%%:*}"
+        ln_ne="$(grep -n 'mint_token_drift_noexcept(' "$planted" | head -1 || true)";  ln_ne="${ln_ne%%:*}"
+        ln_cx="$(grep -n 'mint_token_drift_constexpr(' "$planted" | head -1 || true)"; ln_cx="${ln_cx%%:*}"
+        ln_rq="$(grep -n 'mint_token_drift_requires(' "$planted" | head -1 || true)";  ln_rq="${ln_rq%%:*}"
+        cat >"$tmp_root/scripts/mint-pattern-allowlist.txt" <<ALLOW
+$rel:$ln_nd:nodiscard-ok
+$rel:$ln_ne:noexcept-ok
+$rel:$ln_cx:constexpr-ok
+$rel:$ln_rq:requires-ok
+$rel:$ln_ok:nodiscard-ok
+$rel:1:requires-ok
+ALLOW
+        stale_file="$(mktemp)"
+        stale_rc=0
+        CRUCIBLE_MINT_PATTERN_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$stale_file" || stale_rc=$?
+        if (( stale_rc != 2 )); then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 2) — expected exit 2 (stale), got %d.\n' \
+                "$stale_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$stale_file")" >&2
+            rm -f "$stale_file"
+            exit 2
+        fi
+        # Exactly two stale diagnostics — count==2 implies the four LIVE
+        # entries were NOT falsely flagged (a false positive would push
+        # the count past two).
+        stale_emitted="$(grep -c '^MINT-PATTERN stale:' "$stale_file" || true)"
+        if [[ "$stale_emitted" -ne 2 ]]; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 2) — expected 2 stale diagnostics, got %s.\n' \
+                "$stale_emitted" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$stale_file")" >&2
+            rm -f "$stale_file"
+            exit 2
+        fi
+        stale_expected=(
+            "$rel:$ln_ok:nodiscard-ok"
+            "$rel:1:requires-ok"
+        )
+        for expect in "${stale_expected[@]}"; do
+            if ! grep -qF -- "$expect" "$stale_file"; then
+                printf 'check-mint-pattern: SELF-TEST FAILED (phase 2) — expected stale entry not flagged: %s\n' \
+                    "$expect" >&2
+                printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                    "$(cat "$stale_file")" >&2
+                rm -f "$stale_file"
+                exit 2
+            fi
+        done
+        # Explicit false-positive guard: a LIVE per-check entry must
+        # never appear in a stale diagnostic.
+        if grep '^MINT-PATTERN stale:' "$stale_file" | grep -qF -- "$rel:$ln_nd:nodiscard-ok"; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 2) — live entry %s falsely flagged stale.\n' \
+                "$rel:$ln_nd:nodiscard-ok" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$stale_file")" >&2
+            rm -f "$stale_file"
+            exit 2
+        fi
+        rm -f "$stale_file"
+
+        printf 'check-mint-pattern: self-test passed — drift fires on all four axes (none on canonical); stale detection flags dead allowlist entries (none on live).\n' >&2
         exit 0
         ;;
     "") ;;
@@ -296,6 +380,17 @@ allowlisted_for() {
 # argument position).  False-positive sites land in the allowlist.
 candidate_pattern='\bmint_[a-z_]+\s*\('
 
+# ── Live-failure set of (path:line:check) for stale-entry detection ──
+# Every time a check actually fails (allowlist-blind) we record the
+# (rel:line:check) tuple here.  After the scan, every allowlist entry
+# must correspond to a live failure; entries that don't (the mint
+# moved on a line shift, was fixed, or renamed) are STALE and flagged
+# — parity with check-no-reinterpret-cast.sh.  Without this, a
+# line-shifting edit silently invalidates a grandfather entry and the
+# guard cannot distinguish it from a genuine suppression.
+live_fail_file="$(mktemp)"
+trap 'rm -f "$live_fail_file"' EXIT
+
 violation_count=0
 scan_dirs=("$scan_root/include")
 
@@ -381,31 +476,24 @@ while IFS= read -r match; do
 
     # ── Per-check enforcement ────────────────────────────────────────
     # Each check is independent and the candidate may fail multiple.
+    # For every check that FAILS (allowlist-blind) record the
+    # (rel:line:check) tuple in the live-failure set FIRST, then emit a
+    # violation only when the failure is not allowlisted.  The live set
+    # drives post-scan stale-entry detection.
     site_violations=()
 
-    if ! allowlisted_for "$rel" "$line" "nodiscard"; then
-        if ! has_attribute_above "$file" "$line" '[[nodiscard]]'; then
-            site_violations+=("nodiscard")
-        fi
-    fi
-
-    if ! allowlisted_for "$rel" "$line" "noexcept"; then
-        if ! has_noexcept_in_signature "$file" "$line"; then
-            site_violations+=("noexcept")
-        fi
-    fi
-
-    if ! allowlisted_for "$rel" "$line" "constexpr"; then
-        if ! has_attribute_above "$file" "$line" 'constexpr'; then
-            site_violations+=("constexpr")
-        fi
-    fi
-
-    if ! allowlisted_for "$rel" "$line" "requires"; then
-        if ! has_requires_if_templated "$file" "$line"; then
-            site_violations+=("requires")
-        fi
-    fi
+    for check in nodiscard noexcept constexpr requires; do
+        check_fails=0
+        case "$check" in
+            nodiscard) has_attribute_above   "$file" "$line" '[[nodiscard]]' || check_fails=1 ;;
+            noexcept)  has_noexcept_in_signature "$file" "$line"             || check_fails=1 ;;
+            constexpr) has_attribute_above   "$file" "$line" 'constexpr'     || check_fails=1 ;;
+            requires)  has_requires_if_templated "$file" "$line"             || check_fails=1 ;;
+        esac
+        (( check_fails == 0 )) && continue
+        printf '%s:%s:%s\n' "$rel" "$line" "$check" >> "$live_fail_file"
+        allowlisted_for "$rel" "$line" "$check" || site_violations+=("$check")
+    done
 
     if (( ${#site_violations[@]} > 0 )); then
         for axis in "${site_violations[@]}"; do
@@ -429,7 +517,7 @@ done < <(
        "$candidate_pattern" "${scan_dirs[@]}" 2>/dev/null || true
 )
 
-# ── Outcome ──────────────────────────────────────────────────────────
+# ── Outcome (violations — take precedence over stale) ────────────────
 if [[ "$violation_count" -ne 0 ]]; then
     cat >&2 <<HINT
 
@@ -460,5 +548,62 @@ HINT
     exit 1
 fi
 
-printf 'check-mint-pattern: clean — no §XXI drift on the four enforcement axes.\n' >&2
+# ── Outcome (stale allowlist entries) ────────────────────────────────
+# Every allowlist entry must correspond to a LIVE check-failure.  A
+# `path:line:check-ok` entry is live iff (path:line:check) is in the
+# live-failure set; a bare `path:line` (all-checks) entry is live iff
+# ANY of the four checks fails at that line.  Entries matching neither
+# are STALE (the mint moved on a line shift, was fixed, or renamed) and
+# must be pruned so the guard regains drift coverage at that site.
+stale_count=0
+if [[ -f "$allowlist" ]]; then
+    sort -u "$live_fail_file" -o "$live_fail_file"
+    while IFS= read -r entry; do
+        trimmed="${entry%%#*}"
+        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+        trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
+        [[ -z "$trimmed" ]] && continue
+
+        if [[ "$trimmed" == *-ok ]]; then
+            # path:line:check-ok → live iff path:line:check ∈ live set.
+            live_key="${trimmed%-ok}"          # path:line:check
+            check_name="${live_key##*:}"       # check
+            if ! grep -Fxq -- "$live_key" "$live_fail_file" 2>/dev/null; then
+                printf 'MINT-PATTERN stale: %s — STALE allowlist entry (no live %s failure at this line; the mint moved, was fixed, or renamed — remove from allowlist).\n' \
+                    "$trimmed" "$check_name" >&2
+                stale_count=$((stale_count + 1))
+            fi
+        else
+            # path:line (all-checks) → live iff ANY of the four fails.
+            entry_is_live=0
+            for chk in nodiscard noexcept constexpr requires; do
+                if grep -Fxq -- "$trimmed:$chk" "$live_fail_file" 2>/dev/null; then
+                    entry_is_live=1
+                    break
+                fi
+            done
+            if (( entry_is_live == 0 )); then
+                printf 'MINT-PATTERN stale: %s — STALE allowlist entry (no live failure at this line; the mint moved, was fixed, or renamed — remove from allowlist).\n' \
+                    "$trimmed" >&2
+                stale_count=$((stale_count + 1))
+            fi
+        fi
+    done < "$allowlist"
+fi
+
+if [[ "$stale_count" -ne 0 ]]; then
+    cat >&2 <<HINT
+
+check-mint-pattern detected ${stale_count} stale allowlist entr(y/ies).
+Each points at a (path:line[:check]) that no longer fails its §XXI
+check — the mint moved (line shift), was fixed, or was renamed.  Prune
+the stale entries from scripts/mint-pattern-allowlist.txt so the guard
+regains drift coverage at those sites.  (This is the bug class that
+silently invalidated 7 entries during the FIXY-U-101 line-collapse
+sweep; this gate would have caught them automatically.)
+HINT
+    exit 2
+fi
+
+printf 'check-mint-pattern: clean — no §XXI drift on the four enforcement axes, no stale allowlist entries.\n' >&2
 exit 0
