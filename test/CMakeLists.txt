@@ -3092,7 +3092,7 @@ crucible_neg_compile_effects_test(neg_capability_init_mint_block
 crucible_neg_compile_effects_test(neg_capability_copy_attempt
     "use of deleted function|deleted copy|copy constructor.*deleted")
 crucible_neg_compile_effects_test(neg_capability_default_construct
-    "is private within this context|private member|non-public member|is private")
+    "no matching function|matching function for call to|cap_mint_key|candidate expects 1 argument|is private")
 
 # ─── P1-AUDIT-4 (#855): ExecCtx-driven Capability composition ──────
 #
