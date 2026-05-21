@@ -7720,6 +7720,24 @@ crucible_neg_compile_test(neg_sealedrefined_into_absent
 crucible_neg_compile_test(neg_sealedrefined_mint_arg_mismatch
   "PredicateInvocableOn|constraints not satisfied|the required expression|cannot bind")
 
+# [FIXY-U-144] safety::Pinned<> / NonMovable<> HS14 floor — fifth
+# non-ScopedView primitive (closes Pinned/NonMovable slice of #146
+# A8-P2 alongside U-140 Machine, U-141 ConstantTime, U-142 Tagged,
+# U-143 SealedRefined).
+# Class T-copy: PinnedRing copy-ctor deleted with "stable address —
+#               address-as-identity" reason — Pinned<T> semantics.
+# Class T-move: OwnedHandle move-ctor deleted with "exclusive
+#               ownership — moved-from shell" reason — NonMovable<T>
+#               semantics.
+# Together they pin both soundness layers of the address-stability /
+# exclusive-ownership CRTP mixin family: Pinned protects ADDRESS as
+# identity (interior pointers stay valid); NonMovable protects
+# RESOURCE as ownership (singleton owner never branches).
+crucible_neg_compile_test(neg_pinned_copy_rejected
+  "stable address|use of deleted function|deleted function")
+crucible_neg_compile_test(neg_nonmovable_move_rejected
+  "exclusive ownership|use of deleted function|deleted function")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
