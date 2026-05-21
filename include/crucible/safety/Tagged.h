@@ -427,20 +427,45 @@ struct retag_policy<Tag, Tag> {
 template <typename From, typename To>
 concept RetagAllowed = retag_policy<From, To>::allowed;
 
+// ── Sentinel tag pair for fail-closed witness ───────────────────────
+//
+// Reserved by V-022 for the file-scope static_asserts below AND for
+// the HS14 neg-compile fixtures.  These tags MUST NEVER be specialized
+// to `allowed = true` — they exist solely to witness the primary
+// template's fail-closed default at compile time, independent of
+// whatever transitions V-023+ admits in the production catalog.
+//
+// Living in `detail::retag_policy_test::` keeps them grep-discoverable
+// AND out of reach for application code: production tags live in
+// `source::* / trust::* / access::* / version::* / vessel_trust::*`,
+// never in `detail::`.  Reviewers can grep this namespace and
+// confirm no specialization escapes.
+namespace detail::retag_policy_test {
+    // Sentinel tag pair — fail-closed witness for V-022 + HS14 fixtures.
+    // Never specialize.
+    struct NeverFrom {};
+    struct NeverTo   {};
+}  // namespace detail::retag_policy_test
+
 // Self-test that the primary template is fail-closed AND identity is
-// admitted unconditionally.  V-023's specialization cells will add
-// per-transition cases.
+// admitted unconditionally.  Sentinel-tag witnesses decouple V-022
+// from V-023's catalog: production-tag transitions that V-023 admits
+// (External → Sanitized, FromPytorch → Validated, etc.) would
+// invalidate a production-tag-based fail-closed assertion when their
+// specialization lands.  The sentinel pair stays unspecialized
+// forever, so these asserts witness the STRUCTURAL property "primary
+// template is fail-closed" rather than the transient property "this
+// specific pair is not yet in the catalog".
 static_assert(retag_policy<source::FromUser, source::FromUser>::allowed,
     "retag_policy identity specialization must admit (X → X)");
-static_assert(!retag_policy<source::External, source::Sanitized>::allowed,
-    "retag_policy primary template MUST be fail-closed; the "
-    "(External → Sanitized) transition is opt-in via V-023 spec");
-static_assert(!retag_policy<source::FromUser, trust::Verified>::allowed,
-    "retag_policy primary template MUST reject cross-axis transitions "
-    "(source::* phantom to trust::* phantom) by default");
+static_assert(!retag_policy<detail::retag_policy_test::NeverFrom,
+                            detail::retag_policy_test::NeverTo>::allowed,
+    "retag_policy primary template MUST be fail-closed for any "
+    "(From → To) pair without an explicit specialization");
 static_assert(RetagAllowed<source::FromUser, source::FromUser>,
     "RetagAllowed concept must admit identity");
-static_assert(!RetagAllowed<source::External, source::Sanitized>,
+static_assert(!RetagAllowed<detail::retag_policy_test::NeverFrom,
+                             detail::retag_policy_test::NeverTo>,
     "RetagAllowed concept must reject unspecialized transitions");
 
 // ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
