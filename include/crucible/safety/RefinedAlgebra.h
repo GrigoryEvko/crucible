@@ -333,6 +333,92 @@ template <class PType, auto... Preds>
 struct predicate_implies<PType, refined_algebra::AnyOf<Preds...>>
     : std::true_type {};
 
+// ── FIXY-U-162 — BoundedBelow propagation lattice ───────────────────
+//
+// BoundedBelow lives in this header (RefinedAlgebra.h) as the dual of
+// Refined.h's BoundedAbove.  Its propagation lattice belongs here too
+// (not in Refined.h, which knows nothing about BoundedBelow).  The
+// existing lattice already covers BoundedAbove (tighter→looser),
+// InRange tighter→looser, InRange ⇒ BoundedAbove<H>, and InRange ⇒
+// non_negative (L≥0 bridge from U-161).  This U-162 ship completes
+// the four BoundedBelow axioms symmetrically:
+//
+//   1. BoundedBelow<N> ⇒ BoundedBelow<M>   when N ≥ M
+//      (tighter lower bound implies looser; inequality direction
+//       FLIPPED relative to BoundedAbove which uses N ≤ M because
+//       tighter-ceiling means smaller N).
+//   2. InRange<L, H> ⇒ BoundedBelow<L>
+//      (range floor IS a lower bound — dual to existing
+//       InRange⇒BoundedAbove<H>; lets Bounded<5, 100, T> structurally
+//       strengthen to Floored<5, T> at any session position).
+//   3. BoundedBelow<N> ⇒ non_negative   when N ≥ 0
+//      (bridge to unparameterised non_negative; soundness gate
+//       N ≥ 0 prevents bounded_below<-5> ⇒ non_negative which is
+//       unsound — admits x ∈ [-5, ∞) including negatives).
+//   4. BoundedBelow<N> ⇒ positive   when N ≥ 1
+//      (bridge to unparameterised positive; soundness gate N ≥ 1
+//       prevents bounded_below<0> ⇒ positive which is unsound —
+//       admits x=0 which is NOT positive.  FP NTTPs in (0, 1) are
+//       intentionally excluded — conservative-but-sound).
+//
+// Unblocks WRAP-TensorMeta-6 (`storage_nbytes uint32_t →
+// Refined<bounded_below<element_size>>`) by giving production
+// strengthening paths from `bounded_below` to `non_negative` and
+// `positive` without callers re-validating downstream.
+
+template <auto N, auto M>
+    requires (N >= M)
+struct predicate_implies<BoundedBelow<N>, BoundedBelow<M>> : std::true_type {};
+
+template <auto L, auto H>
+struct predicate_implies<InRange<L, H>, BoundedBelow<L>> : std::true_type {};
+
+template <auto N>
+    requires (N >= 0)
+struct predicate_implies<
+    BoundedBelow<N>,
+    std::remove_cv_t<decltype(non_negative)>>
+    : std::true_type {};
+
+template <auto N>
+    requires (N >= 1)
+struct predicate_implies<
+    BoundedBelow<N>,
+    std::remove_cv_t<decltype(positive)>>
+    : std::true_type {};
+
+// FIXY-U-162 closure-axiom witnesses + soundness gates at boundary.
+static_assert(implies_v<bounded_below<10>, bounded_below<5>>,
+    "FIXY-U-162: bounded_below<10> ⇒ bounded_below<5> "
+    "(tighter lower bound implies looser; 10 ≥ 5).");
+static_assert(implies_v<bounded_below<5>, bounded_below<5>>,
+    "FIXY-U-162: bounded_below<N> ⇒ bounded_below<N> (reflexive).");
+static_assert(!implies_v<bounded_below<5>, bounded_below<10>>,
+    "FIXY-U-162: bounded_below<5> must NOT imply bounded_below<10> "
+    "(5 < 10 — looser lower bound does NOT imply tighter; soundness).");
+static_assert(implies_v<in_range<5, 100>, bounded_below<5>>,
+    "FIXY-U-162: in_range<5, 100> ⇒ bounded_below<5> "
+    "(InRange floor is a lower bound; dual to InRange⇒BoundedAbove<H>).");
+static_assert(implies_v<in_range<0, 200>, bounded_below<0>>,
+    "FIXY-U-162: in_range<0, 200> ⇒ bounded_below<0> (L=0 cardinality).");
+static_assert(implies_v<bounded_below<0>, non_negative>,
+    "FIXY-U-162: bounded_below<0> ⇒ non_negative (N=0 trivial — "
+    "the predicates are extensionally identical for sane T).");
+static_assert(implies_v<bounded_below<5>, non_negative>,
+    "FIXY-U-162: bounded_below<5> ⇒ non_negative (positive lower bound).");
+static_assert(!implies_v<bounded_below<-5>, non_negative>,
+    "FIXY-U-162: bounded_below<-5> must NOT imply non_negative "
+    "(admits x ∈ [-5, ∞), some of which are negative; soundness — "
+    "the N ≥ 0 requires-clause is load-bearing).");
+static_assert(implies_v<bounded_below<1>, positive>,
+    "FIXY-U-162: bounded_below<1> ⇒ positive (boundary N=1 case).");
+static_assert(implies_v<bounded_below<10>, positive>,
+    "FIXY-U-162: bounded_below<10> ⇒ positive (tighter lower bound).");
+static_assert(!implies_v<bounded_below<0>, positive>,
+    "FIXY-U-162: bounded_below<0> must NOT imply positive "
+    "(admits x=0 which is NOT positive; soundness — the N ≥ 1 "
+    "requires-clause is load-bearing, not decoration).");
+
 // ── Self-test block ─────────────────────────────────────────────────
 //
 // Per the algebra/effects runtime-smoke-test discipline (memory rule
