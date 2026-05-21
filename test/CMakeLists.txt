@@ -7757,6 +7757,38 @@ crucible_neg_compile_test(neg_ownedregion_copy_rejected
 crucible_neg_compile_test(neg_ownedregion_cross_tag_mismatch
   "invalid initialization of reference.*RegionTagA|cannot convert.*RegionTag|no matching function.*process_region_a|could not convert.*RegionTag")
 
+# [FIXY-U-146] HS14 floor for three lingering 1-fixture primitives —
+# bumps FinalBy + NotInherited + Stale to ≥2 each.  Closes the last
+# below-floor cells in the safety/ non-ScopedView §XVI catalog
+# alongside U-140 Machine, U-141 ConstantTime, U-142 Tagged,
+# U-143 SealedRefined, U-144 Pinned/NonMovable, U-145 OwnedRegion.
+#
+# Each fixture pair pins TWO distinct soundness layers per primitive:
+#
+#   FinalBy   — Class T-subclass (sibling neg_finalby_subclass_attempt:
+#                private virtual ctor inaccessible from subclass-as-
+#                most-derived) PLUS Class T-copy (THIS slice: deleted
+#                copy on the CRTP base, propagated through the
+#                protected Derived's defaulted copy ctor).
+#
+#   NotInherited — Class M-consteval (sibling neg_notinherited_non_
+#                final: static_assert inside assert_not_inherited<>())
+#                PLUS Class U-concept (THIS slice: NotInherited<T>
+#                concept's constraint-not-satisfied diagnostic at
+#                overload resolution time).
+#
+#   Stale     — Class T-cross-T (sibling neg_stale_cross_t_mixing:
+#                payload-type mismatch in compose_add) PLUS Class
+#                T-rvalue-only (THIS slice: consume() `&&`-qualified
+#                rejects lvalue invocation, mirroring Linear<T>'s
+#                consume discipline).
+crucible_neg_compile_test(neg_finalby_protected_copy_rejected
+  "FinalBy_Subclass_Forbidden|use of deleted function|deleted function")
+crucible_neg_compile_test(neg_notinherited_concept_rejection
+  "constraints not satisfied|NotInherited.*not satisfied|is_final_v.*not.*satisfied|no matching function.*register_final_type")
+crucible_neg_compile_test(neg_stale_consume_lvalue
+  "passing.*as.*this.*argument discards qualifiers|cannot bind rvalue reference|no matching.*consume|discards qualifiers")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
