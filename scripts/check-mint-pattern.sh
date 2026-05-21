@@ -247,7 +247,108 @@ ALLOW
         fi
         rm -f "$stale_file"
 
-        printf 'check-mint-pattern: self-test passed — drift fires on all four axes (none on canonical); stale detection flags dead allowlist entries (none on live).\n' >&2
+        # ── Phase 3: full-line (path:line, all-checks) stale branch ──
+        # Phase 2 exercised only the `:check-ok` grammar.  The bare
+        # `path:line` grammar takes the OTHER stale-detection branch
+        # (live iff ANY of the four checks fails at the line).  Suppress
+        # every drift with a FULL-LINE entry (each lands on a line that
+        # fails ≥1 check → live → must NOT be flagged) and add two
+        # full-line entries with no live failure (canonical mint line +
+        # the `#pragma once` line) that MUST be flagged stale.
+        cat >"$tmp_root/scripts/mint-pattern-allowlist.txt" <<ALLOW
+$rel:$ln_nd
+$rel:$ln_ne
+$rel:$ln_cx
+$rel:$ln_rq
+$rel:$ln_ok
+$rel:1
+ALLOW
+        full_file="$(mktemp)"
+        full_rc=0
+        CRUCIBLE_MINT_PATTERN_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$full_file" || full_rc=$?
+        if (( full_rc != 2 )); then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 3) — expected exit 2 (stale), got %d.\n' \
+                "$full_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$full_file")" >&2
+            rm -f "$full_file"
+            exit 2
+        fi
+        full_emitted="$(grep -c '^MINT-PATTERN stale:' "$full_file" || true)"
+        if [[ "$full_emitted" -ne 2 ]]; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 3) — expected 2 stale diagnostics, got %s.\n' \
+                "$full_emitted" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$full_file")" >&2
+            rm -f "$full_file"
+            exit 2
+        fi
+        # Match on `<entry> — ` (entry, space, em-dash, space): the
+        # trailing delimiter pins the line number so `:1 — ` cannot
+        # substring-match the `:11 — ` diagnostic, and -F sidesteps the
+        # `.`/`/` regex metacharacters in the path.
+        for expect in "$rel:$ln_ok" "$rel:1"; do
+            if ! grep -qF -- "$expect — " "$full_file"; then
+                printf 'check-mint-pattern: SELF-TEST FAILED (phase 3) — expected full-line stale entry not flagged: %s\n' \
+                    "$expect" >&2
+                printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                    "$(cat "$full_file")" >&2
+                rm -f "$full_file"
+                exit 2
+            fi
+        done
+        # A LIVE full-line entry must NOT appear in a stale diagnostic.
+        if grep -qF -- "$rel:$ln_nd — " "$full_file"; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 3) — live full-line entry %s falsely flagged stale.\n' \
+                "$rel:$ln_nd" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$full_file")" >&2
+            rm -f "$full_file"
+            exit 2
+        fi
+        rm -f "$full_file"
+
+        # ── Phase 4: violations take precedence over stale entries ───
+        # Leave one drift UN-suppressed (a live violation) and plant a
+        # dangling `:1:requires-ok` (would be stale).  The scanner must
+        # exit 1 on the violation BEFORE reaching the stale pass, so the
+        # dangling entry is never evaluated — no stale diagnostic.
+        cat >"$tmp_root/scripts/mint-pattern-allowlist.txt" <<ALLOW
+$rel:$ln_ne:noexcept-ok
+$rel:$ln_cx:constexpr-ok
+$rel:$ln_rq:requires-ok
+$rel:1:requires-ok
+ALLOW
+        prec_file="$(mktemp)"
+        prec_rc=0
+        CRUCIBLE_MINT_PATTERN_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$prec_file" || prec_rc=$?
+        if (( prec_rc != 1 )); then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 4) — expected exit 1 (violation precedence), got %d.\n' \
+                "$prec_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$prec_file")" >&2
+            rm -f "$prec_file"
+            exit 2
+        fi
+        if ! grep -qF -- 'mint_token_drift_nodiscard missing nodiscard' "$prec_file"; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 4) — un-suppressed violation not emitted.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$prec_file")" >&2
+            rm -f "$prec_file"
+            exit 2
+        fi
+        if grep -q '^MINT-PATTERN stale:' "$prec_file"; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 4) — stale pass ran despite a pending violation (precedence broken).\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$prec_file")" >&2
+            rm -f "$prec_file"
+            exit 2
+        fi
+        rm -f "$prec_file"
+
+        printf 'check-mint-pattern: self-test passed — drift fires on all four axes (none on canonical); stale detection flags dead allowlist entries across both grammars (none on live); violations preempt the stale pass.\n' >&2
         exit 0
         ;;
     "") ;;
