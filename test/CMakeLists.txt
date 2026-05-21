@@ -3749,6 +3749,14 @@ crucible_neg_compile_effects_test(neg_pipeline_inline_opt_in_missing_ws
 crucible_neg_compile_effects_test(neg_pipeline_ctor_public_bypass
     "is private within this context")
 
+# FIXY-V-010 HS14 companion — Stage's previously-public ctor is now
+# private, with mint_stage friended.  A direct
+# `Stage<&body, Ctx>{ctx, in, out}` call site bypasses CtxFitsStage's
+# input + output row admission and is rejected at the access-control
+# check.
+crucible_neg_compile_effects_test(neg_stage_ctor_public_bypass
+    "is private within this context")
+
 # ─── #868: Endpoint↔Stage bridge gate fixtures ───────────────────────
 #
 # Two fixtures pin the CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp,

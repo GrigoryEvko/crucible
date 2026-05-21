@@ -367,21 +367,6 @@ public:
     static constexpr bool is_value_preserving =
         ::crucible::safety::extract::pipeline_stage_is_value_preserving_v<FnPtr>;
 
-    // ── Construction (used by mint_stage; not user-facing) ─────────
-    //
-    // Marked explicit + nodiscard.  User code goes through mint_stage,
-    // which checks CtxFitsStage at the call boundary.  Direct
-    // construction is permitted (no friend declaration to add) but the
-    // mint factory is the canonical authorization point per §XXI.
-    [[nodiscard]] explicit constexpr Stage(
-        Ctx const&             ctx,
-        consumer_handle_type&& in,
-        producer_handle_type&& out) noexcept
-        : ctx_{ctx}
-        , in_{std::move(in)}
-        , out_{std::move(out)}
-    {}
-
     // ── Move-only (handles hold linear Permission tokens) ──────────
     Stage(Stage const&) = delete("Stage holds linear Permission tokens via the consumer/producer handles");
     Stage& operator=(Stage const&) = delete("Stage holds linear Permission tokens via the consumer/producer handles");
@@ -414,6 +399,34 @@ public:
     [[nodiscard]] constexpr producer_handle_type const& out() const &  noexcept { return out_; }
 
 private:
+    // ── Construction (used by mint_stage; not user-facing) ─────────
+    //
+    // Private per CLAUDE.md §XXI — mint_stage is the single load-
+    // bearing authorization point.  A direct call site like
+    // `Stage<&body, Ctx>{ctx, in, out}` would bypass CtxFitsStage's
+    // input-row + output-row admission and emit a Stage whose
+    // effect rows never see `Subrow<input/output_row, ctx_row>`.
+    [[nodiscard]] explicit constexpr Stage(
+        Ctx const&             ctx,
+        consumer_handle_type&& in,
+        producer_handle_type&& out) noexcept
+        : ctx_{ctx}
+        , in_{std::move(in)}
+        , out_{std::move(out)}
+    {}
+
+    // mint_stage is the sole authorized constructor — friend the
+    // entire template family so any (FnPtr, Ctx) instantiation can
+    // reach the private ctor.
+    template <auto MintFnPtr, ::crucible::effects::IsExecCtx MintCtx>
+        requires ::crucible::safety::extract::PipelineStage<MintFnPtr>
+    friend constexpr auto mint_stage(
+        MintCtx const&,
+        std::remove_reference_t<
+            ::crucible::safety::extract::param_type_t<MintFnPtr, 0>>&&,
+        std::remove_reference_t<
+            ::crucible::safety::extract::param_type_t<MintFnPtr, 1>>&&) noexcept;
+
     [[no_unique_address]] Ctx     ctx_;
     consumer_handle_type           in_;
     producer_handle_type           out_;
