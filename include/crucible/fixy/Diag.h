@@ -207,6 +207,20 @@ inline constexpr std::uint64_t row_hash_contribution_v =
 inline constexpr std::uint64_t EMPTY_ROW_HASH =
     ::crucible::safety::diag::detail::EMPTY_ROW_HASH;
 
+// ═══════════════════════════════════════════════════════════════════
+// mint_diagnostic<Tag, Ctx...>(ctx...) — §XXI Universal Mint Pattern
+// ═══════════════════════════════════════════════════════════════════
+//
+// Single grep-target for Diagnostic<Tag, Ctx...> construction in fixy-
+// only code (FIXY-U-115).  Direct `Diagnostic<Tag, Ctx...>{}` ctor
+// bypasses the §XXI authorization surface per fixy-A4-018 precedent.
+//
+// Note: mint_diagnostic is consteval; its reach proof lives in the
+// self_test sub-namespace as a return-type identity (pointer-to-
+// consteval is not freely formable outside immediate-function
+// context).
+using ::crucible::safety::diag::mint_diagnostic;
+
 }  // namespace crucible::fixy::diag
 
 // ── Self-test ──────────────────────────────────────────────────────
@@ -302,5 +316,20 @@ static_assert(!insight_provider<HugePageAllocationFailed>::why_this_matters.empt
     "HugePageAllocationFailed insight_provider must be specialized");
 static_assert(!insight_provider<PublishOnceDoublePublish>::why_this_matters.empty(),
     "PublishOnceDoublePublish insight_provider must be specialized");
+
+// ── FIXY-U-115: mint_diagnostic re-export reach proof ──────────────
+//
+// Return-type identity rather than pointer-identity — mint_diagnostic
+// is consteval (P3068R5 immediate function), and pointer-to-consteval
+// can't be formed outside an immediate-function context.  static_assert
+// IS such a context, so calling the function and comparing the deduced
+// return type works cleanly.  Drift between the fixy:: re-export and
+// the substrate symbol fails here.
+static_assert(std::is_same_v<
+    decltype(::crucible::fixy::diag::mint_diagnostic<
+                ::crucible::fixy::diag::HotPathViolation>()),
+    decltype(::crucible::safety::diag::mint_diagnostic<
+                ::crucible::safety::diag::HotPathViolation>())>,
+    "FIXY-U-115: fixy::diag::mint_diagnostic must alias safety::diag::mint_diagnostic.");
 
 }  // namespace crucible::fixy::diag::self_test

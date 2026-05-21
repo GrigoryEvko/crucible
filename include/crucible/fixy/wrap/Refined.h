@@ -20,6 +20,8 @@
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/RefinedAlgebra.h>   // all_of predicate combinator
 
+#include <type_traits>                        // FIXY-U-115 self-test sentinel
+
 namespace crucible::fixy::wrap {
 
 // Refined<Pred, T> — predicate-checked at construction.
@@ -55,4 +57,23 @@ using ::crucible::safety::length_ge;
 using ::crucible::safety::predicate_implies;
 using ::crucible::safety::implies_v;
 
+// mint_refined<Pred, T>(value) — §XXI Universal Mint Pattern (FIXY-U-115).
+// Single grep-target for Refined<Pred, T> construction in fixy-only code;
+// direct `Refined<Pred, T>{value}` ctor bypasses the §XXI authorization
+// surface per fixy-A4-018 precedent (mint_fn direct-ctor dilution).
+using ::crucible::safety::mint_refined;
+
 }  // namespace crucible::fixy::wrap
+
+// ── Self-test ──────────────────────────────────────────────────────
+//
+// Witness that mint_refined re-export resolves to the substrate
+// symbol; pattern matches fixy/Wrap.h dual-export sentinels.
+namespace crucible::fixy::wrap::self_test {
+
+static_assert(std::is_same_v<
+    decltype(&::crucible::safety::mint_refined<::crucible::safety::positive, int>),
+    decltype(&::crucible::fixy::wrap::mint_refined<::crucible::safety::positive, int>)>,
+    "FIXY-U-115: fixy::wrap::mint_refined must alias safety::mint_refined.");
+
+}  // namespace crucible::fixy::wrap::self_test

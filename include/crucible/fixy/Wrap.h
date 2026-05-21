@@ -166,9 +166,11 @@ using ::crucible::safety::drop;
 
 // SealedRefined<Pred, T> — Refined with no into() extractor.
 using ::crucible::safety::SealedRefined;
+using ::crucible::safety::mint_sealed_refined;  // FIXY-U-115 §XXI surface
 
 // Tagged<T, Source> — phantom-tag provenance / trust marker.
 using ::crucible::safety::Tagged;
+using ::crucible::safety::mint_tagged;          // FIXY-U-115 §XXI surface
 
 // Secret<T> — classified-by-default carrier.
 using ::crucible::safety::Secret;
@@ -704,6 +706,21 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_view<
         WrapStructuralTag, int>)>,
     "fixy::wrap::mint_view must alias safety::mint_view.");
+// mint_sealed_refined / mint_tagged — FIXY-U-115 §XXI surface (mint_refined
+// reach is proven in fixy/wrap/Refined.h::self_test, co-located with its
+// granular using-decl).
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_sealed_refined<
+        ::crucible::safety::positive, int>),
+    decltype(&::crucible::safety::mint_sealed_refined<
+        ::crucible::safety::positive, int>)>,
+    "FIXY-U-115: fixy::wrap::mint_sealed_refined must alias safety::mint_sealed_refined.");
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_tagged<
+        ::crucible::safety::source::FromUser, int>),
+    decltype(&::crucible::safety::mint_tagged<
+        ::crucible::safety::source::FromUser, int>)>,
+    "FIXY-U-115: fixy::wrap::mint_tagged must alias safety::mint_tagged.");
 // no_scoped_view_field_check — function-template identity.
 static_assert(std::is_same_v<
     decltype(&::crucible::fixy::wrap::no_scoped_view_field_check<int>),
