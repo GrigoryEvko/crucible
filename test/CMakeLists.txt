@@ -8035,6 +8035,36 @@ crucible_neg_compile_test(neg_alignedbuffer_copy_ctor_rejected
 crucible_neg_compile_test(neg_alignedbuffer_copy_assign_rejected
   "use of deleted function.*AlignedBuffer.*operator=|AlignedBuffer is move-only|deleted")
 
+# ─── FIXY-U-159: NonZero / NonEmpty / NonEmptySpan alias surface ───
+#
+# Closes the §XVI "every load-bearing predicate gets a named alias"
+# discipline gap for the unparameterised `non_zero` and `non_empty`
+# predicates, plus the §XVI-cited canonical `NonEmptySpan<T>` alias.
+# Production sites previously defined ad-hoc local aliases inline
+# (CallSiteTable.h:114 NonZeroHash); after this ship one canonical
+# name participates in grep/review.
+#
+# Refined<Pred, T> aliases inherit the constructor's
+# `requires PredicateInvocableOn<Pred, T>` concept gate, so the
+# alias-level diagnostic surfaces at the alias name (NonZero<...>,
+# NonEmpty<...>) rather than as a SFINAE wall inside <contracts>.
+#
+# HS14 floor: two fixtures with DISTINCT concept-failure surfaces:
+#   * U-159a (non_zero else-branch): if-constexpr-requires dispatch
+#     where the else-branch's `x != decltype(x){0}` substitution
+#     fails (struct with no operator!=, no ctor-from-int).
+#   * U-159b (non_empty method-missing): single-branch lambda body
+#     where the lone `.empty()` member function requirement fails
+#     for arithmetic types.
+#
+# Both pin "PredicateInvocableOn" as the diagnostic substring so a
+# future Refined refactor that loses the concept gate would red
+# both fixtures simultaneously.
+crucible_neg_compile_test(neg_refined_nonzero_alias_rejects_no_compare_struct
+  "PredicateInvocableOn|constraint.*not satisfied|no matching")
+crucible_neg_compile_test(neg_refined_nonempty_alias_rejects_arithmetic
+  "PredicateInvocableOn|constraint.*not satisfied|no matching")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.

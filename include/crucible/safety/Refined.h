@@ -376,6 +376,20 @@ template <typename T> using NonNull       = Refined<non_null, T>;
 template <typename T> using Positive      = Refined<positive, T>;
 template <typename T> using NonNegative   = Refined<non_negative, T>;
 template <typename T> using PowerOfTwo    = Refined<power_of_two, T>;
+template <typename T> using NonZero       = Refined<non_zero, T>;
+template <typename T> using NonEmpty      = Refined<non_empty, T>;
+
+// CLAUDE.md §XVI canonical example: "every load-bearing predicate gets
+// a named alias — PositiveInt, NonNullTraceEntry, ValidSlotId,
+// NonEmptySpan<T>".  NonEmptySpan<T> uses length_ge<1> rather than
+// non_empty because std::span exposes .size() uniformly across all
+// instantiations (size_type is std::size_t for every T), and
+// length_ge participates in the predicate_implies subsort lattice
+// (LengthGe<N> ⇒ LengthGe<M> when N ≥ M), so a NonEmptySpan<T> can
+// strengthen to MinLengthSpan<N, T> for N > 1 without re-validating.
+// non_empty is a simpler `!c.empty()` lambda — useful for containers
+// where .size() is not O(1) (rare in Crucible), but redundant here.
+template <typename T> using NonEmptySpan  = Refined<length_ge<std::size_t{1}>, std::span<T>>;
 
 // ── Composition with Linear ─────────────────────────────────────────
 //
@@ -412,6 +426,19 @@ using RefinedLinear = Refined<Pred, Linear<T>>;
 // zero-overhead, Refined is zero-overhead, both storage-transparent.
 static_assert(sizeof(LinearRefined<non_null, void*>) == sizeof(void*),
               "LinearRefined must collapse to sizeof(T)");
+
+// Zero-cost: new aliases (NonZero / NonEmpty / NonEmptySpan) must
+// collapse to sizeof(T) exactly like the four existing aliases above.
+// Witnesses that the alias machinery does NOT introduce overhead vs
+// the underlying Refined<Pred, T> — required by CLAUDE.md §XVI claim
+// "sizeof(Wrapper<T>) == sizeof(T) under -O3".  Different T per alias
+// to cover representative shapes: raw scalar (NonZero), .empty()-having
+// container (NonEmpty over std::span — since span has both .empty()
+// AND .size(), it admits both predicates), and parameterised
+// length_ge<1> over span (NonEmptySpan).
+static_assert(sizeof(NonZero<int>)              == sizeof(int));
+static_assert(sizeof(NonEmpty<std::span<int>>)  == sizeof(std::span<int>));
+static_assert(sizeof(NonEmptySpan<int>)         == sizeof(std::span<int>));
 
 // ═════════════════════════════════════════════════════════════════════
 // ── implies_v<P, Q> — cross-predicate implication trait  (#227) ────
@@ -577,6 +604,30 @@ inline void runtime_smoke_test() {
     if (lr.peek().value() != 42) std::abort();
     int lr_extracted = std::move(lr).consume().into();
     if (lr_extracted != 42) std::abort();
+
+    // FIXY-U-159 — new alias surfaces exercised through the same
+    // checked / smoke discipline as the four pre-existing aliases.
+    //
+    // NonZero<int> — uses the unparameterised `non_zero` lambda
+    // (else-branch fallback, `x != decltype(x){0}`).  Non-zero
+    // sentinel constructs cleanly; zero would fire the contract.
+    NonZero<int> nz{seed};
+    if (nz.value() != 42) std::abort();
+
+    // NonEmpty<std::span<int>> — uses the unparameterised
+    // `non_empty` lambda (`!c.empty()`).  std::span<int> has
+    // .empty() per [span.obs]; non-empty span constructs.
+    NonEmpty<std::span<int>> ne{sp};
+    if (ne.value().size() != 3) std::abort();
+
+    // NonEmptySpan<int> — the §XVI canonical alias for a span with
+    // ≥1 element.  Uses parameterised `length_ge<1>` so the value
+    // composes through predicate_implies (LengthGe<N> ⇒ LengthGe<M>
+    // when N ≥ M) — strengthening a NonEmptySpan to MinLengthSpan<N>
+    // for N > 1 is a type-level promotion via the existing implies
+    // axiom, not a re-validation.
+    NonEmptySpan<int> nes{sp};
+    if (nes.value().size() != 3) std::abort();
 }
 
 }  // namespace detail::refined_self_test

@@ -31,6 +31,16 @@ using ::crucible::safety::NonNull;
 using ::crucible::safety::Positive;
 using ::crucible::safety::NonNegative;
 using ::crucible::safety::PowerOfTwo;
+// FIXY-U-159 — three §XVI alias-discipline gaps closed:
+//   * NonZero<T>      — production sites previously defined inline
+//                       (e.g. CallSiteTable.h:114 NonZeroHash).
+//   * NonEmpty<T>     — non_empty lambda surface, container-shape.
+//   * NonEmptySpan<T> — the §XVI-cited canonical alias for span<T>
+//                       with ≥1 element, length_ge<1>-backed so it
+//                       composes through predicate_implies subsort.
+using ::crucible::safety::NonZero;
+using ::crucible::safety::NonEmpty;
+using ::crucible::safety::NonEmptySpan;
 // Refined composition with Linear (both orderings).
 using ::crucible::safety::LinearRefined;
 using ::crucible::safety::RefinedLinear;
