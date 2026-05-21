@@ -231,6 +231,22 @@ static_assert(std::is_same_v<
     ::crucible::warden::QuarantineSnapshot>,
     "fixy::warden::QuarantineSnapshot must alias substrate.");
 
+// FIXY-U-120d — Hardening class identity.  The class itself is
+// re-exported via `using ::crucible::warden::Hardening;` above; the
+// substrate exposes static `Hardening::apply(policy)` whose contract
+// the mint factory wraps.  Without this assert, a future regression
+// could shadow `Hardening` with an empty local struct (`Hardening{}`
+// is constructible) and the `mint_hardening` body — which forwards
+// to `Hardening::apply(policy)` inside the substrate — would still
+// resolve because the substrate namespace is what the body sees.
+// The fixy:: re-export semantics, however, would silently diverge:
+// downstream users typing `fixy::warden::Hardening::apply(...)` would
+// reach a different class.  Catch that asymmetry here.
+static_assert(std::is_same_v<
+    ::crucible::fixy::warden::Hardening,
+    ::crucible::warden::Hardening>,
+    "fixy::warden::Hardening must alias substrate.");
+
 // Concept-resolution witnesses.  Each concept name is satisfied by
 // `ColdInitCtx` (which carries Init in its effect row); the substrate
 // ships the same static_asserts at the mint definition site.  This
@@ -274,6 +290,54 @@ static_assert(!::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<
 static_assert(!::crucible::fixy::warden::CtxFitsQuarantineMint<
     ::crucible::effects::BgDrainCtx>,
     "fixy::warden::CtxFitsQuarantineMint must reject BgDrainCtx.");
+
+// FIXY-U-120d — Second negative-reach class: HotFgCtx.  Carries
+// `Row<>` (empty effect row), failing the Init-row conjunct of every
+// Init-tier mint concept.  Substrate ships these asserts at the mint
+// site; test_fixy_warden.cpp duplicates them; the header sentinel
+// must too so consumer-include drift detection sees BOTH rejection
+// classes (Bg → Init absent due to wrong row, HotFg → Init absent
+// due to empty row).  Quarantine has no HotFg neg-assert in
+// substrate (the substrate ships only ColdInit positive + BgDrain
+// negative for QuarantineMint), so we omit it here for parity.
+static_assert(!::crucible::fixy::warden::CtxFitsHardeningMint<
+    ::crucible::effects::HotFgCtx>,
+    "fixy::warden::CtxFitsHardeningMint must reject HotFgCtx.");
+
+static_assert(!::crucible::fixy::warden::CtxFitsDeadlineWatchdogMint<
+    ::crucible::effects::HotFgCtx>,
+    "fixy::warden::CtxFitsDeadlineWatchdogMint must reject HotFgCtx.");
+
+static_assert(!::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<
+    ::crucible::effects::HotFgCtx>,
+    "fixy::warden::CtxFitsHotRegionRegistryMint must reject HotFgCtx.");
+
+// FIXY-U-120d — Sub-concept admittance witnesses for the quarantine
+// record/override variants.  These are query-only concepts (not gates
+// on the mint factory itself); their substrate purpose is to widen
+// the legal-caller set for non-mint quarantine operations:
+//   - CtxFitsQuarantineRecord — admits BgDrainCtx so the steady-state
+//     drain thread can record quarantine transitions without minting.
+//   - CtxFitsQuarantineOverride — admits ColdInitCtx (Keeper override)
+//     and TestRunnerCtx (deterministic test override) so authorized
+//     callers can force-clear a quarantine state.
+// Substrate ships these asserts at Quarantine.h:471-474; test TU
+// duplicates them.  Header sentinel must too for include-time drift
+// detection at every fixy:: consumer.
+static_assert(::crucible::fixy::warden::CtxFitsQuarantineRecord<
+    ::crucible::effects::BgDrainCtx>,
+    "fixy::warden::CtxFitsQuarantineRecord must admit BgDrainCtx "
+    "(the steady-state drain context records transitions).");
+
+static_assert(::crucible::fixy::warden::CtxFitsQuarantineOverride<
+    ::crucible::effects::ColdInitCtx>,
+    "fixy::warden::CtxFitsQuarantineOverride must admit ColdInitCtx "
+    "(Keeper init-time override authority).");
+
+static_assert(::crucible::fixy::warden::CtxFitsQuarantineOverride<
+    ::crucible::effects::TestRunnerCtx>,
+    "fixy::warden::CtxFitsQuarantineOverride must admit TestRunnerCtx "
+    "(deterministic test-runner override authority).");
 
 // Cardinality witness.  Four mint factories live in `warden/`.  If a
 // future contributor adds a fifth (or removes one of the current
