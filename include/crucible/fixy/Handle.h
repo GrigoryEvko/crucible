@@ -116,7 +116,14 @@ using ::crucible::safety::HugePageBuffer;
 // (FIXY-U-016b) Pinned (non-copy / non-move) atomic cell that fuses
 // the standard "atomic store with release → reader acquire" pattern
 // under a Tag-typed identity.  Used by BackgroundThread pipeline-stage
-// publication.
+// publication.  The friend-gate (`friend WriteAuth;`) is the structural
+// witness that bump_by / bump are callable ONLY from inside WriteAuth's
+// body — every authorized writer is grep-visible at the cell's
+// declaration site.  FIXY-V-037 mirrors the substrate's
+// publish_commit_detail:: structural contracts (alignas(64), Pinned,
+// trivially-destructible) at the dual-export sentinel block below so
+// reviewers can verify the channel-identity guarantees without
+// descending into safety/PublishCommit.h.
 using ::crucible::safety::PublishCommitCell;
 
 // ── open_read / open_write_truncate — FileHandle free factories ────
@@ -206,6 +213,67 @@ static_assert(std::is_same_v<
     "fixy::handle::PublishCommitCell<Tag, WriteAuth> must alias "
     "safety::PublishCommitCell — Pinned-channel identity is load-bearing "
     "for cross-thread publish/commit ordering.");
+
+// FIXY-V-037 — LOAD-BEARING structural-contract sentinels for the
+// PublishCommit pattern.  The substrate ships these in its own
+// `publish_commit_detail::` block, but mirroring them at the fixy::
+// boundary catches contract drift on the alias path before any
+// production call site (BackgroundThread pipeline-stage publication,
+// per the substrate doc-block's GAPS-FLUSH-RACE bug class) notices.
+// Per CLAUDE.md §XIII ("every contract has a test that violates it")
+// and the V-034 discipline ("reviewer never has to grep into safety/
+// to verify the guarantee").
+//
+// Contract 1 — alignas(64) cache-line isolation.  The cell occupies a
+// full cache line so the fg's acquire-load of value_ and bg's release-
+// store via bump_by NEVER share an L1 line with any neighboring field.
+// If this drifts (e.g., a future refactor merges PublishCommitCell into
+// a larger struct without alignas), false sharing reintroduces the
+// 40× MESI ping-pong penalty CLAUDE.md §IX warned about.
+static_assert(
+    alignof(::crucible::fixy::handle::PublishCommitCell<
+        HandleProbeT, HandleProbeProto>) == 64,
+    "fixy::handle::PublishCommitCell<Tag, WriteAuth> must be alignas(64) "
+    "— cross-thread acquire/release pair requires cache-line isolation; "
+    "drift here reintroduces false sharing (CLAUDE.md §IX).");
+
+// Contract 2 — non-movable.  The cell IS the channel identity; moving
+// it would relocate the atomic mid-stream, invalidating all in-flight
+// load_acquire calls and any external references / friend-list assumptions.
+static_assert(
+    !std::is_move_constructible_v<
+        ::crucible::fixy::handle::PublishCommitCell<
+            HandleProbeT, HandleProbeProto>>,
+    "fixy::handle::PublishCommitCell<Tag, WriteAuth> must not be move-"
+    "constructible — Pinned channel identity; move would orphan the "
+    "fg's outstanding acquire-load address.");
+
+// Contract 3 — non-copyable.  Two cells with the same Tag/WriteAuth
+// would mean two independent counters claiming the same channel
+// identity; the friend-gate would unwittingly authorize writes to
+// both, breaking the BorrowSafe single-writer invariant.
+static_assert(
+    !std::is_copy_constructible_v<
+        ::crucible::fixy::handle::PublishCommitCell<
+            HandleProbeT, HandleProbeProto>>,
+    "fixy::handle::PublishCommitCell<Tag, WriteAuth> must not be copy-"
+    "constructible — channel-identity uniqueness; copy would break the "
+    "single-writer invariant (BorrowSafe).");
+
+// Contract 4 — trivially destructible.  The cell owns only an atomic
+// uint64_t; no resource to free.  Trivially destructible enables
+// constexpr initialization (the cell can live in static storage with
+// zero initialization cost) AND guarantees no exception is thrown from
+// the dtor (which would compile-error under -fno-exceptions anyway,
+// but the sentinel surfaces the invariant explicitly).
+static_assert(
+    std::is_trivially_destructible_v<
+        ::crucible::fixy::handle::PublishCommitCell<
+            HandleProbeT, HandleProbeProto>>,
+    "fixy::handle::PublishCommitCell<Tag, WriteAuth> must be trivially "
+    "destructible — the cell owns only std::atomic<uint64_t>; a non-"
+    "trivial dtor would mean someone added a managed resource without "
+    "updating the Pinned discipline.");
 
 // FIXY-V-034 — HugePageBuffer<T> identity (dual-export sentinel).
 static_assert(std::is_same_v<

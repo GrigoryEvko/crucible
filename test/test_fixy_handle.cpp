@@ -21,11 +21,14 @@
 //      path.
 //
 // FIXY-U-016 (base) + U-016b (AlignedBuffer + PublishCommitCell) +
-// U-016c (open_read + open_write_truncate) + V-034 (HugePageBuffer).
+// U-016c (open_read + open_write_truncate) + V-034 (HugePageBuffer) +
+// V-037 (PublishCommit pattern: structural-contract sentinels +
+// read-side API round-trip + friend-gated write-side round-trip).
 // Doc-block updated by U-131 to reflect post-U-016b/c expansion.
 
 #include <crucible/fixy/Handle.h>
 
+#include <atomic>       // FIXY-V-037 — std::memory_order_relaxed for cell.load
 #include <bit>          // FIXY-V-034 — std::bit_cast for pointer→uintptr_t
 #include <cstdint>      // FIXY-V-034 — std::uintptr_t for alignment check
 #include <type_traits>
@@ -63,6 +66,37 @@ static_assert(std::is_same_v<
     fhand::PublishCommitCell<th::ProbeT, th::ProbeProto>,
     safe::PublishCommitCell<th::ProbeT, th::ProbeProto>>);
 
+// FIXY-V-037 — LOAD-BEARING structural contracts mirrored at TU level
+// under project warning flags.  These re-prove (cf. Handle.h's
+// publish_commit_detail-mirror block) the cache-line isolation,
+// Pinned channel identity, and trivial-dtor guarantees that the
+// PublishCommit pattern's BorrowSafe / ThreadSafe / DetSafe axiom
+// coverage rests on.  If a future contributor weakens any of these
+// at the substrate without auditing the fixy:: surface, ONE of
+// these sentinels reddens — at the alias path, not just at substrate.
+static_assert(
+    alignof(fhand::PublishCommitCell<th::ProbeT, th::ProbeProto>) == 64,
+    "fixy::handle::PublishCommitCell must be alignas(64) — false sharing "
+    "between fg's load_acquire and bg's bump_by release-store would "
+    "regress to ~40× MESI ping-pong (CLAUDE.md §IX).");
+static_assert(
+    !std::is_move_constructible_v<
+        fhand::PublishCommitCell<th::ProbeT, th::ProbeProto>>,
+    "fixy::handle::PublishCommitCell must not be move-constructible "
+    "— channel identity is the cell's atomic storage address.");
+static_assert(
+    !std::is_copy_constructible_v<
+        fhand::PublishCommitCell<th::ProbeT, th::ProbeProto>>,
+    "fixy::handle::PublishCommitCell must not be copy-constructible "
+    "— two cells claiming one channel identity would break the "
+    "single-writer BorrowSafe invariant.");
+static_assert(
+    std::is_trivially_destructible_v<
+        fhand::PublishCommitCell<th::ProbeT, th::ProbeProto>>,
+    "fixy::handle::PublishCommitCell must be trivially destructible "
+    "— a non-trivial dtor means someone added a managed resource "
+    "without updating the Pinned discipline.");
+
 // FIXY-U-016c — open_read + open_write_truncate free-function identity.
 static_assert(std::is_same_v<
     decltype(&fhand::open_read),
@@ -81,6 +115,29 @@ static_assert(fhand::HugePageBuffer<th::ProbeT>::huge_page_bytes
               "fixy::handle::HugePageBuffer<T>::huge_page_bytes must equal "
               "warden::kHugePageBytes — madvise(MADV_HUGEPAGE) requires "
               "the allocation to be aligned to the kernel huge-page boundary.");
+
+// FIXY-V-037 — Write-side fixture for the PublishCommit pattern's
+// friend-gated bump.  Declared at namespace scope so its identity is
+// stable as the `WriteAuth` template argument; the cell instantiated
+// with this type then sees its `static_publish_one` member as a friend
+// and may call the otherwise-private `bump()` from inside.  This
+// exercises the load-bearing contract that the friend relationship
+// SURVIVES the fixy::handle:: alias path — a hand-rolled refactor that
+// accidentally introduced a shim wrapper without `friend WriteAuth;`
+// re-emission would red this fixture at link time.
+namespace test_fixy_handle {
+struct PubCommitWriteAuth {
+    // Friend-gated single-bump helper.  Compiles ONLY because
+    // PublishCommitCell<PubCommitTag, PubCommitWriteAuth> declares
+    // `friend PubCommitWriteAuth;` — i.e., the type-erased re-export
+    // path preserves the friend identity.
+    template <typename Cell>
+    static auto bump_once(Cell& cell) noexcept {
+        return cell.bump();
+    }
+};
+struct PubCommitTag {};
+}  // namespace test_fixy_handle
 
 // ─── 2. Cardinality FLOOR witness mirror ──────────────────────────
 //
@@ -148,6 +205,39 @@ int main() {
         buf[0] = 0x12345678;
         if (buf[0] != 0x12345678) return 5;             // write-then-read sanity
         // dtor on scope exit returns the block via std::free.
+    }
+    {
+        // FIXY-V-037 — PublishCommitCell round-trip via fixy::handle::.
+        // Exercises the FULL public read-side API (4 methods) plus the
+        // friend-gated write-side via the namespace-scope WriteAuth
+        // fixture defined above.  Verifies through the alias path:
+        //   (a) default-construct yields counter == 0 (atomic NSDMI)
+        //   (b) all 4 read methods agree on the initial value
+        //   (c) friend-gated bump returns the previous value (issued-
+        //       ticket semantics) and advances the counter exactly once
+        //   (d) acquire-load after bump sees the new value (intra-thread,
+        //       so this proves the release/acquire happens-before chain
+        //       compiles correctly through the alias)
+        using Cell = fhand::PublishCommitCell<
+            th::PubCommitTag, th::PubCommitWriteAuth>;
+        Cell cell;
+        // (a) + (b) — read API agreement at initial state.
+        if (cell.load_acquire() != 0)                        return 10;
+        if (cell.peek_relaxed() != 0)                        return 11;
+        if (cell.get() != 0)                                 return 12;
+        if (cell.load(std::memory_order_relaxed) != 0)       return 13;
+        // (c) — friend-gated bump via WriteAuth.  bump() returns the
+        // PREVIOUS counter value (== 0 here), then advances the cell.
+        const auto previous = th::PubCommitWriteAuth::bump_once(cell);
+        if (previous != 0)                                   return 14;
+        // (d) — post-bump read API sees the advanced value.
+        if (cell.load_acquire() != 1)                        return 15;
+        if (cell.peek_relaxed() != 1)                        return 16;
+        // Second bump to prove issued-ticket arithmetic, not boolean
+        // flag semantics.  Previous return == 1; counter now == 2.
+        if (th::PubCommitWriteAuth::bump_once(cell) != 1)    return 17;
+        if (cell.load_acquire() != 2)                        return 18;
+        // Cell dtor on scope exit is trivial; no resource to free.
     }
     return 0;
 }
