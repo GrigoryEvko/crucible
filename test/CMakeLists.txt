@@ -7639,6 +7639,17 @@ crucible_neg_compile_test(neg_crucible_context_mint_compiled_view_cross_carrier
 crucible_neg_compile_test(neg_crucible_context_mint_compiled_view_in_field
   "Type contains a safety::ScopedView<> in some field")
 
+# [FIXY-U-138] HS14 floor for PoolAllocator::mint_initialized_view.  Same
+# carrier-singleton shape as CrucibleContext::mint_compiled_view above —
+# PoolAllocator has only one typed view (InitializedView; no companion
+# "DestroyedView") so the cross-carrier mismatch is the equivalent type-
+# system gate.  Together the pair pins both soundness layers (typed-
+# overload + structural field-storage).
+crucible_neg_compile_test(neg_pool_allocator_mint_initialized_view_cross_carrier
+  "invalid initialization of reference.*MutableView.*Initialized|cannot convert.*Initialized.*Mutable")
+crucible_neg_compile_test(neg_pool_allocator_mint_initialized_view_in_field
+  "Type contains a safety::ScopedView<> in some field")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
