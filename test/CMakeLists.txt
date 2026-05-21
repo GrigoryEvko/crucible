@@ -7686,6 +7686,23 @@ crucible_neg_compile_test(neg_constanttime_less_signed_type
 crucible_neg_compile_test(neg_constanttime_eq_length_mismatch
   "non-constant condition|__builtin_trap|not a constant expression|non-constant.*static_assert|call to non.*constexpr")
 
+# [FIXY-U-142] safety::Tagged<T, Tag> HS14 floor — third non-ScopedView
+# primitive to get neg-compile pair coverage (closes Tagged slice of
+# #146 A8-P2 alongside U-140's Machine + U-141's ConstantTime).
+# Class U: mint_tagged<int, int>(42) fails ValidTaggedTag concept
+#          (Tag must be std::is_class_v).
+# Class T: Tagged<uint64_t, source::External> passed to a function
+#          expecting Tagged<uint64_t, source::Sanitized> — unrelated
+#          template instantiations, no implicit conversion across
+#          the trust boundary.
+# Together they pin both soundness layers of Tagged's discipline:
+# (a) tag-shape gate (class-type-only), and (b) tag-identity gate
+# (provenance Tag is load-bearing for overload resolution).
+crucible_neg_compile_test(neg_tagged_mint_scalar_tag
+  "ValidTaggedTag|constraints not satisfied|is_class_v|the required expression")
+crucible_neg_compile_test(neg_tagged_unrelated_source_mismatch
+  "cannot convert.*External.*Sanitized|cannot convert.*source::External|no matching function.*hash_for_kernel|could not convert.*source::External")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
