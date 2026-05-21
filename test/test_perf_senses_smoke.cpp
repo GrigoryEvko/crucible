@@ -159,7 +159,15 @@ int main() {
     // in the test env).  We don't insist on success — coverage() is
     // what reports it.
 
-    // ── (8) Move semantics — moved-from reports zero attachments.
+    // ── (8a) Move CONSTRUCTION — moved-from reports zero attachments.
+    //
+    // Pre-FIXY-U-126: the =default move-ctor delegated to
+    // std::optional<State>::operator=(optional&&) which does NOT reset
+    // the source — it moves the contained T but leaves has_value()==true
+    // on the source.  Effect: coverage().attached_count() returned 7
+    // (or 6 if one facade failed to load) on the moved-from instance,
+    // violating the documented Senses move-ownership contract.  U-126
+    // replaced =default with std::exchange-based explicit moves.
     auto moved_into = std::move(s);
     const auto moved_from_cov = s.coverage();
     if (moved_from_cov.attached_count() != 0u) {
@@ -176,7 +184,70 @@ int main() {
     if (s.sched_tp_btf()    != nullptr) { std::fprintf(stderr, "Senses: moved-from sched_tp_btf() not null\n");    return 1; }
     if (s.syscall_tp_btf()  != nullptr) { std::fprintf(stderr, "Senses: moved-from syscall_tp_btf() not null\n");  return 1; }
 
+    // ── (8b) Move ASSIGNMENT — same source-nullifying contract.
+    //
+    // The U-126 fix touches both move-ctor and move-assign; without
+    // exercising both paths the assignment-side regression would slip
+    // through.  Reload a fresh Senses, then move-assign it into a
+    // separate target and re-check the source's post-move state.
+    auto reloaded = crucible::perf::Senses::load_all(
+        ::crucible::effects::testing::init());
+    auto assigned_into = crucible::perf::Senses::load_subset(
+        ::crucible::effects::testing::init(),
+        crucible::perf::SensesMask{});  // empty mask — target starts disengaged
+    assigned_into = std::move(reloaded);
+    const auto reloaded_cov = reloaded.coverage();
+    if (reloaded_cov.attached_count() != 0u) {
+        std::fprintf(stderr,
+            "Senses move-assigned-from must report zero attachments; got %zu\n",
+            reloaded_cov.attached_count());
+        return 1;
+    }
+    if (reloaded.sense_hub()       != nullptr) { std::fprintf(stderr, "Senses: move-assigned-from sense_hub() not null\n");       return 1; }
+    if (reloaded.sched_switch()    != nullptr) { std::fprintf(stderr, "Senses: move-assigned-from sched_switch() not null\n");    return 1; }
+    if (reloaded.pmu_sample()      != nullptr) { std::fprintf(stderr, "Senses: move-assigned-from pmu_sample() not null\n");      return 1; }
+    if (reloaded.lock_contention() != nullptr) { std::fprintf(stderr, "Senses: move-assigned-from lock_contention() not null\n"); return 1; }
+    if (reloaded.syscall_latency() != nullptr) { std::fprintf(stderr, "Senses: move-assigned-from syscall_latency() not null\n"); return 1; }
+    if (reloaded.sched_tp_btf()    != nullptr) { std::fprintf(stderr, "Senses: move-assigned-from sched_tp_btf() not null\n");    return 1; }
+    if (reloaded.syscall_tp_btf()  != nullptr) { std::fprintf(stderr, "Senses: move-assigned-from syscall_tp_btf() not null\n");  return 1; }
+
+    // ── (8c) Self-move-assignment preserves the live state (post-cond
+    // equality with the pre-move state).
+    //
+    // Two layers of protection cooperate here:
+    //
+    //   1. The `if (this != &other)` guard at the top of operator=
+    //      makes self-move a no-op for performance (skips the
+    //      temporary round-trip).
+    //   2. Even WITHOUT the guard, the std::exchange-based body
+    //      happens to be self-move-safe via the temporary: state
+    //      moves out into the exchange local, source resets to
+    //      nullopt, then outer-assign moves the local back into the
+    //      same address.  The guard is the idiomatic safety net for
+    //      future implementations that might use a naive
+    //      "reset-then-move" body (which IS self-move-UNsafe — the
+    //      reset would wipe before the move could rescue).
+    //
+    // We pin the post-condition the test really cares about: the
+    // attached_count is preserved exactly across self-move-assign.
+    // This catches both the guard regression AND any refactor that
+    // accidentally introduces a self-move-unsafe body.
+    const auto pre_self_move_count =
+        assigned_into.coverage().attached_count();
+    auto& self_ref = assigned_into;
+    self_ref = std::move(assigned_into);
+    const auto post_self_move_count =
+        assigned_into.coverage().attached_count();
+    if (pre_self_move_count != post_self_move_count) {
+        std::fprintf(stderr,
+            "Senses self-move-assign perturbed state: %zu → %zu attached "
+            "(must be invariant; guard or move-assign body regressed)\n",
+            pre_self_move_count, post_self_move_count);
+        return 1;
+    }
+
     (void)moved_into;
+    (void)assigned_into;
 #endif
 
     std::printf("perf::Senses smoke OK\n");

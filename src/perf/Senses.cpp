@@ -16,9 +16,44 @@ namespace crucible::perf {
 
 Senses::Senses(std::optional<State> s) noexcept : state_{std::move(s)} {}
 
-Senses::Senses(Senses&&) noexcept            = default;
-Senses& Senses::operator=(Senses&&) noexcept = default;
-Senses::~Senses() noexcept                   = default;
+// ─── Move ctor + move assign — explicit, not =default ────────────────
+//
+// `=default` on a class whose only member is `std::optional<State>` is
+// WRONG.  `std::optional<T>::operator=(optional&&)` does NOT reset the
+// source to `std::nullopt` — it moves the contained `T` but leaves the
+// source's `has_value()` returning `true` (with a moved-from `T`
+// inside).  Same for the move-ctor: source remains engaged.
+//
+// Pre-FIXY-U-088 / fixy-A5-026 this class held `std::unique_ptr<State>`
+// whose move-ctor IS source-nullifying — coverage()/accessors on the
+// moved-from instance returned zero/nullptr via the null-pointer guard.
+// U-088 replaced unique_ptr with inline `std::optional<State>` to
+// eliminate the noexcept-Init-path heap allocation; the move semantics
+// regression was unintended.  `std::exchange(other.state_,
+// std::nullopt)` restores the source-nullifying contract by atomically
+// (from the reader's perspective) moving the value out and resetting
+// the source to `nullopt`.
+//
+// Post-move source-side contract — enforced by test_perf_senses_smoke
+// (step 8) and the design intent at Senses.h:152 ("owns N sub-facades
+// each of which owns BPF object + mmap"):
+//   • coverage().attached_count() == 0
+//   • every accessor returns nullptr
+//
+// Both follow from `state_ == std::nullopt` via the existing
+// `if (!state_) return ...` guards in the accessor + coverage paths.
+
+Senses::Senses(Senses&& other) noexcept
+    : state_{std::exchange(other.state_, std::nullopt)} {}
+
+Senses& Senses::operator=(Senses&& other) noexcept {
+    if (this != &other) {
+        state_ = std::exchange(other.state_, std::nullopt);
+    }
+    return *this;
+}
+
+Senses::~Senses() noexcept = default;
 
 // ─── load_subset ─────────────────────────────────────────────────────
 //
