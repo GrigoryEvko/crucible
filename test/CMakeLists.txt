@@ -299,6 +299,7 @@ crucible_test(test_types)
 crucible_test(test_kernel_cache_key)
 crucible_test(test_row_hash_fold)
 crucible_test(test_row_hash_contribution_sentinel)
+crucible_test(test_row_hash_distinctness)
 crucible_test(test_fixy_mint_inventory)
 crucible_test(test_fixy_decide)
 crucible_test(test_fixy_sess_mint_handle_reach)  # FIXY-U-022
