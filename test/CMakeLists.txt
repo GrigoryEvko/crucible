@@ -7830,6 +7830,22 @@ crucible_neg_compile_test(neg_boundedmonotonic_cross_max_mismatch
 crucible_neg_compile_test(neg_orderedappendonly_drain_lvalue
   "passing.*as.*this.*argument discards qualifiers|cannot bind rvalue reference|no matching.*drain|discards qualifiers")
 
+# [FIXY-U-151] safety::WriteOnceNonNull<T*> HS14 floor — Class M-set-
+# null complement to the existing Class T-primary-template fixture
+# (neg_writeoncenonnull_non_pointer).  Closes the WriteOnceNonNull
+# slice of #146 A8-P2.
+#
+# The non-null clause inside set() (Mutation.h:737) is the load-
+# bearing structural differentiator vs WriteOnce<T*> — WriteOnce<T*>
+# accepts nullptr-engaged optional as a legal first set; the nullptr-
+# sentinel storage model in WriteOnceNonNull makes "ptr_ == nullptr"
+# reserved for "slot empty", so publishing null is indistinguishable
+# from "never set" — always a caller bug.  CRUCIBLE_PRE under
+# consteval fires __builtin_trap, poisoning the surrounding
+# static_assert.
+crucible_neg_compile_test(neg_pre_macro_writeoncenonnull_set_null
+  "non-constant condition for static assertion|__builtin_trap|CRUCIBLE_PRE|in.*consteval|is not a constant expression")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
