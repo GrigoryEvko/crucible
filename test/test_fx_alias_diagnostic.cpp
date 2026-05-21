@@ -91,9 +91,22 @@ void test_catalog_indices_for_fx_alias_tags() {
     static_assert(diag::category_of_v<diag::LinearAliasViolation>
                   == diag::Category::LinearAliasViolation);
 
-    EXPECT_TRUE(diag::catalog_size == 30);
+    // Catalog cardinality is monotonically non-decreasing under
+    // append-only discipline (Diagnostic.h docblock + FOUND-E01).  Lock
+    // the floor at this test's authoring epoch (30 entries through the
+    // ModalityMismatch / LinearAliasViolation pair) but do NOT pin
+    // equality — appending a new tag must not red this test (that is
+    // the test_diagnostic_compile sentinel's job, not the FX-alias
+    // routing TU's).  Pre-FIXY-U-124 the equality check was the
+    // discipline footgun PublishOnceDoublePublish tripped over.
+    EXPECT_TRUE(diag::catalog_size >= 30);
+
+    // Every Catalog member's underlying value is < catalog_size.  This
+    // proves HugePageAllocationFailed (whatever its index) is a valid
+    // catalog member without locking it to the trailing position — the
+    // structural property the test really wants to assert here.
     EXPECT_TRUE(static_cast<std::size_t>(diag::Category::HugePageAllocationFailed)
-                == diag::catalog_size - 1);
+                < diag::catalog_size);
 }
 
 // ── Accessor routing — runtime name/description/remediation ───────

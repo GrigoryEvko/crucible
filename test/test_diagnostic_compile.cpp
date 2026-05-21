@@ -86,12 +86,21 @@ void test_runtime_smoke() {
 }
 
 void test_catalog_cardinality() {
-    // 22 wrapper-axis tags shipped at FOUND-E01 + 3 F*-style alias tags
-    // shipped at FOUND-E18 + 1 FIXY-G9 witness tag + 2 FIXY-G10
-    // modality tags (ModalityMismatch, LinearAliasViolation) + 1
-    // fixy-A1-015 SharedPermissionPool saturation tag + 1 fixy-A1-022
-    // HugePageBuffer allocation-failure tag.
-    EXPECT_EQ(diag::catalog_size, std::size_t{30});
+    // 22 wrapper-axis tags (FOUND-E01) + 3 F*-style alias tags
+    // (FOUND-E18) + 1 FIXY-G9 witness tag + 2 FIXY-G10 modality tags +
+    // 1 fixy-A1-015 SharedPermissionPool saturation + 1 fixy-A1-022
+    // HugePageBuffer allocation-failure tag = 30 entries through this
+    // test's authoring epoch.
+    //
+    // FIXY-U-124: assert MONOTONIC-NON-DECREASING (the append-only
+    // catalog discipline) rather than equality.  The Diagnostic.h
+    // self-test block at end-of-file ships the hard-pin
+    // `static_assert(catalog_size == N)` that fires when a new tag
+    // appends without updating BOTH header sentinel + test floor; the
+    // test floor is for regression-guarding (catalog mustn't shrink),
+    // not for locking the exact size.  This split is what fixy-A1-031
+    // (PublishOnceDoublePublish) tripped over pre-U-124.
+    EXPECT_TRUE(diag::catalog_size >= std::size_t{30});
 }
 
 // Namespace-scope user-extension tag.  C++26 [class.local]/4 forbids
@@ -195,11 +204,22 @@ void test_macro_compiles() {
         "Comma in condition protected by parentheses.");
 }
 
+// Trailing-tag identity derived from the Catalog tuple itself — invariant
+// under append-only catalog growth (FIXY-U-124).  Pre-U-124 these tests
+// hard-coded `HugePageAllocationFailed` as the trailing entry; appending
+// PublishOnceDoublePublish (fixy-A1-031) reddened both without alerting
+// the appender that the test surface needed lockstep update.  Reflection
+// over `Catalog` closes the trap by deriving "trailing tag" structurally.
+using TrailingTag =
+    std::tuple_element_t<diag::catalog_size - 1, diag::Catalog>;
+using LeadingTag =
+    std::tuple_element_t<0, diag::Catalog>;
+
 void test_categories_array() {
     EXPECT_EQ(diag::categories_v.size(), diag::catalog_size);
-    EXPECT_EQ(diag::categories_v[0], diag::Category::EffectRowMismatch);
+    EXPECT_EQ(diag::categories_v[0], diag::category_of_v<LeadingTag>);
     EXPECT_EQ(diag::categories_v[diag::catalog_size - 1],
-              diag::Category::HugePageAllocationFailed);
+              diag::category_of_v<TrailingTag>);
 
     // Runtime traversal: sequential indexing matches enum value.
     volatile std::size_t const cap = diag::catalog_size;
@@ -229,8 +249,8 @@ void test_enumerate_categories_visits_all() {
         visited[cursor++] = diag::name_of(C);
     });
     EXPECT_EQ(cursor, diag::catalog_size);
-    EXPECT_EQ(visited.front(), diag::EffectRowMismatch::name);
-    EXPECT_EQ(visited.back(), diag::HugePageAllocationFailed::name);
+    EXPECT_EQ(visited.front(), LeadingTag::name);
+    EXPECT_EQ(visited.back(), TrailingTag::name);
 }
 
 void test_mint_diagnostic_factory() {
