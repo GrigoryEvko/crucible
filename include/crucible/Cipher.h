@@ -716,13 +716,30 @@ class CRUCIBLE_OWNER Cipher {
         }
         head_ = content_hash;
 
-        // Overwrite HEAD file (truncate to hex + newline).
+        // FIXY-V-027: atomic HEAD update via write-tmp + fdatasync +
+        // rename + parent-dir-fsync.  Replaces the pre-V-027 ofstream
+        // truncate-and-write which had no atomicity window: the file
+        // was observably empty between O_TRUNC and the first write, and
+        // partial between successive writes.  See atomic_write_path_'s
+        // doc-block for the full crash-recovery scenario; the helper
+        // returns true only when the new HEAD bytes are fully durable
+        // (write + fdatasync) AND the rename is durable (parent-dir
+        // fsync).  A helper failure here leaves the cached `head_` set
+        // and the log append below as the recovery anchor — the next
+        // open() call's latest_committed_head() scan recovers the
+        // committed pointer from the log even if HEAD is stale or
+        // missing on disk.
         {
-            std::ofstream hf(root_str() + "/HEAD");
             char hex[16];
             hex16_(content_hash.raw(), hex);
-            hf.write(hex, sizeof(hex));
-            hf.put('\n');
+            std::uint8_t buf[17];
+            std::memcpy(buf, hex, 16);
+            buf[16] = static_cast<std::uint8_t>('\n');
+            const std::string head_path = root_str() + "/HEAD";
+            (void)atomic_write_path_(
+                head_path,
+                std::span<const std::uint8_t>{buf, sizeof(buf)},
+                root_str());
         }
 
         // Append log entry.
@@ -1228,6 +1245,104 @@ class CRUCIBLE_OWNER Cipher {
         } while (rc < 0 && errno == EINTR);
         ::close(fd);
         return rc == 0;
+    }
+
+    // ── FIXY-V-027: atomic file-content replace helper ─────────────
+    //
+    // POSIX-atomic replace pattern: write to `path + ".tmp"`,
+    // fdatasync the bytes onto disk, atomically rename onto `path`,
+    // then fsync the parent directory to make the rename itself
+    // durable.
+    //
+    // Why this matters: the pre-V-027 HEAD-write path uses
+    // `std::ofstream hf(root + "/HEAD")` which is O_TRUNC + write
+    // — observably empty between O_TRUNC and the first write, and
+    // partially-written between successive writes.  A crash during
+    // either window leaves HEAD corrupt; the next open() reads zero
+    // (or partial) bytes and falls back to `latest_committed_head()`
+    // scanning the log, but the log might ALSO have been mid-append
+    // when the crash struck.  The atomic-replace pattern eliminates
+    // the entire window: HEAD is either fully the old hex (rename
+    // not yet committed) or fully the new hex (rename committed +
+    // dir fsync'd).
+    //
+    // Why `rename(2)` over `renameat2(..., RENAME_NOREPLACE)`:
+    // RENAME_NOREPLACE FAILS if the destination exists, which is
+    // the OPPOSITE of what HEAD-update wants — we explicitly want
+    // to REPLACE the old HEAD.  Plain rename(2) is POSIX-atomic for
+    // same-filesystem replacements and is the canonical Linux atomic
+    // write pattern.  RENAME_NOREPLACE is appropriate for content-
+    // addressed object creation (store() / V-026 / V-028), where
+    // collision = caller bug or filesystem corruption.
+    //
+    // Why fsync the parent directory: the rename(2) syscall returns
+    // before the directory entry is necessarily flushed to disk.
+    // POSIX permits a crash AFTER rename returns success but BEFORE
+    // the directory entry hits storage — the rename is then lost,
+    // HEAD is left at its OLD value, and the new bytes are orphaned
+    // in HEAD.tmp.  Fsyncing the parent directory closes this
+    // window; the rename is durable when the helper returns true.
+    //
+    // EINTR retry on write / fdatasync / rename / fsync mirrors the
+    // kernel's own retry contract.  Cleanup: if any step fails after
+    // we've created the tmp file, unlink it so a subsequent run
+    // doesn't trip over a partial-write artifact.
+    [[nodiscard]] static bool atomic_write_path_(
+        const std::string& path,
+        std::span<const uint8_t> bytes,
+        const std::string& parent_dir) noexcept {
+        const std::string tmp_path = path + ".tmp";
+        const int tmp_fd = ::open(tmp_path.c_str(),
+                                   O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
+                                   0644);
+        if (tmp_fd < 0) return false;
+
+        // Write all bytes, EINTR-safe.
+        std::size_t off = 0;
+        while (off < bytes.size()) {
+            const ssize_t r = ::write(tmp_fd,
+                                       bytes.data() + off,
+                                       bytes.size() - off);
+            if (r < 0) {
+                if (errno == EINTR) continue;
+                ::close(tmp_fd);
+                ::unlink(tmp_path.c_str());
+                return false;
+            }
+            off += static_cast<std::size_t>(r);
+        }
+
+        // fdatasync the tmp file's bytes before the rename.
+        int frc;
+        do {
+            frc = ::fdatasync(tmp_fd);
+        } while (frc < 0 && errno == EINTR);
+        ::close(tmp_fd);
+        if (frc != 0) {
+            ::unlink(tmp_path.c_str());
+            return false;
+        }
+
+        // POSIX-atomic same-filesystem rename.
+        int rrc;
+        do {
+            rrc = ::rename(tmp_path.c_str(), path.c_str());
+        } while (rrc < 0 && errno == EINTR);
+        if (rrc != 0) {
+            ::unlink(tmp_path.c_str());
+            return false;
+        }
+
+        // fsync the parent directory so the rename is durable.
+        const int dir_fd = ::open(parent_dir.c_str(),
+                                   O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (dir_fd < 0) return false;
+        int drc;
+        do {
+            drc = ::fsync(dir_fd);
+        } while (drc < 0 && errno == EINTR);
+        ::close(dir_fd);
+        return drc == 0;
     }
 
     // Path: root_/objects/<first2hex>/<remaining14hex>

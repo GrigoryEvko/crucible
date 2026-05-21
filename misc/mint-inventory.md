@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T17:24:00Z`.
+Snapshot generated: `2026-05-21T17:42:31Z`.
 
 ## bridges/
 
