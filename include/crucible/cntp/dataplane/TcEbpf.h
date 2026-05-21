@@ -90,8 +90,7 @@ using DeclaredTcFlowClass =
 template <class Ctx>
 concept CtxFitsTcMint =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 [[nodiscard]] constexpr std::expected<TcDscp, TcError>
 admit_tc_dscp(std::uint8_t dscp) noexcept {

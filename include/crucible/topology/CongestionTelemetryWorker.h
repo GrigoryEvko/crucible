@@ -47,14 +47,12 @@ using CongestionObservationBatch =
 template <class Ctx>
 concept CtxFitsCongestionTelemetryStart =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <class Ctx>
 concept CtxFitsCongestionTelemetryHarvest =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Bg>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
 
 [[nodiscard]] constexpr std::uint32_t
 congestion_metric_id(std::uint16_t link_slot,

@@ -95,14 +95,12 @@ static_assert(std::is_trivially_copyable_v<PathSwapEvent>);
 template <class Ctx>
 concept CtxFitsPathSwapMint =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <class Ctx>
 concept CtxFitsPathSwapTransition =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Bg>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
 
 template <class Resource>
 concept PathSwapSessionResource =

@@ -86,8 +86,7 @@ concept OverlayMulticastShape =
 template <class Ctx>
 concept CtxFitsOverlayMulticastMint =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 [[nodiscard]] constexpr std::expected<OverlayStripeCount,
                                       OverlayMulticastError>

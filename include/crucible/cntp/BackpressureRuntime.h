@@ -29,16 +29,12 @@ namespace crucible::cntp {
 template <class Ctx>
 concept CtxFitsBackpressureMint =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <class Ctx>
 concept CtxFitsBackpressureRuntime =
        effects::IsExecCtx<Ctx>
-    && (effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                                effects::Effect::Bg>
-        || effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                                   effects::Effect::Test>);
+    && effects::CtxOwnsAnyOf<Ctx, effects::Effect::Bg, effects::Effect::Test>;
 
 template <std::size_t MaxFlows>
 class CreditFlowControl : public safety::Pinned<CreditFlowControl<MaxFlows>> {

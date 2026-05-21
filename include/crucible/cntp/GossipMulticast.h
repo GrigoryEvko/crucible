@@ -144,8 +144,7 @@ struct GossipReplicationPlan {
 template <class Ctx>
 concept CtxFitsGossipMulticastMint =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 [[nodiscard]] inline std::expected<DeclaredGossipTopic, GossipMulticastError>
 admit_gossip_topic_hash(std::uint64_t hash) noexcept {

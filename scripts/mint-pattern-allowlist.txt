@@ -97,11 +97,11 @@ include/crucible/canopy/Plumtree.h:529:constexpr-ok
 include/crucible/canopy/Scuttlebutt.h:627:constexpr-ok
 include/crucible/canopy/Swim.h:486:constexpr-ok
 include/crucible/canopy/VectorClock.h:391:constexpr-ok
-include/crucible/cntp/AfXdp.h:472:constexpr-ok
-include/crucible/cntp/AfXdp.h:472:noexcept-ok
-include/crucible/cntp/OverlayMulticast.h:369:constexpr-ok
-include/crucible/cntp/_wip/QuicTransport.h:201:noexcept-ok
-include/crucible/cntp/dataplane/Xdp.h:192:requires-ok
+include/crucible/cntp/AfXdp.h:471:constexpr-ok
+include/crucible/cntp/AfXdp.h:471:noexcept-ok
+include/crucible/cntp/OverlayMulticast.h:368:constexpr-ok
+include/crucible/cntp/_wip/QuicTransport.h:199:noexcept-ok
+include/crucible/cntp/dataplane/Xdp.h:191:requires-ok
 include/crucible/fixy/Substr.h:451:requires-ok
 include/crucible/fixy/Substr.h:458:requires-ok
 include/crucible/fixy/Substr.h:476:requires-ok
@@ -137,7 +137,7 @@ include/crucible/permissions/Permission.h:1341:noexcept-ok
 include/crucible/permissions/Permission.h:1341:requires-ok
 include/crucible/permissions/Permission.h:1343:noexcept-ok
 include/crucible/permissions/Permission.h:1343:requires-ok
-include/crucible/permissions/PermissionFork.h:321:constexpr-ok
+include/crucible/permissions/PermissionFork.h:319:constexpr-ok
 include/crucible/permissions/PermissionInherit.h:287:requires-ok
 include/crucible/permissions/ReadView.h:156:requires-ok
 include/crucible/safety/Diagnostic.h:1476:constexpr-ok
@@ -211,4 +211,4 @@ include/crucible/sessions/SwmrSession.h:241:requires-ok
 include/crucible/sessions/SwmrSession.h:250:requires-ok
 include/crucible/topology/Pingmesh.h:441:constexpr-ok
 include/crucible/topology/Ptp.h:429:constexpr-ok
-include/crucible/warden/Hardening.h:494:constexpr-ok
+include/crucible/warden/Hardening.h:493:constexpr-ok

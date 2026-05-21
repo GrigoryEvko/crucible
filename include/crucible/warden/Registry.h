@@ -263,8 +263,7 @@ static_assert(sizeof(HotRegionRegistryHandle) == 1,
 template <class Ctx>
 concept CtxFitsHotRegionRegistryMint =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <effects::IsExecCtx Ctx>
     requires CtxFitsHotRegionRegistryMint<Ctx>

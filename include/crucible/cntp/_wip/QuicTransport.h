@@ -154,14 +154,12 @@ using DeclaredQuicMigration =
 template <class Ctx>
 concept CtxFitsQuicMint =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <class Ctx>
 concept CtxFitsQuicRuntime =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Bg>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
 
 [[nodiscard]] constexpr std::expected<PositiveQuicStreamLimit, QuicError>
 admit_quic_stream_limit(std::uint16_t limit) noexcept {

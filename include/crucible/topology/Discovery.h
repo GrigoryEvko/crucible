@@ -131,14 +131,12 @@ concept DiscoveryShape = MaxNodes > 0 && MaxEdges > 0;
 template <class Ctx>
 concept CtxFitsDiscoveryInit =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <class Ctx>
 concept CtxFitsDiscoveryBg =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Bg>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
 
 [[nodiscard]] std::string_view discovery_error_name(DiscoveryError error) noexcept;
 [[nodiscard]] std::string_view discovery_source_name(DiscoverySource source) noexcept;

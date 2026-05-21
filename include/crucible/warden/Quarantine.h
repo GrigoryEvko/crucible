@@ -107,22 +107,17 @@ struct QuarantineEvent {
 template <class Ctx>
 concept CtxFitsQuarantineMint =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <class Ctx>
 concept CtxFitsQuarantineRecord =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Bg>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
 
 template <class Ctx>
 concept CtxFitsQuarantineOverride =
        effects::IsExecCtx<Ctx>
-    && (effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                                effects::Effect::Init>
-        || effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                                   effects::Effect::Test>);
+    && effects::CtxOwnsAnyOf<Ctx, effects::Effect::Init, effects::Effect::Test>;
 
 namespace detail {
 

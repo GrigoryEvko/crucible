@@ -151,7 +151,7 @@ inline constexpr std::size_t inferred_row_count_v =
 // Folds over the inferred row; declaration-order independent.
 template <auto FnPtr, ::crucible::effects::Effect E>
 inline constexpr bool function_has_effect_v =
-    ::crucible::effects::row_contains_v<inferred_row_t<FnPtr>, E>;
+    ::crucible::effects::row_contains_v<inferred_row_t<FnPtr>, E>;  // ROW-CONTAINS-OK: inferred-row point query over inferred_row_t<FnPtr>, not a Ctx capability check
 
 // True iff FnPtr's parameter list carries NO cap-tag types — a
 // "pure" function in the dispatcher's vocabulary.  Foreground hot-

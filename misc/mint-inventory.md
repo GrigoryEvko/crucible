@@ -26,7 +26,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-21T01:21:51Z`.
+Snapshot generated: `2026-05-21T01:58:19Z`.
 
 ## bridges/
 
@@ -93,7 +93,7 @@ Snapshot generated: `2026-05-21T01:21:51Z`.
 | `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h:697` | - | - | Y | - | token | `include/crucible/fixy/Perm.h:173` | HS14: 24 |
 | `mint_permission_combine` | `include/crucible/permissions/Permission.h:504` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:33` | HS14: 2 |
 | `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:533` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:35` | HS14: 2 |
-| `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:321` | Y | - | Y | - | ctx | `include/crucible/fixy/Perm.h:104` | HS14: 6 |
+| `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:319` | Y | - | Y | - | ctx | `include/crucible/fixy/Perm.h:104` | HS14: 6 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:287` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:108` | HS14: 6 |
 | `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/Perm.h:31` | HS14: 151 |
 | `mint_permission_share` | `include/crucible/permissions/Permission.h:1038` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:19` | HS14: 4 |
@@ -171,10 +171,10 @@ Snapshot generated: `2026-05-21T01:21:51Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h:380` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
-| `mint_hardening` | `include/crucible/warden/Hardening.h:494` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
-| `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h:272` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
-| `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h:466` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
+| `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h:379` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
+| `mint_hardening` | `include/crucible/warden/Hardening.h:493` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
+| `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h:271` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
+| `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h:461` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
 
 ## Summary
 

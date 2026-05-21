@@ -812,13 +812,13 @@ class CRUCIBLE_OWNER Cipher {
         "record_event_required_row size MUST be exactly 2 atoms "
         "(IO + Block).");
     static_assert(
-        ::crucible::effects::row_contains_v<
+        ::crucible::effects::row_contains_v<  // ROW-CONTAINS-OK: concrete-row static_assert (record_event_required_row), not a Ctx capability check
             record_event_required_row,
             ::crucible::effects::Effect::IO>,
         "record_event_required_row MUST contain Effect::IO — the "
         "fence's reason for existence (HEAD + log file writes).");
     static_assert(
-        ::crucible::effects::row_contains_v<
+        ::crucible::effects::row_contains_v<  // ROW-CONTAINS-OK: concrete-row static_assert (record_event_required_row), not a Ctx capability check
             record_event_required_row,
             ::crucible::effects::Effect::Block>,
         "record_event_required_row MUST contain Effect::Block — "

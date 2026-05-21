@@ -313,8 +313,7 @@ static_assert(std::is_standard_layout_v<TopologyEdge>,
 template <class Ctx>
 concept CtxFitsTopologyGraph =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 // ── TopologyGraph — Pinned immutable carrier ────────────────────────
 //

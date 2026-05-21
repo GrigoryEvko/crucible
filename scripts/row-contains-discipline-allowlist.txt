@@ -10,51 +10,20 @@
 #   effects::CtxOwnsAnyOf<Ctx, Effect::X, Effect::Y>      (disjunction)
 #   effects::CtxOwnsAllOf<Ctx, Effect::X, Effect::Y>      (conjunction)
 #
-# These 38 sites are grandfathered awaiting the FIXY-U-101 sweep.  New
-# inline sites without an entry here fail the CI guard
-# (scripts/check-row-contains-discipline.sh).  When migrating a site,
-# prune its allowlist entry in the same PR (drift-free invariant).
+# The FIXY-U-101 grandfathered sweep is COMPLETE — every Ctx-gating
+# inline site migrated to a named CtxOwns* lift; the few non-Ctx sites
+# (concrete-row static_asserts, generic <Row, E> membership aliases,
+# inferred-row point queries) carry an inline `// ROW-CONTAINS-OK:`
+# marker at their definition.  This allowlist is therefore EMPTY.
+#
+# New inline `row_contains_v<row_type_of_t<Ctx>, ...>` sites without a
+# named lift or a ROW-CONTAINS-OK marker fail the CI guard
+# (scripts/check-row-contains-discipline.sh).  Prefer the named lift;
+# reach for an allowlist entry only to grandfather a tracked future
+# migration, and prune it in the same PR that migrates the site
+# (drift-free invariant).
 #
 # Format:
 #   <path>:<line> — fixy-U-101-MIGRATE: <recommended target lift>
 #   # comment lines start with `#`
 #   blank lines ignored
-
-include/crucible/Cipher.h:815 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/Cipher.h:821 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/AfXdp.h:258 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/BackpressureRuntime.h:32 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/BackpressureRuntime.h:38 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/BackpressureRuntime.h:40 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/ConnectionPoolRuntime.h:29 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/ConnectionPoolRuntime.h:35 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/ConnectionPoolRuntime.h:37 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/dataplane/TcEbpf.h:93 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/dataplane/Xdp.h:118 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/GossipMulticast.h:147 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/OverlayMulticast.h:89 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/PathSwap.h:104 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/PathSwap.h:98 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/_wip/QuicTransport.h:157 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/cntp/_wip/QuicTransport.h:163 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/permissions/PermissionFork.h:182 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/safety/CollisionCatalog.h:411 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/safety/InferredRow.h:154 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/topology/AsymmetricFailure.h:105 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/topology/AsymmetricFailure.h:111 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/topology/CongestionTelemetryWorker.h:50 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/topology/CongestionTelemetryWorker.h:56 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/topology/Discovery.h:134 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/topology/Discovery.h:140 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/topology/Health.h:185 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/topology/Health.h:191 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/topology/Telemetry.h:131 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/topology/Telemetry.h:137 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/topology/TopologyGraph.h:316 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/warden/DeadlineWatchdog.h:374 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/warden/Hardening.h:488 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/warden/Quarantine.h:110 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/warden/Quarantine.h:116 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/warden/Quarantine.h:122 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/warden/Quarantine.h:124 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/warden/Registry.h:266 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf

@@ -408,7 +408,7 @@ template <typename T, typename Source>
 struct is_borrowed_carrier<Borrowed<T, Source>> : std::true_type {};
 
 template <typename Row, effects::Effect E>
-inline constexpr bool row_has_effect_v = effects::row_contains_v<Row, E>;
+inline constexpr bool row_has_effect_v = effects::row_contains_v<Row, E>;  // ROW-CONTAINS-OK: generic <Row, E> membership alias, not a Ctx capability check
 
 template <typename F>
 inline constexpr bool has_async_v = marks_async<F>::value;

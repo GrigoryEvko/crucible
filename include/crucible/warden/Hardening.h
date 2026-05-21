@@ -485,8 +485,7 @@ class Hardening {
 template <class Ctx>
 concept CtxFitsHardeningMint =
        effects::IsExecCtx<Ctx>
-    && effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                               effects::Effect::Init>;
+    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <effects::IsExecCtx Ctx>
     requires CtxFitsHardeningMint<Ctx>

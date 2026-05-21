@@ -179,9 +179,7 @@ using PermissionForkSpawnCtx = ::crucible::effects::ExecCtx<
 template <typename Ctx, typename Parent, typename... Children>
 concept CtxFitsPermissionFork =
     ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::row_contains_v<
-        typename Ctx::row_type,
-        ::crucible::effects::Effect::Bg>
+    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>
     && CtxAdmitsPermission<Parent, Ctx>
     && (CtxAdmitsPermission<Children, Ctx> && ...)
     && splits_into_pack_v<Parent, Children...>
