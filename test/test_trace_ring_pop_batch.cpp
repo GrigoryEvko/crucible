@@ -75,7 +75,7 @@ static void test_empty_returns_zero() {
     uint32_t n = ring->try_pop_batch(out_entries, out_metas, out_scopes,
                                      out_calls, 8);
     assert(n == 0);
-    assert(ring->size() == 0);
+    assert(ring->size().peek() == 0);
 
     std::printf("  test_empty_returns_zero: PASSED\n");
 }
@@ -91,7 +91,7 @@ static void test_max_count_zero() {
     // Push something so the ring isn't empty — make sure max_count=0
     // returns 0 even with available entries.
     assert(ring->try_append(make_entry(7)));
-    assert(ring->size() == 1);
+    assert(ring->size().peek() == 1);
 
     TraceRing::Entry  out_entries[8];
     MetaIndex         out_metas[8];
@@ -101,7 +101,7 @@ static void test_max_count_zero() {
     uint32_t n = ring->try_pop_batch(out_entries, out_metas, out_scopes,
                                      out_calls, 0);
     assert(n == 0);
-    assert(ring->size() == 1);  // entry not drained
+    assert(ring->size().peek() == 1);  // entry not drained
 
     std::printf("  test_max_count_zero: PASSED\n");
 }
@@ -116,7 +116,7 @@ static void test_single_thread_fifo() {
         assert(ring->try_append(make_entry(i), make_meta(i),
                                 make_scope(i), make_callsite(i)));
     }
-    assert(ring->size() == N);
+    assert(ring->size().peek() == N);
 
     TraceRing::Entry  out_entries[N];
     MetaIndex         out_metas[N];
@@ -126,7 +126,7 @@ static void test_single_thread_fifo() {
     uint32_t n = ring->try_pop_batch(out_entries, out_metas, out_scopes,
                                      out_calls, N);
     assert(n == N);
-    assert(ring->size() == 0);
+    assert(ring->size().peek() == 0);
 
     for (uint32_t i = 0; i < N; ++i) {
         assert(out_entries[i].schema_hash == SchemaHash{i});
@@ -355,7 +355,7 @@ static void test_spsc_stress() {
                 }
                 received.fetch_add(got, std::memory_order_release);
             } else if (producer_done.load(std::memory_order_acquire)
-                       && ring->size() == 0) {
+                       && ring->size().peek() == 0) {
                 break;
             } else {
                 CRUCIBLE_SPIN_PAUSE;
