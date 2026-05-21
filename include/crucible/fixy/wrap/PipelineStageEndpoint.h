@@ -21,9 +21,11 @@
 // project's warnings-as-errors flags
 // (feedback_header_only_static_assert_blind_spot.md).
 //
-// ─── Public surface (20 symbols) ────────────────────────────────────
+// ─── Public surface (21 symbols) ────────────────────────────────────
 //
-//   PipelineStage substrate (8):
+//   PipelineStage substrate (9):
+//     StageArity<FnPtr>                            (struct: input_count,
+//                                                   output_count, ordered)
 //     VariadicPipelineStage<FnPtr>                 (concept)
 //     PipelineStage<FnPtr>                         (concept)
 //     is_pipeline_stage_v<FnPtr>                   (bool)
@@ -61,9 +63,10 @@
 namespace crucible::fixy::wrap {
 
 // ═══════════════════════════════════════════════════════════════════
-// ── 1. PipelineStage — 1-in / 1-out body shape (8) ───────────────
+// ── 1. PipelineStage — 1-in / 1-out body shape (9) ───────────────
 // ═══════════════════════════════════════════════════════════════════
 
+using ::crucible::safety::extract::StageArity;
 using ::crucible::safety::extract::VariadicPipelineStage;
 using ::crucible::safety::extract::PipelineStage;
 using ::crucible::safety::extract::is_pipeline_stage_v;
@@ -160,6 +163,39 @@ inline void f_producer_endpoint_mismatch(
 
 // Negative-case probe — neither stage nor endpoint shape.
 inline void f_two_ints(int, int) noexcept {}
+
+// ── 0. PipelineStage StageArity — struct-template identity ───────
+//
+// StageArity<FnPtr> exposes input_count, output_count, ordered as
+// static-member constants.  Cross-path value equality witnesses the
+// using-decl preserves the substrate's compute_stage_arity result.
+
+static_assert(
+    ::crucible::fixy::wrap::StageArity<&f_stage_int_int>::input_count ==
+    ::crucible::safety::extract::StageArity<&f_stage_int_int>::input_count);
+static_assert(
+    ::crucible::fixy::wrap::StageArity<&f_stage_int_int>::input_count == 1);
+static_assert(
+    ::crucible::fixy::wrap::StageArity<&f_stage_int_int>::output_count == 1);
+static_assert(
+    ::crucible::fixy::wrap::StageArity<&f_stage_int_int>::ordered == true);
+
+// Non-1×1 form — 2-input + 1-output stage produces input_count=2.
+inline void f_stage_2to1_for_arity(probe_consumer_handle<int>&&,
+                                   probe_consumer_handle<float>&&,
+                                   probe_producer_handle<int>&&) noexcept {}
+static_assert(
+    ::crucible::fixy::wrap::StageArity<&f_stage_2to1_for_arity>::input_count == 2);
+static_assert(
+    ::crucible::fixy::wrap::StageArity<&f_stage_2to1_for_arity>::output_count == 1);
+static_assert(
+    ::crucible::fixy::wrap::StageArity<&f_stage_2to1_for_arity>::ordered == true);
+
+// Out-of-order shape — producer-before-consumer fails the `ordered` clause.
+inline void f_stage_unordered(probe_producer_handle<int>&&,
+                              probe_consumer_handle<int>&&) noexcept {}
+static_assert(
+    ::crucible::fixy::wrap::StageArity<&f_stage_unordered>::ordered == false);
 
 // ── 1. PipelineStage concept admission identity ───────────────────
 //
@@ -359,11 +395,11 @@ static_assert( ::crucible::fixy::wrap::ProducerEndpoint<&f_producer_endpoint_int
 
 // ── Cardinality witness ──────────────────────────────────────────
 //
-// 20 surfaced using-declarations across 3 substrates:
+// 21 surfaced using-declarations across 3 substrates:
 //
-//   PipelineStage     (8) — VariadicPipelineStage / PipelineStage
-//                            concepts + is_pipeline_stage_v +
-//                            {input,output}_value_{at_t,_t} +
+//   PipelineStage     (9) — StageArity struct + VariadicPipelineStage
+//                            / PipelineStage concepts + is_pipeline_stage_v
+//                            + {input,output}_value_{at_t,_t} +
 //                            is_value_preserving_v
 //   ConsumerEndpoint  (6) — ConsumerEndpoint concept + is_v +
 //                            {handle,region}_{value,tag}_t +
@@ -375,8 +411,8 @@ static_assert( ::crucible::fixy::wrap::ProducerEndpoint<&f_producer_endpoint_int
 // Future additions to any of the three substrates MUST extend this
 // block + bump the constant + add a sentinel above.
 
-constexpr int pipeline_stage_endpoint_alias_cardinality = 20;
-static_assert(pipeline_stage_endpoint_alias_cardinality == 20,
+constexpr int pipeline_stage_endpoint_alias_cardinality = 21;
+static_assert(pipeline_stage_endpoint_alias_cardinality == 21,
     "fixy::wrap::PipelineStageEndpoint cardinality changed — update "
     "PipelineStageEndpoint.h sentinel block to track the three "
     "dispatch-shape recognizer substrates' public surface.");

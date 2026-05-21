@@ -102,6 +102,19 @@ int  f_int_return(producer_handle<int>&&, OR_int_in&&) noexcept;
 // config divergence between the umbrella TU and this TU would catch
 // it (the same blind-spot rationale that motivates V-040..V-042).
 
+// ── 0. PipelineStage StageArity — struct identity + value witness ─
+
+static_assert(fw::StageArity<&probes::f_stage_int_int>::input_count == 1);
+static_assert(fw::StageArity<&probes::f_stage_int_int>::output_count == 1);
+static_assert(fw::StageArity<&probes::f_stage_int_int>::ordered == true);
+static_assert(fw::StageArity<&probes::f_stage_2to1>::input_count == 2);
+static_assert(fw::StageArity<&probes::f_stage_2to1>::output_count == 1);
+
+// Cross-path equality of input_count witnesses using-decl identity.
+static_assert(
+    fw::StageArity<&probes::f_stage_int_int>::input_count ==
+    extract::StageArity<&probes::f_stage_int_int>::input_count);
+
 // ── 1. PipelineStage — concept admission cross-path identity ─────
 
 static_assert( fw::PipelineStage<&probes::f_stage_int_int>);
@@ -217,6 +230,22 @@ static_assert( fw::ProducerEndpoint<&probes::f_producer_well_formed>);
 // ── Runtime witnesses ────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 
+// 0. StageArity readback through alias — value witness for
+//    input_count / output_count / ordered.  Volatile sinks so the
+//    optimizer cannot fold the readback away.
+static void test_runtime_stage_arity_readback() {
+    volatile std::size_t in_1x1 = fw::StageArity<&probes::f_stage_int_int>::input_count;
+    volatile std::size_t out_1x1 = fw::StageArity<&probes::f_stage_int_int>::output_count;
+    volatile std::size_t in_2to1 = fw::StageArity<&probes::f_stage_2to1>::input_count;
+    volatile std::size_t out_2to1 = fw::StageArity<&probes::f_stage_2to1>::output_count;
+    volatile bool ordered = fw::StageArity<&probes::f_stage_int_int>::ordered;
+    if (in_1x1   != 1) std::abort();
+    if (out_1x1  != 1) std::abort();
+    if (in_2to1  != 2) std::abort();
+    if (out_2to1 != 1) std::abort();
+    if (!ordered)      std::abort();
+}
+
 // 1. PipelineStage admission through alias — boolean readback at
 //    runtime through a volatile sink so the optimizer cannot fold
 //    the concept evaluation away entirely.
@@ -327,6 +356,7 @@ static void test_runtime_cross_shape_exclusion() {
 // ═══════════════════════════════════════════════════════════════════
 
 int main() {
+    test_runtime_stage_arity_readback();
     test_runtime_pipeline_stage_admission();
     test_runtime_consumer_endpoint_admission();
     test_runtime_producer_endpoint_admission();
@@ -336,6 +366,6 @@ int main() {
     test_runtime_variadic_vs_strict_stage();
     test_runtime_cross_shape_exclusion();
     std::printf("test_fixy_wrap_pipeline_stage_endpoint: "
-                "8/8 runtime witnesses passed\n");
+                "9/9 runtime witnesses passed\n");
     return 0;
 }
