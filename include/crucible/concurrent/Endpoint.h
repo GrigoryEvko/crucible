@@ -272,12 +272,28 @@ concept SubstrateMatchesEndpointRecommendation =
  && ::crucible::effects::IsExecCtx<Ctx>
  && endpoint_detail::endpoint_recommendation<Substr, Ctx>::admissible;
 
+// ── FIXY-V-014: composite §XXI single-concept gate ─────────────────
+//
+// Per CLAUDE.md §XXI Universal Mint Pattern: "The `requires` clause
+// MUST be a single concept".  `CtxFitsEndpointMint<Substr, Dir, Ctx>`
+// ANDs the three load-bearing sub-concepts (direction bridgeability,
+// substrate residency fit, channel-topology recommendation match)
+// into a single named gate.  All three Endpoint-related declaration
+// sites — the class template, the friend declaration on the private
+// ctor, and the free-function `mint_endpoint` factory — share this
+// concept verbatim, so a future tightening (or relaxation) is a
+// one-line edit and the inventory scanner consistently picks up the
+// rq flag regardless of which decl site wins the dedup tiebreak.
+template <class Substr, Direction Dir, class Ctx>
+concept CtxFitsEndpointMint =
+    IsBridgeableDirection<Substr, Dir>
+ && SubstrateFitsCtxResidency<Substr, Ctx>
+ && SubstrateMatchesEndpointRecommendation<Substr, Ctx>;
+
 // ── Endpoint<Substr, Dir, Ctx> — the typed ctx-aware view ──────────
 
 template <class Substr, Direction Dir, ::crucible::effects::IsExecCtx Ctx>
-    requires IsBridgeableDirection<Substr, Dir>
-          && SubstrateFitsCtxResidency<Substr, Ctx>
-          && SubstrateMatchesEndpointRecommendation<Substr, Ctx>
+    requires CtxFitsEndpointMint<Substr, Dir, Ctx>
 class [[nodiscard]] Endpoint {
 public:
     using substrate_type = Substr;
@@ -353,11 +369,11 @@ private:
 
     // Factory-only construction.  The friend declaration matches
     // exactly the mint_endpoint signature so SFINAE rejects any
-    // back-door instantiation.
+    // back-door instantiation.  FIXY-V-014: single-concept gate
+    // (CtxFitsEndpointMint) + [[nodiscard]] mirror the free-function
+    // definition byte-for-byte (per §XXI requires-clause discipline).
     template <class S, Direction D, ::crucible::effects::IsExecCtx C>
-        requires IsBridgeableDirection<S, D>
-              && SubstrateFitsCtxResidency<S, C>
-              && SubstrateMatchesEndpointRecommendation<S, C>
+        requires CtxFitsEndpointMint<S, D, C>
     friend constexpr auto mint_endpoint(C const&, handle_for_t<S, D>&) noexcept;
 
     constexpr explicit Endpoint(handle_type& h) noexcept
@@ -562,18 +578,21 @@ public:
 // access AND the optional ability to upgrade to a session view later
 // via .into_session().
 //
-// Constraints checked at the call site:
+// FIXY-V-014: a single composite concept `CtxFitsEndpointMint`
+// enforces the §XXI Universal Mint requires-clause discipline.  The
+// gate decomposes into three load-bearing sub-concepts (defined
+// alongside the composite above):
 //   * IsBridgeableDirection<Substr, Dir>     — supported (S, D) pair
 //   * SubstrateFitsCtxResidency<Substr, Ctx> — substrate footprint fits
 //   * SubstrateMatchesEndpointRecommendation — selected topology matches
 //                                             Ctx's ChannelBudget shape
 
 template <class Substr, Direction Dir, ::crucible::effects::IsExecCtx Ctx>
-    requires IsBridgeableDirection<Substr, Dir>
-          && SubstrateFitsCtxResidency<Substr, Ctx>
-          && SubstrateMatchesEndpointRecommendation<Substr, Ctx>
-[[nodiscard]] constexpr auto
-mint_endpoint(Ctx const&, handle_for_t<Substr, Dir>& handle) noexcept {
+    requires CtxFitsEndpointMint<Substr, Dir, Ctx>
+[[nodiscard]] constexpr auto mint_endpoint(
+    Ctx const&,
+    handle_for_t<Substr, Dir>& handle) noexcept
+{
     return Endpoint<Substr, Dir, Ctx>{handle};
 }
 

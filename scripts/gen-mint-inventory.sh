@@ -137,6 +137,25 @@ scan_substrate() {
             '"'*) continue ;;
         esac
 
+        # FIXY-V-014: skip `friend` declarations.  A `friend` declaration
+        # of a free-function mint inside a class body is the ACCESS-GRANT,
+        # not the canonical authorization point.  Crucially, GCC 16
+        # `-Werror=attributes` rejects `[[nodiscard]]` on a non-defining
+        # friend declaration (P2900/P3441 attribute-ignorability rules),
+        # so the friend-line ALWAYS has nd=N even when the actual mint
+        # factory definition (at module scope, later in the same TU)
+        # carries `[[nodiscard]]`.  Without this skip, the friend at
+        # `Endpoint.h:377` lex-sorts before the free-function definition
+        # at `Endpoint.h:592` (string-sort of `file:LINE` yields
+        # "377" < "592"), dedup picks the friend, and the inventory
+        # spuriously shows nd=N on a fully §XXI-compliant mint.  Friend
+        # declarations are also structurally never the §XXI grep-target
+        # (the convention is "every cross-tier composition factory MUST
+        # be named mint_<noun>" — the factory itself, not its access grant).
+        case "$stripped" in
+            'friend '*|'friend('*) continue ;;
+        esac
+
         # Extract mint name from the matched line.  awk avoids head -1 +
         # pipefail traps; rg's pattern guarantees at least one match.
         # The `(^|[^A-Za-z0-9_])` prefix is a word-boundary guard: without

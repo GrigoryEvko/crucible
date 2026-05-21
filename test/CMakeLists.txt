@@ -1996,7 +1996,7 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_channel_recv_row_drift
 # mint_swmr_stage, mint_substrate_session).  Two HS14 fixtures pin
 # the endpoint substrate-fit gate and the pipeline chain gate:
 crucible_neg_compile_fixy_test(neg_fixy_pipe_endpoint_non_bridgeable
-    "IsBridgeableDirection|constraints not satisfied|associated constraints are not satisfied")
+    "IsBridgeableDirection|CtxFitsEndpointMint|constraints not satisfied|associated constraints are not satisfied|handle_for|incomplete type")
 crucible_neg_compile_fixy_test(neg_fixy_pipe_pipeline_non_stage
     "CtxFitsPipeline|pipeline_chain|IsStage|constraints not satisfied|associated constraints are not satisfied")
 # FIXY-U-074c HS14 floor: mint_pipeline sat at HS14:1 (only non_stage).
@@ -3653,7 +3653,7 @@ crucible_neg_compile_effects_test(neg_session_mint_hotpath_hides_bg
 crucible_neg_compile_effects_test(neg_endpoint_unfit_residency
     "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
 crucible_neg_compile_effects_test(neg_endpoint_non_bridgeable_direction
-    "associated constraints are not satisfied|IsBridgeableDirection")
+    "associated constraints are not satisfied|IsBridgeableDirection|CtxFitsEndpointMint|handle_for|incomplete type")
 crucible_neg_compile_effects_test(neg_endpoint_non_exec_ctx
     "associated constraints are not satisfied|SubstrateFitsCtxResidency|IsExecCtx")
 crucible_neg_compile_effects_test(neg_endpoint_topology_recommendation_mismatch
