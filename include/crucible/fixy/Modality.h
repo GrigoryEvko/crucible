@@ -211,13 +211,24 @@ static_assert(::crucible::fixy::modality::modality_name(
     ::crucible::fixy::modality::ModalityKind::Coeffect) == "Coeffect");
 
 // ── Cardinality mirror — drives off substrate's reflection ───────
+//
+// FIXY-U-127 / U-128 / U-129 / U-130 floor-vs-ceiling split: the
+// EXACT ceiling pin (`== 6`) lives in algebra/Modality.h:181
+// colocated with the source-of-truth `modality_kind_count` constant
+// (reflection-derived from the substrate ModalityKind enum); THIS
+// fixy-side header holds only the FLOOR pin (`>= 6`) catching the
+// inverse direction — a ModalityKind enumerator removed from
+// substrate.  The structural-identity cross-check above (fixy ==
+// algebra value) stays exact since both are aliases of the same
+// reflection result.
 
 static_assert(::crucible::fixy::modality::modality_kind_count
               == ::crucible::algebra::modality_kind_count);
-static_assert(::crucible::fixy::modality::modality_kind_count == 6,
-    "fixy::modality:: surface drifted from 6 ModalityKind values — "
-    "algebra::ModalityKind enum grew/shrank; update this sentinel "
-    "AND the fixy::modality:: re-export block in lockstep.");
+static_assert(::crucible::fixy::modality::modality_kind_count >= 6,
+    "fixy::modality::modality_kind_count floor: regressed below 6 — "
+    "a ModalityKind enumerator was removed from algebra/Modality.h "
+    "without updating both the colocated ceiling pin AND this floor "
+    "witness.");
 
 constexpr int u060_concept_cardinality  = 7;  // IsModality + 6 per-form
 constexpr int u060_tag_cardinality      = 6;  // Comonad_t..Coeffect_t

@@ -200,17 +200,19 @@ static_assert(sizeof(::crucible::fixy::eff::Bg)   == 1);
 static_assert(sizeof(::crucible::fixy::eff::Init) == 1);
 static_assert(sizeof(::crucible::fixy::eff::Test) == 1);
 
-// fixy-M-05: ResourceKind cardinality witness — couples the docstring
-// claim "23 ResourceKind budget tags" to the substrate truth.  The
-// substrate already pins resource_kind_count via reflection, but a
-// fixy-side mirror guarantees that an underbump in the substrate (or a
-// new enumerator without a docstring update) breaks the build at the
-// fixy layer too.  Adding a 24th ResourceKind requires extending BOTH
-// the eff_self_test block AND the docstring tag list above.
-static_assert(::crucible::fixy::eff::resource_kind_count == 23,
-    "fixy::eff::resource_kind_count diverged from 23 — extend the "
-    "ResourceKind tag list in the Eff.h docstring in lockstep with "
-    "the substrate change.");
+// fixy-M-05 + FIXY-U-127 / U-128 / U-129 / U-130 floor-vs-ceiling
+// split: the EXACT ceiling pin (`== 23`) lives in
+// effects/Resources.h:430 colocated with the source-of-truth
+// `resource_kind_count` constant (reflection-derived from substrate
+// ResourceKind enum); THIS fixy-side header holds only the FLOOR pin
+// (`>= 23`) catching the inverse direction — a ResourceKind enumerator
+// removed from substrate without parallel docstring trim here.
+// Growth (a 24th ResourceKind) auto-tracks without touching this floor.
+static_assert(::crucible::fixy::eff::resource_kind_count >= 23,
+    "fixy::eff::resource_kind_count floor: regressed below 23 — a "
+    "ResourceKind enumerator was removed from effects/Resources.h "
+    "without updating both the colocated ceiling pin AND this floor "
+    "witness.");
 
 // Per-tag identity for every resource::* budget template — proves
 // the namespace alias surfaces every shipped tag (not just a sampled

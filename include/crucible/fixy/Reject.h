@@ -517,16 +517,19 @@ static_assert(!is_fixy_diag_v<::crucible::safety::diag::EffectRowMismatch>,
 // not-found diagnostic at the disjointness check rather than
 // silently passing.
 //
-// Cardinality sentinel (paired with Diagnostic.h's own
-// `static_assert(catalog_size == 31)`): a drift here flags the
-// fixy-side fold needs to be re-evaluated in lockstep with the
-// substrate Category enum (FOUND-E01 closure discipline).
+// FIXY-U-127 / U-128 / U-129 / U-130 floor-vs-ceiling split: the
+// EXACT ceiling pin (`== 31`) lives in safety/Diagnostic.h:1562
+// colocated with the source-of-truth `catalog_size` constant; THIS
+// fixy-side header only holds the FLOOR pin (`>= 31`) catching the
+// inverse direction — an accidental REMOVAL of a substrate Catalog
+// entry.  Per FOUND-E01 closure discipline + adaptive fold below
+// (which uses `make_index_sequence<catalog_size>` and walks however
+// many entries exist), the prior `== 31` lockstep here was vestigial.
 
-static_assert(::crucible::safety::diag::catalog_size == 31,
-    "fixy-A4-030 cardinality sentinel: safety::diag::catalog_size "
-    "drifted.  Update in lockstep with Diagnostic.h's matching "
-    "static_assert; the disjointness fold below walks every "
-    "substrate Catalog entry and must witness all 31.");
+static_assert(::crucible::safety::diag::catalog_size >= 31,
+    "fixy-A4-030 floor: safety::diag::catalog_size regressed below "
+    "31 — a Catalog entry was removed without updating both "
+    "Diagnostic.h's colocated ceiling pin AND this floor witness.");
 
 namespace detail::substrate_disjointness {
 

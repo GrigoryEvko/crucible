@@ -236,10 +236,16 @@ static_assert(Category::EffectRowMismatch ==
 static_assert(Category::LinearAliasViolation ==
               ::crucible::safety::diag::Category::LinearAliasViolation);
 
-// catalog_size frozen at 31 — bumps require coordinated Catalog +
-// Category + Diagnostic.h append-only edits.
-static_assert(catalog_size == 31,
-    "fixy::diag::catalog_size must match safety::diag::catalog_size");
+// FIXY-U-127 / U-128 / U-129 / U-130 floor-vs-ceiling split: the
+// EXACT ceiling pin (`== 31`) lives in safety/Diagnostic.h:1562
+// colocated with the source-of-truth constant; THIS fixy-side header
+// only holds the FLOOR pin (`>= 31`).  Bumps to the substrate
+// catalog are append-only and now auto-track here — only removals
+// red-light this floor.
+static_assert(catalog_size >= 31,
+    "fixy::diag::catalog_size floor: regressed below 31 — a Catalog "
+    "entry was removed without updating both Diagnostic.h's "
+    "colocated ceiling pin AND this floor witness.");
 
 // Tag-class identity.
 static_assert(std::is_same_v<HotPathViolation,

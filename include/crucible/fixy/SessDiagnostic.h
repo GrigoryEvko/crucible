@@ -177,13 +177,21 @@ static_assert(std::is_same_v<
 
 // ── E. Catalog / catalog_size / 23-tag triple cross-check ──────────
 //
-// The Catalog tuple's arity, catalog_size, and the count of tag
-// using-decls in this header must agree.  Any tag added to the
-// substrate without a using-decl here (or vice versa) breaks one leg.
-static_assert(catalog_size == 23,
-    "fixy::sess::diagnostic::catalog_size must stay 23 — a tag was "
-    "added/removed in SessionDiagnostic.h.");
-static_assert(std::tuple_size_v<Catalog> == 23);
+// The Catalog tuple's arity and catalog_size must agree (structural
+// identity — kept exact since both are derived from the same tuple
+// type in this header).  The literal `23` lockstep with substrate is
+// the U-130 floor-vs-ceiling target: the EXACT ceiling (`== 23`)
+// lives in sessions/SessionDiagnostic.h:742 colocated with the
+// source-of-truth Catalog tuple; THIS fixy-side header holds only
+// the FLOOR pin (`>= 23`) catching the inverse direction (a tag
+// removed from the substrate Catalog).
+static_assert(catalog_size >= 23,
+    "fixy::sess::diagnostic::catalog_size floor: regressed below 23 "
+    "— a tag was removed from SessionDiagnostic.h's Catalog without "
+    "updating both the colocated ceiling pin AND this floor witness.");
+static_assert(std::tuple_size_v<Catalog> >= 23,
+    "fixy::sess::diagnostic::Catalog tuple-size floor: same removal "
+    "drift as above, expanded to the structural-identity form.");
 static_assert(std::tuple_size_v<Catalog> == catalog_size,
     "Catalog arity and catalog_size must agree through the fixy path.");
 static_assert(std::is_same_v<std::tuple_element_t<8, Catalog>, SubtypeMismatch>,
