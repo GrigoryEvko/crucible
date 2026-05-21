@@ -18,15 +18,18 @@ factory is named `mint_<noun>`.  Each row records:
 |---|---|
 | `mint_name` | The factory's identifier. |
 | `file:line` | Substrate declaration site (canonical). |
-| `nd cx ne rq cb` | §XXI compliance flags: `[[nodiscard]]` / `constexpr` (or `consteval`) / `noexcept` / `requires`-clause / ctx-bound (vs token). `Y` = present, `-` = absent. |
-| `fixy` | fixy:: re-export site (`include/crucible/fixy/...`) or `[✗ NO-FIXY]` gap. |
+| `nd cx ne rq` | §XXI compliance flags: `[[nodiscard]]` / `constexpr` (or `consteval`) / `noexcept` / `requires`-clause.  `Y` = present, `-` = absent. |
+| `cb` | Authorization shape: `ctx` (ctx-bound mint, `Ctx const&` first parameter), `token` (token mint, derives authority from a parent token), or `member` (class-method mint — see "Member-function mints" section below). |
+| `fixy` | fixy:: re-export site (`include/crucible/fixy/...`) or `[✗ NO-FIXY]` gap.  Inapplicable for the `member` row (class-method mints cannot be `using`-re-exported at namespace scope). |
 | `HS14` | Count of neg-compile fixtures across all `test/*_neg/` trees (fixy_neg, warden_neg, perf_neg, effects_neg, safety_neg, …) mentioning this mint (HS14 floor is 2). |
 
 Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
-appear as `-` in the flag columns.
+appear as `-` in the flag columns.  The auditor surface for member-function
+mints lives in a separate "Member-function mints" section after the substrate
+trees (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T03:21:42Z`.
+Snapshot generated: `2026-05-21T03:37:58Z`.
 
 ## bridges/
 
@@ -175,8 +178,34 @@ Snapshot generated: `2026-05-21T03:21:42Z`.
 | `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h:271` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
 | `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h:461` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
 
+## Member-function mints
+
+These §XXI mints are class methods, not namespace-level free
+functions.  They CANNOT be `using`-re-exported through fixy::
+(a using-declaration moves a free-function NAME into another
+namespace, but a member function's authority is the object
+whose method it is).  This section is the §XXI grep-target for
+member-function mints — the inventory cell for "fixy re-export"
+is structurally inapplicable, but `nd cx ne rq` compliance is
+still audited, and HS14 fixture coverage is still counted.
+
+The `cb` column carries `member` (instead of `ctx` / `token`)
+to distinguish this third authorization shape.
+
+| class::mint_name | file:line | nd | cx | ne | rq | cb | HS14 |
+|---|---|---|---|---|---|---|---|
+| `Cipher::mint_open_view` | `include/crucible/Cipher.h:242` | Y | - | Y | - | member | HS14: 17 |
+| `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h:463` | Y | - | Y | - | member | HS14: 0 ⚠ |
+| `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h:469` | Y | - | Y | - | member | HS14: 3 |
+| `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h:320` | Y | - | Y | - | member | HS14: 0 ⚠ |
+| `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h:295` | Y | - | Y | - | member | HS14: 0 ⚠ |
+| `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h:398` | Y | - | Y | - | member | HS14: 0 ⚠ |
+| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h:155` | Y | - | Y | - | member | HS14: 0 ⚠ |
+| `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h:161` | Y | - | Y | - | member | HS14: 3 |
+
 ## Summary
 
 - Total substrate mints: 102
 - Missing fixy re-export: 14
+- Member-function mints: 8 (separate §XXI grep-target — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

@@ -168,6 +168,95 @@ scan_substrate() {
     )
 }
 
+# ── Scan top-level headers for class-member mint_X declarations ──────
+# FIXY-U-118b (Part 2): member-function mints are CLASS METHODS (e.g.
+# `Cipher::mint_open_view`, `ReplayEngine::mint_active_view`).  They
+# CANNOT be `using`-re-exported at namespace scope — a `using`-decl
+# moves a free-function NAME into another namespace, but a member
+# function's authority is the object whose method it is.  Therefore the
+# §XXI authorization-point grep-target lives at the class-method
+# declaration site itself, and the "fixy re-export" cell is structurally
+# inapplicable.
+#
+# This scanner discovers them by walking `include/crucible/*.h` top-level
+# files (the substrate trees scanned above never contain top-level
+# headers — they live under safety/, sessions/, etc.) plus a curated set
+# of inner trees where member-function mints have been observed.  For
+# each `^\s+\[\[nodiscard\]\]…mint_X(` match, it reverse-scans for the
+# enclosing `^(class|struct) … NAME` declaration, stripping known
+# `CRUCIBLE_*` annotation macros (CRUCIBLE_OWNER, CRUCIBLE_API, …).
+#
+# Emits TAB-separated rows:
+#   class_name<TAB>mint_name<TAB>file:line<TAB>nd<TAB>cx<TAB>ne<TAB>rq<TAB>cb
+scan_member_function_mints() {
+    local files=()
+    local f
+    # Top-level Crucible headers (Cipher.h, Vigil.h, PoolAllocator.h,
+    # ReplayEngine.h, CKernel.h, SchemaTable.h, CrucibleContext.h, ...)
+    # are not part of any substrate tree in `trees=()`.  Scan them here.
+    for f in "$scan_root"/include/crucible/*.h; do
+        [[ -f "$f" ]] && files+=("$f")
+    done
+    [[ ${#files[@]} -eq 0 ]] && return 0
+
+    while IFS=: read -r file line text; do
+        # Same line-skip discipline as scan_substrate: drop comments and
+        # string-literal continuations.  The leading-whitespace +
+        # `[[nodiscard]]` anchor of the rg pattern already excludes
+        # `return ...` and `auto x = ...` call sites, so those cases
+        # never reach this filter.
+        local stripped="${text#"${text%%[![:space:]]*}"}"
+        case "$stripped" in
+            '//'*|'///'*|'*'*|'/*'*) continue ;;
+            '"'*) continue ;;
+        esac
+
+        # Extract mint name from text.  Awk regex does NOT support
+        # `\b` as word-boundary (awk treats `\b` as literal backspace,
+        # 0x08); use the same explicit-character-class trick scan_substrate
+        # uses — `(^|[^A-Za-z0-9_])` left anchor, with a trailing `(`
+        # right anchor to land on the actual factory token (avoids
+        # matching `mint_*_key` member of a passkey class declared
+        # earlier in the same line).
+        local name
+        name="$(awk 'match($0, /(^|[^A-Za-z0-9_])mint_[a-z0-9_]+[[:space:]]*\(/) {
+                         s = substr($0, RSTART, RLENGTH);
+                         sub(/^[^A-Za-z0-9_]*/, "", s);
+                         sub(/[[:space:]]*\(.*$/, "", s);
+                         print s; exit }' <<<"$text")"
+        [[ -z "$name" ]] && continue
+
+        # Walk forward through $file recording the most recent column-0
+        # `class|struct NAME` declaration; print it when line number
+        # reaches the mint's line.  CRUCIBLE_OWNER / CRUCIBLE_API macros
+        # are stripped before the name match so `class CRUCIBLE_OWNER
+        # Cipher {` resolves to "Cipher" (not the macro name).
+        local class_name
+        class_name="$(awk -v target="$line" '
+            /^(class|struct)[[:space:]]/ {
+                cleaned = $0
+                gsub(/CRUCIBLE_[A-Z_]+[[:space:]]+/, "", cleaned)
+                if (match(cleaned, /^(class|struct)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)/, m)) {
+                    last_class = m[2]
+                }
+            }
+            NR == target { print last_class; exit }
+        ' "$file")"
+
+        [[ -z "$class_name" ]] && class_name="(unknown)"
+
+        local quals
+        quals="$(extract_qualifiers "$file" "$line")"
+
+        local rel="${file#"$scan_root"/}"
+        printf '%s\t%s\t%s:%s\t%s\n' "$class_name" "$name" "$rel" "$line" "$quals"
+    done < <(
+        rg -nP --no-heading \
+           '^\s+\[\[nodiscard\]\][^{]*\bmint_[a-z0-9_]+\s*\(' \
+           "${files[@]}" 2>/dev/null || true
+    )
+}
+
 # ── Cross-reference one mint_name into fixy/ for re-export status ────
 # Returns: fixy_path (e.g. "include/crucible/fixy/Sess.h:123") or empty.
 # We accept the FIRST match (sorted by file then line) as the canonical
@@ -314,13 +403,16 @@ factory is named \`mint_<noun>\`.  Each row records:
 |---|---|
 | \`mint_name\` | The factory's identifier. |
 | \`file:line\` | Substrate declaration site (canonical). |
-| \`nd cx ne rq cb\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause / ctx-bound (vs token). \`Y\` = present, \`-\` = absent. |
-| \`fixy\` | fixy:: re-export site (\`include/crucible/fixy/...\`) or \`[✗ NO-FIXY]\` gap. |
+| \`nd cx ne rq\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause.  \`Y\` = present, \`-\` = absent. |
+| \`cb\` | Authorization shape: \`ctx\` (ctx-bound mint, \`Ctx const&\` first parameter), \`token\` (token mint, derives authority from a parent token), or \`member\` (class-method mint — see "Member-function mints" section below). |
+| \`fixy\` | fixy:: re-export site (\`include/crucible/fixy/...\`) or \`[✗ NO-FIXY]\` gap.  Inapplicable for the \`member\` row (class-method mints cannot be \`using\`-re-exported at namespace scope). |
 | \`HS14\` | Count of neg-compile fixtures across all \`test/*_neg/\` trees (fixy_neg, warden_neg, perf_neg, effects_neg, safety_neg, …) mentioning this mint (HS14 floor is 2). |
 
 Gap markers: \`[✗ NO-FIXY]\` (substrate mint not re-exported through fixy::),
 \`[⚠ <2 HS14]\` (HS14 fixture floor not met).  §XXI compliance shortfalls
-appear as \`-\` in the flag columns.
+appear as \`-\` in the flag columns.  The auditor surface for member-function
+mints lives in a separate "Member-function mints" section after the substrate
+trees (FIXY-U-118b).
 
 Snapshot generated: \`$generated_at\`.
 
@@ -367,10 +459,55 @@ HEADER
         [[ -z "$fixy" ]] && violation_count=$((violation_count + 1))
     done <"$inventory_tmp"
 
+    # ── Member-function mints (FIXY-U-118b Part 2) ───────────────────
+    # Class-method mint factories live under a distinct section because
+    # they cannot be `using`-re-exported at namespace scope.  See
+    # scan_member_function_mints() above for the discovery + class-name
+    # resolution algorithm.  The "fixy" cell is structurally inapplicable
+    # for this surface — auditors verify §XXI nodiscard/constexpr/noexcept
+    # compliance at the class-method declaration site itself.
+    local mf_rows mf_count=0
+    mf_rows="$(scan_member_function_mints | sort -t$'\t' -k1,1 -k2,2 -k3,3)"
+    if [[ -n "$mf_rows" ]]; then
+        printf '\n## Member-function mints\n\n'
+        printf 'These §XXI mints are class methods, not namespace-level free\n'
+        printf 'functions.  They CANNOT be `using`-re-exported through fixy::\n'
+        printf '(a using-declaration moves a free-function NAME into another\n'
+        printf 'namespace, but a member function'\''s authority is the object\n'
+        printf 'whose method it is).  This section is the §XXI grep-target for\n'
+        printf 'member-function mints — the inventory cell for "fixy re-export"\n'
+        printf 'is structurally inapplicable, but `nd cx ne rq` compliance is\n'
+        printf 'still audited, and HS14 fixture coverage is still counted.\n'
+        printf '\n'
+        printf 'The `cb` column carries `member` (instead of `ctx` / `token`)\n'
+        printf 'to distinguish this third authorization shape.\n\n'
+        printf '| class::mint_name | file:line | nd | cx | ne | rq | cb | HS14 |\n'
+        printf '|---|---|---|---|---|---|---|---|\n'
+        while IFS=$'\t' read -r class_name name fileline nd cx ne rq cb; do
+            [[ -z "$class_name" ]] && continue
+            local mf_nd_cell="-" mf_cx_cell="-" mf_ne_cell="-" mf_rq_cell="-"
+            [[ "$nd" == "1" ]] && mf_nd_cell="Y"
+            [[ "$cx" == "1" ]] && mf_cx_cell="Y"
+            [[ "$ne" == "1" ]] && mf_ne_cell="Y"
+            [[ "$rq" == "1" ]] && mf_rq_cell="Y"
+
+            local mf_hs14 mf_hs14_cell
+            mf_hs14="$(hs14_count_for "$name")"
+            mf_hs14_cell="HS14: $mf_hs14"
+            (( mf_hs14 < 2 )) && mf_hs14_cell="HS14: $mf_hs14 ⚠"
+
+            printf '| `%s::%s` | `%s` | %s | %s | %s | %s | %s | %s |\n' \
+                "$class_name" "$name" "$fileline" "$mf_nd_cell" "$mf_cx_cell" \
+                "$mf_ne_cell" "$mf_rq_cell" "member" "$mf_hs14_cell"
+            mf_count=$((mf_count + 1))
+        done <<<"$mf_rows"
+    fi
+
     printf '\n'
     printf '## Summary\n\n'
     printf -- '- Total substrate mints: %d\n' "$(wc -l <"$inventory_tmp")"
     printf -- '- Missing fixy re-export: %d\n' "$violation_count"
+    printf -- '- Member-function mints: %d (separate §XXI grep-target — see above)\n' "$mf_count"
     printf -- '- See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.\n'
 }
 
