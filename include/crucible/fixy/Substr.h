@@ -67,6 +67,7 @@
 #include <crucible/concurrent/MpmcRing.h>                   // FIXY-V-046: MpmcValue concept
 #include <crucible/concurrent/PermissionedCalendarGrid.h>   // FIXY-V-050: substrate-direct single-grid calendar surface
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>  // FIXY-V-047: substrate-direct work-stealing surface
+#include <crucible/concurrent/PermissionedMetaLog.h>       // FIXY-V-051: substrate-direct MetaLog SPSC surface
 #include <crucible/concurrent/PermissionedMpmcChannel.h>    // FIXY-V-046: substrate-direct MPMC surface
 #include <crucible/concurrent/PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>  // FIXY-V-049: substrate-direct sharded-calendar-grid surface
@@ -370,6 +371,64 @@ using ConsumerProto =
 template <typename Log>
 concept MetaLogSessionSurface =
     ::crucible::safety::proto::metalog_session::MetaLogSessionSurface<Log>;
+
+// ── FIXY-V-051: substrate-direct surface enrichment ──────────────
+//
+// Mirror of V-045's spsc:: / V-047's chaselev:: / V-049's shardcal::
+// / V-050's calendar_grid:: surface treatment.  PermissionedMetaLog
+// is THE production TensorMeta side-channel: linear single-producer
+// (foreground recording thread appends) × linear single-consumer
+// (background drain thread reads).  The substrate decorates the
+// already-extant ::crucible::MetaLog buffer rather than owning its
+// storage — the PermissionedMetaLog<UserTag> instance stores only a
+// MetaLog& reference plus an empty Permission token (EBO-collapsed),
+// keeping handles pointer-sized.
+//
+// Pre-V-051 the metalog:: sub-namespace surfaced only the four
+// session-layer mints (mint_metalog_{producer,consumer}[ _session])
+// — callers who wanted to construct a PermissionedMetaLog, mint its
+// Whole permission, or split into Producer/Consumer halves had to
+// descend into <crucible/concurrent/PermissionedMetaLog.h> directly.
+// V-051 closes the discoverability gap by re-exporting the substrate
+// primitive, its three-tag permission tree, and the MetaIndex strong
+// type returned by try_append.
+//
+// Surface (additive, all alias-template / using-decl — pure name
+// lookup, zero runtime cost).  No new mint factories — endpoint and
+// session mints already shipped from sessions/MetaLogSession.h.
+
+// Substrate alias — full re-export including default UserTag = void.
+// Value type is fixed to ::crucible::TensorMeta by the substrate (the
+// MetaLog itself is anchored to TensorMeta storage).
+template <typename UserTag = void>
+using PermissionedMetaLog =
+    ::crucible::concurrent::PermissionedMetaLog<UserTag>;
+
+// MetaIndex strong ID re-export — the type returned by
+// ProducerHandle::try_append (signals start index of a bulk append).
+// Bumps substr_metalog_using cardinality 4 → 5.  V-051-unique: no
+// other substr sub-namespace re-exports a strong-ID return type via
+// using-decl, mirroring how V-049 exposed ShardedCalendarKeyExtractorOf
+// and V-050 exposed KeyExtractorOf — each cell brings a substrate-
+// specific name into reach.
+using ::crucible::MetaIndex;
+
+// metalog_tag sub-namespace — Whole / Producer / Consumer permission
+// tag templates.  Although the linear × linear SPSC split is the
+// canonical CSL shape, the substrate ships all three tags + a
+// splits_into<Whole, Producer, Consumer> specialization so callers
+// may use the standard mint_permission_split rail.
+namespace metalog_tag {
+template <typename UserTag>
+using Whole =
+    ::crucible::concurrent::metalog_tag::Whole<UserTag>;
+template <typename UserTag>
+using Producer =
+    ::crucible::concurrent::metalog_tag::Producer<UserTag>;
+template <typename UserTag>
+using Consumer =
+    ::crucible::concurrent::metalog_tag::Consumer<UserTag>;
+}  // namespace metalog_tag
 
 // Mint factories.
 using ::crucible::safety::proto::metalog_session::mint_metalog_producer;
@@ -1063,6 +1122,14 @@ using ::crucible::concurrent::SubstrateBenefitsFromParallelism;
 // generic KeyExtractorOf concept (V-049 sharded variant uses the
 // qualified-name ShardedCalendarKeyExtractorOf to coexist without
 // collision).
+// metalog::MetaIndex using-decl added by FIXY-V-051 bumped metalog
+// 4 → 5.  Unlike V-045..V-050 which surfaced a per-substrate concept,
+// MetaLog's value_type is hard-coded to TensorMeta (no MetaLogValue
+// payload predicate exists), so the V-051-unique cardinality bump
+// is the substrate's strong-ID return type ::crucible::MetaIndex
+// (returned by ProducerHandle::try_append).  Substrate alias template
+// + metalog_tag tree alias templates do NOT count toward the
+// cardinality witness; only the MetaIndex using-decl does.
 //
 // Same recipe as fixy/Pipe.h / fixy/Struct.h: type-identity witnesses
 // for representative items + per-sub-namespace cardinality mirrors.
@@ -1642,12 +1709,90 @@ static_assert(std::is_same_v<typename GridViaFixy::value_type, int>);
 
 }  // namespace v050
 
+// ── FIXY-V-051: MetaLog substrate-direct surface witnesses ───────
+//
+// Same recipe as v045::..v050:: above.  Pin every V-051 addition:
+// substrate alias identity, MetaIndex type identity (V-051-unique
+// cardinality bump — see U-103 prose above), metalog_tag tree
+// identity, member-typedef propagation, value_type identity (fixed
+// to TensorMeta by substrate), MetaLogSessionSurface admission.
+
+namespace v051 {
+
+struct V051ProbeUserTag {};
+
+// 1. Substrate alias identity — fixy path === concurrent path.
+using LogViaFixy = ::crucible::fixy::substr::metalog::PermissionedMetaLog<
+    V051ProbeUserTag>;
+using LogViaConcurrent = ::crucible::concurrent::PermissionedMetaLog<
+    V051ProbeUserTag>;
+static_assert(std::is_same_v<LogViaFixy, LogViaConcurrent>,
+    "fixy::substr::metalog::PermissionedMetaLog must alias the substrate.");
+
+// 2. MetaIndex strong-ID identity — V-051-unique cardinality bump.
+// fixy:: namespace's MetaIndex must alias the canonical
+// ::crucible::MetaIndex returned by ProducerHandle::try_append.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::metalog::MetaIndex,
+    ::crucible::MetaIndex>,
+    "fixy::substr::metalog::MetaIndex must alias ::crucible::MetaIndex.");
+
+// 3. Tag template identity — Whole/Producer/Consumer alias the
+// substrate's metalog_tag tree exactly.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::metalog::metalog_tag::Whole<V051ProbeUserTag>,
+    ::crucible::concurrent::metalog_tag::Whole<V051ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::metalog::metalog_tag::Producer<V051ProbeUserTag>,
+    ::crucible::concurrent::metalog_tag::Producer<V051ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::metalog::metalog_tag::Consumer<V051ProbeUserTag>,
+    ::crucible::concurrent::metalog_tag::Consumer<V051ProbeUserTag>>);
+
+// 4. Tag identity propagates through LogViaFixy's member typedefs.
+static_assert(std::is_same_v<
+    typename LogViaFixy::whole_tag,
+    ::crucible::fixy::substr::metalog::metalog_tag::Whole<V051ProbeUserTag>>);
+static_assert(std::is_same_v<
+    typename LogViaFixy::producer_tag,
+    ::crucible::fixy::substr::metalog::metalog_tag::Producer<V051ProbeUserTag>>);
+static_assert(std::is_same_v<
+    typename LogViaFixy::consumer_tag,
+    ::crucible::fixy::substr::metalog::metalog_tag::Consumer<V051ProbeUserTag>>);
+
+// 5. MetaLogSessionSurface admits the representative log.  The
+// surface concept is a NOMINAL specialization-trait (admits only
+// PermissionedMetaLog<...>), and the fixy:: alias resolves exactly
+// to that substrate type, so the trait fires.
+static_assert(
+    ::crucible::fixy::substr::metalog::MetaLogSessionSurface<LogViaFixy>);
+
+// 6. value_type identity — substrate's value_type == TensorMeta ==
+// fixy's MetaLogRecord alias.
+static_assert(std::is_same_v<
+    typename LogViaFixy::value_type,
+    ::crucible::TensorMeta>);
+static_assert(std::is_same_v<
+    typename LogViaFixy::value_type,
+    ::crucible::fixy::substr::metalog::MetaLogRecord>);
+
+// 7. Protocol aliases unchanged through V-051 (pre-existing
+// re-exports remain canonical).
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::metalog::ProducerProto,
+    ::crucible::safety::proto::metalog_session::ProducerProto>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::metalog::ConsumerProto,
+    ::crucible::safety::proto::metalog_session::ConsumerProto>);
+
+}  // namespace v051
+
 // ── Per-sub-namespace cardinality witnesses ──────────────────────
 
 constexpr int substr_spsc_using                  = 3;
 constexpr int substr_swmr_using                  = 6;
 constexpr int substr_chaselev_using              = 5;
-constexpr int substr_metalog_using               = 4;
+constexpr int substr_metalog_using               = 5;
 constexpr int substr_chainedge_using             = 4;
 constexpr int substr_mpmc_using                  = 5;
 constexpr int substr_calendar_grid_using         = 5;
@@ -1663,8 +1808,8 @@ constexpr int substr_total_using =
     substr_sharded_grid_using + substr_snapshot_using +
     substr_outer_using;
 
-static_assert(substr_total_using == 49,
-    "fixy::substr:: using-decl surface drifted from 49 — Substr.h "
+static_assert(substr_total_using == 50,
+    "fixy::substr:: using-decl surface drifted from 50 — Substr.h "
     "sub-namespace re-exports and this sentinel must update in lockstep.");
 
 // ── FIXY-U-051: topology + ctx-fit concept-surface witnesses ───────

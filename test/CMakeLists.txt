@@ -209,6 +209,7 @@ crucible_test(test_fixy_substr_chaselev_permissioned_chase_lev_deque) # FIXY-V-0
 crucible_test(test_fixy_substr_sharded_grid_permissioned_sharded_grid) # FIXY-V-048 — fixy::substr::sharded_grid:: PermissionedShardedGrid surface
 crucible_test(test_fixy_substr_shardcal_permissioned_sharded_calendar_grid) # FIXY-V-049 — fixy::substr::sharded_calendar_grid:: PermissionedShardedCalendarGrid surface
 crucible_test(test_fixy_substr_calendar_permissioned_calendar_grid) # FIXY-V-050 — fixy::substr::calendar_grid:: PermissionedCalendarGrid surface
+crucible_test(test_fixy_substr_metalog_permissioned_metalog) # FIXY-V-051 — fixy::substr::metalog:: PermissionedMetaLog surface
 crucible_test(test_fixy_sess)
 crucible_test(test_fixy_sess_phi)
 crucible_test(test_fixy_sess_patterns)  # FIXY-AUDIT-C6
