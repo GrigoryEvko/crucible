@@ -297,6 +297,35 @@ static_assert( is_subtype_sync_v<Send<Refined<exact_size<8>, std::span<int>>, En
 static_assert(!is_subtype_sync_v<Send<Refined<exact_size<0>, std::span<int>>, End>,
                                  Send<Refined<non_empty, std::span<int>>, End>>);
 
+// ── FIXY-U-167 — DivisibleBy subsumption (end-to-end) ──────────────
+//
+// Witness DivisibleBy<N>⇒DivisibleBy<M> when M divides N flow through
+// Send-covariance.  Mirrors the Aligned<N>⇒Aligned<M> path but on
+// integer-modulo: a SIMD-lane trip count gated by divisible_by<16>
+// (AVX-512) structurally strengthens to a consumer expecting
+// divisible_by<8> (AVX2) or divisible_by<4> (SSE) without
+// re-validation.
+
+// Reflexive (N=M=4):
+static_assert( is_subtype_sync_v<Send<Refined<divisible_by<4>, int>, End>,
+                                 Send<Refined<divisible_by<4>, int>, End>>);
+
+// SIMD chain — AVX-512 trip count satisfies AVX2 and SSE:
+static_assert( is_subtype_sync_v<Send<Refined<divisible_by<16>, int>, End>,
+                                 Send<Refined<divisible_by<8>, int>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<divisible_by<16>, int>, End>,
+                                 Send<Refined<divisible_by<4>, int>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<divisible_by<8>, int>, End>,
+                                 Send<Refined<divisible_by<4>, int>, End>>);
+
+// Soundness: M does NOT divide N must NOT propagate.
+static_assert(!is_subtype_sync_v<Send<Refined<divisible_by<6>, int>, End>,
+                                 Send<Refined<divisible_by<4>, int>, End>>);
+
+// Soundness: looser divisor does NOT imply tighter divisor (N < M).
+static_assert(!is_subtype_sync_v<Send<Refined<divisible_by<4>, int>, End>,
+                                 Send<Refined<divisible_by<8>, int>, End>>);
+
 // ── Runtime scenario: Vessel-FFI flow ──────────────────────────────
 
 // Mock dispatch request — the kind of value that arrives at the FFI

@@ -536,6 +536,68 @@ static_assert(!implies_v<exact_size<0>, non_empty>,
     "(c.size() == 0 ⇒ c.empty() per [container.reqmts]; soundness "
     "— the N ≥ 1 gate matches LengthGe⇒non_empty discipline).");
 
+// ── FIXY-U-167 — DivisibleBy subsumption lattice ───────────────────
+//
+// DivisibleBy<N> ⇒ DivisibleBy<M>   when N ≥ M ∧ M > 0 ∧ (N mod M = 0)
+//
+// Symmetric to Refined.h's `Aligned<N> ⇒ Aligned<M>` lattice (same
+// `N ≥ M ∧ N mod M = 0` shape) but on the integer-modulo axis rather
+// than the pointer-alignment axis.  Closes the structural gap: today
+// `Aligned<N>` ships a subsumption axiom but `DivisibleBy<N>` does
+// not, even though their underlying mathematical relations are
+// identical (both are "x % K == 0").
+//
+// Soundness:
+//   x divisible by N ⇒ x = N*k for some k ∈ ℤ
+//   N divisible by M ⇒ N = M*j for some j ∈ ℤ⁺   (j ≥ 1 because M > 0 ∧ N ≥ M)
+//   ⇒ x = M*j*k = M*(j*k) ⇒ x divisible by M    ∎
+//
+// The `M > 0` clause matches the `divisible_by<0>` static_assert in
+// the predicate body — modulo-by-zero is UB, so M = 0 is rejected at
+// the lattice level before it can reach the predicate.  The `N ≥ M`
+// clause follows from `N mod M = 0 ∧ M > 0` (the smallest non-zero
+// multiple of M is M itself); shipping it explicitly mirrors
+// Aligned's discipline and gives the requires-clause a single-pass
+// readability.
+//
+// Load-bearing for SIMD trip-count gates per the predicate's own
+// doc-block: a `Refined<divisible_by<16>, std::size_t>` SIMD-lane
+// count structurally strengthens to `Refined<divisible_by<8>, ...>`
+// or `Refined<divisible_by<4>, ...>` consumers, mirroring the
+// pointer-alignment chain (CacheLineAligned ⇒ AlignedTo<32>).
+
+template <auto N, auto M>
+    requires (N >= M && M > decltype(M){0} && (N % M == decltype(N){0}))
+struct predicate_implies<DivisibleBy<N>, DivisibleBy<M>> : std::true_type {};
+
+// FIXY-U-167 closure-axiom witnesses for the new propagation paths.
+
+// DivisibleBy ⇒ DivisibleBy: reflexive, transitive, and SIMD-shape.
+static_assert(implies_v<divisible_by<4>, divisible_by<4>>,
+    "FIXY-U-167: divisible_by<N> ⇒ divisible_by<N> (reflexive — "
+    "N mod N = 0, N ≥ N).");
+static_assert(implies_v<divisible_by<8>, divisible_by<4>>,
+    "FIXY-U-167: divisible_by<8> ⇒ divisible_by<4> "
+    "(8 = 4*2; multiple of 8 is multiple of 4).");
+static_assert(implies_v<divisible_by<16>, divisible_by<4>>,
+    "FIXY-U-167: divisible_by<16> ⇒ divisible_by<4> "
+    "(16 = 4*4; AVX-512 trip count ⇒ SSE trip count).");
+static_assert(implies_v<divisible_by<16>, divisible_by<8>>,
+    "FIXY-U-167: divisible_by<16> ⇒ divisible_by<8> "
+    "(16 = 8*2; AVX-512 trip count ⇒ AVX2 trip count).");
+
+// Soundness: M does NOT divide N must NOT propagate.
+static_assert(!implies_v<divisible_by<6>, divisible_by<4>>,
+    "FIXY-U-167: divisible_by<6> must NOT imply divisible_by<4> "
+    "(6 mod 4 = 2 ≠ 0; e.g. x=6 satisfies divisible_by<6> but not "
+    "divisible_by<4>; soundness — the N mod M = 0 gate is "
+    "load-bearing).");
+static_assert(!implies_v<divisible_by<4>, divisible_by<8>>,
+    "FIXY-U-167: divisible_by<4> must NOT imply divisible_by<8> "
+    "(N=4 < M=8; the N ≥ M gate excludes this — looser divisor "
+    "doesn't imply tighter divisor; e.g. x=4 satisfies "
+    "divisible_by<4> but not divisible_by<8>).");
+
 // ── Self-test block ─────────────────────────────────────────────────
 //
 // Per the algebra/effects runtime-smoke-test discipline (memory rule
