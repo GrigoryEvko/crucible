@@ -29,7 +29,7 @@ appear as `-` in the flag columns.  The auditor surface for member-function
 mints lives in a separate "Member-function mints" section after the substrate
 trees (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T04:38:52Z`.
+Snapshot generated: `2026-05-21T04:48:18Z`.
 
 ## bridges/
 
@@ -78,15 +78,15 @@ Snapshot generated: `2026-05-21T04:38:52Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_lock_contention` | `include/crucible/perf/LockContention.h:326` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:120` | HS14: 2 |
-| `mint_pmu_sample` | `include/crucible/perf/PmuSample.h:348` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:128` | HS14: 2 |
-| `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h:353` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:136` | HS14: 2 |
-| `mint_sched_tp_btf` | `include/crucible/perf/SchedTpBtf.h:189` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:144` | HS14: 2 |
-| `mint_sense_hub` | `include/crucible/perf/SenseHub.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:152` | HS14: 2 |
+| `mint_lock_contention` | `include/crucible/perf/LockContention.h:326` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:120` | HS14: 4 |
+| `mint_pmu_sample` | `include/crucible/perf/PmuSample.h:348` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:128` | HS14: 4 |
+| `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h:353` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:136` | HS14: 4 |
+| `mint_sched_tp_btf` | `include/crucible/perf/SchedTpBtf.h:189` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:144` | HS14: 4 |
+| `mint_sense_hub` | `include/crucible/perf/SenseHub.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:152` | HS14: 4 |
 | `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h:589` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h:312` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:160` | HS14: 2 |
-| `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h:198` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:168` | HS14: 2 |
-| `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h:323` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:180` | HS14: 2 |
+| `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h:312` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:160` | HS14: 4 |
+| `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h:198` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:168` | HS14: 4 |
+| `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h:323` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:180` | HS14: 4 |
 
 ## permissions/
 
