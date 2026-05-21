@@ -24,6 +24,7 @@
 //                                    — typed publish/commit cell (FIXY-U-016b)
 //   safety::AlignedBuffer<T, Align>  — RAII over-aligned heap buffer (FIXY-U-016b)
 //   safety::HugePageBuffer<T>        — 2-MB-aligned RAII buffer (FIXY-V-034)
+//   safety::OwnedFile                — std::FILE* RAII wrapper (FIXY-V-037-audit / V-032)
 //   safety::LazyEstablishedChannel<Proto, Resource>
 //                                    — session-handshake-backed channel
 //
@@ -61,6 +62,7 @@
 #include <crucible/handles/PublishOnce.h>
 #include <crucible/safety/AlignedBuffer.h>     // FIXY-U-016b — RAII over-aligned buffer
 #include <crucible/safety/HugePageBuffer.h>    // FIXY-V-034 — 2-MB-aligned RAII buffer
+#include <crucible/safety/OwnedFile.h>         // FIXY-V-032 audit — std::FILE* RAII
 #include <crucible/safety/PublishCommit.h>     // FIXY-U-016b — typed publish/commit cell
 
 #include <type_traits>   // dual-export sentinel uses std::is_same_v
@@ -111,6 +113,18 @@ using ::crucible::safety::AlignedBuffer;
 // Used by MetaLog (TensorMeta ring backing) and the perf hub
 // hugepage-arena consumers tracked by FIXY-V-236.
 using ::crucible::safety::HugePageBuffer;
+
+// ── OwnedFile — std::FILE* RAII wrapper ────────────────────────────
+// (FIXY-V-032-audit) Move-only RAII over stdio's `std::FILE*`.  Copy
+// = deleted (double-close on destruction); move = exchange-into-null;
+// dtor calls std::fclose() iff non-null.  Substrate was shipped by
+// FIXY-V-032 (the TraceLoader.h migration) but the fixy::handle::
+// alias was missed at the time — TraceLoader.h's
+// `::crucible::safety::OwnedFile` reach-through tripped the FIXY-U-096z
+// fixy_clean_headers CI guard (TraceLoader.h is on the certified
+// registry).  This alias closes that gap; existing consumers should
+// migrate to `fixy::handle::OwnedFile` per the umbrella discipline.
+using ::crucible::safety::OwnedFile;
 
 // ── PublishCommitCell<Tag, WriteAuth> — publish/commit pattern ─────
 // (FIXY-U-016b) Pinned (non-copy / non-move) atomic cell that fuses
@@ -302,6 +316,73 @@ static_assert(
     "this drifts, hugepage backing silently fails and TLB pressure "
     "regresses without any C++-level error path.");
 
+// FIXY-V-032-audit — OwnedFile identity (dual-export sentinel).
+static_assert(std::is_same_v<
+    ::crucible::fixy::handle::OwnedFile,
+    ::crucible::safety::OwnedFile>,
+    "fixy::handle::OwnedFile must alias safety::OwnedFile — RAII "
+    "close-on-dtor identity is load-bearing for TraceLoader.h's 9 "
+    "early-return paths (FIXY-V-032 substrate migration).");
+
+// FIXY-V-032-audit — LOAD-BEARING structural contracts.  OwnedFile's
+// raison-d'être is the move-only RAII discipline that makes leaking
+// std::FILE* structurally impossible.  Mirroring the substrate
+// contracts at the fixy:: boundary catches drift before any consumer
+// (TraceLoader, warden::CpuTopology, future Cipher load paths) sees a
+// regression.  Per CLAUDE.md §XIII discipline.
+//
+// Contract 1 — non-copyable.  The substrate deletes copy ctor + copy
+// assign with the reason "FILE* is unique; copy would double-close on
+// destruction"; if a future refactor accidentally re-introduces a
+// default copy ctor (e.g. by demoting `delete("...")` to `default` or
+// by composing OwnedFile into a struct that auto-generates copy), this
+// sentinel fires before the dtor runs twice on the same FILE*.
+static_assert(
+    !std::is_copy_constructible_v<::crucible::fixy::handle::OwnedFile>,
+    "fixy::handle::OwnedFile must not be copy-constructible — copying "
+    "a FILE* aliases two RAII owners that both call std::fclose() at "
+    "destruction, double-closing the stdio handle (MemSafe).");
+
+static_assert(
+    !std::is_copy_assignable_v<::crucible::fixy::handle::OwnedFile>,
+    "fixy::handle::OwnedFile must not be copy-assignable — copy-assign "
+    "would leak the LHS's existing FILE* AND double-close the RHS's.");
+
+// Contract 2 — nothrow move.  The handle must be move-into-container
+// safe (e.g. inside std::expected<OwnedFile, std::error_code> as
+// returned by open_read).  Throwing move would force expected<> into a
+// degraded valueless state on a transient stack-shuffle.
+static_assert(
+    std::is_nothrow_move_constructible_v<::crucible::fixy::handle::OwnedFile>,
+    "fixy::handle::OwnedFile must have a nothrow move constructor — "
+    "it appears inside std::expected<> and other move-only containers "
+    "that demand noexcept move for the strong exception guarantee.");
+
+static_assert(
+    std::is_nothrow_move_assignable_v<::crucible::fixy::handle::OwnedFile>,
+    "fixy::handle::OwnedFile must have a nothrow move-assign operator "
+    "for symmetric strong-guarantee handling.");
+
+// Contract 3 — nothrow dtor.  The dtor must be noexcept because it is
+// called during stack unwind on every early return; throwing here
+// would terminate under `-fno-exceptions` and propagate through stdio
+// buffers in a non-deterministic order.  fclose's errno is intentionally
+// ignored by the dtor; callers who care call close_explicit() instead.
+static_assert(
+    std::is_nothrow_destructible_v<::crucible::fixy::handle::OwnedFile>,
+    "fixy::handle::OwnedFile destructor must be noexcept — it runs on "
+    "every early-return path and stdio errors must not propagate.");
+
+// Contract 4 — zero-overhead.  The wrapper holds exactly one
+// std::FILE* (sentinel-init to nullptr) and nothing else; sizeof must
+// equal sizeof(FILE*) so the migration cost is structurally nil at
+// every call site (no extra padding, no vtable, no flag byte).
+static_assert(
+    sizeof(::crucible::fixy::handle::OwnedFile) == sizeof(std::FILE*),
+    "fixy::handle::OwnedFile must be sizeof(std::FILE*) — any inflation "
+    "means a hidden field was added that would balloon the cost of "
+    "every TraceLoader stack frame and per-call early-return path.");
+
 // FIXY-U-016c — open_read / open_write_truncate free-function identity.
 // Non-template free functions: identity verified by pointer-of-function
 // decltype equality (same technique as fixy/Wrap.h's saturating-arith
@@ -322,11 +403,12 @@ static_assert(std::is_same_v<
     "safety::open_write_truncate — Cipher spill / federation entry "
     "write path depends on identity preservation.");
 
-// Cardinality witness: 14 aliases surfaced; future additions to
+// Cardinality witness: 15 aliases surfaced; future additions to
 // handles/ MUST extend this block + add a substrate type below.
 // FIXY-V-034: bumped 13 → 14 for HugePageBuffer<T>.
-constexpr int handle_alias_cardinality = 14;
-static_assert(handle_alias_cardinality == 14,
+// FIXY-V-032-audit: bumped 14 → 15 for OwnedFile.
+constexpr int handle_alias_cardinality = 15;
+static_assert(handle_alias_cardinality == 15,
     "fixy::handle:: cardinality changed — update Handle.h sentinel "
     "block to track the substrate handles/ surface.");
 

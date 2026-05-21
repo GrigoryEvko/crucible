@@ -44,7 +44,7 @@
 #include <crucible/SchemaTable.h>
 #include <crucible/TraceRing.h>
 #include <crucible/fixy/Wrap.h>   // FIXY-U-096r: Refined / bounded_above / in_range via the fixy umbrella
-#include <crucible/safety/OwnedFile.h>  // FIXY-V-032: std::FILE* RAII — no fclose() leaks on early-return
+#include <crucible/fixy/Handle.h>       // FIXY-V-032-audit: route OwnedFile via fixy::handle::
 
 namespace crucible {
 
@@ -207,7 +207,7 @@ static_assert(std::endian::native == std::endian::little,
   // FILE* via the dtor; the 9 std::fclose() calls the previous version
   // sprinkled across error paths are now structurally unreachable as
   // a LeakSafe-axiom-violation (no path can leak the handle).
-  ::crucible::safety::OwnedFile trace_file{std::fopen(path, "rb")};
+  ::crucible::fixy::handle::OwnedFile trace_file{std::fopen(path, "rb")};
   if (!trace_file.is_open()) {
     std::fprintf(stderr, "load_trace: cannot open %s\n", path);
     return nullptr;

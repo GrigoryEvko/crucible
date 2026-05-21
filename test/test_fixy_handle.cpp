@@ -1,14 +1,15 @@
 // ── test_fixy_handle — sentinel TU for fixy/Handle.h ───────────────
 //
 // Pulls fixy/Handle.h into a TU compiled under project warning flags
-// so the header's 14 dual-export sentinels + cardinality witness
+// so the header's 15 dual-export sentinels + cardinality witness
 // execute under enforcement.  Witnesses:
 //
-//   1. Every fixy::handle::X alias resolves to safety::X (14 aliases —
+//   1. Every fixy::handle::X alias resolves to safety::X (15 aliases —
 //      Fd, FileHandle, Once, Lazy, SetOnce, OneShotFlag, PublishOnce,
 //      PublishSlot, LazyEstablishedChannel, AlignedBuffer (U-016b),
 //      PublishCommitCell (U-016b), open_read (U-016c),
-//      open_write_truncate (U-016c), HugePageBuffer (V-034)).
+//      open_write_truncate (U-016c), HugePageBuffer (V-034),
+//      OwnedFile (V-032-audit)).
 //   2. Cardinality FLOOR witness (handle_alias_cardinality >= 13)
 //      trips if a future contributor REMOVES a handle alias without
 //      updating both Handle.h's colocated ceiling AND this floor —
@@ -16,14 +17,16 @@
 //      past 13 is silent here and auto-tracked by the header's `==`.
 //   3. End-to-end RAII round-trip via the fixy:: alias proves no
 //      name-shadow drift past the sentinel — exercises FileHandle
-//      default-ctor + dtor, OneShotFlag signal/peek, and (V-034)
-//      HugePageBuffer<int>::allocate + dtor through the fixy::handle::
-//      path.
+//      default-ctor + dtor, OneShotFlag signal/peek, (V-034)
+//      HugePageBuffer<int>::allocate + dtor, and (V-032-audit)
+//      OwnedFile move semantics + release-into-fclose through the
+//      fixy::handle:: path.
 //
 // FIXY-U-016 (base) + U-016b (AlignedBuffer + PublishCommitCell) +
 // U-016c (open_read + open_write_truncate) + V-034 (HugePageBuffer) +
 // V-037 (PublishCommit pattern: structural-contract sentinels +
-// read-side API round-trip + friend-gated write-side round-trip).
+// read-side API round-trip + friend-gated write-side round-trip) +
+// V-032-audit (OwnedFile: move-only RAII + close-on-dtor witness).
 // Doc-block updated by U-131 to reflect post-U-016b/c expansion.
 
 #include <crucible/fixy/Handle.h>
@@ -31,6 +34,7 @@
 #include <atomic>       // FIXY-V-037 — std::memory_order_relaxed for cell.load
 #include <bit>          // FIXY-V-034 — std::bit_cast for pointer→uintptr_t
 #include <cstdint>      // FIXY-V-034 — std::uintptr_t for alignment check
+#include <cstdio>       // FIXY-V-032-audit — std::fopen / FILE* / std::tmpfile
 #include <type_traits>
 #include <utility>
 
@@ -139,6 +143,52 @@ struct PubCommitWriteAuth {
 struct PubCommitTag {};
 }  // namespace test_fixy_handle
 
+// FIXY-V-032-audit — OwnedFile alias identity + LOAD-BEARING structural
+// contracts mirrored at TU level under project warning flags.  Closes
+// the fixy_clean_headers CI guard regression: TraceLoader.h (on the
+// FIXY-U-096z certified registry) was reaching `::crucible::safety::
+// OwnedFile` directly because V-032 added the substrate without
+// surfacing it via fixy::handle::.
+//
+// Identity: the alias must resolve to safety::OwnedFile so that
+// existing TraceLoader / warden::CpuTopology consumers continue to
+// see the same RAII type after the migration.
+static_assert(std::is_same_v<fhand::OwnedFile, safe::OwnedFile>);
+
+// Structural contracts (4): copy-rejection (LeakSafe + MemSafe —
+// no double-close), nothrow-move (strong-guarantee container
+// compatibility — std::expected<OwnedFile, error_code>), nothrow-dtor
+// (early-return safety under -fno-exceptions), and zero-overhead
+// (sizeof == sizeof(FILE*) — no hidden cost at every TraceLoader
+// stack frame).  These re-state the substrate contracts at the alias
+// path so a future weakening that escapes the safety/ self-test
+// reddens here too.
+static_assert(
+    !std::is_copy_constructible_v<fhand::OwnedFile>,
+    "fixy::handle::OwnedFile must not be copy-constructible — copying "
+    "a FILE* would double-close at destruction (LeakSafe + MemSafe).");
+static_assert(
+    !std::is_copy_assignable_v<fhand::OwnedFile>,
+    "fixy::handle::OwnedFile must not be copy-assignable — copy-assign "
+    "leaks the LHS's existing FILE* and double-closes the RHS's.");
+static_assert(
+    std::is_nothrow_move_constructible_v<fhand::OwnedFile>,
+    "fixy::handle::OwnedFile must have a nothrow move constructor — "
+    "it appears inside std::expected<>-shaped return channels that "
+    "demand noexcept move for the strong exception guarantee.");
+static_assert(
+    std::is_nothrow_move_assignable_v<fhand::OwnedFile>,
+    "fixy::handle::OwnedFile must have a nothrow move-assign for "
+    "symmetric strong-guarantee handling.");
+static_assert(
+    std::is_nothrow_destructible_v<fhand::OwnedFile>,
+    "fixy::handle::OwnedFile destructor must be noexcept — it runs on "
+    "every early-return path and stdio errors must not propagate.");
+static_assert(
+    sizeof(fhand::OwnedFile) == sizeof(std::FILE*),
+    "fixy::handle::OwnedFile must be sizeof(std::FILE*) — any inflation "
+    "balloons the cost of every TraceLoader stack frame.");
+
 // ─── 2. Cardinality FLOOR witness mirror ──────────────────────────
 //
 // Per FIXY-U-127 / U-128 floor-vs-ceiling split: the EXACT ceiling
@@ -238,6 +288,57 @@ int main() {
         if (th::PubCommitWriteAuth::bump_once(cell) != 1)    return 17;
         if (cell.load_acquire() != 2)                        return 18;
         // Cell dtor on scope exit is trivial; no resource to free.
+    }
+    {
+        // FIXY-V-032-audit — OwnedFile RAII round-trip via fixy::handle::.
+        // Witnesses the move-only ownership + close-on-dtor discipline
+        // that V-032 introduced at the substrate and V-032-audit
+        // surfaced at the umbrella.  std::tmpfile() creates a
+        // self-deleting temporary FILE* that survives the entire stdio
+        // round-trip without touching the real filesystem — perfect
+        // for a deterministic test (no path collisions, no leftover
+        // artifacts).
+        //
+        // Sequence:
+        //   (a) Construct OwnedFile from std::tmpfile() — must report
+        //       is_open / explicit bool == true.
+        //   (b) get() returns the raw FILE* without ownership transfer.
+        //   (c) Write + fflush + rewind + read round-trip via the
+        //       borrowed FILE* to prove the alias preserves stdio
+        //       semantics through the type.
+        //   (d) Move into a second OwnedFile — source must transition
+        //       to !is_open (moved-from is null-sentinel), dest takes
+        //       ownership.
+        //   (e) Destructor on dest closes the FILE* (verified by
+        //       absence of leaks under ASan / LeakSan in the default
+        //       preset; no separate runtime assertion possible — the
+        //       sanitizers ARE the witness).
+        std::FILE* raw = std::tmpfile();
+        if (raw == nullptr) {
+            // Sandbox may forbid tmpfile (no writable /tmp).  Treat as
+            // skip-not-fail: the static_assert sentinels above already
+            // prove the alias-path identity; the runtime witness is a
+            // belt-and-suspenders RAII exercise.
+            return 0;
+        }
+        fhand::OwnedFile a{raw};
+        if (!a.is_open())               return 20;
+        if (!a)                         return 21;
+        if (a.get() != raw)             return 22;
+        // Write-then-read round-trip via the borrowed FILE*.
+        constexpr int sentinel = 0x42;
+        if (std::fputc(sentinel, a.get()) != sentinel) return 23;
+        if (std::fflush(a.get()) != 0)                  return 24;
+        std::rewind(a.get());
+        if (std::fgetc(a.get()) != sentinel)           return 25;
+        // Move-into-new-owner.  Source must surrender ownership.
+        fhand::OwnedFile b{std::move(a)};
+        if (a.is_open())                return 26;  // moved-from is null
+        if (!b.is_open())               return 27;  // dest holds the FILE*
+        if (b.get() != raw)             return 28;  // ptr identity preserved
+        // Dtor on b at scope exit calls std::fclose(raw); tmpfile is
+        // self-deleting so no /tmp residue.  ASan / LeakSan in the
+        // default preset will surface any leak.
     }
     return 0;
 }
