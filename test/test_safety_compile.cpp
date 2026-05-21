@@ -93,7 +93,14 @@ namespace fn = crucible::safety::fn;
 namespace dimension_traits_compile_probe {
 
 static_assert(cs::TIER_KIND_COUNT == 5);
-static_assert(cs::DIMENSION_AXIS_COUNT == 22);  // fixy-A3-009: +Regime (2026-05-18)
+// FIXY-U-128 / U-129 floor-vs-ceiling split: the EXACT ceiling pin
+// (`== 22`) lives in safety/DimensionTraits.h:600 colocated with the
+// source-of-truth enum; THIS TU only holds the FLOOR pin (`>= 22`).
+static_assert(cs::DIMENSION_AXIS_COUNT >= 22,  // fixy-A3-009 floor: +Regime (2026-05-18)
+    "floor: DimensionAxis cardinality regressed below 22 — a "
+    "post-Regime enumerator was removed without updating both "
+    "DimensionTraits.h's colocated ceiling pin AND this floor "
+    "witness.");
 
 [[nodiscard]] consteval bool every_tier_kind_has_name() noexcept {
     static constexpr auto enumerators =

@@ -109,9 +109,17 @@ static_assert(sizeof(fm::Quotient_t)      == 1);
 static_assert(sizeof(fm::Coeffect_t)      == 1);
 
 // ─── 6. Cardinality reflection ────────────────────────────────────
+//
+// FIXY-U-128 / U-129 floor-vs-ceiling split: the EXACT ceiling pin
+// (`== 6`) lives in fixy/Modality.h colocated with the source-of-truth
+// constant; THIS TU only holds the FLOOR pin (`>= 6`) which catches the
+// inverse direction — an accidental REMOVAL of a modality form.
 
 static_assert(fm::modality_kind_count == am::modality_kind_count);
-static_assert(fm::modality_kind_count == 6);
+static_assert(fm::modality_kind_count >= 6,
+    "floor: fixy::modality::modality_kind_count regressed below 6 — "
+    "a ModalityKind enumerator was removed without updating both "
+    "Modality.h's colocated ceiling pin AND this floor witness.");
 
 // ─── 7. has_*_v exhaustive table ─────────────────────────────────
 

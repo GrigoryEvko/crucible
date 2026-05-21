@@ -93,8 +93,14 @@ static_assert(fa::ModalityKind::Relative      == al::ModalityKind::Relative);
 static_assert(fa::ModalityKind::Quotient      == al::ModalityKind::Quotient);
 static_assert(fa::ModalityKind::Coeffect      == al::ModalityKind::Coeffect);
 
-static_assert(fa::modality_kind_count == 6,
-    "fixy::algebra::modality_kind_count must match substrate's six-arm catalog");
+// FIXY-U-128 / U-129 floor-vs-ceiling split: the EXACT ceiling pin
+// (`== 6`) lives in fixy/Modality.h colocated with the source-of-truth
+// constant; THIS TU only holds the FLOOR pin (`>= 6`) catching the
+// inverse direction — an accidental REMOVAL of a ModalityKind arm.
+static_assert(fa::modality_kind_count >= 6,
+    "floor: fixy::algebra::modality_kind_count regressed below 6 — "
+    "a ModalityKind enumerator was removed without updating both "
+    "Modality.h's colocated ceiling pin AND this floor witness.");
 
 static_assert(std::is_same_v<fa::modality::Comonad_t,       al::modality::Comonad_t>);
 static_assert(std::is_same_v<fa::modality::RelativeMonad_t, al::modality::RelativeMonad_t>);

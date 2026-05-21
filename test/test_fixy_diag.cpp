@@ -36,8 +36,16 @@ static_assert(fd::Category::LinearAliasViolation   == cd::Category::LinearAliasV
 // value MUST round-trip — tag_of_t<C>'s back-pointer through
 // category_of_v MUST equal C.  This catches any future enum / Catalog
 // / specialization drift in a single static_assert per entry.
+//
+// FIXY-U-128 / U-129 floor-vs-ceiling split: the EXACT ceiling pin
+// (`== 31`) lives in fixy/Diag.h colocated with the source-of-truth
+// constant; THIS TU only holds the FLOOR pin (`>= 31`) which catches
+// the inverse direction — an accidental REMOVAL of a Category tag.
 static_assert(fd::catalog_size == cd::catalog_size);
-static_assert(fd::catalog_size == 31);
+static_assert(fd::catalog_size >= 31,
+    "floor: fixy::diag::catalog_size regressed below 31 — a Category "
+    "tag was removed without updating both Diag.h's colocated ceiling "
+    "pin AND this floor witness.");
 
 static_assert(std::is_same_v<fd::Catalog, cd::Catalog>);
 

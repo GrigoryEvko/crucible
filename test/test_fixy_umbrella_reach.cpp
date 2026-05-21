@@ -491,9 +491,19 @@ static_assert(std::is_same_v<fsdiag::Catalog,
     ::crucible::safety::proto::diagnostic::Catalog>);
 
 // 6g-b. Classifier + catalog size route through.
+//
+// FIXY-U-128 / U-129 floor-vs-ceiling split: the EXACT ceiling pin
+// (`== 23`) lives in fixy/SessDiagnostic.h:183 colocated with the
+// source-of-truth Catalog tuple; THIS TU only holds the FLOOR pin
+// (`>= 23`) catching the inverse direction — an accidental REMOVAL
+// of a session-diagnostic Catalog entry.
 static_assert(fsdiag::is_diagnostic_class_v<fsdiag::SubtypeMismatch>);
 static_assert(!fsdiag::is_diagnostic_class_v<int>);
-static_assert(fsdiag::catalog_size == 23);
+static_assert(fsdiag::catalog_size >= 23,
+    "floor: fixy::sess::diagnostic::catalog_size regressed below 23 "
+    "— a session-diagnostic Catalog entry was removed without "
+    "updating both SessDiagnostic.h's colocated ceiling pin AND this "
+    "floor witness.");
 
 // 6g-c. Diagnostic<> wrapper reaches the consumer.
 static_assert(fsdiag::is_diagnostic_v<fsdiag::Diagnostic<fsdiag::SubtypeMismatch, int>>);

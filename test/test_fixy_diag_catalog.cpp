@@ -35,12 +35,25 @@ namespace cd = crucible::safety::diag;
 namespace fx = crucible::fixy;
 
 // ─── 1. Cardinality ───────────────────────────────────────────────
+//
+// FIXY-U-128 / U-129 floor-vs-ceiling split: the EXACT ceiling pin
+// for FixyCatalog cardinality is owned transitively by the substrate
+// — `fixy_catalog_size == kDimAxisCount` in fixy/Reject.h:449 (the
+// bijection witness) plus `DIMENSION_AXIS_COUNT == 22` in
+// safety/DimensionTraits.h:600 colocated with the source-of-truth
+// enum.  THIS TU only holds the FLOOR pin (`>= 22`) which catches
+// the inverse direction — an accidental REMOVAL of a DimensionAxis
+// enumerator (and its matching FixyCatalog entry).
 
-static_assert(fd::fixy_catalog_size == 22,
-    "FixyCatalog must enumerate exactly 22 entries — one per "
-    "DimensionAxis enumerator.");
+static_assert(fd::fixy_catalog_size >= 22,
+    "floor: fixy::diag::fixy_catalog_size regressed below 22 — a "
+    "DimensionAxis enumerator (and its matching FixyCatalog entry) "
+    "was removed without updating both DimensionTraits.h's colocated "
+    "ceiling pin AND this floor witness.");
 
-static_assert(std::tuple_size_v<fd::FixyCatalog> == 22);
+static_assert(std::tuple_size_v<fd::FixyCatalog> >= 22,
+    "floor: FixyCatalog tuple-size regressed below 22 — same removal "
+    "drift as above, expanded to the structural-identity form.");
 
 // ─── 2. is_fixy_diag_v on every catalog entry ─────────────────────
 

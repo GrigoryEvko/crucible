@@ -97,9 +97,17 @@ static_assert(cs::verify_quadruple<TermInt>(),
     "hold — Progress stays on Complexity.");
 
 // ── Catalog cardinality — Regime grew the axis count from 21 to 22.
-static_assert(cs::DIMENSION_AXIS_COUNT == 22,
-    "fixy-A3-009: DimensionAxis catalog must equal 22 (21 + Regime "
-    "extension added 2026-05-18; was 21 after fixy-A3-008).");
+//
+// FIXY-U-128 / U-129 floor-vs-ceiling split: the EXACT ceiling pin
+// (`== 22`) lives in safety/DimensionTraits.h:600 colocated with the
+// source-of-truth enum; THIS TU only holds the FLOOR pin (`>= 22`)
+// which catches the inverse direction — an accidental REMOVAL of a
+// DimensionAxis enumerator post-Regime.
+static_assert(cs::DIMENSION_AXIS_COUNT >= 22,
+    "fixy-A3-009 floor: DimensionAxis cardinality regressed below 22 "
+    "— a post-Regime enumerator was removed without updating both "
+    "DimensionTraits.h's colocated ceiling pin AND this floor "
+    "witness.");
 
 // ── Regime carries a non-empty, non-sentinel name.
 static_assert(cs::dimension_axis_name(cs::DimensionAxis::Regime)
