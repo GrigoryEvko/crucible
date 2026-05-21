@@ -1,18 +1,27 @@
 // ── test_fixy_handle — sentinel TU for fixy/Handle.h ───────────────
 //
 // Pulls fixy/Handle.h into a TU compiled under project warning flags
-// so the header's 9 dual-export sentinels + cardinality witness
+// so the header's 13 dual-export sentinels + cardinality witness
 // execute under enforcement.  Witnesses:
 //
-//   1. Every fixy::handle::X alias resolves to safety::X (9 aliases).
-//   2. Cardinality witness (handle_alias_cardinality == 9) trips if
-//      a future contributor adds/removes a handle type without
-//      updating the sentinel block in Handle.h.
+//   1. Every fixy::handle::X alias resolves to safety::X (13 aliases —
+//      Fd, FileHandle, Once, Lazy, SetOnce, OneShotFlag, PublishOnce,
+//      PublishSlot, LazyEstablishedChannel, AlignedBuffer (U-016b),
+//      PublishCommitCell (U-016b), open_read (U-016c),
+//      open_write_truncate (U-016c)).
+//   2. Cardinality FLOOR witness (handle_alias_cardinality >= 13)
+//      trips if a future contributor REMOVES a handle alias without
+//      updating both Handle.h's colocated ceiling AND this floor —
+//      per FIXY-U-127 / U-128 floor-vs-ceiling discipline.  Growth
+//      past 13 is silent here and auto-tracked by the header's `==`.
 //   3. End-to-end RAII round-trip via the fixy:: alias proves no
 //      name-shadow drift past the sentinel — exercises FileHandle
-//      open_read / close pair through the fixy::handle:: path.
+//      default-ctor + dtor and OneShotFlag signal/peek through the
+//      fixy::handle:: path.
 //
-// FIXY-U-016.
+// FIXY-U-016 (base) + U-016b (AlignedBuffer + PublishCommitCell) +
+// U-016c (open_read + open_write_truncate).  Doc-block updated by
+// U-131 to reflect post-U-016b/c expansion.
 
 #include <crucible/fixy/Handle.h>
 
