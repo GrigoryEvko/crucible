@@ -57,7 +57,7 @@ include/crucible/permissions/PermissionInherit.h:135
 # ── §XXI grandfathered drift (TODO — trim as sites migrate) ──────────
 include/crucible/CKernel.h:463:constexpr-ok
 include/crucible/CKernel.h:469:constexpr-ok
-include/crucible/Cipher.h:245:constexpr-ok
+include/crucible/Cipher.h:263:constexpr-ok
 include/crucible/CrucibleContext.h:320:constexpr-ok
 include/crucible/PoolAllocator.h:295:constexpr-ok
 include/crucible/ReplayEngine.h:398:constexpr-ok

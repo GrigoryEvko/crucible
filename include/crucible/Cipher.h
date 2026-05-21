@@ -191,6 +191,24 @@ class CRUCIBLE_OWNER Cipher {
         [[assume(root_set)]];
         std::filesystem::create_directories(root + "/objects");
 
+        // FIXY-V-030: anchor the Cipher root as a dirfd opened with
+        // O_DIRECTORY | O_NOFOLLOW so subsequent fs ops can go through
+        // ::openat() with O_NOFOLLOW (preventing symlink-based path
+        // substitution attacks) and survive an under-the-feet rename
+        // of the root directory.  A symlinked root would fail here
+        // with ELOOP and we abort — Cipher's durable-on-return
+        // contract cannot be honored if we cannot trust the root
+        // directory's identity is stable for the lifetime of this
+        // instance.  See root_dirfd_'s declaration doc-block for the
+        // full security rationale.
+        {
+            const int dfd = ::open(root.c_str(),
+                                    O_DIRECTORY | O_RDONLY |
+                                    O_NOFOLLOW | O_CLOEXEC);
+            if (dfd < 0) std::abort();
+            c.root_dirfd_ = crucible::fixy::handle::FileHandle{dfd};
+        }
+
         // Load the log first to populate in-memory state.
         c.load_log();
 
@@ -270,9 +288,18 @@ class CRUCIBLE_OWNER Cipher {
         // FIXY-V-026 audit-fix: cross-process recovery — even on the
         // skip path, fdatasync to flush any ghost-bytes a previous
         // process may have written but failed to flush before crashing.
-        // fdatasync_path_'s doc-block carries the full scenario.
+        // fdatasync_at_'s doc-block carries the full scenario.
+        //
+        // FIXY-V-030: dirfd-rooted openat with O_NOFOLLOW guards against
+        // a symlinked objects/<XX>/<HASH> leaf — without O_NOFOLLOW a
+        // symlinked leaf would redirect fdatasync to whatever the
+        // symlink targets, bypassing the idempotency invariant we
+        // depend on for cross-process recovery.
+        const std::string obj_rel = obj_relpath_(hash.raw());
         if (std::filesystem::exists(path)) {
-            if (!fdatasync_path_(path)) return ContentHash{};
+            if (!fdatasync_at_(root_dirfd_.get(), obj_rel)) {
+                return ContentHash{};
+            }
             return hash;
         }
 
@@ -332,7 +359,14 @@ class CRUCIBLE_OWNER Cipher {
         // partial-durability state.
         f.close();
         if (!f) return ContentHash{};
-        if (!fdatasync_path_(path)) return ContentHash{};
+        // FIXY-V-030: dirfd-rooted fdatasync of the newly-written
+        // object file — final-component O_NOFOLLOW guards leaf
+        // substitution even on the new-write path (concurrent
+        // creator races, mid-write replacement attempts).  obj_rel
+        // was computed above for the idempotent-skip path.
+        if (!fdatasync_at_(root_dirfd_.get(), obj_rel)) {
+            return ContentHash{};
+        }
 
         remember_cached_bytes(hash, std::span<const uint8_t>{buf.data(), n});
         return hash;
@@ -716,30 +750,35 @@ class CRUCIBLE_OWNER Cipher {
         }
         head_ = content_hash;
 
-        // FIXY-V-027: atomic HEAD update via write-tmp + fdatasync +
-        // rename + parent-dir-fsync.  Replaces the pre-V-027 ofstream
-        // truncate-and-write which had no atomicity window: the file
-        // was observably empty between O_TRUNC and the first write, and
-        // partial between successive writes.  See atomic_write_path_'s
-        // doc-block for the full crash-recovery scenario; the helper
-        // returns true only when the new HEAD bytes are fully durable
-        // (write + fdatasync) AND the rename is durable (parent-dir
-        // fsync).  A helper failure here leaves the cached `head_` set
-        // and the log append below as the recovery anchor — the next
-        // open() call's latest_committed_head() scan recovers the
-        // committed pointer from the log even if HEAD is stale or
-        // missing on disk.
+        // FIXY-V-027 + V-030: atomic HEAD update via write-tmp +
+        // fdatasync + renameat + parent-dirfd-fsync, anchored at
+        // root_dirfd_.  Replaces the pre-V-027 ofstream truncate-
+        // and-write which had no atomicity window: the file was
+        // observably empty between O_TRUNC and the first write,
+        // and partial between successive writes.  See
+        // atomic_write_at_'s doc-block for the full crash-recovery
+        // scenario; the helper returns true only when the new HEAD
+        // bytes are fully durable (write + fdatasync) AND the
+        // rename is durable (parent-dirfd fsync).  V-030's
+        // dirfd-rooted form additionally guards against symlink
+        // substitution of HEAD or HEAD.tmp — a malicious symlink
+        // fails the openat() with ELOOP rather than redirecting
+        // writes to an attacker-controlled path.  A helper failure
+        // here leaves the cached `head_` set and the log append
+        // below as the recovery anchor — the next open() call's
+        // latest_committed_head() scan recovers the committed
+        // pointer from the log even if HEAD is stale or missing on
+        // disk.
         {
             char hex[16];
             hex16_(content_hash.raw(), hex);
             std::uint8_t buf[17];
             std::memcpy(buf, hex, 16);
             buf[16] = static_cast<std::uint8_t>('\n');
-            const std::string head_path = root_str() + "/HEAD";
-            (void)atomic_write_path_(
-                head_path,
-                std::span<const std::uint8_t>{buf, sizeof(buf)},
-                root_str());
+            (void)atomic_write_at_(
+                root_dirfd_.get(),
+                "HEAD",
+                std::span<const std::uint8_t>{buf, sizeof(buf)});
         }
 
         // Append log entry.
@@ -747,13 +786,17 @@ class CRUCIBLE_OWNER Cipher {
         log_.emplace(LogEntry::cipher_store_committed(
             crucible::fixy::sess::eventlog::StepId{step_id}, content_hash, ts));
         {
-            // V-028: durable log append.  Format the record into an inline
-            // buffer, then hand off to atomic_append_log_ which performs a
-            // single O_APPEND write (POSIX atomic within a regular-file
-            // block) + fdatasync + parent-dir fsync.  The ofstream form
-            // used a userspace buffer that flushed only on dtor and never
-            // synced — a crash between commit and dtor lost the entry
-            // even though hash() returns success.
+            // V-028 + V-030: durable log append.  Format the record into
+            // an inline buffer, then hand off to atomic_append_at_ which
+            // performs a single O_APPEND write (POSIX atomic within a
+            // regular-file block) + fdatasync + parent-dirfd fsync,
+            // anchored at root_dirfd_ with O_NOFOLLOW.  The ofstream
+            // form used a userspace buffer that flushed only on dtor
+            // and never synced — a crash between commit and dtor lost
+            // the entry even though hash() returns success.  V-030's
+            // dirfd anchoring additionally guards against a symlinked
+            // "log" leaf redirecting appends to an attacker-controlled
+            // path.
             //
             // Record layout: "<step_id>,<16-hex content_hash>,<ts>\n".
             // Max length: 20 (uint64_t dec) + 1 + 16 + 1 + 20 + 1 = 59B,
@@ -774,17 +817,16 @@ class CRUCIBLE_OWNER Cipher {
             if (ec2 != std::errc{}) std::abort();
             off = static_cast<std::size_t>(p2 - rec);
             rec[off++] = '\n';
-            const std::string log_path = root_str() + "/log";
             // §III cast cascade for char* → uint8_t* (reinterpret_cast
             // banned; bit_cast is value-not-pointer; void* round-trip
             // is the §III-blessed form).
-            (void)atomic_append_log_(
-                log_path,
+            (void)atomic_append_at_(
+                root_dirfd_.get(),
+                "log",
                 std::span<const std::uint8_t>{
                     static_cast<const std::uint8_t*>(
                         static_cast<const void*>(rec)),
-                    off},
-                root_str());
+                    off});
         }
 
         // CONTRACT-107-POST: state-mutation contract — after advance_head
@@ -1059,15 +1101,31 @@ class CRUCIBLE_OWNER Cipher {
         std::memcpy(idx_rec + off, hex, 16);
         off += 16;
         idx_rec[off++] = '\n';
-        const std::string index_path = dir + "/index";
+
+        // FIXY-V-030: open the session subdir via dirfd-rooted openat
+        // so the subsequent index-append is two-level-anchored (root
+        // dirfd → session dirfd → "index" leaf with O_NOFOLLOW).
+        // O_DIRECTORY on the subdir open rejects a regular-file
+        // substitution; O_NOFOLLOW rejects a symlink substitution of
+        // the session-events/<hex> directory itself.  The remaining
+        // attack surface (substitution of the "session_events"
+        // intermediate directory) requires write access to the
+        // Cipher root — outside the V-030 threat model.
+        const std::string sess_rel = session_event_dir_relpath_(session);
+        crucible::fixy::handle::FileHandle session_dirfd =
+            open_dir_at_(root_dirfd_.get(), sess_rel.c_str());
+        if (!session_dirfd.is_open()) {
+            return ContentHash{};
+        }
+
         // §III cast cascade: char* → const void* → const std::uint8_t*.
-        if (!atomic_append_log_(
-                index_path,
+        if (!atomic_append_at_(
+                session_dirfd.get(),
+                "index",
                 std::span<const std::uint8_t>{
                     static_cast<const std::uint8_t*>(
                         static_cast<const void*>(idx_rec)),
-                    off},
-                dir)) {
+                    off})) {
             return ContentHash{};
         }
 
@@ -1245,6 +1303,46 @@ class CRUCIBLE_OWNER Cipher {
     crucible::fixy::wrap::WriteOnce<
         crucible::fixy::wrap::Tagged<std::string, crucible::fixy::tags::source::Durable>>
                                              root_;
+    // FIXY-V-030: dirfd anchor for the Cipher root, opened with
+    // O_DIRECTORY | O_NOFOLLOW | O_RDONLY | O_CLOEXEC.  Every helper
+    // that touches the on-disk tree (atomic_write_at_, atomic_append_
+    // at_, fdatasync_at_, open_dir_at_) uses ::openat() relative to
+    // this fd with O_NOFOLLOW, so:
+    //
+    //   (1) The root cannot be a symlink at construction (the dirfd
+    //       open with O_NOFOLLOW fails with ELOOP; Cipher::open()
+    //       aborts because a symlinked Cipher root is either a
+    //       deliberate substitution attack or a serious misconfig).
+    //
+    //   (2) The root survives rename/move underneath us — the dirfd
+    //       continues to refer to the original inode even if the
+    //       path is moved away.  Two concurrent Cipher instances
+    //       cannot race-substitute each other's root.
+    //
+    //   (3) The LEAF path component in any helper-relative open
+    //       cannot be a symlink — O_NOFOLLOW on every ::openat()
+    //       call makes a symlinked HEAD / log / index /
+    //       objects/<XX>/<hash> file fail with ELOOP rather than
+    //       transparently redirecting to whatever the symlink
+    //       targets (the classic privilege-escalation primitive
+    //       when Cipher runs with elevated capabilities).  This
+    //       is the canonical Linux per-component-NOFOLLOW limit:
+    //       O_NOFOLLOW only inspects the trailing pathname
+    //       component, not the intermediate directories.  For
+    //       the leaf-file class of attacks this is sufficient.
+    //       Substituting an intermediate directory (objects/, XX/,
+    //       session_events/) with a symlink requires write access
+    //       to the Cipher root, which is outside the V-030 threat
+    //       model — the Keeper that owns root_dirfd_ also owns the
+    //       directory permissions on root, and a process with write
+    //       access there has already breached the security boundary.
+    //       Stronger guarantees (RESOLVE_NO_SYMLINKS via openat2)
+    //       are deferred to V-037 when openat2 portability is sorted.
+    //
+    // fixy::handle::FileHandle is RAII move-only — defaulted Cipher
+    // move ops correctly transfer ownership; the Cipher destructor
+    // (also defaulted) closes the dirfd via FileHandle's destructor.
+    crucible::fixy::handle::FileHandle            root_dirfd_{};
     ContentHash                              head_{};
 
     // Internal unwrap — single point that peels both layers.
@@ -1273,13 +1371,22 @@ class CRUCIBLE_OWNER Cipher {
         return ContentHash{};
     }
 
-    // ── FIXY-V-026 audit-fix: durable-on-return helper ─────────────
+    // ── FIXY-V-026 audit-fix + V-030 dirfd hardening ───────────────
     //
-    // Re-opens `path` RDONLY and fdatasync's it.  Returns true on
-    // success; false on any error (open failure, fdatasync failure
-    // other than EINTR).  EINTR is retried — fdatasync is permitted
-    // to be interrupted by signals on Linux and the retry contract
-    // matches the kernel's own loop in writeback_inodes_sb_nr_if_idle.
+    // Re-opens `relpath` (relative to `parent_dirfd`) RDONLY and
+    // fdatasync's it.  Returns true on success; false on any error
+    // (open failure, fdatasync failure other than EINTR).  EINTR is
+    // retried — fdatasync is permitted to be interrupted by signals
+    // on Linux and the retry contract matches the kernel's own loop
+    // in writeback_inodes_sb_nr_if_idle.
+    //
+    // V-030: O_NOFOLLOW on the ::openat() rejects a symlinked leaf —
+    // a symlinked HEAD / log / objects/<XX>/<hash> file fails with
+    // ELOOP rather than redirecting the fdatasync to whatever the
+    // symlink targets.  The dirfd anchor (root_dirfd_) was acquired
+    // with O_NOFOLLOW at Cipher::open() time, so the root itself is
+    // also non-symlink; combined this defeats leaf-substitution and
+    // root-substitution attacks.
     //
     // Why this lives at class scope: both the new-write path AND
     // the idempotent-skip path in store() MUST flush before
@@ -1306,25 +1413,41 @@ class CRUCIBLE_OWNER Cipher {
     // returns ContentHash{} like A did).  Cipher's durable-on-
     // return contract holds for cross-process recovery, not just
     // single-process success paths.
-    [[nodiscard]] static bool fdatasync_path_(const std::string& path) noexcept {
-        const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    [[nodiscard]] static bool fdatasync_at_(
+        int parent_dirfd,
+        const std::string& relpath) noexcept {
+        const int fd = ::openat(parent_dirfd, relpath.c_str(),
+                                 O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
         if (fd < 0) return false;
+        crucible::fixy::handle::FileHandle guard{fd};
         int rc;
         do {
             rc = ::fdatasync(fd);
         } while (rc < 0 && errno == EINTR);
-        ::close(fd);
         return rc == 0;
     }
 
-    // ── FIXY-V-027: atomic file-content replace helper ─────────────
+    // ── FIXY-V-027 + V-030: atomic file-content replace helper ─────
     //
-    // POSIX-atomic replace pattern: write to `path + ".tmp"`,
-    // fdatasync the bytes onto disk, atomically rename onto `path`,
-    // then fsync the parent directory to make the rename itself
-    // durable.
+    // POSIX-atomic replace pattern: write to `relpath + ".tmp"`
+    // (relative to `parent_dirfd`), fdatasync the bytes onto disk,
+    // atomically rename onto `relpath`, then fsync the parent
+    // dirfd directly so the rename is durable.
     //
-    // Why this matters: the pre-V-027 HEAD-write path uses
+    // V-030 changes vs the pre-V-030 atomic_write_path_:
+    //   - ::openat(parent_dirfd, ..., O_NOFOLLOW) on the tmp create —
+    //     a symlinked tmp (e.g., an attacker pre-creating "HEAD.tmp"
+    //     as a symlink to /etc/passwd) fails with ELOOP.
+    //   - ::renameat(parent_dirfd, tmp, parent_dirfd, relpath) — the
+    //     atomic rename is anchored at the same dirfd on both sides,
+    //     so it cannot be redirected by a concurrent rename of the
+    //     root directory between the tmp open and the rename call.
+    //   - ::fsync(parent_dirfd) directly — no re-open of the parent
+    //     path is needed; the dirfd is already the inode we want to
+    //     flush.  Saves a syscall and closes a race where the parent
+    //     path could be renamed between open and fsync.
+    //
+    // Why this matters: the pre-V-027 HEAD-write path used
     // `std::ofstream hf(root + "/HEAD")` which is O_TRUNC + write
     // — observably empty between O_TRUNC and the first write, and
     // partially-written between successive writes.  A crash during
@@ -1336,86 +1459,96 @@ class CRUCIBLE_OWNER Cipher {
     // not yet committed) or fully the new hex (rename committed +
     // dir fsync'd).
     //
-    // Why `rename(2)` over `renameat2(..., RENAME_NOREPLACE)`:
+    // Why `renameat(2)` (without RENAME_NOREPLACE):
     // RENAME_NOREPLACE FAILS if the destination exists, which is
     // the OPPOSITE of what HEAD-update wants — we explicitly want
-    // to REPLACE the old HEAD.  Plain rename(2) is POSIX-atomic for
-    // same-filesystem replacements and is the canonical Linux atomic
-    // write pattern.  RENAME_NOREPLACE is appropriate for content-
-    // addressed object creation (store() / V-026 / V-028), where
-    // collision = caller bug or filesystem corruption.
+    // to REPLACE the old HEAD.  Plain rename/renameat are POSIX-
+    // atomic for same-filesystem replacements and is the canonical
+    // Linux atomic write pattern.  RENAME_NOREPLACE is appropriate
+    // for content-addressed object creation (store() / V-026 /
+    // V-028), where collision = caller bug or filesystem corruption.
     //
-    // Why fsync the parent directory: the rename(2) syscall returns
+    // Why fsync the parent dirfd: the renameat(2) syscall returns
     // before the directory entry is necessarily flushed to disk.
-    // POSIX permits a crash AFTER rename returns success but BEFORE
-    // the directory entry hits storage — the rename is then lost,
-    // HEAD is left at its OLD value, and the new bytes are orphaned
-    // in HEAD.tmp.  Fsyncing the parent directory closes this
+    // POSIX permits a crash AFTER renameat returns success but
+    // BEFORE the directory entry hits storage — the rename is then
+    // lost, HEAD is left at its OLD value, and the new bytes are
+    // orphaned in HEAD.tmp.  Fsyncing the parent dirfd closes this
     // window; the rename is durable when the helper returns true.
     //
-    // EINTR retry on write / fdatasync / rename / fsync mirrors the
-    // kernel's own retry contract.  Cleanup: if any step fails after
-    // we've created the tmp file, unlink it so a subsequent run
-    // doesn't trip over a partial-write artifact.
-    [[nodiscard]] static bool atomic_write_path_(
-        const std::string& path,
-        std::span<const uint8_t> bytes,
-        const std::string& parent_dir) noexcept {
-        const std::string tmp_path = path + ".tmp";
-        const int tmp_fd = ::open(tmp_path.c_str(),
-                                   O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
-                                   0644);
+    // EINTR retry on write / fdatasync / renameat / fsync mirrors
+    // the kernel's own retry contract.  Cleanup: if any step fails
+    // after we've created the tmp file, unlinkat it so a subsequent
+    // run doesn't trip over a partial-write artifact.
+    [[nodiscard]] static bool atomic_write_at_(
+        int parent_dirfd,
+        const std::string& relpath,
+        std::span<const std::uint8_t> bytes) noexcept {
+        const std::string tmp_relpath = relpath + ".tmp";
+        const int tmp_fd = ::openat(parent_dirfd, tmp_relpath.c_str(),
+                                     O_WRONLY | O_CREAT | O_TRUNC |
+                                     O_NOFOLLOW | O_CLOEXEC, 0644);
         if (tmp_fd < 0) return false;
 
-        // Write all bytes, EINTR-safe.
-        std::size_t off = 0;
-        while (off < bytes.size()) {
-            const ssize_t r = ::write(tmp_fd,
-                                       bytes.data() + off,
-                                       bytes.size() - off);
-            if (r < 0) {
-                if (errno == EINTR) continue;
-                ::close(tmp_fd);
-                ::unlink(tmp_path.c_str());
+        // RAII close on every exit — wrapped in a nested scope so
+        // the guard's dtor fires BEFORE the renameat below.  Closing
+        // the writer before rename matches the POSIX recommendation
+        // for atomic-rename writes and avoids holding an extra fd
+        // through the rename window.
+        {
+            crucible::fixy::handle::FileHandle write_guard{tmp_fd};
+
+            // Write all bytes, EINTR-safe.
+            std::size_t off = 0;
+            while (off < bytes.size()) {
+                const ssize_t r = ::write(tmp_fd,
+                                           bytes.data() + off,
+                                           bytes.size() - off);
+                if (r < 0) {
+                    if (errno == EINTR) continue;
+                    ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);
+                    return false;
+                }
+                off += static_cast<std::size_t>(r);
+            }
+
+            // fdatasync the tmp file's bytes before the rename.
+            int frc;
+            do {
+                frc = ::fdatasync(tmp_fd);
+            } while (frc < 0 && errno == EINTR);
+            if (frc != 0) {
+                ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);
                 return false;
             }
-            off += static_cast<std::size_t>(r);
+            // write_guard's dtor closes tmp_fd here.
         }
 
-        // fdatasync the tmp file's bytes before the rename.
-        int frc;
-        do {
-            frc = ::fdatasync(tmp_fd);
-        } while (frc < 0 && errno == EINTR);
-        ::close(tmp_fd);
-        if (frc != 0) {
-            ::unlink(tmp_path.c_str());
-            return false;
-        }
-
-        // POSIX-atomic same-filesystem rename.
+        // POSIX-atomic same-dirfd renameat — anchored at parent_dirfd
+        // on both source and destination so the swap is immune to
+        // concurrent rename of the parent directory.
         int rrc;
         do {
-            rrc = ::rename(tmp_path.c_str(), path.c_str());
+            rrc = ::renameat(parent_dirfd, tmp_relpath.c_str(),
+                              parent_dirfd, relpath.c_str());
         } while (rrc < 0 && errno == EINTR);
         if (rrc != 0) {
-            ::unlink(tmp_path.c_str());
+            ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);
             return false;
         }
 
-        // fsync the parent directory so the rename is durable.
-        const int dir_fd = ::open(parent_dir.c_str(),
-                                   O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-        if (dir_fd < 0) return false;
+        // fsync the parent dirfd directly so the rename is durable.
+        // No re-open / close needed — parent_dirfd is owned by the
+        // caller (typically Cipher::root_dirfd_) and lives well
+        // past this call.
         int drc;
         do {
-            drc = ::fsync(dir_fd);
+            drc = ::fsync(parent_dirfd);
         } while (drc < 0 && errno == EINTR);
-        ::close(dir_fd);
         return drc == 0;
     }
 
-    // ── FIXY-V-028: atomic append + fdatasync helper ───────────────
+    // ── FIXY-V-028 + V-030: atomic append + fdatasync helper ───────
     //
     // Atomic-append discipline for monotonically-growing files (the
     // Cipher event log, V-029 session_event index).  Uses O_APPEND so
@@ -1429,6 +1562,14 @@ class CRUCIBLE_OWNER Cipher {
     // an existing inode and fdatasync alone suffices, but the dir
     // fsync is cheap relative to the Wait::Block tier the Cipher
     // path already commits to).
+    //
+    // V-030 changes:
+    //   - ::openat(parent_dirfd, relpath, O_NOFOLLOW) — symlinked log
+    //     leaf fails with ELOOP rather than redirecting writes to
+    //     attacker-controlled paths.
+    //   - ::fsync(parent_dirfd) directly — saves a parent open syscall
+    //     and avoids a race where the parent could be renamed between
+    //     open and fsync.
     //
     // Why O_APPEND + single write() instead of write-tmp + rename:
     // logs grow forever, renames don't compose with append, and the
@@ -1445,52 +1586,79 @@ class CRUCIBLE_OWNER Cipher {
     // ignored by load_log, and a missing record is recovered via
     // HEAD's authoritative pointer.  Returns true only when the
     // record bytes AND the directory entry are durable.
-    [[nodiscard]] static bool atomic_append_log_(
-        const std::string& path,
-        std::span<const std::uint8_t> bytes,
-        const std::string& parent_dir) noexcept {
-        const int fd = ::open(path.c_str(),
-                               O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC,
-                               0644);
+    [[nodiscard]] static bool atomic_append_at_(
+        int parent_dirfd,
+        const std::string& relpath,
+        std::span<const std::uint8_t> bytes) noexcept {
+        const int fd = ::openat(parent_dirfd, relpath.c_str(),
+                                 O_WRONLY | O_APPEND | O_CREAT |
+                                 O_NOFOLLOW | O_CLOEXEC, 0644);
         if (fd < 0) return false;
 
-        // Single-write loop.  With O_APPEND + record-size < block,
-        // ::write either returns -1 (errno set; no bytes written) or
-        // returns exactly bytes.size().  The loop handles the rare
-        // case of partial writes (e.g., short-write on signal) by
-        // re-issuing for the remaining bytes; each re-issue is a
-        // fresh kernel-atomic O_APPEND write.
-        std::size_t off = 0;
-        while (off < bytes.size()) {
-            const ssize_t r = ::write(fd,
-                                       bytes.data() + off,
-                                       bytes.size() - off);
-            if (r < 0) {
-                if (errno == EINTR) continue;
-                ::close(fd);
-                return false;
+        {
+            crucible::fixy::handle::FileHandle guard{fd};
+
+            // Single-write loop.  With O_APPEND + record-size < block,
+            // ::write either returns -1 (errno set; no bytes written)
+            // or returns exactly bytes.size().  The loop handles the
+            // rare case of partial writes (short-write on signal) by
+            // re-issuing for the remaining bytes; each re-issue is a
+            // fresh kernel-atomic O_APPEND write.
+            std::size_t off = 0;
+            while (off < bytes.size()) {
+                const ssize_t r = ::write(fd,
+                                           bytes.data() + off,
+                                           bytes.size() - off);
+                if (r < 0) {
+                    if (errno == EINTR) continue;
+                    return false;
+                }
+                off += static_cast<std::size_t>(r);
             }
-            off += static_cast<std::size_t>(r);
+
+            // fdatasync the record onto disk.
+            int frc;
+            do {
+                frc = ::fdatasync(fd);
+            } while (frc < 0 && errno == EINTR);
+            if (frc != 0) return false;
+            // guard's dtor closes fd here.
         }
 
-        // fdatasync the record onto disk.
-        int frc;
-        do {
-            frc = ::fdatasync(fd);
-        } while (frc < 0 && errno == EINTR);
-        ::close(fd);
-        if (frc != 0) return false;
-
-        // fsync parent dir for first-record durability.
-        const int dir_fd = ::open(parent_dir.c_str(),
-                                   O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-        if (dir_fd < 0) return false;
+        // fsync parent_dirfd directly for first-record durability.
         int drc;
         do {
-            drc = ::fsync(dir_fd);
+            drc = ::fsync(parent_dirfd);
         } while (drc < 0 && errno == EINTR);
-        ::close(dir_fd);
         return drc == 0;
+    }
+
+    // ── FIXY-V-030: open a subdirectory via openat ──────────────────
+    //
+    // Opens `relpath` (a directory) relative to `parent_dirfd`,
+    // with O_DIRECTORY | O_NOFOLLOW | O_RDONLY | O_CLOEXEC, and
+    // returns the resulting FileHandle.  On failure returns a
+    // default-constructed (closed) FileHandle whose is_open() is
+    // false.
+    //
+    // O_DIRECTORY ensures the open fails with ENOTDIR if relpath
+    // refers to a regular file instead of a directory — defense
+    // against substitution of the session subdir with a regular
+    // file.  O_NOFOLLOW + dirfd-anchored open guards substitution
+    // of the leaf component.
+    //
+    // Used by persist_session_events to acquire a session-scoped
+    // dirfd so the subsequent atomic_append_at_(session_dirfd,
+    // "index", ...) call's O_NOFOLLOW guards against `index`
+    // being substituted with a symlink even when the session
+    // directory itself is attacker-controlled.
+    [[nodiscard]] static crucible::fixy::handle::FileHandle open_dir_at_(
+        int parent_dirfd, const char* relpath) noexcept {
+        const int dfd = ::openat(parent_dirfd, relpath,
+                                  O_DIRECTORY | O_RDONLY |
+                                  O_NOFOLLOW | O_CLOEXEC);
+        if (dfd < 0) return crucible::fixy::handle::FileHandle{};
+        return crucible::fixy::handle::FileHandle{dfd};
     }
 
     // Path: root_/objects/<first2hex>/<remaining14hex>
@@ -1510,6 +1678,24 @@ class CRUCIBLE_OWNER Cipher {
         return path;
     }
 
+    // FIXY-V-030: relative-path counterpart of obj_path, used by
+    // ::openat(root_dirfd_.get(), obj_relpath_(hash), ...) helpers
+    // so the open is anchored at the dirfd and the leaf is checked
+    // with O_NOFOLLOW.  Returns "objects/<XX>/<14hex>" — no leading
+    // slash because openat with a relative path resolves under the
+    // parent_dirfd inode, not under "/".
+    static std::string obj_relpath_(std::uint64_t hash) {
+        char hex[16];
+        hex16_(hash, hex);
+        std::string r;
+        r.reserve(sizeof("objects/") - 1 + 2 + 1 + 14);
+        r.append("objects/");
+        r.append(hex, 2);
+        r.push_back('/');
+        r.append(hex + 2, 14);
+        return r;
+    }
+
     std::string session_event_dir(
         crucible::fixy::sess::eventlog::SessionTagId session) const {
         char hex[16];
@@ -1518,6 +1704,22 @@ class CRUCIBLE_OWNER Cipher {
         std::string path{root};
         path.reserve(root.size() + sizeof("/session_events/") - 1 + 16);
         path.append("/session_events/");
+        path.append(hex, 16);
+        return path;
+    }
+
+    // FIXY-V-030: relative-path counterpart of session_event_dir,
+    // used by open_dir_at_(root_dirfd_.get(),
+    // session_event_dir_relpath_(session).c_str()) to acquire a
+    // session-scoped dirfd anchored at root_dirfd_.  Returns
+    // "session_events/<16hex>".
+    static std::string session_event_dir_relpath_(
+        crucible::fixy::sess::eventlog::SessionTagId session) {
+        char hex[16];
+        hex16_(session.value, hex);
+        std::string path;
+        path.reserve(sizeof("session_events/") - 1 + 16);
+        path.append("session_events/");
         path.append(hex, 16);
         return path;
     }

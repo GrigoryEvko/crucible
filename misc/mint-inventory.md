@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T18:12:30Z`.
+Snapshot generated: `2026-05-21T18:40:31Z`.
 
 ## bridges/
 
@@ -195,7 +195,7 @@ to distinguish this third authorization shape.
 
 | class::mint_name | file:line | nd | cx | ne | rq | cb | HS14 |
 |---|---|---|---|---|---|---|---|
-| `Cipher::mint_open_view` | `include/crucible/Cipher.h:245` | Y | - | Y | - | member | HS14: 17 |
+| `Cipher::mint_open_view` | `include/crucible/Cipher.h:263` | Y | - | Y | - | member | HS14: 17 |
 | `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h:463` | Y | - | Y | - | member | HS14: 4 |
 | `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h:469` | Y | - | Y | - | member | HS14: 3 |
 | `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h:320` | Y | Y | Y | - | member | HS14: 3 |
