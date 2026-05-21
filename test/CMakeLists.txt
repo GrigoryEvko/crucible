@@ -8779,11 +8779,12 @@ crucible_neg_compile_session_test(neg_persisted_session_no_open_view
     "PersistedSession_OpenViewRequired|use of deleted function")
 
 # fixy-A2-006 — PSH overloads of mint_recording_session / mint_persisted_session.
-crucible_neg_compile_session_test(neg_recording_session_psh_delegate_unsupported
-    "incomplete type|no matching|invalid use|too many initializers")
-
-crucible_neg_compile_session_test(neg_recording_session_psh_accept_unsupported
-    "incomplete type|no matching|invalid use|too many initializers")
+# (Phase 1 deferral witnesses neg_recording_session_psh_delegate_unsupported +
+# neg_recording_session_psh_accept_unsupported retired in FIXY-U-123 — Phase 2
+# specializations shipped via fixy-A2-006b/c/d/e (tasks #1716/#1717/#1718/#1719);
+# the primary template's incomplete-type hole is sealed and positive coverage
+# at the four Delegate/Accept/EpochedDelegate/EpochedAccept specializations
+# lives in the RecordingPermissionedSessionHandle.h sentinel block.)
 
 crucible_neg_compile_session_test(neg_persisted_session_psh_hot_ctx
     "constraints not satisfied|template constraint failure|associated constraints|CtxAdmits")

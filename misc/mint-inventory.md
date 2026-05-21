@@ -29,7 +29,7 @@ appear as `-` in the flag columns.  The auditor surface for member-function
 mints lives in a separate "Member-function mints" section after the substrate
 trees (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T05:21:34Z`.
+Snapshot generated: `2026-05-21T05:32:04Z`.
 
 ## bridges/
 
@@ -40,7 +40,7 @@ Snapshot generated: `2026-05-21T05:21:34Z`.
 | `mint_crash_watched_session` | `include/crucible/bridges/CrashTransport.h:1216` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:130` | HS14: 5 |
 | `mint_persisted_session` | `include/crucible/bridges/SessionPersistence.h:690` | Y | - | - | Y | ctx | `include/crucible/fixy/Bridge.h:100` | HS14: 14 |
 | `mint_recording_endpoint` | `include/crucible/bridges/EndpointMint.h:99` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:222` | HS14: 4 |
-| `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:1223` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:119` | HS14: 16 |
+| `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:1223` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:119` | HS14: 14 |
 | `mint_vigil_mode_bridge` | `include/crucible/bridges/VigilModeHandle.h:205` | Y | Y | Y | - | token | `include/crucible/fixy/Bridge.h:229` | HS14: 3 |
 
 ## cipher/
@@ -145,7 +145,7 @@ Snapshot generated: `2026-05-21T05:21:34Z`.
 | `mint_mpmc_producer_endpoint` | `include/crucible/sessions/MpmcChannelSession.h:239` | Y | - | Y | - | token | `include/crucible/fixy/Substr.h:244` | HS14: 2 |
 | `mint_mpmc_producer_session` | `include/crucible/sessions/MpmcChannelSession.h:271` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:246` | HS14: 4 |
 | `mint_owner_session` | `include/crucible/sessions/ChaseLevDequeSession.h:109` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:169` | HS14: 3 |
-| `mint_permissioned_session` | `include/crucible/sessions/SessionMint.h:955` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:15` | HS14: 50 |
+| `mint_permissioned_session` | `include/crucible/sessions/SessionMint.h:955` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:15` | HS14: 48 |
 | `mint_producer_session` | `include/crucible/sessions/CalendarGridSession.h:79` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:102` | HS14: 7 |
 | `mint_reader_runtime_session` | `include/crucible/sessions/SwmrSession.h:250` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:144` | HS14: 2 |
 | `mint_reader_session` | `include/crucible/sessions/SwmrSession.h:231` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:142` | HS14: 2 |
