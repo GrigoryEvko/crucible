@@ -8012,6 +8012,29 @@ crucible_neg_compile_test(neg_publishcommit_copy_rejected
 crucible_neg_compile_test(neg_publishcommit_non_friend_bump
   "is private within this context|private|bump.*is.*private|access.*private")
 
+# [FIXY-U-158] safety::AlignedBuffer<T, Alignment> HS14 floor —
+# paired Class T fixtures completing the move-only RAII buffer trio
+# (HugePageBuffer + SwissTableBuffer + AlignedBuffer).  Wrapper had
+# ZERO neg-compile coverage despite shipping the SAME structural
+# discipline as its U-153/U-156 siblings:
+#
+#   AlignedBuffer<T, A> (AlignedBuffer.h:89-91):
+#     * Class T-copy-ctor (U-158a): direct copy construction triggers
+#       deleted ctor at the construction boundary — pins the
+#       factory-result return path.
+#     * Class T-copy-assign (U-158b): copy-assignment from a const
+#       lvalue triggers deleted operator= at the assignment boundary
+#       — pins the rebuild()-then-assign production path.
+#
+# Both Class T but on STRUCTURALLY DISTINCT enforcement boundaries
+# (construction vs assignment).  Closes the AlignedBuffer slice of
+# #146 A8-P2 alongside U-153 (HugePageBuffer/SwissTableBuffer first
+# half) and U-156 (HugePageBuffer/SwissTableBuffer second half).
+crucible_neg_compile_test(neg_alignedbuffer_copy_ctor_rejected
+  "use of deleted function.*AlignedBuffer.*AlignedBuffer|AlignedBuffer is move-only|deleted")
+crucible_neg_compile_test(neg_alignedbuffer_copy_assign_rejected
+  "use of deleted function.*AlignedBuffer.*operator=|AlignedBuffer is move-only|deleted")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
