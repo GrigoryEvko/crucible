@@ -63,7 +63,9 @@
 //
 // Zero.  using-declarations are pure name-lookup directives.
 
+#include <crucible/concurrent/ChaseLevDeque.h>               // FIXY-V-047: DequeValue concept
 #include <crucible/concurrent/MpmcRing.h>                   // FIXY-V-046: MpmcValue concept
+#include <crucible/concurrent/PermissionedChaseLevDeque.h>  // FIXY-V-047: substrate-direct work-stealing surface
 #include <crucible/concurrent/PermissionedMpmcChannel.h>    // FIXY-V-046: substrate-direct MPMC surface
 #include <crucible/concurrent/PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
@@ -278,6 +280,65 @@ using ThiefProto =
 template <typename Deque>
 concept ChaseLevSessionSurface =
     ::crucible::safety::proto::chaselev_session::ChaseLevSessionSurface<Deque>;
+
+// ── FIXY-V-047: substrate-direct surface enrichment ──────────────
+//
+// Mirror of V-045's spsc:: and V-046's mpmc:: surface treatment.
+// PermissionedChaseLevDeque is THE worked work-stealing example in
+// the CSL/separation-logic stack: ASYMMETRIC linear × fractional
+// permissions — one Linear Owner (push_bottom / pop_bottom) and many
+// Fractional Thieves (steal_top via internally-minted Pool root).
+// The thief pool is constructed inside the substrate (mirror of
+// PermissionedSnapshot's reader pool), so callers mint only the
+// linear Owner Permission externally.
+//
+// Pre-V-047 the chaselev:: sub-namespace surfaced only the ctx-bound
+// session mints + endpoint mints — callers who wanted to construct
+// a PermissionedChaseLevDeque, mint its Whole permission, or split
+// into Owner/Thief halves had to descend into
+// <crucible/concurrent/PermissionedChaseLevDeque.h> directly.  V-047
+// closes the discoverability gap by re-exporting the substrate
+// primitive, its three-tag permission tree, and the DequeValue
+// concept (the same shape spsc surfaces SpscValue and mpmc surfaces
+// MpmcValue).
+//
+// Surface (additive, all alias-template / using-decl — pure name
+// lookup, zero runtime cost).  No new mint factories — endpoint and
+// session mints already shipped from sessions/ChaseLevDequeSession.h.
+
+// Substrate alias — full re-export including default UserTag = void.
+// DequeValue T constraint surfaced for diagnostic clarity (same
+// pattern as fixy::substr::spsc::PermissionedSpscChannel).
+template <::crucible::concurrent::DequeValue T,
+          std::size_t Capacity,
+          typename UserTag = void>
+using PermissionedChaseLevDeque =
+    ::crucible::concurrent::PermissionedChaseLevDeque<T, Capacity, UserTag>;
+
+// DequeValue concept re-export (using-decl form — concepts can be
+// brought in by name).  Bumps substr_chaselev_using cardinality 4 → 5.
+using ::crucible::concurrent::DequeValue;
+
+// deque_tag sub-namespace — Whole / Owner / Thief permission tag
+// templates.  Although the work-stealing CSL split is asymmetric
+// (Owner is Linear, Thief is Fractional via internal pool), the
+// substrate ships all three tags + a splits_into<Whole, Owner, Thief>
+// specialization so callers may use the standard mint_permission_split
+// rail for the Whole Permission if they prefer (the substrate's
+// default-ctor mints the Thief pool root internally; an external
+// Whole→Owner+Thief split is also valid for callers that want explicit
+// pool construction).
+namespace deque_tag {
+template <typename UserTag>
+using Whole =
+    ::crucible::concurrent::deque_tag::Whole<UserTag>;
+template <typename UserTag>
+using Owner =
+    ::crucible::concurrent::deque_tag::Owner<UserTag>;
+template <typename UserTag>
+using Thief =
+    ::crucible::concurrent::deque_tag::Thief<UserTag>;
+}  // namespace deque_tag
 
 // Mint factories.
 using ::crucible::safety::proto::chaselev_session::mint_chaselev_owner;
@@ -728,7 +789,7 @@ using ::crucible::concurrent::SubstrateBenefitsFromParallelism;
 // ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
 //
 // Drift-catch for the per-substrate sub-namespaces: spsc (3), swmr (6),
-// chaselev (4), metalog (4), chainedge (4), mpmc (4), calendar_grid (4),
+// chaselev (5), metalog (4), chainedge (4), mpmc (5), calendar_grid (4),
 // sharded_calendar_grid (4), sharded_grid (4), snapshot (4), and the
 // outer-level mint_substrate_session re-export (1).  mpsc:: is NOT a
 // pure re-export — it defines its own mint factories (also covered by
@@ -738,6 +799,10 @@ using ::crucible::concurrent::SubstrateBenefitsFromParallelism;
 // mpmc::MpmcValue using-decl added by FIXY-V-046 bumped mpmc 4 → 5
 // (substrate alias template + tag tree alias templates do NOT count
 // — only the MpmcValue using-decl bumps the cardinality witness).
+// chaselev::DequeValue using-decl added by FIXY-V-047 bumped chaselev
+// 4 → 5 (same pattern as V-045 / V-046 — substrate alias template +
+// deque_tag tree alias templates do NOT count toward the cardinality
+// witness; only the concept using-decl does).
 //
 // Same recipe as fixy/Pipe.h / fixy/Struct.h: type-identity witnesses
 // for representative items + per-sub-namespace cardinality mirrors.
@@ -905,11 +970,79 @@ static_assert(std::is_same_v<typename MpmcViaFixy::value_type, int>);
 
 }  // namespace v046
 
+// ── FIXY-V-047: Chase-Lev substrate-direct surface witnesses ─────
+//
+// Same recipe as v045:: / v046:: above.  Pin every V-047 addition:
+// substrate alias identity, DequeValue concept admission parity,
+// tag tree identity (three tags — Whole / Owner / Thief, asymmetric
+// linear × fractional CSL split), member-typedef propagation,
+// deque_capacity passthrough, value_type identity, surface concept
+// admission.  ChaseLev differs structurally from SPSC/MPMC in that
+// Owner is Linear and Thief is Fractional via internal pool, but
+// the substrate-direct surface witnesses are structurally identical.
+
+namespace v047 {
+
+struct V047ProbeUserTag {};
+
+// 1. Substrate alias identity — fixy path === concurrent path.
+using DequeViaFixy = ::crucible::fixy::substr::chaselev::PermissionedChaseLevDeque<
+    int, 64, V047ProbeUserTag>;
+using DequeViaConcurrent = ::crucible::concurrent::PermissionedChaseLevDeque<
+    int, 64, V047ProbeUserTag>;
+static_assert(std::is_same_v<DequeViaFixy, DequeViaConcurrent>,
+    "fixy::substr::chaselev::PermissionedChaseLevDeque must alias the substrate.");
+
+// 2. DequeValue concept admission parity (using-decl preserves
+// concept semantics).
+static_assert(::crucible::fixy::substr::chaselev::DequeValue<int> ==
+              ::crucible::concurrent::DequeValue<int>);
+static_assert(::crucible::fixy::substr::chaselev::DequeValue<int>);
+
+// 3. Tag template identity — Whole / Owner / Thief alias the
+// substrate's deque_tag tree exactly.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::chaselev::deque_tag::Whole<V047ProbeUserTag>,
+    ::crucible::concurrent::deque_tag::Whole<V047ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::chaselev::deque_tag::Owner<V047ProbeUserTag>,
+    ::crucible::concurrent::deque_tag::Owner<V047ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::chaselev::deque_tag::Thief<V047ProbeUserTag>,
+    ::crucible::concurrent::deque_tag::Thief<V047ProbeUserTag>>);
+
+// 4. Tag identity propagates through DequeViaFixy's member typedefs.
+// Note: no producer_tag/consumer_tag on chaselev — Owner is the
+// privileged Linear side, Thief is the Fractional side.
+static_assert(std::is_same_v<
+    typename DequeViaFixy::whole_tag,
+    ::crucible::fixy::substr::chaselev::deque_tag::Whole<V047ProbeUserTag>>);
+static_assert(std::is_same_v<
+    typename DequeViaFixy::owner_tag,
+    ::crucible::fixy::substr::chaselev::deque_tag::Owner<V047ProbeUserTag>>);
+static_assert(std::is_same_v<
+    typename DequeViaFixy::thief_tag,
+    ::crucible::fixy::substr::chaselev::deque_tag::Thief<V047ProbeUserTag>>);
+
+// 5. ChaseLevSessionSurface admits the representative deque.
+static_assert(
+    ::crucible::fixy::substr::chaselev::ChaseLevSessionSurface<DequeViaFixy>);
+
+// 6. deque_capacity passes through (value-template parity).
+static_assert(DequeViaFixy::deque_capacity == 64);
+static_assert(DequeViaFixy::deque_capacity ==
+              DequeViaConcurrent::deque_capacity);
+
+// 7. value_type identity — substrate's T == fixy's T.
+static_assert(std::is_same_v<typename DequeViaFixy::value_type, int>);
+
+}  // namespace v047
+
 // ── Per-sub-namespace cardinality witnesses ──────────────────────
 
 constexpr int substr_spsc_using                  = 3;
 constexpr int substr_swmr_using                  = 6;
-constexpr int substr_chaselev_using              = 4;
+constexpr int substr_chaselev_using              = 5;
 constexpr int substr_metalog_using               = 4;
 constexpr int substr_chainedge_using             = 4;
 constexpr int substr_mpmc_using                  = 5;
@@ -926,8 +1059,8 @@ constexpr int substr_total_using =
     substr_sharded_grid_using + substr_snapshot_using +
     substr_outer_using;
 
-static_assert(substr_total_using == 43,
-    "fixy::substr:: using-decl surface drifted from 43 — Substr.h "
+static_assert(substr_total_using == 44,
+    "fixy::substr:: using-decl surface drifted from 44 — Substr.h "
     "sub-namespace re-exports and this sentinel must update in lockstep.");
 
 // ── FIXY-U-051: topology + ctx-fit concept-surface witnesses ───────

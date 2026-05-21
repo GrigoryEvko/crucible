@@ -205,6 +205,7 @@ crucible_test(test_fixy_wrap_pipeline_stage_endpoint) # FIXY-V-043 — fixy::wra
 crucible_test(test_fixy_wrap_inferred) # FIXY-V-044 — fixy::wrap:: InferredRow + InferredPermissionTags surface
 crucible_test(test_fixy_substr_spsc_permissioned_spsc_channel) # FIXY-V-045 — fixy::substr::spsc:: PermissionedSpscChannel surface
 crucible_test(test_fixy_substr_mpmc_permissioned_mpmc_channel) # FIXY-V-046 — fixy::substr::mpmc:: PermissionedMpmcChannel surface
+crucible_test(test_fixy_substr_chaselev_permissioned_chase_lev_deque) # FIXY-V-047 — fixy::substr::chaselev:: PermissionedChaseLevDeque surface
 crucible_test(test_fixy_sess)
 crucible_test(test_fixy_sess_phi)
 crucible_test(test_fixy_sess_patterns)  # FIXY-AUDIT-C6
