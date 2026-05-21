@@ -142,6 +142,14 @@ static_assert( is_subtype_sync_v<Send<Refined<length_ge<1>, std::span<int>>, End
                                  Send<Refined<non_empty, std::span<int>>, End>>);
 static_assert( is_subtype_sync_v<Send<Refined<length_ge<8>, std::span<int>>, End>,
                                  Send<Refined<non_empty, std::span<int>>, End>>);
+// FIXY-U-164: missing soundness witness from U-163 — length_ge<0> is
+// vacuous (size_t unsigned, x ≥ 0 always-true), so an empty container
+// passes length_ge<0> but FAILS non_empty.  The implies_v witness for
+// this gate exists at file scope (Refined.h's `!implies_v<length_ge<0>,
+// non_empty>`), but the consumer-level is_subsort witness was missed
+// in U-163.  Closing here completes U-163's 100% premise.
+static_assert(!is_subtype_sync_v<Send<Refined<length_ge<0>, std::span<int>>, End>,
+                                 Send<Refined<non_empty, std::span<int>>, End>>);
 
 // U-161: InRange<L, H> ⇒ non_negative when L ≥ 0
 static_assert( is_subtype_sync_v<Send<Refined<in_range<0, 100>, int>, End>,
@@ -192,6 +200,39 @@ static_assert( is_subtype_sync_v<Recv<Refined<non_negative, int>, End>,
 static_assert( is_subtype_sync_v<
     Loop<Send<Refined<bounded_below<10>, int>, Continue>>,
     Loop<Send<Refined<positive, int>, Continue>>>);
+
+// ── FIXY-U-164 — transitive-closure direct bridges ─────────────────
+//
+// The is_subsort partial spec in SessionPayloadSubsort.h requires
+// DIRECT implies_v — there is no recursive transitive composition.
+// So the chain `in_range<5, 100> ⇒ bounded_below<5> ⇒ positive` is
+// NOT automatically reachable through is_subsort without an explicit
+// `in_range<L, H> ⇒ positive` direct bridge axiom.  Similarly the
+// chain `bounded_below<N> ⇒ positive ⇒ non_zero` needs a direct
+// `bounded_below<N> ⇒ non_zero` bridge.
+//
+// U-164 ships both bridges (Refined.h + RefinedAlgebra.h).  Witness
+// each through is_subtype_sync_v at the boundary cardinality + the
+// soundness gate that proves the L ≥ 1 / N ≥ 1 requires-clause is
+// load-bearing.
+
+// InRange<L, H> ⇒ positive direct bridge (L ≥ 1):
+static_assert( is_subtype_sync_v<Send<Refined<in_range<1, 100>, int>, End>,
+                                 Send<Refined<positive, int>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>,
+                                 Send<Refined<positive, int>, End>>);
+// Soundness: L=0 admits x=0 (NOT positive); must NOT propagate.
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<0, 100>, int>, End>,
+                                 Send<Refined<positive, int>, End>>);
+
+// BoundedBelow<N> ⇒ non_zero direct bridge (N ≥ 1):
+static_assert( is_subtype_sync_v<Send<Refined<bounded_below<1>, int>, End>,
+                                 Send<Refined<non_zero, int>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<bounded_below<10>, int>, End>,
+                                 Send<Refined<non_zero, int>, End>>);
+// Soundness: N=0 admits x=0 (IS zero); must NOT propagate.
+static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<0>, int>, End>,
+                                 Send<Refined<non_zero, int>, End>>);
 
 // ── Runtime scenario: Vessel-FFI flow ──────────────────────────────
 

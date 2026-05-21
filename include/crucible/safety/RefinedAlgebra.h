@@ -387,6 +387,32 @@ struct predicate_implies<
     std::remove_cv_t<decltype(positive)>>
     : std::true_type {};
 
+// ── FIXY-U-164 — BoundedBelow ⇒ non_zero direct bridge ─────────────
+//
+// BoundedBelow<N> ⇒ non_zero   for N ≥ 1
+//
+// Same transitive-closure rationale as the U-164 InRange⇒positive
+// bridge in Refined.h: is_subsort requires DIRECT implies_v, so the
+// chain `bounded_below<N> ⇒ positive ⇒ non_zero` (via the existing
+// U-162 BoundedBelow⇒positive + Refined.h's positive⇒non_zero axioms)
+// is NOT automatically reachable through is_subsort.  This direct
+// bridge closes the gap.
+//
+// Soundness: bounded_below<N>(x) = (x >= decltype(x)(N)).  For N ≥ 1:
+//   * Arithmetic T: x ≥ 1 ⇒ x ≠ 0 ⇒ non_zero(x).
+//   * Pointer T:    x ≥ (T*)1 means address ≥ 1 ⇒ x ≠ nullptr ⇒
+//     non_zero(x) (via non_zero's else-branch `x != decltype(x){0}`
+//     which equals `x != nullptr` for pointers).
+// Both T categories sound at N ≥ 1.  Conservative-but-sound gate
+// rationale matches the U-162 BoundedBelow⇒positive bridge.
+
+template <auto N>
+    requires (N >= 1)
+struct predicate_implies<
+    BoundedBelow<N>,
+    std::remove_cv_t<decltype(non_zero)>>
+    : std::true_type {};
+
 // FIXY-U-162 closure-axiom witnesses + soundness gates at boundary.
 static_assert(implies_v<bounded_below<10>, bounded_below<5>>,
     "FIXY-U-162: bounded_below<10> ⇒ bounded_below<5> "
@@ -418,6 +444,16 @@ static_assert(!implies_v<bounded_below<0>, positive>,
     "FIXY-U-162: bounded_below<0> must NOT imply positive "
     "(admits x=0 which is NOT positive; soundness — the N ≥ 1 "
     "requires-clause is load-bearing, not decoration).");
+
+// FIXY-U-164 closure-axiom witnesses for the new non_zero bridge.
+static_assert(implies_v<bounded_below<1>, non_zero>,
+    "FIXY-U-164: bounded_below<1> ⇒ non_zero (boundary N=1 case).");
+static_assert(implies_v<bounded_below<10>, non_zero>,
+    "FIXY-U-164: bounded_below<10> ⇒ non_zero (tighter lower bound).");
+static_assert(!implies_v<bounded_below<0>, non_zero>,
+    "FIXY-U-164: bounded_below<0> must NOT imply non_zero "
+    "(admits x=0 which IS zero; soundness — the N ≥ 1 gate matches "
+    "the BoundedBelow⇒positive discipline).");
 
 // ── Self-test block ─────────────────────────────────────────────────
 //

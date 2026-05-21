@@ -740,6 +740,37 @@ struct predicate_implies<
     std::remove_cv_t<decltype(non_negative)>>
     : std::true_type {};
 
+// ── FIXY-U-164 — InRange ⇒ positive direct bridge ──────────────────
+//
+// InRange<L, H> ⇒ positive   for L ≥ 1
+//
+// The is_subsort partial spec in SessionPayloadSubsort.h requires
+// DIRECT implies_v<P, Q>; it does NOT recursively compose.  So even
+// though the existing axioms give:
+//
+//   in_range<5, 100> ⇒ bounded_below<5>  (U-162 InRange⇒BoundedBelow)
+//   bounded_below<5> ⇒ positive          (U-162 BoundedBelow⇒positive)
+//
+// the chain `in_range<5, 100> ⇒ positive` is NOT automatically
+// reachable through is_subsort — each hop must have its own direct
+// implies_v partial spec.  This axiom closes that gap: a tight-range
+// refinement with L ≥ 1 strengthens DIRECTLY to positive, so
+// production code passing `WithinRange<5, 100, int>` through a session
+// position expecting `Positive<int>` propagates without an explicit
+// intermediate-cast.
+//
+// Soundness gate `L >= 1`: in_range<L, H>(x) = (x >= L && x <= H).
+// When L ≥ 1, the lower-bound conjunct gives x ≥ 1, which implies
+// x > 0 (positive).  L=0 admits x=0 which is NOT positive, hence the
+// gate.  Same conservative-but-sound discipline as the U-162
+// BoundedBelow⇒positive bridge's N ≥ 1 gate.
+template <auto L, auto H>
+    requires (L >= 1)
+struct predicate_implies<
+    InRange<L, H>,
+    std::remove_cv_t<decltype(positive)>>
+    : std::true_type {};
+
 // ── FIXY-U-159b — closure axioms (verify the propagation fires) ────
 //
 // Witness that the new implications are reachable through implies_v
@@ -791,6 +822,25 @@ static_assert(!implies_v<in_range<-5, 100>, non_negative>,
 static_assert(implies_v<in_range<5, 100>, in_range<0, 200>>,
     "FIXY-U-161: InRange tighter ⇒ looser (precondition for "
     "transitive chain to non_negative through the L=0 bridge).");
+
+// ── FIXY-U-164 — closure axioms for InRange ⇒ positive bridge ──────
+//
+// Witness the new direct bridge at the boundary cardinalities + the
+// L<1 soundness gate.  This bridge closes the lattice gap between
+// in_range (parameterised) and positive (unparameterised) without
+// requiring transitive composition through bounded_below.
+
+static_assert(implies_v<in_range<1, 100>, positive>,
+    "FIXY-U-164: in_range<1, 100> ⇒ positive (boundary L=1 case).");
+static_assert(implies_v<in_range<5, 100>, positive>,
+    "FIXY-U-164: in_range<5, 100> ⇒ positive (tighter lower bound).");
+static_assert(!implies_v<in_range<0, 100>, positive>,
+    "FIXY-U-164: in_range<0, 100> must NOT imply positive "
+    "(admits x=0 which is NOT positive; soundness — L ≥ 1 gate is "
+    "load-bearing).");
+static_assert(!implies_v<in_range<-5, 100>, positive>,
+    "FIXY-U-164: in_range<-5, 100> must NOT imply positive "
+    "(admits negative values; soundness — L ≥ 1 gate).");
 
 namespace detail::refined_self_test {
 
