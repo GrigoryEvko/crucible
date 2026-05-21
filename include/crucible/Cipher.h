@@ -267,7 +267,14 @@ class CRUCIBLE_OWNER Cipher {
         const std::string path = obj_path(hash.raw());
 
         // Idempotent: if the file already exists, same bytes → skip write.
-        if (std::filesystem::exists(path)) return hash;
+        // FIXY-V-026 audit-fix: cross-process recovery — even on the
+        // skip path, fdatasync to flush any ghost-bytes a previous
+        // process may have written but failed to flush before crashing.
+        // fdatasync_path_'s doc-block carries the full scenario.
+        if (std::filesystem::exists(path)) {
+            if (!fdatasync_path_(path)) return ContentHash{};
+            return hash;
+        }
 
         // Estimate serialization size conservatively.  #105:
         // estimate_serial_size returns Positive<std::size_t> — the
@@ -325,11 +332,7 @@ class CRUCIBLE_OWNER Cipher {
         // partial-durability state.
         f.close();
         if (!f) return ContentHash{};
-        const int fsync_fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
-        if (fsync_fd < 0) return ContentHash{};
-        const int fsync_rc = ::fdatasync(fsync_fd);
-        ::close(fsync_fd);
-        if (fsync_rc != 0) return ContentHash{};
+        if (!fdatasync_path_(path)) return ContentHash{};
 
         remember_cached_bytes(hash, std::span<const uint8_t>{buf.data(), n});
         return hash;
@@ -1181,6 +1184,50 @@ class CRUCIBLE_OWNER Cipher {
             }
         }
         return ContentHash{};
+    }
+
+    // ── FIXY-V-026 audit-fix: durable-on-return helper ─────────────
+    //
+    // Re-opens `path` RDONLY and fdatasync's it.  Returns true on
+    // success; false on any error (open failure, fdatasync failure
+    // other than EINTR).  EINTR is retried — fdatasync is permitted
+    // to be interrupted by signals on Linux and the retry contract
+    // matches the kernel's own loop in writeback_inodes_sb_nr_if_idle.
+    //
+    // Why this lives at class scope: both the new-write path AND
+    // the idempotent-skip path in store() MUST flush before
+    // returning a hash to the caller.  The original ship of V-026
+    // inlined the fdatasync block in the new-write path only —
+    // the idempotent-skip path returned `hash` without flushing.
+    // Cross-process recovery scenario the gap creates:
+    //
+    //   Process A: store() writes file, fdatasync FAILS (EIO).
+    //              store() returns ContentHash{} so A's caller
+    //              treats as failure — but the file ON DISK has
+    //              partial / not-yet-durable bytes.
+    //   Process A: crashes (or just exits) before the kernel
+    //              eventually completes the writeback.
+    //   Process B: store() of the SAME content_hash hits the
+    //              idempotent-skip path (file exists), returns
+    //              the hash WITHOUT flushing.  Caller treats the
+    //              hash as durable — but the on-disk bytes have
+    //              never had their writeback acknowledged.
+    //
+    // Routing the idempotent-skip path through fdatasync closes
+    // the gap: if A's ghost bytes haven't been flushed, B's
+    // fdatasync forces the flush (or fails, in which case B
+    // returns ContentHash{} like A did).  Cipher's durable-on-
+    // return contract holds for cross-process recovery, not just
+    // single-process success paths.
+    [[nodiscard]] static bool fdatasync_path_(const std::string& path) noexcept {
+        const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        if (fd < 0) return false;
+        int rc;
+        do {
+            rc = ::fdatasync(fd);
+        } while (rc < 0 && errno == EINTR);
+        ::close(fd);
+        return rc == 0;
     }
 
     // Path: root_/objects/<first2hex>/<remaining14hex>
