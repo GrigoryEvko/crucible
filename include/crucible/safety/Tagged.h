@@ -468,6 +468,167 @@ static_assert(!RetagAllowed<detail::retag_policy_test::NeverFrom,
                              detail::retag_policy_test::NeverTo>,
     "RetagAllowed concept must reject unspecialized transitions");
 
+// ── V-023 safe-transition catalog ──────────────────────────────────
+//
+// Every specialization below admits exactly one (From → To) phantom-
+// tag transition.  The catalog is the SINGLE source of truth for the
+// safe laundering surface — every safety-critical retag review reads
+// this list and verifies that the validator at the call site
+// discharges the implicit invariant.  Adding a specialization here
+// is a security-review gate: which validator proves this transition
+// is safe?
+//
+// Discipline:
+//   - Group by tag-family axis (trust::, source::, vessel_trust::).
+//     Cross-family transitions are NEVER added — laundering across
+//     orthogonal axes (e.g., source::* → trust::*) confounds the
+//     phantom semantic.
+//   - Within a group, list shorter-distance transitions first
+//     (Unverified → Tested before Unverified → Verified).
+//   - Every specialization is paired with rationale naming the
+//     validator that discharges the invariant.
+//   - The inverse direction (downgrade) stays REJECTED by the V-022
+//     fail-closed primary template — confirmed by inverse static
+//     asserts in the self-test block.
+//
+// V-024 wires this catalog into Tagged::retag()'s requires-clause.
+// Until then, the catalog is consultative — V-022's concept gate
+// compiles, V-024 pins it onto retag().
+
+// ── trust:: catalog — verification-status escalation ───────────────
+//
+// Trust is a one-way ratchet: Unverified ⊏ Tested ⊏ Verified.
+// Assumed is a sibling pre-condition that discharges into Verified
+// once the assumption is checked.  The validator at the retag site —
+// test suite execution, proof checker, assumption pre-condition
+// verification — IS the safety-bearing component; the retag is the
+// type-level record that it ran.
+
+template <> struct retag_policy<trust::Unverified, trust::Tested> {
+    // Discharge: test suite ran and passed against this value.
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<trust::Unverified, trust::Verified> {
+    // Discharge: formal proof / cryptographic verification completed.
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<trust::Tested, trust::Verified> {
+    // Discharge: proof obligation discharged on top of test coverage.
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<trust::Assumed, trust::Verified> {
+    // Discharge: previously-assumed pre-condition was checked.
+    static constexpr bool allowed = true;
+};
+
+// ── source:: catalog — provenance laundering ───────────────────────
+//
+// External / FromUser → Sanitized: the input validator (well-formed
+// ness, bounds, character-class) ran and accepted the value.
+// External / Sanitized → IntegrityVerified: the integrity check
+// (CRC / xxHash / HMAC trailer) ran and matched.  Recorded → Loaded:
+// the recording pipeline finished and the value was admitted to
+// persistent state.
+
+template <> struct retag_policy<source::External, source::Sanitized> {
+    // Discharge: input sanitizer at the trust boundary accepted bytes.
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<source::External, source::IntegrityVerified> {
+    // Discharge: end-to-end integrity check (xxHash64 trailer, etc.)
+    // recomputed at receiver and matched the wire value.
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<source::Sanitized, source::IntegrityVerified> {
+    // Discharge: sanitized value additionally passes integrity check.
+    // The two predicates compose (sanitized AND integrity-verified).
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<source::FromUser, source::Sanitized> {
+    // Discharge: user-supplied value passed the input sanitizer.
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<source::Recorded, source::Loaded> {
+    // Discharge: recording pipeline closed the trace; value is now
+    // admitted into validated persistent state (Cipher load path).
+    static constexpr bool allowed = true;
+};
+
+// ── vessel_trust:: catalog — Vessel-boundary validation ────────────
+//
+// FromPytorch marks raw input crossing the PyTorch ABI boundary;
+// Validated marks the same value after Vessel-side well-formedness
+// checks pass.  Internal paths (record / replay / KernelCache lookup)
+// demand Validated at entry; the type system rejects the
+// `FromPytorch → record` shortcut at the call site.
+
+template <> struct retag_policy<vessel_trust::FromPytorch, vessel_trust::Validated> {
+    // Discharge: Vessel adapter's well-formedness checks ran on input.
+    static constexpr bool allowed = true;
+};
+
+// ── V-023 self-test ────────────────────────────────────────────────
+//
+// Positive: every catalog specialization admits its transition.
+// Negative: every inverse direction stays rejected — the fail-closed
+// primary template does NOT auto-admit the reverse, so the V-022
+// property survives intact under the V-023 catalog.
+
+// trust:: positives — catalog admits forward escalation
+static_assert(retag_policy<trust::Unverified, trust::Tested>::allowed,
+    "trust::Unverified → trust::Tested must be admitted");
+static_assert(retag_policy<trust::Unverified, trust::Verified>::allowed,
+    "trust::Unverified → trust::Verified must be admitted");
+static_assert(retag_policy<trust::Tested, trust::Verified>::allowed,
+    "trust::Tested → trust::Verified must be admitted");
+static_assert(retag_policy<trust::Assumed, trust::Verified>::allowed,
+    "trust::Assumed → trust::Verified must be admitted");
+
+// trust:: inverse rejected — verification strip is NEVER safe
+static_assert(!retag_policy<trust::Verified, trust::Unverified>::allowed,
+    "trust::Verified → trust::Unverified would erase the proof");
+static_assert(!retag_policy<trust::Verified, trust::Tested>::allowed,
+    "trust:: catalog is one-way; Verified → Tested is a downgrade");
+static_assert(!retag_policy<trust::Tested, trust::Unverified>::allowed,
+    "trust::Tested → trust::Unverified would erase test coverage");
+
+// source:: positives — catalog admits forward laundering
+static_assert(retag_policy<source::External, source::Sanitized>::allowed,
+    "source::External → source::Sanitized must be admitted");
+static_assert(retag_policy<source::External, source::IntegrityVerified>::allowed,
+    "source::External → source::IntegrityVerified must be admitted");
+static_assert(retag_policy<source::Sanitized, source::IntegrityVerified>::allowed,
+    "source::Sanitized → source::IntegrityVerified must be admitted");
+static_assert(retag_policy<source::FromUser, source::Sanitized>::allowed,
+    "source::FromUser → source::Sanitized must be admitted");
+static_assert(retag_policy<source::Recorded, source::Loaded>::allowed,
+    "source::Recorded → source::Loaded must be admitted");
+
+// source:: inverse rejected — taint cannot be reintroduced
+static_assert(!retag_policy<source::Sanitized, source::External>::allowed,
+    "source::Sanitized → source::External would reintroduce taint");
+static_assert(!retag_policy<source::IntegrityVerified, source::External>::allowed,
+    "source::IntegrityVerified → source::External would erase integrity");
+static_assert(!retag_policy<source::Loaded, source::Recorded>::allowed,
+    "source::Loaded → source::Recorded would unwind admitted state");
+
+// vessel_trust:: positive + inverse
+static_assert(retag_policy<vessel_trust::FromPytorch, vessel_trust::Validated>::allowed,
+    "vessel_trust::FromPytorch → vessel_trust::Validated must be admitted");
+static_assert(!retag_policy<vessel_trust::Validated, vessel_trust::FromPytorch>::allowed,
+    "vessel_trust::Validated → FromPytorch would erase well-formedness");
+
+// Concept-form positives + cross-axis rejection survives V-023
+static_assert(RetagAllowed<source::External, source::Sanitized>,
+    "RetagAllowed concept admits catalog transitions");
+static_assert(RetagAllowed<trust::Unverified, trust::Verified>,
+    "RetagAllowed concept admits trust escalation");
+static_assert(!RetagAllowed<source::External, trust::Verified>,
+    "Cross-axis transition (source::* to trust::*) stays rejected — "
+    "laundering across orthogonal axes is never safe");
+static_assert(!RetagAllowed<source::FromUser, access::WriteOnce>,
+    "Cross-axis transition (source::* to access::*) stays rejected");
+
 // ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
 //
 // `mint_tagged<Tag, T>(value)` synthesizes an authoritative
