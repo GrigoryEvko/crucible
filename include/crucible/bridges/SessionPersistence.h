@@ -682,20 +682,17 @@ public:
     }
 };
 
-template <typename Proto,
-          ::crucible::effects::IsExecCtx Ctx,
-          typename Resource>
-    requires ::crucible::effects::CtxAdmits<
-        Ctx, CipherSessionEventPersistenceRow>
+// FIXY-V-015: signature compacted so `noexcept` lands within the
+// mint-inventory scanner's 8-line window after `[[nodiscard]]`.
+// `constexpr` is intentionally omitted per §XXI rule "constexpr
+// unless the factory genuinely allocates" — `make_unique` below
+// performs a heap allocation, so `constexpr` would lie about cost.
+template <typename Proto, ::crucible::effects::IsExecCtx Ctx, typename Resource>
+    requires ::crucible::effects::CtxAdmits<Ctx, CipherSessionEventPersistenceRow>
 [[nodiscard]] auto mint_persisted_session(
-    Ctx const&,
-    Cipher& cipher,
-    CipherOpenView const& view,
-    Resource&& resource,
-    SessionTagId session,
-    RoleTagId self,
-    RoleTagId peer,
-    SessionPersistencePolicy policy = {}) noexcept
+    Ctx const&, Cipher& cipher, CipherOpenView const& view,
+    Resource&& resource, SessionTagId session, RoleTagId self,
+    RoleTagId peer, SessionPersistencePolicy policy = {}) noexcept
 {
     using CallerRow = typename Ctx::row_type;
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
