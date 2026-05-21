@@ -724,15 +724,24 @@ concept ShardSubstrateFitsCtxResidency =
 // layer enforces single-producer-or-multi-producer semantics
 // independently of the wire-permission flow.
 
-template <class Substr,
-          Direction Dir,
-          typename LoopCtx = void,
+// FIXY-V-016: §XXI single-concept gate composing the three sub-concepts
+// (bridgeable direction × residency fit × permissioned-protocol fit).
+// Mirrors `CtxFitsEndpointMint` (FIXY-V-014).  Folding the requires-list
+// into one named concept makes the mint-inventory scanner's 8-line
+// window pick up `requires`, and gives reviewers a single grep target
+// when auditing the gate.
+template <class Substr, Direction Dir, typename LoopCtx, typename Ctx>
+concept CtxFitsSubstrateSessionMint =
+    ::crucible::effects::IsExecCtx<Ctx>
+ && IsBridgeableDirection<Substr, Dir>
+ && SubstrateFitsCtxResidency<Substr, Ctx>
+ && ::crucible::safety::proto::CtxFitsPermissionedProtocol<
+        default_proto_for_t<Substr, Dir>, Ctx,
+        ::crucible::safety::proto::EmptyPermSet, LoopCtx>;
+
+template <class Substr, Direction Dir, typename LoopCtx = void,
           ::crucible::effects::IsExecCtx Ctx>
-    requires IsBridgeableDirection<Substr, Dir>
-          && SubstrateFitsCtxResidency<Substr, Ctx>
-          && ::crucible::safety::proto::CtxFitsPermissionedProtocol<
-                 default_proto_for_t<Substr, Dir>, Ctx,
-                 ::crucible::safety::proto::EmptyPermSet, LoopCtx>
+    requires CtxFitsSubstrateSessionMint<Substr, Dir, LoopCtx, Ctx>
 [[nodiscard]] constexpr auto
 mint_substrate_session(Ctx const&, handle_for_t<Substr, Dir>& handle) noexcept
 {
@@ -746,16 +755,21 @@ mint_substrate_session(Ctx const&, handle_for_t<Substr, Dir>& handle) noexcept
             LoopCtx>(&handle, std::source_location::current());
 }
 
-template <class Substr,
-          class Shard,
-          Direction Dir,
-          typename LoopCtx = void,
+// FIXY-V-016 shard variant: same §XXI single-concept gate composing
+// the bridgeable-shard-direction × shard-residency × permissioned-
+// protocol-fit triple.  Mirrors `CtxFitsSubstrateSessionMint` above.
+template <class Substr, class Shard, Direction Dir, typename LoopCtx, typename Ctx>
+concept CtxFitsShardSubstrateSessionMint =
+    ::crucible::effects::IsExecCtx<Ctx>
+ && IsBridgeableShardDirection<Substr, Shard, Dir>
+ && ShardSubstrateFitsCtxResidency<Substr, Shard, Dir, Ctx>
+ && ::crucible::safety::proto::CtxFitsPermissionedProtocol<
+        default_proto_for_t<Substr, Dir, Shard>, Ctx,
+        ::crucible::safety::proto::EmptyPermSet, LoopCtx>;
+
+template <class Substr, class Shard, Direction Dir, typename LoopCtx = void,
           ::crucible::effects::IsExecCtx Ctx>
-    requires IsBridgeableShardDirection<Substr, Shard, Dir>
-          && ShardSubstrateFitsCtxResidency<Substr, Shard, Dir, Ctx>
-          && ::crucible::safety::proto::CtxFitsPermissionedProtocol<
-                 default_proto_for_t<Substr, Dir, Shard>, Ctx,
-                 ::crucible::safety::proto::EmptyPermSet, LoopCtx>
+    requires CtxFitsShardSubstrateSessionMint<Substr, Shard, Dir, LoopCtx, Ctx>
 [[nodiscard]] constexpr auto
 mint_substrate_session(Ctx const&, handle_for_t<Substr, Dir, Shard>& handle) noexcept
 {

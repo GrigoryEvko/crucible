@@ -3661,7 +3661,7 @@ crucible_neg_compile_effects_test(neg_endpoint_topology_recommendation_mismatch
 crucible_neg_compile_effects_test(neg_substrate_session_unfit_residency
     "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
 crucible_neg_compile_effects_test(neg_substrate_session_non_bridgeable
-    "associated constraints are not satisfied|IsBridgeableDirection")
+    "associated constraints are not satisfied|IsBridgeableDirection|CtxFitsSubstrateSessionMint|CtxFitsShardSubstrateSessionMint|handle_for|incomplete type")
 
 # ─── Tier 3 commit 1 (#863, HS14): mint_stage gate fixtures ──────────
 #

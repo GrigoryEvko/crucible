@@ -29,7 +29,7 @@ appear as `-` in the flag columns.  The auditor surface for member-function
 mints lives in a separate "Member-function mints" section after the substrate
 trees (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T15:29:41Z`.
+Snapshot generated: `2026-05-21T15:33:47Z`.
 
 ## bridges/
 
@@ -62,7 +62,7 @@ Snapshot generated: `2026-05-21T15:29:41Z`.
 | `mint_pipeline_dag` | `include/crucible/concurrent/Pipeline.h:1045` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:206` | HS14: 3 |
 | `mint_stage` | `include/crucible/concurrent/Stage.h:670` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:151` | HS14: 26 |
 | `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:510` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:105` | HS14: 7 |
-| `mint_substrate_session` | `include/crucible/concurrent/SubstrateSessionBridge.h:737` | Y | Y | Y | - | ctx | `include/crucible/fixy/Pipe.h:113` | HS14: 12 |
+| `mint_substrate_session` | `include/crucible/concurrent/SubstrateSessionBridge.h:746` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:113` | HS14: 12 |
 | `mint_swmr_stage` | `include/crucible/concurrent/StageEndpointBridge.h:559` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:107` | HS14: 2 |
 
 ## effects/
