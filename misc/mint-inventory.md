@@ -26,13 +26,13 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-21T03:12:06Z`.
+Snapshot generated: `2026-05-21T03:16:49Z`.
 
 ## bridges/
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_atomic_session` | `include/crucible/bridges/MachineSessionBridge.h:281` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:105` | HS14: 2 |
+| `mint_atomic_session` | `include/crucible/bridges/MachineSessionBridge.h:281` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:105` | HS14: 4 |
 | `mint_crash_watched_endpoint` | `include/crucible/bridges/EndpointMint.h:127` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:223` | HS14: 4 |
 | `mint_crash_watched_session` | `include/crucible/bridges/CrashTransport.h:1216` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:130` | HS14: 5 |
 | `mint_open_view` | `include/crucible/bridges/SessionPersistence.h:736` | - | - | - | Y | ctx | [✗ NO-FIXY] | HS14: 17 |

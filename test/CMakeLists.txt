@@ -2100,6 +2100,26 @@ crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_endpoint_non_endpoin
 crucible_neg_compile_fixy_test(neg_fixy_bridge_crashwatched_endpoint_wrong_flag_type
     "no matching function|mint_crash_watched_endpoint|cannot bind|could not convert|OneShotFlag")
 
+# FIXY-U-117b — mint_atomic_session HS14 floor (≥2 fixtures via the
+# `fixy::bridge::` re-export at Bridge.h:105 — FIXY-U-117 landing).
+# Substrate at bridges/MachineSessionBridge.h:281 in `crucible::safety::`
+# namespace (NOT bridges::, despite the file path).  Concept gate is
+# `AtomicMachineCell<Cell> && safety::proto::is_well_formed_v<Proto>`
+# — two distinct mismatch classes:
+# (#1) non_cell — Cell-side concept gate.  Empty struct lacks
+#      `state_type` + `load(memory_order)` → AtomicMachineCell<Cell>
+#      false → requires-clause unsatisfied → overload removed.
+# (#2) ill_formed_proto — Proto-side trait gate.  Empty struct
+#      matches no `is_well_formed` specialization → access to
+#      ::value is ill-formed → substitution fails → overload removed.
+# Each fixture isolates ONE conjunct of the requires-clause (the
+# other argument is valid), so a regression that drops a single
+# conjunct surfaces in exactly one fixture.
+crucible_neg_compile_fixy_test(neg_fixy_bridge_atomic_session_non_cell
+    "no matching function|mint_atomic_session|AtomicMachineCell|state_type|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_bridge_atomic_session_ill_formed_proto
+    "no matching function|mint_atomic_session|is_well_formed|incomplete type|no type named|constraints not satisfied")
+
 # fixy-HS14-06 — per-role federation mints HS14 floor (≥2 fixtures
 # each across mint_sender / mint_receiver / mint_coord, all via the
 # `fixy::sess::` re-export — `using federation::mint_{sender,
