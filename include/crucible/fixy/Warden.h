@@ -213,6 +213,24 @@ static_assert(std::is_same_v<
     ::crucible::warden::QuarantineEvent>,
     "fixy::warden::QuarantineEvent must alias substrate.");
 
+// FIXY-U-120c — QuarantineTransition + QuarantineSnapshot identity
+// witnesses.  Both are non-mint quarantine surface types re-exported
+// at Warden.h above (the diagnostic-class-tag base + the snapshot
+// payload returned from QuarantinePolicy::current/snapshot).  Without
+// these asserts a using-decl regression that shadowed either type
+// with a local typedef would silently pass — `QuarantineSnapshot`
+// is trivially-copyable and structurally similar to a hand-rolled
+// substitute, masking ABI drift across the fixy:: surface.
+static_assert(std::is_same_v<
+    ::crucible::fixy::warden::QuarantineTransition,
+    ::crucible::warden::QuarantineTransition>,
+    "fixy::warden::QuarantineTransition must alias substrate.");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::warden::QuarantineSnapshot,
+    ::crucible::warden::QuarantineSnapshot>,
+    "fixy::warden::QuarantineSnapshot must alias substrate.");
+
 // Concept-resolution witnesses.  Each concept name is satisfied by
 // `ColdInitCtx` (which carries Init in its effect row); the substrate
 // ships the same static_asserts at the mint definition site.  This

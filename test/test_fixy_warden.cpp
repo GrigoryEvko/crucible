@@ -97,6 +97,22 @@ static_assert(std::is_same_v<fw::QuarantineConfig, warden_::QuarantineConfig>,
 static_assert(std::is_same_v<fw::QuarantineEvent, warden_::QuarantineEvent>,
     "fixy::warden::QuarantineEvent must alias substrate.");
 
+// FIXY-U-120c — QuarantineTransition (diagnostic-class tag base) and
+// QuarantineSnapshot (return type of QuarantinePolicy::current /
+// ::snapshot) are re-exported through fixy::warden:: at Warden.h
+// alongside the other 6 non-mint types above.  Without these two
+// asserts a using-decl regression that shadowed either type with a
+// local typedef would silently pass — QuarantineSnapshot in
+// particular is trivially-copyable and a hand-rolled substitute of
+// the same shape would fool the test TU otherwise.
+static_assert(std::is_same_v<fw::QuarantineTransition,
+                             warden_::QuarantineTransition>,
+    "fixy::warden::QuarantineTransition must alias substrate.");
+
+static_assert(std::is_same_v<fw::QuarantineSnapshot,
+                             warden_::QuarantineSnapshot>,
+    "fixy::warden::QuarantineSnapshot must alias substrate.");
+
 // ─── 6. Concept-resolution identity ───────────────────────────────
 //
 // Each CtxFitsXMint concept admits ColdInitCtx and rejects BgDrainCtx.
