@@ -1794,3 +1794,163 @@ static_assert(sizeof(stance::RealtimeHot<int>) == sizeof(int),
 }  // namespace detail::fn_self_test
 
 }  // namespace crucible::fixy
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-V-001: row_hash_contribution<fixy::fn<T, Grants...>> ──────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Closes Agent 4's Tier-1 Critical federation-cache fragmentation
+// bug at the fixy-facade level. Reference: Agent 4 report §T1-A,
+// /tmp/audit_test.cpp pinned at compile-time on the patched GCC 16:
+//
+//   row_hash_contribution_v<fixy::stance::PureCopy<int>>
+//                  == row_hash_contribution_v<fixy::stance::IoFunction<int>>
+//                  == 0;
+//
+// — capability-divergent stances over the SAME payload Type produced
+// identical RowHash{0}, collapsing the federation cache key
+// `KernelCacheKey{ContentHash, RowHash}` to `(ContentHash, 0)` for
+// every fixy::fn instantiation. A pure-row CtCrypto kernel and an
+// IoFunction kernel published with byte-identical content_hash would
+// alias to the same cache slot. The spec §7(b) federation discharge
+// gate ("cross-vendor numerics correctness is enforced before the
+// binary leaves the publishing organization") was silently unsound;
+// org A's BITEXACT_TC + constant-time discipline would not be
+// preserved on org B's download because the cache routing didn't see
+// the grade divergence.
+//
+// Design — delegate via ::safety_fn_t for permutation invariance:
+//
+// fixy::fn<Type, Grants...> resolves its capability projection into a
+// concrete `safety_fn_t = detail::resolve::resolved_fn_t<Type,
+// Grants...>` using `find_grant_t<D, Grants...>` (one grant per axis;
+// UniqueEngagementPerAxis enforced by the H-02 tier-4 static_assert).
+// `find_grant_t` is permutation-invariant for well-formed Grants
+// packs — the resolved safety::fn::Fn<Type, ...> is bit-identical
+// regardless of grant declaration order in the user's source.
+//
+// Routing the row_hash through ::safety_fn_t therefore inherits this
+// permutation invariance for free, AND inherits the 19-axis fold
+// shipped by FIXY-V-002 in safety/Fn.h. No re-implementation of the
+// per-axis fold logic on the fixy side.
+//
+// The WRAPPER_FIXY_FN_TAG (0x1E) salt keeps fixy::fn<T, Grants...>'s
+// hash DISTINCT from the equivalent directly-written `safety::fn::Fn
+// <T, ...>` (WRAPPER_SAFETY_FN_TAG, 0x1D). This matches the spec §0
+// thesis that fixy::fn is the discipline-bearing surface — code that
+// chose to write `fixy::fn<...>` opted into the IsAccepted gate,
+// AllDimsEngaged, ValidComposition cascade etc., and the federation
+// cache should reflect "this kernel was published through fixy
+// discipline" as a discriminating axis. A future migration path
+// could collapse the two slots via grant-erasure, but for now the
+// disjoint salt preserves the audit trail (cache-key inspection
+// reveals which API surface emitted the kernel).
+//
+// Cache-key separation guarantee:
+//   • bare T              ≠ fixy::fn<T, ...>      ≠ safety::fn::Fn<T, ...>
+//   • fixy::fn<T, A, B>  == fixy::fn<T, B, A>     (permutation invariance via safety_fn_t)
+//   • fixy::stance::PureCopy<int>      ≠ fixy::stance::IoFunction<int>
+//     (Usage / EffectRow axes diverge → distinct safety_fn_t → distinct
+//      row_hash)
+//   • fixy::fn<T, ...>   ≠ fixy::fn<T, ...different-axes...>
+//
+// Specialization lives here (alongside the class definition) per the
+// A1-018 "spec next to declaration" convention. RowHashFold.h's
+// open-extension-point doc-block at line 346 explicitly endorses
+// out-of-file specializations in the `crucible::safety::diag`
+// namespace following the recursive composition discipline.
+
+#include <crucible/safety/diag/RowHashFold.h>
+
+namespace crucible::safety::diag {
+
+template <typename Type, typename... Grants>
+struct row_hash_contribution<::crucible::fixy::fn<Type, Grants...>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FIXY_FN_TAG,
+        row_hash_contribution_v<
+            typename ::crucible::fixy::fn<Type, Grants...>::safety_fn_t>);
+};
+
+// ─── Self-test block — Agent 4's verified bug closes ──────────────
+
+namespace detail::fixy_fn_row_hash_self_test {
+
+using crucible::fixy::stance::PureCopy;
+using crucible::fixy::stance::PureLinear;
+using crucible::fixy::stance::IoFunction;
+using crucible::fixy::stance::BgWorker;
+using crucible::fixy::stance::CtCrypto;
+
+// The headline closure: distinct stances over IDENTICAL payload Type
+// MUST produce distinct row hashes. This is the literal test that
+// /tmp/audit_test.cpp pinned at compile-time on the patched GCC 16.
+//
+// Before this specialization shipped:
+//   row_hash_contribution_v<PureCopy<int>>    == 0
+//   row_hash_contribution_v<IoFunction<int>>  == 0
+//   row_hash_contribution_v<PureCopy<int>>   == row_hash_contribution_v<IoFunction<int>>
+//
+// After this specialization ships, all three of the above flip:
+//   row_hash_contribution_v<PureCopy<int>>    != 0
+//   row_hash_contribution_v<IoFunction<int>>  != 0
+//   row_hash_contribution_v<PureCopy<int>>   != row_hash_contribution_v<IoFunction<int>>
+
+static_assert(row_hash_contribution_v<PureCopy<int>>    != 0,
+    "FIXY-V-001 / Agent 4 T1-A: PureCopy<int> must contribute non-zero "
+    "to the federation cache RowHash.");
+static_assert(row_hash_contribution_v<IoFunction<int>>  != 0,
+    "FIXY-V-001 / Agent 4 T1-A: IoFunction<int> must contribute non-zero "
+    "to the federation cache RowHash.");
+
+// The principal cache-divergence claim — capability-distinct stances
+// over the SAME payload Type produce DISTINCT row hashes.
+static_assert(row_hash_contribution_v<PureCopy<int>>
+           != row_hash_contribution_v<IoFunction<int>>,
+    "FIXY-V-001 / Agent 4 T1-A: PureCopy<int> and IoFunction<int> must "
+    "produce distinct RowHash so the federation cache (KernelCacheKey "
+    "{ContentHash, RowHash}) routes them to disjoint slots. Spec §7(b) "
+    "federation discharge depends on this discrimination.");
+
+// Additional stance-divergence pinning — covers Usage, EffectRow,
+// Security, Reentrancy axes from the 12-stance catalog.
+static_assert(row_hash_contribution_v<PureLinear<int>>
+           != row_hash_contribution_v<PureCopy<int>>,
+    "PureLinear (Usage=Linear) vs PureCopy (Usage=Copy) differ on "
+    "the Usage axis — distinct row hashes required.");
+
+static_assert(row_hash_contribution_v<BgWorker<int>>
+           != row_hash_contribution_v<IoFunction<int>>,
+    "BgWorker (Effect={Bg,Alloc}) vs IoFunction (Effect={IO}) differ "
+    "on the EffectRow axis — distinct row hashes required.");
+
+static_assert(row_hash_contribution_v<CtCrypto<int>>
+           != row_hash_contribution_v<PureLinear<int>>,
+    "CtCrypto (constant-time discipline + Security tier) vs "
+    "PureLinear differ on multiple axes — distinct row hashes required.");
+
+// Cross-surface separation — fixy::fn and safety::fn::Fn route to
+// DISTINCT cache slots even when the underlying capability projection
+// is identical. The WRAPPER_FIXY_FN_TAG (0x1E) vs WRAPPER_SAFETY_FN_TAG
+// (0x1D) separation enforces this. (We cannot test this with the
+// `using safety_fn_t = ...` alias directly because the alias resolves
+// inside fixy::fn — but the salt guarantees it.)
+static_assert(row_hash_contribution_v<PureLinear<int>>
+           != row_hash_contribution_v<typename PureLinear<int>::safety_fn_t>,
+    "fixy::fn<T, ...> and the directly-spelled safety::fn::Fn<T, ...> "
+    "MUST route to distinct cache slots so the audit trail "
+    "'published-through-fixy' is preserved at federation-cache "
+    "lookup tier (WRAPPER_FIXY_FN_TAG vs WRAPPER_SAFETY_FN_TAG salt).");
+
+// Bare payload contributes 0; fixy::fn<T, ...> with the salt does NOT.
+static_assert(row_hash_contribution_v<int>             == 0);
+static_assert(row_hash_contribution_v<PureLinear<int>> != 0);
+
+// RowHash sentinel discipline — fixy::fn's hash is NOT the cache's
+// dedicated sentinel slot value.
+static_assert(!row_hash_of_v<PureLinear<int>>.is_sentinel());
+
+}  // namespace detail::fixy_fn_row_hash_self_test
+
+}  // namespace crucible::safety::diag
+

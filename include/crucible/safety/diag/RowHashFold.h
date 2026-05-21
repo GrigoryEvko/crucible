@@ -234,6 +234,48 @@ inline constexpr std::uint64_t WRAPPER_EPOCH_VERSIONED_TAG  = 0x1A00'0000'0000'0
 inline constexpr std::uint64_t WRAPPER_NUMA_PLACEMENT_TAG   = 0x1B00'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_RECIPE_SPEC_TAG      = 0x1C00'0000'0000'0000ULL;
 
+// ── FIXY-V-001 / V-002: Fn aggregator + fixy::fn facade row-hash salts ─
+//
+// The 19-axis `safety::fn::Fn<Type, ...>` aggregator AND the higher-level
+// `fixy::fn<Type, Grants...>` facade are BOTH row-bearing kinds — every
+// capability claim attached to a binding (UsageMode, EffectRow,
+// SecLevel, Source, Trust, Repr, Cost, Precision, Space, Overflow,
+// Mutation, Reentrancy, Size, Version, Staleness, plus Refinement /
+// Protocol / Lifetime / Cost type-valued axes) must contribute to the
+// federation cache key, otherwise two capability-divergent bindings
+// over the same payload Type collapse to row_hash == 0 and route to
+// the SAME (ContentHash, RowHash) cache slot.
+//
+// This is the bug Agent 4 verified at /tmp/audit_test.cpp on the
+// patched GCC 16: every `fixy::fn<Type, Stance1...>` and
+// `fixy::fn<Type, Stance2...>` with identical payload `Type` produced
+// `row_hash_contribution_v == 0` regardless of stance divergence on
+// Effect/Usage/Security/Vendor/Recipe/Hot/Wait/MemOrder/Allocator/
+// CipherTier/Numa axes. Spec §7(b) federation discharge ("cross-vendor
+// numerics correctness is enforced before the binary leaves the
+// publishing organization") was silently unsound.
+//
+// Salt allocations (per FOUND-I02 high-byte discipline):
+//   0x1D — Fn aggregator (substrate, safety::fn::Fn)
+//   0x1E — fixy::fn facade (binds Type+Grants pack, resolves via
+//          ::safety_fn_t for permutation-invariant cache slot)
+//
+// Specializations live in:
+//   safety/Fn.h           — `safety::fn::Fn<Type, ...>` 19-axis fold
+//                           (per A1-018 "spec next to declaration")
+//   fixy/Fn.h             — `fixy::fn<Type, Grants...>` facade fold
+//                           that delegates to ::safety_fn_t hash so
+//                           Grant-pack permutations resolve to the
+//                           SAME cache slot (find_grant_t<D, Grants...>
+//                           is permutation-invariant under
+//                           UniqueEngagementPerAxis).
+//
+// Salts 0x1D / 0x1E are disjoint from each other AND from the existing
+// 0x01-0x1C canonical-wrapper salts AND from the resource family
+// (0x10-0x11) — same separation discipline as A3-002 / A3-003.
+inline constexpr std::uint64_t WRAPPER_SAFETY_FN_TAG        = 0x1D00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FIXY_FN_TAG          = 0x1E00'0000'0000'0000ULL;
+
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
 // axiom — EffectRowLattice's defensive cap, FOUND-H01-AUDIT-2), so

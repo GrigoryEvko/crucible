@@ -692,3 +692,217 @@ static_assert(sizeof(Fn<const int*>) == sizeof(const int*));
 }  // namespace detail::fn_self_test
 
 }  // namespace crucible::safety::fn
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-V-002: row_hash_contribution<Fn<...>> 19-axis fold ────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Closes Agent 4's verified federation-cache bug: every `safety::fn::Fn
+// <Type, ...non-default-axes...>` instantiation previously routed to
+// the primary-template `row_hash_contribution<T>::value == 0` slot,
+// collapsing capability-divergent bindings to ONE federation cache
+// key (ContentHash, RowHash{0}). The audit at /tmp/audit_test.cpp
+// (Agent 4 report §T1-B) verified the collision on the patched GCC
+// 16: `safety::fn::Fn<int>` and `safety::fn::Fn<int, pred::True,
+// UsageMode::Copy>` produced identical row_hash, so the cross-vendor
+// numerics federation contract (§7(b) / FORGE.md §23.2) silently
+// fragmented under the same key.
+//
+// The specialization folds ALL 19 axes through `combine_ids` in a
+// pinned declaration-order traversal. The fold is order-sensitive by
+// design (combine_ids is Boost-style golden-ratio mixed) — Fn's axes
+// are POSITIONAL, so axis-position-vs-axis-value disambiguation is
+// guaranteed at the cache layer without needing canonicalization.
+//
+// Axis-fold protocol:
+//   • Type-valued axes (Refinement, Protocol, Lifetime, Source, Trust,
+//     Cost, Precision, Space, Size, Staleness): contribute their
+//     stable_type_id (FNV-1a fold of the reflection display name,
+//     FOUND-E07/E08). Two axes with structurally-identical tag
+//     classes but distinct types (e.g. source::FromInternal vs
+//     source::FromUser) produce DISTINCT contributions.
+//   • EffectRow: routes through the existing
+//     `row_hash_contribution<effects::Row<Es...>>` specialization —
+//     so the EffectRow's set-semantic permutation invariance and
+//     cardinality-seeded fold flows transparently into the Fn-axis
+//     hash. `Fn<T, ..., EffectRow=Row<IO,Bg>>` and `Fn<T, ...,
+//     EffectRow=Row<Bg,IO>>` hash identically (correct: same set).
+//   • Type (the payload, axis 1): contributes its OWN
+//     `row_hash_contribution_v<Type>` — so a payload that is itself
+//     row-bearing (e.g. wrapper-stacked) flows through. For bare
+//     payloads (int, float, struct), Type's contribution is 0 and
+//     the per-axis salt dominates.
+//   • Enum-valued axes (UsageMode Usage, SecLevel Security, ReprKind
+//     Repr, OverflowMode Overflow, MutationMode Mutation,
+//     ReentrancyMode Reentrancy): cast to underlying uint64_t. The
+//     wrapper-tag salt (WRAPPER_SAFETY_FN_TAG, 0x1D) guards against
+//     zero-collision when ALL enum axes happen to be 0 (e.g. the
+//     default-constructed Fn<int> with every default).
+//   • Integer-valued Version (uint32_t): widens to uint64_t, folds.
+//     Two Fns with same axes but Version 1 vs Version 2 produce
+//     distinct cache slots — supporting Fn API versioning across
+//     federation revisions.
+//
+// Cache-key separation guarantee:
+//   • `safety::fn::Fn<T>` ≠ bare `T` (the WRAPPER_SAFETY_FN_TAG salt
+//     ensures non-zero contribution).
+//   • `safety::fn::Fn<T, Refinement1>` ≠ `safety::fn::Fn<T, Refinement2>`
+//     (stable_type_id distinguishes types).
+//   • `safety::fn::Fn<T, ..., Usage1>` ≠ `safety::fn::Fn<T, ..., Usage2>`
+//     (underlying enum value participates).
+//   • `safety::fn::Fn<T, ..., Row<IO>>` ≠ `safety::fn::Fn<T, ..., Row<Bg>>`
+//     (delegates to the Row<Es...> specialization).
+//
+// Specialization lives here (alongside the class definition) per the
+// A1-018 "spec next to declaration" convention adopted for
+// effects/Resources.h and effects/Concurrent.h. RowHashFold.h's
+// open-extension-point doc-block at line 346 explicitly endorses
+// out-of-file specializations in the `crucible::safety::diag`
+// namespace following the recursive composition discipline.
+
+#include <crucible/safety/diag/RowHashFold.h>
+
+namespace crucible::safety::diag {
+
+template <
+    typename       Type,
+    typename       Refinement,
+    safety::fn::UsageMode      Usage,
+    typename       EffectRow,
+    safety::fn::SecLevel       Security,
+    typename       Protocol,
+    typename       Lifetime,
+    typename       Source,
+    typename       Trust,
+    safety::fn::ReprKind       Repr,
+    typename       Cost,
+    typename       Precision,
+    typename       Space,
+    safety::fn::OverflowMode   Overflow,
+    safety::fn::MutationMode   Mutation,
+    safety::fn::ReentrancyMode Reentrancy,
+    typename       Size,
+    std::uint32_t  Version,
+    typename       Staleness
+>
+struct row_hash_contribution<safety::fn::Fn<
+    Type, Refinement, Usage, EffectRow, Security, Protocol, Lifetime,
+    Source, Trust, Repr, Cost, Precision, Space, Overflow, Mutation,
+    Reentrancy, Size, Version, Staleness>>
+{
+    static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
+        // Start with the wrapper-tag salt; every subsequent
+        // combine_ids preserves the salt's discrimination across
+        // axis values via Boost-style mixing.
+        std::uint64_t h = detail::WRAPPER_SAFETY_FN_TAG;
+
+        // Payload-side row contribution — payload may itself be a
+        // row-bearing wrapper stack (e.g. HotPath<Hot, DetSafe<Pure,
+        // Computation<R, int>>>). Bare-T contributes 0 — the salt
+        // continues to discriminate via subsequent axes.
+        h = detail::combine_ids(h, row_hash_contribution_v<Type>);
+
+        // Type-valued axes — stable_type_id captures the tag class's
+        // identity (display name's FNV-1a) which is stable within
+        // one build per FOUND-E07's V1 contract.
+        h = detail::combine_ids(h, stable_type_id<Refinement>);
+        h = detail::combine_ids(h, stable_type_id<Protocol>);
+        h = detail::combine_ids(h, stable_type_id<Lifetime>);
+        h = detail::combine_ids(h, stable_type_id<Source>);
+        h = detail::combine_ids(h, stable_type_id<Trust>);
+        h = detail::combine_ids(h, stable_type_id<Cost>);
+        h = detail::combine_ids(h, stable_type_id<Precision>);
+        h = detail::combine_ids(h, stable_type_id<Space>);
+        h = detail::combine_ids(h, stable_type_id<Size>);
+        h = detail::combine_ids(h, stable_type_id<Staleness>);
+
+        // EffectRow — delegates to the Row<Es...> specialization for
+        // set-semantic permutation-invariant folding.
+        h = detail::combine_ids(h, row_hash_contribution_v<EffectRow>);
+
+        // Enum-valued axes — underlying uint8_t widens to uint64_t.
+        h = detail::combine_ids(h, static_cast<std::uint64_t>(Usage));
+        h = detail::combine_ids(h, static_cast<std::uint64_t>(Security));
+        h = detail::combine_ids(h, static_cast<std::uint64_t>(Repr));
+        h = detail::combine_ids(h, static_cast<std::uint64_t>(Overflow));
+        h = detail::combine_ids(h, static_cast<std::uint64_t>(Mutation));
+        h = detail::combine_ids(h, static_cast<std::uint64_t>(Reentrancy));
+
+        // Integer-valued Version — folds last.
+        h = detail::combine_ids(h, static_cast<std::uint64_t>(Version));
+        return h;
+    }();
+};
+
+// ─── Self-test block — Agent 4's verified bug closes ──────────────
+
+namespace detail::fn_row_hash_self_test {
+
+using crucible::safety::fn::Fn;
+using crucible::safety::fn::UsageMode;
+using crucible::safety::fn::SecLevel;
+using crucible::safety::fn::ReprKind;
+using crucible::safety::fn::OverflowMode;
+using crucible::safety::fn::MutationMode;
+using crucible::safety::fn::ReentrancyMode;
+using crucible::effects::Effect;
+using crucible::effects::Row;
+
+// Bare T contributes 0; Fn<T> with the salt does NOT.  This is the
+// load-bearing closure for Agent 4 T1-B.
+static_assert(row_hash_contribution_v<int>            == 0);
+static_assert(row_hash_contribution_v<Fn<int>>        != 0);
+static_assert(row_hash_contribution_v<Fn<int>>
+           != row_hash_contribution_v<int>);
+
+// Default-axis Fn<T> with two distinct payloads collide on the
+// Type-axis stable_type_id — but the WRAPPER_SAFETY_FN_TAG salt
+// keeps both off the bare-payload zero slot.
+static_assert(row_hash_contribution_v<Fn<int>>    != 0);
+static_assert(row_hash_contribution_v<Fn<float>>  != 0);
+// The two payloads produce DIFFERENT contributions through Type's
+// row_hash (both bare = 0, so the only discriminator is the
+// stable_type_id of pred::True which is the same — the actual
+// discriminator is `safety_fn_t` identity in the cache lookup tier,
+// not the row hash). At the row-hash layer, two default-axis Fns
+// over bare payloads with different types hash IDENTICALLY because
+// row_hash discriminates ROWS, not payloads. This matches the
+// Computation<R, T> design contract (2) "payload-blind for bare T".
+static_assert(row_hash_contribution_v<Fn<int>>
+           == row_hash_contribution_v<Fn<float>>);
+
+// Usage divergence — Linear vs Copy must hash distinctly. This is
+// the principal closure shape for Agent 4 T1-A/B.
+static_assert(row_hash_contribution_v<Fn<int>>  // Usage = Linear (default)
+           != row_hash_contribution_v<Fn<int, crucible::safety::fn::pred::True,
+                                            UsageMode::Copy>>);
+
+// Security divergence — Classified vs Public must hash distinctly.
+static_assert(row_hash_contribution_v<Fn<int>>  // Security = Classified (default)
+           != row_hash_contribution_v<Fn<int, crucible::safety::fn::pred::True,
+                                            UsageMode::Linear,
+                                            Row<>,
+                                            SecLevel::Public>>);
+
+// EffectRow divergence — Row<> vs Row<Effect::IO> must hash distinctly.
+static_assert(row_hash_contribution_v<Fn<int>>  // Row = Row<> (default)
+           != row_hash_contribution_v<Fn<int, crucible::safety::fn::pred::True,
+                                            UsageMode::Linear,
+                                            Row<Effect::IO>>>);
+
+// EffectRow permutation invariance — Row<IO, Bg> ≡ Row<Bg, IO>
+// (delegates to the Row<Es...> set-semantic fold).
+static_assert(row_hash_contribution_v<Fn<int, crucible::safety::fn::pred::True,
+                                          UsageMode::Linear,
+                                          Row<Effect::IO, Effect::Bg>>>
+           == row_hash_contribution_v<Fn<int, crucible::safety::fn::pred::True,
+                                          UsageMode::Linear,
+                                          Row<Effect::Bg, Effect::IO>>>);
+
+// Sentinel for the federation cache key — Fn<T>'s row_hash is
+// non-sentinel (not the documented sentinel slot value).
+static_assert(!row_hash_of_v<Fn<int>>.is_sentinel());
+
+}  // namespace detail::fn_row_hash_self_test
+
+}  // namespace crucible::safety::diag
