@@ -3757,6 +3757,15 @@ crucible_neg_compile_effects_test(neg_pipeline_ctor_public_bypass
 crucible_neg_compile_effects_test(neg_stage_ctor_public_bypass
     "is private within this context")
 
+# FIXY-V-011 HS14 companion — MpmcStage's previously-public ctor is now
+# private, with detail::make_mpmc_stage_from_endpoint_tuple (the helper
+# mint_mpmc_stage_from_endpoints forwards to) friended.  A direct
+# `MpmcStage<&body, Ctx, Inputs, Outputs>{ctx, inputs, outputs}` call
+# site bypasses the variadic row admission check and is rejected at the
+# access-control check.
+crucible_neg_compile_effects_test(neg_mpmc_stage_ctor_public_bypass
+    "is private within this context")
+
 # ─── #868: Endpoint↔Stage bridge gate fixtures ───────────────────────
 #
 # Two fixtures pin the CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp,

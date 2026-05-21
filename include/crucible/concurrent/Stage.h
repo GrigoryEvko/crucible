@@ -292,6 +292,15 @@ public:
     static constexpr bool value = compute();
 };
 
+// Forward-declared so MpmcStage<>'s class body can `friend` it.  The
+// definition lives in StageEndpointBridge.h (which includes this
+// header) and is the sole call site that constructs an MpmcStage —
+// reached only through mint_mpmc_stage_from_endpoints.
+template <auto FnPtr, class Ctx, class Tuple>
+[[nodiscard]] constexpr auto
+make_mpmc_stage_from_endpoint_tuple(Ctx const& ctx,
+                                    Tuple& endpoints) noexcept;
+
 }  // namespace detail
 
 template <auto FnPtr>
@@ -503,15 +512,6 @@ public:
         }
     }();
 
-    [[nodiscard]] explicit constexpr MpmcStage(
-        Ctx const& ctx,
-        input_tuple_type&& inputs,
-        output_tuple_type&& outputs) noexcept
-        : ctx_{ctx}
-        , inputs_{std::move(inputs)}
-        , outputs_{std::move(outputs)}
-    {}
-
     MpmcStage(MpmcStage const&) = delete(
         "MpmcStage holds linear or fractional endpoint handles");
     MpmcStage& operator=(MpmcStage const&) = delete(
@@ -540,6 +540,32 @@ public:
     }
 
 private:
+    // ── Construction (used by mint_mpmc_stage_from_endpoints; not user-facing) ──
+    //
+    // Private per CLAUDE.md §XXI — mint_mpmc_stage_from_endpoints (and
+    // its internal helper `detail::make_mpmc_stage_from_endpoint_tuple`)
+    // is the sole authorization point.  A direct call site like
+    // `MpmcStage<&body, Ctx, ins, outs>{ctx, ins, outs}` would bypass
+    // CtxFitsMpmcStageFromEndpoints' row admission and emit a stage
+    // whose effect row never sees `Subrow<required_row, ctx_row>`.
+    [[nodiscard]] explicit constexpr MpmcStage(
+        Ctx const& ctx,
+        input_tuple_type&& inputs,
+        output_tuple_type&& outputs) noexcept
+        : ctx_{ctx}
+        , inputs_{std::move(inputs)}
+        , outputs_{std::move(outputs)}
+    {}
+
+    // The sole authorized constructor lives in
+    // `detail::make_mpmc_stage_from_endpoint_tuple` (invoked from
+    // mint_mpmc_stage_from_endpoints).  Friend the entire template
+    // family so any (FnPtr, Ctx, Tuple) instantiation can reach the
+    // private ctor.
+    template <auto MintFnPtr, class MintCtx, class MintTuple>
+    friend constexpr auto detail::make_mpmc_stage_from_endpoint_tuple(
+        MintCtx const&, MintTuple&) noexcept;
+
     template <std::size_t... Is, std::size_t... Os>
     void run_impl_(std::index_sequence<Is...>,
                    std::index_sequence<Os...>) && noexcept {
