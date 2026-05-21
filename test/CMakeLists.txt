@@ -10364,6 +10364,28 @@ crucible_neg_compile_test(neg_retag_policy_cross_axis_rejects
     "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
 
 # ─────────────────────────────────────────────────────────────────
+# FIXY-V-024 HS14 — Tagged::retag() consumer-level requires-clause
+# ─────────────────────────────────────────────────────────────────
+#
+# V-022 fixtures above exercise the GATE level (free function +
+# class template constrained on `RetagAllowed`).  V-024 wires the
+# concept into `Tagged<T, Tag>::retag<NewTag>()`'s requires-clause,
+# so the CONSUMER level must also reject every catalog miss.  Two
+# fixtures, one per mismatch class:
+#   - cross_axis: source::* → trust::* (cross-family laundering;
+#     never admitted by V-023 because the phantom semantic does
+#     not bridge orthogonal axes).
+#   - sentinel_pair: V-022's `detail::retag_policy_test::
+#     {NeverFrom, NeverTo}` — reserved-forever-unspecialized,
+#     stays correct as the V-023 catalog grows.
+# Same broad diagnostic family as the gate fixtures (GCC 16
+# wording varies slightly across instantiation depths).
+crucible_neg_compile_test(neg_tagged_retag_cross_axis
+    "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
+crucible_neg_compile_test(neg_tagged_retag_sentinel_pair
+    "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
+
+# ─────────────────────────────────────────────────────────────────
 # fixy-A2-001 — StopG<Peer, CrashClass C> projection threading
 # ─────────────────────────────────────────────────────────────────
 #
