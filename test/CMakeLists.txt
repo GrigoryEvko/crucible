@@ -7623,6 +7623,22 @@ crucible_neg_compile_test(neg_schema_mint_mutable_view_to_sealed_overload
 crucible_neg_compile_test(neg_schema_mint_mutable_view_in_field
   "Type contains a safety::ScopedView<> in some field")
 
+# FIXY-U-137 — HS14 floor for CrucibleContext::mint_compiled_view.
+# CrucibleContext has only one typed view (CompiledView; no companion
+# RecordingView), so the intra-carrier per-state mismatch pattern used
+# by CKernelTable/SchemaTable doesn't apply.  The cross-carrier pair:
+#   * _cross_carrier — feed CompiledView to a CKernelTable::MutableView
+#     parameter; type system rejects the ScopedView<C,T> instantiation
+#     mismatch.  Demonstrates the carrier-level lock independently of
+#     state-level locks tested by U-135/U-136.  [GCC-WRAPPER-TEXT]
+#   * _in_field — same structural Tier-2 field-storage audit as the
+#     other carriers; proves the audit reaches CrucibleContext via its
+#     CompiledView typedef.
+crucible_neg_compile_test(neg_crucible_context_mint_compiled_view_cross_carrier
+  "invalid initialization of reference.*MutableView.*Compiled|cannot convert.*Compiled.*Mutable")
+crucible_neg_compile_test(neg_crucible_context_mint_compiled_view_in_field
+  "Type contains a safety::ScopedView<> in some field")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
