@@ -228,13 +228,28 @@ scan_member_function_mints() {
 
         # Walk forward through $file recording the most recent column-0
         # `class|struct NAME` declaration; print it when line number
-        # reaches the mint's line.  CRUCIBLE_OWNER / CRUCIBLE_API macros
-        # are stripped before the name match so `class CRUCIBLE_OWNER
-        # Cipher {` resolves to "Cipher" (not the macro name).
+        # reaches the mint's line.  Two annotation families are stripped
+        # before the name match so the regex's `[A-Za-z_]` anchor lands
+        # on the actual identifier:
+        #   1. `[[...]]` attribute blocks — handles `class [[nodiscard]]
+        #      Foo {` and `class [[gnu::const, gnu::pure]] Bar {`.
+        #      Stripped FIRST because the alternate ordering (`class
+        #      CRUCIBLE_OWNER [[nodiscard]] Baz`) is also legal and
+        #      stripping CRUCIBLE_* first would leave `class
+        #      [[nodiscard]] Baz` which would still need attribute strip.
+        #   2. `CRUCIBLE_*` annotation macros (CRUCIBLE_OWNER,
+        #      CRUCIBLE_API, …) — handles `class CRUCIBLE_OWNER Cipher {`.
+        # FIXY-U-118c: pre-empts a class-name mis-attribution bug where
+        # a `class [[nodiscard]] Inner { mint_x(...) }` nested inside an
+        # outer `class CRUCIBLE_OWNER Outer { ... }` would be silently
+        # attributed to Outer because the inner `match()` would fail to
+        # capture (the leading `[` is not in `[A-Za-z_]`) and `last_class`
+        # would retain the previous (wrong) value.
         local class_name
         class_name="$(awk -v target="$line" '
             /^(class|struct)[[:space:]]/ {
                 cleaned = $0
+                gsub(/\[\[[^]]*\]\][[:space:]]*/, "", cleaned)
                 gsub(/CRUCIBLE_[A-Z_]+[[:space:]]+/, "", cleaned)
                 if (match(cleaned, /^(class|struct)[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)/, m)) {
                     last_class = m[2]
@@ -251,7 +266,15 @@ scan_member_function_mints() {
         local rel="${file#"$scan_root"/}"
         printf '%s\t%s\t%s:%s\t%s\n' "$class_name" "$name" "$rel" "$line" "$quals"
     done < <(
-        rg -nP --no-heading \
+        # `--with-filename` (-H) is LOAD-BEARING: when rg is given exactly
+        # one path argument it auto-omits the filename prefix, breaking
+        # the `IFS=: read -r file line text` parse downstream (the line
+        # number lands in $file, the body in $line, and $text is empty).
+        # The production scan always sees ≥8 top-level headers so the
+        # bug never manifested; --self-test plants exactly one header so
+        # the bug surfaced as "0 member-function mints captured" until
+        # FIXY-U-118c forced the prefix.
+        rg -nP --no-heading --with-filename \
            '^\s+\[\[nodiscard\]\][^{]*\bmint_[a-z0-9_]+\s*\(' \
            "${files[@]}" 2>/dev/null || true
     )
@@ -332,6 +355,38 @@ NEG
 #include <crucible/fixy/Planted.h>
 // references mint_planted_token (second fixture for HS14 threshold)
 NEG
+    # ── Plant class-method mints — covers scan_member_function_mints ──
+    # FIXY-U-118c extension: the substrate path above tests free-function
+    # mint capture + fixy re-export + HS14 counter.  This block additionally
+    # plants two class-method mints (one under each annotation family) so
+    # `scan_member_function_mints` is exercised end-to-end:
+    #
+    #   1. `class CRUCIBLE_OWNER MacroHost`        — CRUCIBLE_* macro
+    #                                                annotation, was the
+    #                                                original known case.
+    #   2. `class [[nodiscard]] AttrHost`          — `[[...]]` attribute
+    #                                                annotation, the new
+    #                                                FIXY-U-118c-covered case.
+    #
+    # The self-test then verifies BOTH class names extract correctly (i.e.
+    # `MacroHost::mint_planted_macro` and `AttrHost::mint_planted_attr`,
+    # NOT `(unknown)::...`) — proving the awk gsub strip handles each
+    # annotation kind and the rg `--with-filename` prefix is honoured.
+    cat >"$tmp_root/include/crucible/PlantedHost.h" <<'HOST'
+#pragma once
+// Synthetic member-function mint-inventory fixture.
+#define CRUCIBLE_OWNER  /* deliberately empty for the self-test */
+namespace crucible::planted {
+class CRUCIBLE_OWNER MacroHost {
+public:
+    [[nodiscard]] int mint_planted_macro() const noexcept { return 0; }
+};
+class [[nodiscard]] AttrHost {
+public:
+    [[nodiscard]] int mint_planted_attr() const noexcept { return 0; }
+};
+}
+HOST
     out="$(mktemp)"
     CRUCIBLE_MINT_INVENTORY_TEST_ROOT="$tmp_root" \
         bash "${BASH_SOURCE[0]}" --stdout >"$out" 2>/dev/null
@@ -357,8 +412,37 @@ NEG
         rm -f "$out"
         exit 2
     fi
+    # ── Member-function mint discovery + class-name extraction ──
+    # FIXY-U-118c: assert BOTH annotation families resolve to the right
+    # enclosing class.  Each check is independently failable so the
+    # diagnostic points at the specific failure mode (rg prefix bug,
+    # CRUCIBLE_ macro strip bug, or [[...]] attribute strip bug).
+    if ! grep -qF 'MacroHost::mint_planted_macro' "$out"; then
+        printf 'gen-mint-inventory: SELF-TEST FAILED — MacroHost::mint_planted_macro not captured.\n' >&2
+        printf '   (CRUCIBLE_* annotation-macro strip regressed OR rg --with-filename missing.)\n' >&2
+        printf '── output ───\n%s\n────────────\n' "$(cat "$out")" >&2
+        rm -f "$out"
+        exit 2
+    fi
+    if ! grep -qF 'AttrHost::mint_planted_attr' "$out"; then
+        printf 'gen-mint-inventory: SELF-TEST FAILED — AttrHost::mint_planted_attr not captured.\n' >&2
+        printf '   (`[[...]]` attribute strip regressed OR class-name fell through to (unknown).)\n' >&2
+        printf '── output ───\n%s\n────────────\n' "$(cat "$out")" >&2
+        rm -f "$out"
+        exit 2
+    fi
+    # Negative: verify NO `(unknown)::mint_planted_*` row leaked through
+    # (would indicate the strip succeeded for one annotation but not the
+    # other, and the result fell through to the `[[ -z "$class_name" ]]
+    # && class_name="(unknown)"` fallback).
+    if grep -qE '\(unknown\)::mint_planted_' "$out"; then
+        printf 'gen-mint-inventory: SELF-TEST FAILED — planted mint fell through to (unknown)::.\n' >&2
+        printf '── output ───\n%s\n────────────\n' "$(cat "$out")" >&2
+        rm -f "$out"
+        exit 2
+    fi
     rm -f "$out"
-    printf 'gen-mint-inventory: self-test passed — mint capture + fixy re-export + HS14 count all honoured.\n' >&2
+    printf 'gen-mint-inventory: self-test passed — substrate mint + fixy re-export + HS14 count + member-function discovery (CRUCIBLE_* + [[...]] annotation families) all honoured.\n' >&2
     exit 0
 fi
 
