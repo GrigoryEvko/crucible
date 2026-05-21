@@ -44,6 +44,7 @@
 #include <crucible/SchemaTable.h>
 #include <crucible/TraceRing.h>
 #include <crucible/fixy/Wrap.h>   // FIXY-U-096r: Refined / bounded_above / in_range via the fixy umbrella
+#include <crucible/safety/OwnedFile.h>  // FIXY-V-032: std::FILE* RAII — no fclose() leaks on early-return
 
 namespace crucible {
 
@@ -202,8 +203,12 @@ static_assert(std::endian::native == std::endian::little,
               ".crtrace format requires little-endian host");
 
 [[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(const char* path) {
-  std::FILE* trace_file = std::fopen(path, "rb");
-  if (!trace_file) {
+  // FIXY-V-032: OwnedFile RAII — every early-return below closes the
+  // FILE* via the dtor; the 9 std::fclose() calls the previous version
+  // sprinkled across error paths are now structurally unreachable as
+  // a LeakSafe-axiom-violation (no path can leak the handle).
+  ::crucible::safety::OwnedFile trace_file{std::fopen(path, "rb")};
+  if (!trace_file.is_open()) {
     std::fprintf(stderr, "load_trace: cannot open %s\n", path);
     return nullptr;
   }
@@ -211,24 +216,21 @@ static_assert(std::endian::native == std::endian::little,
   // Read header (16 bytes).
   char magic[4]{};
   uint32_t version = 0, num_ops = 0, num_metas = 0;
-  if (std::fread(magic, 1, 4, trace_file) != 4 ||
-      std::fread(&version, 4, 1, trace_file) != 1 ||
-      std::fread(&num_ops, 4, 1, trace_file) != 1 ||
-      std::fread(&num_metas, 4, 1, trace_file) != 1) {
+  if (std::fread(magic, 1, 4, trace_file.get()) != 4 ||
+      std::fread(&version, 4, 1, trace_file.get()) != 1 ||
+      std::fread(&num_ops, 4, 1, trace_file.get()) != 1 ||
+      std::fread(&num_metas, 4, 1, trace_file.get()) != 1) {
     std::fprintf(stderr, "load_trace: truncated header in %s\n", path);
-    std::fclose(trace_file);
     return nullptr;
   }
 
   if (std::memcmp(magic, "CRTR", 4) != 0) {
     std::fprintf(stderr, "load_trace: bad magic in %s\n", path);
-    std::fclose(trace_file);
     return nullptr;
   }
   if (version != 1) {
     std::fprintf(stderr, "load_trace: unsupported version %u in %s\n",
                  version, path);
-    std::fclose(trace_file);
     return nullptr;
   }
 
@@ -241,7 +243,6 @@ static_assert(std::endian::native == std::endian::little,
     std::fprintf(stderr, "load_trace: header counts exceed cap in %s "
                          "(num_ops=%u num_metas=%u)\n",
                  path, num_ops, num_metas);
-    std::fclose(trace_file);
     return nullptr;
   }
   // Defense-in-depth typed witnesses (#1050 WRAP-TraceLoader-2).  The
@@ -259,18 +260,17 @@ static_assert(std::endian::native == std::endian::little,
   // Read op records.
   std::vector<TraceOpRecord> records(num_ops);
   if (num_ops > 0 &&
-      std::fread(records.data(), sizeof(TraceOpRecord), num_ops, trace_file) != num_ops) {
+      std::fread(records.data(), sizeof(TraceOpRecord), num_ops, trace_file.get()) != num_ops) {
     std::fprintf(stderr, "load_trace: truncated op records in %s\n", path);
-    std::fclose(trace_file);
     return nullptr;
   }
 
   // Read meta records. Detect 144B, 160B, and 168B layouts by checking
   // remaining file size after op records.
-  const long meta_start_pos = std::ftell(trace_file);
-  std::fseek(trace_file, 0, SEEK_END);
-  const long file_size = std::ftell(trace_file);
-  std::fseek(trace_file, meta_start_pos, SEEK_SET);
+  const long meta_start_pos = std::ftell(trace_file.get());
+  std::fseek(trace_file.get(), 0, SEEK_END);
+  const long file_size = std::ftell(trace_file.get());
+  std::fseek(trace_file.get(), meta_start_pos, SEEK_SET);
 
   const long remaining = file_size - meta_start_pos;
   const long meta_bytes_144 = static_cast<long>(num_metas) * 144;
@@ -291,18 +291,16 @@ static_assert(std::endian::native == std::endian::little,
     if (historical_144 || historical_160) {
       // Historical format: read each meta at its original size, zero-init rest.
       for (uint32_t i = 0; i < num_metas; i++) {
-        if (std::fread(&metas[i], meta_record_size, 1, trace_file) != 1) {
+        if (std::fread(&metas[i], meta_record_size, 1, trace_file.get()) != 1) {
           std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
-          std::fclose(trace_file);
           return nullptr;
         }
         // Extended fields beyond meta_record_size stay zero from TensorMeta{}.
       }
     } else {
       // Current 168B format: direct bulk read.
-      if (std::fread(metas.data(), sizeof(TensorMeta), num_metas, trace_file) != num_metas) {
+      if (std::fread(metas.data(), sizeof(TensorMeta), num_metas, trace_file.get()) != num_metas) {
         std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
-        std::fclose(trace_file);
         return nullptr;
       }
     }
@@ -322,7 +320,6 @@ static_assert(std::endian::native == std::endian::little,
         std::fprintf(stderr,
             "load_trace: meta[%u].ndim=%u exceeds max 8 in %s — corrupt trace\n",
             i, metas[i].ndim, path);
-        std::fclose(trace_file);
         return nullptr;
       }
       metas[i].data_ptr = external_data_ptr(nullptr);
@@ -341,7 +338,7 @@ static_assert(std::endian::native == std::endian::little,
   // test/safety_neg/neg_schema_name_len_below_min.cpp +
   // test/safety_neg/neg_schema_name_len_above_max.cpp.
   uint32_t num_names = 0;
-  if (std::fread(&num_names, 4, 1, trace_file) == 1 && num_names > 0 &&
+  if (std::fread(&num_names, 4, 1, trace_file.get()) == 1 && num_names > 0 &&
       num_names <= SCHEMA_TABLE_CAP) {
     // Defense-in-depth typed witness (#1050 WRAP-TraceLoader-2).  The
     // condition on the if above ensures `num_names` lies in (0,
@@ -353,8 +350,8 @@ static_assert(std::endian::native == std::endian::little,
     for (uint32_t i = 0; i < num_names; i++) {
       uint64_t schema_hash_raw = 0;
       uint16_t raw_name_len = 0;
-      if (std::fread(&schema_hash_raw, 8, 1, trace_file) != 1) break;
-      if (std::fread(&raw_name_len, 2, 1, trace_file) != 1) break;
+      if (std::fread(&schema_hash_raw, 8, 1, trace_file.get()) != 1) break;
+      if (std::fread(&raw_name_len, 2, 1, trace_file.get()) != 1) break;
       if (raw_name_len < SCHEMA_NAME_LEN_MIN ||
           raw_name_len > SCHEMA_NAME_LEN_MAX) break;
       // Validated uint16_t → schema-name-length widening
@@ -370,7 +367,7 @@ static_assert(std::endian::native == std::endian::little,
       const uint16_t name_len = make_schema_name_len(
           ValidSchemaNameLen{raw_name_len});
       char name_buf[257]{};
-      if (std::fread(name_buf, 1, name_len, trace_file) != name_len) break;
+      if (std::fread(name_buf, 1, name_len, trace_file.get()) != name_len) break;
       name_buf[name_len] = '\0';
       // Bytes from disk, but length-validated above (1..256) and explicitly
       // null-terminated.  Retag from External (file source) → Sanitized so
@@ -382,7 +379,6 @@ static_assert(std::endian::native == std::endian::little,
     }
   }
 
-  std::fclose(trace_file);
 
   // Convert to BackgroundThread-compatible vectors.
   auto trace = std::make_unique<LoadedTrace>();

@@ -8802,6 +8802,15 @@ crucible_neg_compile_test(neg_fd_errno_shaped_negative
 crucible_neg_compile_test(neg_file_handle_errno_shaped_negative
     "non-constant condition|__builtin_trap|contract violation|static assertion")
 
+# FIXY-V-032 HS14 floor — OwnedFile (safety/OwnedFile.h) is the RAII
+# wrapper for std::FILE* mirroring FileHandle's int-fd discipline.
+# Exclusive ownership = copy-ctor + copy-assign deleted with the
+# structured reason string.  Two fixtures pin the two boundaries.
+crucible_neg_compile_test(neg_owned_file_copy_rejected
+    "use of deleted function|deleted|copy|double-close")
+crucible_neg_compile_test(neg_owned_file_copy_assign_rejected
+    "use of deleted function|deleted|copy|double-close")
+
 # fixy-A1-014 HS14 floor — `ct::eq` is a span-only API and fires
 # CRUCIBLE_PRE on length mismatch.  Pre-fix `(ptr, ptr, size_t)` silently
 # dereferenced null at any non-zero length and swallowed sized
