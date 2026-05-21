@@ -7607,6 +7607,22 @@ crucible_neg_compile_test(neg_ckernel_mint_mutable_view_to_sealed_overload
 crucible_neg_compile_test(neg_ckernel_mint_mutable_view_in_field
   "Type contains a safety::ScopedView<> in some field")
 
+# FIXY-U-136 — HS14 spirit gap closure for SchemaTable::mint_mutable_view.
+# U-135's CKernelTable fixtures bumped SchemaTable::mint_mutable_view's
+# scanner-count from 0 → 2 via shared-name name-coincidence (the HS14
+# scanner counts the bare token `mint_mutable_view` and conflates both
+# carriers).  The SCANNER says satisfied; the SPIRIT is unsatisfied —
+# a regression in SchemaTable's per-state discipline would slip past
+# U-135's CKernelTable-only fixtures because the ScopedView<C, Tag>
+# types are distinct per-carrier (different `view_ok` ADL overloads,
+# different `no_scoped_view_field_check` instantiations).  U-136
+# ships the missing carrier-specific pair so a future edit affecting
+# SchemaTable's gate is caught independently.
+crucible_neg_compile_test(neg_schema_mint_mutable_view_to_sealed_overload
+  "invalid initialization of reference.*SealedView.*Mutable|cannot convert.*Mutable.*Sealed")
+crucible_neg_compile_test(neg_schema_mint_mutable_view_in_field
+  "Type contains a safety::ScopedView<> in some field")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
