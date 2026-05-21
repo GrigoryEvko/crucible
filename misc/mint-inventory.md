@@ -26,7 +26,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-21T02:58:53Z`.
+Snapshot generated: `2026-05-21T03:03:01Z`.
 
 ## bridges/
 
@@ -66,11 +66,11 @@ Snapshot generated: `2026-05-21T02:58:53Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_bg_context` | `include/crucible/effects/Capabilities.h:344` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 3 |
-| `mint_cap` | `include/crucible/effects/Capability.h:164` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:100` | HS14: 11 |
-| `mint_from_ctx` | `include/crucible/effects/Capability.h:319` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Cap.h:106` | HS14: 3 |
-| `mint_init_context` | `include/crucible/effects/Capabilities.h:366` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 3 |
-| `mint_test_context` | `include/crucible/effects/Capabilities.h:381` | - | Y | Y | - | token | [✗ NO-FIXY] | HS14: 2 |
+| `mint_bg_context` | `include/crucible/effects/Capabilities.h:344` | - | Y | Y | - | token | `include/crucible/fixy/Cap.h:145` | HS14: 3 |
+| `mint_cap` | `include/crucible/effects/Capability.h:164` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:104` | HS14: 11 |
+| `mint_from_ctx` | `include/crucible/effects/Capability.h:319` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Cap.h:110` | HS14: 3 |
+| `mint_init_context` | `include/crucible/effects/Capabilities.h:366` | - | Y | Y | - | token | `include/crucible/fixy/Cap.h:149` | HS14: 3 |
+| `mint_test_context` | `include/crucible/effects/Capabilities.h:381` | - | Y | Y | - | token | `include/crucible/fixy/Cap.h:153` | HS14: 2 |
 
 ## perf/
 
@@ -179,5 +179,5 @@ Snapshot generated: `2026-05-21T02:58:53Z`.
 ## Summary
 
 - Total substrate mints: 103
-- Missing fixy re-export: 19
+- Missing fixy re-export: 16
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

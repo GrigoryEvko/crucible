@@ -61,6 +61,23 @@ using ::crucible::effects::mint_from_ctx;
 
 using ::crucible::effects::Capability;
 
+// ── Cap-context mints — passkey-gated Bg/Init/Test factories ───────
+//
+// FIXY-U-116: `mint_bg_context` / `mint_init_context` / `mint_test_context`
+// are §XXI passkey-gated token mints (substrate at
+// effects/Capabilities.h:393-409).  Each takes a `detail::ctx_mint::*_key`
+// by value and trades it for a fresh Bg/Init/Test context.  Passkey ctors
+// are private + friend-restricted (BackgroundThread / Vigil /
+// effects::testing::TestWitness), so calling the mint requires friend
+// access — the re-export is purely the §XXI grep-target enumerating
+// every authorization point.  The substrate is reachable through
+// `fixy::eff::` via Eff.h's namespace alias too; this fixy::cap:: surface
+// mirrors the `mint_cap` / `mint_from_ctx` dual-export precedent and
+// gives the gen-mint-inventory scanner an explicit using-decl to find.
+using ::crucible::effects::mint_bg_context;
+using ::crucible::effects::mint_init_context;
+using ::crucible::effects::mint_test_context;
+
 }  // namespace crucible::fixy::cap
 
 // ── Self-test ──────────────────────────────────────────────────────
@@ -117,5 +134,24 @@ static_assert(std::is_same_v<
     ::crucible::effects::Capability<
         ::crucible::effects::Effect::Alloc, ::crucible::effects::Bg>>,
     "fixy::cap::Capability must alias effects::Capability.");
+
+// (4) FIXY-U-116: cap-context mints — non-template free functions, so
+//     pointer-identity is direct.  Each substrate mint takes a private-
+//     ctor passkey by value; the using-decls do not duplicate the
+//     overload (a `using ::ns::fn;` brings the name in without
+//     introducing a new declaration), and these asserts pin that
+//     promise.  Drift between fixy:: and substrate fails HERE.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::cap::mint_bg_context),
+    decltype(&::crucible::effects::mint_bg_context)>,
+    "FIXY-U-116: fixy::cap::mint_bg_context must alias effects::mint_bg_context.");
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::cap::mint_init_context),
+    decltype(&::crucible::effects::mint_init_context)>,
+    "FIXY-U-116: fixy::cap::mint_init_context must alias effects::mint_init_context.");
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::cap::mint_test_context),
+    decltype(&::crucible::effects::mint_test_context)>,
+    "FIXY-U-116: fixy::cap::mint_test_context must alias effects::mint_test_context.");
 
 }  // namespace crucible::fixy::cap::self_test
