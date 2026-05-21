@@ -29,7 +29,7 @@ appear as `-` in the flag columns.  The auditor surface for member-function
 mints lives in a separate "Member-function mints" section after the substrate
 trees (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T08:57:47Z`.
+Snapshot generated: `2026-05-21T09:01:17Z`.
 
 ## bridges/
 

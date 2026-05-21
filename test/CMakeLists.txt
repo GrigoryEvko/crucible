@@ -7858,6 +7858,32 @@ crucible_neg_compile_test(neg_pre_macro_writeoncenonnull_set_null
 crucible_neg_compile_test(neg_appendonly_drain_lvalue
   "passing.*as.*this.*argument discards qualifiers|cannot bind rvalue reference|no matching.*drain|discards qualifiers")
 
+# [FIXY-U-153] safety::HugePageBuffer<T> + safety::SwissTableBuffer
+# <SlotPtr> HS14 floor — paired move-only RAII buffer wrappers.
+# Both wrappers shared a structurally identical move-only-RAII shape
+# (deleted copy/copy-assign + defaulted move/move-assign + private
+# direct ctor + factory `allocate()` + `std::free()` in dtor) but
+# had ZERO neg-compile fixtures.  Mirrors the U-144 Pinned-copy +
+# NonMovable-move sibling pattern: each wrapper gets ONE Class T-
+# deleted-method fixture pinning a structurally distinct
+# enforcement point (copy CTOR vs copy ASSIGN), and together the
+# pair covers both halves of the deleted-copy discipline.
+#
+# Phase ctor (HugePageBuffer): copy construction triggers the
+#   deleted ctor with "HugePageBuffer is move-only" message.
+# Phase assign (SwissTableBuffer): copy assignment triggers the
+#   deleted operator= with "SwissTableBuffer is move-only" message.
+#
+# Production sites that depend on the discipline: TraceRing hugepage
+# backing, MetaLog hugepage SPSC, ExprPool/RecipePool Swiss-table
+# control-byte+slot-array coupled regions.  In every site, the
+# wrapper IS the ownership token — duplication via copy would
+# corrupt the allocation lifetime.
+crucible_neg_compile_test(neg_hugepagebuffer_copy_rejected
+  "use of deleted function.*HugePageBuffer.*HugePageBuffer|HugePageBuffer is move-only|deleted")
+crucible_neg_compile_test(neg_swisstablebuffer_copy_assign_rejected
+  "use of deleted function.*SwissTableBuffer.*operator=|SwissTableBuffer is move-only|deleted")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
