@@ -16,7 +16,7 @@
 // simple since both reader and writer are the same background thread).
 
 // FIXY-U-096e production migration: Tagged<RegionNode*, source::Arena>
-// + Monotonic / BoundedMonotonic reached through the fixy:: umbrella
+// + Monotonic / CyclicBuffer reached through the fixy:: umbrella
 // instead of safety::* directly.  Transaction.h has a single production
 // fan-in (Vigil.h) and no substrate-to-Transaction edge, so the full
 // Wrap.h + Source.h umbrella is cycle-safe here.  `crucible::decide::
@@ -32,6 +32,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 
@@ -97,25 +98,29 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Transaction);
 template <uint32_t N = 16>
 class TransactionLog {
     static_assert((N & (N - 1)) == 0, "N must be a power of 2");
-    static constexpr uint32_t MASK = N - 1;
+    // (MASK retired in #1063: the masked write cursor + saturating fill
+    //  counter now live inside CyclicBuffer<Transaction, N> — see the Ring
+    //  alias below.  CyclicBuffer owns the & (N-1) wrap-mask internally.)
 
  public:
-    // ── count counter wrapper (#1064 WRAP-Transaction-5) ──────────────
-    // count_ is structurally append-only-up-to-N: begin_tx pushes one
-    // entry per call (advancing count_), saturates at N (the ring's
-    // capacity), and rewinds only on TransactionLog destruction (which
-    // is move/copy-deleted, so there is no clear() lifecycle to wrap).
+    // ── ring storage wrapper (#1063 WRAP-Transaction-4) ───────────────
+    // The (entries_ + head_ + count_) triple — N inline slots, a masked
+    // write cursor, and a saturating fill counter — IS the
+    // CyclicBuffer<T, N> composition (FixedArray + Cyclic +
+    // BoundedMonotonic).  Wiring it here retires the open-coded
+    // `head_ & MASK` masking and the hand-rolled fill bump (the same
+    // triple that carried the "circular index after first wrap"
+    // off-by-one elsewhere); the masking + wrap discipline now lives in
+    // the type.  begin_tx maps to claim() (bind the next-write slot,
+    // advance the cursor, saturate the fill); previous() to the
+    // recent(i) MRU reverse scan.  The #1064 BoundedMonotonic fill
+    // invariant is preserved — CyclicBuffer composes it internally as
+    // BoundedMonotonic<size_t, N>, so the count still cannot exceed N nor
+    // move backward.
     //
-    // BoundedMonotonic<uint32_t, N> pins both invariants at the type
-    // level: monotonic forward progress (no accidental backward write
-    // via raw assignment) AND the upper bound (no accidental
-    // count_ > N via aliasing or memcpy).  Same pattern as
-    // SchemaTable::SizeCounter (WRAP-SchemaTab-1 #1003) and
-    // CKernelTable::SizeCounter (WRAP-CKernel-2 #890).
-    //
-    // Zero-cost: regime-2 collapse — sizeof(CountCounter) ==
-    // sizeof(uint32_t) == 4 B; TransactionLog layout preserved.
-    using CountCounter = ::crucible::fixy::wrap::BoundedMonotonic<uint32_t, N>;
+    // Zero-cost: CyclicBuffer is a struct of the three composed members
+    // with no overhead beyond alignment (layout static_assert below).
+    using Ring = ::crucible::fixy::wrap::CyclicBuffer<Transaction, N>;
 
     TransactionLog() = default;
     TransactionLog(const TransactionLog&)            = delete("TransactionLog holds ring-internal pointers");
@@ -125,7 +130,14 @@ class TransactionLog {
 
     // gnu::cold: step-boundary transition, amortized once per iteration.
     [[nodiscard, gnu::cold]] Transaction* begin_tx(uint64_t step_id) noexcept {
-        auto* tx   = &entries_[head_ & MASK];
+        // claim() binds the next-write slot, advances the cursor, and
+        // saturates the fill counter — the (entries_[head_ & MASK] +
+        // head_++ + guarded count bump) triple, now carried by
+        // CyclicBuffer.  advance() touches only the cursor, so the bound
+        // slot reference stays valid for the in-place reset below; the
+        // CyclicBuffer fill bump keeps the saturate-don't-abort semantic
+        // (its own LOAD-BEARING `if (count < N)` guard around bump()).
+        Transaction* tx = &ring_.claim();
         *tx = Transaction{};   // value-init via NSDMI defaults (no memset on non-trivial type)
         // step_id is Monotonic<uint64_t>{0} after the reset; advance()
         // pre-clause `0 <= step_id` holds for any uint64_t.  Bypassing
@@ -133,33 +145,21 @@ class TransactionLog {
         // a retrograde write under bug-in-bug regression.
         tx->step_id.advance(step_id);
         tx->ts_ns   = now_ns();
-        head_++;
-        // count_ saturates at N: only bump while below the cap.  The
-        // explicit if-check is defense-in-depth — BoundedMonotonic::bump's
-        // pre-clause `inner_.get() < T(Max)` would fire on the (N+1)th
-        // call without it; the if preserves the original
-        // saturate-don't-abort semantic so the type-system gate fires
-        // only on bug-in-bug regressions (e.g. an unconditional bump).
-        if (count_.get() < N) count_.bump();
         // CONTRACT-Tx-Begin-POST: factory result-shape contract — every
         // begin_tx returns a non-null Transaction in the RECORDING state
         // with the caller's step_id stamped.  Catches a future refactor
-        // that moves the head_++ before the *tx assignment (would return
-        // a pointer into uninitialized ring slot) or that bumps count_
-        // unconditionally past the N saturation point.
-        //   (1) tx != nullptr — entries_[head_ & MASK] is always a valid
-        //       slot in the bounded ring; the address arithmetic cannot
-        //       produce nullptr unless entries_ itself is null, which
-        //       NSDMI initialization rules out.
+        // that reorders claim() and the *tx reset (which would return a
+        // pointer into an unreset ring slot).
+        //   (1) tx != nullptr — claim() returns a reference into the
+        //       inline ring storage; its address is never null.
         //   (2) tx->status == RECORDING — value-init via TxStatus's
         //       NSDMI default (RECORDING is the first enumerator and the
         //       NSDMI on the field).
         //   (3) tx->step_id == step_id — caller's step_id stamped above.
         // Routes through CRUCIBLE_POST: the predicates dereference the
-        // freshly-acquired `tx` pointer; same GCC 16.1.1 consteval-bypass
-        // family as CONTRACT-100..108-POST and all sibling POSTs in this
-        // session.  Under NDEBUG these collapse to `[[assume]]` so the
-        // commit() path can speculate on RECORDING without re-checking.
+        // freshly-claimed `tx` pointer; same GCC 16.1.1 consteval-bypass
+        // family as all sibling POSTs in this file.  Under NDEBUG these
+        // collapse to `[[assume]]` so commit() can speculate on RECORDING.
         CRUCIBLE_POST(tx, tx != nullptr);
         CRUCIBLE_POST(tx, tx->status == TxStatus::RECORDING);
         CRUCIBLE_POST(tx, tx->step_id.get() == step_id);
@@ -316,15 +316,23 @@ class TransactionLog {
     [[nodiscard]] Transaction* active() CRUCIBLE_LIFETIMEBOUND  { return active_tx_; }
 
     [[nodiscard]] Transaction* previous() CRUCIBLE_LIFETIMEBOUND {
-        // Walk the ring backward from head to find the most recent SUPERSEDED entry.
-        for (uint32_t i = 0; i < count_.get(); i++) {
-            Transaction* e = &entries_[(head_ - 1 - i) & MASK];
-            if (e->status == TxStatus::SUPERSEDED) return e;
+        // Walk the ring backward from the cursor for the most recent
+        // SUPERSEDED entry.  recent(i) is CyclicBuffer's MRU reverse scan
+        // — recent(0) is the last-claimed slot — bit-identical to the
+        // open-coded `entries_[(head_ - 1 - i) & MASK]` it replaces.
+        for (typename Ring::size_type i = 0; i < ring_.size(); i++) {
+            Transaction& e = ring_.recent(i);
+            if (e.status == TxStatus::SUPERSEDED) return &e;
         }
         return nullptr;
     }
 
-    [[nodiscard]] uint32_t size() const { return count_.get(); }
+    [[nodiscard]] uint32_t size() const {
+        // ring_.size() is the saturating fill (0..N) as size_t; the
+        // public API returns uint32_t.  size() <= N <= UINT32_MAX, so the
+        // cast is lossless (TypeSafe: explicit, no implicit narrowing).
+        return static_cast<uint32_t>(ring_.size());
+    }
 
  private:
     // Nanosecond timestamp from the monotonic clock.
@@ -335,10 +343,28 @@ class TransactionLog {
                 steady_clock::now().time_since_epoch()).count());
     }
 
-    Transaction  entries_[N]{};
-    uint32_t     head_{0};       // next write slot (mod N)
-    CountCounter count_{0u};     // number of filled entries (0..N), bounded
+    // The (entries_ + head_ + count_) ring triple, now one audited
+    // composition (see the Ring alias above).  active_tx_ stays a raw
+    // pointer into ring_'s inline slots — it tracks WHICH slot is live,
+    // not WHERE the next write goes, so it is not part of the ring
+    // storage; its provenance/lifetime tagging is the separate
+    // WRAP-Transaction-6 (#1065) task.  TransactionLog is move/copy-
+    // deleted, so ring_ never relocates and the interior pointer stays
+    // valid for the log's lifetime.
+    Ring         ring_{};
     Transaction* active_tx_{nullptr};
 };
+
+// Zero-cost ring wiring (#1063 WRAP-Transaction-4): CyclicBuffer<Transaction, N>
+// composes FixedArray + Cyclic + BoundedMonotonic with no overhead beyond
+// alignment — sizeof equals the sum of the three composed members.  N=16 is
+// the production shape (TransactionLog<16> is the BackgroundThread rollback
+// ring).  A regression in the composition's zero-cost guarantee reddens here.
+static_assert(
+    sizeof(::crucible::fixy::wrap::CyclicBuffer<Transaction, 16>)
+        == sizeof(::crucible::safety::FixedArray<Transaction, 16>)
+         + sizeof(::crucible::safety::Cyclic<std::size_t, 16>)
+         + sizeof(::crucible::safety::BoundedMonotonic<std::size_t, 16>),
+    "CyclicBuffer<Transaction, N> must stay a zero-overhead composition");
 
 } // namespace crucible

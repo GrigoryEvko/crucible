@@ -4224,33 +4224,28 @@ crucible_neg_compile_test(neg_symbol_table_add_raw_symbol_id
 crucible_neg_compile_test(neg_symbol_table_add_cross_tag
   "no match for|cannot convert|no viable|could not convert|Tagged|External|FromInternal")
 
-# WRAP-Transaction-5 (#1064) — TransactionLog<N>::CountCounter =
-# BoundedMonotonic<uint32_t, N>; constructing it with an out-of-range
-# initial value fires the BoundedMonotonic ctor's pre-clause
-# `!(T(Max) < initial)` in constant evaluation.  Pins the count
-# counter as monotonic-and-capped at the type level — begin_tx's
-# saturating gate `if (count_.get() < N) count_.bump();` becomes
-# defense-in-depth (the if-check preserves the original
-# saturate-don't-abort semantic so the BoundedMonotonic gate fires
-# only on bug-in-bug regressions where someone bumps unconditionally).
-# Two fixtures per HS14:
-#   * _above_cap     — boundary edge (= N + 1 = 17 for default N=16,
-#     off-by-two).  Catches drift where the bound widens from
-#     `BoundedMonotonic<..., N>` to `BoundedMonotonic<..., N + K>`
-#     for any K >= 1, silently admitting count values past the
-#     ring's capacity and breaking previous()'s backward-walk
-#     invariant `(head_ - 1 - i) & MASK`.
-#   * _uint32_max    — wide miss (= UINT32_MAX).  Catches "drop the
-#     bound entirely" regression where CountCounter degenerates from
-#     BoundedMonotonic into plain Monotonic<uint32_t> or raw uint32_t;
-#     under that drift the if-check inside begin_tx is the only
-#     defense and the compile-time witness — which also fires on
-#     aggregate-init / memcpy / aliasing paths that bypass begin_tx
-#     entirely — disappears.
-crucible_neg_compile_test(neg_transaction_log_count_above_cap
-  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_transaction_log_count_uint32_max
-  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
+# WRAP-Transaction-4 (#1063) — TransactionLog<N>'s ring-storage triple
+# (entries_ + head_ + count_) is now safety::CyclicBuffer<Transaction,
+# N>.  The migration's positive-power-of-2 capacity invariant is
+# enforced at the TransactionLog<N> instantiation by TWO gates; the
+# two fixtures (per HS14) exercise one distinct mismatch class each:
+#   * _non_power_of_two (N = 7) — caught by BOTH the class-body
+#     static_assert("N must be a power of 2") AND CyclicBuffer's
+#     requires-clause.  A masked cursor over a non-power-of-2 ring
+#     would alias logical positions onto one physical slot.
+#   * _zero_capacity (N = 0) — SLIPS PAST the static_assert
+#     (`0 & (0u-1u) == 0` is vacuously a power of two) and is caught
+#     ONLY by CyclicBuffer's `requires (N > 0 ...)`.  Witnesses that
+#     the migration STRENGTHENED the contract — the old hand-rolled
+#     `entries_[0]` carried no N > 0 gate.
+# (The retired _count_above_cap / _count_uint32_max fixtures targeted
+#  the removed CountCounter alias; the BoundedMonotonic fill-counter
+#  bound they pinned is now structurally guaranteed inside CyclicBuffer
+#  and covered by neg_pre_macro_bounded_monotonic_bump_at_max.)
+crucible_neg_compile_test(neg_transaction_log_non_power_of_two
+  "power of 2|constraints not satisfied|static assertion")
+crucible_neg_compile_test(neg_transaction_log_zero_capacity
+  "constraints not satisfied|required from")
 
 # WRAP-Transaction-2 (#1061) — Transaction::region is committed via
 # Tagged<RegionNode*, source::Arena>.  Raw RegionNode* and loaded
