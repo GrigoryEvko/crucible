@@ -326,6 +326,40 @@ static_assert(!is_subtype_sync_v<Send<Refined<divisible_by<6>, int>, End>,
 static_assert(!is_subtype_sync_v<Send<Refined<divisible_by<4>, int>, End>,
                                  Send<Refined<divisible_by<8>, int>, End>>);
 
+// ── FIXY-U-168 — Aligned lattice end-to-end coverage symmetrisation ─
+//
+// The existing Aligned<N>⇒Aligned<M> axiom (Refined.h:660, predates
+// U-167) had only ONE end-to-end witness (Loop<Send<Aligned<64>>>⩽
+// Loop<Send<Aligned<32>>> at line 105-108) — structurally identical
+// to U-167's DivisibleBy lattice which got 6 witnesses.  Symmetrise
+// the coverage: Aligned and DivisibleBy share the `N >= M ∧ M > 0 ∧
+// N mod M == 0` shape, so test density should match.
+//
+// Hardware-relevant chain: cache-line (64 B) ⇒ AVX-512 (32 B) ⇒
+// AVX2 (16 B) ⇒ SSE (8 B) ⇒ word (4 B).  A pointer pinned to the
+// strongest alignment subsumes every looser hardware requirement.
+
+// Reflexive (N=M=64):
+static_assert( is_subtype_sync_v<Send<Refined<aligned<64>, void*>, End>,
+                                 Send<Refined<aligned<64>, void*>, End>>);
+
+// Cache-line ⇒ AVX-512 ⇒ AVX2 ⇒ SSE ⇒ word:
+static_assert( is_subtype_sync_v<Send<Refined<aligned<64>, void*>, End>,
+                                 Send<Refined<aligned<16>, void*>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<aligned<32>, void*>, End>,
+                                 Send<Refined<aligned<8>, void*>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<aligned<16>, void*>, End>,
+                                 Send<Refined<aligned<4>, void*>, End>>);
+
+// Soundness: looser alignment does NOT imply tighter alignment.
+static_assert(!is_subtype_sync_v<Send<Refined<aligned<8>, void*>, End>,
+                                 Send<Refined<aligned<64>, void*>, End>>);
+
+// Soundness: non-multiple alignments (8 mod 3 = 2, 16 mod 6 = 4) must
+// NOT propagate even though the larger value compares ≥ the smaller.
+static_assert(!is_subtype_sync_v<Send<Refined<aligned<8>, void*>, End>,
+                                 Send<Refined<aligned<3>, void*>, End>>);
+
 // ── Runtime scenario: Vessel-FFI flow ──────────────────────────────
 
 // Mock dispatch request — the kind of value that arrives at the FFI
