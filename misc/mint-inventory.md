@@ -26,7 +26,7 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-20T16:23:57Z`.
+Snapshot generated: `2026-05-21T01:21:51Z`.
 
 ## bridges/
 
@@ -76,15 +76,15 @@ Snapshot generated: `2026-05-20T16:23:57Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_lock_contention` | `include/crucible/perf/LockContention.h:328` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_pmu_sample` | `include/crucible/perf/PmuSample.h:350` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h:355` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_sched_tp_btf` | `include/crucible/perf/SchedTpBtf.h:191` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_sense_hub` | `include/crucible/perf/SenseHub.h:322` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h:581` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h:314` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h:200` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
-| `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h:325` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
+| `mint_lock_contention` | `include/crucible/perf/LockContention.h:326` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
+| `mint_pmu_sample` | `include/crucible/perf/PmuSample.h:348` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
+| `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h:353` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
+| `mint_sched_tp_btf` | `include/crucible/perf/SchedTpBtf.h:189` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
+| `mint_sense_hub` | `include/crucible/perf/SenseHub.h:320` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
+| `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h:579` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
+| `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h:312` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
+| `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h:198` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
+| `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h:323` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
 
 ## permissions/
 
