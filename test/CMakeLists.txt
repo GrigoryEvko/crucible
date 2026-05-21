@@ -199,6 +199,7 @@ crucible_test(test_fixy_perm)
 crucible_test(test_fixy_handle)  # FIXY-U-016 — per-namespace test_fixy_handle sentinel TU
 crucible_test(test_fixy_kernel)  # FIXY-V-038 — fixy::kernel:: Reduction + reduce_into surface
 crucible_test(test_fixy_reflect) # FIXY-V-040 — fixy::reflect:: Reflect + Reflected surface
+crucible_test(test_fixy_wrap_simd_workload_locality) # FIXY-V-041 — fixy::wrap:: Simd + Workload + LocalityHint surface
 crucible_test(test_fixy_sess)
 crucible_test(test_fixy_sess_phi)
 crucible_test(test_fixy_sess_patterns)  # FIXY-AUDIT-C6
