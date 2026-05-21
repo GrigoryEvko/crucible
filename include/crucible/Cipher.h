@@ -747,15 +747,44 @@ class CRUCIBLE_OWNER Cipher {
         log_.emplace(LogEntry::cipher_store_committed(
             crucible::fixy::sess::eventlog::StepId{step_id}, content_hash, ts));
         {
-            std::ofstream lf(root_str() + "/log", std::ios::app);
-            write_u64_dec_(lf, step_id);
-            lf.put(',');
+            // V-028: durable log append.  Format the record into an inline
+            // buffer, then hand off to atomic_append_log_ which performs a
+            // single O_APPEND write (POSIX atomic within a regular-file
+            // block) + fdatasync + parent-dir fsync.  The ofstream form
+            // used a userspace buffer that flushed only on dtor and never
+            // synced — a crash between commit and dtor lost the entry
+            // even though hash() returns success.
+            //
+            // Record layout: "<step_id>,<16-hex content_hash>,<ts>\n".
+            // Max length: 20 (uint64_t dec) + 1 + 16 + 1 + 20 + 1 = 59B,
+            // fits in 64B with margin and well under the 4096B POSIX
+            // single-write atomicity window for regular files.
+            char rec[64];
+            std::size_t off = 0;
+            auto [p1, ec1] = std::to_chars(rec + off, rec + sizeof(rec), step_id);
+            if (ec1 != std::errc{}) std::abort();
+            off = static_cast<std::size_t>(p1 - rec);
+            rec[off++] = ',';
             char hex[16];
             hex16_(content_hash.raw(), hex);
-            lf.write(hex, sizeof(hex));
-            lf.put(',');
-            write_u64_dec_(lf, ts);
-            lf.put('\n');
+            std::memcpy(rec + off, hex, 16);
+            off += 16;
+            rec[off++] = ',';
+            auto [p2, ec2] = std::to_chars(rec + off, rec + sizeof(rec), ts);
+            if (ec2 != std::errc{}) std::abort();
+            off = static_cast<std::size_t>(p2 - rec);
+            rec[off++] = '\n';
+            const std::string log_path = root_str() + "/log";
+            // §III cast cascade for char* → uint8_t* (reinterpret_cast
+            // banned; bit_cast is value-not-pointer; void* round-trip
+            // is the §III-blessed form).
+            (void)atomic_append_log_(
+                log_path,
+                std::span<const std::uint8_t>{
+                    static_cast<const std::uint8_t*>(
+                        static_cast<const void*>(rec)),
+                    off},
+                root_str());
         }
 
         // CONTRACT-107-POST: state-mutation contract — after advance_head
@@ -1334,6 +1363,84 @@ class CRUCIBLE_OWNER Cipher {
         }
 
         // fsync the parent directory so the rename is durable.
+        const int dir_fd = ::open(parent_dir.c_str(),
+                                   O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (dir_fd < 0) return false;
+        int drc;
+        do {
+            drc = ::fsync(dir_fd);
+        } while (drc < 0 && errno == EINTR);
+        ::close(dir_fd);
+        return drc == 0;
+    }
+
+    // ── FIXY-V-028: atomic append + fdatasync helper ───────────────
+    //
+    // Atomic-append discipline for monotonically-growing files (the
+    // Cipher event log, V-029 session_event index).  Uses O_APPEND so
+    // the kernel atomically advances offset to EOF BEFORE writing —
+    // POSIX guarantees this is atomic for writes within a filesystem
+    // block (4096 B on ext4/XFS default).  Our records are ≤64 B (V-
+    // 028 event log) and ≤96 B (V-029 session_event index header),
+    // well within the atomicity window.  fdatasync then makes the
+    // bytes durable; parent-dir fsync makes the file's existence
+    // durable for the first-record case (subsequent records mutate
+    // an existing inode and fdatasync alone suffices, but the dir
+    // fsync is cheap relative to the Wait::Block tier the Cipher
+    // path already commits to).
+    //
+    // Why O_APPEND + single write() instead of write-tmp + rename:
+    // logs grow forever, renames don't compose with append, and the
+    // POSIX append-atomicity guarantee is exactly the property we
+    // need.  Recovery (load_log) is tolerant of malformed trailing
+    // lines — parse_u64 fails → continue — so a partial write that
+    // somehow exceeds the block boundary still leaves a recoverable
+    // log; the in-memory log_ already has the event, and HEAD (V-
+    // 027 atomic replace) carries the authoritative pointer.
+    //
+    // EINTR retry on write / fdatasync / fsync mirrors the kernel's
+    // own contract.  No cleanup needed on failure — the log file is
+    // monotonic append-only by design; a partial trailing record is
+    // ignored by load_log, and a missing record is recovered via
+    // HEAD's authoritative pointer.  Returns true only when the
+    // record bytes AND the directory entry are durable.
+    [[nodiscard]] static bool atomic_append_log_(
+        const std::string& path,
+        std::span<const std::uint8_t> bytes,
+        const std::string& parent_dir) noexcept {
+        const int fd = ::open(path.c_str(),
+                               O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC,
+                               0644);
+        if (fd < 0) return false;
+
+        // Single-write loop.  With O_APPEND + record-size < block,
+        // ::write either returns -1 (errno set; no bytes written) or
+        // returns exactly bytes.size().  The loop handles the rare
+        // case of partial writes (e.g., short-write on signal) by
+        // re-issuing for the remaining bytes; each re-issue is a
+        // fresh kernel-atomic O_APPEND write.
+        std::size_t off = 0;
+        while (off < bytes.size()) {
+            const ssize_t r = ::write(fd,
+                                       bytes.data() + off,
+                                       bytes.size() - off);
+            if (r < 0) {
+                if (errno == EINTR) continue;
+                ::close(fd);
+                return false;
+            }
+            off += static_cast<std::size_t>(r);
+        }
+
+        // fdatasync the record onto disk.
+        int frc;
+        do {
+            frc = ::fdatasync(fd);
+        } while (frc < 0 && errno == EINTR);
+        ::close(fd);
+        if (frc != 0) return false;
+
+        // fsync parent dir for first-record durability.
         const int dir_fd = ::open(parent_dir.c_str(),
                                    O_RDONLY | O_DIRECTORY | O_CLOEXEC);
         if (dir_fd < 0) return false;
