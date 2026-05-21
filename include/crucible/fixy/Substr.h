@@ -66,6 +66,7 @@
 #include <crucible/concurrent/ChaseLevDeque.h>               // FIXY-V-047: DequeValue concept
 #include <crucible/concurrent/MpmcRing.h>                   // FIXY-V-046: MpmcValue concept
 #include <crucible/concurrent/PermissionedCalendarGrid.h>   // FIXY-V-050: substrate-direct single-grid calendar surface
+#include <crucible/concurrent/PermissionedChainEdge.h>      // FIXY-V-052: substrate-direct ChainEdge one-shot semaphore surface
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>  // FIXY-V-047: substrate-direct work-stealing surface
 #include <crucible/concurrent/PermissionedMetaLog.h>       // FIXY-V-051: substrate-direct MetaLog SPSC surface
 #include <crucible/concurrent/PermissionedMpmcChannel.h>    // FIXY-V-046: substrate-direct MPMC surface
@@ -453,6 +454,68 @@ using WaiterProto =
 template <typename Edge>
 concept ChainEdgeSessionSurface =
     ::crucible::safety::proto::chainedge_session::ChainEdgeSessionSurface<Edge>;
+
+// ── FIXY-V-052: substrate-direct surface enrichment ──────────────
+//
+// Mirror of V-045's spsc:: / V-047's chaselev:: / V-049's shardcal::
+// / V-050's calendar_grid:: / V-051's metalog:: treatment.
+// PermissionedChainEdge is THE one-shot GPU-semaphore primitive used
+// to sequence two execution plans on the same Mimic backend: the
+// upstream plan signals a SemaphoreSignal once after its final
+// kernel completes; the downstream plan waits for the same signal
+// before issuing its first kernel.  Linear × linear (single
+// signaler, single waiter), but parameterized on a VendorBackend
+// axis (CPU oracle vs NV / AM / TPU / TRN native semaphore).
+//
+// Pre-V-052 the chainedge:: sub-namespace surfaced only the four
+// session-layer mints (mint_chainedge_{signaler,waiter}[_session])
+// — callers who wanted to construct a PermissionedChainEdge, mint
+// its Whole permission, or split into Signaler/Waiter halves had
+// to descend into <crucible/concurrent/PermissionedChainEdge.h>
+// directly.  V-052 closes the discoverability gap by re-exporting
+// the substrate primitive, its three-tag permission tree, and the
+// VendorBackend enum (the vendor axis is V-052-structurally unique
+// — no other substrate in the V-045..V-052 channel-permission arc
+// is parameterized on vendor backend).
+//
+// Surface (additive, all alias-template / using-decl — pure name
+// lookup, zero runtime cost).  No new mint factories — endpoint and
+// session mints already shipped from sessions/ChainEdgeSession.h.
+
+// Substrate alias — full re-export including default Backend =
+// VendorBackend::CPU and default UserTag = void.  TWO template
+// params (Backend + UserTag) — first cell in V-045..V-052 arc with
+// a vendor-axis template param.
+template <::crucible::concurrent::VendorBackend Backend =
+              ::crucible::concurrent::VendorBackend::CPU,
+          typename UserTag = void>
+using PermissionedChainEdge =
+    ::crucible::concurrent::PermissionedChainEdge<Backend, UserTag>;
+
+// VendorBackend enum re-export (using-decl form).  Bumps
+// substr_chainedge_using cardinality 4 → 5.  V-052-unique: no
+// other substr sub-namespace ships a VendorBackend axis, mirroring
+// how V-049 surfaced ShardedCalendarKeyExtractorOf, V-050 exposed
+// KeyExtractorOf, and V-051 exposed MetaIndex — each cell brings a
+// substrate-specific name into reach.
+using ::crucible::concurrent::VendorBackend;
+
+// chainedge_tag sub-namespace — Whole / Signaler / Waiter
+// permission tag templates.  Linear × linear (one Signaler, one
+// Waiter); substrate ships splits_into<Whole, Signaler, Waiter>
+// specialization so callers may use the standard mint_permission_split
+// rail.
+namespace chainedge_tag {
+template <typename UserTag>
+using Whole =
+    ::crucible::concurrent::chainedge_tag::Whole<UserTag>;
+template <typename UserTag>
+using Signaler =
+    ::crucible::concurrent::chainedge_tag::Signaler<UserTag>;
+template <typename UserTag>
+using Waiter =
+    ::crucible::concurrent::chainedge_tag::Waiter<UserTag>;
+}  // namespace chainedge_tag
 
 // Mint factories.
 using ::crucible::safety::proto::chainedge_session::mint_chainedge_signaler;
@@ -1130,6 +1193,20 @@ using ::crucible::concurrent::SubstrateBenefitsFromParallelism;
 // (returned by ProducerHandle::try_append).  Substrate alias template
 // + metalog_tag tree alias templates do NOT count toward the
 // cardinality witness; only the MetaIndex using-decl does.
+// chainedge::VendorBackend using-decl added by FIXY-V-052 bumped
+// chainedge 4 → 5.  ChainEdge is structurally V-052-unique among
+// V-045..V-052: it is the only substrate parameterized on a
+// VendorBackend axis (CPU oracle vs NV / AM / TPU / TRN native
+// semaphore).  The V-052-unique cardinality bump is the
+// ::crucible::concurrent::VendorBackend enum re-export (the vendor
+// axis MUST be available at the fixy:: surface so callers can spell
+// non-default backends).  Substrate alias template + chainedge_tag
+// tree alias templates do NOT count toward the cardinality witness;
+// only the VendorBackend using-decl does.  This closes the V-045..
+// V-052 channel-permission family (eight substrate cells: SPSC,
+// SWMR-snapshot, MPMC, ChaseLev, ShardedGrid, ShardedCalendarGrid,
+// CalendarGrid, MetaLog, ChainEdge — note swmr and snapshot share
+// the SWMR sub-namespace).
 //
 // Same recipe as fixy/Pipe.h / fixy/Struct.h: type-identity witnesses
 // for representative items + per-sub-namespace cardinality mirrors.
@@ -1787,13 +1864,112 @@ static_assert(std::is_same_v<
 
 }  // namespace v051
 
+// ── FIXY-V-052: ChainEdge substrate-direct surface witnesses ──────
+//
+// Same recipe as v045::..v051:: above.  Pin every V-052 addition:
+// substrate alias identity (with default Backend = CPU AND
+// non-default backend), VendorBackend enum-value parity (V-052-
+// unique cardinality bump — see U-103 prose above), chainedge_tag
+// tree identity, member-typedef propagation, Signal/value_type
+// identity (fixed to SemaphoreSignal by substrate), surface concept
+// admission, protocol aliases preserved.
+
+namespace v052 {
+
+struct V052ProbeUserTag {};
+
+// 1. Substrate alias identity — default Backend = CPU.
+using EdgeViaFixy = ::crucible::fixy::substr::chainedge::PermissionedChainEdge<
+    ::crucible::concurrent::VendorBackend::CPU, V052ProbeUserTag>;
+using EdgeViaConcurrent = ::crucible::concurrent::PermissionedChainEdge<
+    ::crucible::concurrent::VendorBackend::CPU, V052ProbeUserTag>;
+static_assert(std::is_same_v<EdgeViaFixy, EdgeViaConcurrent>,
+    "fixy::substr::chainedge::PermissionedChainEdge must alias the substrate.");
+
+// 1b. Substrate alias identity — non-default Backend (NV).  Verifies
+// that the Backend template parameter passes through unchanged.
+using EdgeNvViaFixy = ::crucible::fixy::substr::chainedge::PermissionedChainEdge<
+    ::crucible::fixy::substr::chainedge::VendorBackend::NV,
+    V052ProbeUserTag>;
+using EdgeNvViaConcurrent = ::crucible::concurrent::PermissionedChainEdge<
+    ::crucible::concurrent::VendorBackend::NV, V052ProbeUserTag>;
+static_assert(std::is_same_v<EdgeNvViaFixy, EdgeNvViaConcurrent>,
+    "fixy::substr::chainedge::PermissionedChainEdge<NV> must alias the "
+    "non-default-backend substrate variant.");
+
+// 2. VendorBackend enum identity — V-052-unique cardinality bump.
+// fixy:: re-exports the underlying enum AND every enumerator value
+// must compare equal to the substrate's corresponding enumerator.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::chainedge::VendorBackend,
+    ::crucible::concurrent::VendorBackend>,
+    "fixy::substr::chainedge::VendorBackend must alias "
+    "::crucible::concurrent::VendorBackend.");
+static_assert(static_cast<int>(
+        ::crucible::fixy::substr::chainedge::VendorBackend::CPU) ==
+    static_cast<int>(::crucible::concurrent::VendorBackend::CPU));
+static_assert(static_cast<int>(
+        ::crucible::fixy::substr::chainedge::VendorBackend::NV) ==
+    static_cast<int>(::crucible::concurrent::VendorBackend::NV));
+
+// 3. Tag template identity — Whole/Signaler/Waiter alias the
+// substrate's chainedge_tag tree exactly.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::chainedge::chainedge_tag::Whole<V052ProbeUserTag>,
+    ::crucible::concurrent::chainedge_tag::Whole<V052ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::chainedge::chainedge_tag::Signaler<V052ProbeUserTag>,
+    ::crucible::concurrent::chainedge_tag::Signaler<V052ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::chainedge::chainedge_tag::Waiter<V052ProbeUserTag>,
+    ::crucible::concurrent::chainedge_tag::Waiter<V052ProbeUserTag>>);
+
+// 4. Tag identity propagates through EdgeViaFixy's member typedefs.
+static_assert(std::is_same_v<
+    typename EdgeViaFixy::whole_tag,
+    ::crucible::fixy::substr::chainedge::chainedge_tag::Whole<V052ProbeUserTag>>);
+static_assert(std::is_same_v<
+    typename EdgeViaFixy::signaler_tag,
+    ::crucible::fixy::substr::chainedge::chainedge_tag::Signaler<V052ProbeUserTag>>);
+static_assert(std::is_same_v<
+    typename EdgeViaFixy::waiter_tag,
+    ::crucible::fixy::substr::chainedge::chainedge_tag::Waiter<V052ProbeUserTag>>);
+
+// 5. ChainEdgeSessionSurface admits the representative edge.
+static_assert(
+    ::crucible::fixy::substr::chainedge::ChainEdgeSessionSurface<EdgeViaFixy>);
+
+// 6. value_type identity — Signal == SemaphoreSignal.
+static_assert(std::is_same_v<
+    typename EdgeViaFixy::value_type,
+    ::crucible::concurrent::SemaphoreSignal>);
+static_assert(std::is_same_v<
+    typename EdgeViaFixy::value_type,
+    ::crucible::fixy::substr::chainedge::Signal>);
+
+// 7. Backend constant passes through.
+static_assert(EdgeViaFixy::backend ==
+              ::crucible::concurrent::VendorBackend::CPU);
+static_assert(EdgeNvViaFixy::backend ==
+              ::crucible::concurrent::VendorBackend::NV);
+
+// 8. Protocol aliases unchanged through V-052.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::chainedge::SignalerProto,
+    ::crucible::safety::proto::chainedge_session::SignalerProto>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::chainedge::WaiterProto,
+    ::crucible::safety::proto::chainedge_session::WaiterProto>);
+
+}  // namespace v052
+
 // ── Per-sub-namespace cardinality witnesses ──────────────────────
 
 constexpr int substr_spsc_using                  = 3;
 constexpr int substr_swmr_using                  = 6;
 constexpr int substr_chaselev_using              = 5;
 constexpr int substr_metalog_using               = 5;
-constexpr int substr_chainedge_using             = 4;
+constexpr int substr_chainedge_using             = 5;
 constexpr int substr_mpmc_using                  = 5;
 constexpr int substr_calendar_grid_using         = 5;
 constexpr int substr_sharded_calendar_grid_using = 5;
@@ -1808,8 +1984,8 @@ constexpr int substr_total_using =
     substr_sharded_grid_using + substr_snapshot_using +
     substr_outer_using;
 
-static_assert(substr_total_using == 50,
-    "fixy::substr:: using-decl surface drifted from 50 — Substr.h "
+static_assert(substr_total_using == 51,
+    "fixy::substr:: using-decl surface drifted from 51 — Substr.h "
     "sub-namespace re-exports and this sentinel must update in lockstep.");
 
 // ── FIXY-U-051: topology + ctx-fit concept-surface witnesses ───────
