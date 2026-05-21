@@ -571,9 +571,7 @@ static_assert(sizeof(SenseHubV2) == sizeof(std::unique_ptr<DummyStateV2>),
 template <class Ctx>
 concept CtxFitsSenseHubV2Mint =
        ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::row_contains_v<
-           ::crucible::effects::row_type_of_t<Ctx>,
-           ::crucible::effects::Effect::Init>;
+    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSenseHubV2Mint<Ctx>

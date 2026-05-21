@@ -1003,26 +1003,26 @@ struct BackgroundThread {
       "run_required_row size MUST be exactly 4 atoms "
       "(Bg + Alloc + IO + Block).");
   static_assert(
-      ::crucible::effects::row_contains_v<
+      ::crucible::effects::row_contains_v<  // ROW-CONTAINS-OK: concrete row literal (run_required_row), not a Ctx capability check
           run_required_row,
           ::crucible::effects::Effect::Bg>,
       "run_required_row MUST contain Effect::Bg — the bg thread "
       "by definition runs in the Bg context.");
   static_assert(
-      ::crucible::effects::row_contains_v<
+      ::crucible::effects::row_contains_v<  // ROW-CONTAINS-OK: concrete row literal (run_required_row), not a Ctx capability check
           run_required_row,
           ::crucible::effects::Effect::Alloc>,
       "run_required_row MUST contain Effect::Alloc — region "
       "construction and current_trace growth are allocations.");
   static_assert(
-      ::crucible::effects::row_contains_v<
+      ::crucible::effects::row_contains_v<  // ROW-CONTAINS-OK: concrete row literal (run_required_row), not a Ctx capability check
           run_required_row,
           ::crucible::effects::Effect::IO>,
       "run_required_row MUST contain Effect::IO — region_ready_cb "
       "fires with the freshly-built region (audit log, federated "
       "cache enqueue).");
   static_assert(
-      ::crucible::effects::row_contains_v<
+      ::crucible::effects::row_contains_v<  // ROW-CONTAINS-OK: concrete row literal (run_required_row), not a Ctx capability check
           run_required_row,
           ::crucible::effects::Effect::Block>,
       "run_required_row MUST contain Effect::Block — the SPSC "

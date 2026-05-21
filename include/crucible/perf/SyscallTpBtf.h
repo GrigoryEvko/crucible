@@ -190,9 +190,7 @@ class SyscallTpBtf {
 template <class Ctx>
 concept CtxFitsSyscallTpBtfMint =
        ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::row_contains_v<
-           ::crucible::effects::row_type_of_t<Ctx>,
-           ::crucible::effects::Effect::Init>;
+    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSyscallTpBtfMint<Ctx>

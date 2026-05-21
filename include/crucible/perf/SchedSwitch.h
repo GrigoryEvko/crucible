@@ -345,9 +345,7 @@ class SchedSwitch {
 template <class Ctx>
 concept CtxFitsSchedSwitchMint =
        ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::row_contains_v<
-           ::crucible::effects::row_type_of_t<Ctx>,
-           ::crucible::effects::Effect::Init>;
+    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSchedSwitchMint<Ctx>

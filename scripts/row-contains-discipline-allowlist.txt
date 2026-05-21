@@ -10,7 +10,7 @@
 #   effects::CtxOwnsAnyOf<Ctx, Effect::X, Effect::Y>      (disjunction)
 #   effects::CtxOwnsAllOf<Ctx, Effect::X, Effect::Y>      (conjunction)
 #
-# These 43 sites are grandfathered awaiting the FIXY-U-101 sweep.  New
+# These 38 sites are grandfathered awaiting the FIXY-U-101 sweep.  New
 # inline sites without an entry here fail the CI guard
 # (scripts/check-row-contains-discipline.sh).  When migrating a site,
 # prune its allowlist entry in the same PR (drift-free invariant).
@@ -20,10 +20,6 @@
 #   # comment lines start with `#`
 #   blank lines ignored
 
-include/crucible/BackgroundThread.h:1009 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/BackgroundThread.h:1015 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/BackgroundThread.h:1021 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
-include/crucible/BackgroundThread.h:1028 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
 include/crucible/Cipher.h:815 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
 include/crucible/Cipher.h:821 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
 include/crucible/cntp/AfXdp.h:258 — fixy-U-101-MIGRATE: CtxOwnsCapability / CtxOwnsAnyOf / CtxOwnsAllOf
