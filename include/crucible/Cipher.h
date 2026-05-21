@@ -50,6 +50,9 @@
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
 
+#include <fcntl.h>     // FIXY-V-026: ::open(O_RDONLY|O_CLOEXEC) for fdatasync barrier
+#include <unistd.h>    // FIXY-V-026: ::fdatasync, ::close
+
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -287,6 +290,47 @@ class CRUCIBLE_OWNER Cipher {
         f.write(static_cast<const char*>(static_cast<const void*>(buf.data())),
                 static_cast<std::streamsize>(n));
         if (!f) return ContentHash{};
+
+        // ── FIXY-V-026: durable-on-return contract ─────────────────
+        //
+        // Close the stream BEFORE the fdatasync barrier so the
+        // userspace buffer is flushed to the kernel page cache.  A
+        // crash between f.write() and the destructor's flush would
+        // otherwise lose this object's bytes silently — and Cipher
+        // is the crash-recovery foundation (L14): an object that
+        // store() returned a hash for MUST be loadable after a
+        // process / kernel / power crash.
+        //
+        // Re-open RDONLY for the fdatasync syscall because libstdc++
+        // does not portably expose the std::ofstream's underlying
+        // fd.  The double-open costs ~3 µs warm-cache; well under
+        // any blocking-I/O budget the Cipher tier already commits
+        // to (Wait::Block per store_pinned, ~100 µs floor).
+        //
+        // fdatasync (not fsync) is sufficient: Cipher objects are
+        // immutable content-addressed payloads, so the inode never
+        // changes after creation — only the data + the metadata
+        // required to locate it (size, block map) need durable
+        // ordering, exactly what fdatasync flushes.
+        //
+        // Failure modes flow into the existing empty-hash return:
+        //   - close fails        → returns ContentHash{}, caller
+        //                          treats as store failure
+        //   - reopen fails       → ditto (race or ENOSPC during
+        //                          fsync of an earlier inode-update)
+        //   - fdatasync returns -1 (ENOSPC / EIO / EBADF) → ditto.
+        // Every error path is durable-correct: either the data is
+        // on disk AND the hash is returned, OR an empty hash is
+        // returned and the caller treats as failure.  No silent
+        // partial-durability state.
+        f.close();
+        if (!f) return ContentHash{};
+        const int fsync_fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        if (fsync_fd < 0) return ContentHash{};
+        const int fsync_rc = ::fdatasync(fsync_fd);
+        ::close(fsync_fd);
+        if (fsync_rc != 0) return ContentHash{};
+
         remember_cached_bytes(hash, std::span<const uint8_t>{buf.data(), n});
         return hash;
     }
