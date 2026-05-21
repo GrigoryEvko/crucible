@@ -29,7 +29,7 @@ appear as `-` in the flag columns.  The auditor surface for member-function
 mints lives in a separate "Member-function mints" section after the substrate
 trees (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T03:46:25Z`.
+Snapshot generated: `2026-05-21T03:59:44Z`.
 
 ## bridges/
 
@@ -173,10 +173,10 @@ Snapshot generated: `2026-05-21T03:46:25Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h:379` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
-| `mint_hardening` | `include/crucible/warden/Hardening.h:493` | Y | - | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
-| `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h:271` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
-| `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h:461` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 3 |
+| `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h:379` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Warden.h:119` | HS14: 3 |
+| `mint_hardening` | `include/crucible/warden/Hardening.h:493` | Y | - | Y | Y | ctx | `include/crucible/fixy/Warden.h:105` | HS14: 3 |
+| `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h:271` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Warden.h:131` | HS14: 3 |
+| `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h:461` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Warden.h:144` | HS14: 3 |
 
 ## Member-function mints
 
@@ -206,6 +206,6 @@ to distinguish this third authorization shape.
 ## Summary
 
 - Total substrate mints: 102
-- Missing fixy re-export: 14
+- Missing fixy re-export: 10
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.
