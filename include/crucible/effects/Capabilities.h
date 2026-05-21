@@ -419,7 +419,9 @@ class Test {
 private:
     constexpr Test() noexcept = default;
 
-    friend constexpr Test mint_test_context(detail::ctx_mint::test_key) noexcept;
+    template <class Key>
+        requires CanMintTestContext<Key>
+    friend constexpr Test mint_test_context(Key) noexcept;
 
     template <class Cap, class Numa, class Alloc, class Heat,
               class Resid, class Row, class Workload>
@@ -480,8 +482,10 @@ mint_init_context(Key) noexcept {
     return Init{};
 }
 
+template <class Key>
+    requires CanMintTestContext<Key>
 [[nodiscard]] inline constexpr Test
-mint_test_context(detail::ctx_mint::test_key) noexcept {
+mint_test_context(Key) noexcept {
     static_assert(noexcept(Test{}),
         "fixy-A3-015: Test default ctor MUST be noexcept — a cap::* "
         "token's NSDMI must never throw.");

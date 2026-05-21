@@ -3073,6 +3073,9 @@ crucible_neg_compile_effects_test(neg_effects_mint_test_context_forge_key
     "is private within this context|private member|test_key")
 crucible_neg_compile_effects_test(neg_effects_mint_test_context_keyless
     "too few arguments|no matching function|mint_test_context")
+# FIXY-V-019: exercises CanMintTestContext<Key> with the wrong passkey.
+crucible_neg_compile_effects_test(neg_effects_mint_test_context_wrong_key
+    "constraints not satisfied|CanMintTestContext|same_as|bg_key|test_key|is private")
 
 # ─── P1-AUDIT-2 (#853): composition-point witnesses ─────────────────
 #
