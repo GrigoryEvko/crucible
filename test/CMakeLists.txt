@@ -2158,6 +2158,52 @@ crucible_neg_compile_fixy_test(neg_fixy_warden_quarantine_policy_bg_ctx
 crucible_neg_compile_fixy_test(neg_fixy_warden_quarantine_policy_not_exec_ctx
     "no matching function|mint_quarantine_policy|IsExecCtx|NotAnExecCtx|row_type|constraints not satisfied")
 
+# FIXY-U-121b — HS14 ≥2 floor for the 8 V1 perf mints surfaced
+# through `fixy::perf::` (Perf.h:120-180, FIXY-U-121 landing).  Each
+# mint's `CtxFitsXMint = IsExecCtx<Ctx> ∧ CtxOwnsCapability<Ctx, Init>`
+# gets 2 fixtures targeting DISTINCT conjuncts:
+# (#1) bg_ctx       — BgDrainCtx (IsExecCtx ✓, Init capability ✗);
+# (#2) not_exec_ctx — struct missing row_type (IsExecCtx ✗).
+#
+# 16 fixtures total.  Sentinel test_fixy_perf.cpp pins identity +
+# concept-resolution + cardinality; these fixtures pin the requires-
+# clause FIRES through the using-decl name lookup (a regression that
+# replaced the using-decl with a free-function shim would leave
+# substrate's `perf_neg/neg_X_mint_bg_ctx.cpp` green while these
+# fixtures unexpectedly compiled).  V2 hub deferred per FIXY-U-121.
+crucible_neg_compile_fixy_test(neg_fixy_perf_lock_contention_bg_ctx
+    "no matching function|mint_lock_contention|CtxFitsLockContentionMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_lock_contention_not_exec_ctx
+    "no matching function|mint_lock_contention|CtxFitsLockContentionMint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_pmu_sample_bg_ctx
+    "no matching function|mint_pmu_sample|CtxFitsPmuSampleMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_pmu_sample_not_exec_ctx
+    "no matching function|mint_pmu_sample|CtxFitsPmuSampleMint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_sched_switch_bg_ctx
+    "no matching function|mint_sched_switch|CtxFitsSchedSwitchMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_sched_switch_not_exec_ctx
+    "no matching function|mint_sched_switch|CtxFitsSchedSwitchMint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_sched_tp_btf_bg_ctx
+    "no matching function|mint_sched_tp_btf|CtxFitsSchedTpBtfMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_sched_tp_btf_not_exec_ctx
+    "no matching function|mint_sched_tp_btf|CtxFitsSchedTpBtfMint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_sense_hub_bg_ctx
+    "no matching function|mint_sense_hub|CtxFitsSenseHubMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_sense_hub_not_exec_ctx
+    "no matching function|mint_sense_hub|CtxFitsSenseHubMint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_latency_bg_ctx
+    "no matching function|mint_syscall_latency|CtxFitsSyscallLatencyMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_latency_not_exec_ctx
+    "no matching function|mint_syscall_latency|CtxFitsSyscallLatencyMint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_tp_btf_bg_ctx
+    "no matching function|mint_syscall_tp_btf|CtxFitsSyscallTpBtfMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_syscall_tp_btf_not_exec_ctx
+    "no matching function|mint_syscall_tp_btf|CtxFitsSyscallTpBtfMint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_workload_profiler_bg_ctx
+    "no matching function|mint_workload_profiler|CtxFitsWorkloadProfilerMint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_workload_profiler_not_exec_ctx
+    "no matching function|mint_workload_profiler|CtxFitsWorkloadProfilerMint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
+
 # fixy-HS14-06 — per-role federation mints HS14 floor (≥2 fixtures
 # each across mint_sender / mint_receiver / mint_coord, all via the
 # `fixy::sess::` re-export — `using federation::mint_{sender,
