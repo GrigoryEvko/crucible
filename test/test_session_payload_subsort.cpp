@@ -370,6 +370,56 @@ static_assert( is_subtype_sync_v<Recv<Refined<aligned<16>, void*>, End>,
 static_assert(!is_subtype_sync_v<Recv<Refined<aligned<64>, void*>, End>,
                                  Recv<Refined<aligned<16>, void*>, End>>);
 
+// ── FIXY-U-169 — Recv contravariance for DivisibleBy + ExactSize ──
+//
+// Symmetric to U-168b's Aligned contravariance witnesses but on the
+// modular and size axes.  The structural pattern: Recv<X> ⩽ Recv<Y>
+// requires Y ⩽ X (contravariance) — the position-spec Y must be a
+// subtype of the substitute-spec X.  For predicate strengthening
+// (P⇒Q means Refined<P> ⩽ Refined<Q>), this translates to:
+//
+//   Recv<Refined<looser, T>> ⩽ Recv<Refined<tighter, T>>
+//
+// because the looser-accepting recv handles ALL values arriving at
+// the tighter-position (subset relation).  The negative case fails
+// because a tighter-accepting recv would reject values the looser
+// position guarantees only as "satisfying the looser predicate".
+//
+// Failure mode this catches: if SessionPayloadSubsort.h erroneously
+// specialised Recv with covariant semantics (matching Send), these
+// witnesses would red — Send and Recv would behave identically,
+// which is a known protocol-soundness bug pattern in session-type
+// implementations.
+
+// DivisibleBy Recv contravariance: looser divisor ⩽ tighter divisor:
+static_assert( is_subtype_sync_v<Recv<Refined<divisible_by<8>, int>, End>,
+                                 Recv<Refined<divisible_by<16>, int>, End>>);
+// Soundness: tighter ⩽ looser FAILS (tighter recv would reject some
+// values the looser position accepts).
+static_assert(!is_subtype_sync_v<Recv<Refined<divisible_by<16>, int>, End>,
+                                 Recv<Refined<divisible_by<8>, int>, End>>);
+
+// ExactSize ⇒ LengthGe Recv contravariance — looser lower-bound recv
+// ⩽ tighter exact-size recv (because exact-size is a STRICTER spec,
+// so the Recv with stricter spec is a SUBTYPE of the loose-spec Recv
+// — the loose Recv handles all exact-size values too):
+static_assert( is_subtype_sync_v<Recv<Refined<length_ge<4>, std::span<int>>, End>,
+                                 Recv<Refined<exact_size<8>, std::span<int>>, End>>);
+// Soundness: exact-size Recv does NOT substitute for length_ge<4>
+// Recv (it would reject sizes ≠ 8 that length_ge<4> accepts):
+static_assert(!is_subtype_sync_v<Recv<Refined<exact_size<8>, std::span<int>>, End>,
+                                 Recv<Refined<length_ge<4>, std::span<int>>, End>>);
+
+// ExactSize ⇒ non_empty Recv contravariance — non_empty Recv ⩽
+// exact_size<8> Recv (non_empty Recv handles all exact_size<8> values
+// too):
+static_assert( is_subtype_sync_v<Recv<Refined<non_empty, std::span<int>>, End>,
+                                 Recv<Refined<exact_size<8>, std::span<int>>, End>>);
+// Soundness: exact-size Recv does NOT substitute for non_empty Recv
+// (would reject size-3, size-5, etc. that non_empty accepts):
+static_assert(!is_subtype_sync_v<Recv<Refined<exact_size<8>, std::span<int>>, End>,
+                                 Recv<Refined<non_empty, std::span<int>>, End>>);
+
 // ── Runtime scenario: Vessel-FFI flow ──────────────────────────────
 
 // Mock dispatch request — the kind of value that arrives at the FFI
