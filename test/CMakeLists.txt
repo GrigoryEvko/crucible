@@ -7846,6 +7846,18 @@ crucible_neg_compile_test(neg_orderedappendonly_drain_lvalue
 crucible_neg_compile_test(neg_pre_macro_writeoncenonnull_set_null
   "non-constant condition for static assertion|__builtin_trap|CRUCIBLE_PRE|in.*consteval|is not a constant expression")
 
+# [FIXY-U-152] safety::AppendOnly<T> Class T-rvalue-only-drain HS14
+# floor complement.  Existing coverage was entirely composition-rule
+# side (neg_appendonly_over_writeonce + neg_appendonly_over_
+# writeoncenonnull — both Class T-redundancy-static-assert at
+# class-instantiation time).  This fixture pins the destructive-
+# extraction ownership discipline at the drain() boundary: drain()'s
+# `&&` ref-qualifier rejects lvalue invocation at overload-resolution
+# time — same enforcement pattern as OrderedAppendOnly's drain
+# fixture (U-149).  Closes the AppendOnly slice of #146 A8-P2.
+crucible_neg_compile_test(neg_appendonly_drain_lvalue
+  "passing.*as.*this.*argument discards qualifiers|cannot bind rvalue reference|no matching.*drain|discards qualifiers")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
