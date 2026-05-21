@@ -3766,6 +3766,14 @@ crucible_neg_compile_effects_test(neg_stage_ctor_public_bypass
 crucible_neg_compile_effects_test(neg_mpmc_stage_ctor_public_bypass
     "is private within this context")
 
+# FIXY-V-012 HS14 companion — PipelineDag's previously-public ctor is
+# now private, with mint_pipeline_dag friended.  A direct
+# `PipelineDag<Graph>{stages...}` call site bypasses
+# CtxFitsPipelineDagMint's row admission and is rejected at the
+# access-control check.
+crucible_neg_compile_effects_test(neg_pipeline_dag_ctor_public_bypass
+    "is private within this context")
+
 # ─── #868: Endpoint↔Stage bridge gate fixtures ───────────────────────
 #
 # Two fixtures pin the CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp,

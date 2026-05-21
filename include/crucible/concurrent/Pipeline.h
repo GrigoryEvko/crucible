@@ -850,6 +850,41 @@ private:
     std::tuple<Stages...> stages_;
 };
 
+// ── pipeline_dag_mint_gate / CtxFitsPipelineDagMint ─────────────────
+//
+// Hoisted above the PipelineDag class body so the in-class friend
+// declaration for mint_pipeline_dag can reference the same concept
+// the free-function template definition uses below.  Without this
+// hoist the friend declaration cannot see the concept and the
+// signatures fail to match — the mint factory then cannot reach
+// PipelineDag's private constructor.
+namespace detail {
+
+template <class Ctx, class Graph, class... Stages>
+struct pipeline_dag_mint_gate {
+private:
+    static consteval bool compute() noexcept {
+        if constexpr (!CtxFitsPipelineDag<Ctx, Graph>) {
+            return false;
+        } else {
+            using expected =
+                typename stage_graph_traits<std::remove_cvref_t<Graph>>
+                    ::stage_pack_type;
+            using actual = StagePack<std::remove_cvref_t<Stages>...>;
+            return std::is_same_v<expected, actual>;
+        }
+    }
+
+public:
+    static constexpr bool value = compute();
+};
+
+}  // namespace detail
+
+template <class Ctx, class Graph, class... Stages>
+concept CtxFitsPipelineDagMint =
+    detail::pipeline_dag_mint_gate<Ctx, Graph, Stages...>::value;
+
 template <class Graph>
     requires StageGraphWellFormed<Graph>
 class PipelineDag;
@@ -874,10 +909,6 @@ public:
         ((!stage_inline_safe_v<Stages> || stage_per_call_ws_known_v<Stages>) && ...),
         "PipelineDag inline opt-in requires every stage handle pack to "
         "expose static constexpr per_call_working_set");
-
-    [[nodiscard]] explicit constexpr PipelineDag(Stages&&... stages) noexcept
-        : stages_{std::forward<Stages>(stages)...}
-    {}
 
     PipelineDag(PipelineDag const&) = delete(
         "PipelineDag holds move-only Stages, each of which owns endpoint handles");
@@ -912,6 +943,30 @@ public:
     }
 
 private:
+    // ── Construction (used by mint_pipeline_dag; not user-facing) ──
+    //
+    // Private per CLAUDE.md §XXI — `mint_pipeline_dag` is the sole
+    // authorization point.  A direct `PipelineDag<Graph>{stages...}`
+    // call site would bypass `CtxFitsPipelineDagMint`'s row admission
+    // (`Subrow<stage_graph_row_union_t<Graph>, ctx_row>`) and emit a
+    // DAG whose effect row never sees the gate.
+    [[nodiscard]] explicit constexpr PipelineDag(Stages&&... stages) noexcept
+        : stages_{std::forward<Stages>(stages)...}
+    {}
+
+    // mint_pipeline_dag is the sole authorized constructor.  Friend the
+    // entire template family so any (Ctx, Graph, Stages...) instantiation
+    // matching the same CtxFitsPipelineDagMint constraint can reach the
+    // private ctor.
+    template <::crucible::effects::IsExecCtx MintCtx,
+              class MintGraph,
+              class... MintStages>
+        requires CtxFitsPipelineDagMint<MintCtx, MintGraph, MintStages...>
+    friend constexpr auto mint_pipeline_dag(
+        MintCtx const&,
+        MintGraph,
+        MintStages&&...) noexcept;
+
     [[nodiscard]] static PipelineDispatchKind compute_dispatch_kind_() noexcept {
         if constexpr (inline_safe && aggregate_working_set_known) {
             const auto& topology = Topology::instance();
@@ -984,33 +1039,6 @@ template <::crucible::effects::IsExecCtx Ctx, class... Stages>
         std::forward<Stages>(stages)...
     };
 }
-
-namespace detail {
-
-template <class Ctx, class Graph, class... Stages>
-struct pipeline_dag_mint_gate {
-private:
-    static consteval bool compute() noexcept {
-        if constexpr (!CtxFitsPipelineDag<Ctx, Graph>) {
-            return false;
-        } else {
-            using expected =
-                typename stage_graph_traits<std::remove_cvref_t<Graph>>
-                    ::stage_pack_type;
-            using actual = StagePack<std::remove_cvref_t<Stages>...>;
-            return std::is_same_v<expected, actual>;
-        }
-    }
-
-public:
-    static constexpr bool value = compute();
-};
-
-}  // namespace detail
-
-template <class Ctx, class Graph, class... Stages>
-concept CtxFitsPipelineDagMint =
-    detail::pipeline_dag_mint_gate<Ctx, Graph, Stages...>::value;
 
 template <::crucible::effects::IsExecCtx Ctx, class Graph, class... Stages>
     requires CtxFitsPipelineDagMint<Ctx, Graph, Stages...>
