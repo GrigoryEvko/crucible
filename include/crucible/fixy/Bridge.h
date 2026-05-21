@@ -102,6 +102,7 @@
 #include <crucible/Cipher.h>
 #include <crucible/bridges/CrashTransport.h>
 #include <crucible/bridges/EndpointMint.h>
+#include <crucible/bridges/MachineSessionBridge.h>  // FIXY-U-117: mint_atomic_session
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/bridges/SessionPersistence.h>
 #include <crucible/bridges/VigilModeHandle.h>
@@ -231,6 +232,26 @@ using ::crucible::bridges::mint_crash_watched_endpoint;
 // the bridge level; production hot path never calls this.
 
 using ::crucible::mint_vigil_mode_bridge;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Atomic-machine session — Machine<State> + SessionHandle bridge ─
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-U-117: `mint_atomic_session<Proto, Cell>(cell)` mints a
+// SessionHandle that observes a Cell's atomic state-machine through
+// the Send/Recv protocol surface.  The substrate function lives in
+// `crucible::safety::` (NOT `crucible::bridges::` despite the file
+// path — see `bridges/MachineSessionBridge.h:107` `namespace
+// crucible::safety { ... }`), so the using-decl resolves the name
+// from the safety namespace.
+//
+// Concept gate `AtomicMachineCell<Cell> && safety::proto::is_well_formed_v<Proto>`
+// is preserved through the alias (using-decl is name-lookup-only).
+// Pointer-identity reach proof lives in test_fixy_bridge.cpp where
+// probe types AtomicProbeCell + Send<int, End> instantiate the
+// template at a concrete argument pair.
+
+using ::crucible::safety::mint_atomic_session;
 
 }  // namespace crucible::fixy::bridge
 

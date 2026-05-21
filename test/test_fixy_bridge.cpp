@@ -44,6 +44,31 @@ static_assert(std::is_same_v<
     "fixy::bridge::mint_recording_session must be the substrate function "
     "(name-lookup-only re-export).");
 
+// ─── 3a. FIXY-U-117 — mint_atomic_session function-template identity ──
+//
+// Probe Cell satisfies AtomicMachineCell concept (state_type typedef +
+// load() returning state_type).  Probe Proto reuses SendInt which
+// safety::proto::is_well_formed_v already admits.  Substrate function
+// lives in crucible::safety:: (not crucible::bridges::); pointer-
+// identity through fb:: proves the using-decl is name-lookup-only.
+
+namespace test_fixy_bridge {
+struct AtomicProbeCell {
+    using state_type = int;
+    constexpr state_type load(std::memory_order) const noexcept { return 0; }
+};
+}  // namespace test_fixy_bridge
+
+namespace safety_ns = ::crucible::safety;
+
+static_assert(std::is_same_v<
+    decltype(&fb::mint_atomic_session<
+        test_fixy_bridge::SendInt, test_fixy_bridge::AtomicProbeCell>),
+    decltype(&safety_ns::mint_atomic_session<
+        test_fixy_bridge::SendInt, test_fixy_bridge::AtomicProbeCell>)>,
+    "FIXY-U-117: fixy::bridge::mint_atomic_session must be the substrate "
+    "function (using-decl preserves crucible::safety:: residency).");
+
 // ─── 4. Endpoint mints + vigil-mode bridge reachable via alias ────
 //
 // The `mint_recording_endpoint` / `mint_crash_watched_endpoint` /
@@ -59,6 +84,7 @@ FIXY_BRIDGE_NAME_REACHABLE(fb::mint_crash_watched_endpoint);
 FIXY_BRIDGE_NAME_REACHABLE(fb::mint_vigil_mode_bridge);
 FIXY_BRIDGE_NAME_REACHABLE(fb::mint_persisted_session);
 FIXY_BRIDGE_NAME_REACHABLE(fb::mint_crash_watched_session);
+FIXY_BRIDGE_NAME_REACHABLE(fb::mint_atomic_session);  // FIXY-U-117
 // FIXY-U-070 crash-event surface (6 items).  Name reachability +
 // substrate identity for the 5 type-level items below.  The function
 // template `wrap_crash_return` is name-reach-only here; runtime call

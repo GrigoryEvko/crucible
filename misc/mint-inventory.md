@@ -26,20 +26,20 @@ Gap markers: `[✗ NO-FIXY]` (substrate mint not re-exported through fixy::),
 `[⚠ <2 HS14]` (HS14 fixture floor not met).  §XXI compliance shortfalls
 appear as `-` in the flag columns.
 
-Snapshot generated: `2026-05-21T03:03:01Z`.
+Snapshot generated: `2026-05-21T03:12:06Z`.
 
 ## bridges/
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_atomic_session` | `include/crucible/bridges/MachineSessionBridge.h:281` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
-| `mint_crash_watched_endpoint` | `include/crucible/bridges/EndpointMint.h:127` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:222` | HS14: 4 |
-| `mint_crash_watched_session` | `include/crucible/bridges/CrashTransport.h:1216` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:129` | HS14: 5 |
+| `mint_atomic_session` | `include/crucible/bridges/MachineSessionBridge.h:281` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:105` | HS14: 2 |
+| `mint_crash_watched_endpoint` | `include/crucible/bridges/EndpointMint.h:127` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:223` | HS14: 4 |
+| `mint_crash_watched_session` | `include/crucible/bridges/CrashTransport.h:1216` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:130` | HS14: 5 |
 | `mint_open_view` | `include/crucible/bridges/SessionPersistence.h:736` | - | - | - | Y | ctx | [✗ NO-FIXY] | HS14: 17 |
 | `mint_persisted_session` | `include/crucible/bridges/SessionPersistence.h:690` | Y | - | - | Y | ctx | `include/crucible/fixy/Bridge.h:100` | HS14: 14 |
-| `mint_recording_endpoint` | `include/crucible/bridges/EndpointMint.h:99` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:221` | HS14: 4 |
-| `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:1223` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:118` | HS14: 16 |
-| `mint_vigil_mode_bridge` | `include/crucible/bridges/VigilModeHandle.h:205` | Y | Y | Y | - | token | `include/crucible/fixy/Bridge.h:228` | HS14: 3 |
+| `mint_recording_endpoint` | `include/crucible/bridges/EndpointMint.h:99` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:222` | HS14: 4 |
+| `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:1223` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:119` | HS14: 16 |
+| `mint_vigil_mode_bridge` | `include/crucible/bridges/VigilModeHandle.h:205` | Y | Y | Y | - | token | `include/crucible/fixy/Bridge.h:229` | HS14: 3 |
 
 ## cipher/
 
@@ -179,5 +179,5 @@ Snapshot generated: `2026-05-21T03:03:01Z`.
 ## Summary
 
 - Total substrate mints: 103
-- Missing fixy re-export: 16
+- Missing fixy re-export: 15
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.
