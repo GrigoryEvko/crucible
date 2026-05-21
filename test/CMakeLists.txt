@@ -7820,6 +7820,16 @@ crucible_neg_compile_test(neg_atomicmonotonic_non_trivially_copyable
 crucible_neg_compile_test(neg_boundedmonotonic_cross_max_mismatch
   "invalid initialization of reference.*BoundedMonotonic|cannot convert.*BoundedMonotonic|no matching function.*consume_capacity_8|could not convert.*BoundedMonotonic")
 
+# [FIXY-U-149] safety::OrderedAppendOnly<T, ...> HS14 floor — bumps
+# OrderedAppendOnly from 1 → 2 fixtures.  Existing Class M
+# (neg_pre_macro_ordered_appendonly_backward_key) pins the order-
+# preservation CRUCIBLE_PRE inside append(); this Class T fixture
+# pins the destructive-extraction ownership discipline of drain()'s
+# `&&` ref-qualifier.  Closes the OrderedAppendOnly slice of #146
+# A8-P2.
+crucible_neg_compile_test(neg_orderedappendonly_drain_lvalue
+  "passing.*as.*this.*argument discards qualifiers|cannot bind rvalue reference|no matching.*drain|discards qualifiers")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
