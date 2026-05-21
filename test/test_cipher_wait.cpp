@@ -22,6 +22,10 @@
 #include <type_traits>
 #include <utility>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 using crucible::Cipher;
 using crucible::ContentHash;
 using crucible::RegionNode;
@@ -66,7 +70,7 @@ static RegionNode* make_test_region(Arena& arena, uint32_t seed) {
 static void test_store_pinned_bit_equality(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 1);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -80,7 +84,7 @@ static void test_store_pinned_bit_equality(const char* dir) {
 static void test_store_pinned_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 2);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -99,7 +103,7 @@ static void test_store_pinned_type_identity(const char* dir) {
 static void test_store_pinned_payload_route(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 3);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
 
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
@@ -141,7 +145,7 @@ static ContentHash block_fence_consumer(W wrapped) noexcept {
 static void test_e2e_block_fence_consumer(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 4);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 

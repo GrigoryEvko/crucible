@@ -223,7 +223,15 @@ class Vigil {
         meta_log_->reset();
 
         if (!cfg_.cipher_path.empty()) {
-            cipher_.emplace(Cipher::open(cfg_.cipher_path));
+            // FIXY-V-031: declare External provenance at the trust
+            // boundary.  cfg_.cipher_path is operator-supplied (config
+            // file / env var) — it is `source::External` until
+            // Cipher::open() runs sanitize_path() internally to
+            // promote provenance to source::Sanitized.
+            cipher_.emplace(Cipher::open(
+                crucible::fixy::wrap::Path<
+                    crucible::fixy::tags::source::External>{
+                    cfg_.cipher_path}));
         }
 
         // Wire the background thread callback to our on_region_ready.

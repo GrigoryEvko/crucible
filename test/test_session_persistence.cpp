@@ -16,6 +16,10 @@
 #include <unistd.h>
 #include <utility>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 namespace proto = crucible::safety::proto;
 namespace eff = crucible::effects;
 
@@ -127,13 +131,13 @@ void drive_5000_events(crucible::Cipher& cipher) {
 }
 
 int test_two_sessions_replay_after_reopen(const std::string& dir) {
-    auto cipher = crucible::Cipher::open(dir);
+    auto cipher = crucible::Cipher::open(CipherRoot{dir});
     assert(cipher.is_open());
 
     drive_5000_events<proto::SessionTagId{9001}>(cipher);
     drive_5000_events<proto::SessionTagId{9002}>(cipher);
 
-    auto reopened = crucible::Cipher::open(dir);
+    auto reopened = crucible::Cipher::open(CipherRoot{dir});
     assert(reopened.is_open());
     auto view = reopened.mint_open_view();
 
@@ -185,7 +189,7 @@ int test_two_sessions_replay_after_reopen(const std::string& dir) {
 }
 
 int test_manual_flush_and_existing_handle_overload(const std::string& dir) {
-    auto cipher = crucible::Cipher::open(dir);
+    auto cipher = crucible::Cipher::open(CipherRoot{dir});
     assert(cipher.is_open());
     auto view = cipher.mint_open_view();
 
@@ -218,7 +222,7 @@ int test_manual_flush_and_existing_handle_overload(const std::string& dir) {
     CounterResource resource = std::move(end_handle).close();
     assert(resource.last == 7);
 
-    auto reopened = crucible::Cipher::open(dir);
+    auto reopened = crucible::Cipher::open(CipherRoot{dir});
     assert(reopened.is_open());
     auto reopened_view = reopened.mint_open_view();
     const auto events = reopened.load_session_events(
@@ -242,7 +246,7 @@ int test_manual_flush_and_existing_handle_overload(const std::string& dir) {
 // witness is structural: the handle owns its own proof-of-open from mint
 // time, and subsequent flushes never re-touch Cipher::mint_open_view().
 int test_fixy_a2_007_stored_view_discipline(const std::string& dir) {
-    auto cipher = crucible::Cipher::open(dir);
+    auto cipher = crucible::Cipher::open(CipherRoot{dir});
     assert(cipher.is_open());
 
     proto::SessionPersistencePolicy manual_only{
@@ -294,7 +298,7 @@ int test_fixy_a2_007_stored_view_discipline(const std::string& dir) {
 
     // Re-open and verify the full event stream landed on disk via the
     // stored-view path. 3 Selects + 2 Sends + 1 Close = 6 events.
-    auto reopened = crucible::Cipher::open(dir);
+    auto reopened = crucible::Cipher::open(CipherRoot{dir});
     assert(reopened.is_open());
     auto rv = reopened.mint_open_view();
     const auto events = reopened.load_session_events(
@@ -343,7 +347,7 @@ static_assert(std::is_nothrow_destructible_v<
 // Pre-fix observable: events.size() == 0 after re-open (silently lost).
 // Post-fix observable: events.size() == kEvents (flushed at destruction).
 int test_fixy_a2_013_destructor_flushes_pending_events(const std::string& dir) {
-    auto cipher = crucible::Cipher::open(dir);
+    auto cipher = crucible::Cipher::open(CipherRoot{dir});
     assert(cipher.is_open());
 
     constexpr proto::SessionTagId kSession{0xA2013};
@@ -376,7 +380,7 @@ int test_fixy_a2_013_destructor_flushes_pending_events(const std::string& dir) {
         // drain the pending tail into Cipher's cold tier.
     }
 
-    auto reopened = crucible::Cipher::open(dir);
+    auto reopened = crucible::Cipher::open(CipherRoot{dir});
     assert(reopened.is_open());
     auto view = reopened.mint_open_view();
     const auto events = reopened.load_session_events(view, kSession);

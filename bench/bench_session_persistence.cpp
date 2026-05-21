@@ -11,6 +11,10 @@
 #include <string>
 #include <unistd.h>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 namespace proto = crucible::safety::proto;
 namespace eff = crucible::effects;
 
@@ -60,7 +64,7 @@ int main() {
     std::printf("=== session persistence ===\n  tmpdir: %s\n\n",
                 dir.c_str());
 
-    auto cipher = crucible::Cipher::open(dir.string());
+    auto cipher = crucible::Cipher::open(CipherRoot{dir.string()});
     auto view = cipher.mint_open_view();
     eff::TestRunnerCtx ctx{};
 

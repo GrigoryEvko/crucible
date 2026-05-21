@@ -37,6 +37,10 @@
 #include <type_traits>
 #include <utility>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 using crucible::Cipher;
 using crucible::ContentHash;
 namespace eff = crucible::effects;
@@ -139,8 +143,8 @@ static void test_t04_record_event_matches_advance_head(const char* base_dir) {
     std::filesystem::create_directories(dir_a);
     std::filesystem::create_directories(dir_b);
 
-    auto cipher_a = Cipher::open(dir_a);
-    auto cipher_b = Cipher::open(dir_b);
+    auto cipher_a = Cipher::open(CipherRoot{dir_a});
+    auto cipher_b = Cipher::open(CipherRoot{dir_b});
     auto view_a = cipher_a.mint_open_view();
     auto view_b = cipher_b.mint_open_view();
 
@@ -175,7 +179,7 @@ static void test_t04_record_event_matches_advance_head(const char* base_dir) {
 static void test_t05_round_trip(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t05";
     std::filesystem::create_directories(dir);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
 
     constexpr ContentHash kHash{0xDEAD'BEEF'CAFE'BABEULL};
@@ -202,7 +206,7 @@ static void test_t05_round_trip(const char* base_dir) {
 static void test_t06_bg_superset_row(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t06";
     std::filesystem::create_directories(dir);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
 
     using BgRow = eff::Row<eff::Effect::Alloc, eff::Effect::IO,
@@ -221,7 +225,7 @@ static void test_t06_bg_superset_row(const char* base_dir) {
 static void test_t07_full_universe_row(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t07";
     std::filesystem::create_directories(dir);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
 
     using UniverseRow = eff::Row<
@@ -244,7 +248,7 @@ static void test_t07_full_universe_row(const char* base_dir) {
 static void test_t08_monotonic_steps(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t08";
     std::filesystem::create_directories(dir);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
 
     using R = eff::Row<eff::Effect::IO, eff::Effect::Block>;
@@ -274,7 +278,7 @@ static void test_t08_monotonic_steps(const char* base_dir) {
 static void test_t09_multiple_events_monotonic(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t09";
     std::filesystem::create_directories(dir);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
 
     using R = eff::Row<eff::Effect::IO, eff::Effect::Block>;
@@ -308,7 +312,7 @@ static void test_t09_multiple_events_monotonic(const char* base_dir) {
 static void test_t10_api_surface_pinned(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t10";
     std::filesystem::create_directories(dir);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
 
     using R = eff::Row<eff::Effect::IO, eff::Effect::Block>;
@@ -384,8 +388,8 @@ static void test_audit_b_multi_event_byte_equivalence(const char* base_dir) {
     std::filesystem::create_directories(dir_a);
     std::filesystem::create_directories(dir_b);
 
-    auto cipher_a = Cipher::open(dir_a);
-    auto cipher_b = Cipher::open(dir_b);
+    auto cipher_a = Cipher::open(CipherRoot{dir_a});
+    auto cipher_b = Cipher::open(CipherRoot{dir_b});
     auto view_a = cipher_a.mint_open_view();
     auto view_b = cipher_b.mint_open_view();
 
@@ -488,7 +492,7 @@ static void test_audit_c_external_visibility() {
 static void test_audit_d_canonical_row_acceptance(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/aud_d";
     std::filesystem::create_directories(dir);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
 
     // Pass via the typedef itself.
@@ -528,7 +532,7 @@ static void test_audit_d_canonical_row_acceptance(const char* base_dir) {
 static void test_audit_e_pre_clause_orthogonal(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/aud_e";
     std::filesystem::create_directories(dir);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
 
     using R = eff::Row<eff::Effect::IO, eff::Effect::Block>;

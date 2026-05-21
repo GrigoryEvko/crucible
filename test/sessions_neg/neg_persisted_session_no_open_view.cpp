@@ -7,13 +7,17 @@
 #include <crucible/Cipher.h>  // fixy-A2-014: explicit; SessionPersistence.h no longer pulls Cipher.h
 #include <crucible/bridges/SessionPersistence.h>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 namespace proto = crucible::safety::proto;
 namespace eff = crucible::effects;
 
 struct Resource {};
 
 int main() {
-    auto cipher = crucible::Cipher::open("/tmp/crucible_neg_persist_no_view");
+    auto cipher = crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_persist_no_view"});
     eff::TestRunnerCtx ctx{};
 
     [[maybe_unused]] auto h = proto::mint_persisted_session<

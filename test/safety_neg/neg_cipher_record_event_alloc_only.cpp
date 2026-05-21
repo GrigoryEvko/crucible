@@ -19,13 +19,17 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 namespace eff = ::crucible::effects;
 
 int main() {
     // Caller declares Row<Alloc> — wrong axis entirely.
     //   {IO, Block} ⊄ {Alloc} → Subrow false → constraint fails.
     auto cipher = ::crucible::Cipher::open(
-        "/tmp/crucible_neg_record_event_alloc_only");
+        CipherRoot{"/tmp/crucible_neg_record_event_alloc_only"});
     cipher.record_event<eff::Row<eff::Effect::Alloc>>(
         cipher.mint_open_view(),
         ::crucible::ContentHash{1u},

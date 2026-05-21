@@ -55,6 +55,10 @@
 #include <type_traits>
 #include <utility>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 using crucible::Arena;
 using crucible::Cipher;
 using crucible::ContentHash;
@@ -98,7 +102,7 @@ static RegionNode* mint_region(Arena& arena, uint64_t hash_seed) {
 // ── T01 — commit_per_fleet PER_FLEET → Cold ─────────────────────
 static void test_commit_per_fleet_type_identity() {
     auto tmp = tmp_root_for("t01");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 1);
@@ -123,7 +127,7 @@ static void test_commit_per_fleet_type_identity() {
 // ── T02 — commit_per_program PER_PROGRAM → Warm ─────────────────
 static void test_commit_per_program_type_identity() {
     auto tmp = tmp_root_for("t02");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 2);
@@ -149,7 +153,7 @@ static void test_commit_per_program_type_identity() {
 // ── T03 — commit_per_request PER_REQUEST → Hot ─────────────────
 static void test_commit_per_request_type_identity() {
     auto tmp = tmp_root_for("t03");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 3);
@@ -168,7 +172,7 @@ static void test_commit_per_request_type_identity() {
 // ── T04 — PER_FLEET satisfies PER_REQUEST (wider serves narrower) ─
 static void test_fleet_satisfies_request() {
     auto tmp = tmp_root_for("t04");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 4);
@@ -187,7 +191,7 @@ static void test_fleet_satisfies_request() {
 // ── T05 — PER_FLEET satisfies PER_PROGRAM ───────────────────────
 static void test_fleet_satisfies_program() {
     auto tmp = tmp_root_for("t05");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 5);
@@ -205,7 +209,7 @@ static void test_fleet_satisfies_program() {
 // ── T06 — PER_PROGRAM satisfies PER_REQUEST ─────────────────────
 static void test_program_satisfies_request() {
     auto tmp = tmp_root_for("t06");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 6);
@@ -222,7 +226,7 @@ static void test_program_satisfies_request() {
 // ── T07 — PER_PROGRAM satisfies PER_PROGRAM (self-match) ────────
 static void test_program_self_match() {
     auto tmp = tmp_root_for("t07");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 7);
@@ -239,7 +243,7 @@ static void test_program_self_match() {
 // ── T08 — One OpenView gates all lifetime commit scopes ─────────
 static void test_single_open_view_type_identity() {
     auto tmp = tmp_root_for("t08");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     auto view = c.mint_open_view();
     Arena arena;
     MetaLog log;
@@ -264,7 +268,7 @@ static void test_single_open_view_type_identity() {
 // ── T09 — Round-trip: commit_per_program writes, load reads back ─
 static void test_round_trip_via_program_commit() {
     auto tmp = tmp_root_for("t09");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 9);
@@ -290,7 +294,7 @@ static void test_round_trip_via_program_commit() {
 // ── T10 — Null-region pass-through ──────────────────────────────
 static void test_null_region_pass_through() {
     auto tmp = tmp_root_for("t10");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     MetaLog log;
 
     // PER_PROGRAM is the real Warm path; null mirrors publish_warm
@@ -377,7 +381,7 @@ static void test_layout_invariant() {
 // widening-then-narrowing without losing the satisfies<> property.
 static void test_relax_down_then_commit_per_request() {
     auto tmp = tmp_root_for("t16");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 16);
@@ -430,7 +434,7 @@ static void test_reflective_trait_agreement() {
 // at the persistence boundary.
 static void test_idempotent_commit_per_program() {
     auto tmp = tmp_root_for("t18");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 18);
@@ -482,7 +486,7 @@ static void test_move_only_witness() {
 // the lifetime fence and re-open the cross-request leak class.
 static void test_api_completeness_matrix() {
     auto tmp = tmp_root_for("t20");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 20);
@@ -514,7 +518,7 @@ static void test_api_completeness_matrix() {
 // ── T15 — Content-hash equality across the lifetime overlay ────
 static void test_content_hash_equality_across_overlay() {
     auto tmp = tmp_root_for("t15");
-    Cipher c = Cipher::open(tmp.string());
+    Cipher c = Cipher::open(CipherRoot{tmp.string()});
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 0xCAFEBABEULL);
@@ -527,7 +531,7 @@ static void test_content_hash_equality_across_overlay() {
     // "additive overlay" claim: the lifetime axis is type-only, the
     // value-bytes (ContentHash) round-trip identically.
     auto tmp2 = tmp_root_for("t15b");
-    Cipher c2 = Cipher::open(tmp2.string());
+    Cipher c2 = Cipher::open(CipherRoot{tmp2.string()});
 
     OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*> wrapped{region};
     auto pinned = c2.commit_per_program(c2.mint_open_view(),

@@ -172,11 +172,52 @@ class CRUCIBLE_OWNER Cipher {
         return ContentAddressedRegionPayload{region};
     }
 
-    // Factory: open (or create) a Cipher rooted at `root`.
+    // Factory: open (or create) a Cipher rooted at `root_external`.
     // Creates the objects/ subdirectory if absent, loads HEAD + log from disk.
     // gnu::cold: startup-only path, never on the op-dispatch hot path.
-    [[gnu::cold]] static Cipher open(const std::string& root) {
+    //
+    // FIXY-V-031: the root path is declared at the trust-boundary as
+    // `Path<source::External>` — the caller is required to mint the
+    // External tag explicitly:
+    //
+    //     auto root = crucible::fixy::wrap::Path<
+    //         crucible::fixy::tags::source::External>{user_string};
+    //     auto cipher = Cipher::open(std::move(root));
+    //
+    // The constructor body runs `sanitize_path()` (V-031 substrate)
+    // to apply the PathTraversal policy (rejects empty / oversize /
+    // embedded-NUL / ".."-component) and promote provenance to
+    // `Path<source::Sanitized>` before opening the V-030 dirfd.
+    // A sanitization failure returns an empty (unopened) Cipher,
+    // matching the previous `const std::string&` overload's
+    // empty-on-bad-root semantic.  Symlink defense lives downstream
+    // in V-030's `O_NOFOLLOW`-anchored ::openat() helpers; this
+    // entry-point check is string-level only.
+    [[gnu::cold]] static Cipher open(
+        crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>
+            root_external) {
         Cipher c;
+
+        // V-031: sanitize at the trust boundary.  std::expected error
+        // channel collapses to the empty-Cipher return path on any of
+        // the four PathTraversalError variants (Empty / TooLong /
+        // EmbeddedNul / DotDotComponent).
+        auto sanitized_e = crucible::fixy::wrap::sanitize_path(
+            std::move(root_external));
+        if (!sanitized_e) {
+            return c;
+        }
+
+        // Sanitized path bytes for downstream storage.  std::string is
+        // the substrate type Cipher::root_ holds; the path-to-string
+        // bridge happens once here, after taint has been discharged.
+        const std::string root = sanitized_e->value().string();
+
+        // V-031 defense-in-depth: sanitize_path already enforces
+        // [1, MAX_PATH_BYTES (16 KB)] ⊃ [1, MAX_ROOT_PATH_BYTES (4 KB)],
+        // so the Cipher-internal cap is the narrower predicate of
+        // the two.  Keep both checks — the inner cap is the contract
+        // the rest of Cipher.h's buffer math depends on.
         if (root.empty() || root.size() > MAX_ROOT_PATH_BYTES) {
             return c;
         }

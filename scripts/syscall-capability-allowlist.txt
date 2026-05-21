@@ -122,19 +122,19 @@ include/crucible/handles/FileHandle.h:262 — effects::IO via FileHandle::stat_s
 # #include comment is allowlisted because the script naively pattern-
 # matches "::open(" in the comment text.
 include/crucible/Cipher.h:53 — effects::IO via #include <fcntl.h> comment text (no syscall here)
-include/crucible/Cipher.h:205 — effects::Init via Cipher::open (V-030 root_dirfd_ O_DIRECTORY|O_NOFOLLOW acquire)
-include/crucible/Cipher.h:229 — effects::IO via Cipher::open (read HEAD file content at startup)
-include/crucible/Cipher.h:1419 — effects::IO via fdatasync_at_::openat (V-026 + V-030 O_NOFOLLOW)
-include/crucible/Cipher.h:1425 — effects::Block via fdatasync_at_::fdatasync (V-026 durability barrier)
-include/crucible/Cipher.h:1488 — effects::IO via atomic_write_at_::openat (V-027 + V-030 tmp O_NOFOLLOW)
-include/crucible/Cipher.h:1504 — effects::IO via atomic_write_at_::write (V-027 HEAD tmp data)
-include/crucible/Cipher.h:1518 — effects::Block via atomic_write_at_::fdatasync (V-027 HEAD tmp sync)
-include/crucible/Cipher.h:1546 — effects::Block via atomic_write_at_::fsync (V-027 + V-030 parent-dirfd sync)
-include/crucible/Cipher.h:1593 — effects::IO via atomic_append_at_::openat (V-028/V-029 + V-030 O_NOFOLLOW)
-include/crucible/Cipher.h:1609 — effects::IO via atomic_append_at_::write (V-028/V-029 record bytes)
-include/crucible/Cipher.h:1622 — effects::Block via atomic_append_at_::fdatasync (V-028/V-029 durable)
-include/crucible/Cipher.h:1631 — effects::Block via atomic_append_at_::fsync (V-028/V-029 + V-030 parent-dirfd)
-include/crucible/Cipher.h:1657 — effects::IO via open_dir_at_::openat (V-030 session subdir O_DIRECTORY|O_NOFOLLOW)
+include/crucible/Cipher.h:246 — effects::Init via Cipher::open (V-030 root_dirfd_ O_DIRECTORY|O_NOFOLLOW acquire)
+include/crucible/Cipher.h:270 — effects::IO via Cipher::open (read HEAD file content at startup)
+include/crucible/Cipher.h:1460 — effects::IO via fdatasync_at_::openat (V-026 + V-030 O_NOFOLLOW)
+include/crucible/Cipher.h:1466 — effects::Block via fdatasync_at_::fdatasync (V-026 durability barrier)
+include/crucible/Cipher.h:1529 — effects::IO via atomic_write_at_::openat (V-027 + V-030 tmp O_NOFOLLOW)
+include/crucible/Cipher.h:1545 — effects::IO via atomic_write_at_::write (V-027 HEAD tmp data)
+include/crucible/Cipher.h:1559 — effects::Block via atomic_write_at_::fdatasync (V-027 HEAD tmp sync)
+include/crucible/Cipher.h:1587 — effects::Block via atomic_write_at_::fsync (V-027 + V-030 parent-dirfd sync)
+include/crucible/Cipher.h:1634 — effects::IO via atomic_append_at_::openat (V-028/V-029 + V-030 O_NOFOLLOW)
+include/crucible/Cipher.h:1650 — effects::IO via atomic_append_at_::write (V-028/V-029 record bytes)
+include/crucible/Cipher.h:1663 — effects::Block via atomic_append_at_::fdatasync (V-028/V-029 durable)
+include/crucible/Cipher.h:1672 — effects::Block via atomic_append_at_::fsync (V-028/V-029 + V-030 parent-dirfd)
+include/crucible/Cipher.h:1698 — effects::IO via open_dir_at_::openat (V-030 session subdir O_DIRECTORY|O_NOFOLLOW)
 
 # ── Platform.h — process startup probes ───────────────────────────────
 # Init-row /proc reads at startup (CPU topology, isolated CPUs).

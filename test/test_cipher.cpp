@@ -13,6 +13,12 @@
 
 static auto g_test = crucible::effects::testing::test();
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.  Local
+// alias keeps test call sites readable without losing the External
+// trust-boundary declaration each call carries.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 // Build a minimal RegionNode suitable for Cipher round-trip tests.
 static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
     constexpr uint32_t NUM_OPS = 2;
@@ -75,7 +81,7 @@ int main() {
 
     // ── open() creates the objects/ subdir ──────────────────────────
     {
-        auto cipher = crucible::Cipher::open(dir);
+        auto cipher = crucible::Cipher::open(CipherRoot{dir});
         assert(cipher.empty() && "freshly opened Cipher must be empty");
         assert(cipher.root() == dir);
         assert(std::filesystem::is_directory(std::string(dir) + "/objects"));
@@ -87,7 +93,7 @@ int main() {
     assert(static_cast<bool>(expected_hash));
 
     {
-        auto cipher = crucible::Cipher::open(dir);
+        auto cipher = crucible::Cipher::open(CipherRoot{dir});
         auto ov = cipher.mint_open_view();
         const crucible::ContentHash stored_hash =
             cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
@@ -106,7 +112,7 @@ int main() {
 
     // ── load() round-trip ────────────────────────────────────────────
     {
-        auto cipher = crucible::Cipher::open(dir);
+        auto cipher = crucible::Cipher::open(CipherRoot{dir});
         auto ov = cipher.mint_open_view();
         crucible::Arena arena2(1 << 16);
         auto loaded_ca = cipher.load_content_addressed(
@@ -119,7 +125,7 @@ int main() {
 
     // ── advance_head() × 2, verify HEAD file ─────────────────────────
     {
-        auto cipher = crucible::Cipher::open(dir);
+        auto cipher = crucible::Cipher::open(CipherRoot{dir});
         auto ov = cipher.mint_open_view();
         (void)cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
 
@@ -143,7 +149,7 @@ int main() {
     // ── hash_at_step() binary search ─────────────────────────────────
     {
         // Reopen to load the log from disk.
-        auto cipher = crucible::Cipher::open(dir);
+        auto cipher = crucible::Cipher::open(CipherRoot{dir});
         auto ov = cipher.mint_open_view();
 
         // The log has entries at step 10 (expected_hash) and 50 (hash2).
@@ -168,7 +174,7 @@ int main() {
 
     // ── load() on missing hash returns nullptr ────────────────────────
     {
-        auto cipher = crucible::Cipher::open(dir);
+        auto cipher = crucible::Cipher::open(CipherRoot{dir});
         auto ov = cipher.mint_open_view();
         crucible::Arena arena3(1 << 16);
         assert(cipher.load_content_addressed(
@@ -186,7 +192,7 @@ int main() {
         auto* ca_region = make_test_region(ca_arena);
         const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
 
-        auto cipher = crucible::Cipher::open(dir_ca);
+        auto cipher = crucible::Cipher::open(CipherRoot{dir_ca});
         auto ov = cipher.mint_open_view();
         const crucible::ContentHash hash = cipher.store(ov, ca_payload, nullptr);
         assert(hash == ca_region->content_hash);
@@ -230,8 +236,8 @@ int main() {
         auto* ca_region = make_test_region(ca_arena);
         const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
 
-        auto sender = crucible::Cipher::open(sender_dir);
-        auto receiver = crucible::Cipher::open(receiver_dir);
+        auto sender = crucible::Cipher::open(CipherRoot{sender_dir});
+        auto receiver = crucible::Cipher::open(CipherRoot{receiver_dir});
         auto sender_ov = sender.mint_open_view();
         auto receiver_ov = receiver.mint_open_view();
         const crucible::ContentHash sender_hash =
@@ -264,7 +270,7 @@ int main() {
 
     // ── open() transitions to Open, mint_open_view succeeds ──────────
     {
-        auto cipher = crucible::Cipher::open(dir);
+        auto cipher = crucible::Cipher::open(CipherRoot{dir});
         assert(cipher.is_open());
         auto ov = cipher.mint_open_view();    // no contract violation
         // Typed overloads compile and work via the minted view.
@@ -280,7 +286,7 @@ int main() {
 
     // ── Moved-from Cipher is Closed (root_ moves out) ────────────────
     {
-        auto cipher = crucible::Cipher::open(dir);
+        auto cipher = crucible::Cipher::open(CipherRoot{dir});
         assert(cipher.is_open());
         auto moved = std::move(cipher);
         assert(moved.is_open() && "moved-to must be Open");
@@ -311,7 +317,7 @@ int main() {
             lf << "40,deadbeef00000004,4000\n";   // valid
         }
 
-        auto cipher = crucible::Cipher::open(dir2);
+        auto cipher = crucible::Cipher::open(CipherRoot{dir2});
         auto ov = cipher.mint_open_view();
         // Two valid entries should have parsed; corrupt lines skipped.
         assert(cipher.hash_at_step(ov, 10) == crucible::ContentHash{0xdeadbeef00000001ULL});

@@ -15,6 +15,10 @@
 #include <crucible/Cipher.h>
 #include <crucible/bridges/SessionPersistence.h>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 namespace proto = ::crucible::safety::proto;
 namespace eff   = ::crucible::effects;
 
@@ -26,7 +30,7 @@ struct NotAReason {};
 using P = proto::Send<int, proto::End>;
 
 int main() {
-    auto cipher = ::crucible::Cipher::open("/tmp/crucible_neg_psh_detach_untyped");
+    auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_psh_detach_untyped"});
     auto view   = cipher.mint_open_view();
     eff::TestRunnerCtx ctx{};
     auto h = proto::mint_persisted_session<P>(

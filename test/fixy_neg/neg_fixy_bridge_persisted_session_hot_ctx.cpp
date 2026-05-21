@@ -13,13 +13,17 @@
 
 #include <crucible/fixy/Bridge.h>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 namespace fbridge = crucible::fixy::bridge;
 namespace proto   = crucible::safety::proto;
 
 struct Resource {};
 
 int main() {
-    auto cipher = crucible::Cipher::open("/tmp/crucible_neg_fixy_persist_hot");
+    auto cipher = crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_fixy_persist_hot"});
     auto view = cipher.mint_open_view();
     crucible::effects::HotFgCtx ctx{};
 

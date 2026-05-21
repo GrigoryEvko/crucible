@@ -10864,6 +10864,20 @@ crucible_neg_compile_fixy_test(neg_fixy_contract_persisted_session_no_ctx
 crucible_neg_compile_fixy_test(neg_fixy_contract_persisted_session_no_openview
     "PersistedSession_OpenViewRequired|use of deleted function|deleted")
 
+# ── FIXY-V-031 — Cipher::open trust-boundary fixtures (HS14) ────────
+# Cipher::open()'s signature was changed from `const std::string& root`
+# to `crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>`
+# so every operator-supplied path is mint-typed at the boundary.  HS14
+# requires ≥2 neg-compile fixtures per new mint; V-031 ships three —
+# bare-string rejection, cross-tag (Sanitized→External) rejection, and
+# sanitize_path() wrong-source-tag rejection.
+crucible_neg_compile_fixy_test(neg_fixy_cipher_open_rejects_bare_string
+    "no matching function|could not convert|cannot convert|explicit|conversion from")
+crucible_neg_compile_fixy_test(neg_fixy_cipher_open_rejects_sanitized_input
+    "no matching function|could not convert|cannot convert|conversion from")
+crucible_neg_compile_fixy_test(neg_fixy_sanitize_path_rejects_wrong_source
+    "no matching function|could not convert|cannot convert|conversion from")
+
 # ── FIXY-IS round 2 — concept-gate coverage extension ───────────────
 # Existing Is.h coverage pins 3 wrappers (Linear, Secret, SessionHandle);
 # this round adds 6 more, covering canonical wrapper-nesting order from

@@ -141,6 +141,7 @@
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/SwissTableBuffer.h>  // structural (open-addressing slot buffer)
 #include <crucible/safety/Tagged.h>
+#include <crucible/safety/Path.h>             // FIXY-V-031: Path<Source> + sanitize_path
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>            // canonical Tier-S
 #include <crucible/safety/Wait.h>              // canonical Tier-S
@@ -171,6 +172,16 @@ using ::crucible::safety::mint_sealed_refined;  // FIXY-U-115 §XXI surface
 // Tagged<T, Source> — phantom-tag provenance / trust marker.
 using ::crucible::safety::Tagged;
 using ::crucible::safety::mint_tagged;          // FIXY-U-115 §XXI surface
+
+// FIXY-V-031: Path<Source> + sanitize_path — typed filesystem path
+// with explicit trust-boundary promotion (External → Sanitized via
+// PathTraversal-policy sanitizer).  Substrate for FIXY-V-127/V-232/V-233.
+template <typename Source>
+using Path = ::crucible::safety::Path<Source>;
+using ::crucible::safety::PathTraversal;
+using ::crucible::safety::PathTraversalError;
+using ::crucible::safety::sanitize_path;
+using ::crucible::safety::MAX_PATH_BYTES;
 
 // Secret<T> — classified-by-default carrier.
 using ::crucible::safety::Secret;

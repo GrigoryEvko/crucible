@@ -20,13 +20,17 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 namespace eff = ::crucible::effects;
 
 int main() {
     // Caller declares Row<IO> — has IO, missing Block.
     //   {IO, Block} ⊄ {IO} → Subrow false → constraint fails.
     auto cipher = ::crucible::Cipher::open(
-        "/tmp/crucible_neg_record_event_io_only");
+        CipherRoot{"/tmp/crucible_neg_record_event_io_only"});
     cipher.record_event<eff::Row<eff::Effect::IO>>(
         cipher.mint_open_view(),
         ::crucible::ContentHash{1u},

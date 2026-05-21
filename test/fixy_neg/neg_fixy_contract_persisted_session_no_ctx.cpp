@@ -15,6 +15,10 @@
 
 #include <crucible/fixy/Contract.h>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 namespace fcipher = ::crucible::fixy::contract::cipher;
 namespace proto   = ::crucible::safety::proto;
 
@@ -22,7 +26,7 @@ struct Resource {};
 
 int main() {
     auto cipher = ::crucible::Cipher::open(
-        "/tmp/crucible_neg_fixy_persist_no_ctx");
+        CipherRoot{"/tmp/crucible_neg_fixy_persist_no_ctx"});
     auto view = cipher.mint_open_view();
 
     // Should FAIL: deleted overload — no Ctx parameter at all.

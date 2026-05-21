@@ -24,6 +24,10 @@
 
 #include "bench_harness.h"
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 using namespace crucible;
 
 static const auto BG = effects::testing::bg();
@@ -82,7 +86,7 @@ int main() {
         // Cipher + warm_region live in THIS scope, shared across the
         // three benches for this num_ops.  Distinct 'salt' per size
         // avoids collisions in the dedup hash space.
-        auto cipher = Cipher::open(dir);
+        auto cipher = Cipher::open(CipherRoot{dir});
         auto open_view = cipher.mint_open_view();
 
         Arena warm_arena{1 << 18};

@@ -38,6 +38,10 @@
 #include <type_traits>
 #include <utility>
 
+// FIXY-V-031: Cipher::open() now takes Path<source::External>.
+using CipherRoot = crucible::fixy::wrap::Path<
+    crucible::fixy::tags::source::External>;
+
 using crucible::Cipher;
 using crucible::ContentHash;
 using crucible::RegionNode;
@@ -82,7 +86,7 @@ static RegionNode* make_test_region(Arena& arena, uint32_t seed) {
 static void test_publish_warm_bit_equality(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 1);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -100,7 +104,7 @@ static void test_publish_warm_bit_equality(const char* dir) {
 static void test_publish_warm_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 2);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -119,7 +123,7 @@ static void test_publish_warm_type_identity(const char* dir) {
 static void test_publish_hot_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 3);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -139,7 +143,7 @@ static void test_publish_hot_type_identity(const char* dir) {
 static void test_publish_cold_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 4);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -159,7 +163,7 @@ static void test_publish_cold_type_identity(const char* dir) {
 static void test_view_and_payload_route(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 5);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
 
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
@@ -217,7 +221,7 @@ static void test_cold_rejected_at_higher_fences() {
 static void test_relax_to_weaker_tiers(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 9);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -259,7 +263,7 @@ static ContentHash hot_reshard_consumer(W wrapped) noexcept {
 static void test_e2e_hot_fence_consumer(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 11);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -279,7 +283,7 @@ static ContentHash warm_publish_consumer(W wrapped) noexcept {
 static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 12);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -298,7 +302,7 @@ static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
 static void test_phase5_stub_semantics(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 13);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -337,7 +341,7 @@ template <typename W>
 static void test_runtime_tier_reader_pattern(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 14);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -379,7 +383,7 @@ static ContentHash replay_consumer(W wrapped) noexcept {
 static void test_replay_engine_admits_all_tiers(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 15);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
 
@@ -407,7 +411,7 @@ static void test_replay_engine_admits_all_tiers(const char* dir) {
 static void test_sequential_three_tier_publish(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 16);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
 
     auto view = cipher.mint_open_view();
     auto payload = Cipher::content_addressed(region);
@@ -477,7 +481,7 @@ static void test_content_addressed_publish_overloads(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 18);
     const auto payload = Cipher::content_addressed(region);
-    auto cipher = Cipher::open(dir);
+    auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
 
     using Payload = decltype(payload);
