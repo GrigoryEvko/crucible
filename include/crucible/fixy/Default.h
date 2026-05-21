@@ -30,9 +30,12 @@
 //   safety::fn::ReentrancyMode::NonReentrant — Reentrancy (dim 19)
 //   safety::fn::size_pol::Unstated — Size (dim 20) strict default
 //   safety::fn::stale::Fresh      — Staleness (dim 22) strict default
+//   safety::fn::sync::Unconstrained — Synchronization (dim 23) strict default
+//   safety::fn::regime::Unconstrained — Regime (dim 24) strict default
 //
-// 18 of 20 axes carry a strict default at the substrate level.  Two
-// axes are caller-supplied:
+// 20 of 22 axes carry a strict default at the substrate level
+// (refreshed by FIXY-U-134 to match post-A3-008 Synchronization +
+// post-A3-009 Regime extensions).  Two axes are caller-supplied:
 //
 //   DimensionAxis::Type      — there is no "default function type";
 //                              every binding names its own type.
