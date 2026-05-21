@@ -29,7 +29,7 @@ appear as `-` in the flag columns.  The auditor surface for member-function
 mints lives in a separate "Member-function mints" section after the substrate
 trees (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T15:33:47Z`.
+Snapshot generated: `2026-05-21T15:53:27Z`.
 
 ## bridges/
 
@@ -69,11 +69,11 @@ Snapshot generated: `2026-05-21T15:33:47Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_bg_context` | `include/crucible/effects/Capabilities.h:423` | Y | Y | Y | - | token | `include/crucible/fixy/Cap.h:145` | HS14: 3 |
+| `mint_bg_context` | `include/crucible/effects/Capabilities.h:464` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:144` | HS14: 4 |
 | `mint_cap` | `include/crucible/effects/Capability.h:247` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:104` | HS14: 11 |
 | `mint_from_ctx` | `include/crucible/effects/Capability.h:319` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Cap.h:110` | HS14: 3 |
-| `mint_init_context` | `include/crucible/effects/Capabilities.h:431` | Y | Y | Y | - | token | `include/crucible/fixy/Cap.h:149` | HS14: 3 |
-| `mint_test_context` | `include/crucible/effects/Capabilities.h:439` | Y | Y | Y | - | token | `include/crucible/fixy/Cap.h:153` | HS14: 2 |
+| `mint_init_context` | `include/crucible/effects/Capabilities.h:472` | Y | Y | Y | - | token | `include/crucible/fixy/Cap.h:154` | HS14: 3 |
+| `mint_test_context` | `include/crucible/effects/Capabilities.h:480` | Y | Y | Y | - | token | `include/crucible/fixy/Cap.h:158` | HS14: 2 |
 
 ## perf/
 

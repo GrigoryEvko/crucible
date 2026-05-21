@@ -3057,6 +3057,11 @@ crucible_neg_compile_effects_test(neg_effects_mint_bg_context_forge_key
     "is private within this context|private member|bg_key")
 crucible_neg_compile_effects_test(neg_effects_mint_bg_context_keyless
     "too few arguments|no matching function|mint_bg_context")
+# FIXY-V-017: exercises the CanMintBgContext concept's same_as<Key, bg_key>
+# clause — pass init_key (the wrong context's passkey).  Distinct from
+# forge_key (key-private-ctor) and keyless (missing argument).
+crucible_neg_compile_effects_test(neg_effects_mint_bg_context_wrong_key
+    "constraints not satisfied|CanMintBgContext|same_as|init_key|bg_key|is private")
 crucible_neg_compile_effects_test(neg_effects_mint_init_context_forge_key
     "is private within this context|private member|init_key")
 crucible_neg_compile_effects_test(neg_effects_mint_init_context_keyless

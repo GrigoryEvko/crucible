@@ -141,10 +141,15 @@ static_assert(std::is_same_v<
 //     overload (a `using ::ns::fn;` brings the name in without
 //     introducing a new declaration), and these asserts pin that
 //     promise.  Drift between fixy:: and substrate fails HERE.
+// FIXY-V-017: mint_bg_context is a function template gated on
+// CanMintBgContext<Key> (§XXI single-concept rule).  Pointer identity
+// is taken on the concrete instantiation with the only valid Key.
 static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::cap::mint_bg_context),
-    decltype(&::crucible::effects::mint_bg_context)>,
-    "FIXY-U-116: fixy::cap::mint_bg_context must alias effects::mint_bg_context.");
+    decltype(&::crucible::fixy::cap::mint_bg_context<
+                 ::crucible::effects::detail::ctx_mint::bg_key>),
+    decltype(&::crucible::effects::mint_bg_context<
+                 ::crucible::effects::detail::ctx_mint::bg_key>)>,
+    "FIXY-V-017: fixy::cap::mint_bg_context must alias effects::mint_bg_context.");
 static_assert(std::is_same_v<
     decltype(&::crucible::fixy::cap::mint_init_context),
     decltype(&::crucible::effects::mint_init_context)>,

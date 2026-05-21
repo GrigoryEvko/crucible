@@ -334,6 +334,43 @@ private:
 
 }  // namespace detail::ctx_mint
 
+// Forward-declare the three context classes so the §XXI mint-validity
+// concepts (next) can name them in their `is_nothrow_default_constructible_v`
+// clauses.  Trait instantiation is deferred until the concept is checked
+// (call site), at which point the full class definitions are visible.
+class Bg;
+class Init;
+class Test;
+
+// ── §XXI mint-validity concepts ──────────────────────────────────────
+//
+// FIXY-V-017/018/019: each context-mint factory is a function template
+// gated on a single concept (§XXI: "single composite concept" rule)
+// that pins the passkey-to-context pairing at concept-evaluation time
+// — surfaces wrong-key mistakes (e.g. handing bg_key to mint_init_context)
+// as a concept-violation diagnostic before overload resolution finishes
+// burning instantiation budget.
+//
+// **Why no nothrow check here**: `std::is_nothrow_default_constructible_v<Bg>`
+// would evaluate at concept-substitution scope, which lacks friend access
+// to Bg's private default ctor and reports `false` regardless of NSDMI
+// noexcept-ness.  The body-level `static_assert(noexcept(Bg{}))` is the
+// authoritative noexcept gate (it runs inside the friended scope where
+// access is granted); the concept's job is the key-type pairing alone.
+//
+// These are token mints (passkey authority chain established at the
+// key's friend list, not threaded through a Ctx parameter), so the
+// concept signature is `<Key>` not `<Context, Ctx>`.
+
+template <class Key>
+concept CanMintBgContext = std::same_as<Key, detail::ctx_mint::bg_key>;
+
+template <class Key>
+concept CanMintInitContext = std::same_as<Key, detail::ctx_mint::init_key>;
+
+template <class Key>
+concept CanMintTestContext = std::same_as<Key, detail::ctx_mint::test_key>;
+
 class Bg {
 private:
     // fixy-A3-005 (CLAUDE.md §XXI Universal Mint Pattern): the only
@@ -341,7 +378,9 @@ private:
     // and the only path to a bg_key is through a friended class.
     constexpr Bg() noexcept = default;
 
-    friend constexpr Bg mint_bg_context(detail::ctx_mint::bg_key) noexcept;
+    template <class Key>
+        requires CanMintBgContext<Key>
+    friend constexpr Bg mint_bg_context(Key) noexcept;
 
     // ExecCtx<Bg, ...> aggregate-inits its Cap member via NSDMI
     // (`[[no_unique_address]] Cap cap_{};` in ExecCtx.h).  NSDMI
@@ -419,8 +458,10 @@ public:
 // body pin is the middle layer — it sits in the only scope where the
 // private default ctor is accessible.
 
+template <class Key>
+    requires CanMintBgContext<Key>
 [[nodiscard]] inline constexpr Bg
-mint_bg_context(detail::ctx_mint::bg_key) noexcept {
+mint_bg_context(Key) noexcept {
     static_assert(noexcept(Bg{}),
         "fixy-A3-015: Bg default ctor MUST be noexcept — a cap::* "
         "token's NSDMI must never throw.");
