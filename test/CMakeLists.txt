@@ -3912,6 +3912,19 @@ crucible_neg_compile_test(neg_linear_view_field
 crucible_neg_compile_test(neg_appendonly_over_writeonce
   "AppendOnly<WriteOnce<T>> is redundant")
 
+# FIXY-V-008 HS14 companions for test_row_hash_distinctness — three
+# distinct mismatch classes covering each consteval gate.  See the
+# fixture header doc-blocks for the per-class premise; collectively
+# these witness the wire-format-break ceremony fires for federation
+# cache key drift.  Production test is test/test_row_hash_distinctness
+# .cpp; substrate gates live in include/crucible/safety/diag/RowHashFold.h.
+crucible_neg_compile_test(neg_row_hash_anchor_drift
+  "ceremony anchor drift")
+crucible_neg_compile_test(neg_row_hash_collision
+  "row_hash collision")
+crucible_neg_compile_test(neg_row_hash_sentinel
+  "EMPTY-slot sentinel")
+
 # fixy-A1-019 HS14 fixtures for safety::mint_read_view<Tag> — rename
 # of lend_read per §XXI Universal Mint Pattern.  Two distinct
 # mismatch classes:
