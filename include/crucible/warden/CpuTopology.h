@@ -23,7 +23,7 @@
 //     filesystems). Moves the body out of the hot icache.
 
 #include <crucible/safety/Decide.h>
-#include <crucible/safety/OwnedFile.h>  // FIXY-V-033: std::FILE* RAII
+#include <crucible/fixy/Handle.h>       // FIXY-V-033-audit: route OwnedFile via fixy::handle::
 
 #include <algorithm>
 #include <cstdint>
@@ -55,7 +55,7 @@ namespace detail {
     // including the early return on fopen() failure. The dtor's
     // `(void)std::fclose(fp)` matches the pre-V-033 explicit-fclose
     // behavior (errors swallowed — sysfs flushes are unactionable).
-    ::crucible::safety::OwnedFile f{std::fopen(path, "r")};
+    ::crucible::fixy::handle::OwnedFile f{std::fopen(path, "r")};
     if (!f.is_open()) return out;
     char buf[512];
     while (std::fgets(buf, sizeof(buf), f.get())) out.append(buf);

@@ -24,7 +24,7 @@
 //                                    — typed publish/commit cell (FIXY-U-016b)
 //   safety::AlignedBuffer<T, Align>  — RAII over-aligned heap buffer (FIXY-U-016b)
 //   safety::HugePageBuffer<T>        — 2-MB-aligned RAII buffer (FIXY-V-034)
-//   safety::OwnedFile                — std::FILE* RAII wrapper (FIXY-V-037-audit / V-032)
+//   safety::OwnedFile                — std::FILE* RAII wrapper (FIXY-V-032-audit / V-032)
 //   safety::LazyEstablishedChannel<Proto, Resource>
 //                                    — session-handshake-backed channel
 //
