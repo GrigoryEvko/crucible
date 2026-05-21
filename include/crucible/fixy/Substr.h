@@ -68,6 +68,7 @@
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>  // FIXY-V-047: substrate-direct work-stealing surface
 #include <crucible/concurrent/PermissionedMpmcChannel.h>    // FIXY-V-046: substrate-direct MPMC surface
 #include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/PermissionedShardedCalendarGrid.h>  // FIXY-V-049: substrate-direct sharded-calendar-grid surface
 #include <crucible/concurrent/PermissionedShardedGrid.h>    // FIXY-V-048: substrate-direct sharded-grid surface
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>  // FIXY-V-045: substrate-direct SPSC surface
@@ -504,6 +505,88 @@ template <typename Grid>
 concept ShardedCalendarGridSessionSurface =
     ::crucible::safety::proto::sharded_calendar_grid_session::ShardedCalendarGridSessionSurface<Grid>;
 
+// ── FIXY-V-049: substrate-direct surface enrichment ──────────────
+//
+// Mirror of V-045 spsc / V-046 mpmc / V-047 chaselev / V-048
+// sharded_grid.  PermissionedShardedCalendarGrid is the SIXTH cell
+// of the channel-permission family — the linear-grid × linear-grid
+// axis WITH KEY-PRIORITY semantics per shard:
+//
+//   NumShards Producer slots — each LINEAR (one Permission per shard S).
+//   NumShards Consumer slots — each LINEAR (one Permission per shard S).
+//
+// Per-shard priority queue ladder: each shard owns an independent
+// calendar grid (NumBuckets × BucketCap SpscRings) plus a monotone
+// current_bucket counter.  Items dispatched into shard S land in a
+// bucket clamped by KeyExtractor::key(item) / QuantumNs ≥
+// current_bucket(S).  Within shard S the consumer drains in
+// monotone bucket order; across shards no global ordering holds
+// (the trade-off that eliminates cross-thread atomic reads on the
+// producer push path — see header doc-block for the kernel-CFS
+// analogy).
+//
+// All 2*NumShards permissions descend from a single Whole<UserTag>
+// root via the FOUND-A22 2D auto-permission-tree (NumShards ×
+// NumShards via mint_grid_permissions<Whole, N, N>(parent)).  No
+// Pool — every slot is single-owner.  Each handle is STATICALLY
+// INDEXED at compile time: ProducerHandle<S> / ConsumerHandle<S>
+// know their shard S at type level.
+//
+// Pre-V-049 the sharded_calendar_grid:: sub-namespace surfaced only
+// ctx-bound session mints + endpoint mints — callers who wanted to
+// instantiate the substrate, name the KeyExtractor concept, or spell
+// the tag tree had to descend into
+// <crucible/concurrent/PermissionedShardedCalendarGrid.h> directly.
+// V-049 closes the gap by re-exporting the substrate primitive, the
+// V-049-unique ShardedCalendarKeyExtractorOf concept, and the
+// three-tag permission tree.
+//
+// Surface (additive, all alias-template / using-decl — pure name
+// lookup, zero runtime cost).  No new mint factories — endpoint and
+// session mints already shipped from sessions/ShardedCalendarGridSession.h.
+
+// Substrate alias — full re-export including default UserTag = void.
+// Substrate enforces SpscValue T + ShardedCalendarKeyExtractorOf
+// internally (static_assert); fixy surface preserves identity without
+// duplicating constraints to avoid namespace pollution (SpscValue is
+// shipped from fixy::substr::spsc::SpscValue, V-045).
+template <::crucible::concurrent::SpscValue T,
+          std::size_t NumShards,
+          std::size_t NumBuckets,
+          std::size_t BucketCap,
+          typename KeyExtractor,
+          std::uint64_t QuantumNs,
+          typename UserTag = void>
+using PermissionedShardedCalendarGrid =
+    ::crucible::concurrent::PermissionedShardedCalendarGrid<
+        T, NumShards, NumBuckets, BucketCap, KeyExtractor, QuantumNs, UserTag>;
+
+// ShardedCalendarKeyExtractorOf concept re-export — the V-049-unique
+// surface bump.  Pattern parallels V-045 (SpscValue), V-046 (MpmcValue),
+// V-047 (DequeValue) — one new using-decl bumps the cardinality.
+// ShardedCalendarGrid reuses SpscValue from V-045 for the T-side
+// constraint (no ShardedCalendarValue exists in the substrate); the
+// V-049-unique concept is the KeyExtractor predicate.
+using ::crucible::concurrent::ShardedCalendarKeyExtractorOf;
+
+// sharded_calendar_tag sub-namespace — Whole<UserTag> permission root
+// + the FOUND-A22 Slice-indexed Producer<UserTag,S> / Consumer<UserTag,S>
+// tag aliases.  Callers spell these out at mint_permission_root +
+// mint_grid_permissions<Whole, N, N> call sites; surfacing them under
+// fixy::substr::sharded_calendar_grid::sharded_calendar_tag::* removes
+// the descend-into-concurrent requirement.
+namespace sharded_calendar_tag {
+template <typename UserTag>
+using Whole =
+    ::crucible::concurrent::sharded_calendar_tag::Whole<UserTag>;
+template <typename UserTag, std::size_t S>
+using Producer =
+    ::crucible::concurrent::sharded_calendar_tag::Producer<UserTag, S>;
+template <typename UserTag, std::size_t S>
+using Consumer =
+    ::crucible::concurrent::sharded_calendar_tag::Consumer<UserTag, S>;
+}  // namespace sharded_calendar_tag
+
 // Mint factories.
 using ::crucible::safety::proto::sharded_calendar_grid_session::mint_sharded_calendar_grid_producer;
 using ::crucible::safety::proto::sharded_calendar_grid_session::mint_sharded_calendar_grid_consumer;
@@ -881,6 +964,14 @@ using ::crucible::concurrent::SubstrateBenefitsFromParallelism;
 // cardinality bump goes through the Routing axis instead, which IS
 // V-048-unique.  Substrate alias template + grid_tag tree alias
 // templates do NOT count.
+// sharded_calendar_grid::ShardedCalendarKeyExtractorOf using-decl
+// added by FIXY-V-049 bumped sharded_calendar_grid 4 → 5 (same
+// pattern as V-045 / V-046 / V-047 — substrate alias template +
+// sharded_calendar_tag tree alias templates do NOT count toward the
+// cardinality witness; only the concept using-decl does).
+// ShardedCalendarGrid reuses SpscValue from V-045 for the T-side
+// constraint (no ShardedCalendarValue exists in the substrate); the
+// V-049-unique concept is the KeyExtractor predicate.
 //
 // Same recipe as fixy/Pipe.h / fixy/Struct.h: type-identity witnesses
 // for representative items + per-sub-namespace cardinality mirrors.
@@ -1221,6 +1312,126 @@ static_assert(std::is_same_v<typename GridViaFixy::value_type, int>);
 
 }  // namespace v048
 
+// ── FIXY-V-049: ShardedCalendarGrid substrate-direct surface witnesses ─
+//
+// Pin every V-049 addition to the substrate.  Pattern mirrors V-048:
+// substrate-alias identity for two representative instantiations,
+// ShardedCalendarKeyExtractorOf concept admission parity (positive +
+// negative), tag-tree identity through the sharded_calendar_tag
+// sub-namespace, ShardedCalendarGridSessionSurface trait admission,
+// member-typedef parity, value-template parity (num_shards /
+// num_buckets / bucket_cap / quantum_ns), value_type identity.
+
+namespace v049 {
+
+struct V049ProbeUserTag {};
+struct V049ProbeKey {
+    static constexpr std::uint64_t key(int v) noexcept {
+        return static_cast<std::uint64_t>(v);
+    }
+};
+
+// 1. Substrate alias identity — fixy path === concurrent path.
+using GridViaFixy = ::crucible::fixy::substr::sharded_calendar_grid::
+    PermissionedShardedCalendarGrid<int, 2, 8, 16, V049ProbeKey, 1ULL,
+                                    V049ProbeUserTag>;
+using GridViaConcurrent = ::crucible::concurrent::
+    PermissionedShardedCalendarGrid<int, 2, 8, 16, V049ProbeKey, 1ULL,
+                                    V049ProbeUserTag>;
+static_assert(std::is_same_v<GridViaFixy, GridViaConcurrent>,
+    "fixy::substr::sharded_calendar_grid::PermissionedShardedCalendarGrid "
+    "must alias the substrate.");
+
+// 2. ShardedCalendarKeyExtractorOf concept admission parity.  The
+// using-decl preserves concept semantics: positive witness on the
+// real KeyExtractor + negative witness on a non-conforming type.
+static_assert(
+    ::crucible::fixy::substr::sharded_calendar_grid::
+        ShardedCalendarKeyExtractorOf<V049ProbeKey, int> ==
+    ::crucible::concurrent::ShardedCalendarKeyExtractorOf<V049ProbeKey, int>);
+static_assert(
+    ::crucible::fixy::substr::sharded_calendar_grid::
+        ShardedCalendarKeyExtractorOf<V049ProbeKey, int>);
+struct NonKeyExtractor {};
+static_assert(
+    !::crucible::fixy::substr::sharded_calendar_grid::
+        ShardedCalendarKeyExtractorOf<NonKeyExtractor, int>);
+static_assert(
+    !::crucible::concurrent::ShardedCalendarKeyExtractorOf<NonKeyExtractor, int>);
+
+// 3. Tag template identity — fixy path === concurrent path.  Whole +
+// representative Producer<S> + Consumer<S> at S=0 and S=NumShards-1.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_calendar_grid::sharded_calendar_tag::
+        Whole<V049ProbeUserTag>,
+    ::crucible::concurrent::sharded_calendar_tag::Whole<V049ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_calendar_grid::sharded_calendar_tag::
+        Producer<V049ProbeUserTag, 0>,
+    ::crucible::concurrent::sharded_calendar_tag::Producer<
+        V049ProbeUserTag, 0>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_calendar_grid::sharded_calendar_tag::
+        Producer<V049ProbeUserTag, 1>,
+    ::crucible::concurrent::sharded_calendar_tag::Producer<
+        V049ProbeUserTag, 1>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_calendar_grid::sharded_calendar_tag::
+        Consumer<V049ProbeUserTag, 0>,
+    ::crucible::concurrent::sharded_calendar_tag::Consumer<
+        V049ProbeUserTag, 0>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_calendar_grid::sharded_calendar_tag::
+        Consumer<V049ProbeUserTag, 1>,
+    ::crucible::concurrent::sharded_calendar_tag::Consumer<
+        V049ProbeUserTag, 1>>);
+
+// 4. Tag identity propagates through GridViaFixy's member typedefs.
+// ShardedCalendarGrid (like ShardedGrid) does NOT have producer_tag /
+// consumer_tag as singular scalar typedefs — they are
+// statically-indexed via shard_producer_tag<S> / shard_consumer_tag<S>
+// template-typedefs.  whole_tag IS a scalar typedef.
+static_assert(std::is_same_v<
+    typename GridViaFixy::whole_tag,
+    ::crucible::fixy::substr::sharded_calendar_grid::sharded_calendar_tag::
+        Whole<V049ProbeUserTag>>);
+static_assert(std::is_same_v<typename GridViaFixy::user_tag,
+                             V049ProbeUserTag>);
+static_assert(std::is_same_v<typename GridViaFixy::key_extractor,
+                             V049ProbeKey>);
+static_assert(std::is_same_v<
+    typename GridViaFixy::template shard_producer_tag<0>,
+    ::crucible::fixy::substr::sharded_calendar_grid::sharded_calendar_tag::
+        Producer<V049ProbeUserTag, 0>>);
+static_assert(std::is_same_v<
+    typename GridViaFixy::template shard_consumer_tag<1>,
+    ::crucible::fixy::substr::sharded_calendar_grid::sharded_calendar_tag::
+        Consumer<V049ProbeUserTag, 1>>);
+
+// 5. ShardedCalendarGridSessionSurface admits the representative grid.
+// The surface concept is a NOMINAL specialization-trait (admits only
+// PermissionedShardedCalendarGrid<...>), and the fixy:: alias resolves
+// exactly to that substrate type, so the trait fires.
+static_assert(
+    ::crucible::fixy::substr::sharded_calendar_grid::
+        ShardedCalendarGridSessionSurface<GridViaFixy>);
+
+// 6. Value-template parity — num_shards / num_buckets / bucket_cap /
+// quantum_ns pass through unchanged.
+static_assert(GridViaFixy::num_shards == 2);
+static_assert(GridViaFixy::num_buckets == 8);
+static_assert(GridViaFixy::bucket_cap == 16);
+static_assert(GridViaFixy::quantum_ns == 1ULL);
+static_assert(GridViaFixy::num_shards == GridViaConcurrent::num_shards);
+static_assert(GridViaFixy::num_buckets == GridViaConcurrent::num_buckets);
+static_assert(GridViaFixy::bucket_cap == GridViaConcurrent::bucket_cap);
+static_assert(GridViaFixy::quantum_ns == GridViaConcurrent::quantum_ns);
+
+// 7. value_type identity — substrate's T == fixy's T.
+static_assert(std::is_same_v<typename GridViaFixy::value_type, int>);
+
+}  // namespace v049
+
 // ── Per-sub-namespace cardinality witnesses ──────────────────────
 
 constexpr int substr_spsc_using                  = 3;
@@ -1230,7 +1441,7 @@ constexpr int substr_metalog_using               = 4;
 constexpr int substr_chainedge_using             = 4;
 constexpr int substr_mpmc_using                  = 5;
 constexpr int substr_calendar_grid_using         = 4;
-constexpr int substr_sharded_calendar_grid_using = 4;
+constexpr int substr_sharded_calendar_grid_using = 5;
 constexpr int substr_sharded_grid_using          = 7;
 constexpr int substr_snapshot_using              = 4;
 constexpr int substr_outer_using                 = 1;
@@ -1242,8 +1453,8 @@ constexpr int substr_total_using =
     substr_sharded_grid_using + substr_snapshot_using +
     substr_outer_using;
 
-static_assert(substr_total_using == 47,
-    "fixy::substr:: using-decl surface drifted from 47 — Substr.h "
+static_assert(substr_total_using == 48,
+    "fixy::substr:: using-decl surface drifted from 48 — Substr.h "
     "sub-namespace re-exports and this sentinel must update in lockstep.");
 
 // ── FIXY-U-051: topology + ctx-fit concept-surface witnesses ───────
