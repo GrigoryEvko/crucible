@@ -793,9 +793,11 @@ static_assert(recommend_topology_for_workload(4, 4, 4 * 1024 * 1024) ==
 
 // ── 9. Cardinality witness ─────────────────────────────────────────
 //
-// 31 using-decls added for FIXY-U-051 (excluding mint_substrate_session
+// 32 using-decls added for FIXY-U-051 (excluding mint_substrate_session
 // which was already there pre-U-051).  A future drift forces this
-// constant + the using-decl block to update in lockstep.
+// constant + the using-decl block to update in lockstep.  Prose count
+// refreshed by FIXY-U-132 to match constant + breakdown sum below
+// (Class G drift — comment count drifting from constant).
 //
 // Breakdown:
 //   ChannelTopology / Substrate / Substrate_t                        3

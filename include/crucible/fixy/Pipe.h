@@ -231,12 +231,16 @@ using ::crucible::concurrent::CtxFitsSwmrStageFromEndpoint;
 
 // ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
 //
-// Drift-catch for the 18 using-decls above.  Substrate identity
-// witnessed via std::is_same_v on the four type carriers (Endpoint,
-// Stage, Pipeline, Direction); cardinality witness traps additions
-// or removals at every consumer's include time, not just inside
+// Drift-catch for the 31 using-decls above (U-103 baseline 18 +
+// U-050 extension +13; see per-extension breakdown at the
+// cardinality constant below).  Substrate identity witnessed via
+// std::is_same_v on the four type carriers (Endpoint, Stage,
+// Pipeline, Direction); cardinality witness traps additions or
+// removals at every consumer's include time, not just inside
 // test/test_fixy_pipe.cpp.  Same recipe as fixy/Bridge.h::self_test
-// + fixy/Diag.h::self_test + fixy/Handle.h::self_test.
+// + fixy/Diag.h::self_test + fixy/Handle.h::self_test.  Doc-block
+// prose count refreshed by FIXY-U-132 to match U-050 post-extension
+// state (Class G drift — comment count drifting from constant).
 
 namespace crucible::fixy::pipe::self_test {
 

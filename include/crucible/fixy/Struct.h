@@ -226,11 +226,14 @@ using ::crucible::safety::WorkBudget;
 
 // ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
 //
-// Drift-catch for the 77 outer using-decls + ct:: (6) + simd:: (22)
-// nested re-exports.  Same recipe as fixy/Bridge.h / fixy/Diag.h /
-// fixy/Pipe.h sentinels: type-identity witnesses for representative
-// items + cardinality mirror.  Pulls <type_traits> through Pinned.h
-// transitively; no extra include needed.
+// Drift-catch for the 77 outer using-decls + ct:: (6) + simd:: (22
+// using-decls + 1 concept DetSafeSimd) nested re-exports.  Same
+// recipe as fixy/Bridge.h / fixy/Diag.h / fixy/Pipe.h sentinels:
+// type-identity witnesses for representative items + cardinality
+// mirror.  Pulls <type_traits> through Pinned.h transitively; no
+// extra include needed.  Doc-block simd-bucket completed by
+// FIXY-U-132 to match the per-bucket breakdown below (Class G drift
+// — comment count under-listed concept entry).
 //
 // FIXY-U-103.
 
