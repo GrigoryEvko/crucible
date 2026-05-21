@@ -7884,6 +7884,28 @@ crucible_neg_compile_test(neg_hugepagebuffer_copy_rejected
 crucible_neg_compile_test(neg_swisstablebuffer_copy_assign_rejected
   "use of deleted function.*SwissTableBuffer.*operator=|SwissTableBuffer is move-only|deleted")
 
+# [FIXY-U-154] safety::FixedArray<T, N> HS14 floor — paired Class U-
+# concept-gate fixtures.  Wrapper had ZERO neg-compile coverage
+# despite shipping three structurally distinct concept-gate
+# enforcement points:
+#
+# Phase class (FIXY-U-154a): `requires (N > 0)` on the class template
+#   rejects FixedArray<T, 0> at substitution time — pins the
+#   non-empty-array structural invariant.
+# Phase method (FIXY-U-154b): `requires (I < N)` on `at<I>()` rejects
+#   out-of-range compile-time indices at overload resolution — pins
+#   the compile-time-bounded access discipline (tier 3 of
+#   FixedArray's three-tier bounds-checking surface; tier 2 is the
+#   Refined<bounded_above<N-1>> proof token, tier 1 is bare op[]).
+#
+# Both Class U but on DISTINCT scopes (class template vs method
+# template) — two structurally separate enforcement points.
+# Closes the FixedArray slice of #146 A8-P2.
+crucible_neg_compile_test(neg_fixedarray_zero_extent
+  "constraints not satisfied|'N > 0'|template constraint failure|N > 0.*evaluated to.*false|FixedArray")
+crucible_neg_compile_test(neg_fixedarray_compile_time_out_of_range
+  "constraints not satisfied|'I < N'|template constraint failure|I < N.*evaluated to.*false|no matching function.*at")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
