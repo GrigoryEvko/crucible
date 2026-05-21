@@ -61,7 +61,7 @@ using OuterLoop  = Loop<OuterBody>;
 }
 
 int main() {
-    auto h = detail::mint_permissioned_session_with_loc<
+    auto h = detail::permissioned_session_with_loc_<
         OuterLoop, EmptyPermSet, FakeChannel>(
         FakeChannel{}, std::source_location::current());
 

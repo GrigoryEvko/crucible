@@ -30,7 +30,7 @@ WorkerResource wire_accept(CarrierResource&) noexcept {
 int main() {
     auto work = mint_permission_root<WorkItem>();
     static_cast<void>(work);
-    auto carrier = detail::mint_permissioned_session_with_loc<
+    auto carrier = detail::permissioned_session_with_loc_<
         Carrier, PermSet<WorkItem>, CarrierResource>(
         CarrierResource{}, std::source_location::current());
 

@@ -390,7 +390,7 @@ private:
         Res, std::source_location) noexcept;
 
     template <typename Proto, typename InitialPS, typename Res, typename L>
-    friend constexpr auto mint_permissioned_session_with_loc(
+    friend constexpr auto permissioned_session_with_loc_(
         Res, std::source_location) noexcept;
 
     template <typename P, typename PS2, typename Res, typename L>
@@ -1893,7 +1893,7 @@ private:
 };
 
 // ═════════════════════════════════════════════════════════════════
-// ── detail factory: mint_permissioned_session_with_loc ─────────────
+// ── detail factory: permissioned_session_with_loc_ ─────────────
 // ═════════════════════════════════════════════════════════════════
 //
 // Internal construction hook used by SessionMint.h and by negative
@@ -1913,7 +1913,7 @@ template <typename Proto,
           typename InitialPS,
           typename Resource,
           typename LoopCtx>
-[[nodiscard]] constexpr auto mint_permissioned_session_with_loc(
+[[nodiscard]] constexpr auto permissioned_session_with_loc_(
     Resource r,
     std::source_location loc) noexcept
 {
@@ -1938,7 +1938,7 @@ template <typename Proto,
         using InnerProto = protocol_inner_t<Proto>;
         using VendorLoopCtx =
             VendorCtx<protocol_vendor_v<Proto>, loop_ctx_inner_t<LoopCtx>>;
-        return mint_permissioned_session_with_loc<InnerProto, InitialPS,
+        return permissioned_session_with_loc_<InnerProto, InitialPS,
                                                   Resource, VendorLoopCtx>(
             std::forward<Resource>(r), loc);
     } else if constexpr (is_loop_v<Proto>) {
@@ -1960,11 +1960,11 @@ template <typename Proto,
 }
 
 template <typename Proto, typename InitialPS, typename Resource>
-[[nodiscard]] constexpr auto mint_permissioned_session_with_loc(
+[[nodiscard]] constexpr auto permissioned_session_with_loc_(
     Resource r,
     std::source_location loc) noexcept
 {
-    return mint_permissioned_session_with_loc<Proto, InitialPS,
+    return permissioned_session_with_loc_<Proto, InitialPS,
                                               Resource, void>(
         std::forward<Resource>(r), loc);
 }
@@ -2136,7 +2136,7 @@ template <typename G, typename Role, typename SharedChannel, typename Body>
         // PermSet.  LocalProto may begin with Loop; the detail mint
         // unrolls it the same way as the public ctx-bound factory.
         static_cast<void>(role_perm);
-        auto handle = mint_permissioned_session_with_loc<
+        auto handle = permissioned_session_with_loc_<
             LocalProto, PermSet<Role>, SharedChannel&, void>(
             ch, std::source_location::current());
         std::move(body)(std::move(handle));
@@ -2369,7 +2369,7 @@ inline void runtime_smoke_test() noexcept {
     // End-handle close round-trip.
     {
         FakeChannel ch{42};
-        auto h = detail::mint_permissioned_session_with_loc<
+        auto h = detail::permissioned_session_with_loc_<
             End, EmptyPermSet, FakeChannel>(
             ch, std::source_location::current());
         FakeChannel out = std::move(h).close();
@@ -2384,7 +2384,7 @@ inline void runtime_smoke_test() noexcept {
         auto perm = ::crucible::safety::mint_permission_root<WorkPerm>();
         ::crucible::safety::permission_drop(std::move(perm));
 
-        auto handle = detail::mint_permissioned_session_with_loc<
+        auto handle = detail::permissioned_session_with_loc_<
             End, EmptyPermSet, FakeChannel>(
             FakeChannel{7}, std::source_location::current());
         FakeChannel out = std::move(handle).close();
@@ -2417,7 +2417,7 @@ inline void runtime_smoke_test() noexcept {
     {
         using LoopProto = Loop<Send<int, Continue>>;  // plain int — no PS
         using LoopHandle =
-            decltype(detail::mint_permissioned_session_with_loc<
+            decltype(detail::permissioned_session_with_loc_<
                      LoopProto, EmptyPermSet, FakeChannel>(
                          FakeChannel{}, std::source_location::current()));
         static_assert(std::is_same_v<typename LoopHandle::protocol,

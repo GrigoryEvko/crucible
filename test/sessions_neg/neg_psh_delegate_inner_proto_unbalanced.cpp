@@ -26,13 +26,13 @@ void wire_delegate(CarrierResource&, WorkerResource&&) noexcept {}
 }  // namespace
 
 int main() {
-    auto carrier = detail::mint_permissioned_session_with_loc<
+    auto carrier = detail::permissioned_session_with_loc_<
         Carrier, EmptyPermSet, CarrierResource>(
         CarrierResource{}, std::source_location::current());
 
     auto work = mint_permission_root<WorkItem>();
     static_cast<void>(work);
-    auto delegated = detail::mint_permissioned_session_with_loc<
+    auto delegated = detail::permissioned_session_with_loc_<
         InnerProto, PermSet<WorkItem>, WorkerResource>(
         WorkerResource{}, std::source_location::current());
 

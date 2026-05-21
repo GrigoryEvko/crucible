@@ -49,7 +49,7 @@ using LoopProto = Loop<BodyProto>;
 int main() {
     auto perm = mint_permission_root<WorkItem>();
     static_cast<void>(perm);
-    auto h = detail::mint_permissioned_session_with_loc<
+    auto h = detail::permissioned_session_with_loc_<
         LoopProto, PermSet<WorkItem>, FakeChannel>(
         FakeChannel{}, std::source_location::current());
 

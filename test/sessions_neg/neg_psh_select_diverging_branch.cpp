@@ -49,7 +49,7 @@ int main() {
     static_cast<void>(perm);
     // Two branches: one closes immediately (leaks X), one drains
     // X via send.  Establish with X.
-    auto h = detail::mint_permissioned_session_with_loc<
+    auto h = detail::permissioned_session_with_loc_<
         Select<End, Send<Transferable<int, WorkItem>, End>>,
         PermSet<WorkItem>,
         FakeChannel>(

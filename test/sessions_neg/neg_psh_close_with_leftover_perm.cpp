@@ -39,7 +39,7 @@ struct FakeChannel { int last_int = 0; };
 int main() {
     auto perm = mint_permission_root<WorkItem>();
     static_cast<void>(perm);
-    auto h = detail::mint_permissioned_session_with_loc<
+    auto h = detail::permissioned_session_with_loc_<
         End, PermSet<WorkItem>, FakeChannel>(
         FakeChannel{}, std::source_location::current());
     // PS at this point: PermSet<WorkItem>.

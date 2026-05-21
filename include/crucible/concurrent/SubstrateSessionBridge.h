@@ -739,7 +739,7 @@ mint_substrate_session(Ctx const&, handle_for_t<Substr, Dir>& handle) noexcept
     using Proto = default_proto_for_t<Substr, Dir>;
     using Handle = handle_for_t<Substr, Dir>;
     return ::crucible::safety::proto::detail::
-        mint_permissioned_session_with_loc<
+        permissioned_session_with_loc_<
             Proto,
             ::crucible::safety::proto::EmptyPermSet,
             Handle*,
@@ -762,7 +762,7 @@ mint_substrate_session(Ctx const&, handle_for_t<Substr, Dir, Shard>& handle) noe
     using Proto = default_proto_for_t<Substr, Dir, Shard>;
     using Handle = handle_for_t<Substr, Dir, Shard>;
     return ::crucible::safety::proto::detail::
-        mint_permissioned_session_with_loc<
+        permissioned_session_with_loc_<
             Proto,
             ::crucible::safety::proto::EmptyPermSet,
             Handle*,

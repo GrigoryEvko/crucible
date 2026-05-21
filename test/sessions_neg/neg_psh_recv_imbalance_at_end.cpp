@@ -44,7 +44,7 @@ Transferable<int, WorkItem> wire_recv(FakeChannel& ch) noexcept {
 }
 
 int main() {
-    auto h = detail::mint_permissioned_session_with_loc<
+    auto h = detail::permissioned_session_with_loc_<
         Recv<Transferable<int, WorkItem>, End>,
         EmptyPermSet,
         FakeChannel>(

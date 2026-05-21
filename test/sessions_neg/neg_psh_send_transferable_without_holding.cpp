@@ -45,7 +45,7 @@ void wire_send(FakeChannel& ch, Transferable<int, WorkItem>&& t) noexcept {
 
 int main() {
     // Establish without holding WorkItem — PS == EmptyPermSet.
-    auto h = detail::mint_permissioned_session_with_loc<
+    auto h = detail::permissioned_session_with_loc_<
         Send<Transferable<int, WorkItem>, End>,
         EmptyPermSet,
         FakeChannel>(

@@ -42,7 +42,7 @@ void wire_send(FakeChannel& ch, Returned<int, HotPerm>&& r) noexcept {
 
 int main() {
     // Establish without HotPerm.
-    auto h = detail::mint_permissioned_session_with_loc<
+    auto h = detail::permissioned_session_with_loc_<
         Send<Returned<int, HotPerm>, End>,
         EmptyPermSet,
         FakeChannel>(

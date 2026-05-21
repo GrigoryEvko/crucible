@@ -816,7 +816,7 @@ struct protocol_permissioned_runnable<VendorPinned<V, P>>
 // identity of `&&`), which would let `CtxFitsChannel<Select<>, ...>`
 // admit an unrunnable protocol at the channel mint boundary — the
 // `is_empty_choice_v` guard inside mint_session_handle /
-// mint_permissioned_session_with_loc catches it eventually, but
+// permissioned_session_with_loc_ catches it eventually, but
 // only at the inner per-endpoint mint; the outer CtxFitsChannel
 // concept short-circuits earlier and must reject on its own.  These
 // three specializations sit ABOVE the variadic ones in the partial
@@ -961,7 +961,7 @@ template <class Proto,
     using LoopCtx = detail::session_mint::loop_ctx_from_exec_ctx_t<Ctx>;
     ((void)perms, ...);
 
-    return detail::mint_permissioned_session_with_loc<
+    return detail::permissioned_session_with_loc_<
         Proto, InitialPS, Resource, LoopCtx>(
         std::forward<Resource>(resource), std::source_location::current());
 }
@@ -1019,10 +1019,10 @@ template <class Proto,
     using LoopCtxB = detail::session_mint::loop_ctx_from_exec_ctx_t<CtxB>;
 
     return std::pair{
-        detail::mint_permissioned_session_with_loc<
+        detail::permissioned_session_with_loc_<
             Proto, EmptyPermSet, StoredResourceA, LoopCtxA>(
             std::forward<ResourceA>(resource_a), loc),
-        detail::mint_permissioned_session_with_loc<
+        detail::permissioned_session_with_loc_<
             dual_of_t<Proto>, EmptyPermSet, StoredResourceB, LoopCtxB>(
             std::forward<ResourceB>(resource_b), loc)
     };

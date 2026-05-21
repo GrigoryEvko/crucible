@@ -46,7 +46,7 @@ using LoopProto = Loop<BodyProto>;
 
 int main() {
     // Establish with empty PS (entry is empty).
-    auto h = detail::mint_permissioned_session_with_loc<
+    auto h = detail::permissioned_session_with_loc_<
         LoopProto, EmptyPermSet, FakeChannel>(
         FakeChannel{}, std::source_location::current());
 

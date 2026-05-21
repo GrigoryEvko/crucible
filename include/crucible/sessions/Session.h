@@ -521,7 +521,7 @@ using protocol_inner_t = typename is_vendor_pinned<P>::protocol;
 // is_well_formed layering.
 //
 // Used by `mint_session_handle` (Session.h) and
-// `mint_permissioned_session_with_loc` (PermissionedSession.h)'s
+// `permissioned_session_with_loc_` (PermissionedSession.h)'s
 // static_asserts to reject runnable-handle construction on any
 // protocol with a reachable empty choice.  The type-level trait
 // machinery in SessionSubtype.h stays untouched — subtyping still

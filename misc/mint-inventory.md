@@ -29,7 +29,7 @@ appear as `-` in the flag columns.  The auditor surface for member-function
 mints lives in a separate "Member-function mints" section after the substrate
 trees (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T04:48:18Z`.
+Snapshot generated: `2026-05-21T04:59:57Z`.
 
 ## bridges/
 
@@ -146,7 +146,6 @@ Snapshot generated: `2026-05-21T04:48:18Z`.
 | `mint_mpmc_producer_session` | `include/crucible/sessions/MpmcChannelSession.h:271` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:246` | HS14: 4 |
 | `mint_owner_session` | `include/crucible/sessions/ChaseLevDequeSession.h:109` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:169` | HS14: 3 |
 | `mint_permissioned_session` | `include/crucible/sessions/SessionMint.h:955` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:15` | HS14: 50 |
-| `mint_permissioned_session_with_loc` | `include/crucible/sessions/PermissionedSession.h:1916` | Y | Y | Y | - | token | [✗ NO-FIXY] | HS14: 12 |
 | `mint_producer_session` | `include/crucible/sessions/CalendarGridSession.h:79` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:102` | HS14: 7 |
 | `mint_reader_runtime_session` | `include/crucible/sessions/SwmrSession.h:250` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:144` | HS14: 2 |
 | `mint_reader_session` | `include/crucible/sessions/SwmrSession.h:231` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:142` | HS14: 2 |
@@ -205,7 +204,7 @@ to distinguish this third authorization shape.
 
 ## Summary
 
-- Total substrate mints: 102
-- Missing fixy re-export: 2
+- Total substrate mints: 101
+- Missing fixy re-export: 1
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

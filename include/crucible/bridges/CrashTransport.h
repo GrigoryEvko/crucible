@@ -1225,7 +1225,7 @@ template <typename PeerTag, CrashClass C = CrashClass::Abort,
     using PSLoopCtx =
         detail::permissioned_loop_ctx_from_bare_t<LoopCtx, EmptyPermSet>;
     return CrashWatchedHandle<Proto, Resource, PeerTag, C, PSLoopCtx, EmptyPermSet>{
-        detail::mint_permissioned_session_with_loc<
+        detail::permissioned_session_with_loc_<
             Proto, EmptyPermSet, Resource, PSLoopCtx>(
             std::move(recovered), std::source_location::current()),
         flag};

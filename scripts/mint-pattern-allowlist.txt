@@ -173,8 +173,6 @@ include/crucible/sessions/MpmcChannelSession.h:246:constexpr-ok
 include/crucible/sessions/MpmcChannelSession.h:246:requires-ok
 include/crucible/sessions/MpmcChannelSession.h:271:requires-ok
 include/crucible/sessions/MpmcChannelSession.h:281:requires-ok
-include/crucible/sessions/PermissionedSession.h:1916:requires-ok
-include/crucible/sessions/PermissionedSession.h:1963:requires-ok
 include/crucible/sessions/Session.h:2422:requires-ok
 include/crucible/sessions/Session.h:2496:constexpr-ok
 include/crucible/sessions/Session.h:2496:nodiscard-ok
