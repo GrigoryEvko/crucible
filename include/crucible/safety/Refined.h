@@ -771,6 +771,41 @@ struct predicate_implies<
     std::remove_cv_t<decltype(positive)>>
     : std::true_type {};
 
+// ── FIXY-U-165 — InRange ⇒ non_zero direct bridge (disjunctive) ────
+//
+// InRange<L, H> ⇒ non_zero   when (L ≥ 1) ∨ (H ≤ -1)
+//
+// non_zero differs from positive / non_negative in that it's a
+// UNION-of-two-half-lines predicate (x > 0 OR x < 0).  Hence the
+// bridge from InRange admits a DISJUNCTIVE gate — either branch
+// suffices to exclude 0 from [L, H]:
+//
+//   * L ≥ 1: the lower bound is positive, so x ≥ L ≥ 1 ⇒ x ≠ 0.
+//     Subsumes the U-164 InRange⇒positive case via positive⇒non_zero.
+//   * H ≤ -1: the upper bound is negative, so x ≤ H ≤ -1 ⇒ x ≠ 0.
+//     The NEGATIVE-RANGE case — covers production-site shapes like
+//     `WithinRange<-100, -1, int>` for "valid signed-negative offset"
+//     types that the L≥1-only gate would miss.
+//
+// Single-step is_subsort rationale: same as U-164.  is_subsort partial
+// spec requires DIRECT implies_v; the chain `in_range<L, H> ⇒
+// bounded_above<H> ⇒ ...` doesn't transitively close, so the
+// disjunctive bridge must be DIRECT for production code to subsort
+// negative-range refinements to NonZero<T>.
+//
+// Conservative-but-sound gate rationale: same conversion-semantics
+// discipline as U-164 / U-162.  Integer NTTP L ≥ 1 guarantees
+// decltype(x)(L) ≥ 1 for integer T.  FP NTTP L ≥ 1 also guarantees
+// the property (no truncation below 1).  FP NTTPs in (0, 1) are
+// excluded as conservative under-assertion.  Same for H ≤ -1 in the
+// negative direction.
+template <auto L, auto H>
+    requires (L >= 1 || H <= -1)
+struct predicate_implies<
+    InRange<L, H>,
+    std::remove_cv_t<decltype(non_zero)>>
+    : std::true_type {};
+
 // ── FIXY-U-159b — closure axioms (verify the propagation fires) ────
 //
 // Witness that the new implications are reachable through implies_v
@@ -841,6 +876,34 @@ static_assert(!implies_v<in_range<0, 100>, positive>,
 static_assert(!implies_v<in_range<-5, 100>, positive>,
     "FIXY-U-164: in_range<-5, 100> must NOT imply positive "
     "(admits negative values; soundness — L ≥ 1 gate).");
+
+// ── FIXY-U-165 — closure axioms for InRange ⇒ non_zero bridge ──────
+//
+// Disjunctive gate: witness both branches (L ≥ 1 AND H ≤ -1) + the
+// soundness case where neither branch fires (range straddles 0).
+
+// L ≥ 1 branch (positive range; reuses U-164's positive subsumption):
+static_assert(implies_v<in_range<1, 100>, non_zero>,
+    "FIXY-U-165: in_range<1, 100> ⇒ non_zero (L≥1 branch, boundary).");
+static_assert(implies_v<in_range<5, 100>, non_zero>,
+    "FIXY-U-165: in_range<5, 100> ⇒ non_zero (L≥1 branch, interior).");
+
+// H ≤ -1 branch (negative range; the load-bearing new case):
+static_assert(implies_v<in_range<-100, -1>, non_zero>,
+    "FIXY-U-165: in_range<-100, -1> ⇒ non_zero (H≤-1 branch, boundary).");
+static_assert(implies_v<in_range<-100, -5>, non_zero>,
+    "FIXY-U-165: in_range<-100, -5> ⇒ non_zero (H≤-1 branch, interior).");
+
+// Soundness — straddling 0 must NOT propagate:
+static_assert(!implies_v<in_range<0, 100>, non_zero>,
+    "FIXY-U-165: in_range<0, 100> must NOT imply non_zero "
+    "(admits x=0; soundness — neither L≥1 nor H≤-1 holds).");
+static_assert(!implies_v<in_range<-5, 5>, non_zero>,
+    "FIXY-U-165: in_range<-5, 5> must NOT imply non_zero "
+    "(admits x=0; soundness — range straddles zero).");
+static_assert(!implies_v<in_range<-100, 0>, non_zero>,
+    "FIXY-U-165: in_range<-100, 0> must NOT imply non_zero "
+    "(admits x=0 at the upper bound; soundness — H=0 violates H≤-1).");
 
 namespace detail::refined_self_test {
 

@@ -234,6 +234,32 @@ static_assert( is_subtype_sync_v<Send<Refined<bounded_below<10>, int>, End>,
 static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<0>, int>, End>,
                                  Send<Refined<non_zero, int>, End>>);
 
+// ── FIXY-U-165 — InRange ⇒ non_zero disjunctive bridge ─────────────
+//
+// non_zero admits a disjunctive gate `(L ≥ 1) ∨ (H ≤ -1)` because the
+// predicate is the union-of-two-half-lines.  Witness BOTH branches +
+// the load-bearing soundness gate where the range straddles 0.
+
+// L ≥ 1 branch (positive range):
+static_assert( is_subtype_sync_v<Send<Refined<in_range<1, 100>, int>, End>,
+                                 Send<Refined<non_zero, int>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>,
+                                 Send<Refined<non_zero, int>, End>>);
+
+// H ≤ -1 branch (negative range — the load-bearing new direction):
+static_assert( is_subtype_sync_v<Send<Refined<in_range<-100, -1>, int>, End>,
+                                 Send<Refined<non_zero, int>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<in_range<-100, -5>, int>, End>,
+                                 Send<Refined<non_zero, int>, End>>);
+
+// Soundness: range straddles 0 (admits x=0) must NOT propagate.
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<0, 100>, int>, End>,
+                                 Send<Refined<non_zero, int>, End>>);
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<-5, 5>, int>, End>,
+                                 Send<Refined<non_zero, int>, End>>);
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<-100, 0>, int>, End>,
+                                 Send<Refined<non_zero, int>, End>>);
+
 // ── Runtime scenario: Vessel-FFI flow ──────────────────────────────
 
 // Mock dispatch request — the kind of value that arrives at the FFI
