@@ -260,6 +260,43 @@ static_assert(!is_subtype_sync_v<Send<Refined<in_range<-5, 5>, int>, End>,
 static_assert(!is_subtype_sync_v<Send<Refined<in_range<-100, 0>, int>, End>,
                                  Send<Refined<non_zero, int>, End>>);
 
+// ── FIXY-U-166 — ExactSize propagation lattice (end-to-end) ────────
+//
+// Witness ExactSize<N>⇒LengthGe<M> when N ≥ M AND ExactSize<N>⇒
+// non_empty when N ≥ 1 flow through Send-covariance.  Symmetric to
+// the BoundedBelow⇒positive/non_zero lattice but on the size axis:
+// a fixed-shape SIMD-lane producer (Sized<8, span<int>>) feeds a
+// generic container consumer (MinSize<4, span<int>> /
+// NonEmpty<span<int>>) without re-validation.
+
+// ExactSize ⇒ LengthGe boundary (N=M):
+static_assert( is_subtype_sync_v<Send<Refined<exact_size<8>, std::span<int>>, End>,
+                                 Send<Refined<length_ge<8>, std::span<int>>, End>>);
+
+// ExactSize ⇒ LengthGe interior (N>M):
+static_assert( is_subtype_sync_v<Send<Refined<exact_size<8>, std::span<int>>, End>,
+                                 Send<Refined<length_ge<4>, std::span<int>>, End>>);
+
+// ExactSize ⇒ LengthGe vacuous lower bound (M=0):
+static_assert( is_subtype_sync_v<Send<Refined<exact_size<1>, std::span<int>>, End>,
+                                 Send<Refined<length_ge<0>, std::span<int>>, End>>);
+
+// ExactSize ⇒ LengthGe soundness (N<M must NOT propagate):
+static_assert(!is_subtype_sync_v<Send<Refined<exact_size<4>, std::span<int>>, End>,
+                                 Send<Refined<length_ge<8>, std::span<int>>, End>>);
+
+// ExactSize ⇒ non_empty boundary (N=1):
+static_assert( is_subtype_sync_v<Send<Refined<exact_size<1>, std::span<int>>, End>,
+                                 Send<Refined<non_empty, std::span<int>>, End>>);
+
+// ExactSize ⇒ non_empty interior (N>1):
+static_assert( is_subtype_sync_v<Send<Refined<exact_size<8>, std::span<int>>, End>,
+                                 Send<Refined<non_empty, std::span<int>>, End>>);
+
+// Soundness: N=0 means c is empty; must NOT propagate to non_empty.
+static_assert(!is_subtype_sync_v<Send<Refined<exact_size<0>, std::span<int>>, End>,
+                                 Send<Refined<non_empty, std::span<int>>, End>>);
+
 // ── Runtime scenario: Vessel-FFI flow ──────────────────────────────
 
 // Mock dispatch request — the kind of value that arrives at the FFI

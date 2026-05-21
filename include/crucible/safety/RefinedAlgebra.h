@@ -455,6 +455,87 @@ static_assert(!implies_v<bounded_below<0>, non_zero>,
     "(admits x=0 which IS zero; soundness — the N ≥ 1 gate matches "
     "the BoundedBelow⇒positive discipline).");
 
+// ── FIXY-U-166 — ExactSize propagation lattice ─────────────────────
+//
+// ExactSize<N> ⇒ LengthGe<M>   when N ≥ M
+// ExactSize<N> ⇒ non_empty     when N ≥ 1   (direct bridge)
+//
+// ExactSize<N>(c) = (c.size() == N) — the exact-size predicate.
+// LengthGe<M>(c)  = (c.size() ≥ M)  — the lower-bound size predicate.
+// non_empty(c)    = !c.empty()      — STL container invariant equates
+//                   this to (c.size() != 0) per [container.reqmts].
+//
+// Symmetric to the BoundedBelow propagation lattice (FIXY-U-162 +
+// U-164) but on the size axis: an exact-size container structurally
+// strengthens to any looser lower-size bound or to non_empty (when
+// N ≥ 1), so a `Sized<8, std::span<int>>` flows to any
+// `MinSize<M, std::span<int>>` with M ≤ 8 AND to
+// `NonEmpty<std::span<int>>` via a session position without
+// re-validation.  Load-bearing for the production-site pattern where
+// a fixed-shape SIMD lane source (Sized<8, ...>) feeds a generic
+// container consumer (MinSize<4, ...> or NonEmpty<...>).
+//
+// Single-step is_subsort rationale: same as U-164.  is_subsort
+// partial spec requires DIRECT implies_v; the chain
+// `exact_size<8> ⇒ length_ge<8> ⇒ length_ge<4> ⇒ non_empty`
+// (each individual hop currently shipped) is NOT automatically
+// reachable through is_subsort — each useful chain needs a direct-
+// bridge axiom.  The ExactSize⇒non_empty direct bridge closes the
+// structurally important "exact-size to non-empty" path.
+//
+// Soundness:
+//   * ExactSize<N>⇒LengthGe<M> when N ≥ M:
+//     c.size() == N ∧ N ≥ M ⇒ c.size() ≥ M.  Sound for any
+//     container C (no T-context concern — the predicate is
+//     container-size comparison, not arithmetic-T comparison; size_t
+//     is unsigned so N ≥ 0 is always the case at the NTTP level).
+//   * ExactSize<N>⇒non_empty when N ≥ 1:
+//     c.size() == N ∧ N ≥ 1 ⇒ c.size() ≥ 1 ⇒ !c.empty().
+//     N = 0 is INTENTIONALLY excluded — c.size() == 0 ⇒ c.empty(),
+//     which is the OPPOSITE of non_empty.  The N ≥ 1 gate is
+//     load-bearing soundness, not decoration (mirrors U-159b's
+//     `requires (N >= 1)` discipline on LengthGe⇒non_empty).
+
+template <std::size_t N, std::size_t M>
+    requires (N >= M)
+struct predicate_implies<ExactSize<N>, LengthGe<M>> : std::true_type {};
+
+template <std::size_t N>
+    requires (N >= 1)
+struct predicate_implies<
+    ExactSize<N>,
+    std::remove_cv_t<decltype(non_empty)>>
+    : std::true_type {};
+
+// FIXY-U-166 closure-axiom witnesses for the new propagation paths.
+
+// ExactSize ⇒ LengthGe: boundary (N=M), interior (N>M), vacuous lower
+// bound (M=0), and the load-bearing soundness gate (N<M).
+static_assert(implies_v<exact_size<8>, length_ge<8>>,
+    "FIXY-U-166: exact_size<8> ⇒ length_ge<8> (boundary N=M case — "
+    "exact-size satisfies its own lower bound).");
+static_assert(implies_v<exact_size<8>, length_ge<4>>,
+    "FIXY-U-166: exact_size<8> ⇒ length_ge<4> (interior — exact size "
+    "exceeds looser lower bound).");
+static_assert(implies_v<exact_size<1>, length_ge<0>>,
+    "FIXY-U-166: exact_size<1> ⇒ length_ge<0> (vacuous lower bound — "
+    "size_t is always ≥ 0).");
+static_assert(!implies_v<exact_size<4>, length_ge<8>>,
+    "FIXY-U-166: exact_size<4> must NOT imply length_ge<8> "
+    "(c.size() == 4 ⇏ c.size() ≥ 8; soundness — the N ≥ M gate is "
+    "load-bearing, not decoration).");
+
+// ExactSize ⇒ non_empty: boundary (N=1), interior (N>1), and the
+// load-bearing zero-soundness gate (N=0 means c is empty).
+static_assert(implies_v<exact_size<1>, non_empty>,
+    "FIXY-U-166: exact_size<1> ⇒ non_empty (boundary N=1 case).");
+static_assert(implies_v<exact_size<8>, non_empty>,
+    "FIXY-U-166: exact_size<8> ⇒ non_empty (interior — larger N).");
+static_assert(!implies_v<exact_size<0>, non_empty>,
+    "FIXY-U-166: exact_size<0> must NOT imply non_empty "
+    "(c.size() == 0 ⇒ c.empty() per [container.reqmts]; soundness "
+    "— the N ≥ 1 gate matches LengthGe⇒non_empty discipline).");
+
 // ── Self-test block ─────────────────────────────────────────────────
 //
 // Per the algebra/effects runtime-smoke-test discipline (memory rule
