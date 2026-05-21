@@ -420,6 +420,44 @@ static_assert( is_subtype_sync_v<Recv<Refined<non_empty, std::span<int>>, End>,
 static_assert(!is_subtype_sync_v<Recv<Refined<exact_size<8>, std::span<int>>, End>,
                                  Recv<Refined<non_empty, std::span<int>>, End>>);
 
+// ── FIXY-U-170 — Recv contravariance for InRange + cross-family ───
+//
+// Closes the contravariance coverage on the value-range axis (the
+// most populous parametric family).  InRange has three subsumption
+// shapes that need contravariance witnesses:
+//   (i)   InRange transitivity (tighter range ⩽ looser range on Send;
+//         contravariance flips: looser-range Recv ⩽ tighter-range
+//         Recv)
+//   (ii)  InRange ⇒ BoundedAbove (range ceiling is an upper bound)
+//   (iii) InRange ⇒ positive (L≥1 bridge; U-164)
+
+// InRange transitivity Recv contravariance — looser-range recv ⩽
+// tighter-range recv:
+static_assert( is_subtype_sync_v<Recv<Refined<in_range<0, 100>, int>, End>,
+                                 Recv<Refined<in_range<10, 20>, int>, End>>);
+// Soundness: tighter recv does NOT substitute for looser-range recv.
+static_assert(!is_subtype_sync_v<Recv<Refined<in_range<10, 20>, int>, End>,
+                                 Recv<Refined<in_range<0, 100>, int>, End>>);
+
+// InRange ⇒ positive Recv contravariance — positive Recv ⩽ in_range
+// Recv (positive Recv accepts strict-positives which the in_range
+// position guarantees via L≥1):
+static_assert( is_subtype_sync_v<Recv<Refined<positive, int>, End>,
+                                 Recv<Refined<in_range<1, 100>, int>, End>>);
+// Soundness: in_range Recv does NOT substitute for positive Recv —
+// positive admits 200, 300, etc. that in_range<1,100> rejects.
+static_assert(!is_subtype_sync_v<Recv<Refined<in_range<1, 100>, int>, End>,
+                                 Recv<Refined<positive, int>, End>>);
+
+// BoundedBelow Recv contravariance — looser-bound recv ⩽ tighter-
+// bound recv (parallel to U-162's BoundedBelow⇒BoundedBelow lattice):
+static_assert( is_subtype_sync_v<Recv<Refined<bounded_below<5>, int>, End>,
+                                 Recv<Refined<bounded_below<10>, int>, End>>);
+// Soundness: bounded_below<10> recv does NOT substitute for
+// bounded_below<5> recv (would reject 6, 7, 8, 9 the looser accepts).
+static_assert(!is_subtype_sync_v<Recv<Refined<bounded_below<10>, int>, End>,
+                                 Recv<Refined<bounded_below<5>, int>, End>>);
+
 // ── Runtime scenario: Vessel-FFI flow ──────────────────────────────
 
 // Mock dispatch request — the kind of value that arrives at the FFI
