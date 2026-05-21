@@ -7672,6 +7672,20 @@ crucible_neg_compile_test(neg_machine_copy_rejected
 crucible_neg_compile_test(neg_machine_transition_without_optin
   "MachineTransition|constraints not satisfied|machine_transition")
 
+# [FIXY-U-141] safety::ct::* HS14 floor — second non-ScopedView
+# primitive to get neg-compile pair coverage (closes ConstantTime
+# slice of #146 A8-P2 alongside U-140's Machine slice).
+# Class U: ct::less<int32_t> fails std::unsigned_integral concept.
+# Class M: ct::eq with mismatched-length spans fires CRUCIBLE_PRE
+# at consteval (non-constexpr __builtin_trap poisons the call).
+# Together they pin both soundness layers of the ct::* primitives:
+# (a) unsigned-only type-domain gate, and (b) length-equality
+# invariant on byte-span comparison.
+crucible_neg_compile_test(neg_constanttime_less_signed_type
+  "unsigned_integral|constraints not satisfied|the required expression")
+crucible_neg_compile_test(neg_constanttime_eq_length_mismatch
+  "non-constant condition|__builtin_trap|not a constant expression|non-constant.*static_assert|call to non.*constexpr")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
