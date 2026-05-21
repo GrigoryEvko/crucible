@@ -372,6 +372,77 @@ static_assert(sizeof(Tagged<int,   source::FromUser>)  == sizeof(int));
 static_assert(sizeof(Tagged<void*, trust::Verified>)   == sizeof(void*));
 static_assert(sizeof(Tagged<long,  access::AppendOnly>) == sizeof(long));
 
+// ── retag_policy<From, To> — phantom-transition opt-in (FIXY-V-022) ─
+//
+// Primary template: every (From → To) phantom-tag transition is
+// REJECTED by default.  Safe transitions are admitted by EXPLICIT
+// specialization (FIXY-V-023) — the discipline is fail-closed,
+// review-discoverable, and grep-able by `retag_policy<` at every
+// authoritative trust-boundary mutation.
+//
+// Why fail-closed: `Tagged<T, Tag>` carries provenance / trust / access
+// / version / vessel-trust phantoms across boundaries that the type
+// system otherwise can't see — laundering External-tagged user input
+// to Sanitized at a glance is exactly the bug we want the compiler to
+// catch.  An open-by-default policy (silent permitting) would defeat
+// the whole point of the phantom axis.  A fail-closed policy makes the
+// safe-transition catalog (V-023) the single source of truth.
+//
+// V-022 deliverable: primary template only.  No specializations yet —
+// those land in V-023.  V-024 wires `Tagged::retag<NewTag>()`'s
+// requires-clause to `RetagAllowed<Tag, NewTag>`; until then retag()
+// is unconstrained (every existing call site stays green) and the
+// policy is consultative.  V-025 re-exports the policy under
+// `fixy::tags::retag_policy` so band-3 callers can specialize without
+// reaching into safety/.
+//
+// Axiom coverage:
+//   TypeSafe — the phantom-tag transition is a type-level fact; the
+//              policy admits it at compile time, not by runtime tag-
+//              compare.
+//   InitSafe — no runtime state; `allowed` is a constexpr bool.
+//
+// Cost: zero.  `RetagAllowed<A, B>` is a constraint check during
+// overload resolution; no symbol, no storage, no runtime test.
+template <typename From, typename To>
+struct retag_policy {
+    // Default: NO transition admitted.  Explicit specialization
+    // required for every safe direction.  V-023 lands the catalog
+    // (External → Sanitized → IntegrityVerified, FromPytorch →
+    // Validated, etc.).
+    static constexpr bool allowed = false;
+};
+
+// Identity is always safe — `Tagged<T, X>` to `Tagged<T, X>` is a
+// no-op transition (same phantom).  Admitted unconditionally so that
+// generic code that re-asserts the existing tag (template recursion,
+// concept satisfaction tests) doesn't trip the gate.
+template <typename Tag>
+struct retag_policy<Tag, Tag> {
+    static constexpr bool allowed = true;
+};
+
+// Concept-form gate used at call sites.  V-024 will pin this onto
+// `Tagged::retag<NewTag>() requires RetagAllowed<Tag, NewTag>`.
+template <typename From, typename To>
+concept RetagAllowed = retag_policy<From, To>::allowed;
+
+// Self-test that the primary template is fail-closed AND identity is
+// admitted unconditionally.  V-023's specialization cells will add
+// per-transition cases.
+static_assert(retag_policy<source::FromUser, source::FromUser>::allowed,
+    "retag_policy identity specialization must admit (X → X)");
+static_assert(!retag_policy<source::External, source::Sanitized>::allowed,
+    "retag_policy primary template MUST be fail-closed; the "
+    "(External → Sanitized) transition is opt-in via V-023 spec");
+static_assert(!retag_policy<source::FromUser, trust::Verified>::allowed,
+    "retag_policy primary template MUST reject cross-axis transitions "
+    "(source::* phantom to trust::* phantom) by default");
+static_assert(RetagAllowed<source::FromUser, source::FromUser>,
+    "RetagAllowed concept must admit identity");
+static_assert(!RetagAllowed<source::External, source::Sanitized>,
+    "RetagAllowed concept must reject unspecialized transitions");
+
 // ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
 //
 // `mint_tagged<Tag, T>(value)` synthesizes an authoritative

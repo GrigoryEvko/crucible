@@ -10344,6 +10344,26 @@ crucible_neg_compile_test(neg_reset_in_quiescent_context_braced_init
     "explicit constructor|explicit.*conversion|no matching function|could not convert|cannot convert|not a valid template argument")
 
 # ─────────────────────────────────────────────────────────────────
+# FIXY-V-022 — retag_policy<From, To> primary template fail-closed
+# ─────────────────────────────────────────────────────────────────
+#
+# Two HS14 fixtures witness that the primary template's `allowed =
+# false` default DOES route through the `RetagAllowed<From, To>`
+# concept gate.  Both fire constraint diagnostics on cross-axis
+# phantom transitions for which no specialization has been minted.
+# V-023 will land the safe-transition catalog; until then every
+# transition outside the identity specialization stays rejected,
+# which these fixtures continue to verify against the negative case.
+#
+# The diagnostic family is intentionally broad — GCC 16 reports
+# the unsatisfied constraint via "constraints not satisfied" with
+# slightly different wording across template-instantiation depths.
+crucible_neg_compile_test(neg_retag_policy_default_rejects
+    "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
+crucible_neg_compile_test(neg_retag_policy_cross_axis_rejects
+    "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
+
+# ─────────────────────────────────────────────────────────────────
 # fixy-A2-001 — StopG<Peer, CrashClass C> projection threading
 # ─────────────────────────────────────────────────────────────────
 #
