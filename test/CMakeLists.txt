@@ -2357,6 +2357,23 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_endpoint_non_surfac
 crucible_neg_compile_fixy_test(neg_fixy_substr_mpmc_consumer_endpoint_near_miss
     "MpmcChannelSessionSurface|constraints not satisfied|no matching function")
 
+# FIXY-V-045-audit HS14 floor: the SPSC ENDPOINT token mints (two-arg,
+# surface-gated on SpscChannelSessionSurface, plus a Linear Permission<*_tag>
+# proof).  Inline-defined in fixy/Substr.h v045:: (not in inventory scan
+# tree, but HS14 still applies per CLAUDE.md HS14 rule).  Four fixtures →
+# two per mint × two mints: bare non-surface (fails first nested-type
+# requirement + substitution-fails on Permission<typename Channel::*_tag>)
+# vs near-miss (producer/consumer returns optional<handle> instead of bare
+# handle — the SPSC linearity contract opposite of MPMC).
+crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_producer_endpoint_non_surface
+    "SpscChannelSessionSurface|constraints not satisfied|no matching function|producer_tag")
+crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_producer_endpoint_near_miss
+    "SpscChannelSessionSurface|constraints not satisfied|no matching function|same_as")
+crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_consumer_endpoint_non_surface
+    "SpscChannelSessionSurface|constraints not satisfied|no matching function|consumer_tag")
+crucible_neg_compile_fixy_test(neg_fixy_substr_spsc_consumer_endpoint_near_miss
+    "SpscChannelSessionSurface|constraints not satisfied|no matching function|same_as")
+
 # FIXY-U-074l HS14 floor: fixy::safety::mint_view + mint_linear_view.
 # These gate via a `pre(view_ok(c, type_identity<Tag>{}))` contract (NOT a
 # requires-concept) — view_ok is a per-Carrier hidden friend with no global
