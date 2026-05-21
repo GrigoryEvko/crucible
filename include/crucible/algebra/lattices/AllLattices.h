@@ -93,6 +93,7 @@
 #include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7  (#452) — shipped
 #include <crucible/algebra/lattices/VendorLattice.h>     // FOUND-G53  — shipped
 #include <crucible/algebra/lattices/WaitLattice.h>       // FOUND-G23  — shipped
+#include <crucible/algebra/lattices/WitnessLattice.h>    // FIXY-V-053 — shipped (4-tier proof-strength chain)
 
 namespace crucible::algebra::lattices {
 
@@ -209,7 +210,8 @@ static_assert(every_lattice_has_name<
     ToleranceLattice,
     TrustLattice<LatticeNameProbeSource>,
     VendorLattice,
-    WaitLattice
+    WaitLattice,
+    WitnessLattice
 >(),
     "[Lattice_Missing_Name] At least one shipped lattice does not "
     "satisfy HasLatticeName<L> — `lattice_name<L>()` would return the "

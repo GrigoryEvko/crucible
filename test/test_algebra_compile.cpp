@@ -68,6 +68,7 @@
 #include <crucible/algebra/lattices/TrustLattice.h>
 #include <crucible/algebra/lattices/VendorLattice.h>
 #include <crucible/algebra/lattices/WaitLattice.h>
+#include <crucible/algebra/lattices/WitnessLattice.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -238,6 +239,10 @@ void test_crash_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::crash_lattice_self_test::runtime_smoke_test();
 }
 
+void test_witness_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::witness_lattice_self_test::runtime_smoke_test();
+}
+
 }  // namespace
 
 int main() {
@@ -302,6 +307,8 @@ int main() {
              test_vendor_lattice_runtime_smoke);
     run_test("test_crash_lattice_runtime_smoke",
              test_crash_lattice_runtime_smoke);
+    run_test("test_witness_lattice_runtime_smoke",
+             test_witness_lattice_runtime_smoke);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
