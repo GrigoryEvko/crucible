@@ -32,9 +32,17 @@
 # (//, ///, /* */ lines) are skipped automatically.
 #
 # Exit status:
-#   0  — no raw substrate spellings detected in fixy-only zones
-#   1  — at least one violation
-#   2  — bad invocation / missing dependency
+#   0  — clean (no raw substrate spellings, no stale allowlist entries)
+#   1  — at least one violation (takes precedence over stale)
+#   2  — stale allowlist entry (a grandfathered path with no remaining
+#        reach-past-the-umbrella site — the file migrated to fixy::fn;
+#        prune it) OR bad invocation / missing dependency
+#
+# Stale-entry detection (parity with check-no-reinterpret-cast.sh):
+# every allowlist path must correspond to a file that STILL contains a
+# raw substrate spelling.  Once a grandfathered file migrates to
+# fixy::fn, its allowlist entry is dead weight and could silently
+# re-grandfather a future raw spelling re-introduced in that file.
 
 set -euo pipefail
 
@@ -111,7 +119,52 @@ PLANTED
             exit 2
         fi
         rm -f "$result_file"
-        printf 'check-fixy-discipline: self-test passed — regex fires on planted violation.\n' >&2
+        printf 'check-fixy-discipline: self-test phase 1 passed — regex fires on planted violation.\n' >&2
+
+        # ── Phase 2: stale allowlist entry detection ─────────────────
+        # Reuse the planted tree but allowlist the live violation (so
+        # violation_count stays 0 and the file lands in the live set) and
+        # add a SECOND entry for a file that does NOT exist — it is absent
+        # from the live set, hence STALE.  Expect rc=2 with exactly one
+        # stale diagnostic naming the migrated-away path.  A live entry
+        # being false-flagged, or the stale one being missed, fails here.
+        printf 'examples/fn/planted_violation.cpp\nexamples/fn/migrated_away.cpp\n' \
+            >"$tmp_root/scripts/fixy-discipline-allowlist.txt"
+        result_file="$(mktemp)"
+        stale_rc=0
+        CRUCIBLE_FIXY_DISCIPLINE_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$result_file" || stale_rc=$?
+        if [[ "$stale_rc" -ne 2 ]]; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — stale entry expected rc=2, got %s.\n' "$stale_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        stale_hits="$(grep -c '^FIXY-DISCIPLINE stale:' "$result_file" || true)"
+        if [[ "$stale_hits" -ne 1 ]]; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — expected exactly 1 stale diagnostic, got %s.\n' "$stale_hits" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        if ! grep -q 'FIXY-DISCIPLINE stale:.*migrated_away.cpp' "$result_file"; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — stale diagnostic did not name migrated_away.cpp.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        if grep -q 'FIXY-DISCIPLINE stale:.*planted_violation.cpp' "$result_file"; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — live (allowlisted) entry was false-flagged stale.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        rm -f "$result_file"
+        printf 'check-fixy-discipline: self-test passed — regex fires on planted violation; stale allowlist entry detected and live entry preserved.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -150,6 +203,17 @@ if [[ ${#scan_paths[@]} -eq 0 ]]; then
     exit 0
 fi
 
+# ── Live set of file paths for stale-entry detection ─────────────────
+# Every file with a reach-past-the-umbrella candidate that survives the
+# comment / inline-marker filters records its path here, allowlist-
+# blind.  After the scan, every allowlist path must be in this set;
+# entries that aren't (the file migrated to fixy::fn) are STALE and
+# flagged — parity with check-no-reinterpret-cast.sh.  This build sits
+# AFTER the no-scan-paths early exit so absent opt-in dirs never make
+# every allowlist entry look stale.
+live_set_file="$(mktemp)"
+trap 'rm -f "$live_set_file"' EXIT
+
 while IFS= read -r match; do
     file="${match%%:*}"
     rest="${match#*:}"
@@ -170,6 +234,7 @@ while IFS= read -r match; do
     fi
 
     rel="${file#"$scan_root"/}"
+    printf '%s\n' "$rel" >> "$live_set_file"
 
     # Per-line allowlist (repo-relative path; full-line exact match).
     if [[ -f "$allowlist" ]] && grep -Fxq -- "$rel" "$allowlist"; then
@@ -191,7 +256,7 @@ done < <(
        "$banned_pattern" "${scan_paths[@]}" 2>/dev/null || true
 )
 
-# ── Outcome ──────────────────────────────────────────────────────────
+# ── Outcome (violations — take precedence over stale) ─────────────────
 if [[ "$violation_count" -ne 0 ]]; then
     cat >&2 <<HINT
 
@@ -218,5 +283,40 @@ HINT
     exit 1
 fi
 
-printf 'check-fixy-discipline: clean — no reach-past-the-umbrella sites detected.\n' >&2
+# ── Stale allowlist entries (parity with check-no-reinterpret-cast.sh) ─
+# A grandfathered path whose file no longer holds a raw substrate spelling
+# is dead weight: it would silently re-grandfather a future raw spelling
+# re-introduced in that file.  The live set above is allowlist-blind, so an
+# entry absent from it means the file migrated to fixy::fn.  Keys are bare
+# repo-relative paths (no line suffix, no trailing prose) — compare the whole
+# trimmed entry, NOT a first whitespace token.
+stale_count=0
+if [[ -f "$allowlist" ]]; then
+    while IFS= read -r entry; do
+        trimmed="${entry%%#*}"
+        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+        trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
+        [[ -z "$trimmed" ]] && continue
+        if ! grep -Fxq -- "$trimmed" "$live_set_file" 2>/dev/null; then
+            printf 'FIXY-DISCIPLINE stale: %s — STALE allowlist entry (no raw safety::fn::Fn< spelling remains in this file; it migrated to fixy::fn — remove from allowlist).\n' \
+                "$trimmed" >&2
+            stale_count=$((stale_count + 1))
+        fi
+    done < "$allowlist"
+fi
+
+if [[ "$stale_count" -ne 0 ]]; then
+    cat >&2 <<HINT
+
+check-fixy-discipline found ${stale_count} stale allowlist entry/entries.
+Each grandfathered path no longer contains a raw safety::fn::Fn< spelling —
+the file already migrated to the fixy::fn umbrella.  A stale entry is a
+latent re-grandfather hazard: a future raw spelling re-introduced in that
+file would slip past the gate unnoticed.  Prune the listed path(s) from
+scripts/fixy-discipline-allowlist.txt.
+HINT
+    exit 2
+fi
+
+printf 'check-fixy-discipline: clean — no reach-past-the-umbrella sites detected, no stale allowlist entries.\n' >&2
 exit 0
