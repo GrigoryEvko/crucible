@@ -350,14 +350,34 @@ static_assert(
 
 // ── 7. Cardinality witness ────────────────────────────────────────
 //
-// 11 surfaced aliases (concept + variable template + 4 extractors for
-// Reduction + class template + Op concept + wrapper-detection concept
-// + variable template + 2 extractors for reduce_into).  Future
-// additions to safety::extract::* MUST extend this block + bump the
-// constant + add a sentinel below.
+// 12 surfaced using-declarations (raw count, matching the
+// handle_alias_cardinality convention in fixy/Handle.h):
+//
+//   Reduction family (6):
+//     (1) reduce_into          — class template
+//     (2) is_reduction_op_v    — Op admissibility concept
+//     (3) Reduction            — kernel-shape concept (FOUND-D14)
+//     (4) is_reduction_v       — variable-template form of (3)
+//     (5..8) reduction_input_tag_t / reduction_input_value_t
+//                              / reduction_accumulator_t
+//                              / reduction_reducer_t   — 4 extractors
+//
+//   Wrapper-detection family (4):
+//     (9)  IsReduceInto            — wrapper-detection concept (FOUND-D07)
+//     (10) is_reduce_into_v        — variable-template form of (9)
+//     (11) reduce_into_accumulator_t — extractor: R from reduce_into<R, _>
+//     (12) reduce_into_reducer_t     — extractor: Op from reduce_into<_, Op>
+//
+// FIXY-V-038-audit: bumped 11 → 12 after the cardinality off-by-one
+// was caught by the post-ship audit (the original count enumerated
+// 12 items textually but stated 11; the floor sentinel in
+// test_fixy_kernel.cpp was at >= 11, hiding the drift).
+//
+// Future additions to safety::extract::* / safety::* MUST extend
+// this block + bump the constant + add a sentinel above.
 
-constexpr int kernel_alias_cardinality = 11;
-static_assert(kernel_alias_cardinality == 11,
+constexpr int kernel_alias_cardinality = 12;
+static_assert(kernel_alias_cardinality == 12,
     "fixy::kernel:: cardinality changed — update Kernel.h sentinel "
     "block to track the substrate kernel-shape recognizer surface.");
 

@@ -17,7 +17,7 @@
 //   * Negative shape rejection mirroring the substrate's 5 negative
 //     fixtures.
 //   * 4-extractor round-trip across distinct Reduction signatures.
-//   * Cardinality FLOOR witness (>= 11) — append-friendly form per
+//   * Cardinality FLOOR witness (>= 12) — append-friendly form per
 //     FIXY-U-127/U-128 (floor instead of equality so future appends
 //     don't redden silently elsewhere).
 //   * Runtime smoke test — exercises substrate's runtime smoke entry
@@ -308,11 +308,16 @@ static_assert(std::is_same_v<
 // surface grows (V-039 will add Fusion + CanonicalShape + Binary/
 // UnaryTransform), the floor bumps but the relation stays valid.
 static_assert(
-    fk::self_test::kernel_alias_cardinality >= 11,
+    fk::self_test::kernel_alias_cardinality >= 12,
     "fixy::kernel:: cardinality floor — V-038 surface ships at least "
-    "11 re-exports (Reduction concept + 4 extractors + variable "
-    "template + reduce_into class + Op concept + IsReduceInto + 2 "
-    "wrapper extractors).");
+    "12 re-exports (Reduction concept + is_reduction_v variable "
+    "template + 4 Reduction extractors + reduce_into class template + "
+    "is_reduction_op_v Op concept + IsReduceInto wrapper concept + "
+    "is_reduce_into_v variable template + reduce_into_accumulator_t / "
+    "reduce_into_reducer_t wrapper extractors).  FIXY-V-038-audit "
+    "bumped floor 11 → 12 after the post-ship audit caught the "
+    "is_reduce_into_v variable template being omitted from the "
+    "original enumeration.");
 
 // ═══════════════════════════════════════════════════════════════════
 // ── 7. Runtime smoke tests ────────────────────────────────────────
