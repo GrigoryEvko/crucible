@@ -104,6 +104,7 @@
 #include <crucible/safety/Bits.h>              // structural (typed bit-field)
 #include <crucible/safety/Borrowed.h>          // non-owning lifetime-tagged view
 #include <crucible/safety/IsBorrowedRef.h>     // IsBorrowedRef concept gate
+#include <crucible/safety/IsSwmrHandle.h>      // FIXY-V-035: IsSwmrReader (handle shape)
 #include <crucible/safety/Budgeted.h>          // off-tree (Space axis)
 #include <crucible/safety/Saturated.h>         // {value, was_clamped} carrier
 #include <crucible/safety/CipherTier.h>        // canonical Tier-S
@@ -140,6 +141,7 @@
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/SwissTableBuffer.h>  // structural (open-addressing slot buffer)
+#include <crucible/safety/SwmrReader.h>        // FIXY-V-035: SwmrReader<auto FnPtr> (function-ptr shape)
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Path.h>             // FIXY-V-031: Path<Source> + sanitize_path
 #include <crucible/safety/TimeOrdered.h>
@@ -393,6 +395,46 @@ using ::crucible::safety::no_scoped_view_field_check;
 // IsBorrowedRef<T> — concept witnessing T is a safety::BorrowedRef<U>.
 // Used in static_asserts on member-type aliases (e.g. ReplayEngine::PoolBorrow).
 using ::crucible::safety::extract::IsBorrowedRef;
+
+// FIXY-V-035 — SWMR (single-writer-multiple-reader) handle shapes.  Two
+// independent concept surfaces routed through the fixy::wrap:: umbrella so
+// production consumers (KernelCache reader-thread dispatcher per 27_04 §3.6,
+// AtomicSnapshot observe-metrics broadcast per QUEUE-7, SwmrSession per
+// SAFEINT-B18) reach both shapes without descending into safety/:
+//
+//   SwmrReader<auto FnPtr>      Function-pointer-shape concept: FnPtr names
+//                               a function taking one parameter satisfying
+//                               IsSwmrReader on its handle type AND whose
+//                               return is NOT an OwnedRegion (loading a
+//                               region is a Linear-discipline write, not a
+//                               reader-thread query — handled separately by
+//                               SwmrWriter, ships as FIXY-V-036).
+//   IsSwmrReader<T>             Handle-type-shape concept: T (after stripping
+//                               cv/ref) walks-and-quacks like a SWMR-reader
+//                               handle (D07 substrate's member-function
+//                               signature pattern; companion helpers below).
+//
+// Both are deliberately NOT graded — the reader shape is a structural
+// constraint over the handle's API, not a value the type-system can carry
+// in a lattice.  Peer to IsBorrowedRef in this section.
+//
+// Companion traits surfaced alongside so consumers can extract the
+// payload type without re-routing:
+//
+//   is_swmr_reader_function_v<auto FnPtr>   bool: FnPtr is a SwmrReader
+//   swmr_reader_handle_value_t<auto FnPtr>  payload-of-the-handle
+//   swmr_reader_returned_value_t<auto FnPtr> payload-of-the-return
+//   swmr_reader_value_consistent_v<auto F>  bool: handle and return agree
+//   is_swmr_reader_v<T>                     bool: T is a SwmrReader handle
+//   swmr_reader_value_t<T>                  payload of T (ill-formed if not)
+using ::crucible::safety::extract::SwmrReader;
+using ::crucible::safety::extract::is_swmr_reader_function_v;
+using ::crucible::safety::extract::swmr_reader_handle_value_t;
+using ::crucible::safety::extract::swmr_reader_returned_value_t;
+using ::crucible::safety::extract::swmr_reader_value_consistent_v;
+using ::crucible::safety::extract::IsSwmrReader;
+using ::crucible::safety::extract::is_swmr_reader_v;
+using ::crucible::safety::extract::swmr_reader_value_t;
 
 // OwnedRegion<T, Tag> — arena-backed exclusive region.
 using ::crucible::safety::OwnedRegion;
@@ -812,6 +854,81 @@ static_assert(::crucible::fixy::wrap::IsBorrowedRef<
     "fixy::wrap::IsBorrowedRef must accept safety::BorrowedRef<int>.");
 static_assert(!::crucible::fixy::wrap::IsBorrowedRef<int>,
     "fixy::wrap::IsBorrowedRef must reject plain int.");
+
+// FIXY-V-035 — SwmrReader (function-ptr) + IsSwmrReader (handle) sentinels.
+//
+// Two concept surfaces — two pairs of positive + negative witnesses.  The
+// synthetic types mirror the substrate's own self-test in IsSwmrHandle.h
+// so reviewers can cross-check shape without leaving the fixy:: umbrella.
+namespace fixy_v_035_swmr_witness {
+struct ReaderHandle {
+    [[nodiscard]] int load() const noexcept { return 0; }
+};
+struct WriterHandle {
+    void publish(int const&) noexcept {}
+};
+// Function whose first parameter is a SWMR-reader-handle rvalue-ref and
+// whose return is by-value non-OwnedRegion non-reference.
+inline int read_int(ReaderHandle&&) noexcept { return 0; }
+// Negative: parameter is not a SWMR reader handle (plain int).
+inline int read_from_int(int&&) noexcept { return 0; }
+}  // namespace fixy_v_035_swmr_witness
+
+// IsSwmrReader<T> — handle-shape concept: positive + negative.
+static_assert(::crucible::fixy::wrap::IsSwmrReader<
+    fixy_v_035_swmr_witness::ReaderHandle>,
+    "FIXY-V-035: fixy::wrap::IsSwmrReader must accept a handle with "
+    "[[nodiscard]] T load() const noexcept.");
+static_assert(!::crucible::fixy::wrap::IsSwmrReader<
+    fixy_v_035_swmr_witness::WriterHandle>,
+    "FIXY-V-035: fixy::wrap::IsSwmrReader must reject a writer handle "
+    "(no load() — would match IsSwmrWriter instead).");
+static_assert(!::crucible::fixy::wrap::IsSwmrReader<int>,
+    "FIXY-V-035: fixy::wrap::IsSwmrReader must reject plain int.");
+
+// is_swmr_reader_v<T> — variable-template surface co-tracks the concept.
+static_assert(::crucible::fixy::wrap::is_swmr_reader_v<
+    fixy_v_035_swmr_witness::ReaderHandle>,
+    "FIXY-V-035: fixy::wrap::is_swmr_reader_v must agree with IsSwmrReader.");
+
+// swmr_reader_value_t<T> — payload extraction must propagate.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::swmr_reader_value_t<
+        fixy_v_035_swmr_witness::ReaderHandle>,
+    int>,
+    "FIXY-V-035: fixy::wrap::swmr_reader_value_t must alias the handle's "
+    "load() return type.");
+
+// SwmrReader<auto FnPtr> — function-pointer-shape concept: positive + negative.
+static_assert(::crucible::fixy::wrap::SwmrReader<
+    &fixy_v_035_swmr_witness::read_int>,
+    "FIXY-V-035: fixy::wrap::SwmrReader must accept a function with one "
+    "SWMR-reader-handle rvalue-ref parameter and a by-value non-region return.");
+static_assert(!::crucible::fixy::wrap::SwmrReader<
+    &fixy_v_035_swmr_witness::read_from_int>,
+    "FIXY-V-035: fixy::wrap::SwmrReader must reject a function whose "
+    "param 0 is not a SWMR reader handle (int&& fails the handle predicate).");
+
+// is_swmr_reader_function_v<auto FnPtr> — variable-template co-tracks.
+static_assert(::crucible::fixy::wrap::is_swmr_reader_function_v<
+    &fixy_v_035_swmr_witness::read_int>,
+    "FIXY-V-035: fixy::wrap::is_swmr_reader_function_v must agree with SwmrReader.");
+
+// swmr_reader_handle_value_t / swmr_reader_returned_value_t /
+// swmr_reader_value_consistent_v — three extractors gated on SwmrReader.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::swmr_reader_handle_value_t<
+        &fixy_v_035_swmr_witness::read_int>,
+    int>,
+    "FIXY-V-035: swmr_reader_handle_value_t must extract handle payload type.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::swmr_reader_returned_value_t<
+        &fixy_v_035_swmr_witness::read_int>,
+    int>,
+    "FIXY-V-035: swmr_reader_returned_value_t must extract function return type.");
+static_assert(::crucible::fixy::wrap::swmr_reader_value_consistent_v<
+    &fixy_v_035_swmr_witness::read_int>,
+    "FIXY-V-035: swmr_reader_value_consistent_v must witness handle/return agreement.");
 static_assert(std::is_same_v<
     ::crucible::fixy::wrap::OwnedRegion<int, WrapStructuralTag>,
     ::crucible::safety::OwnedRegion<int, WrapStructuralTag>>,
