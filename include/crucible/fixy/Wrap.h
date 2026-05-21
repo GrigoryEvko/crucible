@@ -142,6 +142,7 @@
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/SwissTableBuffer.h>  // structural (open-addressing slot buffer)
 #include <crucible/safety/SwmrReader.h>        // FIXY-V-035: SwmrReader<auto FnPtr> (function-ptr shape)
+#include <crucible/safety/SwmrWriter.h>        // FIXY-V-036: SwmrWriter<auto FnPtr> (function-ptr shape)
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Path.h>             // FIXY-V-031: Path<Source> + sanitize_path
 #include <crucible/safety/TimeOrdered.h>
@@ -435,6 +436,41 @@ using ::crucible::safety::extract::swmr_reader_value_consistent_v;
 using ::crucible::safety::extract::IsSwmrReader;
 using ::crucible::safety::extract::is_swmr_reader_v;
 using ::crucible::safety::extract::swmr_reader_value_t;
+
+// FIXY-V-036 — SWMR writer-side shapes.  Companion to FIXY-V-035 reader
+// surfaces; the substrate carves the SWMR ecosystem into producer (publish)
+// and consumer (load) halves so dispatchers can route by shape per 27_04 §3.6.
+//
+//   SwmrWriter<auto FnPtr>      Function-pointer-shape concept: FnPtr names
+//                               a function whose param 0 is a non-const
+//                               rvalue-ref to an IsSwmrWriter-satisfying
+//                               handle AND param 1 is the value-to-publish
+//                               (by const-ref OR by value) AND return is
+//                               void (publishes don't yield).  Distinct
+//                               from ProducerEndpoint (which moves an
+//                               OwnedRegion); SwmrWriter EXCLUDES that.
+//   IsSwmrWriter<T>             Handle-type-shape concept: T (after cv/ref
+//                               strip) walks-and-quacks like a SWMR-writer
+//                               handle (D07 substrate's publish(T const&)
+//                               member-function pattern).
+//
+// Companion traits parallel the reader side, with `published_value_t`
+// replacing `returned_value_t` since writes consume value, not produce:
+//
+//   is_swmr_writer_function_v<auto FnPtr>      bool: FnPtr is a SwmrWriter
+//   swmr_writer_handle_value_t<auto FnPtr>     payload-of-the-handle
+//   swmr_writer_published_value_t<auto FnPtr>  type of param 1 (the value)
+//   swmr_writer_value_consistent_v<auto F>     bool: handle and value agree
+//   is_swmr_writer_v<T>                        bool: T is a SwmrWriter handle
+//   swmr_writer_value_t<T>                     payload of T (ill-formed if not)
+using ::crucible::safety::extract::SwmrWriter;
+using ::crucible::safety::extract::is_swmr_writer_function_v;
+using ::crucible::safety::extract::swmr_writer_handle_value_t;
+using ::crucible::safety::extract::swmr_writer_published_value_t;
+using ::crucible::safety::extract::swmr_writer_value_consistent_v;
+using ::crucible::safety::extract::IsSwmrWriter;
+using ::crucible::safety::extract::is_swmr_writer_v;
+using ::crucible::safety::extract::swmr_writer_value_t;
 
 // OwnedRegion<T, Tag> — arena-backed exclusive region.
 using ::crucible::safety::OwnedRegion;
@@ -929,6 +965,89 @@ static_assert(std::is_same_v<
 static_assert(::crucible::fixy::wrap::swmr_reader_value_consistent_v<
     &fixy_v_035_swmr_witness::read_int>,
     "FIXY-V-035: swmr_reader_value_consistent_v must witness handle/return agreement.");
+
+// FIXY-V-036 — SwmrWriter (function-ptr) + IsSwmrWriter (handle) sentinels.
+// Companion to FIXY-V-035 reader witness; reuses ReaderHandle/WriterHandle
+// from the V-035 namespace and adds writer-side function-pointer fixtures.
+namespace fixy_v_036_swmr_writer_witness {
+// Function whose first parameter is a SWMR-writer-handle rvalue-ref AND
+// whose second parameter is the value-to-publish by value (NOT reference,
+// NOT OwnedRegion) AND whose return is void.
+inline void publish_int(
+    fixy_v_035_swmr_witness::WriterHandle&&, int) noexcept {}
+// Negative: param 0 is not a SWMR writer handle (plain int).
+inline void publish_from_int(int&&, int) noexcept {}
+// Negative: param 1 is by lvalue reference (writer expects by-value).
+inline void publish_by_lvalue_ref(
+    fixy_v_035_swmr_witness::WriterHandle&&, int&) noexcept {}
+// Negative: return is non-void (writer is "publish and forget").
+inline int publish_returns_int(
+    fixy_v_035_swmr_witness::WriterHandle&&, int) noexcept { return 0; }
+}  // namespace fixy_v_036_swmr_writer_witness
+
+// IsSwmrWriter<T> — handle-shape concept: positive + negative.
+static_assert(::crucible::fixy::wrap::IsSwmrWriter<
+    fixy_v_035_swmr_witness::WriterHandle>,
+    "FIXY-V-036: fixy::wrap::IsSwmrWriter must accept a handle with "
+    "void publish(T const&) noexcept.");
+static_assert(!::crucible::fixy::wrap::IsSwmrWriter<
+    fixy_v_035_swmr_witness::ReaderHandle>,
+    "FIXY-V-036: fixy::wrap::IsSwmrWriter must reject a reader handle "
+    "(no publish() — would match IsSwmrReader instead).");
+static_assert(!::crucible::fixy::wrap::IsSwmrWriter<int>,
+    "FIXY-V-036: fixy::wrap::IsSwmrWriter must reject plain int.");
+
+// is_swmr_writer_v<T> — variable-template surface co-tracks the concept.
+static_assert(::crucible::fixy::wrap::is_swmr_writer_v<
+    fixy_v_035_swmr_witness::WriterHandle>,
+    "FIXY-V-036: fixy::wrap::is_swmr_writer_v must agree with IsSwmrWriter.");
+
+// swmr_writer_value_t<T> — payload extraction must propagate.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::swmr_writer_value_t<
+        fixy_v_035_swmr_witness::WriterHandle>,
+    int>,
+    "FIXY-V-036: fixy::wrap::swmr_writer_value_t must alias the handle's "
+    "publish() parameter type.");
+
+// SwmrWriter<auto FnPtr> — function-pointer-shape concept: positive + negatives.
+static_assert(::crucible::fixy::wrap::SwmrWriter<
+    &fixy_v_036_swmr_writer_witness::publish_int>,
+    "FIXY-V-036: fixy::wrap::SwmrWriter must accept a function with "
+    "(WriterHandle&&, T) → void shape.");
+static_assert(!::crucible::fixy::wrap::SwmrWriter<
+    &fixy_v_036_swmr_writer_witness::publish_from_int>,
+    "FIXY-V-036: fixy::wrap::SwmrWriter must reject a function whose "
+    "param 0 is not a SWMR writer handle.");
+static_assert(!::crucible::fixy::wrap::SwmrWriter<
+    &fixy_v_036_swmr_writer_witness::publish_by_lvalue_ref>,
+    "FIXY-V-036: fixy::wrap::SwmrWriter must reject a function whose "
+    "param 1 is by lvalue reference (writer expects by-value).");
+static_assert(!::crucible::fixy::wrap::SwmrWriter<
+    &fixy_v_036_swmr_writer_witness::publish_returns_int>,
+    "FIXY-V-036: fixy::wrap::SwmrWriter must reject a function whose "
+    "return is non-void (writer is publish-and-forget).");
+
+// is_swmr_writer_function_v<auto FnPtr> — variable-template co-tracks.
+static_assert(::crucible::fixy::wrap::is_swmr_writer_function_v<
+    &fixy_v_036_swmr_writer_witness::publish_int>,
+    "FIXY-V-036: fixy::wrap::is_swmr_writer_function_v must agree with SwmrWriter.");
+
+// swmr_writer_handle_value_t / swmr_writer_published_value_t /
+// swmr_writer_value_consistent_v — three extractors gated on SwmrWriter.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::swmr_writer_handle_value_t<
+        &fixy_v_036_swmr_writer_witness::publish_int>,
+    int>,
+    "FIXY-V-036: swmr_writer_handle_value_t must extract handle payload type.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::swmr_writer_published_value_t<
+        &fixy_v_036_swmr_writer_witness::publish_int>,
+    int>,
+    "FIXY-V-036: swmr_writer_published_value_t must extract param 1 value type.");
+static_assert(::crucible::fixy::wrap::swmr_writer_value_consistent_v<
+    &fixy_v_036_swmr_writer_witness::publish_int>,
+    "FIXY-V-036: swmr_writer_value_consistent_v must witness handle/value agreement.");
 static_assert(std::is_same_v<
     ::crucible::fixy::wrap::OwnedRegion<int, WrapStructuralTag>,
     ::crucible::safety::OwnedRegion<int, WrapStructuralTag>>,
