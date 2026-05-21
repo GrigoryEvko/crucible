@@ -606,6 +606,30 @@ static_assert(std::is_same_v<
     "fixy::wrap::MaxBounded<128u, ...> must alias safety::MaxBounded<128u, ...> "
     "— witness propagation through parameter pack at a saturation-counter N.");
 
+// FIXY-U-161 — dual-export sentinels for the §XVI parameterised-alias
+// closure (AlignedTo + WithinRange).  Witness at two cardinalities
+// each to catch a future drift that breaks only one specialisation.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::AlignedTo<64, int*>,
+    ::crucible::safety::AlignedTo<64, int*>>,
+    "fixy::wrap::AlignedTo<64, ...> must alias safety::AlignedTo<64, ...> "
+    "— cache-line-aligned cardinality witness.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::AlignedTo<4096, void*>,
+    ::crucible::safety::AlignedTo<4096, void*>>,
+    "fixy::wrap::AlignedTo<4096, ...> must alias safety::AlignedTo<4096, ...> "
+    "— page-aligned cardinality witness.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::WithinRange<0, 100, int>,
+    ::crucible::safety::WithinRange<0, 100, int>>,
+    "fixy::wrap::WithinRange<0, 100, ...> must alias safety::WithinRange<0, 100, ...> "
+    "— closed-interval cardinality witness.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::WithinRange<-128, 127, std::int8_t>,
+    ::crucible::safety::WithinRange<-128, 127, std::int8_t>>,
+    "fixy::wrap::WithinRange<-128, 127, ...> must alias safety::WithinRange<-128, 127, ...> "
+    "— signed NTTP witness, covers the int8_t representable-range case.");
+
 // SharedPermission — dual-exported in both fixy::wrap:: and fixy::perm::.
 // Both paths MUST resolve to the same substrate type (fixy-A4-011).
 struct WrapDualExportTag {};

@@ -436,6 +436,60 @@ template <typename T> using NonEmptySpan  = Refined<length_ge<std::size_t{1}>, s
 template <std::size_t N, typename T> using MinLength  = Refined<length_ge<N>, T>;
 template <auto Max, typename T>      using MaxBounded = Refined<bounded_above<Max>, T>;
 
+// ── FIXY-U-161 — closing §XVI parameterised-alias surface ───────────
+//
+// Two more parameterised predicate families lacked named aliases
+// before this ship — `aligned<N>` (pointer-alignment) and
+// `in_range<L, H>` (closed-interval value bound).  After this ship,
+// the §XVI "every load-bearing predicate gets a named alias" rule
+// holds for every parameterised predicate in this header.
+//
+//   AlignedTo<N, T>          = Refined<aligned<N>, T>
+//   WithinRange<L, H, T>     = Refined<in_range<L, H>, T>
+//
+// AlignedTo<N, T> uses `aligned<N>` which takes `auto* p` — T MUST be
+// a pointer type (or a type implicitly convertible to a pointer via
+// the lambda's auto* deduction; reference types and value types are
+// rejected at the concept gate).  The body bit_casts p to uintptr_t
+// and tests `(addr & (N-1)) == 0`, so N is implicitly assumed to be a
+// power of two; if N is not a power of two the alias still compiles
+// (the body becomes an arbitrary low-bit mask) — alias-level rejection
+// of non-power-of-two N is out of scope for U-161 and would require
+// adding a separate compile-time gate.  Production callers should pin
+// the alignment to a hardware power-of-two (64 for cache-line, 4096
+// for page, etc.).
+//
+// WithinRange<L, H, T> uses `in_range<L, H>` whose body is
+// `x >= L && x <= H` — closed interval, BOTH endpoints inclusive.
+// T must support comparison against the deduced types of L and H —
+// `operator>=` AND `operator<=` against the NTTPs' deduced types.
+// This is structurally stricter than MaxBounded (single operator<);
+// a struct that has only one half of the ordering interface (say
+// operator<= but not operator>=) compiles for MaxBounded but not for
+// WithinRange.  The neg-compile fixture for this fires at the
+// dual-operator level.
+//
+// Inverted-bound case (L > H): the alias still compiles; the predicate
+// body evaluates to a vacuous-false (no value can be both >= L and
+// <= H when L > H).  Construction-site contract violation fires at
+// runtime instead of compile-time — alias-level rejection of L > H
+// is out of scope (would require a NTTP-level static_assert which
+// belongs at the predicate-struct level not the alias level).
+//
+// Subsort propagation (existing axioms suffice):
+//   * AlignedTo<N> strengthens to AlignedTo<M> via Aligned<N>⇒Aligned<M>
+//     (N ≥ M ∧ N mod M = 0) — cache-line-aligned ⇒ word-aligned, etc.
+//   * WithinRange<L1, H1> strengthens to WithinRange<L2, H2> via
+//     InRange<L1, H1>⇒InRange<L2, H2> (L2 ≤ L1 ∧ H1 ≤ H2).
+//   * WithinRange<L, H> ⇒ MaxBounded<H> via the existing
+//     InRange⇒BoundedAbove specialisation.
+//   * New bridge (added below): WithinRange<L, H> ⇒ NonNegative when
+//     L ≥ 0 — closes the gap from the parameterised in_range surface
+//     to the unparameterised non_negative surface.
+template <std::size_t N, typename T> using AlignedTo   = Refined<aligned<N>, T>;
+template <auto Lo, auto Hi, typename T>
+using WithinRange = Refined<in_range<Lo, Hi>, T>;
+
 // ── Composition with Linear ─────────────────────────────────────────
 //
 // Two orthogonal orderings compose Linear and Refined, and they mean
@@ -656,6 +710,36 @@ struct predicate_implies<
     std::remove_cv_t<decltype(non_empty)>>
     : std::true_type {};
 
+// ── FIXY-U-161 — parameterised ⇒ unparameterised bridge ────────────
+//
+// InRange<L, H> ⇒ non_negative   for L ≥ 0
+//
+// `in_range<L, H>(x)` evaluates to `x >= L && x <= H`.  When L ≥ 0,
+// the lower-bound conjunct gives x ≥ L ≥ 0 → x ≥ 0 → non_negative(x).
+// Bridges the parameterised `in_range<L, H>`-backed alias surface
+// (`WithinRange<L, H, T>` from U-161 below) to the unparameterised
+// `non_negative`-backed `NonNegative<T>` alias through the implication
+// lattice — a `WithinRange<0, 100, int>` structurally strengthens to a
+// `NonNegative<int>` at any session position via SessionPayloadSubsort.
+//
+// L < 0 is INTENTIONALLY excluded by the `requires (L >= 0)` clause:
+// `in_range<-5, 100>(x) = (x >= -5 && x <= 100)` admits negative
+// values down to -5, which is NOT non_negative.  Asserting
+// `in_range<-5, 100> ⇒ non_negative` would be UNSOUND.  The requires-
+// clause is load-bearing soundness, not decoration (mirrors U-159b's
+// `requires (N >= 1)` discipline on the length_ge bridge).
+//
+// auto-NTTP discipline: L is captured by `auto` so its TYPE is
+// preserved per-instantiation.  The `L >= 0` test works for both
+// signed and unsigned NTTPs (unsigned is always ≥ 0; signed is
+// checked at compile time).
+template <auto L, auto H>
+    requires (L >= 0)
+struct predicate_implies<
+    InRange<L, H>,
+    std::remove_cv_t<decltype(non_negative)>>
+    : std::true_type {};
+
 // ── FIXY-U-159b — closure axioms (verify the propagation fires) ────
 //
 // Witness that the new implications are reachable through implies_v
@@ -684,6 +768,29 @@ static_assert(!implies_v<length_ge<0>, non_empty>,
 // each hop directly.
 static_assert(implies_v<length_ge<8>, length_ge<1>>,
     "FIXY-U-159b: length_ge transitivity hop (parameterised pair).");
+
+// ── FIXY-U-161 — closure axioms for in_range ⇒ non_negative bridge ─
+//
+// Witness propagation at L ≥ 0 cardinalities and the soundness gate
+// at L < 0 (must NOT imply non_negative when L is negative).
+static_assert(implies_v<in_range<0, 100>, non_negative>,
+    "FIXY-U-161: in_range<0, 100> ⇒ non_negative (L ≥ 0 lower bound).");
+static_assert(implies_v<in_range<5, 100>, non_negative>,
+    "FIXY-U-161: in_range<5, 100> ⇒ non_negative (positive lower bound).");
+static_assert(implies_v<in_range<0u, 255u>, non_negative>,
+    "FIXY-U-161: unsigned NTTP carries non_negative trivially.");
+static_assert(!implies_v<in_range<-5, 100>, non_negative>,
+    "FIXY-U-161: in_range<-5, 100> admits negative values; "
+    "must NOT imply non_negative (soundness — the L ≥ 0 requires "
+    "clause is load-bearing, not decoration).");
+
+// Transitivity hop into pre-existing axioms: in_range<5, 100> ⇒
+// in_range<0, 200> (via tighter→looser axiom) ⇒ non_negative (via
+// L=0 ≥ 0 bridge).  Direct hop witnessed; transitive chain is fold
+// in SessionPayloadSubsort.
+static_assert(implies_v<in_range<5, 100>, in_range<0, 200>>,
+    "FIXY-U-161: InRange tighter ⇒ looser (precondition for "
+    "transitive chain to non_negative through the L=0 bridge).");
 
 namespace detail::refined_self_test {
 

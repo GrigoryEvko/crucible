@@ -8094,6 +8094,27 @@ crucible_neg_compile_test(neg_refined_maxbounded_alias_rejects_no_lt
 crucible_neg_compile_test(neg_refined_maxbounded_alias_rejects_string_t
   "PredicateInvocableOn|constraint.*not satisfied|no matching|no match for")
 
+# FIXY-U-161 — paired parameterised §XVI alias closure fixtures
+# (AlignedTo + WithinRange).  Four fixtures across four distinct
+# mismatch classes:
+#   * Class P (scalar T offered, pointer required) — AlignedTo<64, int>
+#   * Class R (reference T, also rejects auto* binding) — AlignedTo<64, int&>
+#   * Class C (no ordering at all) — WithinRange<0, 100, NoOrderStruct>
+#   * Class H (half-ordering interface, distinguishing in_range vs
+#             bounded_above) — WithinRange<0, 100, OnlyLeqStruct>
+# AlignedTo fixtures use PredicateInvocableOn concept-gate path (auto*
+# substitution); WithinRange fixtures route through constexpr-
+# expansion of the dual-comparison in_range body (similar to MaxBounded's
+# bounded_above pattern).  Same wide-regex captures both routes.
+crucible_neg_compile_test(neg_refined_alignedto_alias_rejects_scalar_t
+  "PredicateInvocableOn|constraint.*not satisfied|no matching|no match for")
+crucible_neg_compile_test(neg_refined_alignedto_alias_rejects_reference_t
+  "PredicateInvocableOn|constraint.*not satisfied|no matching|no match for")
+crucible_neg_compile_test(neg_refined_withinrange_alias_rejects_no_order
+  "PredicateInvocableOn|constraint.*not satisfied|no matching|no match for")
+crucible_neg_compile_test(neg_refined_withinrange_alias_rejects_half_ordering
+  "PredicateInvocableOn|constraint.*not satisfied|no matching|no match for")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.

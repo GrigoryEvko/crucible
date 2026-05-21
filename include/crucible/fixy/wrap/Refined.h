@@ -50,6 +50,17 @@ using ::crucible::safety::NonEmptySpan;
 //                          (sat-counter pattern, CKernel-2 et al.).
 using ::crucible::safety::MinLength;
 using ::crucible::safety::MaxBounded;
+// FIXY-U-161 — closes the §XVI parameterised-alias surface:
+//   * AlignedTo<N, T>       — Refined<aligned<N>, T>, pointer alignment
+//                             (T must be a pointer type per
+//                             aligned<N>'s `auto* p` parameter).
+//   * WithinRange<L, H, T>  — Refined<in_range<L, H>, T>, closed
+//                             interval bound (both endpoints inclusive).
+//                             Strictly stricter than MaxBounded — T
+//                             must support BOTH operator>= AND <= against
+//                             the deduced NTTP types.
+using ::crucible::safety::AlignedTo;
+using ::crucible::safety::WithinRange;
 // Refined composition with Linear (both orderings).
 using ::crucible::safety::LinearRefined;
 using ::crucible::safety::RefinedLinear;
