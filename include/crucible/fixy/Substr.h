@@ -68,8 +68,10 @@
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>  // FIXY-V-047: substrate-direct work-stealing surface
 #include <crucible/concurrent/PermissionedMpmcChannel.h>    // FIXY-V-046: substrate-direct MPMC surface
 #include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/PermissionedShardedGrid.h>    // FIXY-V-048: substrate-direct sharded-grid surface
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>  // FIXY-V-045: substrate-direct SPSC surface
+#include <crucible/concurrent/ShardedGrid.h>                // FIXY-V-048: Routing policy structs (RoundRobinRouting / HashKeyRouting / AffinityRouting)
 #include <crucible/concurrent/SpscRing.h>                  // FIXY-V-045: SpscValue concept
 #include <crucible/concurrent/Substrate.h>          // FIXY-U-051: ChannelTopology + IsSubstrate family
 #include <crucible/concurrent/SubstrateCtxFit.h>    // FIXY-U-051: ctx-fit concepts + tier metafns
@@ -528,6 +530,75 @@ template <typename Grid>
 concept ShardedGridSessionSurface =
     ::crucible::safety::proto::sharded_grid_session::ShardedGridSessionSurface<Grid>;
 
+// ── FIXY-V-048: substrate-direct surface enrichment ──────────────
+//
+// Mirror of V-045 spsc / V-046 mpmc / V-047 chaselev.
+// PermissionedShardedGrid is the FIFTH cell of the channel-permission
+// family — the linear-grid × linear-grid axis:
+//
+//   M Producer slots — each LINEAR (one Permission per shard I).
+//   N Consumer slots — each LINEAR (one Permission per shard J).
+//
+// All M+N permissions descend from a single Whole<UserTag> root via
+// the FOUND-A22 2D auto-permission-tree (mint_grid_permissions,
+// already surfaced at fixy::perm::mint_grid_permissions).  No Pool —
+// every slot is single-owner.  Each handle is STATICALLY INDEXED at
+// compile time: ProducerHandle<I> knows its shard I at type level
+// and try_push takes no id parameter.
+//
+// Pre-V-048 the sharded_grid:: sub-namespace surfaced only ctx-bound
+// session mints + endpoint mints — callers who wanted to instantiate
+// the substrate or pick a Routing policy had to descend into
+// <crucible/concurrent/PermissionedShardedGrid.h> AND
+// <crucible/concurrent/ShardedGrid.h> directly.  V-048 closes the
+// gap by re-exporting the substrate primitive, its three-tag
+// permission tree, and the three pre-shipped Routing policy structs.
+//
+// Surface (additive, all alias-template / using-decl — pure name
+// lookup, zero runtime cost).  No new mint factories — endpoint and
+// session mints already shipped from sessions/ShardedGridSession.h.
+
+// Substrate alias — full re-export including default UserTag = void
+// and default Routing = RoundRobinRouting.  SpscValue T constraint
+// surfaced for diagnostic clarity (same pattern as V-045 / V-047);
+// callers spell SpscValue via fixy::substr::spsc::SpscValue (already
+// shipped — no duplicate re-export here to avoid namespace pollution).
+template <::crucible::concurrent::SpscValue T,
+          std::size_t M,
+          std::size_t N,
+          std::size_t Capacity,
+          typename UserTag = void,
+          typename Routing = ::crucible::concurrent::RoundRobinRouting>
+using PermissionedShardedGrid =
+    ::crucible::concurrent::PermissionedShardedGrid<
+        T, M, N, Capacity, UserTag, Routing>;
+
+// Routing policy re-exports — three using-decls bump
+// substr_sharded_grid_using cardinality 4 → 7.  ShardedGrid reuses
+// SpscValue from V-045 (no ShardedGridValue exists); the unique
+// V-048-shipped surface is the Routing axis instead.
+using ::crucible::concurrent::RoundRobinRouting;
+using ::crucible::concurrent::HashKeyRouting;
+using ::crucible::concurrent::AffinityRouting;
+
+// grid_tag sub-namespace — Whole<UserTag> permission root + the
+// FOUND-A22 Slice-indexed Producer<UserTag,I> / Consumer<UserTag,J>
+// tag aliases.  Callers spell these out at
+// mint_permission_root + mint_grid_permissions call sites; surfacing
+// them under fixy::substr::sharded_grid::grid_tag::* removes the
+// descend-into-concurrent requirement.
+namespace grid_tag {
+template <typename UserTag>
+using Whole =
+    ::crucible::concurrent::grid_tag::Whole<UserTag>;
+template <typename UserTag, std::size_t I>
+using Producer =
+    ::crucible::concurrent::grid_tag::Producer<UserTag, I>;
+template <typename UserTag, std::size_t J>
+using Consumer =
+    ::crucible::concurrent::grid_tag::Consumer<UserTag, J>;
+}  // namespace grid_tag
+
 // Mint factories.
 using ::crucible::safety::proto::sharded_grid_session::mint_sharded_grid_producer;
 using ::crucible::safety::proto::sharded_grid_session::mint_sharded_grid_consumer;
@@ -790,7 +861,7 @@ using ::crucible::concurrent::SubstrateBenefitsFromParallelism;
 //
 // Drift-catch for the per-substrate sub-namespaces: spsc (3), swmr (6),
 // chaselev (5), metalog (4), chainedge (4), mpmc (5), calendar_grid (4),
-// sharded_calendar_grid (4), sharded_grid (4), snapshot (4), and the
+// sharded_calendar_grid (4), sharded_grid (7), snapshot (4), and the
 // outer-level mint_substrate_session re-export (1).  mpsc:: is NOT a
 // pure re-export — it defines its own mint factories (also covered by
 // dedicated test_fixy_substr_mpsc fixtures) so it doesn't contribute
@@ -803,6 +874,13 @@ using ::crucible::concurrent::SubstrateBenefitsFromParallelism;
 // 4 → 5 (same pattern as V-045 / V-046 — substrate alias template +
 // deque_tag tree alias templates do NOT count toward the cardinality
 // witness; only the concept using-decl does).
+// sharded_grid Routing using-decls added by FIXY-V-048 bumped
+// sharded_grid 4 → 7 (RoundRobinRouting + HashKeyRouting +
+// AffinityRouting — three using-decls).  ShardedGrid reuses SpscValue
+// from V-045 (no ShardedGridValue exists in the substrate) so the
+// cardinality bump goes through the Routing axis instead, which IS
+// V-048-unique.  Substrate alias template + grid_tag tree alias
+// templates do NOT count.
 //
 // Same recipe as fixy/Pipe.h / fixy/Struct.h: type-identity witnesses
 // for representative items + per-sub-namespace cardinality mirrors.
@@ -1038,6 +1116,111 @@ static_assert(std::is_same_v<typename DequeViaFixy::value_type, int>);
 
 }  // namespace v047
 
+// ── FIXY-V-048: Sharded-grid substrate-direct surface witnesses ──
+//
+// Same recipe as v045 / v046 / v047 above.  Pin every V-048 addition:
+// substrate alias identity (parametric M=4, N=3 plus user-supplied
+// UserTag and Routing), three Routing alias-identity witnesses
+// (RoundRobinRouting / HashKeyRouting<KeyFn> / AffinityRouting),
+// tag tree identity (Whole / Producer<I> / Consumer<J> across the
+// FOUND-A22 Slice-indexed templates), member-typedef propagation,
+// num_producers / num_consumers / shard_capacity value-template
+// passthrough, value_type identity, ShardedGridSessionSurface
+// concept admission.  ShardedGrid differs structurally from V-045
+// SPSC in that it is M×N statically-indexed (linear-grid × linear-
+// grid), but the substrate-direct surface witnesses are
+// structurally symmetric.
+
+namespace v048 {
+
+struct V048ProbeUserTag {};
+struct V048ProbeKeyFn {
+    [[nodiscard]] constexpr std::uint64_t operator()(int x) const noexcept {
+        return static_cast<std::uint64_t>(x);
+    }
+};
+
+// 1. Substrate alias identity — fixy path === concurrent path.  Uses
+// default Routing = RoundRobinRouting (omitted from the alias spec).
+using GridViaFixy = ::crucible::fixy::substr::sharded_grid::PermissionedShardedGrid<
+    int, 4, 3, 64, V048ProbeUserTag>;
+using GridViaConcurrent = ::crucible::concurrent::PermissionedShardedGrid<
+    int, 4, 3, 64, V048ProbeUserTag, ::crucible::concurrent::RoundRobinRouting>;
+static_assert(std::is_same_v<GridViaFixy, GridViaConcurrent>,
+    "fixy::substr::sharded_grid::PermissionedShardedGrid must alias the substrate.");
+
+// 1b. Substrate alias identity with explicit non-default Routing.
+using GridAffinityViaFixy = ::crucible::fixy::substr::sharded_grid::PermissionedShardedGrid<
+    int, 4, 3, 64, V048ProbeUserTag,
+    ::crucible::fixy::substr::sharded_grid::AffinityRouting>;
+using GridAffinityViaConcurrent = ::crucible::concurrent::PermissionedShardedGrid<
+    int, 4, 3, 64, V048ProbeUserTag, ::crucible::concurrent::AffinityRouting>;
+static_assert(std::is_same_v<GridAffinityViaFixy, GridAffinityViaConcurrent>);
+
+// 2. Routing policy alias-identity — fixy:: surface re-exports
+// alias the concurrent:: substrate's policy structs by-name.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_grid::RoundRobinRouting,
+    ::crucible::concurrent::RoundRobinRouting>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_grid::HashKeyRouting<V048ProbeKeyFn>,
+    ::crucible::concurrent::HashKeyRouting<V048ProbeKeyFn>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_grid::AffinityRouting,
+    ::crucible::concurrent::AffinityRouting>);
+
+// 3. Tag template identity — Whole / Producer<I> / Consumer<J> alias
+// the substrate's grid_tag tree exactly.  Producer/Consumer are
+// statically indexed via the FOUND-A22 Slice<...> primitive.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_grid::grid_tag::Whole<V048ProbeUserTag>,
+    ::crucible::concurrent::grid_tag::Whole<V048ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_grid::grid_tag::Producer<V048ProbeUserTag, 0>,
+    ::crucible::concurrent::grid_tag::Producer<V048ProbeUserTag, 0>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_grid::grid_tag::Producer<V048ProbeUserTag, 3>,
+    ::crucible::concurrent::grid_tag::Producer<V048ProbeUserTag, 3>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_grid::grid_tag::Consumer<V048ProbeUserTag, 0>,
+    ::crucible::concurrent::grid_tag::Consumer<V048ProbeUserTag, 0>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::sharded_grid::grid_tag::Consumer<V048ProbeUserTag, 2>,
+    ::crucible::concurrent::grid_tag::Consumer<V048ProbeUserTag, 2>>);
+
+// 4. Tag identity propagates through GridViaFixy's member typedefs.
+// ShardedGrid does NOT have producer_tag / consumer_tag as singular
+// scalar typedefs (they are statically-indexed templates accessed via
+// grid_tag::Producer<UserTag, I>).  whole_tag IS a scalar typedef.
+static_assert(std::is_same_v<
+    typename GridViaFixy::whole_tag,
+    ::crucible::fixy::substr::sharded_grid::grid_tag::Whole<V048ProbeUserTag>>);
+static_assert(std::is_same_v<typename GridViaFixy::user_tag,
+                             V048ProbeUserTag>);
+
+// 5. ShardedGridSessionSurface admits the representative grid.  The
+// surface concept is a NOMINAL specialization-trait (admits only
+// PermissionedShardedGrid<...>), and the fixy:: alias resolves
+// exactly to that substrate type, so the trait fires.
+static_assert(
+    ::crucible::fixy::substr::sharded_grid::ShardedGridSessionSurface<GridViaFixy>);
+static_assert(
+    ::crucible::fixy::substr::sharded_grid::ShardedGridSessionSurface<GridAffinityViaFixy>);
+
+// 6. Value-template parity — num_producers / num_consumers /
+// shard_capacity pass through unchanged.
+static_assert(GridViaFixy::num_producers == 4);
+static_assert(GridViaFixy::num_consumers == 3);
+static_assert(GridViaFixy::shard_capacity == 64);
+static_assert(GridViaFixy::num_producers == GridViaConcurrent::num_producers);
+static_assert(GridViaFixy::num_consumers == GridViaConcurrent::num_consumers);
+static_assert(GridViaFixy::shard_capacity == GridViaConcurrent::shard_capacity);
+
+// 7. value_type identity — substrate's T == fixy's T.
+static_assert(std::is_same_v<typename GridViaFixy::value_type, int>);
+
+}  // namespace v048
+
 // ── Per-sub-namespace cardinality witnesses ──────────────────────
 
 constexpr int substr_spsc_using                  = 3;
@@ -1048,7 +1231,7 @@ constexpr int substr_chainedge_using             = 4;
 constexpr int substr_mpmc_using                  = 5;
 constexpr int substr_calendar_grid_using         = 4;
 constexpr int substr_sharded_calendar_grid_using = 4;
-constexpr int substr_sharded_grid_using          = 4;
+constexpr int substr_sharded_grid_using          = 7;
 constexpr int substr_snapshot_using              = 4;
 constexpr int substr_outer_using                 = 1;
 
@@ -1059,8 +1242,8 @@ constexpr int substr_total_using =
     substr_sharded_grid_using + substr_snapshot_using +
     substr_outer_using;
 
-static_assert(substr_total_using == 44,
-    "fixy::substr:: using-decl surface drifted from 44 — Substr.h "
+static_assert(substr_total_using == 47,
+    "fixy::substr:: using-decl surface drifted from 47 — Substr.h "
     "sub-namespace re-exports and this sentinel must update in lockstep.");
 
 // ── FIXY-U-051: topology + ctx-fit concept-surface witnesses ───────
