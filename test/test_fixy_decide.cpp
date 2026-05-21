@@ -55,11 +55,17 @@ static_assert(::crucible::fixy::decide::self_test::same_no_overflow_mul_v,
 static_assert(::crucible::fixy::decide::self_test::same_in_range_v,
     "umbrella reach: fixy::decide::self_test::same_in_range_v must be "
     "reachable through <crucible/Fixy.h>.");
-static_assert(::crucible::fixy::decide::self_test::kFixyDecidePredicateCount == 23,
-    "umbrella reach: predicate count witness must match the per-row "
-    "tally documented in fixy/Decide.h.");
-static_assert(::crucible::fixy::decide::self_test::kFixyDecideTypeCount == 1,
-    "umbrella reach: type-count witness (Interval<T>) must match.");
+// FIXY-U-128 floor witnesses (the EXACT ceiling pins `== 23` / `== 1`
+// live in fixy/Decide.h colocated with the source-of-truth constants;
+// these floors catch accidental REMOVAL of a catalog entry).
+static_assert(::crucible::fixy::decide::self_test::kFixyDecidePredicateCount >= 23,
+    "floor: fixy::decide:: predicate cardinality regressed below 23 — "
+    "a predicate was removed without updating both Decide.h's "
+    "colocated ceiling pin AND this floor witness.");
+static_assert(::crucible::fixy::decide::self_test::kFixyDecideTypeCount >= 1,
+    "floor: fixy::decide:: type cardinality regressed below 1 — "
+    "Interval<T> was removed without updating both Decide.h's "
+    "colocated ceiling pin AND this floor witness.");
 
 // ═════════════════════════════════════════════════════════════════════
 // Runtime smoke — every predicate evaluated with NON-CONSTANT args

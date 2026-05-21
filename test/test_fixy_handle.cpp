@@ -59,12 +59,20 @@ static_assert(std::is_same_v<
     decltype(&fhand::open_write_truncate),
     decltype(&safe::open_write_truncate)>);
 
-// ─── 2. Cardinality witness mirror (drift catches at TU + header) ─
+// ─── 2. Cardinality FLOOR witness mirror ──────────────────────────
+//
+// Per FIXY-U-127 / U-128 floor-vs-ceiling split: the EXACT ceiling
+// pin (`== 13`) lives in fixy/Handle.h colocated with the source-
+// of-truth constant; THIS TU only holds the FLOOR pin (`>= 13`)
+// which catches the inverse direction — an accidental REMOVAL of a
+// fixy::handle:: alias that escaped review.  Growth past 13 is
+// silent here and auto-tracked by the header's `==` ceiling.
 
 static_assert(
-    ::crucible::fixy::handle::self_test::handle_alias_cardinality == 13,
-    "fixy::handle:: cardinality drifted from 13 — Handle.h's sentinel "
-    "block and this TU must update in lockstep.");
+    ::crucible::fixy::handle::self_test::handle_alias_cardinality >= 13,
+    "floor: fixy::handle:: alias cardinality regressed below 13 — "
+    "an alias was removed without updating both Handle.h's colocated "
+    "ceiling pin AND this floor witness.");
 
 // ─── 3. End-to-end RAII through the fixy:: alias ──────────────────
 //

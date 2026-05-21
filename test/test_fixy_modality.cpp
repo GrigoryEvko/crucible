@@ -134,11 +134,18 @@ static_assert( fm::has_grade_only_v<fm::ModalityKind::Relative>);
 static_assert( fm::has_grade_only_v<fm::ModalityKind::Quotient>);
 static_assert( fm::has_grade_only_v<fm::ModalityKind::Coeffect>);
 
-// ─── 8. Cardinality mirrors against in-header sentinel ────────────
+// ─── 8. Cardinality FLOOR mirrors against in-header sentinel ──────
+//
+// Per FIXY-U-127 / U-128 floor-vs-ceiling split: the EXACT ceiling
+// pins (`== 7 / 6 / 3`) live in fixy/Modality.h colocated with the
+// source-of-truth constants; THIS TU only holds the FLOOR pins
+// (`>= K`) which catch the inverse direction — accidental removal
+// of a modality concept/tag/query.  Growth past K is silent here and
+// auto-tracked by the header's `==` ceilings.
 
-static_assert(fm::self_test::u060_concept_cardinality == 7);
-static_assert(fm::self_test::u060_tag_cardinality     == 6);
-static_assert(fm::self_test::u060_query_cardinality   == 3);
+static_assert(fm::self_test::u060_concept_cardinality >= 7);
+static_assert(fm::self_test::u060_tag_cardinality     >= 6);
+static_assert(fm::self_test::u060_query_cardinality   >= 3);
 
 // ─── 9. modality_name diagnostic reach ────────────────────────────
 

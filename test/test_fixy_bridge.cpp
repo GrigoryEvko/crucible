@@ -154,11 +154,18 @@ using TestCanonicalEvent = fb::crash_event_for_t<
 static_assert(fb::crash_event_matches_survivors<TestCanonicalEvent>::value);
 static_assert(fb::crash_event_matches_survivors_v<TestCanonicalEvent>);
 
-// Cardinality mirror — must match Bridge.h sentinel's crash_event_surface_cardinality.
+// Cardinality FLOOR mirror — per FIXY-U-127 / U-128 floor-vs-ceiling
+// split: the EXACT ceiling pin (`== 6`) lives in fixy/Bridge.h
+// colocated with the source-of-truth constant; THIS TU only holds
+// the FLOOR pin (`>= 6`) which catches the inverse direction — an
+// accidental REMOVAL of a crash-event surface entry that escaped
+// review.  Growth past 6 is silent here and auto-tracked by the
+// header's `==` ceiling.
 static_assert(
-    ::crucible::fixy::bridge::self_test::crash_event_surface_cardinality == 6,
-    "fixy::bridge:: crash-event surface cardinality drifted from 6 — "
-    "Bridge.h sentinel block and this TU must update in lockstep.");
+    ::crucible::fixy::bridge::self_test::crash_event_surface_cardinality >= 6,
+    "floor: fixy::bridge:: crash-event surface cardinality regressed "
+    "below 6 — an entry was removed without updating both Bridge.h's "
+    "colocated ceiling pin AND this floor witness.");
 
 int main() {
     // The substrate's own tests exercise the wrap round-trip.  This

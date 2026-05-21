@@ -92,11 +92,18 @@ static_assert(fr::F002_OK<TestProbe>);
 
 static_assert(fr::AllRulesOK<TestProbe>);
 
-// ─── 5. Cardinality mirror — must match in-header sentinel ────────
+// ─── 5. Cardinality FLOOR mirror — per FIXY-U-127 / U-128 ─────────
+//
+// The EXACT ceiling pin (`== 28`) lives in fixy/Rules.h colocated
+// with the source-of-truth constant; THIS TU only holds the FLOOR
+// pin (`>= 28`) which catches the inverse direction — an accidental
+// REMOVAL of a U-062 surface entry.  Growth past 28 is silent here
+// and auto-tracked by the header's `==` ceiling.
 
-static_assert(fr::u062_self_test::u062_surface_cardinality == 28,
-    "fixy::rule:: U-062 surface cardinality drifted from 28 — "
-    "Rules.h and this TU must update in lockstep.");
+static_assert(fr::u062_self_test::u062_surface_cardinality >= 28,
+    "floor: fixy::rule:: U-062 surface cardinality regressed below "
+    "28 — an entry was removed without updating both Rules.h's "
+    "colocated ceiling pin AND this floor witness.");
 
 int main() {
     // Compile-time-only sentinel; no runtime witness needed.

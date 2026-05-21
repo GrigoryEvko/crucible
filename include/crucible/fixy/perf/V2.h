@@ -189,11 +189,25 @@ static_assert(!::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<
 // ─── Cardinality witness ─────────────────────────────────────────
 //
 // Exactly one v2 mint factory surfaces through `fixy::perf::v2::`:
-// `mint_sense_hub_v2`.  Adding a second v2 mint must touch BOTH this
-// constant AND `static_assert(v2_mint_cardinality == 1)` in
-// test_fixy_perf_v2.cpp; otherwise CI reds.
+// `mint_sense_hub_v2`.
+//
+// FIXY-U-127 / U-128 floor-vs-ceiling split (per U-124 catalog
+// cardinality drift family, feedback_catalog_cardinality_test_drift):
+// the EXACT ceiling pin (`== 1`) lives HERE, colocated with the
+// source-of-truth constant, so any contributor adding a second v2
+// mint cannot miss the sibling assertion at edit time.  The sibling
+// test_fixy_perf_v2.cpp holds only a FLOOR pin (`>= 1`) which catches
+// the inverse direction — an accidental REMOVAL of mint_sense_hub_v2
+// that escaped review.
 
 inline constexpr int v2_mint_cardinality = 1;
+
+static_assert(v2_mint_cardinality == 1,
+    "ceiling: fixy::perf::v2:: re-exports exactly 1 v2 mint factory "
+    "— mint_sense_hub_v2.  If you add or remove a v2 mint, update "
+    "BOTH the constant AND this colocated ceiling pin in the same "
+    "edit.  The sibling test_fixy_perf_v2.cpp holds only a >= floor "
+    "and auto-tracks growth — see feedback_catalog_cardinality_test_drift.");
 
 }  // namespace crucible::fixy::perf::v2::self_test
 

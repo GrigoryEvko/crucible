@@ -295,6 +295,21 @@ static_assert(same_is_non_zero_v,
 // the count below AND add/remove the using-decl above AND add/remove
 // the corresponding same_*_v witness.  Cross-axis change forces
 // reviewer acknowledgement.
+//
+// Two complementary assertions follow the constants:
+//
+// (1) Health-band `[20, 30]` — design-intent floor + ceiling.  If the
+//     count falls below 20, the catalog has lost coverage; if it
+//     exceeds 30, the catalog has likely accumulated unused entries
+//     and should be audited under CONTRACT-126 trim discipline.
+//
+// (2) FIXY-U-127 / U-128 colocated EXACT ceiling pin (`== 23`, `== 1`)
+//     — drift-family discipline per feedback_catalog_cardinality_
+//     test_drift.  The contributor bumping the constants sees the
+//     sibling assertions at edit time.  The sibling test_fixy_decide.
+//     cpp holds only FLOOR pins (`>= 23`, `>= 1`) which catch the
+//     inverse direction — an accidental REMOVAL of a catalog entry
+//     that escaped review.
 
 inline constexpr int kFixyDecidePredicateCount = 23;
 inline constexpr int kFixyDecideTypeCount      = 1;   // Interval
@@ -303,6 +318,18 @@ static_assert(kFixyDecidePredicateCount >= 20 &&
               kFixyDecidePredicateCount <= 30,
     "fixy::decide predicate catalog drift outside expected window — "
     "audit the using-decl rows above against catalog additions/removals.");
+
+static_assert(kFixyDecidePredicateCount == 23,
+    "ceiling: fixy::decide:: re-exports exactly 23 predicates.  If "
+    "you add or remove a predicate, update BOTH the constant AND "
+    "this colocated ceiling pin in the same edit.  The sibling "
+    "test_fixy_decide.cpp holds only a >= floor and auto-tracks "
+    "growth — see feedback_catalog_cardinality_test_drift.");
+
+static_assert(kFixyDecideTypeCount == 1,
+    "ceiling: fixy::decide:: re-exports exactly 1 type (Interval<T>).  "
+    "If you add a second decide type, update BOTH the constant AND "
+    "this colocated ceiling pin in the same edit.");
 
 }  // namespace crucible::fixy::decide::self_test
 

@@ -73,14 +73,17 @@ static_assert(!fpv2::CtxFitsSenseHubV2Mint<eff::HotFgCtx>);
 
 // ─── 4. Cardinality witness ───────────────────────────────────────
 //
-// Locks the V2.h sentinel's stated mint cardinality against drift.
-// Adding a second V2 mint must touch BOTH fixy/perf/V2.h's
-// `v2_mint_cardinality` constant AND this TU's expected value;
-// otherwise CI reds.
+// Per FIXY-U-127 / U-128 floor-vs-ceiling split: the EXACT ceiling
+// pin (`== 1`) lives in fixy/perf/V2.h colocated with the source-of-
+// truth constant; THIS TU only holds the FLOOR pin (`>= 1`) which
+// catches the inverse direction — an accidental REMOVAL of
+// mint_sense_hub_v2.  Growth past 1 is silent here and auto-tracked
+// by the header's `==` ceiling.
 
-static_assert(::crucible::fixy::perf::v2::self_test::v2_mint_cardinality == 1,
-    "fixy::perf::v2:: mint cardinality drifted from 1 — fixy/perf/V2.h "
-    "sentinel block and this TU must update in lockstep.");
+static_assert(::crucible::fixy::perf::v2::self_test::v2_mint_cardinality >= 1,
+    "floor: fixy::perf::v2:: mint cardinality regressed below 1 — "
+    "mint_sense_hub_v2 was removed without updating both V2.h's "
+    "colocated ceiling pin AND this floor witness.");
 
 int main() {
     // No runtime bpf() invocation under CI sandbox — the smoke is
