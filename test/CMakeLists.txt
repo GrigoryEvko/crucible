@@ -209,6 +209,7 @@ crucible_test(test_fixy_pipe_chain)  # FIXY-AUDIT-C2
 crucible_test(test_fixy_bridge)
 crucible_test(test_fixy_warden)  # FIXY-U-120 — fixy::warden:: re-export reach
 crucible_test(test_fixy_perf)    # FIXY-U-121 — fixy::perf:: re-export reach
+crucible_test(test_fixy_perf_v2) # FIXY-U-122 — fixy::perf::v2:: sub-umbrella reach
 crucible_test(test_fixy_substr)
 crucible_test(test_fixy_mach_safety)
 crucible_test(test_fixy_mach_transitions)  # FIXY-AUDIT-C1
@@ -2203,6 +2204,17 @@ crucible_neg_compile_fixy_test(neg_fixy_perf_workload_profiler_bg_ctx
     "no matching function|mint_workload_profiler|CtxFitsWorkloadProfilerMint|Init|row_contains|constraints not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_perf_workload_profiler_not_exec_ctx
     "no matching function|mint_workload_profiler|CtxFitsWorkloadProfilerMint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
+
+# FIXY-U-122 — `fixy::perf::v2::mint_sense_hub_v2` HS14 floor (2
+# fixtures, BgDrainCtx + NotAnExecCtx) routed through the sibling
+# sub-umbrella `<crucible/fixy/perf/V2.h>`.  Closes the final
+# `[✗ NO-FIXY]` entry in mint-inventory.md by surfacing the V2 mint
+# under fixy:: without violating the V1/V2 alternative-build
+# contract.
+crucible_neg_compile_fixy_test(neg_fixy_perf_v2_sense_hub_v2_bg_ctx
+    "no matching function|mint_sense_hub_v2|CtxFitsSenseHubV2Mint|Init|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_v2_sense_hub_v2_not_exec_ctx
+    "no matching function|mint_sense_hub_v2|CtxFitsSenseHubV2Mint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
 
 # fixy-HS14-06 — per-role federation mints HS14 floor (≥2 fixtures
 # each across mint_sender / mint_receiver / mint_coord, all via the

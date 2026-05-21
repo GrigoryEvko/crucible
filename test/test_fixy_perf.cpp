@@ -3,8 +3,11 @@
 // FIXY-U-121.  Pulls fixy/Perf.h into a TU compiled under project
 // warning flags so the header's static_asserts (sentinel + concept
 // resolution + cardinality witness) execute.  Witnesses (8 surfaced
-// V1 perf mints — `mint_sense_hub_v2` is deferred to a future
-// `fixy::perf::v2::` umbrella per Perf.h's top-of-file rationale):
+// V1 perf mints — `mint_sense_hub_v2` ships under
+// `fixy::perf::v2::` via the sibling sub-umbrella
+// `<crucible/fixy/perf/V2.h>` per FIXY-U-122, covered by its own
+// sentinel TU `test_fixy_perf_v2.cpp`; the two umbrellas CANNOT
+// be co-included in one TU — see Perf.h's top-of-file rationale):
 //
 //   1. fixy::perf::mint_lock_contention      aliases substrate.
 //   2. fixy::perf::mint_pmu_sample           aliases substrate.
@@ -22,8 +25,9 @@
 //   10. CtxFitsXMint concepts admit ColdInitCtx and reject both
 //       BgDrainCtx (wrong row) and HotFgCtx (empty row).
 //   11. Cardinality witness — `fixy::perf::` surfaces exactly 8 V1
-//       perf mints; ninth substrate mint (mint_sense_hub_v2) reserved
-//       for a future `fixy::perf::v2::` umbrella.
+//       perf mints; the ninth substrate mint (`mint_sense_hub_v2`)
+//       ships through the sibling `fixy::perf::v2::` umbrella
+//       (FIXY-U-122).
 //
 // Per CLAUDE.md §XXI the using-decl is name-lookup-only: each fixy::
 // re-export must resolve to the SAME substrate function-template

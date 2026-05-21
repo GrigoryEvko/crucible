@@ -7,17 +7,22 @@
 // fixy umbrella do not have to descend into the perf/ tree to mint
 // cold-init observation hubs.
 //
-// The V2-hub mint factory is DELIBERATELY OMITTED.  SenseHub v1 and
-// v2 were authored as alternative-build implementations sharing
-// `crucible::perf::` namespace identifiers (`Idx`, `NUM_COUNTERS`,
-// originally `CoverageReport` — renamed to `LoadReport` per
-// FIXY-U-121a).  Co-including both headers in one TU surfaces three
-// ODR / unscoped-vs-scoped enum / different-enumerator-value
-// collisions; the CMake toggle `CRUCIBLE_SENSE_HUB_V2` confirms the
-// design intent (opt-in replacement, not co-shipped second hub).
-// `fixy::perf::v2::` will surface the V2 mint once the substrate
-// resolves the V2/V1 namespace split; until then, callers who need
-// V2 include `<crucible/perf/SenseHubV2.h>` directly.
+// The V2-hub mint factory is DELIBERATELY OMITTED from THIS umbrella.
+// SenseHub v1 and v2 were authored as alternative-build implementations
+// sharing `crucible::perf::` namespace identifiers (`Idx`,
+// `NUM_COUNTERS`, originally `CoverageReport` — renamed to
+// `LoadReport` per FIXY-U-121a).  Co-including both headers in one TU
+// surfaces three ODR / unscoped-vs-scoped enum / different-enumerator-
+// value collisions; the CMake toggle `CRUCIBLE_SENSE_HUB_V2` confirms
+// the design intent (opt-in replacement, not co-shipped second hub).
+//
+// FIXY-U-122 ships the V2 surface under `fixy::perf::v2::` via a
+// standalone sub-umbrella `<crucible/fixy/perf/V2.h>` that respects
+// the same alternative-build contract: callers include EITHER
+// `<crucible/fixy/Perf.h>` (V1 hubs, this umbrella) OR
+// `<crucible/fixy/perf/V2.h>` (V2 hub) in any one TU — NEVER both.
+// The two-umbrella shape preserves the `fixy::` re-export
+// chokepoint while keeping the V1/V2 namespace collision contained.
 //
 // Per CLAUDE.md §XXI Universal Mint Pattern, each re-export preserves
 // the substrate's CtxFitsXMint concept gate (Init-row admission), the
@@ -39,8 +44,9 @@
 //   perf::mint_workload_profiler(ctx, senses, init[, cfg])
 //                                                — WorkloadProfiler.h
 //
-// DEFERRED (alternative-build header — see top-of-file rationale):
-//   the V2-hub mint factory in SenseHubV2.h
+// CO-SHIPPED in `<crucible/fixy/perf/V2.h>` (alternative-build sub-
+// umbrella — FIXY-U-122, see top-of-file rationale):
+//   perf::mint_sense_hub_v2(ctx, init)           — SenseHubV2.h
 //
 // ── Why every mint is Init-row gated ──────────────────────────────
 //
@@ -353,12 +359,12 @@ static_assert(!::crucible::fixy::perf::CtxFitsWorkloadProfilerMint<
 
 // ─── Cardinality witness ─────────────────────────────────────────
 //
-// Eight V1 mint factories surface through `fixy::perf::`.  A ninth
-// substrate mint (the V2-hub factory) exists but is deferred to a
-// future `fixy::perf::v2::` umbrella once V1/V2 substrate identifier
-// collisions are resolved — see the top-of-file SenseHubV2 deferral
-// rationale.  Adding a tenth perf mint OR landing the V2 umbrella
-// must touch BOTH this constant AND
+// Eight V1 mint factories surface through `fixy::perf::`.  The ninth
+// substrate mint (V2 hub) surfaces under `fixy::perf::v2::` via the
+// sibling sub-umbrella `<crucible/fixy/perf/V2.h>` (FIXY-U-122) which
+// CANNOT be co-included with this header (V1/V2 substrate identifier
+// collision — see the top-of-file alternative-build rationale).
+// Adding a ninth V1 perf mint must touch BOTH this constant AND
 // `static_assert(perf_mint_cardinality == 8)` in test_fixy_perf.cpp;
 // otherwise CI reds.
 
