@@ -584,13 +584,19 @@ static_assert(retag_policy<trust::Tested, trust::Verified>::allowed,
 static_assert(retag_policy<trust::Assumed, trust::Verified>::allowed,
     "trust::Assumed → trust::Verified must be admitted");
 
-// trust:: inverse rejected — verification strip is NEVER safe
+// trust:: inverse rejected — verification strip is NEVER safe.
+// Pair each forward specialization with its inverse witness so a
+// future reviewer adding "by symmetry" cannot accidentally admit a
+// downgrade direction.
 static_assert(!retag_policy<trust::Verified, trust::Unverified>::allowed,
     "trust::Verified → trust::Unverified would erase the proof");
 static_assert(!retag_policy<trust::Verified, trust::Tested>::allowed,
     "trust:: catalog is one-way; Verified → Tested is a downgrade");
 static_assert(!retag_policy<trust::Tested, trust::Unverified>::allowed,
     "trust::Tested → trust::Unverified would erase test coverage");
+static_assert(!retag_policy<trust::Verified, trust::Assumed>::allowed,
+    "trust::Verified → trust::Assumed would downgrade discharged proof "
+    "back to a mere assumption");
 
 // source:: positives — catalog admits forward laundering
 static_assert(retag_policy<source::External, source::Sanitized>::allowed,
@@ -604,13 +610,22 @@ static_assert(retag_policy<source::FromUser, source::Sanitized>::allowed,
 static_assert(retag_policy<source::Recorded, source::Loaded>::allowed,
     "source::Recorded → source::Loaded must be admitted");
 
-// source:: inverse rejected — taint cannot be reintroduced
+// source:: inverse rejected — taint cannot be reintroduced.
+// One inverse witness per forward cell above so the 1:1 matrix is
+// complete (a missing inverse-reject is the easier oversight when
+// adding a forward specialization "by symmetry").
 static_assert(!retag_policy<source::Sanitized, source::External>::allowed,
     "source::Sanitized → source::External would reintroduce taint");
 static_assert(!retag_policy<source::IntegrityVerified, source::External>::allowed,
     "source::IntegrityVerified → source::External would erase integrity");
 static_assert(!retag_policy<source::Loaded, source::Recorded>::allowed,
     "source::Loaded → source::Recorded would unwind admitted state");
+static_assert(!retag_policy<source::IntegrityVerified, source::Sanitized>::allowed,
+    "source::IntegrityVerified → source::Sanitized would erase the "
+    "additional integrity-check guarantee, downgrading to merely sanitized");
+static_assert(!retag_policy<source::Sanitized, source::FromUser>::allowed,
+    "source::Sanitized → source::FromUser would re-introduce taint by "
+    "regressing a validated value to raw user-supplied provenance");
 
 // vessel_trust:: positive + inverse
 static_assert(retag_policy<vessel_trust::FromPytorch, vessel_trust::Validated>::allowed,
