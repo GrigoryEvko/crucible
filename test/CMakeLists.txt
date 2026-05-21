@@ -7810,6 +7810,16 @@ crucible_neg_compile_test(neg_atomicmonotonic_pinned_copy_rejected
 crucible_neg_compile_test(neg_atomicmonotonic_non_trivially_copyable
   "constraints not satisfied|is_trivially_copyable.*not.*satisfied|AtomicMonotonic.*constraints|no type named")
 
+# [FIXY-U-148] safety::BoundedMonotonic<T, Max> HS14 floor —
+# bumps BoundedMonotonic from 1 → 2 fixtures.  Existing Class M
+# (neg_pre_macro_bounded_monotonic_bump_at_max) pins the bound-
+# invariant CRUCIBLE_PRE inside bump(); this Class T fixture pins
+# the load-bearing role of Max as part of type identity (cross-Max
+# overload-resolution rejection).  Closes the BoundedMonotonic
+# slice of #146 A8-P2.
+crucible_neg_compile_test(neg_boundedmonotonic_cross_max_mismatch
+  "invalid initialization of reference.*BoundedMonotonic|cannot convert.*BoundedMonotonic|no matching function.*consume_capacity_8|could not convert.*BoundedMonotonic")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
