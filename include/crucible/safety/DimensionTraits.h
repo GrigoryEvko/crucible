@@ -118,6 +118,7 @@
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
+#include <crucible/safety/Witness.h>
 
 #include <concepts>
 #include <cstdint>
@@ -526,6 +527,16 @@ template <Consistency_v Level, typename T>
 struct wrapper_dimension<Consistency<Level, T>>
     : std::integral_constant<DimensionAxis, DimensionAxis::Version> {};
 
+// FIXY-V-054 — Witness<Tier, T> occupies the Observability axis.
+// Witness encodes epistemic confidence (UNWITNESSED ⊑ TYPE_CHECKED ⊑
+// TEST_PASSED ⊑ FORMALLY_VERIFIED) — i.e. the OBSERVABLE strength of
+// evidence the producer had for the value's invariant.  The
+// Observability axis was previously unoccupied (FX dim 11); Witness
+// is its canonical inhabitant.  Tier-S (Semiring) per tier_of_axis.
+template <Witness_v Tier, typename T>
+struct wrapper_dimension<Witness<Tier, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Observability> {};
+
 template <Lifetime_v Scope, typename T>
 struct wrapper_dimension<OpaqueLifetime<Scope, T>>
     : std::integral_constant<DimensionAxis, DimensionAxis::Lifetime> {};
@@ -845,6 +856,7 @@ using WBudgeted        = Budgeted<int>;
 using WEpochVersioned  = EpochVersioned<int>;
 using WNumaPlacement   = NumaPlacement<int>;
 using WRecipeSpec      = RecipeSpec<int>;
+using WWitness         = Witness<Witness_v::FORMALLY_VERIFIED, int>;
 
 static_assert(wrapper_tier_v<WLinear>         == TierKind::Semiring);
 static_assert(wrapper_tier_v<WRefined>        == TierKind::Foundational);
@@ -879,6 +891,11 @@ static_assert(verify_quadruple<WBudgeted>());
 static_assert(verify_quadruple<WEpochVersioned>());
 static_assert(verify_quadruple<WNumaPlacement>());
 static_assert(verify_quadruple<WRecipeSpec>());
+static_assert(verify_quadruple<WWitness>());
+
+// FIXY-V-054 — Witness pins Observability + Tier-S (Semiring).
+static_assert(wrapper_dimension_v<WWitness> == DimensionAxis::Observability);
+static_assert(wrapper_tier_v<WWitness>      == TierKind::Semiring);
 
 }  // namespace detail::dimension_traits_self_test
 

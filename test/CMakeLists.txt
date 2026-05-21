@@ -5707,6 +5707,22 @@ crucible_neg_compile_test(neg_consistency_cross_level_swap
 crucible_neg_compile_test(neg_consistency_cross_level_equality
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FIXY-V-054 Witness wrapper neg-compiles (2 fixtures, HS14 floor) ───
+#
+# Two-fixture HS14 floor for the Witness<Tier, T> mint pattern.  Per
+# CLAUDE.md §XXI: every mint factory's requires-clause is the SINGLE
+# load-bearing soundness check, and a requires-clause without a
+# witness that it fires is just a comment.  These two fixtures pin
+# rejection across two distinct mismatch classes:
+#   1. relax-to-stronger — substrate tier-subsumption violation.
+#      Catches refactors that loosen relax<>()'s requires-clause.
+#   2. mint-wrong-arg     — substrate constructibility gate.  Catches
+#      refactors that loosen mint_witness's requires-clause.
+crucible_neg_compile_test(neg_witness_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_witness_mint_wrong_arg
+  "constraints not satisfied|no matching function|associated constraints|cannot convert")
+
 # ─── FOUND-G11 OpaqueLifetime wrapper neg-compiles (4 fixtures) ─────
 #
 # Mirror of the NumericalTier and Consistency neg-compile suites for

@@ -80,6 +80,7 @@
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Wait.h>
+#include <crucible/safety/Witness.h>
 #include <crucible/safety/Workload.h>
 
 #include <cstdio>
@@ -243,6 +244,7 @@ using WWait = cs::Wait<cs::WaitStrategy_v::SpinPause, int>;
 using WMemOrder = cs::MemOrder<cs::MemOrderTag_v::SeqCst, int>;
 using WProgress = cs::Progress<cs::ProgressClass_v::Bounded, int>;
 using WConsistency = cs::Consistency<cs::Consistency_v::STRONG, int>;
+using WWitness = cs::Witness<cs::Witness_v::FORMALLY_VERIFIED, int>;
 using WOpaqueLifetime = cs::OpaqueLifetime<cs::Lifetime_v::PER_REQUEST, int>;
 using WCrash = cs::Crash<cs::CrashClass_v::NoThrow, int>;
 using WBudgeted = cs::Budgeted<int>;
@@ -276,6 +278,7 @@ static_assert(cs::verify_quadruple<WWait>());
 static_assert(cs::verify_quadruple<WMemOrder>());
 static_assert(cs::verify_quadruple<WProgress>());
 static_assert(cs::verify_quadruple<WConsistency>());
+static_assert(cs::verify_quadruple<WWitness>());
 static_assert(cs::verify_quadruple<WOpaqueLifetime>());
 static_assert(cs::verify_quadruple<WCrash>());
 static_assert(cs::verify_quadruple<WBudgeted>());
@@ -439,6 +442,10 @@ void test_cipher_tier_compile()     {
     ::crucible::safety::detail::cipher_tier_self_test::runtime_smoke_test();
 }
 void test_constant_time_compile()   {}
+void test_witness_compile() {
+    ::crucible::safety::detail::witness_self_test::runtime_smoke_test();
+}
+
 void test_consistency_compile()     {
     ::crucible::safety::detail::consistency_self_test::runtime_smoke_test();
 }
@@ -532,6 +539,7 @@ int main() {
     run_test("test_cipher_tier_compile",     test_cipher_tier_compile);
     run_test("test_constant_time_compile",   test_constant_time_compile);
     run_test("test_consistency_compile",     test_consistency_compile);
+    run_test("test_witness_compile",         test_witness_compile);
     run_test("test_crash_compile",           test_crash_compile);
     run_test("test_det_safe_compile",        test_det_safe_compile);
     run_test("test_dimension_traits_compile", test_dimension_traits_compile);
