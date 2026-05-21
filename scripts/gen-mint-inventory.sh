@@ -116,6 +116,25 @@ scan_substrate() {
             # positive drop — the third phantom class after the U-110
             # word-boundary fix (substring phantoms) closed the first two.
             *'= default'*|*'=default'*|*'= delete'*|*'=delete'*) continue ;;
+            # FIXY-U-118: string-literal continuation.  A multi-line
+            # static_assert diagnostic message naming a mint factory
+            # (e.g. `"mint_persisted_session(ctx, ...) requires ..."`)
+            # produces continuation lines whose stripped form starts
+            # with a quote.  These are NEVER declaration sites — they
+            # are documentation text inside a string literal that the
+            # mint_* token happens to appear in.  Surveyed 13 such
+            # matches across permissions/Permission.h, permissions/
+            # FederationPermission.h, bridges/SessionPersistence.h —
+            # all 13 start with `"` after leading whitespace.  A
+            # standalone match on Cipher.h's `mint_open_view()` member
+            # function previously lost out to bridges/SessionPersistence.h's
+            # diagnostic-string mention because the scanner picked the
+            # first file-order match; with this skip the diagnostic-string
+            # match never enters dedup, so the member-function site wins
+            # canonically (or, when no real declaration exists, the name
+            # drops from inventory entirely — the desired outcome for
+            # phantom-only matches).
+            '"'*) continue ;;
         esac
 
         # Extract mint name from the matched line.  awk avoids head -1 +
