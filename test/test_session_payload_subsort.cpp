@@ -360,6 +360,16 @@ static_assert(!is_subtype_sync_v<Send<Refined<aligned<8>, void*>, End>,
 static_assert(!is_subtype_sync_v<Send<Refined<aligned<8>, void*>, End>,
                                  Send<Refined<aligned<3>, void*>, End>>);
 
+// Recv contravariance — direction reverses: a Recv expecting tighter
+// alignment is satisfied by a Recv accepting looser alignment (the
+// recipient demands MORE alignment than peer can supply ⇒ unsound),
+// but a Recv expecting looser is satisfied by Recv pinned to tighter
+// (recipient demands LESS than peer supplies ⇒ sound, contravariance).
+static_assert( is_subtype_sync_v<Recv<Refined<aligned<16>, void*>, End>,
+                                 Recv<Refined<aligned<64>, void*>, End>>);
+static_assert(!is_subtype_sync_v<Recv<Refined<aligned<64>, void*>, End>,
+                                 Recv<Refined<aligned<16>, void*>, End>>);
+
 // ── Runtime scenario: Vessel-FFI flow ──────────────────────────────
 
 // Mock dispatch request — the kind of value that arrives at the FFI
