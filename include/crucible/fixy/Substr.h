@@ -63,6 +63,8 @@
 //
 // Zero.  using-declarations are pure name-lookup directives.
 
+#include <crucible/concurrent/MpmcRing.h>                   // FIXY-V-046: MpmcValue concept
+#include <crucible/concurrent/PermissionedMpmcChannel.h>    // FIXY-V-046: substrate-direct MPMC surface
 #include <crucible/concurrent/PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>  // FIXY-V-045: substrate-direct SPSC surface
@@ -353,6 +355,39 @@ using ConsumerProto =
 template <typename Channel>
 concept MpmcChannelSessionSurface =
     ::crucible::safety::proto::mpmc_channel_session::MpmcChannelSessionSurface<Channel>;
+
+// ── FIXY-V-046: substrate-direct surface enrichment ──────────────
+//
+// Mirror of V-045's spsc:: surface treatment.  PermissionedMpmcChannel
+// is THE worked MPMC example in the CSL/separation-logic stack:
+// fractional Producer × fractional Consumer permissions, refcounted
+// SharedPermissionPool on each side, optional<Handle> return from
+// producer()/consumer() factories (multi-party contention can fail
+// when the pool is exhausted).  The four additions below pull the
+// substrate-side type/concept identity into fixy::substr::mpmc::
+// alongside the already-shipped session mints.
+
+// Substrate alias — PermissionedMpmcChannel<T, Cap, UserTag>.  Class
+// templates surface via alias-template, not a using-declaration; this
+// does not bump substr_mpmc_using.
+template <typename T, std::size_t Capacity, typename UserTag = void>
+using PermissionedMpmcChannel =
+    ::crucible::concurrent::PermissionedMpmcChannel<T, Capacity, UserTag>;
+
+// MpmcValue concept re-export (bumps substr_mpmc_using cardinality 4 → 5).
+using ::crucible::concurrent::MpmcValue;
+
+// Tag tree — fractional × fractional Whole/Producer/Consumer.
+// mpmc_tag is a nested namespace; alias templates do not count as
+// using-declarations toward substr_mpmc_using.
+namespace mpmc_tag {
+template <typename UserTag>
+using Whole = ::crucible::concurrent::mpmc_tag::Whole<UserTag>;
+template <typename UserTag>
+using Producer = ::crucible::concurrent::mpmc_tag::Producer<UserTag>;
+template <typename UserTag>
+using Consumer = ::crucible::concurrent::mpmc_tag::Consumer<UserTag>;
+}  // namespace mpmc_tag
 
 // Mint factories.
 using ::crucible::safety::proto::mpmc_channel_session::mint_mpmc_producer_endpoint;
@@ -700,6 +735,9 @@ using ::crucible::concurrent::SubstrateBenefitsFromParallelism;
 // dedicated test_fixy_substr_mpsc fixtures) so it doesn't contribute
 // to the using-decl cardinality.  spsc::SpscValue using-decl added by
 // FIXY-V-045 (substrate-direct surface enrichment) bumped spsc 2 → 3.
+// mpmc::MpmcValue using-decl added by FIXY-V-046 bumped mpmc 4 → 5
+// (substrate alias template + tag tree alias templates do NOT count
+// — only the MpmcValue using-decl bumps the cardinality witness).
 //
 // Same recipe as fixy/Pipe.h / fixy/Struct.h: type-identity witnesses
 // for representative items + per-sub-namespace cardinality mirrors.
@@ -802,6 +840,71 @@ static_assert(std::is_same_v<typename SpscViaFixy::value_type, int>);
 
 }  // namespace v045
 
+// ── FIXY-V-046: MPMC substrate-direct surface witnesses ──────────
+//
+// Same recipe as v045:: above.  Pin every V-046 addition: substrate
+// alias identity, MpmcValue concept admission parity, tag tree
+// identity, member-typedef propagation, channel_capacity passthrough,
+// value_type identity, surface concept admission.  MPMC differs from
+// SPSC in fractional × fractional permission shape (refcounted Pool
+// on both sides), but the surface witnesses are structurally
+// symmetric.
+
+namespace v046 {
+
+struct V046ProbeUserTag {};
+
+// 1. Substrate alias identity — fixy path === concurrent path.
+using MpmcViaFixy = ::crucible::fixy::substr::mpmc::PermissionedMpmcChannel<
+    int, 64, V046ProbeUserTag>;
+using MpmcViaConcurrent = ::crucible::concurrent::PermissionedMpmcChannel<
+    int, 64, V046ProbeUserTag>;
+static_assert(std::is_same_v<MpmcViaFixy, MpmcViaConcurrent>,
+    "fixy::substr::mpmc::PermissionedMpmcChannel must alias the substrate.");
+
+// 2. MpmcValue concept admission parity (using-decl preserves
+// concept semantics).
+static_assert(::crucible::fixy::substr::mpmc::MpmcValue<int> ==
+              ::crucible::concurrent::MpmcValue<int>);
+static_assert(::crucible::fixy::substr::mpmc::MpmcValue<int>);
+
+// 3. Tag template identity — Whole/Producer/Consumer alias the
+// substrate's mpmc_tag tree exactly.
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::mpmc::mpmc_tag::Whole<V046ProbeUserTag>,
+    ::crucible::concurrent::mpmc_tag::Whole<V046ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::mpmc::mpmc_tag::Producer<V046ProbeUserTag>,
+    ::crucible::concurrent::mpmc_tag::Producer<V046ProbeUserTag>>);
+static_assert(std::is_same_v<
+    ::crucible::fixy::substr::mpmc::mpmc_tag::Consumer<V046ProbeUserTag>,
+    ::crucible::concurrent::mpmc_tag::Consumer<V046ProbeUserTag>>);
+
+// 4. Tag identity propagates through MpmcViaFixy's member typedefs.
+static_assert(std::is_same_v<
+    typename MpmcViaFixy::whole_tag,
+    ::crucible::fixy::substr::mpmc::mpmc_tag::Whole<V046ProbeUserTag>>);
+static_assert(std::is_same_v<
+    typename MpmcViaFixy::producer_tag,
+    ::crucible::fixy::substr::mpmc::mpmc_tag::Producer<V046ProbeUserTag>>);
+static_assert(std::is_same_v<
+    typename MpmcViaFixy::consumer_tag,
+    ::crucible::fixy::substr::mpmc::mpmc_tag::Consumer<V046ProbeUserTag>>);
+
+// 5. MpmcChannelSessionSurface admits the representative channel.
+static_assert(
+    ::crucible::fixy::substr::mpmc::MpmcChannelSessionSurface<MpmcViaFixy>);
+
+// 6. channel_capacity passes through (value-template parity).
+static_assert(MpmcViaFixy::channel_capacity == 64);
+static_assert(MpmcViaFixy::channel_capacity ==
+              MpmcViaConcurrent::channel_capacity);
+
+// 7. value_type identity — substrate's T == fixy's T.
+static_assert(std::is_same_v<typename MpmcViaFixy::value_type, int>);
+
+}  // namespace v046
+
 // ── Per-sub-namespace cardinality witnesses ──────────────────────
 
 constexpr int substr_spsc_using                  = 3;
@@ -809,7 +912,7 @@ constexpr int substr_swmr_using                  = 6;
 constexpr int substr_chaselev_using              = 4;
 constexpr int substr_metalog_using               = 4;
 constexpr int substr_chainedge_using             = 4;
-constexpr int substr_mpmc_using                  = 4;
+constexpr int substr_mpmc_using                  = 5;
 constexpr int substr_calendar_grid_using         = 4;
 constexpr int substr_sharded_calendar_grid_using = 4;
 constexpr int substr_sharded_grid_using          = 4;
@@ -823,8 +926,8 @@ constexpr int substr_total_using =
     substr_sharded_grid_using + substr_snapshot_using +
     substr_outer_using;
 
-static_assert(substr_total_using == 42,
-    "fixy::substr:: using-decl surface drifted from 42 — Substr.h "
+static_assert(substr_total_using == 43,
+    "fixy::substr:: using-decl surface drifted from 43 — Substr.h "
     "sub-namespace re-exports and this sentinel must update in lockstep.");
 
 // ── FIXY-U-051: topology + ctx-fit concept-surface witnesses ───────
