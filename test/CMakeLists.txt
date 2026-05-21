@@ -7703,6 +7703,23 @@ crucible_neg_compile_test(neg_tagged_mint_scalar_tag
 crucible_neg_compile_test(neg_tagged_unrelated_source_mismatch
   "cannot convert.*External.*Sanitized|cannot convert.*source::External|no matching function.*hash_for_kernel|could not convert.*source::External")
 
+# [FIXY-U-143] safety::SealedRefined<Pred, T> HS14 floor — fourth
+# non-ScopedView primitive (closes SealedRefined slice of #146 A8-P2
+# alongside U-140's Machine, U-141's ConstantTime, U-142's Tagged).
+# Class T: std::move(sealed).into() — method DELIBERATELY ABSENT from
+#          SealedRefined (load-bearing distinguishing property vs
+#          Refined<Pred, T>); name-lookup fails at the call site.
+# Class U: mint_sealed_refined<non_null, int>(42) — non_null requires
+#          pointer arg; int fails PredicateInvocableOn concept gate
+#          (same predicate-invocability discipline as Refined).
+# Together they pin both soundness layers of SealedRefined:
+# (a) structural sealing (no into() escape hatch); and (b) predicate-
+# invocability gate (mint refuses categorically mismatched pairs).
+crucible_neg_compile_test(neg_sealedrefined_into_absent
+  "has no member named.*into|no member named.*into|into.*is not a member")
+crucible_neg_compile_test(neg_sealedrefined_mint_arg_mismatch
+  "PredicateInvocableOn|constraints not satisfied|the required expression|cannot bind")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
