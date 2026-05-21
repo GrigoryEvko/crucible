@@ -27,9 +27,11 @@
 //   * include/crucible/sessions/SessionSubtype.h (the relation)
 
 #include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/safety/RefinedAlgebra.h>  // FIXY-U-163 — bounded_below
 
 #include <cstdio>
 #include <expected>
+#include <span>        // FIXY-U-163 — span<int> in is_subsort witnesses
 #include <utility>
 
 namespace {
@@ -110,6 +112,86 @@ static_assert( is_subtype_sync_v<Send<Refined<in_range<10, 20>, int>, End>,
                                  Send<Refined<in_range<0, 100>, int>, End>>);
 static_assert(!is_subtype_sync_v<Send<Refined<in_range<0, 10>, int>, End>,
                                  Send<Refined<in_range<20, 30>, int>, End>>);
+
+// ── FIXY-U-163 — end-to-end is_subsort witnesses ───────────────────
+//
+// The U-159b → U-162 thread accumulated 7+ new predicate_implies
+// axioms with only file-scope `implies_v` witnesses.  Those prove the
+// TRAIT fires.  The PRODUCTION consumer is SessionPayloadSubsort's
+// `is_subsort<Refined<P,T>, Refined<Q,T>>` partial spec (requires
+// `implies_v<P, Q> && !std::is_same_v<decltype(P), decltype(Q)>`),
+// reached at runtime via `is_subtype_sync_v` through Send/Recv/Loop's
+// covariant/contravariant payload positions.
+//
+// A future refactor of is_subsort's requires-clause (e.g., adding a
+// guard that incidentally rejects struct-form predicates) would
+// silently break consumer-level propagation while the implies_v
+// witnesses still pass.  The end-to-end asserts below catch that
+// regression class.  Each new axiom from U-159b / U-160 / U-161 /
+// U-162 is exercised through Send (covariant payload) with at least
+// one positive case + one soundness witness where applicable.
+
+// U-159b: non_null ⇔ non_zero bidirectional for pointer T
+static_assert( is_subtype_sync_v<Send<Refined<non_null, int*>, End>,
+                                 Send<Refined<non_zero, int*>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<non_zero, int*>, End>,
+                                 Send<Refined<non_null, int*>, End>>);
+
+// U-159b: LengthGe<N> ⇒ non_empty for N ≥ 1 (parameterised bridge)
+static_assert( is_subtype_sync_v<Send<Refined<length_ge<1>, std::span<int>>, End>,
+                                 Send<Refined<non_empty, std::span<int>>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<length_ge<8>, std::span<int>>, End>,
+                                 Send<Refined<non_empty, std::span<int>>, End>>);
+
+// U-161: InRange<L, H> ⇒ non_negative when L ≥ 0
+static_assert( is_subtype_sync_v<Send<Refined<in_range<0, 100>, int>, End>,
+                                 Send<Refined<non_negative, int>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>,
+                                 Send<Refined<non_negative, int>, End>>);
+// Soundness gate: L < 0 must NOT propagate to non_negative.
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<-5, 100>, int>, End>,
+                                 Send<Refined<non_negative, int>, End>>);
+
+// U-162: BoundedBelow<N> ⇒ BoundedBelow<M> when N ≥ M (transitivity)
+static_assert( is_subtype_sync_v<Send<Refined<bounded_below<10>, int>, End>,
+                                 Send<Refined<bounded_below<5>, int>, End>>);
+// Soundness gate: looser must NOT propagate to tighter.
+static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<5>, int>, End>,
+                                 Send<Refined<bounded_below<10>, int>, End>>);
+
+// U-162: InRange<L, H> ⇒ BoundedBelow<L> (dual to InRange⇒BoundedAbove<H>)
+static_assert( is_subtype_sync_v<Send<Refined<in_range<5, 100>, int>, End>,
+                                 Send<Refined<bounded_below<5>, int>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<in_range<0, 200>, int>, End>,
+                                 Send<Refined<bounded_below<0>, int>, End>>);
+
+// U-162: BoundedBelow<N> ⇒ non_negative when N ≥ 0
+static_assert( is_subtype_sync_v<Send<Refined<bounded_below<0>, int>, End>,
+                                 Send<Refined<non_negative, int>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<bounded_below<5>, int>, End>,
+                                 Send<Refined<non_negative, int>, End>>);
+// Soundness gate: N < 0 must NOT propagate to non_negative.
+static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<-5>, int>, End>,
+                                 Send<Refined<non_negative, int>, End>>);
+
+// U-162: BoundedBelow<N> ⇒ positive when N ≥ 1
+static_assert( is_subtype_sync_v<Send<Refined<bounded_below<1>, int>, End>,
+                                 Send<Refined<positive, int>, End>>);
+static_assert( is_subtype_sync_v<Send<Refined<bounded_below<10>, int>, End>,
+                                 Send<Refined<positive, int>, End>>);
+// Soundness gate: N=0 admits x=0 (NOT positive); must NOT propagate.
+static_assert(!is_subtype_sync_v<Send<Refined<bounded_below<0>, int>, End>,
+                                 Send<Refined<positive, int>, End>>);
+
+// Recv contravariance: payload position reverses direction.  Use one
+// flagship case to witness Recv routes through the same lattice fold.
+static_assert( is_subtype_sync_v<Recv<Refined<non_negative, int>, End>,
+                                 Recv<Refined<bounded_below<5>, int>, End>>);
+
+// Loop composition: lattice fires through repeated payload position.
+static_assert( is_subtype_sync_v<
+    Loop<Send<Refined<bounded_below<10>, int>, Continue>>,
+    Loop<Send<Refined<positive, int>, Continue>>>);
 
 // ── Runtime scenario: Vessel-FFI flow ──────────────────────────────
 
