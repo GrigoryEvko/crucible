@@ -7985,6 +7985,33 @@ crucible_neg_compile_test(neg_hugepagebuffer_copy_assign_rejected
 crucible_neg_compile_test(neg_swisstablebuffer_copy_rejected
   "use of deleted function.*SwissTableBuffer.*SwissTableBuffer|SwissTableBuffer is move-only|deleted")
 
+# [FIXY-U-157] safety::PublishCommitCell<Tag, WriteAuth> HS14 floor —
+# paired Class T fixtures.  Wrapper had ZERO neg-compile coverage
+# despite being the structural fix for the GAPS-FLUSH-RACE bug class
+# (test_vigil_dispatch / test_end_to_end / test_region_cache /
+# test_vigil_deadline_watchdog).  Two structurally distinct
+# enforcement points:
+#
+# Phase copy (FIXY-U-157a): deleted copy ctor with "owns the channel
+#   identity" reason — pins the unique-atomic-per-channel invariant
+#   that allows the wrapper's acquire/release pairing to hold.
+# Phase access (FIXY-U-157b): private + friend-gated bump_by()/bump()
+#   write surface — pins the "only WriteAuth (stage-4 publisher) may
+#   advance the counter" structural access discipline that closes
+#   the GAPS-FLUSH-RACE class.  Stage-3 (or any non-friend code)
+#   trying to call bump triggers a private-access diagnostic at the
+#   call site.
+#
+# Both Class T but on STRUCTURALLY DISTINCT enforcement points —
+# `= delete("reason")` on a special member vs private + friend list
+# on an instance method.  Together they pin BOTH soundness layers
+# the wrapper ships.  Closes the PublishCommitCell slice of #146
+# A8-P2.
+crucible_neg_compile_test(neg_publishcommit_copy_rejected
+  "use of deleted function.*PublishCommitCell.*PublishCommitCell|owns the channel identity|deleted")
+crucible_neg_compile_test(neg_publishcommit_non_friend_bump
+  "is private within this context|private|bump.*is.*private|access.*private")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
