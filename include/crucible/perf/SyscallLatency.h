@@ -308,6 +308,11 @@ concept CtxFitsSyscallLatencyMint =
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSyscallLatencyMint<Ctx>
+// §XXI carve-out: cx=alloc — SyscallLatency::load() attaches a BPF
+// program to the raw_syscalls sys_enter/sys_exit tracepoints, mmaps
+// the per-CPU histogram array, and heap-allocates
+// std::unique_ptr<State>.  CLAUDE.md §XXI: compile-time evaluation
+// would lie about the runtime cost.
 [[nodiscard]] inline std::optional<SyscallLatency>
 mint_syscall_latency(Ctx const&, ::crucible::effects::Init init) noexcept {
     return SyscallLatency::load(init);

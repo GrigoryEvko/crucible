@@ -319,6 +319,13 @@ concept CtxFitsWorkloadProfilerMint =
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsWorkloadProfilerMint<Ctx>
+// §XXI carve-out: cx=alloc — WorkloadProfiler ctor borrows a
+// Senses* (itself an Init-row resource that performs BPF load +
+// perf_event_open + mmap during its own construction) and may
+// allocate per-class histogram storage on first sample.  CLAUDE.md
+// §XXI: compile-time evaluation would lie about the runtime cost —
+// the transitive Senses dependency forces the carve-out even
+// though this ctor itself looks pure.
 [[nodiscard]] inline WorkloadProfiler
 mint_workload_profiler(Ctx const&,
                        const Senses* senses,
@@ -328,6 +335,9 @@ mint_workload_profiler(Ctx const&,
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsWorkloadProfilerMint<Ctx>
+// §XXI carve-out: cx=alloc — see default-Config overload above.
+// Same transitive Senses dependency + per-class histogram
+// allocation rationale applies.
 [[nodiscard]] inline WorkloadProfiler
 mint_workload_profiler(Ctx const&,
                        const Senses* senses,

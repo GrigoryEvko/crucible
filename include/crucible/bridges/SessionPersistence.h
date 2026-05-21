@@ -682,13 +682,12 @@ public:
     }
 };
 
-// FIXY-V-015: signature compacted so `noexcept` lands within the
-// mint-inventory scanner's 8-line window after `[[nodiscard]]`.
-// `constexpr` is intentionally omitted per §XXI rule "constexpr
-// unless the factory genuinely allocates" — `make_unique` below
-// performs a heap allocation, so `constexpr` would lie about cost.
 template <typename Proto, ::crucible::effects::IsExecCtx Ctx, typename Resource>
     requires ::crucible::effects::CtxAdmits<Ctx, CipherSessionEventPersistenceRow>
+// §XXI carve-out: cx=alloc — mint_persisted_session heap-allocates
+// the SessionPersistenceState via std::make_unique to own the
+// MetaLog drain machinery.  CLAUDE.md §XXI: compile-time evaluation
+// would lie about the runtime cost.
 [[nodiscard]] auto mint_persisted_session(
     Ctx const&, Cipher& cipher, CipherOpenView const& view,
     Resource&& resource, SessionTagId session, RoleTagId self,

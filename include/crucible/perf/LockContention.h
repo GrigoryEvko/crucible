@@ -322,6 +322,10 @@ concept CtxFitsLockContentionMint =
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsLockContentionMint<Ctx>
+// §XXI carve-out: cx=alloc — LockContention::load() performs BPF
+// program loading + perf_event_open + mmap + heap allocation
+// (std::unique_ptr<State>).  CLAUDE.md §XXI: compile-time
+// evaluation would lie about the runtime cost.
 [[nodiscard]] inline std::optional<LockContention>
 mint_lock_contention(Ctx const&, ::crucible::effects::Init init) noexcept {
     return LockContention::load(init);

@@ -349,6 +349,11 @@ concept CtxFitsSchedSwitchMint =
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSchedSwitchMint<Ctx>
+// §XXI carve-out: cx=alloc — SchedSwitch::load() attaches BPF to
+// sched_switch tracepoint via bpf()/perf_event_open + mmaps the
+// per-CPU histogram array + heap-allocates std::unique_ptr<State>.
+// CLAUDE.md §XXI: compile-time evaluation would lie about the
+// runtime cost.
 [[nodiscard]] inline std::optional<SchedSwitch>
 mint_sched_switch(Ctx const&, ::crucible::effects::Init init) noexcept {
     return SchedSwitch::load(init);

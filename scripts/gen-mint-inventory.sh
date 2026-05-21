@@ -65,32 +65,62 @@ trees=(safety effects algebra concurrent sessions permissions bridges handles ci
 
 # ── Extract qualifiers for one declaration site ──────────────────────
 # Inputs: file path (absolute), line number.
-# Reads lines [N-2 .. N+5] and inspects them for [[nodiscard]],
-# constexpr/consteval, noexcept, requires, and a ctx-bound first
-# parameter (Ctx const& / eff::IsExecCtx).
+# Reads lines [N-10 .. N+5] and inspects them for [[nodiscard]],
+# constexpr/consteval, noexcept, requires, a ctx-bound first
+# parameter (Ctx const& / eff::IsExecCtx), and the §XXI alloc
+# carve-out marker (`// §XXI carve-out: cx=alloc`).
 #
-# Outputs TAB-separated: nd<TAB>cx<TAB>ne<TAB>rq<TAB>cb (each 0 or 1).
+# FIXY-V-021: the window was widened from `line - 2` to `line - 10`
+# to accept a multi-line carve-out marker between the `requires`
+# line and the `[[nodiscard]]` line.  Ten lines of upward reach
+# accommodate the canonical layout
+#
+#   template <…>
+#       requires ctx_fits_X<…>
+#   // §XXI carve-out: cx=alloc — ≤7 lines of rationale
+#   [[nodiscard]] inline …
+#   mint_X(…) noexcept { … }
+#
+# without losing the `requires` line off the top of the window.
+# Comments inside the carve-out marker MUST NOT contain the literal
+# tokens `constexpr` or `consteval` — `\b(constexpr|consteval)\b` is
+# the cx-detection regex and a match anywhere in the window flips cx
+# to Y, mis-attributing a documented carve-out as a compliance pass.
+# Use paraphrase ("compile-time evaluation", "constant evaluation")
+# instead; the marker text itself is the §XXI grep-target, not the
+# language-feature name.
+#
+# When `cv=1` AND `cx=0`, the inventory renders the cx column as
+# `- (alloc)` instead of bare `-` — surfacing that the absence is
+# documented, not a §XXI compliance gap.  A site that carries the
+# marker AND `constexpr` is a contradiction; the inventory still
+# emits `Y` in that case (constexpr wins) but the auditor surface
+# still grep-finds the marker.
+#
+# Outputs TAB-separated: nd<TAB>cx<TAB>ne<TAB>rq<TAB>cb<TAB>cv
+# (each 0 or 1).
 extract_qualifiers() {
     local file="$1" line="$2"
-    local start=$(( line - 2 ))
+    local start=$(( line - 10 ))
     local end=$(( line + 5 ))
     (( start < 1 )) && start=1
 
     local window
     window="$(sed -n "${start},${end}p" "$file" 2>/dev/null || true)"
 
-    local nd=0 cx=0 ne=0 rq=0 cb=0
+    local nd=0 cx=0 ne=0 rq=0 cb=0 cv=0
     if grep -qE '\[\[nodiscard\]\]' <<<"$window"; then nd=1; fi
     if grep -qE '\b(constexpr|consteval)\b' <<<"$window"; then cx=1; fi
     if grep -qE '\bnoexcept\b' <<<"$window"; then ne=1; fi
     if grep -qE '\brequires\b' <<<"$window"; then rq=1; fi
     if grep -qE '(Ctx[[:space:]]+const[[:space:]]*&|effects::IsExecCtx|eff::IsExecCtx)' <<<"$window"; then cb=1; fi
+    if grep -qF '§XXI carve-out: cx=alloc' <<<"$window"; then cv=1; fi
 
-    printf '%d\t%d\t%d\t%d\t%d\n' "$nd" "$cx" "$ne" "$rq" "$cb"
+    printf '%d\t%d\t%d\t%d\t%d\t%d\n' "$nd" "$cx" "$ne" "$rq" "$cb" "$cv"
 }
 
 # ── Scan one substrate tree for mint_* declarations ──────────────────
-# Emits TAB-separated rows: tree<TAB>name<TAB>file:line<TAB>nd<TAB>cx<TAB>ne<TAB>rq<TAB>cb
+# Emits TAB-separated rows: tree<TAB>name<TAB>file:line<TAB>nd<TAB>cx<TAB>ne<TAB>rq<TAB>cb<TAB>cv
 #
 # Filter: skips comment lines (//, ///, *, /*) and pure-call lines
 # (lines whose first non-whitespace token is `return` or `auto X =`).
@@ -506,16 +536,17 @@ factory is named \`mint_<noun>\`.  Each row records:
 |---|---|
 | \`mint_name\` | The factory's identifier. |
 | \`file:line\` | Substrate declaration site (canonical). |
-| \`nd cx ne rq\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause.  \`Y\` = present, \`-\` = absent. |
+| \`nd cx ne rq\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause.  \`Y\` = present, \`-\` = absent.  \`- (alloc)\` in the \`cx\` column = documented carve-out (FIXY-V-021): the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI \`constexpr\` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the \`// §XXI carve-out: cx=alloc\` marker placed immediately above the \`[[nodiscard]]\` line at the mint signature. |
 | \`cb\` | Authorization shape: \`ctx\` (ctx-bound mint, \`Ctx const&\` first parameter), \`token\` (token mint, derives authority from a parent token), or \`member\` (class-method mint — see "Member-function mints" section below). |
 | \`fixy\` | fixy:: re-export site (\`include/crucible/fixy/...\`) or \`[✗ NO-FIXY]\` gap.  Inapplicable for the \`member\` row (class-method mints cannot be \`using\`-re-exported at namespace scope). |
 | \`HS14\` | Count of neg-compile fixtures across all \`test/*_neg/\` trees (fixy_neg, warden_neg, perf_neg, effects_neg, safety_neg, …) mentioning this mint (HS14 floor is 2). |
 
 Gap markers: \`[✗ NO-FIXY]\` (substrate mint not re-exported through fixy::),
 \`[⚠ <2 HS14]\` (HS14 fixture floor not met).  §XXI compliance shortfalls
-appear as \`-\` in the flag columns.  The auditor surface for member-function
-mints lives in a separate "Member-function mints" section after the substrate
-trees (FIXY-U-118b).
+appear as \`-\` in the flag columns.  \`- (alloc)\` is documented absence,
+not a gap.  The auditor surface for member-function mints lives in a
+separate "Member-function mints" section after the substrate trees
+(FIXY-U-118b).
 
 Snapshot generated: \`$generated_at\`.
 
@@ -523,7 +554,7 @@ HEADER
 
     local current_tree=""
     local violation_count=0
-    while IFS=$'\t' read -r tree name fileline nd cx ne rq cb; do
+    while IFS=$'\t' read -r tree name fileline nd cx ne rq cb cv; do
         if [[ "$tree" != "$current_tree" ]]; then
             [[ -n "$current_tree" ]] && printf '\n'
             printf '## %s/\n\n' "$tree"
@@ -549,6 +580,18 @@ HEADER
         [[ "$ne" == "1" ]] && ne_cell="Y"
         [[ "$rq" == "1" ]] && rq_cell="Y"
         [[ "$cb" == "1" ]] && cb_cell="ctx"
+
+        # FIXY-V-021: `cx=- (alloc)` is the documented carve-out for mints
+        # that genuinely allocate (BPF load + perf_event_open + mmap, heap,
+        # syscall) — CLAUDE.md §XXI rule says `constexpr` would lie about
+        # the runtime cost.  The carve-out marker `// §XXI carve-out:
+        # cx=alloc` placed above the mint signature surfaces the rationale
+        # in the auditor's grep window.  A site that carries BOTH the
+        # marker AND `constexpr` is a contradiction; we emit `Y` (constexpr
+        # detection wins) and rely on review to flag it.
+        if [[ "$cv" == "1" && "$cx" == "0" ]]; then
+            cx_cell="- (alloc)"
+        fi
 
         local hs14_cell="HS14: $hs14"
         if (( hs14 < 2 )); then
@@ -586,13 +629,19 @@ HEADER
         printf 'to distinguish this third authorization shape.\n\n'
         printf '| class::mint_name | file:line | nd | cx | ne | rq | cb | HS14 |\n'
         printf '|---|---|---|---|---|---|---|---|\n'
-        while IFS=$'\t' read -r class_name name fileline nd cx ne rq cb; do
+        while IFS=$'\t' read -r class_name name fileline nd cx ne rq cb cv; do
             [[ -z "$class_name" ]] && continue
             local mf_nd_cell="-" mf_cx_cell="-" mf_ne_cell="-" mf_rq_cell="-"
             [[ "$nd" == "1" ]] && mf_nd_cell="Y"
             [[ "$cx" == "1" ]] && mf_cx_cell="Y"
             [[ "$ne" == "1" ]] && mf_ne_cell="Y"
             [[ "$rq" == "1" ]] && mf_rq_cell="Y"
+
+            # FIXY-V-021: §XXI alloc carve-out for member-function mints.
+            # See substrate loop for full rationale.
+            if [[ "$cv" == "1" && "$cx" == "0" ]]; then
+                mf_cx_cell="- (alloc)"
+            fi
 
             local mf_hs14 mf_hs14_cell
             mf_hs14="$(hs14_count_for "$name")"

@@ -344,6 +344,10 @@ concept CtxFitsPmuSampleMint =
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsPmuSampleMint<Ctx>
+// §XXI carve-out: cx=alloc — PmuSample::load() opens per-CPU
+// perf_event_open file descriptors, mmaps the kernel sample ring,
+// and heap-allocates std::unique_ptr<State>.  CLAUDE.md §XXI:
+// compile-time evaluation would lie about the runtime cost.
 [[nodiscard]] inline std::optional<PmuSample>
 mint_pmu_sample(Ctx const&, ::crucible::effects::Init init) noexcept {
     return PmuSample::load(init);

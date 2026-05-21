@@ -194,6 +194,11 @@ concept CtxFitsSyscallTpBtfMint =
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSyscallTpBtfMint<Ctx>
+// §XXI carve-out: cx=alloc — SyscallTpBtf::load() attaches a CO-RE
+// BPF program to the raw_syscalls sys_enter/sys_exit raw
+// tracepoints, mmaps the per-CPU histogram array, and heap-
+// allocates std::unique_ptr<State>.  CLAUDE.md §XXI: compile-time
+// evaluation would lie about the runtime cost.
 [[nodiscard]] inline std::optional<SyscallTpBtf>
 mint_syscall_tp_btf(Ctx const&, ::crucible::effects::Init init) noexcept {
     return SyscallTpBtf::load(init);

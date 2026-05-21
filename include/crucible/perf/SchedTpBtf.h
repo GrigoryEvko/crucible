@@ -185,6 +185,11 @@ concept CtxFitsSchedTpBtfMint =
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSchedTpBtfMint<Ctx>
+// §XXI carve-out: cx=alloc — SchedTpBtf::load() attaches a CO-RE
+// BPF program to the sched_switch raw tracepoint, mmaps the per-CPU
+// histogram array, and heap-allocates std::unique_ptr<State>.
+// CLAUDE.md §XXI: compile-time evaluation would lie about the
+// runtime cost.
 [[nodiscard]] inline std::optional<SchedTpBtf>
 mint_sched_tp_btf(Ctx const&, ::crucible::effects::Init init) noexcept {
     return SchedTpBtf::load(init);

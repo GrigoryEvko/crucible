@@ -585,6 +585,11 @@ concept CtxFitsSenseHubV2Mint =
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSenseHubV2Mint<Ctx>
+// §XXI carve-out: cx=alloc — SenseHubV2::load() performs BPF
+// program loading + tracepoint attach via bpf()/perf_event_open +
+// mmaps the kernel ringbuf + heap-allocates std::unique_ptr<State>.
+// CLAUDE.md §XXI: compile-time evaluation would lie about the
+// runtime cost.
 [[nodiscard]] inline std::optional<SenseHubV2>
 mint_sense_hub_v2(Ctx const&, ::crucible::effects::Init init) noexcept {
     return SenseHubV2::load(init);
