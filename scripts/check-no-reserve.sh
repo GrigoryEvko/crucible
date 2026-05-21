@@ -34,9 +34,17 @@
 # deliberately plant the pattern to demonstrate rejection.
 #
 # Exit status:
-#   0 — clean (no NEW reserve sites beyond the allowlist)
-#   1 — at least one violation
-#   2 — bad invocation / missing dependency
+#   0 — clean (no NEW reserve sites, no stale allowlist entries)
+#   1 — at least one violation (takes precedence over stale)
+#   2 — stale allowlist entry (a path:line where reserve no longer
+#       exists — the call moved on a line shift, or the site was
+#       migrated away; prune it) OR bad invocation / missing dependency
+#
+# Stale-entry detection (parity with check-no-reinterpret-cast.sh):
+# every allowlist entry must correspond to a LIVE reserve site.  A
+# line-shifting edit silently invalidates a grandfather entry; without
+# this gate a migrated-away entry lingers and could re-grandfather a
+# future reserve re-introduced at the same line.
 
 set -euo pipefail
 
@@ -140,7 +148,52 @@ ALLOW
             exit 2
         fi
         rm -f "$result_file"
-        printf 'check-no-reserve: self-test passed — drift caught, allowlist + inline marker + comment-filter all honoured.\n' >&2
+
+        # ── Phase 2: stale-allowlist-entry detection ─────────────────
+        # Reuse the planted fixture.  Suppress BOTH real reserve sites
+        # (lines 7 and 11) with live allowlist entries so the scan
+        # reaches the stale pass with zero violations, then add a stale
+        # entry (line 99 — no reserve there) that MUST be flagged.
+        cat >"$tmp_root/scripts/no-reserve-allowlist.txt" <<'ALLOW'
+# self-test live entries (real reserve sites)
+include/crucible/planted/planted_violation.h:7
+include/crucible/planted/planted_violation.h:11
+# self-test stale entry (no reserve at this line)
+include/crucible/planted/planted_violation.h:99
+ALLOW
+        stale_file="$(mktemp)"
+        stale_rc=0
+        CRUCIBLE_NO_RESERVE_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$stale_file" || stale_rc=$?
+        if [[ "$stale_rc" -ne 2 ]]; then
+            printf 'check-no-reserve: SELF-TEST FAILED (phase 2) — expected exit 2 (stale), got %d.\n' \
+                "$stale_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$stale_file")" >&2
+            rm -f "$stale_file"
+            exit 2
+        fi
+        # Exactly one stale diagnostic — the live entries (7, 11) must
+        # NOT be flagged (count==1 implies no false positive).
+        stale_emitted="$(grep -c '^NO-RESERVE stale:' "$stale_file" || true)"
+        if [[ "$stale_emitted" -ne 1 ]]; then
+            printf 'check-no-reserve: SELF-TEST FAILED (phase 2) — expected 1 stale diagnostic, got %s.\n' \
+                "$stale_emitted" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$stale_file")" >&2
+            rm -f "$stale_file"
+            exit 2
+        fi
+        if ! grep -qF -- 'planted_violation.h:99' "$stale_file"; then
+            printf 'check-no-reserve: SELF-TEST FAILED (phase 2) — stale entry :99 not flagged.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$stale_file")" >&2
+            rm -f "$stale_file"
+            exit 2
+        fi
+        rm -f "$stale_file"
+
+        printf 'check-no-reserve: self-test passed — drift caught, allowlist + inline marker + comment-filter honoured; stale detection flags dead allowlist entries (none on live).\n' >&2
         exit 0
         ;;
     "") ;;
@@ -173,6 +226,15 @@ allowlisted() {
         grep -Fxq -- "$rel:$line"
 }
 
+# ── Live set of (path:line) for stale-entry detection ────────────────
+# Every candidate reserve site that survives the comment / inline-marker
+# filters records its (rel:line) here, allowlist-blind.  After the scan,
+# every allowlist entry must be in this set; entries that aren't (the
+# call moved on a line shift, or the site was migrated away) are STALE
+# and flagged — parity with check-no-reinterpret-cast.sh.
+live_set_file="$(mktemp)"
+trap 'rm -f "$live_set_file"' EXIT
+
 violation_count=0
 scan_dirs=("$scan_root/include")
 
@@ -196,6 +258,7 @@ while IFS= read -r match; do
     esac
 
     rel="${file#"$scan_root"/}"
+    printf '%s:%s\n' "$rel" "$line" >> "$live_set_file"
 
     if allowlisted "$rel" "$line"; then
         continue
@@ -219,7 +282,7 @@ done < <(
        "$candidate_pattern" "${scan_dirs[@]}" 2>/dev/null || true
 )
 
-# ── Outcome ──────────────────────────────────────────────────────────
+# ── Outcome (violations — take precedence over stale) ────────────────
 if [[ "$violation_count" -ne 0 ]]; then
     cat >&2 <<HINT
 
@@ -247,5 +310,39 @@ HINT
     exit 1
 fi
 
-printf 'check-no-reserve: clean — no new std::vector::reserve sites.\n' >&2
+# ── Outcome (stale allowlist entries) ────────────────────────────────
+# Every allowlist entry must correspond to a LIVE reserve site.  An
+# entry whose (path:line) is not in the live set points at a line where
+# reserve no longer exists — the call moved on a line shift, or the site
+# was migrated away.  Flag it so the allowlist drains as the §IV
+# migration lands and can never silently re-grandfather a future site.
+stale_count=0
+if [[ -f "$allowlist" ]]; then
+    while IFS= read -r entry; do
+        trimmed="${entry%%#*}"
+        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+        trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
+        [[ -z "$trimmed" ]] && continue
+        if ! grep -Fxq -- "$trimmed" "$live_set_file" 2>/dev/null; then
+            printf 'NO-RESERVE stale: %s — STALE allowlist entry (no std::vector::reserve at this line; the call moved on a line shift or the site was migrated away — remove from allowlist).\n' \
+                "$trimmed" >&2
+            stale_count=$((stale_count + 1))
+        fi
+    done < "$allowlist"
+fi
+
+if [[ "$stale_count" -ne 0 ]]; then
+    cat >&2 <<HINT
+
+check-no-reserve detected ${stale_count} stale allowlist entr(y/ies).
+Each entry points at a path:line where std::vector::reserve no longer
+exists — the call moved (line shift) or the site was migrated away.
+Prune the stale entries from scripts/no-reserve-allowlist.txt so the
+guard regains drift coverage and cannot re-grandfather a future reserve
+re-introduced at the same line.
+HINT
+    exit 2
+fi
+
+printf 'check-no-reserve: clean — no new std::vector::reserve sites, no stale allowlist entries.\n' >&2
 exit 0
