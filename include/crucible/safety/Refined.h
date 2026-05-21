@@ -517,6 +517,38 @@ struct predicate_implies<
     std::remove_cv_t<decltype(non_zero)>>
     : std::true_type {};
 
+// ── FIXY-U-159b — propagation closure for new alias surface ────────
+//
+// non_null ⇔ non_zero  (bidirectional, for pointer T)
+//
+// For raw pointer T*: `non_null(p) = (p != nullptr)` (lambda body
+// `p != nullptr`) and `non_zero(p) = (p != decltype(p){0})` (else-
+// branch of the requires-dispatch, since pointer-T has no `.raw()`).
+// `decltype(p){0}` for pointer T is `(T*)nullptr` so the two
+// predicates evaluate to literally identical machine code on
+// pointers.  Bidirectional is structurally correct AND closes the
+// `NonNull<T*>` vs `NonZero<T*>` alias-pair gap: production code
+// that gates on one accepts the other through the subsort axiom in
+// SessionPayloadSubsort.h.
+//
+// The bidirectional axiom is restricted to pointer T at the use
+// site by PredicateInvocableOn — `Refined<non_null, int>` is
+// ill-formed (non_null's `auto*` parameter rejects scalar int), so
+// `is_subsort<Refined<non_zero, int>, Refined<non_null, int>>` is
+// vacuously safe (the RHS type doesn't exist for non-pointer T).
+
+template <>
+struct predicate_implies<
+    std::remove_cv_t<decltype(non_null)>,
+    std::remove_cv_t<decltype(non_zero)>>
+    : std::true_type {};
+
+template <>
+struct predicate_implies<
+    std::remove_cv_t<decltype(non_zero)>,
+    std::remove_cv_t<decltype(non_null)>>
+    : std::true_type {};
+
 // ── Parameterised-predicate implications (type-level partial specs) ─
 //
 // These work because we refactored the parameterised predicates to
@@ -552,6 +584,61 @@ struct predicate_implies<InRange<L, H>, BoundedAbove<H>> : std::true_type {};
 template <std::size_t N, std::size_t M>
     requires (N >= M)
 struct predicate_implies<LengthGe<N>, LengthGe<M>> : std::true_type {};
+
+// ── FIXY-U-159b — parameterised ⇒ unparameterised bridge ───────────
+//
+// LengthGe<N> ⇒ non_empty   for N ≥ 1
+//
+// STL container invariant [container.reqmts]: `c.empty() ==
+// (c.size() == 0)`.  When N ≥ 1, `c.size() >= N` implies
+// `c.size() >= 1` which implies `!c.empty()`.  Bridges the
+// parameterised `length_ge<N>`-backed alias surface (NonEmptySpan<T>
+// from FIXY-U-159, MinLength<N, T> on the U-160 backlog) to the
+// unparameterised `non_empty`-backed `NonEmpty<T>` alias through
+// the implication lattice — a NonEmptySpan<T> structurally
+// strengthens to a NonEmpty<std::span<T>> at any session position.
+//
+// N=0 is INTENTIONALLY excluded by the `requires (N >= 1)` clause:
+// `length_ge<0>(c) = (c.size() >= 0)` is trivially true (size_t is
+// unsigned, comparison with 0 always succeeds), so an empty
+// container satisfies length_ge<0> but NOT non_empty.  Asserting
+// `length_ge<0> ⇒ non_empty` would be UNSOUND — the requires-clause
+// is load-bearing soundness, not decoration.
+template <std::size_t N>
+    requires (N >= 1)
+struct predicate_implies<
+    LengthGe<N>,
+    std::remove_cv_t<decltype(non_empty)>>
+    : std::true_type {};
+
+// ── FIXY-U-159b — closure axioms (verify the propagation fires) ────
+//
+// Witness that the new implications are reachable through implies_v
+// at file scope — catches a future refactor that drops a partial
+// specialisation or breaks the auto-NTTP type-recovery convention.
+// Mirrors the static_assert(sizeof(...)) discipline of the alias
+// zero-cost guarantees above.
+
+static_assert(implies_v<non_null, non_zero>,
+    "FIXY-U-159b: non_null ⇒ non_zero (pointer non-null ≡ pointer non-zero).");
+static_assert(implies_v<non_zero, non_null>,
+    "FIXY-U-159b: non_zero ⇒ non_null (bidirectional for pointer T).");
+static_assert(implies_v<length_ge<1>, non_empty>,
+    "FIXY-U-159b: length_ge<1> ⇒ non_empty (size ≥ 1 ⇒ !empty per STL).");
+static_assert(implies_v<length_ge<8>, non_empty>,
+    "FIXY-U-159b: length_ge<N> ⇒ non_empty for any N ≥ 1.");
+static_assert(!implies_v<length_ge<0>, non_empty>,
+    "FIXY-U-159b: length_ge<0> is vacuous; must NOT imply non_empty "
+    "(soundness — empty container satisfies length_ge<0> but not non_empty).");
+
+// Transitive closure witnesses — the new axioms compose with the
+// pre-existing LengthGe<N> ⇒ LengthGe<M> (N ≥ M) chain.  A length_ge<8>
+// container is length_ge<1> is non_empty.  The implication lattice
+// is structural; transitivity is provided by SessionSubtype's
+// is_subsort fold, not by predicate_implies itself, so we witness
+// each hop directly.
+static_assert(implies_v<length_ge<8>, length_ge<1>>,
+    "FIXY-U-159b: length_ge transitivity hop (parameterised pair).");
 
 namespace detail::refined_self_test {
 

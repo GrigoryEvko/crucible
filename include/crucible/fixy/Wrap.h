@@ -562,6 +562,25 @@ static_assert(std::is_same_v<
     ::crucible::safety::RefinedLinear<::crucible::safety::positive, int>>,
     "fixy::wrap::RefinedLinear must alias safety::RefinedLinear.");
 
+// FIXY-U-159b — dual-export sentinels for the three §XVI named
+// aliases added in U-159 (NonZero / NonEmpty / NonEmptySpan).  Match
+// the dual-export discipline of Refined/LinearRefined/RefinedLinear
+// above: a future drift in fixy/wrap/Refined.h's using-declarations
+// must red the build at this static_assert, NOT silently at a
+// production call site.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::NonZero<int>,
+    ::crucible::safety::NonZero<int>>,
+    "fixy::wrap::NonZero must alias safety::NonZero — dual-export drift.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::NonEmpty<std::span<int>>,
+    ::crucible::safety::NonEmpty<std::span<int>>>,
+    "fixy::wrap::NonEmpty must alias safety::NonEmpty — dual-export drift.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::NonEmptySpan<int>,
+    ::crucible::safety::NonEmptySpan<int>>,
+    "fixy::wrap::NonEmptySpan must alias safety::NonEmptySpan — dual-export drift.");
+
 // SharedPermission — dual-exported in both fixy::wrap:: and fixy::perm::.
 // Both paths MUST resolve to the same substrate type (fixy-A4-011).
 struct WrapDualExportTag {};
