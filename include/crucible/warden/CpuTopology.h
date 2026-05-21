@@ -23,6 +23,7 @@
 //     filesystems). Moves the body out of the hot icache.
 
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/OwnedFile.h>  // FIXY-V-033: std::FILE* RAII
 
 #include <algorithm>
 #include <cstdint>
@@ -50,11 +51,14 @@ namespace detail {
 
 [[nodiscard, gnu::pure]] inline std::string read_small_file(const char* path) noexcept {
     std::string out;
-    std::FILE* f = std::fopen(path, "r");
-    if (f == nullptr) return out;
+    // FIXY-V-033: OwnedFile RAII discharges fclose on every exit path,
+    // including the early return on fopen() failure. The dtor's
+    // `(void)std::fclose(fp)` matches the pre-V-033 explicit-fclose
+    // behavior (errors swallowed — sysfs flushes are unactionable).
+    ::crucible::safety::OwnedFile f{std::fopen(path, "r")};
+    if (!f.is_open()) return out;
     char buf[512];
-    while (std::fgets(buf, sizeof(buf), f)) out.append(buf);
-    std::fclose(f);
+    while (std::fgets(buf, sizeof(buf), f.get())) out.append(buf);
     // strip trailing newline(s)
     while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
     return out;
