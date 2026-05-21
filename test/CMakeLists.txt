@@ -7789,6 +7789,27 @@ crucible_neg_compile_test(neg_notinherited_concept_rejection
 crucible_neg_compile_test(neg_stale_consume_lvalue
   "passing.*as.*this.*argument discards qualifiers|cannot bind rvalue reference|no matching.*consume|discards qualifiers")
 
+# [FIXY-U-147] safety::AtomicMonotonic<T, Cmp> HS14 floor — closes
+# the AtomicMonotonic slice of #146 A8-P2.
+#
+# Class T-pinned-copy: AtomicMonotonic inherits Pinned<Derived> and
+#   therefore its copy ctor — the address-stability discipline IS
+#   load-bearing because the std::atomic<T> field is at a fixed
+#   cross-thread-shared address.
+# Class U-non-trivially-copyable: requires `std::is_trivially_copyable
+#   _v<T>` rejects non-trivial payloads at template instantiation —
+#   the std::atomic<T> machinery requires it per [atomics.types.
+#   generic]/1.
+#
+# Together they pin BOTH enforcement layers AtomicMonotonic ships:
+# address stability for the wrapper instance + payload triviality
+# for the templated atomic.  Softening either would slip past a
+# single-fixture audit.
+crucible_neg_compile_test(neg_atomicmonotonic_pinned_copy_rejected
+  "stable address|use of deleted function|deleted function|Pinned")
+crucible_neg_compile_test(neg_atomicmonotonic_non_trivially_copyable
+  "constraints not satisfied|is_trivially_copyable.*not.*satisfied|AtomicMonotonic.*constraints|no type named")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
