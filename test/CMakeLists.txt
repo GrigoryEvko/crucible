@@ -7650,6 +7650,17 @@ crucible_neg_compile_test(neg_pool_allocator_mint_initialized_view_cross_carrier
 crucible_neg_compile_test(neg_pool_allocator_mint_initialized_view_in_field
   "Type contains a safety::ScopedView<> in some field")
 
+# [FIXY-U-139] HS14 floor for ReplayEngine::mint_active_view.  Same
+# carrier-singleton shape as U-137 + U-138 — ReplayEngine has only one
+# typed view (ActiveView; no companion "InactiveView" / "DivergedView")
+# so the cross-carrier mismatch is the equivalent type-system gate.
+# Together the pair pins both soundness layers (typed-overload +
+# structural field-storage).  Closes the last HS14: 0 mint gap.
+crucible_neg_compile_test(neg_replay_engine_mint_active_view_cross_carrier
+  "invalid initialization of reference.*MutableView.*Active|cannot convert.*Active.*Mutable")
+crucible_neg_compile_test(neg_replay_engine_mint_active_view_in_field
+  "Type contains a safety::ScopedView<> in some field")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
