@@ -7738,6 +7738,25 @@ crucible_neg_compile_test(neg_pinned_copy_rejected
 crucible_neg_compile_test(neg_nonmovable_move_rejected
   "exclusive ownership|use of deleted function|deleted function")
 
+# [FIXY-U-145] safety::OwnedRegion<T, Tag> HS14 floor — sixth
+# non-ScopedView primitive (closes OwnedRegion slice of #146 A8-P2).
+# Class T-copy: copy ctor deleted with linearity-duplication reason
+#   ("OwnedRegion owns a Permission — copy would duplicate the
+#   linear token") — embedded Permission<Tag>'s linearity is
+#   preserved at the type system level.
+# Class T-cross-tag: OwnedRegion<int, TagA> passed to function
+#   demanding OwnedRegion<int, TagB> — unrelated template
+#   instantiations, no implicit conversion across CSL provenance
+#   tags.
+# Together they pin both soundness layers of OwnedRegion:
+# (a) embedded Permission's linearity preserved, and (b) phantom
+# Tag is load-bearing for overload resolution (regions for
+# different arenas / sub-arenas don't substitute for each other).
+crucible_neg_compile_test(neg_ownedregion_copy_rejected
+  "duplicate the linear token|use of deleted function|deleted function")
+crucible_neg_compile_test(neg_ownedregion_cross_tag_mismatch
+  "invalid initialization of reference.*RegionTagA|cannot convert.*RegionTag|no matching function.*process_region_a|could not convert.*RegionTag")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
