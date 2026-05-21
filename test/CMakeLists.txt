@@ -3066,6 +3066,9 @@ crucible_neg_compile_effects_test(neg_effects_mint_init_context_forge_key
     "is private within this context|private member|init_key")
 crucible_neg_compile_effects_test(neg_effects_mint_init_context_keyless
     "too few arguments|no matching function|mint_init_context")
+# FIXY-V-018: exercises CanMintInitContext<Key> with the wrong passkey.
+crucible_neg_compile_effects_test(neg_effects_mint_init_context_wrong_key
+    "constraints not satisfied|CanMintInitContext|same_as|bg_key|init_key|is private")
 crucible_neg_compile_effects_test(neg_effects_mint_test_context_forge_key
     "is private within this context|private member|test_key")
 crucible_neg_compile_effects_test(neg_effects_mint_test_context_keyless

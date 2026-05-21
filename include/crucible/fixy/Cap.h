@@ -150,10 +150,14 @@ static_assert(std::is_same_v<
     decltype(&::crucible::effects::mint_bg_context<
                  ::crucible::effects::detail::ctx_mint::bg_key>)>,
     "FIXY-V-017: fixy::cap::mint_bg_context must alias effects::mint_bg_context.");
+// FIXY-V-018: mint_init_context is a function template gated on
+// CanMintInitContext<Key>.  Identity taken on the concrete instantiation.
 static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::cap::mint_init_context),
-    decltype(&::crucible::effects::mint_init_context)>,
-    "FIXY-U-116: fixy::cap::mint_init_context must alias effects::mint_init_context.");
+    decltype(&::crucible::fixy::cap::mint_init_context<
+                 ::crucible::effects::detail::ctx_mint::init_key>),
+    decltype(&::crucible::effects::mint_init_context<
+                 ::crucible::effects::detail::ctx_mint::init_key>)>,
+    "FIXY-V-018: fixy::cap::mint_init_context must alias effects::mint_init_context.");
 static_assert(std::is_same_v<
     decltype(&::crucible::fixy::cap::mint_test_context),
     decltype(&::crucible::effects::mint_test_context)>,
