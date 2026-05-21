@@ -20,10 +20,10 @@ include/crucible/vis/TraceVisualizer.h:1019
 # serialization; amortization is acceptable but the guard tracks
 # them so the long-term migration to inplace_vector + Linear<bytes>
 # isn't forgotten.
-include/crucible/Cipher.h:1125
-include/crucible/Cipher.h:1464
-include/crucible/Cipher.h:1478
-include/crucible/Cipher.h:1523
+include/crucible/Cipher.h:1166
+include/crucible/Cipher.h:1505
+include/crucible/Cipher.h:1519
+include/crucible/Cipher.h:1564
 #
 # ── BackgroundThread.h ──────────────────────────────────────────────
 # WRAP-BgThread-6 (#877): current_trace + parallel vectors reserved

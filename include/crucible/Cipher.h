@@ -1016,19 +1016,60 @@ class CRUCIBLE_OWNER Cipher {
             if (!out) return ContentHash{};
         }
 
-        std::ofstream index(dir + "/index", std::ios::app);
-        if (!index) return ContentHash{};
-        write_u64_dec_(index, events.front().step_id.value);
-        index.put(',');
-        write_u64_dec_(index, events.back().step_id.value);
-        index.put(',');
-        write_u64_dec_(index, events.size());
-        index.put(',');
+        // V-029: durable session_event index append.  Same atomic-
+        // append discipline as V-028 — O_APPEND single-write atomicity
+        // within block + fdatasync + parent-dir fsync.  The pre-V-029
+        // std::ofstream(std::ios::app) form had the userspace-buffer
+        // window that V-028 closed for the main event log.
+        //
+        // Record layout:
+        //   "<first_step>,<last_step>,<count>,<16-hex hash>\n"
+        // Max length: 20 + 1 + 20 + 1 + 20 + 1 + 16 + 1 = 80 B, fits
+        // in the 96 B inline buffer with margin and well under the
+        // 4096 B POSIX single-write atomicity window for regular files.
+        //
+        // Recovery (load_session_events / parse_session_index_line_)
+        // is tolerant of malformed trailing lines — a partial-record
+        // crash drops a single index entry; the batch file (also on
+        // disk via the content-addressed write above) remains and the
+        // next persist_session_events call re-appends the index entry
+        // (file_bytes_equal_ idempotency closes the loop).
+        char idx_rec[96];
+        std::size_t off = 0;
+        auto [p1, ec1] = std::to_chars(
+            idx_rec + off, idx_rec + sizeof(idx_rec),
+            events.front().step_id.value);
+        if (ec1 != std::errc{}) return ContentHash{};
+        off = static_cast<std::size_t>(p1 - idx_rec);
+        idx_rec[off++] = ',';
+        auto [p2, ec2] = std::to_chars(
+            idx_rec + off, idx_rec + sizeof(idx_rec),
+            events.back().step_id.value);
+        if (ec2 != std::errc{}) return ContentHash{};
+        off = static_cast<std::size_t>(p2 - idx_rec);
+        idx_rec[off++] = ',';
+        auto [p3, ec3] = std::to_chars(
+            idx_rec + off, idx_rec + sizeof(idx_rec),
+            events.size());
+        if (ec3 != std::errc{}) return ContentHash{};
+        off = static_cast<std::size_t>(p3 - idx_rec);
+        idx_rec[off++] = ',';
         char hex[16];
         hex16_(hash.raw(), hex);
-        index.write(hex, sizeof(hex));
-        index.put('\n');
-        if (!index) return ContentHash{};
+        std::memcpy(idx_rec + off, hex, 16);
+        off += 16;
+        idx_rec[off++] = '\n';
+        const std::string index_path = dir + "/index";
+        // §III cast cascade: char* → const void* → const std::uint8_t*.
+        if (!atomic_append_log_(
+                index_path,
+                std::span<const std::uint8_t>{
+                    static_cast<const std::uint8_t*>(
+                        static_cast<const void*>(idx_rec)),
+                    off},
+                dir)) {
+            return ContentHash{};
+        }
 
         return hash;
     }
