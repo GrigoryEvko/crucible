@@ -1,7 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/fixy/Wrap.h>     // FIXY-U-096p: Refined + bounded_above through fixy::
+#include <crucible/fixy/wrap/Refined.h>  // FIXY-U-096p: Refined + bounded_above through fixy:: (granular surface — keeps Types.h light, no OwnedRegion->Arena pull)
 
 #include <compare>
 #include <cstddef>

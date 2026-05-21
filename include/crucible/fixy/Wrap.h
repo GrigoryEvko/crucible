@@ -133,6 +133,7 @@
 #include <crucible/safety/RecipeSpec.h>        // off-tree (Precision axis)
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/RefinedAlgebra.h>    // FIXY-U-096s: all_of predicate combinator
+#include <crucible/fixy/wrap/Refined.h>        // granular Refined-family surface (light consumers)
 #include <crucible/safety/ResidencyHeat.h>     // canonical Tier-S
 #include <crucible/safety/ScopedView.h>        // structural (lifetime borrow)
 #include <crucible/safety/SealedRefined.h>
@@ -157,38 +158,11 @@ using ::crucible::safety::Linear;
 using ::crucible::safety::mint_linear;
 using ::crucible::safety::drop;
 
-// Refined<Pred, T> — predicate-checked at construction.
-using ::crucible::safety::Refined;
-// Named refinement aliases — load-bearing per CLAUDE.md §XVI.
-using ::crucible::safety::NonNull;
-using ::crucible::safety::Positive;
-using ::crucible::safety::NonNegative;
-using ::crucible::safety::PowerOfTwo;
-// Refined composition with Linear (both orderings).
-using ::crucible::safety::LinearRefined;
-using ::crucible::safety::RefinedLinear;
-// Common stateless predicates — usable as Refined NTTP.
-using ::crucible::safety::positive;
-using ::crucible::safety::non_negative;
-using ::crucible::safety::non_zero;
-using ::crucible::safety::non_null;
-using ::crucible::safety::power_of_two;
-using ::crucible::safety::non_empty;
-// Predicate combinator (RefinedAlgebra.h) — conjunction of predicates,
-// `all_of<power_of_two, bounded_above<128>>` etc.  FIXY-U-096s.
-using ::crucible::safety::all_of;
-// Parameterised predicate templates.
-using ::crucible::safety::Aligned;
-using ::crucible::safety::InRange;
-using ::crucible::safety::BoundedAbove;
-using ::crucible::safety::LengthGe;
-using ::crucible::safety::aligned;
-using ::crucible::safety::in_range;
-using ::crucible::safety::bounded_above;
-using ::crucible::safety::length_ge;
-// Cross-predicate implication trait — used by SessionPayloadSubsort.
-using ::crucible::safety::predicate_implies;
-using ::crucible::safety::implies_v;
+// Refined<Pred, T> family + predicates + combinator + implication trait
+// are surfaced via the granular <crucible/fixy/wrap/Refined.h> header
+// (included above) — single source of truth.  Light foundational
+// consumers (Types.h) include that header directly to avoid this
+// umbrella's OwnedRegion -> Arena transitive pull (fixy-A2-014 guard).
 
 // SealedRefined<Pred, T> — Refined with no into() extractor.
 using ::crucible::safety::SealedRefined;
