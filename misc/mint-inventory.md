@@ -29,7 +29,7 @@ appear as `-` in the flag columns.  The auditor surface for member-function
 mints lives in a separate "Member-function mints" section after the substrate
 trees (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T05:32:04Z`.
+Snapshot generated: `2026-05-21T06:32:43Z`.
 
 ## bridges/
 
@@ -83,7 +83,7 @@ Snapshot generated: `2026-05-21T05:32:04Z`.
 | `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h:353` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:142` | HS14: 4 |
 | `mint_sched_tp_btf` | `include/crucible/perf/SchedTpBtf.h:189` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:150` | HS14: 4 |
 | `mint_sense_hub` | `include/crucible/perf/SenseHub.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:158` | HS14: 4 |
-| `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h:589` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:49` | HS14: 4 |
+| `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h:589` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:385` | HS14: 4 |
 | `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h:312` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:166` | HS14: 4 |
 | `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h:198` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:174` | HS14: 4 |
 | `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h:323` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perf.h:186` | HS14: 4 |

@@ -364,11 +364,30 @@ static_assert(!::crucible::fixy::perf::CtxFitsWorkloadProfilerMint<
 // sibling sub-umbrella `<crucible/fixy/perf/V2.h>` (FIXY-U-122) which
 // CANNOT be co-included with this header (V1/V2 substrate identifier
 // collision — see the top-of-file alternative-build rationale).
-// Adding a ninth V1 perf mint must touch BOTH this constant AND
-// `static_assert(perf_mint_cardinality == 8)` in test_fixy_perf.cpp;
-// otherwise CI reds.
+//
+// FIXY-U-127 floor-vs-ceiling split (per U-124 catalog cardinality
+// drift family, feedback_catalog_cardinality_test_drift): the EXACT
+// ceiling pin (`== 8`) lives HERE, colocated with the source of
+// truth, so any contributor bumping the constant cannot miss the
+// sibling assertion at edit time.  The test TU `test_fixy_perf.cpp`
+// holds only the FLOOR pin (`>= 8`) which catches the inverse
+// direction — an accidental REMOVAL of a V1 mint that escaped
+// review.  Adding a ninth V1 perf mint requires updating BOTH the
+// constant AND the colocated `static_assert` below; the test TU
+// floor auto-tracks via `>=`.
 
 inline constexpr int perf_mint_cardinality = 8;
+
+static_assert(perf_mint_cardinality == 8,
+    "ceiling: fixy::perf:: re-exports exactly 8 V1 mint factories — "
+    "mint_lock_contention, mint_pmu_sample, mint_sched_switch, "
+    "mint_sched_tp_btf, mint_sense_hub, mint_syscall_latency, "
+    "mint_syscall_tp_btf, mint_workload_profiler.  (mint_sense_hub_v2 "
+    "lives in fixy::perf::v2:: via the FIXY-U-122 sub-umbrella.)  "
+    "If you add or remove a V1 mint, update BOTH the constant "
+    "AND this colocated ceiling pin in the same edit.  The "
+    "sibling test_fixy_perf.cpp holds only a >= floor and "
+    "auto-tracks growth — see feedback_catalog_cardinality_test_drift.");
 
 }  // namespace crucible::fixy::perf::self_test
 

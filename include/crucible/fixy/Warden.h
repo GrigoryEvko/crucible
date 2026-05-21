@@ -339,14 +339,29 @@ static_assert(::crucible::fixy::warden::CtxFitsQuarantineOverride<
     "fixy::warden::CtxFitsQuarantineOverride must admit TestRunnerCtx "
     "(deterministic test-runner override authority).");
 
-// Cardinality witness.  Four mint factories live in `warden/`.  If a
-// future contributor adds a fifth (or removes one of the current
-// four), this constant drifts and the matching test_fixy_warden.cpp
-// `static_assert(warden_mint_cardinality == 4)` reds the build,
-// prompting the auditor to either update both sites in lockstep or
-// document the drift in the inventory regeneration step.
+// Cardinality witness.  Four mint factories live in `warden/`.
+//
+// FIXY-U-127 floor-vs-ceiling split (per U-124 catalog cardinality
+// drift family, feedback_catalog_cardinality_test_drift): the EXACT
+// ceiling pin (`== 4`) lives HERE, colocated with the source of
+// truth, so any contributor bumping the constant cannot miss the
+// sibling assertion at edit time.  The test TU `test_fixy_warden.cpp`
+// holds only the FLOOR pin (`>= 4`) which catches the inverse
+// direction — an accidental REMOVAL of a warden mint that escaped
+// review.  Adding a fifth warden mint requires updating BOTH the
+// constant AND the colocated `static_assert` below; the test TU
+// floor auto-tracks via `>=`.
 
 inline constexpr int warden_mint_cardinality = 4;
+
+static_assert(warden_mint_cardinality == 4,
+    "ceiling: fixy::warden:: re-exports exactly 4 mint factories — "
+    "mint_hardening, mint_deadline_watchdog, "
+    "mint_hot_region_registry_handle, mint_quarantine_policy.  "
+    "If you add or remove a warden mint, update BOTH the constant "
+    "AND this colocated ceiling pin in the same edit.  The "
+    "sibling test_fixy_warden.cpp holds only a >= floor and "
+    "auto-tracks growth — see feedback_catalog_cardinality_test_drift.");
 
 }  // namespace crucible::fixy::warden::self_test
 

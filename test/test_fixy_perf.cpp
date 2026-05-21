@@ -195,16 +195,21 @@ static_assert(fp::CtxFitsWorkloadProfilerMint<eff::ColdInitCtx>);
 static_assert(!fp::CtxFitsWorkloadProfilerMint<eff::BgDrainCtx>);
 static_assert(!fp::CtxFitsWorkloadProfilerMint<eff::HotFgCtx>);
 
-// ─── 11. Cardinality witness ──────────────────────────────────────
+// ─── 11. Cardinality witness — FLOOR ──────────────────────────────
 //
-// Locks the Perf.h sentinel's stated mint cardinality against drift.
-// Adding a ninth V1 perf mint OR landing the deferred V2 umbrella
-// must touch BOTH fixy/Perf.h's `perf_mint_cardinality` constant AND
-// this TU's expected value; otherwise CI reds.
+// Per FIXY-U-127 floor-vs-ceiling split (feedback_catalog_cardinality_
+// test_drift family): the EXACT ceiling pin (`== 8`) lives in
+// fixy/Perf.h colocated with the source-of-truth constant, so a
+// contributor incrementing the constant cannot miss the sibling
+// assertion at edit time.  THIS TU only holds the FLOOR pin (`>= 8`)
+// which catches the inverse direction — an accidental REMOVAL of a
+// V1 mint that escaped review.  Growth past 8 is silent here and
+// auto-tracked by the header's `==` ceiling.
 
-static_assert(::crucible::fixy::perf::self_test::perf_mint_cardinality == 8,
-    "fixy::perf:: mint cardinality drifted from 8 — fixy/Perf.h "
-    "sentinel block and this TU must update in lockstep.");
+static_assert(::crucible::fixy::perf::self_test::perf_mint_cardinality >= 8,
+    "floor: fixy::perf:: mint cardinality regressed below 8 — a V1 "
+    "perf mint was removed without updating both fixy/Perf.h's "
+    "colocated ceiling pin AND this floor witness.");
 
 int main() {
     // The substrate's own perf_neg fixtures (if any) exercise the

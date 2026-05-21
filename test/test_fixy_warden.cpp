@@ -143,16 +143,21 @@ static_assert(fw::CtxFitsQuarantineRecord<eff::BgDrainCtx>);
 static_assert(fw::CtxFitsQuarantineOverride<eff::ColdInitCtx>);
 static_assert(fw::CtxFitsQuarantineOverride<eff::TestRunnerCtx>);
 
-// ─── 7. Cardinality witness ───────────────────────────────────────
+// ─── 7. Cardinality witness — FLOOR ───────────────────────────────
 //
-// Locks the Warden.h sentinel's stated mint cardinality against drift.
-// A future contributor adding a fifth warden mint must touch BOTH
-// fixy/Warden.h's `warden_mint_cardinality` constant AND this TU's
-// expected value; otherwise CI reds.
+// Per FIXY-U-127 floor-vs-ceiling split (feedback_catalog_cardinality_
+// test_drift family): the EXACT ceiling pin (`== 4`) lives in
+// fixy/Warden.h colocated with the source-of-truth constant, so a
+// contributor incrementing the constant cannot miss the sibling
+// assertion at edit time.  THIS TU only holds the FLOOR pin (`>= 4`)
+// which catches the inverse direction — an accidental REMOVAL of a
+// warden mint that escaped review.  Growth past 4 is silent here and
+// auto-tracked by the header's `==` ceiling.
 
-static_assert(::crucible::fixy::warden::self_test::warden_mint_cardinality == 4,
-    "fixy::warden:: mint cardinality drifted from 4 — fixy/Warden.h "
-    "sentinel block and this TU must update in lockstep.");
+static_assert(::crucible::fixy::warden::self_test::warden_mint_cardinality >= 4,
+    "floor: fixy::warden:: mint cardinality regressed below 4 — a "
+    "warden mint was removed without updating both fixy/Warden.h's "
+    "colocated ceiling pin AND this floor witness.");
 
 int main() {
     // The substrate's own warden_neg fixtures exercise the negative
