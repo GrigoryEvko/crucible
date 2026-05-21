@@ -7661,6 +7661,17 @@ crucible_neg_compile_test(neg_replay_engine_mint_active_view_cross_carrier
 crucible_neg_compile_test(neg_replay_engine_mint_active_view_in_field
   "Type contains a safety::ScopedView<> in some field")
 
+# [FIXY-U-140] safety::Machine<> HS14 floor — first non-ScopedView
+# primitive to get neg-compile pair coverage (closes #146 A8-P2 slice).
+# Class T: deleted-copy with reason string (linearity gate).
+# Class U: transition without machine_transition opt-in (concept gate).
+# Together they pin both soundness layers of the Machine state-machine
+# primitive.
+crucible_neg_compile_test(neg_machine_copy_rejected
+  "Machine is move-only|use of deleted function|deleted function")
+crucible_neg_compile_test(neg_machine_transition_without_optin
+  "MachineTransition|constraints not satisfied|machine_transition")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
