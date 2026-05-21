@@ -70,7 +70,7 @@
 namespace crucible::fixy::diag {
 
 // ═══════════════════════════════════════════════════════════════════
-// Diagnostic catalog — tag_base + 28 tag classes + Catalog tuple
+// Diagnostic catalog — tag_base + 31 tag classes + Catalog tuple
 // ═══════════════════════════════════════════════════════════════════
 
 using ::crucible::safety::diag::tag_base;

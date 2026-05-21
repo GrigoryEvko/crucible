@@ -10,7 +10,7 @@
 //   (a) every grant in `Grants...` is an `IsGrantTag` (final-class +
 //       inherits grant_base — defends against trait-spec injection)
 //
-//   (b) every DimensionAxis enumerator (the 20 axes from
+//   (b) every DimensionAxis enumerator (the 22 axes from
 //       safety::DimensionAxis) is engaged via at least one grant —
 //       i.e., the author has read the discipline and made a choice
 //       on every dim
@@ -108,7 +108,7 @@ namespace diag {
             "Dimension '" #AxisName "' (" AxisDesc ") has no engagement marker "    \
             "or relaxation tag in the binding's Grants pack.  Per misc/"            \
             "16_05_2026_fixy.md §3, every fixy:: binding MUST engage with every "   \
-            "one of the 20 dimensions either via an explicit relaxation tag or "    \
+            "one of the 22 dimensions either via an explicit relaxation tag or "    \
             "via `grant::accept_default_strict_for<dim::DimensionAxis::"            \
             #AxisName ">`.";                                                        \
         static constexpr ::std::string_view remediation =                           \
@@ -319,7 +319,7 @@ using dup_tag_for_axis_t = typename dup_tag_for_axis<D>::type;
 // stable order) but lives entirely on the fixy side because per
 // `safety/Diagnostic.h:96-99` user-defined tags MUST NOT enter the
 // substrate's closed Category/Catalog — those are reserved for the
-// foundation's 28 axis violations.  Fixy's twenty `FixyNotEngaged_*`
+// foundation's 31 axis violations.  Fixy's twenty-two `FixyNotEngaged_*`
 // tags still need to be enumerable as a closed set so callers can:
 //
 //   (a) discriminate fixy tags from substrate tags via
@@ -561,7 +561,7 @@ static_assert(
 // fixy-A4-030 walks substrate → fixy (every substrate entry rejects).
 // The forward direction was hand-picked: only FixyNotEngaged_Type and
 // FixyNotEngaged_Staleness had explicit `is_fixy_diag_v<X>` witnesses
-// — the other 18 axis-engagement tags were covered only by the
+// — the other 20 axis-engagement tags were covered only by the
 // bijection walk at line 475, which tests round-trip but NOT in-tuple
 // membership.  M-12 closes the gap with an exhaustive fold over
 // FixyCatalog: EVERY entry must register as a fixy diagnostic.  A
@@ -700,7 +700,7 @@ inline constexpr auto axis_at_v = [:kAxisEnumerators[I]:];
 // type-level distinction.
 //
 // fixy-H-09: the prior shape used `template for` which unconditionally
-// instantiated `engaged_for<axis_v, Grants...>()` for ALL 20 axes even
+// instantiated `engaged_for<axis_v, Grants...>()` for ALL 22 axes even
 // after the first miss was observed.  The recursive `if constexpr`
 // form below stops instantiating the engagement check at the first
 // miss — algorithm shape now matches the doc-block claim ("returns

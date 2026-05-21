@@ -20,7 +20,7 @@
 //                                                         30/20/10/10
 //                                                         minimum-
 //                                                         length bar).
-//   fixy/Reject.h::FixyNotEngaged_*  — the 20 axis-engagement tags.
+//   fixy/Reject.h::FixyNotEngaged_*  — the 22 axis-engagement tags.
 //   fixy/Theory.h::corpus::*         — the 4 §30.14 unsoundness tags.
 //
 // ── Authoring discipline ───────────────────────────────────────────

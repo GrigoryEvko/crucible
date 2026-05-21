@@ -12,7 +12,9 @@
 //
 // ── Substrate consumed ─────────────────────────────────────────────
 //
-//   safety::DimensionAxis      — the 20 enumerators (§24.1 of fixy.md)
+//   safety::DimensionAxis      — the 22 enumerators (§24.1 of fixy.md;
+//                                 +Synchronization via fixy-A3-008,
+//                                 +Regime via fixy-A3-009)
 //   safety::dimension_axis_name — string projection
 //   safety::tier_of_axis        — Tier S/L/T/F/V classification
 //   safety::TierKind            — the 5 composition-law families
@@ -30,7 +32,7 @@
 // ── Why a separate namespace alias rather than `using` at call site
 //
 // The fixy:: discipline surface is greppable.  Every fixy header that
-// references the 20 dimensions cites `fixy::dim::DimensionAxis`, not
+// references the 22 dimensions cites `fixy::dim::DimensionAxis`, not
 // the raw `safety::DimensionAxis`.  A reviewer auditing "what does
 // fixy depend on?" can grep `fixy::` and see every substrate touch.
 //
