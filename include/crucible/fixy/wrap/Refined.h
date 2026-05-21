@@ -41,6 +41,15 @@ using ::crucible::safety::PowerOfTwo;
 using ::crucible::safety::NonZero;
 using ::crucible::safety::NonEmpty;
 using ::crucible::safety::NonEmptySpan;
+// FIXY-U-160 — parameterised §XVI alias surface:
+//   * MinLength<N, T>    — Refined<length_ge<N>, T>, container min-size
+//                          alias used at production sites that want a
+//                          grep-target instead of inline length_ge<N>.
+//   * MaxBounded<Max, T> — Refined<bounded_above<Max>, T>, the upper-
+//                          bound family covering 142+ inline sites
+//                          (sat-counter pattern, CKernel-2 et al.).
+using ::crucible::safety::MinLength;
+using ::crucible::safety::MaxBounded;
 // Refined composition with Linear (both orderings).
 using ::crucible::safety::LinearRefined;
 using ::crucible::safety::RefinedLinear;

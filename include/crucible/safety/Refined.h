@@ -391,6 +391,51 @@ template <typename T> using NonEmpty      = Refined<non_empty, T>;
 // where .size() is not O(1) (rare in Crucible), but redundant here.
 template <typename T> using NonEmptySpan  = Refined<length_ge<std::size_t{1}>, std::span<T>>;
 
+// ── FIXY-U-160 — parameterised §XVI named aliases ───────────────────
+//
+// `MinLength<N, T>` and `MaxBounded<Max, T>` close the §XVI alias-
+// discipline gap for the *parameterised* predicate families that the
+// unparameterised aliases above (NonEmptySpan / NonEmpty / NonNegative)
+// only cover at fixed parameter values.
+//
+//   MinLength<N, T>     = Refined<length_ge<N>, T>
+//   MaxBounded<Max, T>  = Refined<bounded_above<Max>, T>
+//
+// Why named aliases (not anonymous `Refined<length_ge<N>, T>` at
+// call sites): the §XVI discipline rule is "every load-bearing
+// predicate gets a named alias".  Production has 142+ inline
+// `Refined<bounded_above<...>>` sites (e.g. CKernel-2/SchemaTab-1/
+// Transaction-5 sat-counter family, see
+// feedback_bounded_monotonic_counter_pattern.md) and a smaller but
+// growing population of `Refined<length_ge<N>, std::span<T>>` sites.
+// A named alias gives reviewers a grep target and lets future
+// hardening (e.g. lifting a span field from `Refined<length_ge<8>>`
+// to `MinLength<8>` at signature level) propagate by one rename.
+//
+// The alias inherits the same `PredicateInvocableOn<Pred, T>` concept
+// gate as the bare Refined<>; substitution failure at the alias site
+// surfaces the canonical PredicateInvocableOn diagnostic, not an
+// SFINAE wall inside the contract clause (mirrors NonZero/NonEmpty
+// from FIXY-U-159 — see neg_refined_nonempty_alias_rejects_arithmetic
+// + neg_refined_nonzero_alias_rejects_no_compare_struct).
+//
+// Subsort participation: MinLength<N, T> strengthens to MinLength<M, T>
+// for any M ≤ N (per LengthGe<N> ⇒ LengthGe<M> partial spec above),
+// and MinLength<N, T> for N ≥ 1 strengthens to NonEmpty<T> (per the
+// LengthGe<N> ⇒ non_empty bridge from FIXY-U-159b).  MaxBounded
+// strengthens via BoundedAbove<N> ⇒ BoundedAbove<M> when N ≤ M.
+// Production code receiving `MaxBounded<7>` accepts a `MaxBounded<3>`
+// caller through SessionPayloadSubsort's is_subsort fold.
+//
+// Soundness gate: N ≥ 1 on MinLength is NOT enforced at the alias
+// because the underlying LengthGe<N> primitive accepts N=0 (vacuous
+// — c.size() >= 0 always).  N=0 is intentionally permitted as a
+// degenerate-but-well-formed alias for "any-length container", and
+// the predicate_implies axiom `length_ge<0> ⇒ non_empty` is correctly
+// REJECTED by the soundness witness (see U-159b static_asserts).
+template <std::size_t N, typename T> using MinLength  = Refined<length_ge<N>, T>;
+template <auto Max, typename T>      using MaxBounded = Refined<bounded_above<Max>, T>;
+
 // ── Composition with Linear ─────────────────────────────────────────
 //
 // Two orthogonal orderings compose Linear and Refined, and they mean

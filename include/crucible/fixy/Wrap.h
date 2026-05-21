@@ -581,6 +581,31 @@ static_assert(std::is_same_v<
     ::crucible::safety::NonEmptySpan<int>>,
     "fixy::wrap::NonEmptySpan must alias safety::NonEmptySpan — dual-export drift.");
 
+// FIXY-U-160 — dual-export sentinels for the two §XVI parameterised
+// named aliases.  Witness at three parameter cardinalities each
+// (catches a future drift that breaks only one specialisation, e.g.
+// N=0 if someone adds a `requires (N >= 1)` clause to the alias).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::MinLength<1, std::span<int>>,
+    ::crucible::safety::MinLength<1, std::span<int>>>,
+    "fixy::wrap::MinLength<1, ...> must alias safety::MinLength<1, ...> "
+    "— dual-export drift on the §XVI parameterised length_ge surface.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::MinLength<8, std::span<int>>,
+    ::crucible::safety::MinLength<8, std::span<int>>>,
+    "fixy::wrap::MinLength<8, ...> must alias safety::MinLength<8, ...> "
+    "— witness propagation through parameter pack at a non-trivial N.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::MaxBounded<255u, unsigned int>,
+    ::crucible::safety::MaxBounded<255u, unsigned int>>,
+    "fixy::wrap::MaxBounded<255u, ...> must alias safety::MaxBounded<255u, ...> "
+    "— dual-export drift on the §XVI parameterised bounded_above surface.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::MaxBounded<128u, unsigned int>,
+    ::crucible::safety::MaxBounded<128u, unsigned int>>,
+    "fixy::wrap::MaxBounded<128u, ...> must alias safety::MaxBounded<128u, ...> "
+    "— witness propagation through parameter pack at a saturation-counter N.");
+
 // SharedPermission — dual-exported in both fixy::wrap:: and fixy::perm::.
 // Both paths MUST resolve to the same substrate type (fixy-A4-011).
 struct WrapDualExportTag {};

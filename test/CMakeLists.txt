@@ -8065,6 +8065,35 @@ crucible_neg_compile_test(neg_refined_nonzero_alias_rejects_no_compare_struct
 crucible_neg_compile_test(neg_refined_nonempty_alias_rejects_arithmetic
   "PredicateInvocableOn|constraint.*not satisfied|no matching")
 
+# FIXY-U-160 — paired parameterised §XVI alias fixtures (HS14 floor):
+#   * MinLength<N, T>     — Refined<length_ge<N>, T>
+#   * MaxBounded<Max, T>  — Refined<bounded_above<Max>, T>
+# Four fixtures across four distinct mismatch classes:
+#   * Class C (arithmetic .size() missing) — MinLength<5, int>
+#   * Class N (nested Refined breaks .size()) — MinLength<5, Refined<>>
+#   * Class M (operator< missing on struct) — MaxBounded<10, NoLtStruct>
+#   * Class T (heterogeneous string-vs-int compare) — MaxBounded<10u, string>
+# All four pin "PredicateInvocableOn" as the diagnostic substring so a
+# future Refined refactor that loses the concept gate would red all
+# four fixtures simultaneously.
+crucible_neg_compile_test(neg_refined_minlength_alias_rejects_arithmetic
+  "PredicateInvocableOn|constraint.*not satisfied|no matching")
+crucible_neg_compile_test(neg_refined_minlength_alias_rejects_nested_refined
+  "PredicateInvocableOn|constraint.*not satisfied|no matching")
+# MaxBounded fixtures: bounded_above<Max>'s operator() body
+# unconditionally evaluates `x <= decltype(x)(Max)` — no
+# requires-guarded if-constexpr branch like non_zero has — so the
+# rejection surfaces at constexpr-expansion time as "no match for
+# operator<=" rather than at concept-gate time as
+# "PredicateInvocableOn".  The wider regex captures both legitimate-
+# rejection surfaces; either reading means the predicate body is
+# unable to evaluate against T, which is the discipline this fixture
+# witnesses.
+crucible_neg_compile_test(neg_refined_maxbounded_alias_rejects_no_lt
+  "PredicateInvocableOn|constraint.*not satisfied|no matching|no match for")
+crucible_neg_compile_test(neg_refined_maxbounded_alias_rejects_string_t
+  "PredicateInvocableOn|constraint.*not satisfied|no matching|no match for")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
