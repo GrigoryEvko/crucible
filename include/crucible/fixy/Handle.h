@@ -23,6 +23,7 @@
 //   safety::PublishCommitCell<Tag, WriteAuth>
 //                                    — typed publish/commit cell (FIXY-U-016b)
 //   safety::AlignedBuffer<T, Align>  — RAII over-aligned heap buffer (FIXY-U-016b)
+//   safety::HugePageBuffer<T>        — 2-MB-aligned RAII buffer (FIXY-V-034)
 //   safety::LazyEstablishedChannel<Proto, Resource>
 //                                    — session-handshake-backed channel
 //
@@ -59,6 +60,7 @@
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/handles/PublishOnce.h>
 #include <crucible/safety/AlignedBuffer.h>     // FIXY-U-016b — RAII over-aligned buffer
+#include <crucible/safety/HugePageBuffer.h>    // FIXY-V-034 — 2-MB-aligned RAII buffer
 #include <crucible/safety/PublishCommit.h>     // FIXY-U-016b — typed publish/commit cell
 
 #include <type_traits>   // dual-export sentinel uses std::is_same_v
@@ -96,6 +98,19 @@ using ::crucible::safety::LazyEstablishedChannel;
 // (FIXY-U-016b) Move-only, nothrow-move; zero-initialized allocation
 // via `allocate_zeroed(count)`.  Used by BackgroundThread scratch pools.
 using ::crucible::safety::AlignedBuffer;
+
+// ── HugePageBuffer<T> — 2-MB-aligned RAII buffer ───────────────────
+// (FIXY-V-034) Move-only, nothrow-move; `allocate(count)` returns a
+// buffer aligned to `warden::kHugePageBytes` so that the caller's
+// subsequent `register_hot_region(..., huge=true, ...)` →
+// `madvise(MADV_HUGEPAGE)` can actually be honored by the kernel.
+// The alignment is the *guarantee* this alias re-surfaces; callers
+// still pair with `warden::register_hot_region` explicitly because
+// the registry needs the friendly name for the diagnostic surface.
+//
+// Used by MetaLog (TensorMeta ring backing) and the perf hub
+// hugepage-arena consumers tracked by FIXY-V-236.
+using ::crucible::safety::HugePageBuffer;
 
 // ── PublishCommitCell<Tag, WriteAuth> — publish/commit pattern ─────
 // (FIXY-U-016b) Pinned (non-copy / non-move) atomic cell that fuses
@@ -192,6 +207,33 @@ static_assert(std::is_same_v<
     "safety::PublishCommitCell — Pinned-channel identity is load-bearing "
     "for cross-thread publish/commit ordering.");
 
+// FIXY-V-034 — HugePageBuffer<T> identity (dual-export sentinel).
+static_assert(std::is_same_v<
+    ::crucible::fixy::handle::HugePageBuffer<HandleProbeT>,
+    ::crucible::safety::HugePageBuffer<HandleProbeT>>,
+    "fixy::handle::HugePageBuffer<T> must alias safety::HugePageBuffer<T> "
+    "— 2-MB-aligned RAII identity is load-bearing for MetaLog + perf "
+    "hugepage-arena consumers (FIXY-V-236).");
+
+// FIXY-V-034 — madvise(MADV_HUGEPAGE) hint guarantee.  This is the
+// LOAD-BEARING contract behind the alias: the buffer's allocation
+// alignment equals warden::kHugePageBytes (== 2 MB on x86_64), so a
+// subsequent madvise(MADV_HUGEPAGE) call inside warden::register_hot_region
+// CAN succeed in the kernel.  If the substrate's huge_page_bytes ever
+// drifted (e.g. an ARM 64-KB hugepage path with a smaller constant),
+// madvise would silently fall back to small pages, TLB miss rate would
+// spike, and there'd be no C++-level signal.  This sentinel catches
+// the drift at compile time on the fixy:: surface so a reviewer never
+// has to grep into safety/HugePageBuffer.h to verify the guarantee.
+static_assert(
+    ::crucible::fixy::handle::HugePageBuffer<HandleProbeT>::huge_page_bytes
+        == ::crucible::warden::kHugePageBytes,
+    "fixy::handle::HugePageBuffer<T>::huge_page_bytes must equal "
+    "warden::kHugePageBytes — madvise(MADV_HUGEPAGE) requires the "
+    "allocation to be aligned to the kernel's huge-page boundary; if "
+    "this drifts, hugepage backing silently fails and TLB pressure "
+    "regresses without any C++-level error path.");
+
 // FIXY-U-016c — open_read / open_write_truncate free-function identity.
 // Non-template free functions: identity verified by pointer-of-function
 // decltype equality (same technique as fixy/Wrap.h's saturating-arith
@@ -212,10 +254,11 @@ static_assert(std::is_same_v<
     "safety::open_write_truncate — Cipher spill / federation entry "
     "write path depends on identity preservation.");
 
-// Cardinality witness: 13 aliases surfaced; future additions to
+// Cardinality witness: 14 aliases surfaced; future additions to
 // handles/ MUST extend this block + add a substrate type below.
-constexpr int handle_alias_cardinality = 13;
-static_assert(handle_alias_cardinality == 13,
+// FIXY-V-034: bumped 13 → 14 for HugePageBuffer<T>.
+constexpr int handle_alias_cardinality = 14;
+static_assert(handle_alias_cardinality == 14,
     "fixy::handle:: cardinality changed — update Handle.h sentinel "
     "block to track the substrate handles/ surface.");
 

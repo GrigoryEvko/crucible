@@ -1,14 +1,14 @@
 // ── test_fixy_handle — sentinel TU for fixy/Handle.h ───────────────
 //
 // Pulls fixy/Handle.h into a TU compiled under project warning flags
-// so the header's 13 dual-export sentinels + cardinality witness
+// so the header's 14 dual-export sentinels + cardinality witness
 // execute under enforcement.  Witnesses:
 //
-//   1. Every fixy::handle::X alias resolves to safety::X (13 aliases —
+//   1. Every fixy::handle::X alias resolves to safety::X (14 aliases —
 //      Fd, FileHandle, Once, Lazy, SetOnce, OneShotFlag, PublishOnce,
 //      PublishSlot, LazyEstablishedChannel, AlignedBuffer (U-016b),
 //      PublishCommitCell (U-016b), open_read (U-016c),
-//      open_write_truncate (U-016c)).
+//      open_write_truncate (U-016c), HugePageBuffer (V-034)).
 //   2. Cardinality FLOOR witness (handle_alias_cardinality >= 13)
 //      trips if a future contributor REMOVES a handle alias without
 //      updating both Handle.h's colocated ceiling AND this floor —
@@ -16,15 +16,18 @@
 //      past 13 is silent here and auto-tracked by the header's `==`.
 //   3. End-to-end RAII round-trip via the fixy:: alias proves no
 //      name-shadow drift past the sentinel — exercises FileHandle
-//      default-ctor + dtor and OneShotFlag signal/peek through the
-//      fixy::handle:: path.
+//      default-ctor + dtor, OneShotFlag signal/peek, and (V-034)
+//      HugePageBuffer<int>::allocate + dtor through the fixy::handle::
+//      path.
 //
 // FIXY-U-016 (base) + U-016b (AlignedBuffer + PublishCommitCell) +
-// U-016c (open_read + open_write_truncate).  Doc-block updated by
-// U-131 to reflect post-U-016b/c expansion.
+// U-016c (open_read + open_write_truncate) + V-034 (HugePageBuffer).
+// Doc-block updated by U-131 to reflect post-U-016b/c expansion.
 
 #include <crucible/fixy/Handle.h>
 
+#include <bit>          // FIXY-V-034 — std::bit_cast for pointer→uintptr_t
+#include <cstdint>      // FIXY-V-034 — std::uintptr_t for alignment check
 #include <type_traits>
 #include <utility>
 
@@ -68,6 +71,17 @@ static_assert(std::is_same_v<
     decltype(&fhand::open_write_truncate),
     decltype(&safe::open_write_truncate)>);
 
+// FIXY-V-034 — HugePageBuffer<T> identity + madvise-hint guarantee
+// re-stated at TU level so it executes under the project warning
+// flags (not just inside Handle.h's self_test:: block).
+static_assert(std::is_same_v<fhand::HugePageBuffer<th::ProbeT>,
+                             safe::HugePageBuffer<th::ProbeT>>);
+static_assert(fhand::HugePageBuffer<th::ProbeT>::huge_page_bytes
+              == ::crucible::warden::kHugePageBytes,
+              "fixy::handle::HugePageBuffer<T>::huge_page_bytes must equal "
+              "warden::kHugePageBytes — madvise(MADV_HUGEPAGE) requires "
+              "the allocation to be aligned to the kernel huge-page boundary.");
+
 // ─── 2. Cardinality FLOOR witness mirror ──────────────────────────
 //
 // Per FIXY-U-127 / U-128 floor-vs-ceiling split: the EXACT ceiling
@@ -103,6 +117,37 @@ int main() {
         flag.signal();
         bool seen = flag.peek();
         (void)seen;
+    }
+    {
+        // FIXY-V-034 — HugePageBuffer<int> allocate + dtor round-trip
+        // via the fixy::handle:: alias.  Allocates one int rounded up
+        // to a 2-MB-aligned block; aligned_alloc succeeds even when the
+        // host has no hugepages configured (it's an alignment request,
+        // not a hugepage-backing request — madvise(MADV_HUGEPAGE) is
+        // applied later by warden::register_hot_region at the call
+        // site, and silently falls back to small pages if unavailable).
+        // Exercises substrate `allocate()` factory + RAII dtor's
+        // std::free, proving the alias preserves both the alignment
+        // contract and the ownership-transfer semantic.
+        fhand::HugePageBuffer<int> buf = fhand::HugePageBuffer<int>::allocate(1);
+        if (buf.data() == nullptr) return 1;            // allocate failure → fail
+        if (buf.size() != 1)       return 2;            // size must match count
+        if (buf.bytes() < fhand::HugePageBuffer<int>::huge_page_bytes) return 3;
+        // Pointer must be huge-page-aligned — the load-bearing guarantee
+        // re-verified at runtime (the static_assert above proved the
+        // *constant* matches; this proves the *runtime* allocation
+        // honors it).  std::bit_cast (C++26 §III rule — reinterpret_cast
+        // is banned) inspects the pointer's bit-pattern as uintptr_t for
+        // alignment masking.
+        const auto addr = std::bit_cast<std::uintptr_t>(buf.data());
+        if ((addr & (fhand::HugePageBuffer<int>::huge_page_bytes - 1)) != 0)
+            return 4;                                    // alignment violated
+        // Sentinel value fits in signed int (positive 32-bit half); the
+        // canonical 0xDEADBEEF would trigger -Werror=sign-conversion on
+        // `int buf[]`.  We just need a non-zero write-then-read witness.
+        buf[0] = 0x12345678;
+        if (buf[0] != 0x12345678) return 5;             // write-then-read sanity
+        // dtor on scope exit returns the block via std::free.
     }
     return 0;
 }
