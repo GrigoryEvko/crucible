@@ -107,6 +107,61 @@ namespace secret_policy = ::crucible::safety::secret_policy;
 // time discriminates the persistence contract.
 namespace hash_family = ::crucible::hash_family;
 
+// ── retag_policy<From, To> + RetagAllowed (FIXY-V-022..V-025) ──────
+//
+// V-022 ships the fail-closed `safety::retag_policy<From, To>` primary
+// template + the `safety::RetagAllowed` concept.  V-023 ships the
+// safe-transition catalog (10 specializations across trust::, source::,
+// vessel_trust:: axes).  V-024 wires the concept into
+// `Tagged::retag<NewTag>()`'s requires-clause.  V-025 (this surface)
+// re-exports the gate at the fixy band so band-3 callers consult the
+// policy / concept via `fixy::tags::retag_policy<>` /
+// `fixy::tags::RetagAllowed<>` without descending into safety/.
+//
+// ── Reading vs writing the catalog ─────────────────────────────────
+//
+// READING (querying whether (A → B) is admitted) goes through the
+// fixy alias:
+//
+//     using namespace crucible::fixy::tags;
+//     static_assert(RetagAllowed<source::External, source::Sanitized>);
+//     auto admit = retag_policy<trust::Tested, trust::Verified>::allowed;
+//
+// WRITING (adding a new specialization to admit (A → B)) STILL goes
+// to the canonical safety:: namespace, NOT through the fixy alias.
+// C++ forbids specializing a class template through a using-declaration
+// — you must spell the original namespace at the specialization site:
+//
+//     template <>
+//     struct ::crucible::safety::retag_policy<my_tag, my_other_tag> {
+//         static constexpr bool allowed = true;
+//     };
+//
+// Once specialized at the substrate, the new admittance is visible
+// through EVERY alias (fixy::tags, any local namespace alias, etc.).
+// This asymmetry is intentional: it keeps the catalog's canonical
+// home a single grep target (`retag_policy<` in safety/Tagged.h) and
+// prevents catalog drift across re-export surfaces.
+//
+// ── Cost ───────────────────────────────────────────────────────────
+//
+// Zero.  The `using` declarations are name-lookup directives only; no
+// symbols emitted, no types introduced, no specializations duplicated.
+using ::crucible::safety::retag_policy;
+using ::crucible::safety::RetagAllowed;
+
+// ── Sentinel pair re-export (V-022 fail-closed witness) ────────────
+//
+// The substrate's `safety::detail::retag_policy_test::{NeverFrom,
+// NeverTo}` pair is reserved-forever-unspecialized — V-022 documents
+// the invariant.  Re-exporting at the fixy band lets fixy_neg HS14
+// fixtures (and downstream catalog-evolution tests) cite the sentinel
+// pair via `fixy::tags::retag_policy_test::Never{From,To}` instead of
+// reaching into safety::detail::.  The `detail::` prefix is dropped
+// because the fixy::tags surface IS the test-visible re-export tier;
+// hiding it again would defeat the surface's discoverability.
+namespace retag_policy_test = ::crucible::safety::detail::retag_policy_test;
+
 }  // namespace crucible::fixy::tags
 
 // ═════════════════════════════════════════════════════════════════════
@@ -322,5 +377,70 @@ static_assert(std::is_same_v<
         ::crucible::permissions::tag::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
     "fixy-A4-013: fixy::source::federation::FederatedPeer must alias "
     "permissions::tag::FederatedPeer (permission axis).");
+
+// ── FIXY-V-025: retag_policy + RetagAllowed alias pinning ──────────
+//
+// Witness that the using-declarations + sentinel-namespace alias
+// preserve the substrate's V-022 fail-closed contract AND V-023's
+// catalog admittance.  If the substrate concept is renamed, the
+// retag_policy primary template moves, or the sentinel pair gains a
+// stray specialization, ONE of these asserts fires at sentinel-TU
+// compile rather than at 40 downstream call sites.
+
+// Identity transition — V-022's `retag_policy<Tag, Tag>` admits
+// (X → X) unconditionally.  Pinning through the alias witnesses that
+// the using-declaration carries specializations, not just the primary
+// template.
+static_assert(retag_policy<source::FromUser, source::FromUser>::allowed,
+    "fixy-V-025: fixy::tags::retag_policy identity specialization "
+    "must admit (X → X) via the V-022 identity rule.");
+
+// Fail-closed default — sentinel pair stays unspecialized, primary
+// template's `allowed = false` reaches through the alias.
+static_assert(!retag_policy<retag_policy_test::NeverFrom,
+                            retag_policy_test::NeverTo>::allowed,
+    "fixy-V-025: fixy::tags::retag_policy primary template MUST be "
+    "fail-closed for the V-022 sentinel pair when reached via the "
+    "fixy alias.");
+
+// V-023 catalog reachable through alias — External → Sanitized is
+// one of the production admittances.  Witnesses that the alias
+// surfaces ALL substrate specializations, not just primaries.
+static_assert(retag_policy<source::External, source::Sanitized>::allowed,
+    "fixy-V-025: V-023 catalog (External → Sanitized) must be "
+    "reachable through the fixy::tags alias.");
+
+// vessel_trust axis — pin a second axis to witness the alias is
+// axis-agnostic.
+static_assert(retag_policy<vessel_trust::FromPytorch,
+                            vessel_trust::Validated>::allowed,
+    "fixy-V-025: V-023 catalog (vessel_trust::FromPytorch → Validated) "
+    "must be reachable through the fixy::tags alias.");
+
+// Concept form — `RetagAllowed<>` consults the same policy table;
+// pin the concept's reach independently.
+static_assert(RetagAllowed<source::External, source::Sanitized>,
+    "fixy-V-025: fixy::tags::RetagAllowed concept must admit V-023 "
+    "catalog transitions through the alias.");
+
+static_assert(!RetagAllowed<retag_policy_test::NeverFrom,
+                              retag_policy_test::NeverTo>,
+    "fixy-V-025: fixy::tags::RetagAllowed concept must reject the "
+    "V-022 sentinel pair through the alias.");
+
+// Identity through concept form — closes the matrix (policy.allowed
+// reachable AND concept reachable, both pinned positive + negative).
+static_assert(RetagAllowed<source::FromUser, source::FromUser>,
+    "fixy-V-025: fixy::tags::RetagAllowed concept must admit identity "
+    "(X → X) through the V-022 identity specialization.");
+
+// Inverse-direction one-way-ratchet — V-023's trust:: catalog is a
+// one-way ratchet (Unverified ⊏ Verified, never backwards).  Pin the
+// inverse-rejection through the alias so a future regression that
+// silently admits Verified → Unverified reddens HERE.
+static_assert(!RetagAllowed<trust::Verified, trust::Unverified>,
+    "fixy-V-025: trust ratchet (Verified → Unverified) MUST stay "
+    "rejected; admitting it would defeat the verification-status "
+    "monotonicity contract.");
 
 }  // namespace crucible::fixy::tags::self_test

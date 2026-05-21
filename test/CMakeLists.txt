@@ -2726,6 +2726,27 @@ crucible_neg_compile_fixy_test(neg_fixy_source_cross_axis_tagged
 crucible_neg_compile_fixy_test(neg_fixy_source_trust_vs_source
     "is_same|static assertion|cross-axis")
 
+# ─────────────────────────────────────────────────────────────────
+# FIXY-V-025 HS14 — retag_policy + RetagAllowed reached via fixy alias
+# ─────────────────────────────────────────────────────────────────
+#
+# V-022 ships safety::retag_policy + safety::RetagAllowed; V-023 the
+# catalog; V-024 wires the concept onto Tagged::retag()'s requires-
+# clause.  V-025 re-exports both at fixy::tags::* (`using` + sentinel
+# namespace alias).  Two HS14 fixtures pin distinct mismatch classes
+# at the FIXY BAND consumer surfaces:
+#   - default_rejects: GATE level via free-function template
+#     constrained on fixy::tags::RetagAllowed; sentinel-pair witness.
+#   - tagged_retag_cross_axis: CONSUMER level via Tagged::retag()'s
+#     wired requires-clause; cross-axis miss with both tags through
+#     fixy::tags.
+# Broad diagnostic family — GCC 16 wording varies across the
+# requires-clause / using-declaration / instantiation paths.
+crucible_neg_compile_fixy_test(neg_fixy_retag_policy_default_rejects
+    "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
+crucible_neg_compile_fixy_test(neg_fixy_tagged_retag_cross_axis
+    "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
+
 # ── FIXY-STRUCT — fixy/Struct.h re-export of structural wrappers
 # (Pinned / NonMovable / NotInherited / FinalBy / Checked /
 # ConstantTime / Simd / OwnedRegion / Workload).  11 HS14 fixtures

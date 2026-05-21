@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T16:50:23Z`.
+Snapshot generated: `2026-05-21T17:07:01Z`.
 
 ## bridges/
 
@@ -104,7 +104,7 @@ Snapshot generated: `2026-05-21T16:50:23Z`.
 | `mint_permission_split` | `include/crucible/permissions/Permission.h:484` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 25 |
 | `mint_permission_split_n` | `include/crucible/permissions/Permission.h:516` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:34` | HS14: 4 |
 | `mint_read_view` | `include/crucible/permissions/ReadView.h:156` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:138` | HS14: 4 |
-| `mint_self_signed_handshake` | `include/crucible/permissions/FederationPermission.h:634` | Y | Y | Y | Y | token | `include/crucible/fixy/Source.h:226` | HS14: 4 |
+| `mint_self_signed_handshake` | `include/crucible/permissions/FederationPermission.h:634` | Y | Y | Y | Y | token | `include/crucible/fixy/Source.h:281` | HS14: 4 |
 
 ## safety/
 
