@@ -28,7 +28,7 @@ struct SenseHubV2::State {
     //   volatile uint64_t*        gauges_mmap;
     //   sense_meta                meta;
     //   ProcGauges                proc_gauges;
-    //   CoverageReport            coverage;
+    //   LoadReport                coverage;
     int placeholder = 0;
 };
 
@@ -66,8 +66,8 @@ SenseHubV2::gauges_view() const noexcept {
     return {nullptr, 0};
 }
 
-CoverageReport SenseHubV2::coverage() const noexcept {
-    return CoverageReport{};  // all default — nothing loaded yet
+LoadReport SenseHubV2::coverage() const noexcept {
+    return LoadReport{};  // all default — nothing loaded yet
 }
 
 } // namespace crucible::perf

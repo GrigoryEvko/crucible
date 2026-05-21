@@ -480,13 +480,22 @@ struct FullSnapshot {
     GaugeSnapshot   gauges;
 };
 
-// ─── Coverage report ──────────────────────────────────────────────────
+// ─── Load report ──────────────────────────────────────────────────
 //
 // load() never fails wholesale — each subprogram attaches independently.
-// Coverage reports which programs/maps loaded vs failed (for the bench
+// LoadReport reports which programs/maps loaded vs failed (for the bench
 // harness banner).
+//
+// FIXY-U-121a — renamed from `CoverageReport` to resolve an ODR collision
+// against `crucible::perf::CoverageReport` (Senses.h:130).  The Senses
+// type answers "which fleet observers are alive?"; this type answers
+// "did THIS hub's eBPF program + maps initialize?".  Different
+// questions, deserve different names.  Surfaced when `fixy/Perf.h`
+// (FIXY-U-121) transitively included both Senses.h and SenseHubV2.h
+// into the same TU; ODR forbids two `crucible::perf::CoverageReport`
+// definitions.
 
-struct CoverageReport {
+struct LoadReport {
     safety::Refined<safety::bounded_above<200>, std::size_t> attached_programs{0};
     safety::Refined<safety::bounded_above<200>, std::size_t> attach_failures{0};
     bool   meta_verified            = false;
@@ -526,8 +535,9 @@ public:
     [[nodiscard]] safety::Borrowed<const volatile uint64_t, SenseHubV2>
         gauges_view() const noexcept;
 
-    // Diagnostic surface
-    [[nodiscard]] CoverageReport coverage() const noexcept;
+    // Diagnostic surface (FIXY-U-121a — was `CoverageReport`; see
+    // the struct-rename comment above for ODR-collision rationale).
+    [[nodiscard]] LoadReport coverage() const noexcept;
 
     // Ship-time constants
     static constexpr std::size_t num_counters() noexcept { return NUM_COUNTERS; }
