@@ -61,6 +61,7 @@
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
+#include <crucible/safety/Witness.h>             // FIXY-V-054 / V-055
 #include <crucible/safety/diag/RowHashFold.h>
 #include <crucible/safety/diag/StableName.h>     // detail::combine_ids
 
@@ -114,6 +115,7 @@ using W23_Budgeted       = cs::Budgeted<int>;
 using W24_EpochVersioned = cs::EpochVersioned<int>;
 using W25_NumaPlacement  = cs::NumaPlacement<int>;
 using W26_RecipeSpec     = cs::RecipeSpec<int>;
+using W27_Witness        = cs::Witness<cs::Witness_v::FORMALLY_VERIFIED, int>;
 
 // ── 8 canonical single-parameter fixy stances ─────────────────────
 //
@@ -135,13 +137,14 @@ using S06_AsyncEndpoint  = cf::stance::AsyncEndpoint<int>;
 using S07_CooperativeBg  = cf::stance::CooperativeBg<int>;
 using S08_RealtimeHot    = cf::stance::RealtimeHot<int>;
 
-// ── 34-entry hash matrix ──────────────────────────────────────────
+// ── 35-entry hash matrix ──────────────────────────────────────────
 //
 // Order is contractual — the fold ceremony pins acc-after-each-entry,
 // so reshuffling indices changes the anchor literal even if every
 // individual hash stays the same.  When adding an entry, append at
-// the end (preserves all upstream fold state).
-inline constexpr std::array<std::uint64_t, 34> kHashes = {
+// the END of the wrapper bucket (preserves all upstream fold state for
+// the stance bucket).
+inline constexpr std::array<std::uint64_t, 35> kHashes = {
     row_hash_contribution_v<W01_Linear>,
     row_hash_contribution_v<W02_Refined>,
     row_hash_contribution_v<W03_SealedRefined>,
@@ -168,6 +171,7 @@ inline constexpr std::array<std::uint64_t, 34> kHashes = {
     row_hash_contribution_v<W24_EpochVersioned>,
     row_hash_contribution_v<W25_NumaPlacement>,
     row_hash_contribution_v<W26_RecipeSpec>,
+    row_hash_contribution_v<W27_Witness>,
     row_hash_contribution_v<S01_PureLinear>,
     row_hash_contribution_v<S02_PureCopy>,
     row_hash_contribution_v<S03_IoFunction>,
@@ -257,7 +261,15 @@ inline constexpr std::uint64_t kFoldSeed = 0xC0FFEEBADF00DBA5ULL;
 // the commit message via "FIXY-V-008: anchor rolled OLD → NEW because
 // <reason>" — the OLD value tells reviewers which prior cache slots
 // were affected.
-inline constexpr std::uint64_t kFoldAnchor = 0x6c5e81d4da13027bULL;
+//
+// V-055 (2026-05-22): rolled OLD=0x6C5E81D4DA13027B →
+// NEW=0xCF47CF6C1D6D6AAA after appending W27_Witness at wrapper-bucket
+// position 27.  Inserting mid-array DOES re-fold the trailing 8 stance
+// entries, but the entries themselves did not change; this is a
+// fold-position drift, not a hash drift, and is the expected
+// federation-key wire-format-break for an Observability-axis carrier
+// joining the universe.  See V-055 commit.
+inline constexpr std::uint64_t kFoldAnchor = 0xCF47CF6C1D6D6AAAULL;
 
 static_assert(fold_anchor() == kFoldAnchor,
     "FIXY-V-008: ceremony anchor drift.  A row_hash_contribution<> "
@@ -273,13 +285,13 @@ static_assert(fold_anchor() == kFoldAnchor,
 // Cardinality pin — adding a new entry without updating kEntryCount
 // would compile silently otherwise.  This anchors the size to
 // review.
-static_assert(kEntryCount == 34,
+static_assert(kEntryCount == 35,
     "FIXY-V-008: matrix cardinality changed.  Update kEntryCount, "
     "extend kHashes at the end (NOT the middle — preserves upstream "
     "fold state), and recompute kFoldAnchor.");
 
-static_assert(kPairCount == 561,
-    "FIXY-V-008: 34 * 33 / 2 = 561.  If you see this fire, "
+static_assert(kPairCount == 595,
+    "FIXY-V-008: 35 * 34 / 2 = 595.  If you see this fire, "
     "kEntryCount changed without updating kPairCount.");
 
 // ── Cross-bucket distinctness — wrappers vs stances ───────────────
@@ -288,7 +300,7 @@ static_assert(kPairCount == 561,
 // already enforces no two entries collide, this narrower check
 // documents the load-bearing property that NO wrapper hashes to ANY
 // stance — they live in disjoint cache regions by construction.
-inline constexpr std::size_t kWrapperCount = 26;
+inline constexpr std::size_t kWrapperCount = 27;
 inline constexpr std::size_t kStanceCount  = 8;
 
 static_assert(kWrapperCount + kStanceCount == kEntryCount);

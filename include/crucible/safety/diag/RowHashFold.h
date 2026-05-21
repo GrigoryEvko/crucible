@@ -137,6 +137,7 @@ enum class ResidencyHeatTag : std::uint8_t;
 enum class Tolerance : std::uint8_t;
 enum class VendorBackend : std::uint8_t;
 enum class WaitStrategy : std::uint8_t;
+enum class Witness : std::uint8_t;            // FIXY-V-053
 }  // namespace crucible::algebra::lattices
 
 namespace crucible::safety {
@@ -167,6 +168,8 @@ template <typename T> class Budgeted;
 template <typename T> class EpochVersioned;
 template <typename T> class NumaPlacement;
 template <typename T> class RecipeSpec;
+// ── FIXY-V-054 — Witness (Comonad over WitnessLattice chain) ───────
+template <algebra::lattices::Witness Tier, typename T> class Witness;
 }  // namespace crucible::safety
 
 namespace crucible::safety::diag {
@@ -275,6 +278,24 @@ inline constexpr std::uint64_t WRAPPER_RECIPE_SPEC_TAG      = 0x1C00'0000'0000'0
 // (0x10-0x11) — same separation discipline as A3-002 / A3-003.
 inline constexpr std::uint64_t WRAPPER_SAFETY_FN_TAG        = 0x1D00'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_FIXY_FN_TAG          = 0x1E00'0000'0000'0000ULL;
+
+// ── FIXY-V-054 / V-055: Witness (Comonad over WitnessLattice chain) ─
+//
+// `safety::Witness<algebra::lattices::Witness Tier, T>` is a regime-1
+// Graded carrier on the Observability axis (CLAUDE.md §XVI canonical
+// wrapper-nesting order, FX dim 11 slot — previously unoccupied).  The
+// 4-tier chain UNWITNESSED ⊏ TYPE_CHECKED ⊏ TEST_PASSED ⊏
+// FORMALLY_VERIFIED encodes epistemic confidence; downstream consumers
+// that demand a minimum tier (e.g. `mimic::nv::Kernel<FORMALLY_VERIFIED,
+// CompiledKernel>` per V-176) MUST cache to a slot disjoint from the
+// same payload at TYPE_CHECKED — otherwise a verified kernel and a
+// merely-type-checked kernel collide at the federation key.  Salt 0x1F
+// keeps the Witness specialization disjoint from the existing 0x01-0x1E
+// salts AND from the resource family (0x10-0x11) AND from the A3-003
+// dimension-traits family (0x12-0x1C) AND from the Fn aggregator family
+// (0x1D-0x1E).  Low-byte folds the Tier enumerator the same way
+// Consistency / OpaqueLifetime / Crash / Wait / MemOrder / Progress do.
+inline constexpr std::uint64_t WRAPPER_WITNESS_TAG          = 0x1F00'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -789,6 +810,29 @@ struct row_hash_contribution<safety::RecipeSpec<Inner>> {
 };
 
 // ═════════════════════════════════════════════════════════════════════
+// ── FIXY-V-055 — Witness<Tier, T> specialization (Observability) ───
+// ═════════════════════════════════════════════════════════════════════
+//
+// `safety::Witness<Tier, T>` is the Observability-axis canonical
+// inhabitant (CLAUDE.md §XVI, FX dim 11).  The 4-tier WitnessLattice
+// (UNWITNESSED ⊏ TYPE_CHECKED ⊏ TEST_PASSED ⊏ FORMALLY_VERIFIED)
+// encodes epistemic confidence at the type level: at production V-176
+// `mimic::nv::Kernel<FORMALLY_VERIFIED, CompiledKernel>` declares a
+// formally-verified cert return; the same payload at TYPE_CHECKED is
+// the merely-discipline-witnessed default.  Two such carriers MUST hash
+// to disjoint federation cache slots — a verified kernel and a type-
+// checked kernel are not interchangeable, regardless of byte-identical
+// payload.  Low-byte encodes the Tier enumerator the same way
+// Consistency / OpaqueLifetime / Crash / Progress / Wait / MemOrder
+// fold their lattice tag.
+template <algebra::lattices::Witness Tier, typename Inner>
+struct row_hash_contribution<safety::Witness<Tier, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_WITNESS_TAG | static_cast<std::uint64_t>(Tier),
+        row_hash_contribution_v<Inner>);
+};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Top-level entry points ─────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -1249,6 +1293,18 @@ static_assert(
     "Nested Computation<EmptyRow, Computation<Row<IO>, int>> "
     "row_hash drifted — wire-format break.  Inner-row "
     "non-collapsing through combine_ids must remain bit-stable.");
+
+// ─── FIXY-V-055 — Witness<Tier, T> self-test deferred ─────────────
+//
+// `safety::Witness<Tier, T>` is the Observability-axis Graded carrier
+// (CLAUDE.md §XVI).  Per-tier non-zero + pairwise distinctness +
+// disjoint-from-Secret + non-sentinel invariants are pinned in the
+// test_row_hash_distinctness.cpp matrix (FIXY-V-008), which fully-
+// includes Witness.h (this header keeps `algebra::lattices::Witness`
+// opaquely forward-declared so the federation-hash layer doesn't pull
+// in the lattice definition).  The matrix's per-bucket distinctness
+// + fold-anchor ceremony together discharge the entire Witness
+// row-hash contract.
 
 // ─── Bubble-sort helper correctness ────────────────────────────────
 
