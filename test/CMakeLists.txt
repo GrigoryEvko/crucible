@@ -3741,6 +3741,14 @@ crucible_neg_compile_effects_test(neg_mint_pipeline_empty_pack
 crucible_neg_compile_effects_test(neg_pipeline_inline_opt_in_missing_ws
     "Pipeline inline opt-in requires")
 
+# FIXY-V-009 HS14 companion — Pipeline's previously-public ctor is now
+# private, with mint_pipeline friended.  A direct
+# `Pipeline<S1, S2>{s1, s2}` call site bypasses CtxFitsPipeline's row
+# admission and is rejected at the access-control check.  Diagnostic
+# regex is the stable GCC "is private within this context" form.
+crucible_neg_compile_effects_test(neg_pipeline_ctor_public_bypass
+    "is private within this context")
+
 # ─── #868: Endpoint↔Stage bridge gate fixtures ───────────────────────
 #
 # Two fixtures pin the CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp,

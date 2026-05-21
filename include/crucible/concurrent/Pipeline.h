@@ -748,11 +748,6 @@ public:
         "Pipeline inline opt-in requires both stage handles to expose "
         "static constexpr per_call_working_set");
 
-    // ── Construction (used by mint_pipeline; not user-facing) ─────
-    [[nodiscard]] explicit constexpr Pipeline(Stages&&... stages) noexcept
-        : stages_{std::forward<Stages>(stages)...}
-    {}
-
     // ── Move-only (held Stages are move-only) ──────────────────────
     Pipeline(Pipeline const&) = delete("Pipeline holds move-only Stages, each of which holds linear Permission tokens via its consumer/producer handles");
     Pipeline& operator=(Pipeline const&) = delete("Pipeline holds move-only Stages, each of which holds linear Permission tokens via its consumer/producer handles");
@@ -793,6 +788,26 @@ public:
     [[nodiscard]] constexpr auto const& stage() const &  noexcept { return std::get<I>(stages_); }
 
 private:
+    // ── Construction (used by mint_pipeline; not user-facing) ─────
+    //
+    // Private per CLAUDE.md §XXI — mint_pipeline is the single
+    // load-bearing authorization point.  A direct call site like
+    // `Pipeline<S1, S2>{s1, s2}` would bypass the
+    // `CtxFitsPipeline<Ctx, Stages...>` admission check and emit a
+    // pipeline whose effect row never sees `Subrow<required, ctx>`.
+    [[nodiscard]] explicit constexpr Pipeline(Stages&&... stages) noexcept
+        : stages_{std::forward<Stages>(stages)...}
+    {}
+
+    // mint_pipeline is the sole authorized constructor — friend the
+    // entire template family so any (Ctx, Stages...) instantiation
+    // can reach the private ctor.
+    template <::crucible::effects::IsExecCtx MintCtx, class... MintStages>
+        requires pipeline_chain<std::remove_cvref_t<MintStages>...>
+    friend constexpr auto mint_pipeline(
+        MintCtx const&,
+        MintStages&&...) noexcept;
+
     [[nodiscard]] static PipelineDispatchKind compute_dispatch_kind_() noexcept {
         if constexpr (inline_safe && aggregate_working_set_known) {
             const auto& topology = Topology::instance();
