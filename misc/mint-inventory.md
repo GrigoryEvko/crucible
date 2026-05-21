@@ -29,7 +29,7 @@ appear as `-` in the flag columns.  The auditor surface for member-function
 mints lives in a separate "Member-function mints" section after the substrate
 trees (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T06:32:43Z`.
+Snapshot generated: `2026-05-21T07:33:25Z`.
 
 ## bridges/
 
@@ -194,12 +194,12 @@ to distinguish this third authorization shape.
 | class::mint_name | file:line | nd | cx | ne | rq | cb | HS14 |
 |---|---|---|---|---|---|---|---|
 | `Cipher::mint_open_view` | `include/crucible/Cipher.h:242` | Y | - | Y | - | member | HS14: 17 |
-| `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h:463` | Y | - | Y | - | member | HS14: 0 ⚠ |
+| `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h:463` | Y | - | Y | - | member | HS14: 2 |
 | `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h:469` | Y | - | Y | - | member | HS14: 3 |
 | `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h:320` | Y | - | Y | - | member | HS14: 0 ⚠ |
 | `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h:295` | Y | - | Y | - | member | HS14: 0 ⚠ |
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h:398` | Y | - | Y | - | member | HS14: 0 ⚠ |
-| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h:155` | Y | - | Y | - | member | HS14: 0 ⚠ |
+| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h:155` | Y | - | Y | - | member | HS14: 2 |
 | `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h:161` | Y | - | Y | - | member | HS14: 3 |
 
 ## Summary

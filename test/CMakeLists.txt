@@ -7589,6 +7589,24 @@ crucible_neg_compile_test(neg_schema_register_with_sealed_view
 crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
   "cannot convert.*Sealed.*MutableView")
 
+# FIXY-U-135 — HS14 floor for CKernelTable::mint_mutable_view.
+# Paired fixtures pinning the per-state lock at BOTH gates of the
+# member mint that survived the prior MutableView=>SealedView sweep
+# (which only pinned the inverse direction via register_op above):
+#   * _to_sealed_overload — value-level typed-overload rejection when
+#     a freshly-minted MutableView is offered where SealedView is
+#     required.  Dual of neg_ckernel_register_with_sealed_view: same
+#     per-state lock, opposite direction.  [GCC-WRAPPER-TEXT]
+#   * _in_field — structural Tier-2 field-storage audit reject when a
+#     class declares CKernelTable::MutableView as a member.  Routes
+#     through the same no_scoped_view_field_check audit that fires
+#     for IterDet Steady (#928), exercising the alias-stability path
+#     (MutableView is a typedef of ScopedView<CKernelTable, Mutable>).
+crucible_neg_compile_test(neg_ckernel_mint_mutable_view_to_sealed_overload
+  "invalid initialization of reference.*SealedView.*Mutable|cannot convert.*Mutable.*Sealed")
+crucible_neg_compile_test(neg_ckernel_mint_mutable_view_in_field
+  "Type contains a safety::ScopedView<> in some field")
+
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
