@@ -13,25 +13,34 @@
 // ── Substrate consumed ─────────────────────────────────────────────
 //
 //   safety::fn::Fn<int>           — the canonical default instantiation
-//   safety::fn::pred::True        — Refinement (dim 2) strict default
-//   safety::fn::UsageMode::Linear — Usage (dim 3) strict default
-//   safety::effects::Row<>        — Effect (dim 4) strict default
-//   safety::fn::SecLevel::Classified — Security (dim 5) strict default
-//   safety::fn::proto::None       — Protocol (dim 6) strict default
-//   safety::fn::lifetime::Static  — Lifetime (dim 7) strict default
-//   safety::source::FromInternal  — Provenance (dim 8) strict default
-//   safety::trust::Verified       — Trust (dim 9) strict default
-//   safety::fn::ReprKind::Opaque  — Representation (dim 10) strict default
-//   safety::fn::cost::Unstated    — Complexity (dim 13) strict default
-//   safety::fn::precision::Exact  — Precision (dim 14) strict default
-//   safety::fn::space::Zero       — Space (dim 15) strict default
-//   safety::fn::OverflowMode::Trap — Overflow (dim 16) strict default
-//   safety::fn::MutationMode::Immutable — Mutation (dim 18) strict default
-//   safety::fn::ReentrancyMode::NonReentrant — Reentrancy (dim 19)
-//   safety::fn::size_pol::Unstated — Size (dim 20) strict default
-//   safety::fn::stale::Fresh      — Staleness (dim 22) strict default
-//   safety::fn::sync::Unconstrained — Synchronization (dim 23) strict default
-//   safety::fn::regime::Unconstrained — Regime (dim 24) strict default
+//
+// (FIXY-V-006 — all "(DimensionAxis::Name = N)" parentheticals below
+// quote the SUBSTRATE enumerator's underlying value from
+// safety/DimensionTraits.h, not the historical FX dim spec numbering.
+// FX dim 12 (Clock Domain) and FX dim 17 (FP Order) were dropped per
+// fixy.md §24.1, so the substrate ordering compacts 0..23 without gaps;
+// see `scripts/check-fixy-dim-prose.sh` for the CI grep guard that
+// rejects re-introduction of "(dim NN)" FX-only spellings.)
+//
+//   safety::fn::pred::True        — Refinement (DimensionAxis::Refinement = 1) strict default
+//   safety::fn::UsageMode::Linear — Usage (DimensionAxis::Usage = 2) strict default
+//   safety::effects::Row<>        — Effect (DimensionAxis::Effect = 3) strict default
+//   safety::fn::SecLevel::Classified — Security (DimensionAxis::Security = 4) strict default
+//   safety::fn::proto::None       — Protocol (DimensionAxis::Protocol = 5) strict default
+//   safety::fn::lifetime::Static  — Lifetime (DimensionAxis::Lifetime = 6) strict default
+//   safety::source::FromInternal  — Provenance (DimensionAxis::Provenance = 7) strict default
+//   safety::trust::Verified       — Trust (DimensionAxis::Trust = 8) strict default
+//   safety::fn::ReprKind::Opaque  — Representation (DimensionAxis::Representation = 9) strict default
+//   safety::fn::cost::Unstated    — Complexity (DimensionAxis::Complexity = 11) strict default
+//   safety::fn::precision::Exact  — Precision (DimensionAxis::Precision = 12) strict default
+//   safety::fn::space::Zero       — Space (DimensionAxis::Space = 13) strict default
+//   safety::fn::OverflowMode::Trap — Overflow (DimensionAxis::Overflow = 14) strict default
+//   safety::fn::MutationMode::Immutable — Mutation (DimensionAxis::Mutation = 15) strict default
+//   safety::fn::ReentrancyMode::NonReentrant — Reentrancy (DimensionAxis::Reentrancy = 16)
+//   safety::fn::size_pol::Unstated — Size (DimensionAxis::Size = 17) strict default
+//   safety::fn::stale::Fresh      — Staleness (DimensionAxis::Staleness = 19) strict default
+//   safety::fn::sync::Unconstrained — Synchronization (DimensionAxis::Synchronization = 20) strict default
+//   safety::fn::regime::Unconstrained — Regime (DimensionAxis::Regime = 21) strict default
 //
 // 20 of 22 axes carry a strict default at the substrate level
 // (refreshed by FIXY-U-134 to match post-A3-008 Synchronization +
@@ -43,9 +52,10 @@
 //                              strict default; we project it as a
 //                              value here.
 //
-// (Observability — dim 11 in FX — is DERIVED from the EffectRow per
-//  fixy.md §24.1; it has no slot in the substrate's Fn<...> template
-//  pack, so it does not appear in `strict_default_for` either.)
+// (Observability — DimensionAxis::Observability = 10 in the substrate
+//  (FX dim 11) — is DERIVED from the EffectRow per fixy.md §24.1; it
+//  has no slot in the substrate's Fn<...> template pack, so it does
+//  not appear in `strict_default_for` either.)
 //
 // ── Substrate added by this header ─────────────────────────────────
 //
@@ -296,8 +306,8 @@ struct strict_default_for<dim::DimensionAxis::Staleness> {
     using type = safety::fn::stale::Fresh;
 };
 
-// FIXY-AUDIT-A3-008: Synchronization (dim 20, Crucible extension
-// 2026-05-18) is a WRAPPER-ONLY axis — safety::Wait<Strategy, T> and
+// FIXY-AUDIT-A3-008: Synchronization (DimensionAxis::Synchronization = 20,
+// Crucible extension 2026-05-18) is a WRAPPER-ONLY axis — safety::Wait<Strategy, T> and
 // safety::MemOrder<Tag, T> hold the sync discipline at the value site,
 // not as an Fn<...> aggregator slot.  No Fn<int> alias to round-trip
 // against (see `type_defaults_match_substrate` below — Synchronization
@@ -311,8 +321,8 @@ struct strict_default_for<dim::DimensionAxis::Synchronization> {
     using type = safety::fn::sync::Unconstrained;
 };
 
-// FIXY-AUDIT-A3-009: Regime (dim 21, Crucible extension 2026-05-18) is
-// a WRAPPER-ONLY axis — safety::HotPath<Tier, T> holds the operating-
+// FIXY-AUDIT-A3-009: Regime (DimensionAxis::Regime = 21, Crucible
+// extension 2026-05-18) is a WRAPPER-ONLY axis — safety::HotPath<Tier, T> holds the operating-
 // regime tier (Hot / Warm / Cold) at the value site, not as an Fn<...>
 // aggregator slot.  No Fn<int> alias to round-trip against (parallel
 // to Observability and Synchronization).  The strict default is
@@ -326,8 +336,8 @@ struct strict_default_for<dim::DimensionAxis::Regime> {
     using type = safety::fn::regime::Unconstrained;
 };
 
-// FIXY-V-088: FpMode (dim 22, Crucible extension 2026-05-22) is a
-// WRAPPER-ONLY axis — the FpMode taxonomy (11 sub-axes: Rounding / Ftz
+// FIXY-V-088: FpMode (DimensionAxis::FpMode = 22, Crucible extension
+// 2026-05-22) is a WRAPPER-ONLY axis — the FpMode taxonomy (11 sub-axes: Rounding / Ftz
 // / Contract / TrapMask / Denormal / NanPolicy / InfPolicy /
 // ComplexLayout / LibmPolicy / Reassociate / FpConstant; see
 // algebra/lattices/FpModeLattice.h) is held at the value site by a
@@ -344,8 +354,8 @@ struct strict_default_for<dim::DimensionAxis::FpMode> {
     using type = safety::fn::fp_mode::Unconstrained;
 };
 
-// FIXY-V-097: SyscallSurface (dim 23, Crucible extension 2026-05-22)
-// is a WRAPPER-ONLY axis — the syscall-family taxonomy
+// FIXY-V-097: SyscallSurface (DimensionAxis::SyscallSurface = 23,
+// Crucible extension 2026-05-22) is a WRAPPER-ONLY axis — the syscall-family taxonomy
 // (`SyscallFamilyLattice` per algebra/lattices/SyscallFamilyLattice.h:
 // NoSyscall / VdsoOnly / ReadOnlyState / FileMutation / MemoryMapping
 // / ThreadSync / NetworkIo / ProcessControl / Privilege) is held at

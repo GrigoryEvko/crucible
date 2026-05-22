@@ -291,7 +291,7 @@ struct which_dim<accept_default_strict_for<D>>
 // job of `fixy/Fn.h`'s `detail::resolve` namespace.  IsAccepted only
 // needs the dim-mapping for the engagement check.
 
-// ── Dim 3 Usage relaxations ────────────────────────────────────────
+// ── DimensionAxis::Usage = 2 relaxations ───────────────────────────
 struct affine          final : grant_base {};  // Usage = Affine
 struct copy            final : grant_base {};  // Usage = Copy
 struct ghost           final : grant_base {};  // Usage = Ghost
@@ -306,7 +306,7 @@ template <> struct which_dim<ghost>            : std::integral_constant<dim::Dim
 template <> struct which_dim<borrow>           : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
 template <> struct which_dim<capability_usage> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
 
-// ── Dim 4 Effect relaxations ───────────────────────────────────────
+// ── DimensionAxis::Effect = 3 relaxations ──────────────────────────
 //
 // `with<Es...>` engages the Effect axis with an explicit effects::Row
 // of the supplied effects.  The Es pack is `effects::Effect` enum
@@ -332,7 +332,7 @@ using with_bg    = with<effects::Effect::Bg>;
 using with_init  = with<effects::Effect::Init>;
 using with_test  = with<effects::Effect::Test>;
 
-// ── Dim 5 Security relaxations ─────────────────────────────────────
+// ── DimensionAxis::Security = 4 relaxations ────────────────────────
 //
 // `declassify<Policy>` engages Security with a named policy tag,
 // projecting to `SecLevel::Public`.  The Policy parameter is
@@ -394,7 +394,7 @@ template <> struct which_dim<as_classified>
 template <> struct which_dim<as_secret>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
 
-// ── Dim 6 Protocol relaxations ─────────────────────────────────────
+// ── DimensionAxis::Protocol = 5 relaxations ────────────────────────
 //
 // `protocol<Proto>` engages Protocol with a session-type or machine
 // state-type.  `fixy/Fn.h`'s `detail::resolve` namespace projects
@@ -409,7 +409,7 @@ template <typename Proto>
 struct which_dim<protocol<Proto>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Protocol> {};
 
-// ── Dim 7 Lifetime relaxations ─────────────────────────────────────
+// ── DimensionAxis::Lifetime = 6 relaxations ────────────────────────
 //
 // `in_region<RegionTag>` engages Lifetime with a named region tag,
 // projecting to `safety::fn::lifetime::In<RegionTag>`.
@@ -421,7 +421,7 @@ template <auto RegionTag>
 struct which_dim<in_region<RegionTag>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Lifetime> {};
 
-// ── Dim 8 Provenance relaxations ───────────────────────────────────
+// ── DimensionAxis::Provenance = 7 relaxations ──────────────────────
 //
 // `from_source<Source>` engages Provenance with a substrate source
 // tag (source::FromUser / source::FromDb / source::FromNetwork /
@@ -437,7 +437,7 @@ template <typename Source>
 struct which_dim<from_source<Source>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Provenance> {};
 
-// ── Dim 9 Trust relaxations ────────────────────────────────────────
+// ── DimensionAxis::Trust = 8 relaxations ───────────────────────────
 //
 // `trust_assumed<auto Rationale>` engages Trust with a documented
 // rationale string (the rationale is a non-type template parameter
@@ -487,7 +487,7 @@ template <> struct which_dim<trust_unverified>
 template <> struct which_dim<trust_external>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
 
-// ── Dim 10 Representation relaxations ──────────────────────────────
+// ── DimensionAxis::Representation = 9 relaxations ──────────────────
 //
 // `repr<Kind>` engages Representation with a ReprKind enum value.
 
@@ -498,7 +498,7 @@ template <safety::fn::ReprKind Kind>
 struct which_dim<repr<Kind>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Representation> {};
 
-// ── Dim 11 Observability — derived from Effect ─────────────────────
+// ── DimensionAxis::Observability = 10 — derived from Effect ────────
 //
 // Observability is derived from EffectRow per fixy.md §24.1.  The
 // only valid grant on this axis is the acceptance marker; explicit
@@ -506,7 +506,7 @@ struct which_dim<repr<Kind>>
 // ship NO relaxation tag for Observability — only
 // `accept_default_strict_for<Observability>` is legal.
 
-// ── Dim 13 Complexity relaxations ──────────────────────────────────
+// ── DimensionAxis::Complexity = 11 relaxations ─────────────────────
 //
 // `cost_constant`, `cost_linear<N>`, `cost_quadratic<N>` engage
 // Complexity with the corresponding `safety::fn::cost::*` tag.
@@ -521,7 +521,7 @@ template <auto N>      struct which_dim<cost_linear<N>>     : std::integral_cons
 template <auto N>      struct which_dim<cost_quadratic<N>>  : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
 template <>            struct which_dim<cost_unbounded>     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
 
-// ── Dim 14 Precision relaxations ───────────────────────────────────
+// ── DimensionAxis::Precision = 12 relaxations ──────────────────────
 //
 // `precision_f32`, `precision_f64`, `precision_higham<Bound>` —
 // `fixy/Fn.h`'s `detail::resolve` namespace projects to
@@ -535,7 +535,7 @@ template <>           struct which_dim<precision_f32>          : std::integral_c
 template <>           struct which_dim<precision_f64>          : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Precision> {};
 template <auto Bound> struct which_dim<precision_higham<Bound>>: std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Precision> {};
 
-// ── Dim 15 Space relaxations ───────────────────────────────────────
+// ── DimensionAxis::Space = 13 relaxations ──────────────────────────
 template <auto N> struct space_bounded final : grant_base {};
 struct space_unbounded final : grant_base {};
 
@@ -544,7 +544,7 @@ template <auto N> struct which_dim<space_bounded<N>>
 template <>       struct which_dim<space_unbounded>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Space> {};
 
-// ── Dim 16 Overflow relaxations ────────────────────────────────────
+// ── DimensionAxis::Overflow = 14 relaxations ───────────────────────
 struct overflow_wrap     final : grant_base {};
 struct overflow_saturate final : grant_base {};
 struct overflow_widen    final : grant_base {};
@@ -553,7 +553,7 @@ template <> struct which_dim<overflow_wrap>     : std::integral_constant<dim::Di
 template <> struct which_dim<overflow_saturate> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Overflow> {};
 template <> struct which_dim<overflow_widen>    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Overflow> {};
 
-// ── Dim 18 Mutation relaxations ────────────────────────────────────
+// ── DimensionAxis::Mutation = 15 relaxations ───────────────────────
 struct mut_mutable    final : grant_base {};
 struct mut_append     final : grant_base {};
 struct mut_monotonic  final : grant_base {};
@@ -562,14 +562,14 @@ template <> struct which_dim<mut_mutable>   : std::integral_constant<dim::Dimens
 template <> struct which_dim<mut_append>    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
 template <> struct which_dim<mut_monotonic> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
 
-// ── Dim 19 Reentrancy relaxations ──────────────────────────────────
+// ── DimensionAxis::Reentrancy = 16 relaxations ─────────────────────
 struct reentrant final : grant_base {};
 struct coroutine final : grant_base {};
 
 template <> struct which_dim<reentrant> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Reentrancy> {};
 template <> struct which_dim<coroutine> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Reentrancy> {};
 
-// ── Dim 20 Size relaxations ────────────────────────────────────────
+// ── DimensionAxis::Size = 17 relaxations ───────────────────────────
 template <auto Depth> struct sized_at final : grant_base {};
 struct productive final : grant_base {};
 
@@ -578,19 +578,19 @@ template <auto Depth> struct which_dim<sized_at<Depth>>
 template <>           struct which_dim<productive>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Size> {};
 
-// ── Dim 21 Version relaxations ─────────────────────────────────────
+// ── DimensionAxis::Version = 18 relaxations ────────────────────────
 template <std::uint32_t V> struct version final : grant_base {};
 
 template <std::uint32_t V> struct which_dim<version<V>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Version> {};
 
-// ── Dim 22 Staleness relaxations ───────────────────────────────────
+// ── DimensionAxis::Staleness = 19 relaxations ──────────────────────
 template <auto TauMax> struct stale_to final : grant_base {};
 
 template <auto TauMax> struct which_dim<stale_to<TauMax>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Staleness> {};
 
-// ── Dim 2 Refinement relaxations ───────────────────────────────────
+// ── DimensionAxis::Refinement = 1 relaxations ──────────────────────
 //
 // `refined_with<Pred>` engages Refinement with a predicate type that
 // satisfies the `pred::check` interface.  `fixy/Fn.h`'s
@@ -605,7 +605,7 @@ template <typename Pred>
 struct which_dim<refined_with<Pred>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Refinement> {};
 
-// ── Dim 1 Type relaxations ─────────────────────────────────────────
+// ── DimensionAxis::Type = 0 relaxations ────────────────────────────
 //
 // The Type axis is caller-supplied via `fixy::fn<Type, Grants...>`'s
 // first template parameter.  `fixy/Fn.h`'s `detail::resolve`

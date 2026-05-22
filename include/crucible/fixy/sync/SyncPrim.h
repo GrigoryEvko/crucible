@@ -23,8 +23,8 @@
 //
 // ── Why a PARALLEL taxonomy (not formal fixy::grant) ──────────────
 //
-// Synchronization is a wrapper-only axis per safety/Fn.h Dim 23
-// doc-block — there is NO Fn<...> template-parameter slot for it.
+// Synchronization is a wrapper-only axis per safety/Fn.h
+// DimensionAxis::Synchronization = 20 doc-block — there is NO Fn<...> template-parameter slot for it.
 // The `which_dim` specialization mechanism (Grant.h CR-09) is
 // reserved for AXES with Fn template-parameter positions.  V-085
 // ships a structural taxonomy of permit tags in a parallel
@@ -125,7 +125,7 @@
 // CLAUDE.md §IX.5 — latency hierarchy + canonical ban list.
 // CollisionCatalog W001 / W002 (FIXY-V-081 / V-082) — analogous
 //                                  rules on the Wait wrapper axis.
-// fixy.md §24.1 — Dim 23 Synchronization is a wrapper-only axis.
+// fixy.md §24.1 — DimensionAxis::Synchronization = 20 is a wrapper-only axis.
 
 #include <crucible/Platform.h>
 #include <crucible/safety/HotPath.h>

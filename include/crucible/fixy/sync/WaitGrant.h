@@ -48,7 +48,7 @@
 //    through the fixy surface — surface integrity, not mint gating.
 //
 //  * NOT a fixy::grant tag.  Synchronization is a wrapper-only axis
-//    per `safety/Fn.h` Dim 23 doc-block — there is NO Fn<...>
+//    per `safety/Fn.h` DimensionAxis::Synchronization = 20 doc-block — there is NO Fn<...>
 //    template-parameter slot for it.  The only fixy::grant tag for
 //    DimensionAxis::Synchronization is `accept_default_strict_for<
 //    DimensionAxis::Synchronization>` (already shipped in
@@ -76,7 +76,7 @@
 // Substrate: safety/Wait.h (FOUND-G24), algebra/lattices/WaitLattice.h
 // (FOUND-G23), safety/IsWait.h (FOUND-D26).
 // CLAUDE.md §IX.5 — latency hierarchy + load-bearing discipline.
-// fixy.md §24.1 — Dim 23 Synchronization axis (wrapper-only).
+// fixy.md §24.1 — DimensionAxis::Synchronization = 20 axis (wrapper-only).
 // 28_04_2026_effects.md §4.3.3 — production-call-site rationale.
 
 #include <crucible/safety/Wait.h>

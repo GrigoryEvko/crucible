@@ -3,7 +3,7 @@
 // ── crucible::fixy::grant::syscall — coarse family grants (V-098) ────
 //
 // Nine family-tier grant tags engaging `DimensionAxis::SyscallSurface`
-// (dim 23, V-097 2026-05-22).  Each tag pins ONE of the nine
+// (substrate ordinal 23, V-097 2026-05-22).  Each tag pins ONE of the nine
 // `algebra::lattices::SyscallFamily` chain-lattice tiers (V-097's
 // algebra/lattices/SyscallFamilyLattice.h — the enum lives in the
 // algebra layer because the lattice owns it; safety:: re-export

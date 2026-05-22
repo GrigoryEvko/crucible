@@ -49,7 +49,7 @@
 //    through the fixy surface — surface integrity, not mint gating.
 //
 //  * NOT a fixy::grant tag.  Synchronization is a wrapper-only axis
-//    per `safety/Fn.h` Dim 23 doc-block — there is NO Fn<...>
+//    per `safety/Fn.h` DimensionAxis::Synchronization = 20 doc-block — there is NO Fn<...>
 //    template-parameter slot for it.  This header does NOT
 //    specialize `which_dim`.
 //
@@ -88,7 +88,7 @@
 // Substrate: safety/MemOrder.h (FOUND-G29), algebra/lattices/
 // MemOrderLattice.h (FOUND-G28), safety/IsMemOrder.h (FOUND-D27).
 // CLAUDE.md §VI — memory-order ordering discipline + seq_cst ban.
-// fixy.md §24.1 — Dim 23 Synchronization axis (wrapper-only).
+// fixy.md §24.1 — DimensionAxis::Synchronization = 20 axis (wrapper-only).
 // 28_04_2026_effects.md §4.3.4 — production-call-site rationale.
 
 #include <crucible/safety/MemOrder.h>

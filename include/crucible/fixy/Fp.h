@@ -2,8 +2,8 @@
 
 // ── crucible::fixy::grant — FP-mode grant tags (FIXY-V-092) ───────────
 //
-// Twelve grant tags that engage `DimensionAxis::FpMode` (dim 22, added
-// 2026-05-22 by V-088).  Eleven per-sub-axis parametric grants pin a
+// Twelve grant tags that engage `DimensionAxis::FpMode` (substrate
+// ordinal 22, added 2026-05-22 by V-088).  Eleven per-sub-axis parametric grants pin a
 // specific mode on a single FP sub-axis; one aggregate grant
 // (`fp_strict_ieee`) declares conformance to the IEEE 754 default on
 // every sub-axis at once.  Every tag routes to `DimensionAxis::FpMode`

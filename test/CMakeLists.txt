@@ -580,6 +580,17 @@ add_test(NAME fixy_clean_headers
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-clean-headers.sh)
 set_tests_properties(fixy_clean_headers fixy_clean_headers_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-096z")
+# FIXY-V-006 axis-numbering CI guard.  FX dim numbering (FX dim 1..22)
+# diverges from substrate DimensionAxis ordinal (0..23) because FX dim
+# 12 Clock Domain and FX dim 17 FP Order were dropped per fixy.md
+# §24.1.  V-006 migrated every doc-block under include/crucible/fixy/
+# to the substrate form "DimensionAxis::<Name> = <ordinal>".  This
+# guard rejects regression back to the FX-only "Dim <N>" / "(dim <N>)"
+# spellings.  See Default.h's preamble for the convention statement.
+add_test(NAME fixy_dim_prose
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.sh)
+set_tests_properties(fixy_dim_prose PROPERTIES
+    LABELS "ci_guard;fixy-V-006")
 # FIXY-U-100 syscall capability discipline (closes fixy-A5-016
 # regression-prevention surface).  scripts/check-syscall-capability.sh
 # flags every NEW direct Linux syscall invocation outside the allowlist

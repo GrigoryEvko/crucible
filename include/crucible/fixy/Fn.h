@@ -142,11 +142,11 @@ struct project;
 template <dim::DimensionAxis D>
 struct project<grant::accept_default_strict_for<D>> : strict_default_for<D> {};
 
-// ── Dim 2 Refinement (type-valued) ────────────────────────────────
+// ── DimensionAxis::Refinement = 1 (type-valued) ───────────────────
 template <typename Pred>
 struct project<grant::refined_with<Pred>> { using type = Pred; };
 
-// ── Dim 3 Usage (enum-valued) ─────────────────────────────────────
+// ── DimensionAxis::Usage = 2 (enum-valued) ────────────────────────
 template <> struct project<grant::affine> {
     using value_type = safety::fn::UsageMode;
     static constexpr value_type value = safety::fn::UsageMode::Affine;
@@ -168,11 +168,11 @@ template <> struct project<grant::capability_usage> {
     static constexpr value_type value = safety::fn::UsageMode::Capability;
 };
 
-// ── Dim 4 Effect (type-valued) ────────────────────────────────────
+// ── DimensionAxis::Effect = 3 (type-valued) ───────────────────────
 template <effects::Effect... Es>
 struct project<grant::with<Es...>> { using type = effects::Row<Es...>; };
 
-// ── Dim 5 Security (enum-valued via declassify) ───────────────────
+// ── DimensionAxis::Security = 4 (enum-valued via declassify) ──────
 //
 // Convention: declassify<Policy> projects to SecLevel::Public.
 // The Policy parameter is captured for audit trails (consumed by
@@ -207,21 +207,21 @@ template <> struct project<grant::as_secret> {
     static constexpr value_type value = safety::fn::SecLevel::Secret;
 };
 
-// ── Dim 6 Protocol (type-valued) ──────────────────────────────────
+// ── DimensionAxis::Protocol = 5 (type-valued) ─────────────────────
 template <typename Proto>
 struct project<grant::protocol<Proto>> { using type = Proto; };
 
-// ── Dim 7 Lifetime (type-valued) ──────────────────────────────────
+// ── DimensionAxis::Lifetime = 6 (type-valued) ─────────────────────
 template <auto RegionTag>
 struct project<grant::in_region<RegionTag>> {
     using type = safety::fn::lifetime::In<RegionTag>;
 };
 
-// ── Dim 8 Provenance (type-valued) ────────────────────────────────
+// ── DimensionAxis::Provenance = 7 (type-valued) ───────────────────
 template <typename Source>
 struct project<grant::from_source<Source>> { using type = Source; };
 
-// ── Dim 9 Trust (type-valued) ─────────────────────────────────────
+// ── DimensionAxis::Trust = 8 (type-valued) ────────────────────────
 template <auto Rationale>
 struct project<grant::trust_assumed<Rationale>> {
     using type = safety::trust::Assumed;
@@ -234,14 +234,14 @@ template <> struct project<grant::trust_tested>     { using type = safety::trust
 template <> struct project<grant::trust_unverified> { using type = safety::trust::Unverified; };
 template <> struct project<grant::trust_external>   { using type = safety::trust::External; };
 
-// ── Dim 10 Representation (enum-valued) ───────────────────────────
+// ── DimensionAxis::Representation = 9 (enum-valued) ───────────────
 template <safety::fn::ReprKind Kind>
 struct project<grant::repr<Kind>> {
     using value_type = safety::fn::ReprKind;
     static constexpr value_type value = Kind;
 };
 
-// ── Dim 13 Complexity (type-valued) ───────────────────────────────
+// ── DimensionAxis::Complexity = 11 (type-valued) ──────────────────
 template <> struct project<grant::cost_constant>  { using type = safety::fn::cost::Constant; };
 template <auto N> struct project<grant::cost_linear<N>> {
     using type = safety::fn::cost::Linear<N>;
@@ -251,20 +251,20 @@ template <auto N> struct project<grant::cost_quadratic<N>> {
 };
 template <> struct project<grant::cost_unbounded> { using type = safety::fn::cost::Unbounded; };
 
-// ── Dim 14 Precision (type-valued) ────────────────────────────────
+// ── DimensionAxis::Precision = 12 (type-valued) ───────────────────
 template <> struct project<grant::precision_f32> { using type = safety::fn::precision::F32; };
 template <> struct project<grant::precision_f64> { using type = safety::fn::precision::F64; };
 template <auto Bound> struct project<grant::precision_higham<Bound>> {
     using type = safety::fn::precision::Higham<Bound>;
 };
 
-// ── Dim 15 Space (type-valued) ────────────────────────────────────
+// ── DimensionAxis::Space = 13 (type-valued) ───────────────────────
 template <auto N> struct project<grant::space_bounded<N>> {
     using type = safety::fn::space::Bounded<N>;
 };
 template <> struct project<grant::space_unbounded> { using type = safety::fn::space::Unbounded; };
 
-// ── Dim 16 Overflow (enum-valued) ─────────────────────────────────
+// ── DimensionAxis::Overflow = 14 (enum-valued) ────────────────────
 template <> struct project<grant::overflow_wrap> {
     using value_type = safety::fn::OverflowMode;
     static constexpr value_type value = safety::fn::OverflowMode::Wrap;
@@ -278,7 +278,7 @@ template <> struct project<grant::overflow_widen> {
     static constexpr value_type value = safety::fn::OverflowMode::Widen;
 };
 
-// ── Dim 18 Mutation (enum-valued) ─────────────────────────────────
+// ── DimensionAxis::Mutation = 15 (enum-valued) ────────────────────
 template <> struct project<grant::mut_mutable> {
     using value_type = safety::fn::MutationMode;
     static constexpr value_type value = safety::fn::MutationMode::Mutable;
@@ -292,7 +292,7 @@ template <> struct project<grant::mut_monotonic> {
     static constexpr value_type value = safety::fn::MutationMode::Monotonic;
 };
 
-// ── Dim 19 Reentrancy (enum-valued) ───────────────────────────────
+// ── DimensionAxis::Reentrancy = 16 (enum-valued) ──────────────────
 template <> struct project<grant::reentrant> {
     using value_type = safety::fn::ReentrancyMode;
     static constexpr value_type value = safety::fn::ReentrancyMode::Reentrant;
@@ -302,19 +302,19 @@ template <> struct project<grant::coroutine> {
     static constexpr value_type value = safety::fn::ReentrancyMode::Coroutine;
 };
 
-// ── Dim 20 Size (type-valued) ─────────────────────────────────────
+// ── DimensionAxis::Size = 17 (type-valued) ────────────────────────
 template <auto Depth> struct project<grant::sized_at<Depth>> {
     using type = safety::fn::size_pol::Sized<Depth>;
 };
 template <> struct project<grant::productive> { using type = safety::fn::size_pol::Productive; };
 
-// ── Dim 21 Version (integer-valued) ───────────────────────────────
+// ── DimensionAxis::Version = 18 (integer-valued) ──────────────────
 template <std::uint32_t V> struct project<grant::version<V>> {
     using value_type = std::uint32_t;
     static constexpr value_type value = V;
 };
 
-// ── Dim 22 Staleness (type-valued) ────────────────────────────────
+// ── DimensionAxis::Staleness = 19 (type-valued) ───────────────────
 template <auto TauMax> struct project<grant::stale_to<TauMax>> {
     using type = safety::fn::stale::Stale<TauMax>;
 };
@@ -477,7 +477,7 @@ using resolved_fn_t = safety::fn::Fn<
     resolve_staleness_t<Grants...>>;
 
 // Implicit Type engagement marker injected at fixy::fn instantiation
-// (per Grant.h's Dim 1 Type discipline: callers do not write the
+// (per Grant.h's DimensionAxis::Type = 0 discipline: callers do not write the
 // marker — the wrapper supplies it).
 using ImplicitTypeMarker =
     grant::accept_default_strict_for<dim::DimensionAxis::Type>;
