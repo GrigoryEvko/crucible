@@ -11138,6 +11138,30 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_assoc_role_list_missing_coverage
 crucible_neg_compile_fixy_test(neg_fixy_sess_assoc_wrong_session_tag
     "Association_Domain_Mismatch|assert_associated|is_associated|SessionTag|projection|static assertion failed|domain_matches")
 
+# FIXY-V-060 HS14 floor — three neg-compile fixtures across the
+# fixy::sess::delegate:: surface, one per regression shape:
+#   shape α (delegate carrier)  — assert_delegates_to rejects Send-as-
+#                                 carrier (Send moves VALUE, Delegate
+#                                 moves ENDPOINT — concept rejects).
+#   shape β (accept carrier)    — assert_accepts_from rejects Recv-as-
+#                                 carrier (dual side of α; protects
+#                                 the AcceptsFrom concept route).
+#   shape γ (crash propagation) — assert_delegated_crash_propagates
+#                                 rejects (T, R, K) triples where T
+#                                 can emit but K offers no Crash<R>
+#                                 recovery branch.  Catches the
+#                                 [DelegatedCrashPropagation_Missing-
+#                                 Recovery] regression class.
+# Routing through the fixy::sess::delegate:: umbrella drift-protects
+# the re-export chain — a future refactor that strips `using
+# safety::proto::assert_delegates_to` from SessDelegate.h reds at HS14.
+crucible_neg_compile_fixy_test(neg_fixy_sess_delegate_assert_wrong_carrier_shape
+    "ProtocolViolation_State|assert_delegates_to|DelegatesTo|static assertion failed|Delegate|delegated_proto")
+crucible_neg_compile_fixy_test(neg_fixy_sess_delegate_assert_wrong_accept_carrier
+    "ProtocolViolation_State|assert_accepts_from|AcceptsFrom|static assertion failed|Accept|delegated_proto")
+crucible_neg_compile_fixy_test(neg_fixy_sess_delegate_crash_must_abort
+    "DelegatedCrashPropagation_MissingRecovery|assert_delegated_crash_propagates|static assertion failed|MustAbort|delegated_crash_propagation")
+
 # fixy-A2-016 — 12 negative-compile fixtures across 6 bridges/* mint
 # factories (≥2 per factory).  Each fixture's expected diagnostic
 # regex is wide enough to tolerate GCC phrasing drift across patch

@@ -715,6 +715,82 @@ static_assert(fsassoc::is_associated_v<v059_reach::Gamma,
                                        v059_reach::G,
                                        v059_reach::SessZ>);
 
+// ─── 6l. SessDelegate.h reach — fixy::sess::delegate:: (FIXY-V-060) ──
+//
+// Witness that the L4 delegation surface (Delegate / Accept primary
+// pair, Epoched-NTTP variants, crash propagation triple, sugar aliases,
+// discriminators, concepts, transport concepts, intent-revealing
+// consteval asserts) reaches the consumer through the umbrella include
+// alone.  If a future regression strips `#include <crucible/fixy/
+// SessDelegate.h>` from Fixy.h's Phase-C block, the claims below fail
+// to compile.
+
+namespace fsdelegate = ::crucible::fixy::sess::delegate;
+
+namespace v060_reach {
+struct Req {};
+struct Ack {};
+struct CrashTag {};
+using T = ::crucible::safety::proto::Send<Req, ::crucible::safety::proto::End>;
+using K = ::crucible::safety::proto::End;
+using D = fsdelegate::Delegate<T, K>;
+using A = fsdelegate::Accept<T, K>;
+using ED = fsdelegate::EpochedDelegate<T, K, 11u, 13u>;
+using EA = fsdelegate::EpochedAccept<T, K, 11u, 13u>;
+}  // namespace v060_reach
+
+// 6l-a. Core combinators alias through the umbrella to the substrate.
+static_assert(std::is_same_v<
+    v060_reach::D,
+    ::crucible::safety::proto::Delegate<v060_reach::T, v060_reach::K>>,
+    "umbrella reach: fixy::sess::delegate::Delegate must alias "
+    "safety::proto::Delegate.  If this red-lights, fixy/SessDelegate.h "
+    "is not pulled in by <crucible/Fixy.h>.");
+static_assert(std::is_same_v<
+    v060_reach::A,
+    ::crucible::safety::proto::Accept<v060_reach::T, v060_reach::K>>);
+
+// 6l-b. Epoched variants preserve their NTTPs through the umbrella.
+static_assert(v060_reach::ED::min_epoch      == 11u);
+static_assert(v060_reach::ED::min_generation == 13u);
+static_assert(v060_reach::EA::min_epoch      == 11u);
+static_assert(v060_reach::EA::min_generation == 13u);
+
+// 6l-c. Discriminators reach (is_delegate_v / is_accept_v /
+// is_delegation_head_v).
+static_assert(fsdelegate::is_delegate_v<v060_reach::D>);
+static_assert(fsdelegate::is_accept_v<v060_reach::A>);
+static_assert(fsdelegate::is_delegation_head_v<v060_reach::ED>);
+static_assert(fsdelegate::is_delegation_head_v<v060_reach::EA>);
+
+// 6l-d. Sugar combinator (Delegate_seq / Redelegate) expansions reach.
+static_assert(std::is_same_v<
+    fsdelegate::Delegate_seq<v060_reach::Req, v060_reach::Ack, v060_reach::K>,
+    ::crucible::safety::proto::Delegate<v060_reach::Req,
+        ::crucible::safety::proto::Delegate<v060_reach::Ack, v060_reach::K>>>);
+static_assert(std::is_same_v<
+    fsdelegate::Redelegate<v060_reach::T, v060_reach::K>,
+    ::crucible::safety::proto::Accept<v060_reach::T,
+        ::crucible::safety::proto::Delegate<v060_reach::T, v060_reach::K>>>);
+
+// 6l-e. Concepts reach — CanDelegate / DelegatesTo / AcceptsFrom.
+template <typename P, typename R>
+    requires fsdelegate::CanDelegate<P, R>
+consteval bool v060_can_delegate_witness() { return true; }
+static_assert(v060_can_delegate_witness<v060_reach::T, v060_reach::CrashTag>());
+
+template <typename C, typename Td>
+    requires fsdelegate::DelegatesTo<C, Td>
+consteval bool v060_delegates_to_witness() { return true; }
+static_assert(v060_delegates_to_witness<v060_reach::D, v060_reach::T>());
+
+// 6l-f. Intent-revealing consteval assertions reach.
+consteval bool v060_assert_delegates_to_witness() {
+    fsdelegate::assert_delegates_to<v060_reach::D, v060_reach::T>();
+    return true;
+}
+static_assert(v060_assert_delegates_to_witness());
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }
