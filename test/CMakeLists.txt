@@ -5821,6 +5821,23 @@ crucible_neg_compile_test(neg_join_policy_relax_to_stricter
 crucible_neg_compile_test(neg_join_policy_mint_wrong_arg
   "constraints not satisfied|no matching function|associated constraints|cannot convert")
 
+# ─── FIXY-V-080 ThreadLocalRef neg-compiles (2 fixtures = HS14 floor) ──
+#
+# ThreadLocalRef<Tag, T> — phantom-tagged thread-local storage handle.
+# Structural wrapper (not Graded — no lattice/modality).  HS14: every
+# new mint factory ships ≥2 neg-compile fixtures across distinct
+# mismatch classes.  Here:
+#   1. mint-requires-default-ctor — class+mint constructibility gate.
+#      Catches refactors that loosen the
+#      `std::is_default_constructible_v<T>` requires-clause.
+#   2. store-wrong-type            — store assignability gate.  Catches
+#      refactors that loosen the `is_assignable_v<T&, U&&>` requires-
+#      clause on the store member.
+crucible_neg_compile_test(neg_thread_local_ref_mint_requires_default_ctor
+  "constraints not satisfied|no matching function|associated constraints|deleted function|use of deleted")
+crucible_neg_compile_test(neg_thread_local_ref_store_wrong_type
+  "constraints not satisfied|no matching function|associated constraints|cannot convert")
+
 # ─── FIXY-V-057 Affine wrapper neg-compiles (2 fixtures = HS14 floor) ─
 #
 # Affine<T> = Graded<Absolute, QttSemiring::At<Zero>, T> — substructural

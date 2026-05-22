@@ -205,4 +205,5 @@
 #include <crucible/safety/Witness.h>
 #include <crucible/safety/JoinPolicy.h>
 #include <crucible/safety/IsJoinPolicy.h>
+#include <crucible/safety/ThreadLocalRef.h>
 #include <crucible/safety/Workload.h>

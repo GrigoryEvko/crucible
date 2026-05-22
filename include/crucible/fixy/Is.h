@@ -97,6 +97,7 @@
 #include <crucible/safety/IsDetSafe.h>
 #include <crucible/safety/IsEpochVersioned.h>
 #include <crucible/safety/IsHotPath.h>
+#include <crucible/safety/IsJoinPolicy.h>
 #include <crucible/safety/IsLinear.h>
 #include <crucible/safety/IsMemOrder.h>
 #include <crucible/safety/IsNumaPlacement.h>
