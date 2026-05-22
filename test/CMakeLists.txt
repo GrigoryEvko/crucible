@@ -4246,6 +4246,19 @@ crucible_neg_compile_test(neg_collision_S010_stale_ct
 crucible_neg_compile_test(neg_collision_S011_capability_replay
   "S011:")
 
+# ─── FIXY-V-081 W001 — HotPath x Wait>=Park (2 fixtures = HS14 floor) ──
+#
+# W001 is the first Phase-C wait-strategy cross-axis rule.  Two
+# fixtures probe distinct lattice positions in the rejected region:
+#   1. Wait<Park, T>  — the named "≥Park" boundary tier (condvar).
+#   2. Wait<Block, T> — the chain-bottom worst-case tier (poll/blocking).
+# A regression that narrowed `is_park_or_blockier_v` to only Park
+# would silently let Block slip through — fixture #2 catches that.
+crucible_neg_compile_test(neg_collision_W001_hotpath_wait_park
+  "W001:")
+crucible_neg_compile_test(neg_collision_W001_hotpath_wait_block
+  "W001:")
+
 # ─── SwmrSession role and token discipline (GAPS-021) ────────────────
 crucible_neg_compile_test(neg_swmr_writer_cannot_recv
   "recv")
