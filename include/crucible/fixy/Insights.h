@@ -351,6 +351,30 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "grant::accept_default_strict_for<dim::DimensionAxis::Regime>",
     "fixy::fn<T, /* no Regime grant */, ...>");
 
+// FIXY-V-088: FpMode axis added 2026-05-22.  Strict default is
+// fp::Strict (every sub-axis pinned to the most-IEEE-compliant element)
+// — bindings make no claim about FP evaluation policy at scope,
+// deferring to safety::Fp* value wrappers (V-090 ships them).  Missing
+// engagement disables the §6.8 F101-F105 collision family (FpMode ×
+// Precision, FpMode × Vendor, FpMode × NumericalRecipe, FpMode ×
+// DetSafe, FpMode × HotPath) once V-091 lands those rules.
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_FpMode,
+    ::crucible::safety::diag::Severity::Error,
+    "FpMode engages floating-point evaluation policy (Rounding / Ftz / "
+    "Contract / TrapMask / Denormal / NanPolicy / InfPolicy / "
+    "ComplexLayout / LibmPolicy / Reassociate / FpConstant — the 11-sub-"
+    "axis taxonomy V-089/V-090 will materialize).  Strict default is "
+    "fp::Strict (every sub-axis pinned to the most-IEEE-compliant "
+    "element).  Missing engagement defeats the §6.8 F101-F105 collision "
+    "family (FpMode × Precision, FpMode × Vendor, FpMode × "
+    "NumericalRecipe, FpMode × DetSafe, FpMode × HotPath) which V-091 "
+    "will ship — those rules dispatch on the FpMode grade.",
+    "Grants pack omits grant::with_fp_mode<...> AND omits "
+    "accept_default_strict_for<FpMode>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::FpMode>",
+    "fixy::fn<T, /* no FpMode grant */, ...>");
+
 // ═══════════════════════════════════════════════════════════════════
 // ── 4 §30.14 corpus entry specializations ─────────────────────────
 // ═══════════════════════════════════════════════════════════════════

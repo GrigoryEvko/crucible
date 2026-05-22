@@ -45,7 +45,8 @@ using BadFn = fixy::fn<int,
     strict<D::Representation>, strict<D::Observability>,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>>;
+    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
+    strict<D::FpMode>>;
 
 // Force class-body completion via sizeof.
 static_assert(sizeof(BadFn) > 0,

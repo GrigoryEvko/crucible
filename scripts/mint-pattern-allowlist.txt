@@ -142,9 +142,9 @@ include/crucible/permissions/PermissionInherit.h:287:requires-ok
 include/crucible/permissions/ReadView.h:156:requires-ok
 include/crucible/safety/Diagnostic.h:1476:constexpr-ok
 include/crucible/safety/Diagnostic.h:1476:noexcept-ok
-include/crucible/safety/Fn.h:577:constexpr-ok
-include/crucible/safety/Fn.h:577:nodiscard-ok
-include/crucible/safety/Fn.h:577:noexcept-ok
+include/crucible/safety/Fn.h:600:constexpr-ok
+include/crucible/safety/Fn.h:600:nodiscard-ok
+include/crucible/safety/Fn.h:600:noexcept-ok
 include/crucible/safety/ScopedView.h:161:requires-ok
 include/crucible/safety/ScopedView.h:200:requires-ok
 include/crucible/sessions/CalendarGridSession.h:56:requires-ok

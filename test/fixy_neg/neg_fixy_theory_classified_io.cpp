@@ -36,7 +36,8 @@ int main() {
         strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-        strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>>(42);
+        strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
+        strict<D::FpMode>>(42);
     (void)bad;
     return 0;
 }

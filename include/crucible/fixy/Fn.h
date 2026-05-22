@@ -1115,7 +1115,8 @@ using PureLinear = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 // ── PureCopy — copy usage, strict elsewhere ───────────────────────
 template <typename Type>
@@ -1140,7 +1141,8 @@ using PureCopy = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 // ── IoFunction — IO effect, public-emit Security, strict elsewhere ─
 //
@@ -1179,7 +1181,8 @@ using IoFunction = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 // ── BgWorker — Bg + Alloc effects, public Security, strict else ───
 //
@@ -1216,7 +1219,8 @@ using BgWorker = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 // ── SecretConsumer — declassifies a secret value ──────────────────
 //
@@ -1246,7 +1250,8 @@ using SecretConsumer = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 // ── CtCrypto — constant-time crypto path (FIXY-AUDIT-B3) ──────────
 //
@@ -1296,7 +1301,8 @@ using CtCrypto = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 // ── PublicEmit<Policy> — publicly-observable emission (FIXY-AUDIT-B3) ─
 //
@@ -1342,7 +1348,8 @@ using PublicEmit = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 // ── AsyncEndpoint — coroutine + IO + public Security ──────────────
 //
@@ -1376,7 +1383,8 @@ using AsyncEndpoint = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── FIXY-U-041 stance extension — 4 additional canonical aliases ─
@@ -1436,7 +1444,8 @@ using NamedSession = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 // ── CooperativeBg<Type> — Bg + coroutine + as_public ──────────────
 //
@@ -1467,7 +1476,8 @@ using CooperativeBg = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 // ── SyncBlocking<Type> — IO + Block + as_public ────────────────────
 //
@@ -1501,7 +1511,8 @@ using SyncBlocking = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 // ── RealtimeHot<Type> — empty Effect row + as_public + strict ─────
 //
@@ -1538,7 +1549,8 @@ using RealtimeHot = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Version>,
     detail_stance::strict<dim::DimensionAxis::Staleness>,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>>;
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>>;
 
 }  // namespace stance
 
@@ -1627,7 +1639,8 @@ using direct_fixy = ::crucible::fixy::fn<int,
     grant::accept_default_strict_for<dim::DimensionAxis::Version>,
     grant::accept_default_strict_for<dim::DimensionAxis::Staleness>,
     grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Regime>>;
+    grant::accept_default_strict_for<dim::DimensionAxis::Regime>,
+    grant::accept_default_strict_for<dim::DimensionAxis::FpMode>>;
 
 using direct_substrate = safety::fn::Fn<int,
     safety::fn::pred::True,
@@ -1714,7 +1727,8 @@ constexpr auto minted = mint_fn<int,
     grant::accept_default_strict_for<dim::DimensionAxis::Version>,
     grant::accept_default_strict_for<dim::DimensionAxis::Staleness>,
     grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Regime>>(42);
+    grant::accept_default_strict_for<dim::DimensionAxis::Regime>,
+    grant::accept_default_strict_for<dim::DimensionAxis::FpMode>>(42);
 static_assert(minted.value() == 42,
     "mint_fn must construct fixy::fn carrying the supplied value.");
 

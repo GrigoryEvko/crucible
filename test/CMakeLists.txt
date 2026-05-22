@@ -256,6 +256,7 @@ crucible_test(test_fixy_insights)      # fixy-H-14 insight_provider sentinel
 crucible_test(test_fixy_a3_007_insights)  # fixy-A3-007 substrate-tag insight closure
 crucible_test(test_fixy_a3_008_synchronization)  # fixy-A3-008 Wait + MemOrder → Synchronization
 crucible_test(test_fixy_a3_009_regime)  # fixy-A3-009 HotPath → Regime (Progress stays on Complexity)
+crucible_test(test_fixy_v_088_fp_mode)  # FIXY-V-088 DimensionAxis::FpMode + 11 sub-axis enum scaffolding
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -5901,6 +5902,23 @@ crucible_neg_compile_test(neg_permission_fork_callable_carrying_throws_grant_rej
   "static assertion failed|FIXY-V-087|type_tree_contains_throws|ctrl::throws")
 crucible_neg_compile_test(neg_permission_fork_callable_carrying_cvref_throws_rejected
   "static assertion failed|FIXY-V-087|type_tree_contains_throws|ctrl::throws")
+
+# ─── FIXY-V-088 DimensionAxis::FpMode neg-compile fixtures (2) ────────
+#
+# V-088 ships DimensionAxis::FpMode (ordinal 22, Tier-S Semiring) +
+# 11-sub-axis enum scaffolding in algebra/lattices/FpModeLattice.h.
+# HS14: 2 fixtures across distinct mismatch classes:
+#   1. cardinality-stale — asserts DIMENSION_AXIS_COUNT == 22.  V-088
+#      grew the count to 23; assertion fires and build reddens.
+#      Catches accidental REMOVAL of the FpMode enumerator.
+#   2. tier-misclassify — asserts FpMode is Foundational.  Actual
+#      classification is Semiring; assertion fires and build reddens.
+#      Catches accidental tier reclassification that would silently
+#      disable Forge phase E.RecipeSelect's par/seq composition law.
+crucible_neg_compile_test(neg_fp_mode_cardinality_stale
+  "static assertion failed|DIMENSION_AXIS_COUNT|FIXY-V-088|22")
+crucible_neg_compile_test(neg_fp_mode_tier_misclassify
+  "static assertion failed|FpMode|TierKind|Foundational|Semiring|FIXY-V-088")
 
 # ─── FIXY-V-057 Affine wrapper neg-compiles (2 fixtures = HS14 floor) ─
 #

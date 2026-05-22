@@ -213,6 +213,22 @@ enum class DimensionAxis : std::uint8_t {
     // Fn<> aggregator slot — HotPath composes at use-sites, like
     // Observability and Synchronization.
     Regime          = 21, // S  (Crucible extension, 2026-05-18)
+    // FpMode (FIXY-V-088) — added 2026-05-22 to host the 11-sub-axis
+    // floating-point mode taxonomy (Rounding / Ftz / Contract /
+    // TrapMask / Denormal / NanPolicy / InfPolicy / ComplexLayout /
+    // LibmPolicy / Reassociate / FpConstant) that V-089/V-090 will
+    // populate.  Previously these would have been silently folded onto
+    // Precision (which tracks element-type precision: FP32/FP16/BF16/
+    // E4M3/E5M2), but FP-mode is structurally orthogonal — same
+    // FP32 element type produces bit-different results under different
+    // rounding/Ftz/contract modes.  Pinning FpMode at the axis level
+    // makes Merkle-hash-safe FP canonicalization (V-093) tractable.
+    // Tier S with par=join (strictest-wins) reading — composing two
+    // call sites' FP-mode admits only the intersection of their
+    // tolerances; no Fn<> aggregator slot (composes via wrapper-nesting
+    // and Forge phase E.RecipeSelect, parallel to Synchronization and
+    // Regime).
+    FpMode          = 22, // S  (Crucible extension, 2026-05-22)
 };
 
 inline constexpr std::size_t DIMENSION_AXIS_COUNT =
@@ -242,6 +258,7 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::Staleness:      return "Staleness";
         case DimensionAxis::Synchronization: return "Synchronization";
         case DimensionAxis::Regime:         return "Regime";
+        case DimensionAxis::FpMode:         return "FpMode";
         default:                            return std::string_view{"<unknown DimensionAxis>"};
     }
 }
@@ -284,6 +301,7 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::Staleness:
         case DimensionAxis::Synchronization:
         case DimensionAxis::Regime:
+        case DimensionAxis::FpMode:
             return TierKind::Semiring;
 
         default:
@@ -621,12 +639,14 @@ namespace detail::dimension_traits_self_test {
 static_assert(TIER_KIND_COUNT == 5,
     "TierKind catalog diverged from fixy.md §24.1 Tier S/L/T/F/V (5); "
     "if intentional, update fixy.md and this constant together.");
-static_assert(DIMENSION_AXIS_COUNT == 22,
-    "DimensionAxis catalog diverged from fixy.md §24.1 (22 dims: FX's "
+static_assert(DIMENSION_AXIS_COUNT == 23,
+    "DimensionAxis catalog diverged from fixy.md §24.1 (23 dims: FX's "
     "22 minus dim 12 Clock Domain and dim 17 FP Order, plus the Crucible "
     "Synchronization extension added 2026-05-18 for Wait + MemOrder, plus "
-    "the Crucible Regime extension added 2026-05-18 for HotPath); if "
-    "intentional, update fixy.md §24.1 + §24.14 + §24.15 and this constant.");
+    "the Crucible Regime extension added 2026-05-18 for HotPath, plus "
+    "the Crucible FpMode extension added 2026-05-22 for the 11-sub-axis "
+    "FP-mode taxonomy per FIXY-V-088); if intentional, update fixy.md "
+    "§24.1 + §24.14 + §24.15 + §24.16 and this constant.");
 
 // ── Reflection-driven name coverage (TierKind) ─────────────────────
 [[nodiscard]] consteval bool every_tier_kind_has_name() noexcept {
@@ -701,10 +721,11 @@ static_assert(every_dimension_axis_has_tier(),
     return n;
 }
 
-static_assert(count_dims_in_tier(TierKind::Semiring)     == 17,
-    "fixy.md §24.1 declares 17 Tier-S dimensions (15 FX-inherited + "
+static_assert(count_dims_in_tier(TierKind::Semiring)     == 18,
+    "fixy.md §24.1 declares 18 Tier-S dimensions (15 FX-inherited + "
     "Synchronization 2026-05-18 per fixy-A3-008 + Regime 2026-05-18 per "
-    "fixy-A3-009); tier_of_axis disagrees.");
+    "fixy-A3-009 + FpMode 2026-05-22 per FIXY-V-088); tier_of_axis "
+    "disagrees.");
 static_assert(count_dims_in_tier(TierKind::Lattice)      == 1,
     "fixy.md §24.1 declares 1 Tier-L dimension (Representation); "
     "tier_of_axis disagrees.");

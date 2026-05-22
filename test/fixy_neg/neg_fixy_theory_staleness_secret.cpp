@@ -48,7 +48,7 @@ int main() {
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Synchronization>,
-        strict<D::Regime>,
+        strict<D::Regime>, strict<D::FpMode>,
         gr::stale_to<100>>(42);                 // Staleness ≠ Fresh
     (void)bad;
     return 0;

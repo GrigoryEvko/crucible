@@ -310,6 +310,29 @@ namespace regime {
     struct Unconstrained {};   // default — no regime wrapper claim at binding scope
 }
 
+// ── Dim 22 FpMode (Tier-S, FIXY-V-088, 2026-05-22) ─────────────────
+//
+// Wrapper-only axis — there is NO Fn<...> template-parameter slot for
+// it.  The FpMode taxonomy lives in algebra/lattices/FpModeLattice.h
+// (11 sub-axes: Rounding / Ftz / Contract / TrapMask / Denormal /
+// NanPolicy / InfPolicy / ComplexLayout / LibmPolicy / Reassociate /
+// FpConstant); the actual wrapper that pins a binding to a specific
+// FP-evaluation mode is forge-emitted (V-089/090/091/092/093).  The
+// sole reason this namespace exists is so fixy/Default.h can give the
+// FpMode axis a `type` alias that satisfies the `every_axis_resolves`
+// reflection-driven coverage check.
+//
+// `Unconstrained` IS the strict default — the binding makes no claim
+// about floating-point evaluation policy.  A binding that wants to
+// enforce a specific FP mode wraps the relevant value in a forge-
+// emitted FpMode wrapper at the call site; the fixy::fn engagement
+// marker for this axis is therefore `accept_default_strict_for<
+// DimensionAxis::FpMode>` — i.e., "I'm not claiming any wrapper here;
+// the wrapper, if any, lives on the value itself."
+namespace fp_mode {
+    struct Unconstrained {};   // default — no FP-mode wrapper claim at binding scope
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── ValidComposition concept gate (Phase 0 P0-2) ───────────────────
 // ═════════════════════════════════════════════════════════════════════

@@ -146,6 +146,10 @@ CRUCIBLE_FIXY_NOT_ENGAGED_TAG(Synchronization,
     "wait-strategy / memory-order discipline (safety::Wait / safety::MemOrder)");
 CRUCIBLE_FIXY_NOT_ENGAGED_TAG(Regime,
     "operating-regime tier (Hot / Warm / Cold) — safety::HotPath");
+CRUCIBLE_FIXY_NOT_ENGAGED_TAG(FpMode,
+    "FP-mode taxonomy (Rounding / Ftz / Contract / TrapMask / Denormal / "
+    "NanPolicy / InfPolicy / ComplexLayout / LibmPolicy / Reassociate / "
+    "FpConstant) — Forge phase E.RecipeSelect par/seq composition");
 
 #undef CRUCIBLE_FIXY_NOT_ENGAGED_TAG
 
@@ -206,6 +210,10 @@ CRUCIBLE_FIXY_DUPLICATE_TAG(Synchronization,
     "wait-strategy / memory-order discipline (safety::Wait / safety::MemOrder)");
 CRUCIBLE_FIXY_DUPLICATE_TAG(Regime,
     "operating-regime tier (Hot / Warm / Cold) — safety::HotPath");
+CRUCIBLE_FIXY_DUPLICATE_TAG(FpMode,
+    "FP-mode taxonomy (Rounding / Ftz / Contract / TrapMask / Denormal / "
+    "NanPolicy / InfPolicy / ComplexLayout / LibmPolicy / Reassociate / "
+    "FpConstant) — Forge phase E.RecipeSelect par/seq composition");
 
 #undef CRUCIBLE_FIXY_DUPLICATE_TAG
 
@@ -270,6 +278,7 @@ template <> struct tag_for_axis<dim::DimensionAxis::Version>        { using type
 template <> struct tag_for_axis<dim::DimensionAxis::Staleness>      { using type = FixyNotEngaged_Staleness; };
 template <> struct tag_for_axis<dim::DimensionAxis::Synchronization> { using type = FixyNotEngaged_Synchronization; };
 template <> struct tag_for_axis<dim::DimensionAxis::Regime>         { using type = FixyNotEngaged_Regime; };
+template <> struct tag_for_axis<dim::DimensionAxis::FpMode>         { using type = FixyNotEngaged_FpMode; };
 
 template <dim::DimensionAxis D>
 using tag_for_axis_t = typename tag_for_axis<D>::type;
@@ -306,6 +315,7 @@ template <> struct dup_tag_for_axis<dim::DimensionAxis::Version>        { using 
 template <> struct dup_tag_for_axis<dim::DimensionAxis::Staleness>      { using type = FixyDuplicate_Staleness; };
 template <> struct dup_tag_for_axis<dim::DimensionAxis::Synchronization> { using type = FixyDuplicate_Synchronization; };
 template <> struct dup_tag_for_axis<dim::DimensionAxis::Regime>         { using type = FixyDuplicate_Regime; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::FpMode>         { using type = FixyDuplicate_FpMode; };
 
 template <dim::DimensionAxis D>
 using dup_tag_for_axis_t = typename dup_tag_for_axis<D>::type;
@@ -367,7 +377,8 @@ using FixyCatalog = ::std::tuple<
     FixyNotEngaged_Version,         // 18
     FixyNotEngaged_Staleness,       // 19
     FixyNotEngaged_Synchronization, // 20  (fixy-A3-008, 2026-05-18)
-    FixyNotEngaged_Regime           // 21  (fixy-A3-009, 2026-05-18)
+    FixyNotEngaged_Regime,          // 21  (fixy-A3-009, 2026-05-18)
+    FixyNotEngaged_FpMode           // 22  (FIXY-V-088, 2026-05-22)
 >;
 
 inline constexpr ::std::size_t fixy_catalog_size =
@@ -428,6 +439,7 @@ template <> struct axis_for_tag<FixyNotEngaged_Version>        { static constexp
 template <> struct axis_for_tag<FixyNotEngaged_Staleness>      { static constexpr auto value = dim::DimensionAxis::Staleness; };
 template <> struct axis_for_tag<FixyNotEngaged_Synchronization> { static constexpr auto value = dim::DimensionAxis::Synchronization; };
 template <> struct axis_for_tag<FixyNotEngaged_Regime>         { static constexpr auto value = dim::DimensionAxis::Regime; };
+template <> struct axis_for_tag<FixyNotEngaged_FpMode>         { static constexpr auto value = dim::DimensionAxis::FpMode; };
 
 template <typename Tag>
 inline constexpr dim::DimensionAxis axis_for_tag_v = axis_for_tag<Tag>::value;
@@ -1186,7 +1198,7 @@ inline constexpr bool observability_diagnostic_is_alive_v =
         S<D::Complexity>, S<D::Precision>, S<D::Space>,
         S<D::Overflow>, S<D::Mutation>, S<D::Reentrancy>,
         S<D::Size>, S<D::Version>, S<D::Staleness>,
-        S<D::Synchronization>, S<D::Regime>>()
+        S<D::Synchronization>, S<D::Regime>, S<D::FpMode>>()
     == D::Observability;
 
 // Companion: the inverse witness — engaging every axis (including
@@ -1203,7 +1215,7 @@ inline constexpr bool every_axis_pack_engages_observability_v =
         S<D::Complexity>, S<D::Precision>, S<D::Space>,
         S<D::Overflow>, S<D::Mutation>, S<D::Reentrancy>,
         S<D::Size>, S<D::Version>, S<D::Staleness>,
-        S<D::Synchronization>, S<D::Regime>>().has_value();
+        S<D::Synchronization>, S<D::Regime>, S<D::FpMode>>().has_value();
 
 }  // namespace detail::observability_witness
 
@@ -1496,7 +1508,7 @@ namespace detail::reject_self_test {
 template <dim::DimensionAxis D>
 using strict = grant::accept_default_strict_for<D>;
 
-// All 22 axes accepted-strict.
+// All 23 axes accepted-strict (post-V-088 FpMode addition).
 using AllStrictPack = std::tuple<
     strict<dim::DimensionAxis::Type>,
     strict<dim::DimensionAxis::Refinement>,
@@ -1519,7 +1531,8 @@ using AllStrictPack = std::tuple<
     strict<dim::DimensionAxis::Version>,
     strict<dim::DimensionAxis::Staleness>,
     strict<dim::DimensionAxis::Synchronization>,
-    strict<dim::DimensionAxis::Regime>>;
+    strict<dim::DimensionAxis::Regime>,
+    strict<dim::DimensionAxis::FpMode>>;
 
 // Apply Grants pack from a tuple to a template — helper.
 template <template <typename...> class Tmpl, typename Tuple>
@@ -1602,7 +1615,8 @@ using CopyForUsagePack = std::tuple<
     strict<dim::DimensionAxis::Version>,
     strict<dim::DimensionAxis::Staleness>,
     strict<dim::DimensionAxis::Synchronization>,
-    strict<dim::DimensionAxis::Regime>>;
+    strict<dim::DimensionAxis::Regime>,
+    strict<dim::DimensionAxis::FpMode>>;
 
 static_assert(accepts_pack_v<int, CopyForUsagePack>,
     "Replacing accept-strict<Usage> with `grant::copy` must still "
@@ -1632,7 +1646,8 @@ using MinusEffectPack = std::tuple<
     strict<dim::DimensionAxis::Version>,
     strict<dim::DimensionAxis::Staleness>,
     strict<dim::DimensionAxis::Synchronization>,
-    strict<dim::DimensionAxis::Regime>>;
+    strict<dim::DimensionAxis::Regime>,
+    strict<dim::DimensionAxis::FpMode>>;
 
 static_assert(!accepts_pack_v<int, MinusEffectPack>,
     "Removing accept-strict<Effect> without replacement must reject.");
@@ -1675,7 +1690,8 @@ using MinusRefinementPack = std::tuple<
     strict<dim::DimensionAxis::Version>,
     strict<dim::DimensionAxis::Staleness>,
     strict<dim::DimensionAxis::Synchronization>,
-    strict<dim::DimensionAxis::Regime>>;
+    strict<dim::DimensionAxis::Regime>,
+    strict<dim::DimensionAxis::FpMode>>;
 
 inline constexpr std::optional<dim::DimensionAxis>
 first_missing_for_minus_refinement = []() consteval {
@@ -1688,10 +1704,11 @@ static_assert(first_missing_for_minus_refinement == dim::DimensionAxis::Refineme
     "first_missing_axis_v points at Refinement when only that axis "
     "is omitted from an otherwise full strict pack.");
 
-// fixy-H-08 sentinel: a fully engaged 22-axis pack yields `nullopt`
+// fixy-H-08 sentinel: a fully engaged 23-axis pack yields `nullopt`
 // — proves the type-system leak (0xFF cast to DimensionAxis) is
 // eliminated.  Reuses MinusRefinementPack minus its omission by
-// re-adding the Refinement strict marker inline.
+// re-adding the Refinement strict marker inline.  Post-V-088 the
+// pack extends to 23 entries with the FpMode addition.
 
 using AllAxesStrictPack = std::tuple<
     strict<dim::DimensionAxis::Type>,
@@ -1715,7 +1732,8 @@ using AllAxesStrictPack = std::tuple<
     strict<dim::DimensionAxis::Version>,
     strict<dim::DimensionAxis::Staleness>,
     strict<dim::DimensionAxis::Synchronization>,
-    strict<dim::DimensionAxis::Regime>>;
+    strict<dim::DimensionAxis::Regime>,
+    strict<dim::DimensionAxis::FpMode>>;
 
 inline constexpr std::optional<dim::DimensionAxis>
 first_missing_for_full_strict_pack = []() consteval {

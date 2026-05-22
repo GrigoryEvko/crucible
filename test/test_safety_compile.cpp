@@ -162,7 +162,7 @@ static_assert(cs::DIMENSION_AXIS_COUNT >= 22,  // fixy-A3-009 floor: +Regime (20
 static_assert(every_tier_kind_has_name());
 static_assert(every_dimension_axis_has_name());
 static_assert(every_dimension_axis_has_tier());
-static_assert(count_dims_in_tier(cs::TierKind::Semiring) == 17);  // fixy-A3-009: +Regime (2026-05-18)
+static_assert(count_dims_in_tier(cs::TierKind::Semiring) == 18);  // fixy-V-088: +FpMode (2026-05-22)
 static_assert(count_dims_in_tier(cs::TierKind::Lattice) == 1);
 static_assert(count_dims_in_tier(cs::TierKind::Typestate) == 1);
 static_assert(count_dims_in_tier(cs::TierKind::Foundational) == 2);

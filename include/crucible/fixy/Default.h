@@ -326,6 +326,24 @@ struct strict_default_for<dim::DimensionAxis::Regime> {
     using type = safety::fn::regime::Unconstrained;
 };
 
+// FIXY-V-088: FpMode (dim 22, Crucible extension 2026-05-22) is a
+// WRAPPER-ONLY axis — the FpMode taxonomy (11 sub-axes: Rounding / Ftz
+// / Contract / TrapMask / Denormal / NanPolicy / InfPolicy /
+// ComplexLayout / LibmPolicy / Reassociate / FpConstant; see
+// algebra/lattices/FpModeLattice.h) is held at the value site by a
+// forge-emitted wrapper (V-089/090/091/092/093), not as an Fn<...>
+// aggregator slot.  No Fn<int> alias to round-trip against (parallel
+// to Observability / Synchronization / Regime).  The strict default
+// is `safety::fn::fp_mode::Unconstrained` — meaning "the binding
+// makes no claim about FP-evaluation policy at this scope; if any
+// value flowing through carries a wrapper, that wrapper carries the
+// discipline."  Tier-S Semiring: composition is par=join (strictest-
+// wins) at every cross-axis site under V-091.
+template <>
+struct strict_default_for<dim::DimensionAxis::FpMode> {
+    using type = safety::fn::fp_mode::Unconstrained;
+};
+
 // ─── has_strict_default — predicate concept ────────────────────────
 //
 // True iff a specialization exists for D AND it exposes either `type`
