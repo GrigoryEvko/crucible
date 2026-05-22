@@ -5943,26 +5943,52 @@ crucible_neg_compile_test(neg_fp_mode_cross_mode_assign
 crucible_neg_compile_test(neg_fp_mode_cross_axis_pass
   "cannot convert|no match|could not match|FpModePinned|FpFtz|FpRounding")
 
-# ─── FIXY-V-091 CollisionCatalog F101/F104 neg-compiles (HS14 floor) ──
+# ─── FIXY-V-091 CollisionCatalog F101..F105 neg-compiles (per-rule) ──
 #
 # V-091 ships 5 new CollisionCatalog rules (F101..F105) gating
 # Replay-required and CT carriers against toxic FP-mode wrapper values.
-# HS14: 2 fixtures across 2 distinct mismatch classes:
+# Per-rule HS14 coverage — one fixture per rule, each toggling a single
+# marker (marks_replay_required OR marks_ct) and wrapping its TYPE in
+# the single toxic FP-mode enumerator the rule rejects.  No fixture
+# trips multiple rules: this guarantees a surgical refactor that
+# relaxes ANY one rule's gate reddens exactly the corresponding
+# fixture, not a cascade — matching the diagnostic-substring grep
+# precisely to the rule code being verified.
+#
 #   1. F101 — Replay-required × FpReassociate<UnrestrictedRewrite>.
 #      Algebraic rewrite reorders FP additions; bit pattern diverges
 #      across NV/AMD/Intel backends → bit-exact replay broken.
-#   2. F104 — CT × FpDenormalInput<HonorDenormals>.  DAZ=0 introduces a
-#      30-100× cycle delta on denormal input — textbook FP timing
-#      side-channel.
-# Distinct axes (Replay vs CT) AND distinct sub-axes (Reassociate vs
-# DenormalInput).  Together they pin the load-bearing F101_OK..F105_OK
-# concept atoms AND the validate() static_assert chain — relaxing the
-# detector, swapping the predicate, or weakening wraps_fp_axis_mode
-# turns one of these fixtures from RED to GREEN at the spec boundary.
+#   2. F102 — Replay-required × FpContract<Fast>.  Cross-statement FMA
+#      folding picks different contraction boundaries per vendor → bit
+#      pattern diverges in the cross-vendor CI matrix.
+#   3. F103 — CT × FpReassociate<UnrestrictedRewrite>.  Reassociation
+#      yields data-dependent reduction-tree topology → cycle count
+#      varies by input magnitude, timing side-channel.
+#   4. F104 — CT × FpDenormalInput<HonorDenormals>.  DAZ=0 introduces a
+#      30-100× cycle delta on denormal input — input-side timing leak.
+#   5. F105 — CT × FpFtz<PreserveSubnormals>.  FTZ=0 introduces a
+#      30-100× slowdown PRODUCING denormal outputs — output-side
+#      timing leak, dual to F104.
+#
+# Two orthogonal coverage dimensions:
+#   axis-coverage:    Replay (F101+F102) and CT (F103+F104+F105) both
+#                     witness toxic FP-mode rejection at their respective
+#                     top-axis predicates.
+#   sub-axis-coverage: FpReassociate (F101+F103), FpContract (F102),
+#                     FpDenormalInput (F104), FpFtz (F105) each have a
+#                     fixture pinning their wraps_fp_axis_mode detector
+#                     specialization.
+# Five fixtures saturate the matrix.
 crucible_neg_compile_test(neg_collision_f101_replay_fp_reassoc
   "F101|replay-required|UnrestrictedRewrite|FpReassoc")
+crucible_neg_compile_test(neg_collision_f102_replay_fp_contract_fast
+  "F102|FpContractPinned|Cross-statement FMA|Replay-required")
+crucible_neg_compile_test(neg_collision_f103_ct_fp_reassoc
+  "F103|UnrestrictedRewrite|FpReassociatePinned|reduction-tree topology")
 crucible_neg_compile_test(neg_collision_f104_ct_fp_denormal_honored
   "F104|HonorDenormals|DAZ|FpDenormalInput")
+crucible_neg_compile_test(neg_collision_f105_ct_fp_ftz_preserved
+  "F105|PreserveSubnormals|FpFtzPinned|FTZ=0")
 
 # ─── FIXY-V-057 Affine wrapper neg-compiles (2 fixtures = HS14 floor) ─
 #
