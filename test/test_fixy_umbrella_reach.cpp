@@ -791,6 +791,68 @@ consteval bool v060_assert_delegates_to_witness() {
 }
 static_assert(v060_assert_delegates_to_witness());
 
+// ─── 6m. SessCheckpoint.h reach — fixy::sess::checkpoint:: (V-061) ───
+//
+// Witness that the L8 checkpoint-pair surface (CheckpointedSession +
+// shape traits + branch extractors + Checkpointed concept +
+// assert_checkpointed_matches consteval helper) reaches the consumer
+// through the umbrella include alone.  If a future regression strips
+// `#include <crucible/fixy/SessCheckpoint.h>` from Fixy.h's Phase-C
+// block, the claims below fail to compile.
+
+namespace fscheckpoint = ::crucible::fixy::sess::checkpoint;
+
+namespace v061_reach {
+struct Req {};
+struct Resp {};
+struct Err  {};
+using CommitPath   = ::crucible::safety::proto::Send<Req,
+                       ::crucible::safety::proto::Recv<Resp,
+                         ::crucible::safety::proto::End>>;
+using RollbackPath = ::crucible::safety::proto::Send<Req,
+                       ::crucible::safety::proto::Recv<Err,
+                         ::crucible::safety::proto::End>>;
+using Ckpt = fscheckpoint::CheckpointedSession<CommitPath, RollbackPath>;
+using Plain = ::crucible::safety::proto::Send<Req,
+                ::crucible::safety::proto::End>;
+}  // namespace v061_reach
+
+// 6m-a. CheckpointedSession aliases through the umbrella to the
+// substrate.
+static_assert(std::is_same_v<
+    v061_reach::Ckpt,
+    ::crucible::safety::proto::CheckpointedSession<
+        v061_reach::CommitPath, v061_reach::RollbackPath>>,
+    "umbrella reach: fixy::sess::checkpoint::CheckpointedSession must "
+    "alias safety::proto::CheckpointedSession.  If this red-lights, "
+    "fixy/SessCheckpoint.h is not pulled in by <crucible/Fixy.h>.");
+
+// 6m-b. Shape traits reach — accepts CkptSession, rejects plain.
+static_assert(fscheckpoint::is_checkpointed_session_v<v061_reach::Ckpt>);
+static_assert(!fscheckpoint::is_checkpointed_session_v<v061_reach::Plain>);
+
+// 6m-c. Branch extractors recover the (base, rollback) pair.
+static_assert(std::is_same_v<
+    fscheckpoint::checkpoint_base_t<v061_reach::Ckpt>,
+    v061_reach::CommitPath>);
+static_assert(std::is_same_v<
+    fscheckpoint::checkpoint_rollback_t<v061_reach::Ckpt>,
+    v061_reach::RollbackPath>);
+
+// 6m-d. Checkpointed concept admits CkptSession.
+template <typename P>
+    requires fscheckpoint::Checkpointed<P>
+consteval bool v061_checkpointed_witness() { return true; }
+static_assert(v061_checkpointed_witness<v061_reach::Ckpt>());
+
+// 6m-e. assert_checkpointed_matches reach (consteval call site).
+consteval bool v061_assert_matches_witness() {
+    fscheckpoint::assert_checkpointed_matches<v061_reach::Ckpt,
+        v061_reach::CommitPath, v061_reach::RollbackPath>();
+    return true;
+}
+static_assert(v061_assert_matches_witness());
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }

@@ -11162,6 +11162,27 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_delegate_assert_wrong_accept_carrie
 crucible_neg_compile_fixy_test(neg_fixy_sess_delegate_crash_must_abort
     "DelegatedCrashPropagation_MissingRecovery|assert_delegated_crash_propagates|static assertion failed|MustAbort|delegated_crash_propagation")
 
+# FIXY-V-061 HS14 floor — three neg-compile fixtures across the
+# fixy::sess::checkpoint:: surface, one per static_assert clause
+# inside `assert_checkpointed_matches`:
+#   shape α (not a checkpoint)   — first static_assert fires:
+#                                  "P is not a CheckpointedSession"
+#   shape β (wrong base branch)  — second static_assert fires:
+#                                  "base branch does not match"
+#   shape γ (wrong rollback)     — third static_assert fires:
+#                                  "rollback branch does not match"
+# Distinct diagnostics per arm let reviewers identify the failure
+# class without reading the call site source.  Routing through the
+# fixy::sess::checkpoint:: umbrella drift-protects the re-export
+# chain — a future refactor that strips `using safety::proto::
+# assert_checkpointed_matches` from SessCheckpoint.h reds at HS14.
+crucible_neg_compile_fixy_test(neg_fixy_sess_checkpoint_not_a_checkpoint
+    "ProtocolViolation_State|assert_checkpointed_matches|is_checkpointed_session|static assertion failed|CheckpointedSession|not a CheckpointedSession")
+crucible_neg_compile_fixy_test(neg_fixy_sess_checkpoint_wrong_base_branch
+    "ProtocolViolation_State|assert_checkpointed_matches|checkpoint_base|static assertion failed|base branch")
+crucible_neg_compile_fixy_test(neg_fixy_sess_checkpoint_wrong_rollback_branch
+    "ProtocolViolation_State|assert_checkpointed_matches|checkpoint_rollback|static assertion failed|rollback branch")
+
 # fixy-A2-016 — 12 negative-compile fixtures across 6 bridges/* mint
 # factories (≥2 per factory).  Each fixture's expected diagnostic
 # regex is wide enough to tolerate GCC phrasing drift across patch
