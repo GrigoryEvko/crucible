@@ -34,10 +34,10 @@ include/crucible/Cipher.h:1807
 # to kInitialTraceCapacity at iteration start.  Migration target:
 # length-coupled SoA newtype where the SoA backing storage is
 # arena-owned or inplace_vector<T, kInitialTraceCapacity>.
-include/crucible/BackgroundThread.h:310
-include/crucible/BackgroundThread.h:311
-include/crucible/BackgroundThread.h:312
-include/crucible/BackgroundThread.h:313
+include/crucible/BackgroundThread.h:318
+include/crucible/BackgroundThread.h:319
+include/crucible/BackgroundThread.h:320
+include/crucible/BackgroundThread.h:321
 #
 # ── concurrent/AdaptiveScheduler.h ──────────────────────────────────
 # workers_.reserve(worker_count_) during pool init — bounded by

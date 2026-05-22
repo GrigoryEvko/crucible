@@ -235,7 +235,11 @@ class Vigil {
         }
 
         // Wire the background thread callback to our on_region_ready.
-        bg_.set_region_ready_callback(this, [](void* self, RegionNode* region) {
+        // `noexcept` matches the FIXY-V-086 typedef tightening: this
+        // lambda decays to `void(*)(void*, RegionNode*) noexcept` and
+        // the no-throw promise is honored under -fno-exceptions
+        // (which is globally set for all Crucible TUs).
+        bg_.set_region_ready_callback(this, [](void* self, RegionNode* region) noexcept {
             static_cast<Vigil*>(self)->on_region_ready(region);
         });
 

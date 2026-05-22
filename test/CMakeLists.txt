@@ -5865,6 +5865,24 @@ crucible_neg_compile_test(neg_thread_local_ref_mint_requires_default_ctor
 crucible_neg_compile_test(neg_thread_local_ref_store_wrong_type
   "constraints not satisfied|no matching function|associated constraints|cannot convert")
 
+# ─── FIXY-V-086 RegionReadyCallback noexcept tightening (2 fixtures) ──
+#
+# BackgroundThread::RegionReadyCallback::Fn pre-V-086 was the bare
+# function-pointer type `void(*)(void*, RegionNode*)` — accepting any
+# callable, including throwing ones.  V-086 tightens to the noexcept-
+# qualified variant; the callback fires on the BG thread inside
+# drain_for_one_iteration_, where a thrown exception would tear
+# through Cipher persistence + tx_log commit + DeadlineWatchdog
+# observe.  HS14: 2 fixtures across distinct mismatch classes:
+#   1. throwing-fnptr-rejected   — assignment-conversion gate.
+#      A non-noexcept fn-ptr MUST fail to convert to Fn.
+#   2. type-identity-drift       — typedef structural gate.
+#      Fn IS NOT std::is_same with the bare non-noexcept variant.
+crucible_neg_compile_test(neg_background_thread_callback_throwing_fnptr_rejected
+  "invalid conversion|no known conversion|cannot convert|noexcept|RegionReadyCallback")
+crucible_neg_compile_test(neg_background_thread_callback_type_identity_drift
+  "static assertion failed|noexcept|RegionReadyCallback|FIXY-V-086")
+
 # ─── FIXY-V-057 Affine wrapper neg-compiles (2 fixtures = HS14 floor) ─
 #
 # Affine<T> = Graded<Absolute, QttSemiring::At<Zero>, T> — substructural

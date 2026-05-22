@@ -89,7 +89,15 @@ struct BackgroundThread {
   alignas(64) std::atomic<RegionNode*> active_region{nullptr};
 
   struct RegionReadyCallback {
-    using Fn = void (*)(void*, RegionNode*);
+    // FIXY-V-086: `noexcept` on the typedef is load-bearing.  The
+    // callback fires on the BG thread inside drain_for_one_iteration_
+    // → if it threw, the unwinder would tear through Cipher persistence
+    // + tx_log commit + DeadlineWatchdog observe, leaving the runtime
+    // in a half-applied state.  With -fno-exceptions globally, throws
+    // cannot occur; the `noexcept` here pins the type-system invariant
+    // so a future refactor that drops -fno-exceptions or that wires in
+    // a throwing callable reddens at the callback assignment site.
+    using Fn = void (*)(void*, RegionNode*) noexcept;
 
     void* ctx = nullptr;
     Fn fn = nullptr;
@@ -98,7 +106,7 @@ struct BackgroundThread {
       return fn != nullptr;
     }
 
-    void operator()(RegionNode* region) const {
+    void operator()(RegionNode* region) const noexcept {
       fn(ctx, region);
     }
   };
