@@ -290,6 +290,44 @@ sanitize_path_root_locked(Path<From>&& tainted,
 
 }  // namespace crucible::safety::sanitize::path_traversal
 
+// ── V-031 back-compat entry-point — delegates to V-233 predicate ───
+//
+// FIXY-V-233 audit follow-up: V-031's `sanitize_path(Path<External>&&)`
+// previously inlined a copy of the four-rule no-dot-dot algorithm
+// directly in safety/Path.h.  V-233 lifted that algorithm into the
+// `check_no_dotdot` predicate, so the V-031 entry-point reduces to a
+// one-line delegation through `sanitize_path_no_dotdot<source::External>`.
+//
+// Why keep the V-031 name?  Two reasons:
+//
+//   1. Stable surface for V-031's documented callers.  Cipher::open()
+//      and Vigil reach for `safety::sanitize_path()` per the V-031
+//      contract; renaming would force callsite churn for zero gain.
+//   2. Semantic continuity.  The V-031 entry-point and V-233's
+//      `sanitize_path_no_dotdot` ARE the same operation today; the
+//      back-compat wrapper documents the policy choice — V-031's
+//      External admittance composes exactly with V-233's no_dotdot
+//      policy.
+//
+// Future V-2xx tasks can deprecate this wrapper once every V-031
+// caller migrates to the policy-explicit form; until then the wrapper
+// keeps the migration cost at zero.
+//
+// `[[nodiscard]]` because dropping the result silently discards both
+// the sanitized path AND the error channel.
+//
+// `noexcept` because every step in the delegation chain
+// (`check_no_dotdot`, `retag<source::Sanitized>`) is noexcept.
+namespace crucible::safety {
+
+[[nodiscard]] inline std::expected<Path<source::Sanitized>, PathTraversalError>
+sanitize_path(Path<source::External>&& external_path) noexcept {
+    return sanitize::path_traversal::sanitize_path_no_dotdot<source::External>(
+        std::move(external_path));
+}
+
+}  // namespace crucible::safety
+
 // ── V-233 self-test — pin the predicate catalog at sentinel-TU ─────
 //
 // Static_asserts that the policy tags are distinct types and that

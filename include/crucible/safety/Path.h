@@ -135,68 +135,29 @@ enum class PathTraversalError : std::uint8_t {
 // holds the same cap as MAX_ROOT_PATH_BYTES internally.
 inline constexpr std::size_t MAX_PATH_BYTES = 16 * 1024;
 
-// ── sanitize_path(Path<External>&&) → expected<Path<Sanitized>, E> ─
+// ── sanitize_path() — V-031 entry-point ────────────────────────────
 //
-// Consume an External-tagged path, apply the four rejection rules,
-// and either:
-//   * promote provenance to source::Sanitized (success), OR
-//   * return a PathTraversalError tagged enum (failure).
+// The function body has moved to safety/sanitize/PathTraversal.h
+// (FIXY-V-233 audit follow-up).  It now delegates to V-233's
+// `check_no_dotdot` predicate so the four-rule no-dot-dot algorithm
+// lives in exactly one place — the canonical V-233 predicate — and
+// the V-031 entry-point becomes a thin back-compat wrapper around
+// `sanitize::path_traversal::sanitize_path_no_dotdot<source::External>`.
 //
-// `[[nodiscard]]` because dropping the result silently discards both
-// the sanitized path AND the error channel — almost certainly a bug.
-//
-// `noexcept`: std::filesystem::path's string() does NOT throw on
-// well-formed paths; we only inspect the held native-encoding bytes.
-// The std::expected ctors are noexcept for trivially-copyable error
-// enumerators (PathTraversalError is uint8_t).
-[[nodiscard]] inline std::expected<Path<source::Sanitized>, PathTraversalError>
-sanitize_path(Path<source::External>&& external_path) noexcept {
-    // Peek through the External wrapper to read the underlying path.
-    // The rules below are byte/component-level predicates; they do
-    // not need to consume the tagged value.  The retag at the bottom
-    // is the load-bearing consume.
-    const std::filesystem::path& raw = external_path.value();
-
-    // Inspect the native-encoding bytes directly.  We use string()
-    // (not native()) to stay portable; on POSIX the two are identical,
-    // and Crucible is Linux-only per CLAUDE.md §XIV.
-    const std::string s = raw.string();
-
-    // Rule 1: empty path.
-    if (s.empty()) {
-        return std::unexpected(PathTraversalError::Empty);
-    }
-
-    // Rule 2: oversize path.  Bounded above to keep downstream
-    // buffer math predictable.
-    if (s.size() > MAX_PATH_BYTES) {
-        return std::unexpected(PathTraversalError::TooLong);
-    }
-
-    // Rule 3: embedded NUL.  std::string can hold embedded NUL bytes
-    // but every POSIX path API treats NUL as the C-string terminator,
-    // so a path like "good\0/etc/passwd" would silently truncate to
-    // "good" at ::open() time.  Reject explicitly.
-    if (s.find('\0') != std::string::npos) {
-        return std::unexpected(PathTraversalError::EmbeddedNul);
-    }
-
-    // Rule 4: any path component == "..".  std::filesystem::path's
-    // iterator yields components split on "/" (and the platform's
-    // preferred separator).  Reject the dot-dot literal regardless
-    // of position — even absolute paths with embedded ".." can
-    // escape an intended sandbox.
-    for (const auto& component : raw) {
-        if (component == "..") {
-            return std::unexpected(PathTraversalError::DotDotComponent);
-        }
-    }
-
-    // All four rules passed.  Promote provenance: External → Sanitized
-    // is admitted by retag_policy<source::External, source::Sanitized>
-    // (safety/Tagged.h:543).  The raw path bytes are NOT mutated;
-    // only the phantom Source tag changes (zero-cost retag).
-    return std::move(external_path).template retag<source::Sanitized>();
-}
+// Including PathTraversal.h at the bottom of this header (after
+// Path<>, PathTraversalError, and MAX_PATH_BYTES are declared) closes
+// the back-edge of the cycle: PathTraversal.h needs Path<> visible
+// before it can define sanitize_path_no_dotdot; Path.h re-exports
+// sanitize_path so existing V-031 callers (Cipher::open(), Vigil)
+// don't have to change their includes.
 
 }  // namespace crucible::safety
+
+// V-233 integration: bring `crucible::safety::sanitize_path` and
+// the `crucible::safety::sanitize::path_traversal::*` predicates
+// into scope for every translation unit that includes safety/Path.h.
+// The include lives at the bottom — after the Path<> alias, the
+// PathTraversalError enum, and MAX_PATH_BYTES are all declared —
+// so PathTraversal.h's body sees the symbols it needs when it
+// pulls safety/Path.h via pragma-once short-circuit.
+#include <crucible/safety/sanitize/PathTraversal.h>
