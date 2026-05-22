@@ -195,6 +195,7 @@ crucible_test(test_fixy_rules_compose)  # FIXY-U-062 — §6.8 aggregator surfac
 crucible_test(test_fixy_modality)       # FIXY-U-060 — top-level modality surface
 crucible_test(test_fixy_sess_federation) # FIXY-U-072 — federation per-role reach
 crucible_test(test_fixy_cap)
+crucible_test(test_fixy_canopy)  # FIXY-V-213 — fixy::canopy::mint_hlc re-export sentinel
 crucible_test(test_fixy_perm)
 crucible_test(test_fixy_handle)  # FIXY-U-016 — per-namespace test_fixy_handle sentinel TU
 crucible_test(test_fixy_kernel)  # FIXY-V-038 — fixy::kernel:: Reduction + reduce_into surface
@@ -12047,3 +12048,23 @@ crucible_neg_compile_fixy_test(neg_fixy_cap_cntp_mint_cc_choice_dctcp_cross_dc
     "constraints not satisfied|CcCompatible|LosslessDatacenterFabric")
 crucible_neg_compile_fixy_test(neg_fixy_cap_cntp_mint_custom_cc_missing_name
     "constraints not satisfied|CustomCcModule|congestion_control_name")
+
+# ── FIXY-V-213 — fixy::canopy::mint_hlc re-export HS14 ────────────
+#
+# fixy/Canopy.h re-exports canopy::mint_hlc, the DetSafe-critical
+# HLC factory.  The substrate signature is `Hlc mint_hlc(effects::Init)`
+# — the cap-tag parameter type IS the §XXI gate (only init-tier code
+# can call).  Two distinct mismatch classes:
+#
+#   #1 PARAM-TYPE MISMATCH — passing effects::Bg (background-tier
+#                            cap) where effects::Init is expected
+#                            fires the conversion diagnostic at the
+#                            fixy:: call site, identical to the bare
+#                            substrate diagnostic.
+#   #2 OVERLOAD-RESOLUTION FAILURE — calling with zero arguments
+#                            (no default form exists) fires "no
+#                            matching function" / "too few arguments".
+crucible_neg_compile_fixy_test(neg_fixy_canopy_mint_hlc_wrong_cap
+    "cannot convert|no matching function|could not convert|Init|Bg")
+crucible_neg_compile_fixy_test(neg_fixy_canopy_mint_hlc_no_arg
+    "no matching function|too few arguments|mint_hlc")
