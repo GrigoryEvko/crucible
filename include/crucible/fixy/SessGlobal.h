@@ -148,6 +148,31 @@ using ::crucible::safety::proto::Project;
 using ::crucible::safety::proto::project_t;
 
 // ═════════════════════════════════════════════════════════════════════
+// ── 7. Interaction-witness predicate (FIXY-V-169 / GAPS-001) ───────
+// ═════════════════════════════════════════════════════════════════════
+//
+// `has_interaction_between_v<G, RoleA, RoleB>` — does G contain any
+// Transmission<F, T, P, K> or Choice<F, T, ...> at any depth where
+// {F, T} == {RoleA, RoleB} (unordered)?  Walks the global type tree
+// recursively (O(N) instantiations on tree size).
+//
+// Production driver — the StopG<Peer, C> projection rule (Role ≠
+// Peer): a surviving role's local projection ends in Stop iff Role
+// HAS interactions with the crashed Peer in G, and in End otherwise.
+// Symmetric over the (RoleA, RoleB) pair.
+//
+// Pre-V-169 callers reaching the umbrella spelled the predicate as
+// `::crucible::safety::proto::detail::global::has_interaction_between_v`
+// — a 4-namespace fully-qualified reach that bypasses the §XVI
+// "fixy::sess::mpst:: IS structurally complete" promise.  V-169
+// lifts the predicate to the substrate-public level (parallel to
+// `plain_merge_t` / `roles_of_t` / `project_t` — each lifted from
+// detail::global to the public safety::proto::) and re-exports here
+// next to the other MPST role machinery.
+
+using ::crucible::safety::proto::has_interaction_between_v;
+
+// ═════════════════════════════════════════════════════════════════════
 // ── In-header sentinel battery ─────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //

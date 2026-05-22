@@ -812,6 +812,26 @@ inline constexpr bool has_interaction_between_v =
 
 }  // namespace detail::global
 
+// ── Public alias (FIXY-V-169) ──────────────────────────────────────
+//
+// `has_interaction_between_v<G, A, B>` at the public `safety::proto::`
+// level mirrors `plain_merge_t` (line 723), `roles_of_t` (line 496),
+// and `project_t` (line 1015): the walker lives in `detail::global::`
+// for namespace hygiene, but the predicate IS a public-shape utility —
+// production callers consuming the StopG projection rule (line 907)
+// need a stable substrate-public path that can be re-exported through
+// `fixy/SessGlobal.h` without reaching past the `detail::` boundary.
+//
+// Forwards verbatim; zero runtime cost (template variable, fully
+// folded at compile time).  Adding the alias here means existing
+// substrate call sites that already use the detail::-qualified spelling
+// (e.g. ProjectImpl<StopG<Peer,C>, Role, RootG> at line 907) continue
+// to compile unchanged — the alias is purely additive.
+
+template <typename G, typename A, typename B>
+inline constexpr bool has_interaction_between_v =
+    detail::global::has_interaction_between_v<G, A, B>;
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Project<G, Role> — projection metafunction ─────────────────────
 // ═════════════════════════════════════════════════════════════════════

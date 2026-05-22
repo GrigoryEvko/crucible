@@ -1348,6 +1348,76 @@ static_assert(std::is_same_v<
     "through the fixy umbrella.");
 static_assert(std::is_same_v<fmpst::EmptyRoleList, fmpst::RoleList<>>);
 
+// 6s-f. has_interaction_between_v reach — fixy::sess::mpst:: (V-169).
+//
+// `has_interaction_between_v<G, A, B>` was previously buried at
+// `safety::proto::detail::global::has_interaction_between_v` — V-169
+// lifts it to the substrate-public `safety::proto::` level (parallel
+// to plain_merge_t / roles_of_t / project_t) AND re-exports through
+// `fixy::sess::mpst::` so production callers (the StopG<Peer, C>
+// projection rule and any user of MPST crash-aware projection) reach
+// the predicate through the same umbrella as project_t.
+//
+// Three cells exercise the V-169 lift:
+//   (a) positive: Transmission<Alice, Bob, Ping, End> contains an
+//       interaction between {Alice, Bob} → predicate yields true.
+//   (b) negative: same protocol queried for {Alice, Carol} → predicate
+//       yields false (Carol does not appear in any Transmission/Choice).
+//   (c) symmetry: query is symmetric over (A, B), so swapping the
+//       arguments must yield the same value — the same_unordered_pair
+//       discipline at the substrate is the load-bearing invariant.
+//   (d) cross-binding: umbrella value == substrate-public value ==
+//       substrate-detail value for every queried triple, proving the
+//       lift is a pure pass-through (no fresh predicate forked).
+
+using G_AB_Ping_v169 =
+    fmpst::Transmission<v068_reach::Alice, v068_reach::Bob,
+                        v068_reach::Ping, fmpst::End_G>;
+
+static_assert(fmpst::has_interaction_between_v<
+                  G_AB_Ping_v169, v068_reach::Alice, v068_reach::Bob>,
+    "FIXY-V-169 reach: fixy::sess::mpst::has_interaction_between_v "
+    "must admit the (Alice, Bob) pair on Transmission<Alice, Bob, "
+    "Ping, End> through the umbrella.  If this red-lights, V-169's "
+    "lift dropped or the using-decl in SessGlobal.h was rewritten.");
+static_assert(!fmpst::has_interaction_between_v<
+                  G_AB_Ping_v169, v068_reach::Alice, v068_reach::Carol>,
+    "FIXY-V-169 reach: fixy::sess::mpst::has_interaction_between_v "
+    "must reject (Alice, Carol) on Transmission<Alice, Bob, Ping, "
+    "End> through the umbrella — Carol does not participate.");
+// Symmetry — (Alice, Bob) and (Bob, Alice) yield the same value.  The
+// substrate's `same_unordered_pair_v` discipline is the single point
+// of truth (sessions/SessionGlobal.h:764-767); this cell is the
+// umbrella-side regression witness.
+static_assert(fmpst::has_interaction_between_v<
+                  G_AB_Ping_v169, v068_reach::Bob, v068_reach::Alice>,
+    "FIXY-V-169 reach: predicate must be symmetric over (A, B) — "
+    "(Bob, Alice) must admit the same protocol that (Alice, Bob) "
+    "admits.  If this red-lights, same_unordered_pair_v drifted.");
+// Cross-binding — umbrella reach AND substrate-public path AND
+// substrate-detail::global:: path must all yield the same value on
+// the same query, proving the lift is a pure pass-through chain.
+static_assert(fmpst::has_interaction_between_v<
+                  G_AB_Ping_v169, v068_reach::Alice, v068_reach::Bob>
+              == pproto_v068::has_interaction_between_v<
+                  G_AB_Ping_v169, v068_reach::Alice, v068_reach::Bob>);
+static_assert(pproto_v068::has_interaction_between_v<
+                  G_AB_Ping_v169, v068_reach::Alice, v068_reach::Bob>
+              == pproto_v068::detail::global::has_interaction_between_v<
+                  G_AB_Ping_v169, v068_reach::Alice, v068_reach::Bob>,
+    "FIXY-V-169 cross-binding: substrate-public alias must forward "
+    "verbatim to detail::global:: — if this red-lights, the lift "
+    "introduced a fresh predicate rather than a pass-through.");
+// End / Var_G terminate the walk → no interactions for any (A, B).
+static_assert(!fmpst::has_interaction_between_v<
+                  fmpst::End_G, v068_reach::Alice, v068_reach::Bob>,
+    "FIXY-V-169 reach: End_G admits no interactions through the "
+    "umbrella for any role pair.");
+static_assert(!fmpst::has_interaction_between_v<
+                  fmpst::Var_G, v068_reach::Alice, v068_reach::Bob>,
+    "FIXY-V-169 reach: Var_G admits no interactions through the "
+    "umbrella for any role pair.");
+
 // ─── 6t. Ctx-fit concept reach — fixy::sess:: (FIXY-V-168) ───────────
 //
 // Witness that the 5 Ctx-fit concepts moved into fixy::sess:: in V-168
