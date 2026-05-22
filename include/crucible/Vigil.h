@@ -1046,6 +1046,16 @@ class Vigil {
     // dispatching thread's id and debug-asserts match on every subsequent
     // dispatch.  In release builds the contract collapses under
     // semantic=ignore.
+    //
+    // fixy-V-209 (Agent 7 Bug #5): atomic<thread::id> is not guaranteed
+    // lock-free on every supported target.  libstdc++ silently falls back
+    // to a hashed-table / mutex-backed atomic when the underlying
+    // pthread_t lacks a native atomic intrinsic — a hidden mutex on the
+    // foreground producer-thread check would invert the SPSC hot-path's
+    // nanosecond budget.  Refuse to build instead of regressing silently.
+    static_assert(std::atomic<std::thread::id>::is_always_lock_free,
+                  "std::atomic<std::thread::id> must be lock-free on this "
+                  "target — fixy-V-209");
     std::atomic<std::thread::id>    producer_tid_{};
     // mode_ is a status flag — real sync is pending_region_ observe(),
     // relaxed ordering is sufficient here (fg-thread-primary).  The
