@@ -114,6 +114,7 @@
 #include <crucible/Platform.h>
 #include <crucible/concurrent/ExecCtxBridge.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/fixy/ctrl/Throws.h>
 #include <crucible/permissions/Permission.h>
 
 #include <array>
@@ -334,6 +335,29 @@ template <typename... Children, typename Ctx, typename Parent, typename... Calla
                        Permission<Children>,
                        Ctx const&> && ...),
         "mint_permission_fork: callables must be noexcept (Crucible -fno-exceptions).");
+
+    // FIXY-V-087: reject crucible::fixy::ctrl::throws anywhere in a
+    // Callable's TYPE TREE.  `is_nothrow_invocable_v` above catches
+    // SYNTACTIC lying-by-noexcept-decl; this stronger TYPE-LEVEL gate
+    // catches NAMED callable wrappers that carry an explicit throws
+    // grant via template-argument annotation (e.g. a `fixy::fn<T,
+    // ..., ctrl::throws, ...>` aggregator).  Lambda closures and
+    // non-template carriers naturally pass (no introspectable type
+    // tree) — that is OK; the noexcept-invocable rail catches them.
+    //
+    // The structured-concurrency fork-join (jthread spawn + RAII
+    // join, see `permission_fork_spawn_`) cannot tolerate a throw
+    // tearing through it: parent Permission rebuild would be skipped
+    // and child Permission lifetimes would be stranded with no holder,
+    // breaking the linear-resource invariant on the parent region.
+    // See `crucible/fixy/ctrl/Throws.h` for the tag and the
+    // type-tree-contains trait + cv-ref decay discipline.
+    static_assert(!(::crucible::fixy::ctrl::type_tree_contains_throws_v<
+                        std::decay_t<Callables>> || ...),
+        "mint_permission_fork: Callables may not carry the "
+        "crucible::fixy::ctrl::throws grant — exceptions tearing "
+        "through structured fork-join would corrupt parent Permission "
+        "rebuild and child Permission lifetimes (FIXY-V-087).");
 
     // Step 1: split the parent into disjoint child Permissions.
     auto child_perms =

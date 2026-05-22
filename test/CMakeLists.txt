@@ -5883,6 +5883,25 @@ crucible_neg_compile_test(neg_background_thread_callback_throwing_fnptr_rejected
 crucible_neg_compile_test(neg_background_thread_callback_type_identity_drift
   "static assertion failed|noexcept|RegionReadyCallback|FIXY-V-086")
 
+# ─── FIXY-V-087 permission_fork rejects ctrl::throws (2 fixtures) ─────
+#
+# mint_permission_fork's body adds a TYPE-LEVEL static_assert that no
+# Callable carries `crucible::fixy::ctrl::throws` anywhere in its
+# template-argument tree.  The existing `is_nothrow_invocable_v` rail
+# catches lambdas declared without noexcept; the V-087 reject is the
+# stronger gate against NAMED callable wrappers that lie via noexcept-
+# decl while engaging an explicit throws grant on the type.  HS14: 2
+# fixtures across distinct mismatch classes:
+#   1. callable-carrying-throws-grant — direct-grant reject path.
+#      ThrowingCallable<ctrl::throws> hits type_tree_contains_throws_v.
+#   2. callable-carrying-cvref-throws — cv-ref-decay reject path.
+#      CvRefThrowingCallable<ctrl::throws const&> proves remove_cvref_t
+#      at every recursive node closes the laundering trap.
+crucible_neg_compile_test(neg_permission_fork_callable_carrying_throws_grant_rejected
+  "static assertion failed|FIXY-V-087|type_tree_contains_throws|ctrl::throws")
+crucible_neg_compile_test(neg_permission_fork_callable_carrying_cvref_throws_rejected
+  "static assertion failed|FIXY-V-087|type_tree_contains_throws|ctrl::throws")
+
 # ─── FIXY-V-057 Affine wrapper neg-compiles (2 fixtures = HS14 floor) ─
 #
 # Affine<T> = Graded<Absolute, QttSemiring::At<Zero>, T> — substructural

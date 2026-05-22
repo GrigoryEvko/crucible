@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-22T10:35:02Z`.
+Snapshot generated: `2026-05-22T10:51:30Z`.
 
 ## bridges/
 
@@ -97,9 +97,9 @@ Snapshot generated: `2026-05-22T10:35:02Z`.
 | `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h:697` | - | Y | Y | - | token | `include/crucible/fixy/Perm.h:173` | HS14: 24 |
 | `mint_permission_combine` | `include/crucible/permissions/Permission.h:504` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:33` | HS14: 2 |
 | `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:533` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:35` | HS14: 2 |
-| `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:319` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perm.h:104` | HS14: 7 |
+| `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/ctrl/Throws.h:16` | HS14: 9 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:287` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:108` | HS14: 6 |
-| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 161 |
+| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 163 |
 | `mint_permission_share` | `include/crucible/permissions/Permission.h:1038` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:19` | HS14: 4 |
 | `mint_permission_split` | `include/crucible/permissions/Permission.h:484` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 25 |
 | `mint_permission_split_n` | `include/crucible/permissions/Permission.h:516` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:34` | HS14: 4 |
