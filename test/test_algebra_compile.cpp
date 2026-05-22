@@ -52,6 +52,7 @@
 #include <crucible/algebra/lattices/GenerationLattice.h>
 #include <crucible/algebra/lattices/HappensBefore.h>
 #include <crucible/algebra/lattices/HotPathLattice.h>
+#include <crucible/algebra/lattices/JoinPolicyLattice.h>
 #include <crucible/algebra/lattices/LifetimeLattice.h>
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 #include <crucible/algebra/lattices/MonotoneLattice.h>
@@ -243,6 +244,10 @@ void test_witness_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::witness_lattice_self_test::runtime_smoke_test();
 }
 
+void test_join_policy_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::join_policy_lattice_self_test::runtime_smoke_test();
+}
+
 }  // namespace
 
 int main() {
@@ -309,6 +314,8 @@ int main() {
              test_crash_lattice_runtime_smoke);
     run_test("test_witness_lattice_runtime_smoke",
              test_witness_lattice_runtime_smoke);
+    run_test("test_join_policy_lattice_runtime_smoke",
+             test_join_policy_lattice_runtime_smoke);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

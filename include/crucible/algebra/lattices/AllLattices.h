@@ -77,6 +77,7 @@
 #include <crucible/algebra/lattices/GenerationLattice.h> // FOUND-G67  — shipped (2/2 EpochVersioned axes)
 #include <crucible/algebra/lattices/HappensBefore.h>     // ALGEBRA-13 (#458) — shipped
 #include <crucible/algebra/lattices/HotPathLattice.h>    // FOUND-G18  — shipped
+#include <crucible/algebra/lattices/JoinPolicyLattice.h> // FIXY-V-078 — shipped (6-tier join-policy chain)
 #include <crucible/algebra/lattices/LifetimeLattice.h>   // ALGEBRA-14 (#459) — shipped (1/3)
 #include <crucible/algebra/lattices/MemOrderLattice.h>   // FOUND-G28  — shipped
 #include <crucible/algebra/lattices/ProgressLattice.h>   // FOUND-G33  — shipped
