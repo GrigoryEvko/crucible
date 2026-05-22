@@ -176,6 +176,7 @@
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
+#include <crucible/safety/Affine.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/Fn.h>

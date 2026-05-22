@@ -12,6 +12,7 @@
 // feedback_header_only_static_assert_blind_spot.
 
 #include <crucible/handles/Once.h>
+#include <crucible/safety/Affine.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Cyclic.h>
@@ -28,6 +29,7 @@
 int main() {
     using namespace crucible::safety;
 
+    detail::affine_self_test::runtime_smoke_test();
     detail::borrowed_self_test::runtime_smoke_test();
     detail::cyclic_self_test::runtime_smoke_test();
     detail::cyclic_buffer_self_test::runtime_smoke_test();

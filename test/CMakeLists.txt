@@ -5723,6 +5723,24 @@ crucible_neg_compile_test(neg_witness_relax_to_stronger
 crucible_neg_compile_test(neg_witness_mint_wrong_arg
   "constraints not satisfied|no matching function|associated constraints|cannot convert")
 
+# ─── FIXY-V-057 Affine wrapper neg-compiles (2 fixtures = HS14 floor) ─
+#
+# Affine<T> = Graded<Absolute, QttSemiring::At<Zero>, T> — substructural
+# at-most-once peer to Linear<T>.  HS14: every new mint factory ships
+# ≥ 2 negative-compile fixtures demonstrating distinct mismatch classes:
+#   1. construct-unbuildable — mint_affine's requires-clause fires when
+#      T's ctor universe excludes the supplied args.  Catches refactors
+#      that loosen the std::is_constructible_v<T, Args...> gate.
+#   2. wrap-permission       — class-body static_assert rejects
+#      Affine<Permission<Tag>> / Affine<SharedPermission<Tag>>.
+#      Catches downgrades of Permission's exactly-once CSL frame rule
+#      to Affine's at-most-once (would make the consume OPTIONAL when
+#      the frame rule REQUIRES it).
+crucible_neg_compile_test(neg_affine_construct_unbuildable
+  "constraints not satisfied|no matching function|associated constraints|cannot convert")
+crucible_neg_compile_test(neg_affine_wrap_permission
+  "unsound|static assertion failed|is_already_consume_disciplined")
+
 # ─── FOUND-G11 OpaqueLifetime wrapper neg-compiles (4 fixtures) ─────
 #
 # Mirror of the NumericalTier and Consistency neg-compile suites for
