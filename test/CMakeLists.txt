@@ -11133,6 +11133,29 @@ crucible_neg_compile_test(neg_tagged_retag_sentinel_pair
     "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
 
 # ─────────────────────────────────────────────────────────────────
+# FIXY-V-232 — fine-grained path-provenance taint tags
+# ─────────────────────────────────────────────────────────────────
+#
+# V-232 ships three new source:: tags as orthogonal narrowings of
+# the existing source::External provenance lane: FromUserPath,
+# FromEnvPath, FromConfigPath.  Each narrowing must launder forward
+# into source::Sanitized via V-233's sanitize_path overloads; no
+# direct admittance exists between External and the narrower tags
+# (back-filling provenance) nor between the narrower tags pairwise
+# (cross-narrowing without re-sanitization).
+#
+# Two HS14 fixtures, one per distinct mismatch class:
+#   - external_to_userpath: wide → narrow back-fill (External
+#     bytes claiming they specifically came from CLI).
+#   - userpath_to_envpath: lateral cross-narrowing (CLI bytes
+#     claiming they came from env, swapping provenance lanes).
+# Same broad diagnostic family as the V-024 gate fixtures.
+crucible_neg_compile_test(neg_path_source_external_to_userpath_retag
+    "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
+crucible_neg_compile_test(neg_path_source_userpath_to_envpath_retag
+    "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
+
+# ─────────────────────────────────────────────────────────────────
 # fixy-A2-001 — StopG<Peer, CrashClass C> projection threading
 # ─────────────────────────────────────────────────────────────────
 #

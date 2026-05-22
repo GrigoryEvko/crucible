@@ -82,7 +82,8 @@
 
 #pragma once
 
-#include <crucible/safety/Tagged.h>  // Tagged + source::External/Sanitized
+#include <crucible/safety/Tagged.h>           // Tagged + source::External/Sanitized
+#include <crucible/safety/source/Path.h>      // FIXY-V-232: FromUserPath / FromEnvPath / FromConfigPath
 
 #include <cstddef>
 #include <cstdint>
