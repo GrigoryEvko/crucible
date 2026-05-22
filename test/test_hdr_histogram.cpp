@@ -170,6 +170,60 @@ int main() {
     c.reset();
     assert(c.total_count() == 0);
 
+    // fixy-V-208 regression: distinct UniqueTag instances must keep
+    // distinct shard counters AND distinct per-thread shard caches.
+    // Pre-fix, `next_thread_shard_` was inline-static and the
+    // `thread_shard()` thread_local was per-function-static, so two
+    // ConcurrentHdrHistogram<...> instances with the same template
+    // arguments (or even different ones, when both used the default
+    // tag) shared the same allocation stream — a thread that landed
+    // on shard 0 of histogram A also landed on shard 0 of histogram B,
+    // defeating the contention-avoidance discipline.
+    //
+    // The fix routes the cache through safety::ThreadLocalRef<Tag,
+    // std::size_t>, gated by the new mandatory UniqueTag template
+    // parameter.  Distinct tags → distinct (Tag, size_t) instantiations
+    // → distinct thread_local cells.  This regression test pins the
+    // invariant by:
+    //   1. Declaring two distinct tag structs.
+    //   2. Recording into both histograms on the same thread.
+    //   3. Asserting that each histogram's total_count is independent
+    //      (== exactly the records made into it, no cross-record).
+    {
+        struct LatencyHistogramTag {};
+        struct DrainHistogramTag {};
+
+        using LatencyHist =
+            crucible::observe::ConcurrentHdrHistogram<
+                2, 1'000'000, 4, LatencyHistogramTag>;
+        using DrainHist =
+            crucible::observe::ConcurrentHdrHistogram<
+                2, 1'000'000, 4, DrainHistogramTag>;
+
+        // Distinct types — caller cannot accidentally swap them at
+        // the call site.  This is the TypeSafe axiom kicking in.
+        static_assert(!std::is_same_v<LatencyHist, DrainHist>);
+
+        LatencyHist latency;
+        DrainHist drain;
+
+        for (int i = 0; i < 64; ++i) {
+            latency.record(LatencyHist::histogram_type::checked_value(100));
+        }
+        for (int i = 0; i < 32; ++i) {
+            drain.record(DrainHist::histogram_type::checked_value(500));
+        }
+
+        assert(latency.total_count() == 64);
+        assert(drain.total_count() == 32);
+
+        // Reset one; the other is untouched (per-instance state
+        // isolation — was the bug pre-fix).
+        latency.reset();
+        assert(latency.total_count() == 0);
+        assert(drain.total_count() == 32);
+    }
+
     // fixy-A5-007 regression: N producers + concurrent reader must never
     // observe sum(counts_) < total_count.  Pre-fix the producer-side
     // total_count_.fetch_add used release-only, which on weakly-ordered

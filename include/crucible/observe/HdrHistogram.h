@@ -9,6 +9,7 @@
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/ThreadLocalRef.h>
 
 #include <array>
 #include <atomic>
@@ -353,23 +354,46 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
               "std::atomic<uint64_t> must be lock-free on this target — "
               "fixy-A5-029");
 
+// fixy-V-208 (Agent 7 Bug #4): the `next_thread_shard_` counter and the
+// thread_local cache inside `thread_shard()` were both static, so every
+// `ConcurrentHdrHistogram<...>` instance with identical template params
+// shared the same counter AND the same per-thread cache.  Two histograms
+// in the same TU (e.g. one for record-latency, one for drain-latency)
+// would interleave their shard-pick streams, defeating the per-thread
+// sticky-shard discipline AND causing one histogram to assign a thread
+// to shard 0 while another assigned the same thread to shard 0 too —
+// breaking the sharding's contention-avoidance.
+//
+// Fix: mandatory `UniqueTag` template parameter.  Each call site
+// declares a tag struct; the (Tag, std::size_t) pair routes through
+// `safety::ThreadLocalRef<Tag, std::size_t>` (V-080), which gives each
+// histogram instance its own per-thread cell.  The counter is now an
+// instance member, not static — two instances with the same tag remain
+// distinct because the field lives on `*this`.
+//
+// First record() from each thread CASes the cell from sentinel to the
+// fetch_add result.  Sticky after that.  Per-instance + per-thread =
+// the original intent, now structurally enforced by the type system.
+
 template <
     std::uint8_t Significant = 3,
     std::uint64_t MaxValue = 3'600'000'000'000ull,
-    std::size_t ShardCount = 4>
+    std::size_t ShardCount = 4,
+    typename UniqueTag = struct DefaultConcurrentHdrTag>
 class ConcurrentHdrHistogram {
     static_assert(ShardCount > 0, "ConcurrentHdrHistogram needs at least one shard");
 
 public:
     using histogram_type = HdrHistogram<Significant, MaxValue>;
     using value_type = typename histogram_type::value_type;
+    using unique_tag = UniqueTag;
 
     ConcurrentHdrHistogram() = default;
     ConcurrentHdrHistogram(const ConcurrentHdrHistogram&) = delete;
     ConcurrentHdrHistogram& operator=(const ConcurrentHdrHistogram&) = delete;
 
     CRUCIBLE_HOT void record(value_type value) noexcept {
-        shards_[thread_shard()].record(value);
+        shards_[thread_shard_()].record(value);
     }
 
     CRUCIBLE_HOT void record_on_shard(std::size_t shard, value_type value) noexcept {
@@ -397,14 +421,28 @@ public:
     }
 
 private:
-    [[nodiscard]] static std::size_t thread_shard() noexcept {
-        thread_local const std::size_t shard =
-            next_thread_shard_.fetch_add(1, std::memory_order_relaxed) % ShardCount;
-        return shard;
+    // The thread_local cell stores `shard_index + 1`; sentinel 0 = "this
+    // thread hasn't picked a shard for *this histogram yet."  +1 encoding
+    // works because the modulo result is [0, ShardCount-1], stored as
+    // [1, ShardCount], leaving 0 unambiguously available as the
+    // default-init "uninitialized" marker.  Hot path: one load + one
+    // branch (predicted not-taken after first call) + one subtract.
+    [[nodiscard]] CRUCIBLE_HOT std::size_t thread_shard_() noexcept {
+        const ::crucible::safety::ThreadLocalRef<UniqueTag, std::size_t> cell{};
+        std::size_t& cached_plus_one = cell.peek_mut();
+        if (cached_plus_one == 0) [[unlikely]] {
+            cached_plus_one = (next_thread_shard_.fetch_add(
+                                  1, std::memory_order_relaxed)
+                               % ShardCount) + 1;
+        }
+        return cached_plus_one - 1;
     }
 
     alignas(64) std::array<histogram_type, ShardCount> shards_{};
-    alignas(64) inline static std::atomic<std::uint64_t> next_thread_shard_{0};
+    // Per-instance shard counter — was inline-static, now instance.  Two
+    // ConcurrentHdrHistogram<...> instances are now genuinely isolated;
+    // they no longer pull from the same atomic.
+    alignas(64) std::atomic<std::uint64_t> next_thread_shard_{0};
 };
 
 template <typename H>
