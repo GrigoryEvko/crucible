@@ -65,9 +65,22 @@ USAGE
 }
 
 # ── Greenfield opt-ins ────────────────────────────────────────────────
-# Mirror of CMake CRUCIBLE_FIXY_ONLY target property.  Add paths here
-# AND register `set_target_properties(... PROPERTIES CRUCIBLE_FIXY_ONLY ON)`
-# when a new directory opts in.  Order is presentational only.
+# Authoritative list lives in CMakeLists.txt under the GLOBAL property
+# CRUCIBLE_FIXY_ONLY_PATHS (FIXY-V-072).  At configure time CMake
+# materializes the list to ${CMAKE_BINARY_DIR}/fixy-only-paths.txt; when
+# that file exists (CI runs after configure / regular dev iteration),
+# the script consumes it directly.  When absent (pre-configure CI,
+# standalone scans, freshly-cloned tree), the script falls back to the
+# hardcoded mirror below — verified at CMake configure time to agree
+# with the authoritative list (warning fires on drift).
+#
+# Adding a new band-3 directory:
+#   1. crucible_register_fixy_only_directory(<path>) in CMakeLists.txt
+#      under the FIXY-V-072 block.
+#   2. Mirror the same path into the array below (presentational order
+#      doesn't matter — the configure-time drift check is set-equality).
+#   3. Re-configure to regenerate fixy-only-paths.txt + verify mirror
+#      agreement.
 #
 # FIXY-V-070 — Band-3 expansion (Agent 2 CRITICAL-1).  fixy.md §5.3
 # names cntp/, canopy/, cog/, topology/, forge/, mimic/, observe/,
@@ -99,6 +112,31 @@ CRUCIBLE_FIXY_ONLY_PATHS=(
     src/observe
     src/warden
 )
+
+# ── FIXY-V-072: load authoritative list from generated file if present ──
+# Order of resolution (first hit wins):
+#   1. CRUCIBLE_FIXY_ONLY_PATHS_FILE env var — explicit path override.
+#   2. ${root}/build/fixy-only-paths.txt — default in-tree CMake output.
+#   3. Hardcoded array above — pre-configure / standalone fallback.
+#
+# The generated file is one path per line; blank lines and lines
+# beginning with '#' are ignored (so the header banner CMake writes
+# is skipped).  Loading this AFTER the hardcoded array means a drift-
+# free build produces identical CRUCIBLE_FIXY_ONLY_PATHS; a divergent
+# tree warns at configure time AND reflects the CMake authority here.
+_paths_file_candidate="${CRUCIBLE_FIXY_ONLY_PATHS_FILE:-$root/build/fixy-only-paths.txt}"
+if [[ -f "$_paths_file_candidate" ]]; then
+    _generated_paths=()
+    while IFS= read -r _line; do
+        [[ -z "$_line" || "$_line" =~ ^# ]] && continue
+        _generated_paths+=("$_line")
+    done < "$_paths_file_candidate"
+    if [[ ${#_generated_paths[@]} -gt 0 ]]; then
+        CRUCIBLE_FIXY_ONLY_PATHS=("${_generated_paths[@]}")
+    fi
+    unset _generated_paths _line
+fi
+unset _paths_file_candidate
 
 case "${1:-}" in
     -h|--help) usage; exit 0 ;;
