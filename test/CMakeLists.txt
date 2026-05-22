@@ -2300,6 +2300,22 @@ crucible_neg_compile_fixy_test(neg_fixy_effect_row_engagement_not_computation
 crucible_neg_compile_fixy_test(neg_fixy_effect_row_engagement_empty_row
     "RowEngagementWitnessed|effect_count_in_row|static assertion failed|fixture #2")
 
+# ── FIXY-V-220 — fixy::contract::MemberMintCtxRequired hook ──────
+# Documentation hook for the 8 member-function mints that cannot be
+# re-exported as namespace-scope using-declarations.  Two HS14
+# fixtures pin the concept's two distinct rejection axes:
+#   (1) wrong_ctx     — REGISTERED (Class, MintName) pair, WRONG ctx;
+#       admits<HotFgCtx>() returns false for Cipher::mint_open_view
+#       (which admits only IsBgCtx).  Tests WRONG-CTX axis.
+#   (2) unregistered  — UNREGISTERED pair (`int` as Class); primary
+#       template `member_mint_required_ctx<int, open_view>` is
+#       INCOMPLETE; the requires-clause SFINAE-rejects.  Tests the
+#       MISSING-REGISTRATION axis (distinct from #1).
+crucible_neg_compile_fixy_test(neg_fixy_contract_member_mint_wrong_ctx
+    "MemberMintCtxRequired|Cipher|open_view|static assertion failed|fixture #1")
+crucible_neg_compile_fixy_test(neg_fixy_contract_member_mint_unregistered
+    "MemberMintCtxRequired|incomplete|static assertion failed|fixture #2")
+
 # ── FIXY-MINT-Bridge — fixy/Bridge.h re-export of wrap factories
 # (mint_recording_session, mint_crash_watched_session,
 # mint_persisted_session, mint_recording_endpoint,

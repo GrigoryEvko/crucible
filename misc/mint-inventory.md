@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-22T21:36:55Z`.
+Snapshot generated: `2026-05-22T22:08:48Z`.
 
 ## bridges/
 
@@ -49,9 +49,9 @@ Snapshot generated: `2026-05-22T21:36:55Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_demote` | `include/crucible/cipher/CipherTierPromotion.h:126` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:133` | HS14: 4 |
-| `mint_promote` | `include/crucible/cipher/CipherTierPromotion.h:117` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:132` | HS14: 4 |
-| `mint_restore` | `include/crucible/cipher/CipherTierPromotion.h:161` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:150` | HS14: 6 |
+| `mint_demote` | `include/crucible/cipher/CipherTierPromotion.h:126` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:148` | HS14: 4 |
+| `mint_promote` | `include/crucible/cipher/CipherTierPromotion.h:117` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:147` | HS14: 4 |
+| `mint_restore` | `include/crucible/cipher/CipherTierPromotion.h:161` | Y | Y | Y | Y | token | `include/crucible/fixy/Contract.h:165` | HS14: 6 |
 
 ## concurrent/
 
@@ -200,7 +200,7 @@ to distinguish this third authorization shape.
 
 | class::mint_name | file:line | nd | cx | ne | rq | cb | HS14 |
 |---|---|---|---|---|---|---|---|
-| `Cipher::mint_open_view` | `include/crucible/Cipher.h:304` | Y | - | Y | - | member | HS14: 17 |
+| `Cipher::mint_open_view` | `include/crucible/Cipher.h:304` | Y | - | Y | - | member | HS14: 18 |
 | `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h:463` | Y | - | Y | - | member | HS14: 4 |
 | `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h:469` | Y | - | Y | - | member | HS14: 3 |
 | `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h:320` | Y | Y | Y | - | member | HS14: 3 |

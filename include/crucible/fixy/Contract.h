@@ -91,10 +91,25 @@
 #include <crucible/cipher/ComputationCache.h>           // FIXY-U-015: dispatcher cache surface
 #include <crucible/cipher/ComputationCacheFederation.h> // FIXY-U-015: cache federation wire-keys
 #include <crucible/cipher/FederationProtocol.h>         // FIXY-U-015: federation entry wire format
+#include <crucible/effects/ExecCtx.h>                   // FIXY-V-220: IsBgCtx / IsFgCtx / IsInitCtx
 #include <crucible/safety/Contract.h>
 
 #include <chrono>      // FIXY-U-015: drain_computation_cache signature
 #include <type_traits> // FIXY-U-015 sentinel uses std::is_same_v
+
+// FIXY-V-220 — forward-declare the 5 non-Cipher host classes that
+// carry member-function mints.  Pure name reach for the registration
+// table; the specialization machinery does NOT need the complete type
+// (admits<Ctx>() only inspects Ctx).  Avoids pulling CKernel.h /
+// SchemaTable.h / PoolAllocator.h / CrucibleContext.h / ReplayEngine.h
+// transitively through every fixy::contract:: consumer.
+namespace crucible {
+struct CKernelTable;
+struct SchemaTable;
+struct PoolAllocator;
+struct CrucibleContext;
+struct ReplayEngine;
+}  // namespace crucible
 
 namespace crucible::fixy::contract {
 
@@ -422,6 +437,288 @@ using ::crucible::cipher::federation::serialize_computation_cache_federation_ent
 }  // namespace federation
 
 }  // namespace cipher
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-V-220: member-mint required-ctx documentation hook ────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Per CLAUDE.md §XXI, Crucible's 8 member-function mints are `mint_*`
+// methods on host classes; they cannot be re-exported through
+// `using ...::method;` directives because member functions are not
+// namespace-scope entities.  Production call sites still want a
+// type-level witness that "I'm invoking this method from the right
+// ExecCtx tier" — the V-220 hook provides exactly that.
+//
+// The mechanism is a constexpr registration table:
+//
+//   member_mint_required_ctx<Class, MintName>::admits<Ctx>()
+//
+// per-(Class, MintName) pair, where:
+//   * Class       — the host class type (forward-declared above)
+//   * MintName    — a tag struct from `mint_name::` enumerating the
+//                   distinct mint-method names
+//   * admits<Ctx> — consteval predicate over the calling ExecCtx
+//
+// Production code opts in via static_assert ABOVE the mint invocation:
+//
+//   static_assert(::crucible::fixy::contract::MemberMintCtxRequired<
+//                     ::crucible::Cipher,
+//                     ::crucible::fixy::contract::mint_name::open_view,
+//                     decltype(ctx)>);
+//   auto view = cipher.mint_open_view();
+//
+// Each specialization carries `name()` and `required_ctx_description()`
+// consteval strings to surface the expectation for diagnostics + grep.
+//
+// ── The 8 registered member mints ──────────────────────────────────
+//
+//   1. ::crucible::Cipher::mint_open_view()
+//        ↳ admits IsBgCtx (OpenView writes are drain-side)
+//   2. ::crucible::CKernelTable::mint_mutable_view()
+//        ↳ admits IsInitCtx (cold-init table build, single writer)
+//   3. ::crucible::CKernelTable::mint_sealed_view()
+//        ↳ admits IsExecCtx (hot or bg reads after seal — any ctx)
+//   4. ::crucible::SchemaTable::mint_mutable_view()
+//        ↳ admits IsInitCtx (mirrors #2)
+//   5. ::crucible::SchemaTable::mint_sealed_view()
+//        ↳ admits IsExecCtx (mirrors #3)
+//   6. ::crucible::PoolAllocator::mint_initialized_view()
+//        ↳ admits IsFgCtx OR IsBgCtx (hot alloc + bg teardown)
+//   7. ::crucible::CrucibleContext::mint_compiled_view()
+//        ↳ admits IsFgCtx (compiled dispatch path)
+//   8. ::crucible::ReplayEngine::mint_active_view()
+//        ↳ admits IsFgCtx (replay dispatch path)
+//
+// ── Axiom coverage ─────────────────────────────────────────────────
+//
+//   InitSafe — pure type-level predicate; no state.
+//   TypeSafe — (Class, MintName) are type-level discriminators; an
+//              unregistered pair fails substitution.
+//   NullSafe — no runtime; nothing to dereference.
+//   MemSafe  — no storage, no lifetime.
+//   BorrowSafe — concept doesn't bind to instances.
+//   ThreadSafe — consteval, thread-agnostic.
+//   LeakSafe — no storage.
+//   DetSafe  — same (Class, MintName, Ctx) → same answer.
+//
+// ── Cost ───────────────────────────────────────────────────────────
+//
+// Zero.  Concept resolves at template-substitution time; no runtime
+// emission.  Opt-in static_assert collapses to nothing under -O3.
+
+// ── mint_name:: tag types (grep-friendly) ──────────────────────────
+//
+// Tag types — one per distinct mint-method name across all host
+// classes.  open_view is currently unique to Cipher; mutable_view and
+// sealed_view are shared by CKernelTable + SchemaTable; the others
+// are unique to their host.  When a new member mint lands, add its
+// tag here AND register the (Class, mint_name::tag) specialization
+// below.
+
+namespace mint_name {
+struct open_view {};
+struct mutable_view {};
+struct sealed_view {};
+struct initialized_view {};
+struct compiled_view {};
+struct active_view {};
+}  // namespace mint_name
+
+// ── Primary template: undefined ────────────────────────────────────
+//
+// An unregistered (Class, MintName) pair triggers a hard substitution
+// failure when `MemberMintCtxRequired` probes the spec — surfaces as
+// "incomplete type" / "use of undeclared specialization" diagnostic.
+// HS14 fixture #2 pins this rejection axis (unregistered pair).
+
+template <class Class, class MintName>
+struct member_mint_required_ctx;
+
+// ── 1. Cipher::mint_open_view → IsBgCtx ────────────────────────────
+//
+// Cipher.h:304 — `[[nodiscard]] OpenView mint_open_view() const noexcept
+// pre(is_open())`.  The OpenView mediates writes to the Cipher
+// cold-tier object store; per CipherTier discipline these MUST happen
+// from a BG drain thread (BackgroundThread::run + ::flush call sites).
+// Calling from FG would race the FG dispatch hot path.
+
+template <>
+struct member_mint_required_ctx<::crucible::Cipher, mint_name::open_view> {
+    template <class Ctx>
+    static consteval bool admits() noexcept {
+        return ::crucible::effects::IsBgCtx<std::remove_cvref_t<Ctx>>;
+    }
+    static consteval const char* name() noexcept {
+        return "Cipher::mint_open_view";
+    }
+    static consteval const char* required_ctx_description() noexcept {
+        return "IsBgCtx — Cipher::OpenView writes are drain-side";
+    }
+};
+
+// ── 2. CKernelTable::mint_mutable_view → IsInitCtx ─────────────────
+//
+// CKernel.h:463 — mutable view used by Vessel registration BEFORE the
+// table is sealed.  Single writer (the registration site, called from
+// the Vessel adapter init path).  Wrong ctx (Fg/Bg) would race the
+// post-seal sealed-view reads.
+
+template <>
+struct member_mint_required_ctx<::crucible::CKernelTable, mint_name::mutable_view> {
+    template <class Ctx>
+    static consteval bool admits() noexcept {
+        return ::crucible::effects::IsInitCtx<std::remove_cvref_t<Ctx>>;
+    }
+    static consteval const char* name() noexcept {
+        return "CKernelTable::mint_mutable_view";
+    }
+    static consteval const char* required_ctx_description() noexcept {
+        return "IsInitCtx — pre-seal cold-init table build, single writer";
+    }
+};
+
+// ── 3. CKernelTable::mint_sealed_view → IsExecCtx (any) ────────────
+//
+// CKernel.h:469 — sealed view exposes read-only iteration over the
+// sealed table.  Used by FG dispatch (classify_kernel) AND BG drain
+// (build_trace).  No ctx restriction beyond IsExecCtx — every Ctx
+// shape can read post-seal.
+
+template <>
+struct member_mint_required_ctx<::crucible::CKernelTable, mint_name::sealed_view> {
+    template <class Ctx>
+    static consteval bool admits() noexcept {
+        return ::crucible::effects::IsExecCtx<std::remove_cvref_t<Ctx>>;
+    }
+    static consteval const char* name() noexcept {
+        return "CKernelTable::mint_sealed_view";
+    }
+    static consteval const char* required_ctx_description() noexcept {
+        return "IsExecCtx — hot/bg post-seal reads (any ctx)";
+    }
+};
+
+// ── 4. SchemaTable::mint_mutable_view → IsInitCtx ──────────────────
+//
+// SchemaTable.h:155 — schema-name → schema_hash table.  Same lifecycle
+// as CKernelTable: pre-seal mutable from init, post-seal read-only.
+
+template <>
+struct member_mint_required_ctx<::crucible::SchemaTable, mint_name::mutable_view> {
+    template <class Ctx>
+    static consteval bool admits() noexcept {
+        return ::crucible::effects::IsInitCtx<std::remove_cvref_t<Ctx>>;
+    }
+    static consteval const char* name() noexcept {
+        return "SchemaTable::mint_mutable_view";
+    }
+    static consteval const char* required_ctx_description() noexcept {
+        return "IsInitCtx — pre-seal cold-init schema build, single writer";
+    }
+};
+
+// ── 5. SchemaTable::mint_sealed_view → IsExecCtx (any) ─────────────
+//
+// SchemaTable.h:161 — sealed schema lookup.  Hot path on dispatch
+// (Vessel schema lookup) AND bg drain (build_trace).
+
+template <>
+struct member_mint_required_ctx<::crucible::SchemaTable, mint_name::sealed_view> {
+    template <class Ctx>
+    static consteval bool admits() noexcept {
+        return ::crucible::effects::IsExecCtx<std::remove_cvref_t<Ctx>>;
+    }
+    static consteval const char* name() noexcept {
+        return "SchemaTable::mint_sealed_view";
+    }
+    static consteval const char* required_ctx_description() noexcept {
+        return "IsExecCtx — hot/bg post-seal reads (any ctx)";
+    }
+};
+
+// ── 6. PoolAllocator::mint_initialized_view → Fg OR Bg ─────────────
+//
+// PoolAllocator.h:295 — typed view over the initialized pool.  FG
+// dispatch allocates from the pool (CrucibleContext::output_ptr); BG
+// drain releases slots during teardown.  Init context does NOT touch
+// the pool (the pool itself is built post-init).
+
+template <>
+struct member_mint_required_ctx<::crucible::PoolAllocator, mint_name::initialized_view> {
+    template <class Ctx>
+    static consteval bool admits() noexcept {
+        using C = std::remove_cvref_t<Ctx>;
+        return ::crucible::effects::IsFgCtx<C>
+            || ::crucible::effects::IsBgCtx<C>;
+    }
+    static consteval const char* name() noexcept {
+        return "PoolAllocator::mint_initialized_view";
+    }
+    static consteval const char* required_ctx_description() noexcept {
+        return "IsFgCtx OR IsBgCtx — hot dispatch alloc + bg drain release";
+    }
+};
+
+// ── 7. CrucibleContext::mint_compiled_view → IsFgCtx ───────────────
+//
+// CrucibleContext.h:320 — compiled-dispatch surface used by the hot
+// FG path AFTER a region is compiled (Vigil::switch_region).  The
+// compiled view threads through dispatch_op / dispatch_region.  Cold-
+// init / bg-drain do not consume the compiled view directly.
+
+template <>
+struct member_mint_required_ctx<::crucible::CrucibleContext, mint_name::compiled_view> {
+    template <class Ctx>
+    static consteval bool admits() noexcept {
+        return ::crucible::effects::IsFgCtx<std::remove_cvref_t<Ctx>>;
+    }
+    static consteval const char* name() noexcept {
+        return "CrucibleContext::mint_compiled_view";
+    }
+    static consteval const char* required_ctx_description() noexcept {
+        return "IsFgCtx — compiled dispatch is hot-path foreground only";
+    }
+};
+
+// ── 8. ReplayEngine::mint_active_view → IsFgCtx ────────────────────
+//
+// ReplayEngine.h:398 — active replay cursor; FG dispatch consumes the
+// view per-op to walk the compiled trace.  BG drain builds the engine
+// but does not replay through it.
+
+template <>
+struct member_mint_required_ctx<::crucible::ReplayEngine, mint_name::active_view> {
+    template <class Ctx>
+    static consteval bool admits() noexcept {
+        return ::crucible::effects::IsFgCtx<std::remove_cvref_t<Ctx>>;
+    }
+    static consteval const char* name() noexcept {
+        return "ReplayEngine::mint_active_view";
+    }
+    static consteval const char* required_ctx_description() noexcept {
+        return "IsFgCtx — replay cursor walked by hot FG dispatch";
+    }
+};
+
+// ── Cross-class concept ────────────────────────────────────────────
+//
+// `MemberMintCtxRequired<Class, MintName, Ctx>` is satisfied iff:
+//   (a) a `member_mint_required_ctx<Class, MintName>` specialization
+//       exists (HS14 fixture #2 rejection axis), AND
+//   (b) its `admits<Ctx>()` consteval returns true (HS14 fixture #1
+//       rejection axis).
+//
+// The requires-expression `requires { ... ::template admits<Ctx>(); }`
+// short-circuits at substitution — for an unregistered pair the
+// primary template is incomplete so the expression is ill-formed and
+// the concept is unsatisfied.
+
+template <class Class, class MintName, class Ctx>
+concept MemberMintCtxRequired = requires {
+    requires member_mint_required_ctx<
+        std::remove_cvref_t<Class>,
+        std::remove_cvref_t<MintName>>::template admits<Ctx>();
+};
 
 }  // namespace crucible::fixy::contract
 
@@ -757,5 +1054,106 @@ static_assert(u015_surface_cardinality == 42,
     "must update in lockstep.");
 
 }  // namespace u015
+
+// ─── FIXY-V-220: member-mint required-ctx hook sentinels ───────────
+//
+// Witness the 8 registered (Class, MintName) specifications + the
+// cross-class concept's positive/negative axes.  Substrate identity
+// is asserted via admits<Ctx>() consteval equality against the
+// substrate ctx-discrimination concepts; the cardinality sentinel at
+// the tail pins the registration count.
+
+namespace v220 {
+
+namespace eff = ::crucible::effects;
+
+// ── Per-spec positive admission ────────────────────────────────────
+
+static_assert(member_mint_required_ctx<
+    ::crucible::Cipher, mint_name::open_view>::admits<eff::BgDrainCtx>(),
+    "V-220 #1: Cipher::mint_open_view must admit BgDrainCtx.");
+
+static_assert(member_mint_required_ctx<
+    ::crucible::CKernelTable, mint_name::mutable_view>::admits<eff::ColdInitCtx>(),
+    "V-220 #2: CKernelTable::mint_mutable_view must admit ColdInitCtx.");
+
+static_assert(member_mint_required_ctx<
+    ::crucible::CKernelTable, mint_name::sealed_view>::admits<eff::HotFgCtx>(),
+    "V-220 #3a: CKernelTable::mint_sealed_view must admit HotFgCtx.");
+static_assert(member_mint_required_ctx<
+    ::crucible::CKernelTable, mint_name::sealed_view>::admits<eff::BgDrainCtx>(),
+    "V-220 #3b: CKernelTable::mint_sealed_view must admit BgDrainCtx.");
+
+static_assert(member_mint_required_ctx<
+    ::crucible::SchemaTable, mint_name::mutable_view>::admits<eff::ColdInitCtx>(),
+    "V-220 #4: SchemaTable::mint_mutable_view must admit ColdInitCtx.");
+
+static_assert(member_mint_required_ctx<
+    ::crucible::SchemaTable, mint_name::sealed_view>::admits<eff::HotFgCtx>(),
+    "V-220 #5: SchemaTable::mint_sealed_view must admit HotFgCtx.");
+
+static_assert(member_mint_required_ctx<
+    ::crucible::PoolAllocator, mint_name::initialized_view>::admits<eff::HotFgCtx>(),
+    "V-220 #6a: PoolAllocator::mint_initialized_view must admit HotFgCtx.");
+static_assert(member_mint_required_ctx<
+    ::crucible::PoolAllocator, mint_name::initialized_view>::admits<eff::BgDrainCtx>(),
+    "V-220 #6b: PoolAllocator::mint_initialized_view must admit BgDrainCtx.");
+
+static_assert(member_mint_required_ctx<
+    ::crucible::CrucibleContext, mint_name::compiled_view>::admits<eff::HotFgCtx>(),
+    "V-220 #7: CrucibleContext::mint_compiled_view must admit HotFgCtx.");
+
+static_assert(member_mint_required_ctx<
+    ::crucible::ReplayEngine, mint_name::active_view>::admits<eff::HotFgCtx>(),
+    "V-220 #8: ReplayEngine::mint_active_view must admit HotFgCtx.");
+
+// ── Per-spec negative admission (wrong-ctx rejection) ──────────────
+//
+// Each spec rejects the wrong ctx tier — the cross-class concept's
+// `admits<Ctx>()` branch returns false for these pairings.
+
+static_assert(!member_mint_required_ctx<
+    ::crucible::Cipher, mint_name::open_view>::admits<eff::HotFgCtx>(),
+    "V-220 #1-neg: Cipher::mint_open_view must REJECT HotFgCtx.");
+
+static_assert(!member_mint_required_ctx<
+    ::crucible::CKernelTable, mint_name::mutable_view>::admits<eff::HotFgCtx>(),
+    "V-220 #2-neg: mint_mutable_view must REJECT HotFgCtx (init-only).");
+
+static_assert(!member_mint_required_ctx<
+    ::crucible::CrucibleContext, mint_name::compiled_view>::admits<eff::BgDrainCtx>(),
+    "V-220 #7-neg: mint_compiled_view must REJECT BgDrainCtx (Fg only).");
+
+static_assert(!member_mint_required_ctx<
+    ::crucible::ReplayEngine, mint_name::active_view>::admits<eff::ColdInitCtx>(),
+    "V-220 #8-neg: mint_active_view must REJECT ColdInitCtx (Fg only).");
+
+// ── Cross-class concept positive + negative ────────────────────────
+
+static_assert(MemberMintCtxRequired<
+    ::crucible::Cipher, mint_name::open_view, eff::BgDrainCtx>,
+    "V-220 concept: must satisfy for (Cipher, open_view, BgDrainCtx).");
+
+static_assert(!MemberMintCtxRequired<
+    ::crucible::Cipher, mint_name::open_view, eff::HotFgCtx>,
+    "V-220 concept: must reject for (Cipher, open_view, HotFgCtx).");
+
+// cvref-strip: const& on the Ctx must NOT change the answer.
+static_assert(MemberMintCtxRequired<
+    ::crucible::Cipher, mint_name::open_view, eff::BgDrainCtx const&>,
+    "V-220 concept: cvref-stripped Ctx must satisfy.");
+
+// ── Cardinality witness ────────────────────────────────────────────
+//
+// 8 registered (Class, MintName) specializations today.  Future drift
+// (a new member mint lands → ship the spec → bump the constant).
+
+inline constexpr std::size_t v220_member_mint_cardinality = 8;
+static_assert(v220_member_mint_cardinality == 8,
+    "FIXY-V-220 cardinality sentinel: 8 registered member mints today. "
+    "If a new (Class, MintName) spec lands, bump this constant AND refresh "
+    "the doc-block at the top of the V-220 section in fixy/Contract.h.");
+
+}  // namespace v220
 
 }  // namespace crucible::fixy::contract::self_test
