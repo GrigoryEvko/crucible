@@ -270,6 +270,7 @@ target_include_directories(test_fixy_v_096_welford_variance SYSTEM PRIVATE
 crucible_test(test_fixy_v_097_syscall_family)  # FIXY-V-097 DimensionAxis::SyscallSurface + SyscallFamilyLattice 9-tier chain
 crucible_test(test_fixy_v_098_syscall_grants)  # FIXY-V-098 fixy/syscall/Family.h + Per.h — coarse + per-syscall grants
 crucible_test(test_fixy_v_099_syscall_ioctl)   # FIXY-V-099 fixy/syscall/Ioctl.h   — per-vendor + per-subsystem ioctl grants
+crucible_test(test_fixy_v_100_syscall_bridge)  # FIXY-V-100 fixy/syscall/Bridge.h — SyscallSurface → Met(X) effect-row lift
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -6092,6 +6093,38 @@ crucible_neg_compile_fixy_test(neg_fixy_v_099_wrong_axis
   "could not convert|cannot convert|IoctlVendor|IoctlSubsystem|enumeration type|wrong type")
 crucible_neg_compile_fixy_test(neg_fixy_v_099_vendor_subsystem_duplicate
   "UniqueEngagementPerAxis|FixyDuplicate_SyscallSurface")
+
+# ─── FIXY-V-100 syscall→Met(X) bridge neg-compile fixtures (2) ────────
+#
+# V-100 ships fixy/syscall/Bridge.h: the concept-gated lift from any
+# V-098/V-099 syscall grant to its `effects::Row<...>` contribution.
+# The IsSyscallGrantTag<G> concept has TWO orthogonal arms (IsGrantTag
+# structural gate + which_dim == SyscallSurface axis gate); HS14 covers
+# both at distinct call-site shapes.
+#
+#   1. non-grant — passing a non-grant type (here: plain `int`) to
+#      lift_syscall_grant_row_t<>. IsGrantTag arm fails first; the
+#      concept's structural-validity gate emits the named-concept
+#      satisfaction-failure diagnostic before the SyscallSurface arm
+#      ever evaluates.
+#
+#   2. wrong-axis — passing a well-formed grant tag (V-092's
+#      fp_strict_ieee, which routes to FpMode) to
+#      lift_syscall_grant_row_t<>.  IsGrantTag PASSES (the grant is
+#      structurally valid) but which_dim != SyscallSurface FAILS;
+#      the concept's axis-routing gate emits the named-concept
+#      satisfaction-failure diagnostic citing the SyscallSurface
+#      requirement.
+#
+# Both arms protect against different bug-classes a contributor might
+# hit when integrating V-100 into a new call site; together they
+# witness the concept gate names the correct mismatch class in each
+# case (rather than degrading into a cryptic "undefined family_tier"
+# template error deep in the alias-template expansion).
+crucible_neg_compile_fixy_test(neg_fixy_v_100_non_grant
+  "IsSyscallGrantTag|IsGrantTag|lift_syscall_grant_row|requires|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_v_100_wrong_axis
+  "IsSyscallGrantTag|SyscallSurface|lift_syscall_grant_row|requires|constraints not satisfied")
 
 # ─── FIXY-V-090 FpModePinned wrapper neg-compile fixtures (2) ─────────
 #
