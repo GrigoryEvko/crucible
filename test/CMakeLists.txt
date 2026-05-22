@@ -261,6 +261,7 @@ crucible_test(test_fixy_v_089_fp_lattices)  # FIXY-V-089 11 FP-mode ChainLattice
 crucible_test(test_fixy_v_090_fp_wrappers)  # FIXY-V-090 11 safety/FpMode.h wrappers + composite + row_hash + DimensionTraits
 crucible_test(test_fixy_v_091_collision_fp_mode)  # FIXY-V-091 CollisionCatalog F101-F105 — FP-mode cross-axis rules
 crucible_test(test_fixy_v_092_fp_grants)  # FIXY-V-092 fixy/Fp.h — 12 FP-mode grant tags + per-tag which_dim
+crucible_test(test_fixy_v_093_fp_canonicalize)  # FIXY-V-093 fixy::fp::canonicalize — merkle-hash-safe FP canonicalization
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -1609,6 +1610,26 @@ crucible_neg_compile_fixy_test(neg_fixy_grant_fp_wrong_nttp_enum
     "could not convert|cannot convert|FpRounding|FpFtz|enumeration type|wrong type")
 crucible_neg_compile_fixy_test(neg_fixy_grant_fp_duplicate_engagement
     "UniqueEngagementPerAxis|FixyDuplicate_FpMode")
+
+# FIXY-V-093 — HS14 floor for fixy::fp::canonicalize.  Two fixtures
+# cover orthogonal rejection classes the static_assert wall enforces:
+#   1. Recipe-determinism-tier rejection — recipes with UNORDERED or
+#      ORDERED determinism cannot promise the cross-vendor bit-
+#      stability that merkle hashing requires.  The is_bitexact()
+#      static_assert fires at template-instantiation time.
+#   2. Recipe-rounding-mode rejection — recipes pinned to RZ/RM/RP
+#      (non-default IEEE modes) lock content_hash to a rounding mode
+#      no default kernel pipeline realizes.  The RoundingMode::RN
+#      static_assert fires orthogonally to the determinism gate.
+# Together they pin the recipe-gated canonicalize_for<R> surface from
+# both axes the recipe-tier × rounding-mode product can fail.  The
+# bad-recipe in fixture 2 satisfies the determinism gate (BITEXACT_
+# STRICT) so ONLY the rounding-mode assert fires — proves the gates
+# are independent, not accidentally co-covered.
+crucible_neg_compile_fixy_test(neg_fixy_canonicalize_non_bitexact_recipe
+    "BITEXACT_TC or BITEXACT_STRICT|is_bitexact|static assertion failed")
+crucible_neg_compile_fixy_test(neg_fixy_canonicalize_wrong_rounding_mode
+    "RoundingMode::RN|round-to-nearest|static assertion failed")
 
 # fixy-A4-018 — §XXI Universal-Mint-Pattern enforcement.  fixy::fn's
 # value ctor is private; only the three canonical mint factories
