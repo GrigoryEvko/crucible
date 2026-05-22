@@ -195,6 +195,7 @@
 #include <crucible/fixy/SessView.h>         // FIXY-V-063
 #include <crucible/fixy/SessCrash.h>        // FIXY-V-064
 #include <crucible/fixy/SessFederation.h>   // FIXY-V-065
+#include <crucible/fixy/SessShape.h>        // FIXY-V-066
 #include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/fixy/Wrap.h>

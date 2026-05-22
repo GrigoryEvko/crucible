@@ -112,20 +112,30 @@ using ::crucible::safety::proto::EpochCtx;
 using ::crucible::safety::proto::CheckpointedSession;
 
 // ═════════════════════════════════════════════════════════════════════
-// ── Protocol-shape predicates (sessions/Session.h) ─────────────────
+// ── Protocol-shape predicates — carved out (FIXY-V-066) ────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// FIXY-U-012.  Boolean variable templates that classify a protocol's
-// HEAD constructor shape.  Used by combinator metafunctions, pattern
-// matchers, and the per-production-call-site assertions documented at
-// the top of fixy::sess::pattern::.  No new logic — pure re-export.
+// The 6 protocol-shape predicates (`is_send_v` / `is_recv_v` /
+// `is_select_v` / `is_offer_v` / `is_loop_v` / `is_head_v`) moved to
+// `fixy/SessShape.h` on 2026-05-22 under sub-namespace
+// `fixy::sess::shape::`, parallel to V-061..V-064's `checkpoint::` /
+// `row::` / `view::` / `crash::` sub-namespace carve-outs.  The
+// umbrella-level using-decls below preserve backward compat for any
+// historical `fixy::sess::is_*_v` call site; the canonical home is now
+// SessShape.h for grep discoverability and sentinel battery scope.
 
-using ::crucible::safety::proto::is_send_v;
-using ::crucible::safety::proto::is_recv_v;
-using ::crucible::safety::proto::is_select_v;
-using ::crucible::safety::proto::is_offer_v;
-using ::crucible::safety::proto::is_loop_v;
-using ::crucible::safety::proto::is_head_v;
+}  // namespace crucible::fixy::sess
+
+#include <crucible/fixy/SessShape.h>
+
+namespace crucible::fixy::sess {
+
+using ::crucible::fixy::sess::shape::is_send_v;
+using ::crucible::fixy::sess::shape::is_recv_v;
+using ::crucible::fixy::sess::shape::is_select_v;
+using ::crucible::fixy::sess::shape::is_offer_v;
+using ::crucible::fixy::sess::shape::is_loop_v;
+using ::crucible::fixy::sess::shape::is_head_v;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── PermSet (permissions/PermSet.h) ────────────────────────────────

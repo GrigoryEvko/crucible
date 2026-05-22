@@ -1147,6 +1147,83 @@ static_assert(!fsess::CtxFitsFederation<NonExecCtxProbe>,
     "umbrella reach: fixy::sess::CtxFitsFederation must reach AND "
     "reject a non-IsExecCtx argument (clause 1 of the packaged gate).");
 
+// ─── 6r. SessShape.h reach — fixy::sess::shape:: (FIXY-V-066) ────────
+//
+// Witness that the 6 protocol-shape predicates (`is_send_v` /
+// `is_recv_v` / `is_select_v` / `is_offer_v` / `is_loop_v` /
+// `is_head_v`) reach the consumer through the umbrella alone after
+// V-066's carve-out from fixy/Sess.h to fixy/SessShape.h.  Cells below
+// test (a) sub-namespace reach `fixy::sess::shape::is_<shape>_v`
+// (canonical home) AND (b) umbrella-level reach `fixy::sess::is_<shape>_v`
+// (backward-compat using-decl that Sess.h preserves).  If a future
+// regression strips `#include <crucible/fixy/SessShape.h>` from Fixy.h's
+// Phase-C block OR removes the umbrella using-decls from Sess.h, the
+// claims below fail to compile.
+
+namespace fshape = ::crucible::fixy::sess::shape;
+namespace fsess_umbrella = ::crucible::fixy::sess;
+namespace pproto = ::crucible::safety::proto;
+
+namespace v066_reach {
+struct Probe {};
+using SendP   = pproto::Send<Probe, pproto::End>;
+using RecvP   = pproto::Recv<Probe, pproto::End>;
+using SelectP = pproto::Select<SendP>;
+using OfferP  = pproto::Offer<RecvP>;
+using LoopP   = pproto::Loop<pproto::End>;
+using EndP    = pproto::End;
+}  // namespace v066_reach
+
+// 6r-a. Sub-namespace canonical reach — is_send_v / is_recv_v.
+static_assert(fshape::is_send_v<v066_reach::SendP>,
+    "umbrella reach: fixy::sess::shape::is_send_v must admit Send<T, K> "
+    "through the umbrella.  If this red-lights, fixy/SessShape.h is not "
+    "pulled in by <crucible/Fixy.h> OR the substrate predicate moved.");
+static_assert(!fshape::is_send_v<v066_reach::RecvP>);
+static_assert(fshape::is_recv_v<v066_reach::RecvP>);
+static_assert(!fshape::is_recv_v<v066_reach::SendP>);
+
+// 6r-b. Sub-namespace canonical reach — is_select_v / is_offer_v.
+static_assert(fshape::is_select_v<v066_reach::SelectP>);
+static_assert(!fshape::is_select_v<v066_reach::OfferP>);
+static_assert(fshape::is_offer_v<v066_reach::OfferP>);
+static_assert(!fshape::is_offer_v<v066_reach::SelectP>);
+
+// 6r-c. Sub-namespace canonical reach — is_loop_v / is_head_v.
+static_assert(fshape::is_loop_v<v066_reach::LoopP>);
+static_assert(!fshape::is_loop_v<v066_reach::SendP>);
+static_assert(fshape::is_head_v<v066_reach::SendP>);
+static_assert(fshape::is_head_v<v066_reach::EndP>);
+static_assert(!fshape::is_head_v<v066_reach::LoopP>,
+    "umbrella reach: is_head_v = !is_loop_v by substrate definition; "
+    "Loop must classify as non-head.");
+
+// 6r-d. Umbrella-level backward-compat reach — Sess.h's using-decls
+// must continue to expose `fixy::sess::is_<shape>_v` at the same
+// umbrella level the V-065-and-prior code expected.
+static_assert(fsess_umbrella::is_send_v<v066_reach::SendP>,
+    "umbrella reach: fixy::sess::is_send_v must reach through Sess.h's "
+    "backward-compat using-decl after V-066 carve-out.  If this "
+    "red-lights, Sess.h's umbrella using-decls were dropped — restore "
+    "them or expect every historical call site to break.");
+static_assert(fsess_umbrella::is_recv_v<v066_reach::RecvP>);
+static_assert(fsess_umbrella::is_select_v<v066_reach::SelectP>);
+static_assert(fsess_umbrella::is_offer_v<v066_reach::OfferP>);
+static_assert(fsess_umbrella::is_loop_v<v066_reach::LoopP>);
+static_assert(fsess_umbrella::is_head_v<v066_reach::SendP>);
+
+// 6r-e. Sub-namespace AND umbrella point at the SAME predicate value.
+// If Sess.h ever rewrites the backward-compat using-decls to reach
+// substrate directly (bypassing fixy::sess::shape::), the values
+// remain identical (substrate is the single source of truth), but
+// the structural fact "shape:: is canonical" weakens to "shape:: and
+// umbrella both exist".  The static_assert below confirms equivalence
+// of resolved values regardless of routing path.
+static_assert(fshape::is_send_v<v066_reach::SendP> ==
+              fsess_umbrella::is_send_v<v066_reach::SendP>);
+static_assert(fshape::is_head_v<v066_reach::LoopP> ==
+              fsess_umbrella::is_head_v<v066_reach::LoopP>);
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }
