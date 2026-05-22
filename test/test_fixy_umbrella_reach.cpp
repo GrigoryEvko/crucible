@@ -674,6 +674,47 @@ static_assert(fixy_wrap_sat_smoke(),
     "umbrella path.");
 }  // namespace u096b_reach_probe
 
+// ─── 6k. SessAssoc.h reach — fixy::sess::assoc:: (FIXY-V-059) ────────
+//
+// Witness that the L5 association invariant surface (HYK24 Δ ⊑_s G —
+// domain_matches_v + all_entries_refine_projection_v + is_associated_v
+// + AssociatedWith + assert_associated + projected_context_t + role-
+// list set helpers) reaches the consumer through the umbrella include
+// alone.  If a future regression strips `#include <crucible/fixy/
+// SessAssoc.h>` from Fixy.h's Phase-C block, the claims below fail to
+// compile.
+
+namespace fsassoc = ::crucible::fixy::sess::assoc;
+
+namespace v059_reach {
+struct SessZ {};
+struct RoleA {};
+struct RoleB {};
+struct Msg   {};
+using G = ::crucible::safety::proto::Transmission<RoleA, RoleB, Msg,
+                                                  ::crucible::safety::proto::End_G>;
+using Gamma = fsassoc::projected_context_t<G, SessZ>;
+}  // namespace v059_reach
+
+// 6k-a. projected_context_t resolves through the umbrella to the substrate.
+static_assert(std::is_same_v<
+    v059_reach::Gamma,
+    ::crucible::safety::proto::projected_context_t<v059_reach::G, v059_reach::SessZ>>,
+    "umbrella reach: fixy::sess::assoc::projected_context_t must alias "
+    "safety::proto::projected_context_t.  If this red-lights, "
+    "fixy/SessAssoc.h is not pulled in by <crucible/Fixy.h>.");
+
+// 6k-b. Core association traits route through (domain + refine + assoc).
+static_assert(fsassoc::domain_matches_v<v059_reach::Gamma,
+                                        v059_reach::G,
+                                        v059_reach::SessZ>);
+static_assert(fsassoc::all_entries_refine_projection_v<v059_reach::Gamma,
+                                                      v059_reach::G,
+                                                      v059_reach::SessZ>);
+static_assert(fsassoc::is_associated_v<v059_reach::Gamma,
+                                       v059_reach::G,
+                                       v059_reach::SessZ>);
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }

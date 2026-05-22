@@ -11113,6 +11113,31 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_session_no_admittance
 crucible_neg_compile_fixy_test(neg_fixy_federation_session_wrong_org
     "FederatedPeer|cannot bind|no known conversion|no matching function")
 
+# FIXY-V-059 HS14 floor — `fixy::sess::assoc::assert_associated<Gamma, G,
+# SessionTag>()` at the fixy umbrella boundary (re-export of
+# safety::proto::assert_associated, HYK24 Hou-Yoshida-Kuhn 2024 Δ ⊑_s G
+# association invariant).  Three distinct mismatch shapes — each fires
+# condition (1) (dom(Δ) = roles(G)) via a different structural deviation:
+#   shape A (subset)   — Γ ⊂ G   (strict subset; Follower role missing
+#                         from Γ entirely; cardinality mismatch).
+#   shape B (typo)     — Γ ↔ G   (same cardinality 2 = 2, but identities
+#                         differ: Coord+Stranger ≠ Coord+Follower —
+#                         Stranger ∉ roles(G), catches the cardinality-
+#                         only regression class).
+#   shape C (tag)      — Γ ↦ τ′  (Γ DOES contain valid entries but ALL
+#                         tagged with OtherSession; assert_associated is
+#                         invoked with MySession, so Γ's domain restricted
+#                         to MySession is empty while G's roles are not).
+# Routing through the fixy::sess::assoc:: umbrella drift-protects the
+# re-export chain — a future refactor that strips `using
+# safety::proto::assert_associated` from SessAssoc.h reds at HS14.
+crucible_neg_compile_fixy_test(neg_fixy_sess_assoc_domain_mismatch_missing_role
+    "Association_Domain_Mismatch|assert_associated|is_associated|condition.*1|static assertion failed|domain_matches")
+crucible_neg_compile_fixy_test(neg_fixy_sess_assoc_role_list_missing_coverage
+    "Association_Domain_Mismatch|assert_associated|is_associated|role_list|set-equality|static assertion failed|domain_matches")
+crucible_neg_compile_fixy_test(neg_fixy_sess_assoc_wrong_session_tag
+    "Association_Domain_Mismatch|assert_associated|is_associated|SessionTag|projection|static assertion failed|domain_matches")
+
 # fixy-A2-016 — 12 negative-compile fixtures across 6 bridges/* mint
 # factories (≥2 per factory).  Each fixture's expected diagnostic
 # regex is wide enough to tolerate GCC phrasing drift across patch
