@@ -11586,3 +11586,30 @@ crucible_neg_compile_fixy_test(neg_fixy_concurrent_spinlock_no_permission
     "no matching function|SpinGuard|could not convert|too few arguments|cannot bind")
 crucible_neg_compile_fixy_test(neg_fixy_concurrent_spinlock_bg_context
     "constraints not satisfied|CtxOwnsCapability|lock_in|Bg|associated constraints are not satisfied")
+
+# ── FIXY-V-083 — fixy::spawn::mint_spawn / mint_parallel_for HS14 ───
+#
+# First file in the fixy/spawn/ family.  Two §XXI ctx-bound mints
+# facade the substrate's structured-concurrency primitives:
+#   mint_spawn        → safety::mint_permission_fork (CSL parallel rule)
+#   mint_parallel_for → safety::parallel_for_views<N> (range fan-out)
+#
+# Four HS14 fixtures (2 per mint, distinct rejection classes):
+#   #1 mint_spawn × HotFgCtx (row missing Bg) → CtxFitsSpawn fails on
+#      the row-admission axis even though splits_into_pack is declared.
+#   #2 mint_spawn × BgDrainCtx + no splits_into_pack → CtxFitsSpawn
+#      fails on the structural-disjointness axis even though Bg is
+#      admitted.
+#   #3 mint_parallel_for × HotFgCtx → CtxFitsParallelFor fails on
+#      CtxOwnsCapability<Ctx, Effect::Bg>.
+#   #4 mint_parallel_for × BgDrainCtx + wrong-shape body (Whole-tag
+#      instead of Slice<Whole, 0>) → CtxFitsParallelFor fails on the
+#      is_nothrow_invocable axis.
+crucible_neg_compile_fixy_test(neg_fixy_spawn_mint_spawn_ctx_no_bg
+    "CtxFitsSpawn|CtxFitsPermissionFork|row_contains_v|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_spawn_mint_spawn_no_splits_into_pack
+    "CtxFitsSpawn|CtxFitsPermissionFork|splits_into_pack|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_spawn_mint_parallel_for_ctx_no_bg
+    "CtxFitsParallelFor|CtxOwnsCapability|row_contains_v|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_spawn_mint_parallel_for_body_signature
+    "CtxFitsParallelFor|is_nothrow_invocable|Slice|constraints not satisfied|associated constraints are not satisfied")
