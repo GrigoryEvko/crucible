@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-21T23:42:18Z`.
+Snapshot generated: `2026-05-22T00:10:42Z`.
 
 ## bridges/
 
@@ -116,12 +116,12 @@ Snapshot generated: `2026-05-21T23:42:18Z`.
 | `mint_linear` | `include/crucible/safety/Linear.h:275` | Y | Y | Y | Y | token | `include/crucible/fixy/Safety.h:12` | HS14: 4 |
 | `mint_linear_view` | `include/crucible/safety/ScopedView.h:200` | Y | Y | Y | - | token | `include/crucible/fixy/Safety.h:43` | HS14: 3 |
 | `mint_machine` | `include/crucible/safety/Machine.h:139` | Y | Y | Y | Y | token | `include/crucible/fixy/Mach.h:154` | HS14: 6 |
-| `mint_refined` | `include/crucible/safety/Refined.h:363` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:866` | HS14: 4 |
-| `mint_sealed_refined` | `include/crucible/safety/SealedRefined.h:239` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:173` | HS14: 4 |
+| `mint_refined` | `include/crucible/safety/Refined.h:363` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:956` | HS14: 4 |
+| `mint_sealed_refined` | `include/crucible/safety/SealedRefined.h:239` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:174` | HS14: 4 |
 | `mint_secret` | `include/crucible/safety/Secret.h:359` | Y | Y | Y | Y | token | `include/crucible/fixy/Safety.h:12` | HS14: 4 |
-| `mint_tagged` | `include/crucible/safety/Tagged.h:691` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:177` | HS14: 4 |
+| `mint_tagged` | `include/crucible/safety/Tagged.h:691` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:178` | HS14: 4 |
 | `mint_view` | `include/crucible/safety/ScopedView.h:100` | - | Y | Y | - | token | `include/crucible/fixy/Safety.h:41` | HS14: 10 |
-| `mint_witness` | `include/crucible/safety/Witness.h:411` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_witness` | `include/crucible/safety/Witness.h:411` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:380` | HS14: 1 ⚠ |
 
 ## sessions/
 
@@ -208,6 +208,6 @@ to distinguish this third authorization shape.
 ## Summary
 
 - Total substrate mints: 103
-- Missing fixy re-export: 2
+- Missing fixy re-export: 1
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

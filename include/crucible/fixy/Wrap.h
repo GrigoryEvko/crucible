@@ -149,6 +149,7 @@
 #include <crucible/safety/Vendor.h>            // canonical Tier-S
 #include <crucible/safety/Wait.h>              // canonical Tier-S
 #include <crucible/safety/WeakRef.h>           // structural (nullable non-owning ref)
+#include <crucible/safety/Witness.h>           // off-tree (Observability axis)
 
 #include <cstdint>       // FIXY-U-020 sentinel uses std::uint64_t
 #include <type_traits>   // FIXY-U-020 sentinel uses std::is_same_v
@@ -372,6 +373,33 @@ using ::crucible::safety::NumaNodeLattice;
 using ::crucible::safety::RecipeSpec;
 using ::crucible::safety::RecipeFamily;
 using ::crucible::safety::RecipeFamilyLattice;
+
+// Witness<Witness_v, T> — observability-axis proof-strength carrier
+// (FIXY-V-054).  Comonad modality, 4-tier chain
+// UNWITNESSED ⊑ TYPE_CHECKED ⊑ TEST_PASSED ⊑ FORMALLY_VERIFIED.
+// Companion §XXI mint factory `mint_witness<Tier, T>(args...)` and
+// per-tier convenience aliases below.  Federation cache key carved
+// out via the WRAPPER_WITNESS_TAG row_hash salt (FIXY-V-055).
+using ::crucible::safety::Witness;
+using ::crucible::safety::WitnessLattice;
+using ::crucible::safety::Witness_v;
+using ::crucible::safety::mint_witness;
+
+// Per-tier convenience aliases — mirror safety::witness_tier::
+// (FIXY-V-054 surface).  Lets consumers write the four canonical
+// proof-strength variants without spelling out the tier enum.
+template <typename T>
+using Unwitnessed = ::crucible::safety::Witness<
+    ::crucible::safety::Witness_v::UNWITNESSED, T>;
+template <typename T>
+using TypeChecked = ::crucible::safety::Witness<
+    ::crucible::safety::Witness_v::TYPE_CHECKED, T>;
+template <typename T>
+using TestPassed = ::crucible::safety::Witness<
+    ::crucible::safety::Witness_v::TEST_PASSED, T>;
+template <typename T>
+using FormallyVerified = ::crucible::safety::Witness<
+    ::crucible::safety::Witness_v::FORMALLY_VERIFIED, T>;
 
 // ─── Structural wrappers (deliberately not Graded) ────────────────
 // Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
@@ -840,6 +868,68 @@ static_assert(std::is_same_v<
     ::crucible::fixy::wrap::RecipeSpec<int>,
     ::crucible::safety::RecipeSpec<int>>,
     "fixy::wrap::RecipeSpec must alias safety::RecipeSpec.");
+
+// FIXY-V-056 — Witness alias sentinel (one tier per cell, exhaustive
+// across the 4-element WitnessLattice chain; per-tier convenience
+// aliases checked in the second block below).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Witness<
+        ::crucible::fixy::wrap::Witness_v::UNWITNESSED, int>,
+    ::crucible::safety::Witness<
+        ::crucible::safety::Witness_v::UNWITNESSED, int>>,
+    "fixy::wrap::Witness must alias safety::Witness.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Witness<
+        ::crucible::fixy::wrap::Witness_v::TYPE_CHECKED, int>,
+    ::crucible::safety::Witness<
+        ::crucible::safety::Witness_v::TYPE_CHECKED, int>>,
+    "fixy::wrap::Witness must alias safety::Witness (TYPE_CHECKED).");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Witness<
+        ::crucible::fixy::wrap::Witness_v::TEST_PASSED, int>,
+    ::crucible::safety::Witness<
+        ::crucible::safety::Witness_v::TEST_PASSED, int>>,
+    "fixy::wrap::Witness must alias safety::Witness (TEST_PASSED).");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Witness<
+        ::crucible::fixy::wrap::Witness_v::FORMALLY_VERIFIED, int>,
+    ::crucible::safety::Witness<
+        ::crucible::safety::Witness_v::FORMALLY_VERIFIED, int>>,
+    "fixy::wrap::Witness must alias safety::Witness (FORMALLY_VERIFIED).");
+
+// Per-tier convenience aliases — verify each one reaches the matching
+// safety::Witness<Tier, T> after substitution.  Closes the surface so
+// `fixy::wrap::FormallyVerified<int>` and `safety::Witness<FORMALLY_VERIFIED, int>`
+// are the same type at every consumer site.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Unwitnessed<int>,
+    ::crucible::safety::Witness<
+        ::crucible::safety::Witness_v::UNWITNESSED, int>>,
+    "fixy::wrap::Unwitnessed must alias Witness<UNWITNESSED, T>.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::TypeChecked<int>,
+    ::crucible::safety::Witness<
+        ::crucible::safety::Witness_v::TYPE_CHECKED, int>>,
+    "fixy::wrap::TypeChecked must alias Witness<TYPE_CHECKED, T>.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::TestPassed<int>,
+    ::crucible::safety::Witness<
+        ::crucible::safety::Witness_v::TEST_PASSED, int>>,
+    "fixy::wrap::TestPassed must alias Witness<TEST_PASSED, T>.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::FormallyVerified<int>,
+    ::crucible::safety::Witness<
+        ::crucible::safety::Witness_v::FORMALLY_VERIFIED, int>>,
+    "fixy::wrap::FormallyVerified must alias Witness<FORMALLY_VERIFIED, T>.");
+
+// mint_witness §XXI factory reach via qualified-id decltype identity
+// (same pattern as mint_view / mint_sealed_refined / mint_tagged).
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_witness<
+        ::crucible::fixy::wrap::Witness_v::FORMALLY_VERIFIED, int, int>),
+    decltype(&::crucible::safety::mint_witness<
+        ::crucible::safety::Witness_v::FORMALLY_VERIFIED, int, int>)>,
+    "FIXY-V-056: fixy::wrap::mint_witness must alias safety::mint_witness.");
 
 // ─── Structural wrappers (7 cells, FIXY-U-010) ────────────────────
 
