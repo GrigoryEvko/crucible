@@ -54,6 +54,7 @@
 #include <crucible/concurrent/Stage.h>
 #include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/TopologyConstexpr.h>  // V-223: build-time cache constants
 #include <crucible/concurrent/WorkingSet.h>        // V-076: working-set helpers
 #include <crucible/effects/Capabilities.h>         // V-215: Effect::Bg admission
 #include <crucible/effects/ExecCtx.h>              // V-215: IsExecCtx + CtxOwnsCapability
@@ -588,21 +589,21 @@ mint_pool_dispatch_with_workload(
 // depending on the box".  With the stance, mismatched callers red
 // at COMPILE TIME against the assumed cache budget.
 //
-// ── Defaults ───────────────────────────────────────────────────────
+// ── Defaults (V-223 wiring) ────────────────────────────────────────
 //
-// Default L1dBytes = 32 KiB, L2Bytes = 1 MiB.  Both numbers are the
-// CLAUDE.md §VIII pinned x86_64+aarch64 baseline (private L1d 32-48K,
-// private L2 ≥ 1 MiB per core).  Callers targeting different microarchs
-// (Apple M1 128 KiB L1d, Bergamo 4 MiB L2) spell the NTTPs explicitly.
+// Default L1dBytes = `topology::l1d_per_core_bytes_v` (32 KiB on the
+// CLAUDE.md §VIII x86_64+aarch64 baseline; configurable via
+// `-DCRUCIBLE_L1D_PER_CORE_BYTES=…` per build).  Default L2Bytes =
+// `topology::l2_per_core_bytes_v` (256 KiB by default; configurable
+// via `-DCRUCIBLE_L2_PER_CORE_BYTES=…`).  Both come from V-223's
+// `crucible::concurrent::topology_constexpr::*` constants, re-
+// exported into `crucible::fixy::pipe::topology::*` below.
 //
-// FORWARD-POINTER: FIXY-V-223 plans to plumb `Topology::instance()`
-// startup-probed L1d/L2 sizes through a constexpr surface so the
-// defaults can be derived from real silicon facts at compile time
-// instead of hard-coded.  Until V-223 lands, callers whose deployment
-// fleet diverges from the 32 KiB / 1 MiB baseline must spell the
-// NTTPs explicitly — the type-level claim remains sound either way;
-// the only thing that changes is whether the defaults are picked up
-// from a startup probe or from hard-coded constants.
+// Callers targeting fleets whose silicon differs from the build's
+// configured values either spell the NTTPs explicitly OR set the
+// CMake override at build time.  The type-level claim is sound
+// either way; the override mechanism is purely an ergonomic knob
+// that bakes a fleet-LOWEST baseline into the binary.
 //
 // ── HS14 — two distinct rejection axes ─────────────────────────────
 //
@@ -624,11 +625,39 @@ mint_pool_dispatch_with_workload(
 //
 // Two distinct fault classes ⇒ HS14 floor satisfied.
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-V-223 — Build-time cache-size constexpr surface ───────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Re-export of `concurrent::topology_constexpr::*` into the fixy::pipe
+// umbrella.  Band-3 production sites refer to the cache constants
+// through this surface; the substrate-side spelling is the
+// implementation surface and is not addressed by production code.
+//
+// Values are FROZEN AT BUILD TIME.  Override per-build via CMake:
+//   -DCRUCIBLE_L1D_PER_CORE_BYTES=<value>
+//   -DCRUCIBLE_L2_PER_CORE_BYTES=<value>
+//   -DCRUCIBLE_L3_TOTAL_BYTES=<value>
+//
+// See `include/crucible/concurrent/TopologyConstexpr.h` for the full
+// override discipline and per-fleet tuning rationale.
+
+namespace topology {
+
+using ::crucible::concurrent::topology_constexpr::l1d_per_core_bytes_v;
+using ::crucible::concurrent::topology_constexpr::l2_per_core_bytes_v;
+using ::crucible::concurrent::topology_constexpr::l3_total_bytes_v;
+using ::crucible::concurrent::topology_constexpr::is_l1d_overridden_v;
+using ::crucible::concurrent::topology_constexpr::is_l2_overridden_v;
+using ::crucible::concurrent::topology_constexpr::is_l3_overridden_v;
+
+}  // namespace topology
+
 namespace stance {
 
 template <typename P,
-          std::size_t L1dBytes = 32ULL * 1024ULL,
-          std::size_t L2Bytes  = 1024ULL * 1024ULL>
+          std::size_t L1dBytes = ::crucible::fixy::pipe::topology::l1d_per_core_bytes_v,
+          std::size_t L2Bytes  = ::crucible::fixy::pipe::topology::l2_per_core_bytes_v>
 concept HotPathInline =
     requires {
         { P::template will_run_inline_v<L1dBytes, L2Bytes>() }

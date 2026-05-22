@@ -222,6 +222,21 @@ crucible_test(test_fixy_bridge_fwddecl)  # FIXY-AUDIT-C5
 crucible_test(test_fixy_substr_completeness)  # FIXY-AUDIT-C10
 crucible_test(test_fixy_pipe)
 crucible_test(test_fixy_pipe_chain)  # FIXY-AUDIT-C2
+
+# ── FIXY-V-223 — build-time cache-size constexpr surface ──────────
+# Default-build variant: verifies fixy::pipe::topology::l*_v default
+# to substrate conservative_l* (no -DCRUCIBLE_L*_BYTES override).
+crucible_test(test_fixy_pipe_topology_constexpr)
+
+# Override variant: same TU compiled with -DCRUCIBLE_L*_BYTES values
+# baked in via target_compile_definitions; witnesses fixture #2
+# (cross-compilation override compiles + matches expected sizes).
+crucible_test(test_fixy_pipe_topology_override)
+target_compile_definitions(test_fixy_pipe_topology_override PRIVATE
+    CRUCIBLE_L1D_PER_CORE_BYTES=65536      # 64 KiB
+    CRUCIBLE_L2_PER_CORE_BYTES=1048576     #  1 MiB
+    CRUCIBLE_L3_TOTAL_BYTES=33554432       # 32 MiB
+)
 crucible_test(test_fixy_bridge)
 crucible_test(test_fixy_warden)  # FIXY-U-120 — fixy::warden:: re-export reach
 crucible_test(test_fixy_perf)    # FIXY-U-121 — fixy::perf:: re-export reach
