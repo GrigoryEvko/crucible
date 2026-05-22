@@ -1,5 +1,7 @@
 #include <crucible/cntp/CongestionControl.h>
 
+#include <crucible/handles/FileHandle.h>
+
 #include <cerrno>
 #include <cstring>
 
@@ -16,35 +18,8 @@ namespace {
 constexpr char available_cc_path[] =
     "/proc/sys/net/ipv4/tcp_available_congestion_control";
 
-class LocalFd {
-public:
-    explicit LocalFd(int fd) noexcept : fd_{fd} {}
-    LocalFd(LocalFd const&) = delete;
-    LocalFd& operator=(LocalFd const&) = delete;
-    LocalFd(LocalFd&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
-    LocalFd& operator=(LocalFd&& other) noexcept {
-        if (this != &other) {
-            close();
-            fd_ = other.fd_;
-            other.fd_ = -1;
-        }
-        return *this;
-    }
-    ~LocalFd() noexcept { close(); }
-
-    [[nodiscard]] int raw() const noexcept { return fd_; }
-    [[nodiscard]] bool valid() const noexcept { return fd_ >= 0; }
-
-private:
-    int fd_ = -1;
-
-    void close() noexcept {
-        if (fd_ >= 0) {
-            ::close(fd_);
-            fd_ = -1;
-        }
-    }
-};
+// fixy-V-235: per-TU LocalFd shim consolidated into safety::FileHandle.
+using LocalFd = ::crucible::safety::FileHandle;
 
 [[nodiscard]] bool is_space(char c) noexcept {
     return c == ' ' || c == '\n' || c == '\t' || c == '\r';
@@ -169,12 +144,12 @@ parse_available_congestion_control(std::string_view text) noexcept {
 std::expected<CcAvailability, CcError>
 read_available_congestion_control() noexcept {
     LocalFd fd{::open(available_cc_path, O_RDONLY | O_CLOEXEC)};
-    if (!fd.valid()) {
+    if (!fd.is_open()) {
         return std::unexpected(CcError::SysctlUnavailable);
     }
 
     std::array<char, 512> buffer{};
-    const auto nread = ::read(fd.raw(), buffer.data(), buffer.size() - 1);
+    const auto nread = ::read(fd.get(), buffer.data(), buffer.size() - 1);
     if (nread <= 0) {
         return std::unexpected(CcError::SysctlUnavailable);
     }

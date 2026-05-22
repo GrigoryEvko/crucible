@@ -1,6 +1,7 @@
 #include <crucible/topology/Ptp.h>
 
 #include <crucible/Platform.h>
+#include <crucible/handles/FileHandle.h>
 
 #include <array>
 #include <cerrno>
@@ -22,40 +23,12 @@ namespace crucible::topology {
 
 namespace {
 
-class LocalFd {
-public:
-    explicit LocalFd(int fd) noexcept : fd_{fd} {}
-    LocalFd(LocalFd const&) = delete;
-    LocalFd& operator=(LocalFd const&) = delete;
-    LocalFd(LocalFd&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
-    LocalFd& operator=(LocalFd&& other) noexcept {
-        if (this != &other) {
-            close();
-            fd_ = other.fd_;
-            other.fd_ = -1;
-        }
-        return *this;
-    }
-    ~LocalFd() noexcept { close(); }
-
-    [[nodiscard]] int raw() const noexcept { return fd_; }
-    [[nodiscard]] bool valid() const noexcept { return fd_ >= 0; }
-    [[nodiscard]] int release() noexcept {
-        const int out = fd_;
-        fd_ = -1;
-        return out;
-    }
-
-private:
-    int fd_ = -1;
-
-    void close() noexcept {
-        if (fd_ >= 0) {
-            ::close(fd_);
-            fd_ = -1;
-        }
-    }
-};
+// fixy-V-235: per-TU LocalFd shim consolidated into safety::FileHandle.
+// FileHandle already exposes the .release() semantics Ptp.cpp uses to
+// hand the fd to PtpClockFd's Trusted-ctor — the migration is 1:1 for
+// is_open()/get()/release() and tightens the ctor contract via
+// CRUCIBLE_PRE(Fd::is_valid_pattern(fd)).
+using LocalFd = ::crucible::safety::FileHandle;
 
 [[nodiscard]] constexpr clockid_t
 clockid_from_fd(PtpClockFd fd) noexcept {
@@ -206,7 +179,7 @@ std::expected<OwnedPtpClock, PtpError>
 open_ptp_clock(PtpDeviceIndex index) noexcept {
     const auto path = ptp_device_path(index);
     LocalFd fd{::open(path.bytes.data(), O_RDONLY | O_CLOEXEC)};
-    if (!fd.valid()) {
+    if (!fd.is_open()) {
         static_cast<void>(errno);
         return std::unexpected(PtpError::OpenClockFailed);
     }

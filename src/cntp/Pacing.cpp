@@ -1,5 +1,7 @@
 #include <crucible/cntp/Pacing.h>
 
+#include <crucible/handles/FileHandle.h>
+
 #include <array>
 #include <cerrno>
 #include <cstring>
@@ -17,35 +19,11 @@ namespace crucible::cntp {
 
 namespace {
 
-class LocalFd {
-public:
-    explicit LocalFd(int fd) noexcept : fd_{fd} {}
-    LocalFd(LocalFd const&) = delete;
-    LocalFd& operator=(LocalFd const&) = delete;
-    LocalFd(LocalFd&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
-    LocalFd& operator=(LocalFd&& other) noexcept {
-        if (this != &other) {
-            close();
-            fd_ = other.fd_;
-            other.fd_ = -1;
-        }
-        return *this;
-    }
-    ~LocalFd() noexcept { close(); }
-
-    [[nodiscard]] int raw() const noexcept { return fd_; }
-    [[nodiscard]] bool valid() const noexcept { return fd_ >= 0; }
-
-private:
-    int fd_ = -1;
-
-    void close() noexcept {
-        if (fd_ >= 0) {
-            ::close(fd_);
-            fd_ = -1;
-        }
-    }
-};
+// fixy-V-235: per-TU LocalFd shim consolidated into safety::FileHandle.
+// FileHandle's CRUCIBLE_PRE(Fd::is_valid_pattern) rejects errno-shaped
+// negative fds (e.g. -EBADF == -9), a strictly tighter contract than
+// the pre-shim that silently treated any negative as "closed".
+using LocalFd = ::crucible::safety::FileHandle;
 
 struct QdiscDumpRequest {
     nlmsghdr header{};
@@ -158,7 +136,7 @@ query_active_qdisc(NicInterfaceName iface) noexcept {
     }
 
     LocalFd nl{::socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE)};
-    if (!nl.valid()) {
+    if (!nl.is_open()) {
         return std::unexpected(PacingError::NetlinkOpenFailed);
     }
 
@@ -172,7 +150,7 @@ query_active_qdisc(NicInterfaceName iface) noexcept {
     bind_addr.nl_family = AF_NETLINK;
     bind_addr.nl_pid    = 0;
     bind_addr.nl_groups = 0;
-    if (::bind(nl.raw(),
+    if (::bind(nl.get(),
                static_cast<sockaddr const*>(static_cast<void const*>(&bind_addr)),
                static_cast<socklen_t>(sizeof(bind_addr))) != 0) {
         static_cast<void>(errno);
@@ -186,7 +164,7 @@ query_active_qdisc(NicInterfaceName iface) noexcept {
     timeval rcv_timeout{};
     rcv_timeout.tv_sec  = 5;
     rcv_timeout.tv_usec = 0;
-    if (::setsockopt(nl.raw(), SOL_SOCKET, SO_RCVTIMEO,
+    if (::setsockopt(nl.get(), SOL_SOCKET, SO_RCVTIMEO,
                      &rcv_timeout,
                      static_cast<socklen_t>(sizeof(rcv_timeout))) != 0) {
         static_cast<void>(errno);
@@ -201,7 +179,7 @@ query_active_qdisc(NicInterfaceName iface) noexcept {
     request.header.nlmsg_seq = kRequestSeq;
     request.message.tcm_family = AF_UNSPEC;
 
-    const auto sent = ::send(nl.raw(), &request, sizeof(request), 0);
+    const auto sent = ::send(nl.get(), &request, sizeof(request), 0);
     if (sent != static_cast<ssize_t>(sizeof(request))) {
         static_cast<void>(errno);
         return std::unexpected(PacingError::NetlinkSendFailed);
@@ -209,7 +187,7 @@ query_active_qdisc(NicInterfaceName iface) noexcept {
 
     std::array<char, 16 * 1024> buffer{};
     for (;;) {
-        const auto received = ::recv(nl.raw(), buffer.data(), buffer.size(), 0);
+        const auto received = ::recv(nl.get(), buffer.data(), buffer.size(), 0);
         if (received <= 0) {
             static_cast<void>(errno);
             return std::unexpected(PacingError::NetlinkReceiveFailed);
