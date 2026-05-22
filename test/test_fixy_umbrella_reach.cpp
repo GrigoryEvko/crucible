@@ -509,23 +509,28 @@ static_assert(fsdiag::catalog_size >= 23,
 // 6g-c. Diagnostic<> wrapper reaches the consumer.
 static_assert(fsdiag::is_diagnostic_v<fsdiag::Diagnostic<fsdiag::SubtypeMismatch, int>>);
 
-// ─── 6h. SessPayloadSubsort.h reach — payload axioms (FIXY-U-052h) ───
+// ─── 6h. Payload-subsort axiom reach — merged into SessSubtype.h (V-067) ──
 //
-// SessPayloadSubsort.h ships only is_subsort<...> specialisations (no
-// new names).  The load-bearing reach claim is VISIBILITY: pulling the
-// umbrella must make the payload-subsort specialisations visible, so
-// `fixy::sess::subtype::is_subsort_v<Refined<positive,int>, int>`
-// resolves to the NARROWING specialisation (true) — not the primary
-// template (false).  If Fixy.h stops pulling fixy/SessPayloadSubsort.h,
-// these flip to false and the static_asserts fire.  (`fss` is the
-// fixy::sess::subtype alias from §6e.)
+// History: through 2026-05-22 the SessionPayloadSubsort.h visibility
+// include lived in a dedicated fixy/SessPayloadSubsort.h slice with its
+// own `fixy::sess::payloadsubsort::` sub-namespace.  V-067 consolidated
+// that slice into fixy/SessSubtype.h (payload-subsort axioms are a
+// proper extension of the subtype layer's `is_subsort` relation) and
+// deleted the dedicated header.  The reach claims below STILL hold —
+// the visibility now travels through SessSubtype.h — so this cell is
+// kept as the load-bearing witness that V-067 didn't drop the umbrella
+// visibility for the payload-subsort specialisations.  If a future
+// regression strips `#include <crucible/sessions/SessionPayloadSubsort.h>`
+// from fixy/SessSubtype.h, the next claims fail to compile.
+// (`fss` is the fixy::sess::subtype alias from §6e.)
 
 // 6h-a. Narrowing axiom reaches through the umbrella (true, not false).
 static_assert(fss::is_subsort_v<
     ::crucible::safety::Refined<::crucible::safety::positive, int>, int>,
     "umbrella reach: the Refined<P,T> ⩽ T narrowing axiom must be "
-    "visible — if false, fixy/SessPayloadSubsort.h is not pulled by "
-    "<crucible/Fixy.h> and the primary template silently won.");
+    "visible — if false, fixy/SessSubtype.h dropped its include of "
+    "<crucible/sessions/SessionPayloadSubsort.h> and the primary template "
+    "silently won.");
 
 // 6h-b. Safe-to-erase provenance flows; unsafe provenance does NOT.
 static_assert(fss::is_subsort_v<

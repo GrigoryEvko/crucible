@@ -185,7 +185,10 @@
 #include <crucible/fixy/SessSubtype.h>
 #include <crucible/fixy/SessQueue.h>
 #include <crucible/fixy/SessDiagnostic.h>
-#include <crucible/fixy/SessPayloadSubsort.h>
+// FIXY-V-067: fixy/SessPayloadSubsort.h merged into fixy/SessSubtype.h
+// on 2026-05-22 (the SessionPayloadSubsort.h substrate visibility +
+// payload-axiom witness battery now live alongside the subtype layer
+// itself; this slot deliberately removed).
 #include <crucible/fixy/SessContext.h>
 #include <crucible/fixy/SessGrade.h>
 #include <crucible/fixy/SessAssoc.h>      // FIXY-V-059
