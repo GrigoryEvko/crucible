@@ -214,6 +214,16 @@ static_assert(every_lattice_has_name<
     NumaNodeLattice,
     PeakBytesLattice,
     ProductLattice<HotPathLattice, DetSafeLattice>,
+    // FIXY-V-090 — FpModeProductLattice composite (11-way ProductLattice
+    // over the V-089 per-axis ChainLattices).  Already covered structurally
+    // by the binary ProductLattice witness above, but pinning the 11-way
+    // form here guards against an FpModeLattice.h alias rename / arity
+    // refactor breaking the umbrella discovery contract.
+    ProductLattice<FpRoundingLattice, FpFtzLattice, FpContractLattice,
+                   FpTrapMaskLattice, FpDenormalInputLattice,
+                   FpNanPolicyLattice, FpInfPolicyLattice,
+                   FpComplexLayoutLattice, FpLibmPolicyLattice,
+                   FpReassociateLattice, FpConstantRoundingLattice>,
     ProgressLattice,
     QttSemiring,
     RecipeFamilyLattice,

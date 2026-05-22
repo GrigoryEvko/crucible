@@ -258,6 +258,7 @@ crucible_test(test_fixy_a3_008_synchronization)  # fixy-A3-008 Wait + MemOrder �
 crucible_test(test_fixy_a3_009_regime)  # fixy-A3-009 HotPath → Regime (Progress stays on Complexity)
 crucible_test(test_fixy_v_088_fp_mode)  # FIXY-V-088 DimensionAxis::FpMode + 11 sub-axis enum scaffolding
 crucible_test(test_fixy_v_089_fp_lattices)  # FIXY-V-089 11 FP-mode ChainLattice algebras + umbrella registration
+crucible_test(test_fixy_v_090_fp_wrappers)  # FIXY-V-090 11 safety/FpMode.h wrappers + composite + row_hash + DimensionTraits
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -5920,6 +5921,26 @@ crucible_neg_compile_test(neg_fp_mode_cardinality_stale
   "static assertion failed|DIMENSION_AXIS_COUNT|FIXY-V-088|22")
 crucible_neg_compile_test(neg_fp_mode_tier_misclassify
   "static assertion failed|FpMode|TierKind|Foundational|Semiring|FIXY-V-088")
+
+# ─── FIXY-V-090 FpModePinned wrapper neg-compile fixtures (2) ─────────
+#
+# V-090 ships safety/FpMode.h: 11 per-axis FpModePinned aliases + 12
+# §XXI mints + FpModeComposite + 11 row_hash specs + DimensionTraits
+# binding.  HS14: 2 fixtures across distinct mismatch classes:
+#   1. cross_mode_assign — same axis, different mode (RoundToNearestEven
+#      vs RoundToZero on FpRounding).  Tests that the NTTP-based type-
+#      distinctness rejects cross-mode assignment at the C++ type level.
+#   2. cross_axis_pass — different sub-axes (FpFtz vs FpRounding).  Tests
+#      that NTTPs of different enum types instantiate to disjoint class
+#      types, so function-arg position cannot silently convert one
+#      sub-axis into another.
+# Together they pin the type-system load-bearing claims of V-090: per-
+# mode distinctness (so federation cache slots disambiguate) and
+# per-axis distinctness (so the 11 sub-axes are not interchangeable).
+crucible_neg_compile_test(neg_fp_mode_cross_mode_assign
+  "cannot convert|no match|deleted function|FpModePinned|FpRounding")
+crucible_neg_compile_test(neg_fp_mode_cross_axis_pass
+  "cannot convert|no match|could not match|FpModePinned|FpFtz|FpRounding")
 
 # ─── FIXY-V-057 Affine wrapper neg-compiles (2 fixtures = HS14 floor) ─
 #

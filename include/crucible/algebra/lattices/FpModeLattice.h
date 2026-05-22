@@ -98,6 +98,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
 #include <crucible/algebra/lattices/ChainLattice.h>
+#include <crucible/algebra/lattices/ProductLattice.h>
 
 #include <cstdint>
 #include <meta>
@@ -677,6 +678,79 @@ struct FpConstantRoundingLattice : ChainLatticeOps<FpConstantRounding> {
         }
     };
 };
+
+// ── FIXY-V-090 — FpModeProductLattice composite ─────────────────────
+//
+// 11-way componentwise product over the per-axis chain lattices.  The
+// canonical "FP-mode" state of a value is the 11-tuple
+//   (Rounding, Ftz, Contract, TrapMask, Denormal, NanPolicy, InfPolicy,
+//    ComplexLayout, LibmPolicy, Reassociate, ConstantRounding)
+// — each component independently ordered by its per-axis ⊑.  Operations
+// (leq / join / meet / bottom / top) lift pointwise through
+// `ProductLattice<Ls...>`'s N-ary primary (ProductLattice.h ALGEBRA-15
+// extension).  Bottom is the 11-tuple of weakest tiers (each axis's
+// bottom() — typically the most-permissive policy); top is the 11-tuple
+// of strongest tiers (each axis's top() — typically the most-restrictive
+// policy).
+//
+// USAGE: this composite is the algebraic foundation for the V-090
+// `safety::FpModePinned<auto Mode, T>` wrapper family.  Production code
+// does NOT instantiate `Graded<Absolute, FpModeProductLattice, T>`
+// directly; per CLAUDE.md §XVI canonical wrapper-nesting order, the
+// 11-deep composite is built via the `FpModeComposite<...>` type alias
+// in safety/FpMode.h that NESTS 11 single-axis `FpModePinned<Mode_i, _>`
+// wrappers outer-to-inner.  Reason: nested-wrapper composition gives
+// each axis its own row_hash salt (0x21..0x2B per FOUND-I02), which
+// preserves the federation-cache slot disjointness the product-lattice
+// composite cannot express on its own.
+//
+// The composite IS, however, the canonical answer for any consumer
+// that needs to reason about the 11-axis algebra AS A LATTICE — e.g.
+// computing the meet of two recipe-pinned FP modes, or asking whether
+// recipe A ⊑ recipe B componentwise.  The 11-way join/meet via the
+// N-ary primary is `O(11) compile + 11 constexpr comparisons runtime`
+// — same shape as any other ProductLattice consumer.
+//
+// Axiom coverage:
+//   TypeSafe — `ProductLattice<...>` validates each component via the
+//              Lattice concept; non-FP-axis lattices fail at template
+//              substitution.
+//   DetSafe  — every op is constexpr (NOT consteval) so a runtime
+//              Graded carrier can enforce its `pre (L::leq(...))`
+//              precondition.
+//   MemSafe  — element_type uses ProductLattice's [[no_unique_address]]
+//              componentwise carrier; no per-instance heap.
+using FpModeProductLattice = ::crucible::algebra::lattices::ProductLattice<
+    FpRoundingLattice,
+    FpFtzLattice,
+    FpContractLattice,
+    FpTrapMaskLattice,
+    FpDenormalInputLattice,
+    FpNanPolicyLattice,
+    FpInfPolicyLattice,
+    FpComplexLayoutLattice,
+    FpLibmPolicyLattice,
+    FpReassociateLattice,
+    FpConstantRoundingLattice>;
+
+// Composite-lattice concept-gate witnesses.  The N-ary ProductLattice
+// primary template is gated through the Lattice concept on every
+// component; verify here that the composite IS itself a Lattice and a
+// BoundedLattice (since every component ChainLattice is bounded).  The
+// !Semiring check mirrors the per-axis lattice discipline — the
+// composite carries no ⊕/⊗ structure independent of join/meet.
+static_assert(::crucible::algebra::Lattice<FpModeProductLattice>,
+    "FpModeProductLattice must satisfy the Lattice concept "
+    "(componentwise lift of 11 BoundedLattice chains).");
+static_assert(::crucible::algebra::BoundedLattice<FpModeProductLattice>,
+    "FpModeProductLattice must satisfy BoundedLattice — every component "
+    "ChainLatticeOps<EnumT> publishes bottom() and top().");
+static_assert(!::crucible::algebra::Semiring<FpModeProductLattice>,
+    "FpModeProductLattice carries no ⊕/⊗ structure independent of "
+    "join/meet — Semiring would be a falsehood at the type level.");
+static_assert(FpModeProductLattice::arity == 11,
+    "FpModeProductLattice must have arity 11 — one slot per FP sub-axis "
+    "ordinal of the V-088 enum split.");
 
 // ── Self-test (V-088 scaffolding sanity) ────────────────────────────
 namespace detail::fp_mode_lattice_self_test {

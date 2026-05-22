@@ -139,6 +139,20 @@ enum class VendorBackend : std::uint8_t;
 enum class WaitStrategy : std::uint8_t;
 enum class Witness : std::uint8_t;            // FIXY-V-053
 enum class JoinPolicy : std::uint8_t;         // FIXY-V-078
+// FIXY-V-088 — 11 FP-mode sub-axis enums.  Forward-declared here so
+// the V-090 row_hash_contribution specializations below can dispatch
+// on the NTTP type without pulling FpModeLattice.h.
+enum class FpRounding         : std::uint8_t;
+enum class FpFtz              : std::uint8_t;
+enum class FpContract         : std::uint8_t;
+enum class FpTrapMask         : std::uint8_t;
+enum class FpDenormalInput    : std::uint8_t;
+enum class FpNanPolicy        : std::uint8_t;
+enum class FpInfPolicy        : std::uint8_t;
+enum class FpComplexLayout    : std::uint8_t;
+enum class FpLibmPolicy       : std::uint8_t;
+enum class FpReassociate      : std::uint8_t;
+enum class FpConstantRounding : std::uint8_t;
 }  // namespace crucible::algebra::lattices
 
 namespace crucible::safety {
@@ -173,6 +187,18 @@ template <typename T> class RecipeSpec;
 template <algebra::lattices::Witness Tier, typename T> class Witness;
 // ── FIXY-V-079 — JoinPolicy (Comonad over JoinPolicyLattice chain) ─
 template <algebra::lattices::JoinPolicy Tier, typename T> class JoinPolicy;
+// ── FIXY-V-090 — FpModePinned<auto Mode, T> (Absolute, regime-1) ───
+// The 11 type aliases (FpRoundingPinned, FpFtzPinned, ...) instantiate
+// this template with different NTTP enum types — the partial
+// specializations of row_hash_contribution below dispatch on the
+// NTTP type to apply the right WRAPPER_FP_*_TAG salt.
+// Forward-decl is unconstrained; the real definition in safety/FpMode.h
+// carries `requires detail::fp_mode_traits::IsFpAxisMode<decltype(Mode)>`
+// — that constraint isn't reachable from this header, so the forward-decl
+// is intentionally constraint-free (C++ permits a more-constrained
+// definition to follow a less-constrained forward-decl).
+template <auto Mode, typename T>
+class FpModePinned;
 }  // namespace crucible::safety
 
 namespace crucible::safety::diag {
@@ -318,6 +344,28 @@ inline constexpr std::uint64_t WRAPPER_WITNESS_TAG          = 0x1F00'0000'0000'0
 // the Tier enumerator the same way Witness / Wait / MemOrder /
 // Progress / Crash / Consistency do.
 inline constexpr std::uint64_t WRAPPER_JOIN_POLICY_TAG      = 0x2000'0000'0000'0000ULL;
+
+// FIXY-V-090 — 11 FP-mode sub-axis carriers + 1 composite mint slot.
+// Each sub-axis lives at its own salt so a downstream consumer
+// reasoning about Forge's RecipeSelect phase can distinguish a value
+// computed under FpRounding::RoundToNearestEven from the same value
+// under RoundToZero (the two are NOT byte-equivalent under any FP
+// operation that crosses a rounding boundary).  Salts 0x21..0x2B map
+// 1-to-1 with the V-088 sub-axis ordinal; 0x2C reserved for the
+// 11-axis composite type, but composite row_hash composes through the
+// per-axis specializations automatically (see safety/FpMode.h's
+// FpModeComposite alias), so 0x2C is unused at present.
+inline constexpr std::uint64_t WRAPPER_FP_ROUNDING_TAG          = 0x2100'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_FTZ_TAG               = 0x2200'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_CONTRACT_TAG          = 0x2300'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_TRAP_MASK_TAG         = 0x2400'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_DENORMAL_INPUT_TAG    = 0x2500'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_NAN_POLICY_TAG        = 0x2600'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_INF_POLICY_TAG        = 0x2700'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_COMPLEX_LAYOUT_TAG    = 0x2800'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_LIBM_POLICY_TAG       = 0x2900'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_REASSOCIATE_TAG       = 0x2A00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_CONSTANT_ROUNDING_TAG = 0x2B00'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -870,6 +918,97 @@ template <algebra::lattices::JoinPolicy Tier, typename Inner>
 struct row_hash_contribution<safety::JoinPolicy<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::WRAPPER_JOIN_POLICY_TAG | static_cast<std::uint64_t>(Tier),
+        row_hash_contribution_v<Inner>);
+};
+
+// ── FIXY-V-090 — 11 FP-mode sub-axis wrappers ──────────────────────
+//
+// Each `safety::FpModePinned<Mode, T>` (under per-axis aliases
+// FpRoundingPinned / FpFtzPinned / ...) pins a single FP evaluation
+// policy.  The 11 specializations below dispatch on the NTTP type
+// (enum type of Mode) — distinct partial specializations because
+// each takes a Mode parameter of a distinct enum type.  Salts are
+// allocated from RowHashFold's WRAPPER_FP_*_TAG constants (0x21..0x2B).
+//
+// Composition rule: a stacked FpModeComposite<R, F, C, ..., Cr, T>
+// resolves to 11 nested FpModePinned<Mode, ...> layers; the row_hash
+// folds through each layer's specialization automatically because
+// each layer's Inner is the next layer down.  No composite-specific
+// specialization is needed — the 11 per-axis salts compose.
+template <algebra::lattices::FpRounding Mode, typename Inner>
+struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FP_ROUNDING_TAG | static_cast<std::uint64_t>(Mode),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::FpFtz Mode, typename Inner>
+struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FP_FTZ_TAG | static_cast<std::uint64_t>(Mode),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::FpContract Mode, typename Inner>
+struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FP_CONTRACT_TAG | static_cast<std::uint64_t>(Mode),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::FpTrapMask Mode, typename Inner>
+struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FP_TRAP_MASK_TAG | static_cast<std::uint64_t>(Mode),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::FpDenormalInput Mode, typename Inner>
+struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FP_DENORMAL_INPUT_TAG | static_cast<std::uint64_t>(Mode),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::FpNanPolicy Mode, typename Inner>
+struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FP_NAN_POLICY_TAG | static_cast<std::uint64_t>(Mode),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::FpInfPolicy Mode, typename Inner>
+struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FP_INF_POLICY_TAG | static_cast<std::uint64_t>(Mode),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::FpComplexLayout Mode, typename Inner>
+struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FP_COMPLEX_LAYOUT_TAG | static_cast<std::uint64_t>(Mode),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::FpLibmPolicy Mode, typename Inner>
+struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FP_LIBM_POLICY_TAG | static_cast<std::uint64_t>(Mode),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::FpReassociate Mode, typename Inner>
+struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FP_REASSOCIATE_TAG | static_cast<std::uint64_t>(Mode),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::FpConstantRounding Mode, typename Inner>
+struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_FP_CONSTANT_ROUNDING_TAG | static_cast<std::uint64_t>(Mode),
         row_hash_contribution_v<Inner>);
 };
 

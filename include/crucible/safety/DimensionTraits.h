@@ -117,6 +117,7 @@
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>
+#include <crucible/safety/FpMode.h>
 #include <crucible/safety/JoinPolicy.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/safety/Witness.h>
@@ -567,6 +568,19 @@ struct wrapper_dimension<Witness<Tier, T>>
 template <JoinPolicy_v Tier, typename T>
 struct wrapper_dimension<JoinPolicy<Tier, T>>
     : std::integral_constant<DimensionAxis, DimensionAxis::Synchronization> {};
+
+// FIXY-V-090 — FpModePinned<auto Mode, T> on the FpMode axis (Tier-S
+// chain, axis 22).  Every per-axis spelling (FpRoundingPinned /
+// FpFtzPinned / ... / FpConstantRoundingPinned) instantiates the same
+// FpModePinned class template with a different NTTP enum type, so ONE
+// generic spec catches all 11 instantiations.  The downstream consumer
+// (federation cache routing, dimension-traits queries) gets the same
+// DimensionAxis::FpMode for every sub-axis; per-axis disambiguation
+// happens through the row_hash specializations in safety/diag/
+// RowHashFold.h (salts 0x21..0x2B per NTTP enum type).
+template <auto Mode, typename T>
+struct wrapper_dimension<FpModePinned<Mode, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::FpMode> {};
 
 template <Lifetime_v Scope, typename T>
 struct wrapper_dimension<OpaqueLifetime<Scope, T>>
