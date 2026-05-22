@@ -4259,6 +4259,20 @@ crucible_neg_compile_test(neg_collision_W001_hotpath_wait_park
 crucible_neg_compile_test(neg_collision_W001_hotpath_wait_block
   "W001:")
 
+# ─── FIXY-V-082 W002 — Bg-row x Wait>=BoundedSpin (2 fixtures = HS14) ─
+#
+# W002 is the structural dual of W001: the Synchronization-axis ban at
+# the OPPOSITE endpoint of the WaitLattice chain.  Two fixtures probe
+# distinct lattice positions in the rejected region:
+#   1. Wait<SpinPause, T>   — the chain-top "active-spin" tier (pure pause loop).
+#   2. Wait<BoundedSpin, T> — the second-from-top tier (deadline-bounded spin).
+# A regression that narrowed `is_active_spin_v` to only SpinPause
+# would silently let BoundedSpin slip through — fixture #2 catches that.
+crucible_neg_compile_test(neg_collision_W002_bg_wait_spinpause
+  "W002:")
+crucible_neg_compile_test(neg_collision_W002_bg_wait_boundedspin
+  "W002:")
+
 # ─── SwmrSession role and token discipline (GAPS-021) ────────────────
 crucible_neg_compile_test(neg_swmr_writer_cannot_recv
   "recv")

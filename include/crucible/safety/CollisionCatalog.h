@@ -81,6 +81,17 @@ enum class RuleCode : std::uint8_t {
     // and Block (poll/epoll_wait) involve 1-5 µs latency — incompatible
     // with the hot-path budget (≤ 40 ns intra-socket per CLAUDE.md §IX).
     W001 = 20,  // HotPath × Wait<Park> or Wait<Block> (blocker on hot path)
+    // ── FIXY-V-082 Phase C/W-family — Bg × active-spin Wait ───────────
+    //
+    // W002 is the dual of W001 on the Synchronization axis: a Bg-context
+    // function MUST NOT wrap its return/parameter type in an active-spin
+    // Wait strategy.  SpinPause (pure `_mm_pause` loop, never blocks) and
+    // BoundedSpin (deadline-bounded spin) both monopolize the hosting
+    // core for the duration of the wait.  Bg threads are by contract
+    // permitted to block — they SHOULD use Park/Block/AcquireWait/Umwait
+    // so the scheduler can do useful work elsewhere.  Active-spin in a
+    // Bg row is the back-pressure-trap shape B001 catches one axis over.
+    W002 = 21,  // Bg-row × Wait<SpinPause> or Wait<BoundedSpin> (active-spin in cold thread)
     None = 255,
 };
 
@@ -153,6 +164,11 @@ struct W001_HotPathWaitParkOrBlocker : diag::tag_base {
     static constexpr std::string_view name = "W001_HotPathWaitParkOrBlocker";
 };
 
+// ── FIXY-V-082 W-family (Wait-strategy × Bg cold-thread axis) ──────
+struct W002_BgWaitActiveSpin : diag::tag_base {
+    static constexpr std::string_view name = "W002_BgWaitActiveSpin";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -174,11 +190,12 @@ using Catalog = std::tuple<
     F001_FrameDeclaresAxisCollision,
     H003_HotPathTerminatingAllocIo,
     F002_FederationPeerTerminatingBudget,
-    W001_HotPathWaitParkOrBlocker
+    W001_HotPathWaitParkOrBlocker,
+    W002_BgWaitActiveSpin
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 21);
+static_assert(catalog_size == 22);
 
 template <RuleCode R>
 struct rule_tag;
@@ -204,6 +221,7 @@ template <> struct rule_tag<RuleCode::F001> { using type = F001_FrameDeclaresAxi
 template <> struct rule_tag<RuleCode::H003> { using type = H003_HotPathTerminatingAllocIo; };
 template <> struct rule_tag<RuleCode::F002> { using type = F002_FederationPeerTerminatingBudget; };
 template <> struct rule_tag<RuleCode::W001> { using type = W001_HotPathWaitParkOrBlocker; };
+template <> struct rule_tag<RuleCode::W002> { using type = W002_BgWaitActiveSpin; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -273,6 +291,9 @@ template <> struct rule_code_of<F002_FederationPeerTerminatingBudget> {
 };
 template <> struct rule_code_of<W001_HotPathWaitParkOrBlocker> {
     static constexpr RuleCode value = RuleCode::W001;
+};
+template <> struct rule_code_of<W002_BgWaitActiveSpin> {
+    static constexpr RuleCode value = RuleCode::W002;
 };
 
 template <typename Tag>
@@ -401,6 +422,16 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(W001, "W001",
     "(Wait<SpinPause>, Wait<BoundedSpin>, Wait<UmwaitC01>, or Wait<AcquireWait>), "
     "or move the blocking call into an Init/Bg context that owns the syscall cost",
     "fixy.md §24.2 W001");
+CRUCIBLE_COLLISION_DIAGNOSTIC(W002, "W002",
+    "Bg-row functions do not wrap their return/parameter type in an active-spin Wait strategy",
+    "effect_row contains Effect::Bg AND F::type_t is safety::Wait<SpinPause, U> or "
+    "safety::Wait<BoundedSpin, U> (strategies that monopolize the hosting core with "
+    "an `_mm_pause` loop, 100% CPU until the wait resolves)",
+    "switch to a yielding strategy on the Bg path — Wait<UmwaitC01> (power-aware), "
+    "Wait<AcquireWait> (futex), Wait<Park> (condvar), or Wait<Block> (poll/epoll). "
+    "Active-spin in a Bg row is the back-pressure-trap shape — Bg threads are by "
+    "contract permitted to block so the scheduler can do useful work elsewhere",
+    "fixy.md §24.2 W002");
 
 #undef CRUCIBLE_COLLISION_DIAGNOSTIC
 
@@ -557,6 +588,18 @@ template <> struct is_trivial_refinement<pred::True> : std::true_type {};
 // SpinPause) are admissible on the hot path.
 template <typename T> struct wait_strategy_of {
     static constexpr bool has_wait = false;
+    // Sentinel value present on the primary template too.  W001/W002
+    // concept atoms reference `::value` as a non-type template argument
+    // to `is_park_or_blockier_v` / `is_active_spin_v`; even though the
+    // outer conjunction short-circuits at runtime when `has_wait` is
+    // false, GCC 16 concept normalization eagerly substitutes the
+    // template argument list of the right-hand variable template under
+    // certain instantiation contexts (sentinel-TU re-instantiation in
+    // particular).  Providing a sentinel `value` makes the substitution
+    // well-formed; the predicate result is irrelevant because the
+    // short-circuit chops it off before validate() inspects it.
+    static constexpr ::crucible::algebra::lattices::WaitStrategy value =
+        ::crucible::algebra::lattices::WaitStrategy::SpinPause;
 };
 template <::crucible::algebra::lattices::WaitStrategy S, typename U>
 struct wait_strategy_of<::crucible::safety::Wait<S, U>> {
@@ -584,6 +627,19 @@ template <::crucible::algebra::lattices::WaitStrategy S>
 inline constexpr bool is_park_or_blockier_v =
     ::crucible::algebra::lattices::WaitLattice::leq(
         S, ::crucible::algebra::lattices::WaitStrategy::Park);
+
+// `is_active_spin_v<S>` is the symmetric counterpart at the TOP of the
+// chain.  `leq(BoundedSpin, S)` is true iff BoundedSpin is at-or-below
+// S in the lattice = S ∈ {BoundedSpin, SpinPause}.  Those are the two
+// strategies that occupy 100% of a CPU core for the duration of the
+// wait — pure spin-pause loops with no kernel involvement.  On a Bg
+// thread (cold path, scheduler-yielding), an active-spin is the back-
+// pressure trap: the core stays busy while no useful work happens, and
+// the kernel cannot schedule another runnable thread onto it.
+template <::crucible::algebra::lattices::WaitStrategy S>
+inline constexpr bool is_active_spin_v =
+    ::crucible::algebra::lattices::WaitLattice::leq(
+        ::crucible::algebra::lattices::WaitStrategy::BoundedSpin, S);
 
 // ── Phase B per-Fn rule concepts (6 of 8) ────────────────────────────
 //
@@ -637,6 +693,18 @@ concept W001_OK = !(marks_hot_path<F>::value &&
                     wait_strategy_of<typename F::type_t>::has_wait &&
                     is_park_or_blockier_v<wait_strategy_of<typename F::type_t>::value>);
 
+// W002: Bg-row × Wait<SpinPause> or Wait<BoundedSpin> rejected.
+// Functions whose effect_row carries Effect::Bg MUST NOT wrap their
+// type_t in an active-spin Wait strategy.  SpinPause and BoundedSpin
+// occupy 100% of a CPU core — the Bg thread is by contract permitted
+// to block, so the kernel should be free to schedule another runnable
+// thread onto the core while the Bg wait is pending.  Active-spin in
+// a Bg row is the back-pressure-trap shape B001 catches one axis over.
+template <typename F>
+concept W002_OK = !(row_has_effect_v<typename F::effect_row_t, effects::Effect::Bg> &&
+                    wait_strategy_of<typename F::type_t>::has_wait &&
+                    is_active_spin_v<wait_strategy_of<typename F::type_t>::value>);
+
 template <typename F>
 concept AllRulesOK =
     I002_OK<F> && L002_OK<F> && E044_OK<F> && I003_OK<F> &&
@@ -644,7 +712,7 @@ concept AllRulesOK =
     L003_OK<F> && M011_OK<F> && S010_OK<F> && S011_OK<F> &&
     L004_OK<F> && B001_OK<F> && H001_OK<F> && H002_OK<F> &&
     L005_OK<F> && F001_OK<F> && H003_OK<F> && F002_OK<F> &&
-    W001_OK<F>;
+    W001_OK<F> && W002_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -690,6 +758,8 @@ template <typename F>
         return RuleCode::F002;
     } else if constexpr (!W001_OK<F>) {
         return RuleCode::W001;
+    } else if constexpr (!W002_OK<F>) {
+        return RuleCode::W002;
     } else {
         return RuleCode::None;
     }
@@ -915,6 +985,18 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             }
         }();
 
+    // ── W002: Bg-row × Wait<SpinPause> or Wait<BoundedSpin> ──────────
+    static constexpr bool type_has_active_spin_wait =
+        collision::wait_strategy_of<Type>::has_wait &&
+        []() consteval {
+            if constexpr (collision::wait_strategy_of<Type>::has_wait) {
+                return collision::is_active_spin_v<
+                    collision::wait_strategy_of<Type>::value>;
+            } else {
+                return false;
+            }
+        }();
+
     [[nodiscard]] static consteval bool validate() noexcept {
         static_assert(!(classified && fail && !fail_secret),
             "I002: classified value cannot flow through Fail(E) with "
@@ -997,6 +1079,15 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "(<= 40 ns intra-socket). Switch to Wait<SpinPause>, "
             "Wait<BoundedSpin>, Wait<UmwaitC01>, Wait<AcquireWait>, or "
             "move the blocking call into an Init/Bg context.");
+        static_assert(!(row_has_bg && type_has_active_spin_wait),
+            "W002: Bg-row x Wait<SpinPause> or Wait<BoundedSpin>. Bg-context "
+            "functions MUST NOT wrap return/parameter type in an active-spin "
+            "Wait strategy. SpinPause and BoundedSpin occupy 100% of the "
+            "hosting core. Bg threads are by contract permitted to block, so "
+            "the kernel should be free to schedule another runnable thread "
+            "onto the core. Switch to Wait<UmwaitC01> (power-aware), "
+            "Wait<AcquireWait> (futex), Wait<Park> (condvar), or Wait<Block> "
+            "(poll/epoll).");
         // L005 and F001 are pack-level rules (no single-Fn enforcement
         // shape); fixy/Fn.h checks them across the Grants pack via
         // pack::no_linear_region_alias_v and pack::frame_axis_consistent_v.
@@ -1025,7 +1116,8 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(hot_path && trivial_refinement) &&
                !(hot_path && row_has_alloc_or_io && unbounded_cost) &&
                !(federation_peer && unbounded_cost) &&
-               !(hot_path && type_has_park_or_blockier_wait);
+               !(hot_path && type_has_park_or_blockier_wait) &&
+               !(row_has_bg && type_has_active_spin_wait);
     }
 
     static constexpr bool valid = validate();
@@ -1049,7 +1141,7 @@ namespace detail::collision_catalog_self_test {
 
 using DefaultFn = Fn<int>;
 static_assert(ValidComposition<DefaultFn>);
-static_assert(collision::catalog_size == 21);
+static_assert(collision::catalog_size == 22);
 static_assert(std::is_same_v<
     collision::rule_tag_t<collision::RuleCode::I002>,
     collision::I002_ClassifiedFailPayload>);
@@ -1076,6 +1168,7 @@ static_assert(collision::rule_bijection_v<collision::RuleCode::F001>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::H003>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::F002>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::W001>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::W002>);
 static_assert(collision::CollisionDiagnosticByRule<DefaultFn, collision::RuleCode::I002>::rule_code()
               == std::string_view{"I002"});
 static_assert(collision::CollisionDiagnostic<DefaultFn>::category()
