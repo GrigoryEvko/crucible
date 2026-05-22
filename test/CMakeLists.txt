@@ -11447,3 +11447,14 @@ crucible_neg_compile_bridges_test(neg_wrap_crash_return_key_copy_construct
     "use of deleted function|passkey cannot be copied|fixy-A2-032|deleted")
 crucible_neg_compile_bridges_test(neg_wrap_crash_return_key_move_construct
     "use of deleted function|passkey cannot be moved|fixy-A2-032|deleted")
+
+# ── FIXY-V-071 — fixy::concurrent::SpinLock<Tag> HS14 floor (#1949)
+# ConnectionPoolRuntime.h 11 spin-gate sites migrated to the typed
+# wrapper.  Two HS14 fixtures witness the two soundness gates:
+#   (#1) constructor without Permission<Tag>& — no matching overload
+#   (#2) lock_in<BgDrainCtx> — Bg context owns Effect::Bg, constraint
+#        rejects via `!CtxOwnsCapability<Ctx, Effect::Bg>`
+crucible_neg_compile_fixy_test(neg_fixy_concurrent_spinlock_no_permission
+    "no matching function|SpinGuard|could not convert|too few arguments|cannot bind")
+crucible_neg_compile_fixy_test(neg_fixy_concurrent_spinlock_bg_context
+    "constraints not satisfied|CtxOwnsCapability|lock_in|Bg|associated constraints are not satisfied")

@@ -8,10 +8,11 @@
 
 #include <crucible/Platform.h>
 #include <crucible/cntp/ConnectionPool.h>
-#include <crucible/concurrent/SpinLock.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/fixy/concurrent/SpinLock.h>
+#include <crucible/permissions/Permission.h>
 #include <crucible/safety/Pinned.h>
 
 #include <array>
@@ -56,17 +57,43 @@ class ConnectionPool
         std::uint64_t last_used_ns = 0;
     };
 
+public:
+    // FIXY-V-071: GateTag is the CSL region tag pinning the pool's
+    // spin gate to a Permission<GateTag> ownership token at the type
+    // level.  Nested in ConnectionPool so the tag is per-instantiation
+    // unique (one per <T, MaxRemotes, MaxPerRemote, MaxEvents> tuple)
+    // — separate pools cannot accidentally share spin-gate authority.
+    struct GateTag {};
+
+private:
     std::array<Slot, MaxRemotes * MaxPerRemote> slots_{};
     std::array<cntp::PoolEvent, MaxEvents> events_{};
-    // fixy-A5-009 + FIXY-U-085: gate_ alone on its cache line so spinners on
-    // test_and_set don't false-share with the counter writes below.  The
-    // canonical concurrent::SpinLock is alignas(64) by construction (fixy-
-    // A5-022), so cache-line isolation is inherited; no external alignas
-    // needed at the field declaration.  Prior to the consolidation this file
-    // shipped a private nested SpinGuard over a raw atomic_flag& — replaced
-    // with the canonical primitive so every spin path (acquire/release order,
-    // _mm_pause hint, lock-free assert) is uniform across substrate sites.
-    mutable concurrent::SpinLock gate_{};
+    // fixy-A5-009 + FIXY-U-085 + FIXY-V-071: gate_ alone on its cache
+    // line so spinners on test_and_set don't false-share with the
+    // counter writes below.  fixy::concurrent::SpinLock<GateTag>
+    // inherits alignas(64) from the substrate (fixy-A5-022) AND adds
+    // (1) Permission<GateTag>-witnessed acquire, (2) cache_tier::Hot
+    // annotation, (3) optional ctx-gated lock_in<Ctx> that rejects
+    // Bg.  This pool's 9 acquire sites use the no-ctx form because
+    // the member functions are already CtxFitsConnectionPoolRuntime-
+    // gated (Bg or Test).
+    mutable ::crucible::fixy::concurrent::SpinLock<GateTag> gate_{};
+    // Permission<GateTag> proof — born at construction via the no-ctx
+    // root-mint factory (GateTag carries Row<>, so no Ctx-row
+    // admission is required).  Borrowed (lvalue ref) at every gate_
+    // acquire site; never moved or consumed.  EBO-collapses to zero
+    // bytes via [[no_unique_address]].
+    //
+    // `mutable` mirrors gate_ above — the Permission is a phantom-typed
+    // empty struct with NO observable state, and the spin gate's
+    // lock()/unlock() pair preserves logical const-ness (read paths
+    // that consult event_count_ etc. need to hold the gate to serialize
+    // against concurrent writers).  Without `mutable`, the const-
+    // qualified accessors (event_count, distinct_remote_count,
+    // available_count, event_at) cannot bind a non-const Permission&
+    // to the SpinGuard ctor.
+    [[no_unique_address]] mutable ::crucible::safety::Permission<GateTag>
+        gate_perm_{::crucible::safety::mint_permission_root<GateTag>()};
     // fixy-A5-009: counter group starts a fresh cache line, isolated
     // from gate_ so each producer store invalidates only one line.
     alignas(64) std::size_t next_event_ = 0;
@@ -144,7 +171,7 @@ class ConnectionPool
     }
 
     void return_index(std::size_t index) noexcept {
-        concurrent::SpinGuard guard{gate_};
+        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         Slot* slot = slot_at(index);
         if (slot == nullptr || !slot->occupied || !slot->leased) {
             return;
@@ -243,7 +270,7 @@ public:
             return std::unexpected(cntp::PoolError::InvalidRemoteCog);
         }
 
-        concurrent::SpinGuard guard{gate_};
+        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         // fixy-A5-009: capture has_remote() once (O(N)); the value is
         // load-bearing for BOTH the MaxRemotes gate AND the post-add
         // increment.  Pre-fix this section ran has_remote() then a
@@ -283,7 +310,7 @@ public:
             return std::unexpected(cntp::PoolError::InvalidRemoteCog);
         }
 
-        concurrent::SpinGuard guard{gate_};
+        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         for (std::size_t i = 0; i < slots_.size(); ++i) {
             auto& slot = slots_[i];
             if (!slot.occupied || !same_uuid(slot.connection.remote_uuid,
@@ -317,7 +344,7 @@ public:
         if (!cntp::valid_remote(remote)) {
             return 0;
         }
-        concurrent::SpinGuard guard{gate_};
+        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         std::uint16_t count = 0;
         for (auto const& slot : slots_) {
             if (slot.occupied &&
@@ -337,7 +364,7 @@ public:
         if (!cntp::valid_remote(remote)) {
             return;
         }
-        concurrent::SpinGuard guard{gate_};
+        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         // fixy-A5-009: was_present before / has_remote after is O(N)
         // each, total O(N) per call — strictly better than recomputing
         // distinct_remote_count() (O(N²)) per-slot drain.
@@ -365,7 +392,7 @@ public:
         if (!cntp::valid_remote(remote)) {
             return;
         }
-        concurrent::SpinGuard guard{gate_};
+        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         for (auto& slot : slots_) {
             if (slot.occupied &&
                 same_uuid(slot.connection.remote_uuid, remote.uuid) &&
@@ -383,7 +410,7 @@ public:
         if (!cntp::valid_remote(remote)) {
             return;
         }
-        concurrent::SpinGuard guard{gate_};
+        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         // fixy-A5-009: O(N) bracket around the loop maintains the
         // cached distinct_remotes_ counter at amortized O(1).
         const bool was_present = has_remote(remote.uuid);
@@ -410,7 +437,7 @@ public:
         if (!cntp::valid_remote(remote)) {
             return;
         }
-        concurrent::SpinGuard guard{gate_};
+        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         // fixy-A5-009: was_present check is loop-bounded; the leased
         // slot retains the remote, so distinct_remotes_ only drops
         // when every slot for the remote was already unleased.
@@ -433,20 +460,20 @@ public:
     }
 
     [[nodiscard]] std::size_t event_count() const noexcept {
-        concurrent::SpinGuard guard{gate_};
+        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         return event_count_;
     }
 
     // fixy-A5-009: O(1) cached read.  Pre-fix walked every slot pair
     // (O(N²)) while holding gate_ on every add_connection call.
     [[nodiscard]] std::uint16_t distinct_remote_count() const noexcept {
-        concurrent::SpinGuard guard{gate_};
+        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         return distinct_remotes_;
     }
 
     [[nodiscard]] std::expected<cntp::DeclaredPoolEvent, cntp::PoolError>
     event_at(std::size_t index) const noexcept {
-        concurrent::SpinGuard guard{gate_};
+        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
         if (index >= event_count_) {
             return std::unexpected(cntp::PoolError::InvalidConnectionId);
         }

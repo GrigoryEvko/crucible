@@ -102,11 +102,33 @@ static_assert(std::is_same_v<
     "must resolve to the same substrate symbol.");
 
 // drop(Linear<T>&&) — explicit discard. Dual-exported in safety + wrap.
+// V-058 introduced safety::drop(Affine<T>&&) as a second overload (silent-
+// drop semantics for affine values).  Both `fixy::safety::drop<int>` and
+// `fixy::wrap::drop<int>` now resolve to a two-overload set { Linear, Affine };
+// disambiguate by casting to the Linear-arm function-pointer type so the
+// identity check still witnesses dual-export of the SAME substrate symbol.
 static_assert(std::is_same_v<
-    decltype(&fixy::safety::drop<int>),
-    decltype(&fixy::wrap::drop<int>)>,
-    "fixy-A4-011: fixy::safety::drop and fixy::wrap::drop must resolve to "
-    "the same substrate function template.");
+    decltype(static_cast<
+        void(*)(::crucible::safety::Linear<int>&&) noexcept>(
+        &fixy::safety::drop<int>)),
+    decltype(static_cast<
+        void(*)(::crucible::safety::Linear<int>&&) noexcept>(
+        &fixy::wrap::drop<int>))>,
+    "fixy-A4-011: fixy::safety::drop<Linear<int>> and fixy::wrap::drop must "
+    "resolve to the same substrate function template (Linear arm).");
+
+// V-058 Affine arm — second overload introduced by safety/Affine.h.  Pin
+// the dual-export identity here so future audits can't silently rename one
+// side.
+static_assert(std::is_same_v<
+    decltype(static_cast<
+        void(*)(::crucible::safety::Affine<int>&&) noexcept>(
+        &fixy::safety::drop<int>)),
+    decltype(static_cast<
+        void(*)(::crucible::safety::Affine<int>&&) noexcept>(
+        &fixy::wrap::drop<int>))>,
+    "fixy-A4-011: fixy::safety::drop<Affine<int>> and fixy::wrap::drop must "
+    "resolve to the same substrate function template (Affine arm).");
 
 // mint_permission_share — non-ctx overload. Dual-exported in perm + wrap.
 // A4_011_TestTag has no permission_row<> specialization so it defaults to
