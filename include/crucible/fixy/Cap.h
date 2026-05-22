@@ -37,6 +37,7 @@
 // Zero.  `using crucible::effects::mint_cap;` is a name-lookup
 // directive only; the call resolves to the same substrate function.
 
+#include <crucible/cntp/CongestionControl.h>
 #include <crucible/effects/Capability.h>
 
 namespace crucible::fixy::cap {
@@ -79,6 +80,52 @@ using ::crucible::effects::mint_init_context;
 using ::crucible::effects::mint_test_context;
 
 }  // namespace crucible::fixy::cap
+
+// ── crucible::fixy::cap::cntp — CNT-P congestion-control minters ────
+//
+// FIXY-V-212.  Re-exports the two CNT-P §XXI mint factories under
+// `fixy::cap::cntp::` so callers who include only the fixy umbrella
+// never have to descend into the cntp/ tree to mint a typed
+// congestion-control choice.
+//
+// Both are token mints — they synthesize a fresh `DeclaredCcChoice`
+// (a `Tagged<CcSelection, source::CcAlgorithm>`) whose authority
+// derives from compile-time type witnesses (the algorithm-enum +
+// link-class concept gate, or the CustomCcModule concept).  Neither
+// is ctx-bound; both are `[[nodiscard]] constexpr noexcept` and gate
+// behind a single concept per §XXI.
+//
+// ── Substrate consumed ─────────────────────────────────────────────
+//
+//   cntp::mint_cc_choice<CcAlgorithm, LinkClass>()      — algorithm/link mint
+//   cntp::mint_custom_cc_choice<Module, LinkClass>()    — out-of-tree module mint
+//   cntp::CcCompatible<Algorithm, Link>                 — concept gate (algorithm)
+//   cntp::CustomCcModule<Module>                        — concept gate (module)
+//   cntp::DeclaredCcChoice                              — return type carrier
+//   cntp::{CcSelection, CcAlgorithm, LinkClass}         — value types
+//
+// ── Cost ───────────────────────────────────────────────────────────
+//
+// Zero.  Each `using cntp::*;` is a name-lookup directive; the call
+// resolves to the same substrate function with the same concept gate.
+
+namespace crucible::fixy::cap::cntp {
+
+// ── §XXI mint factories ────────────────────────────────────────────
+using ::crucible::cntp::mint_cc_choice;
+using ::crucible::cntp::mint_custom_cc_choice;
+
+// ── Concept gates (grep-discoverable surface for review) ───────────
+using ::crucible::cntp::CcCompatible;
+using ::crucible::cntp::CustomCcModule;
+
+// ── Type carriers ──────────────────────────────────────────────────
+using ::crucible::cntp::CcAlgorithm;
+using ::crucible::cntp::CcSelection;
+using ::crucible::cntp::DeclaredCcChoice;
+using ::crucible::cntp::LinkClass;
+
+}  // namespace crucible::fixy::cap::cntp
 
 // ── Self-test ──────────────────────────────────────────────────────
 //
@@ -166,5 +213,25 @@ static_assert(std::is_same_v<
     decltype(&::crucible::effects::mint_test_context<
                  ::crucible::effects::detail::ctx_mint::test_key>)>,
     "FIXY-U-116: fixy::cap::mint_test_context must alias effects::mint_test_context.");
+
+// (5) FIXY-V-212: cntp::mint_cc_choice — template gated on
+//     CcCompatible<Algorithm, Link>.  Identity at a concrete
+//     (Cubic, CrossDatacenter) instantiation that satisfies the gate.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::cap::cntp::mint_cc_choice<
+                 ::crucible::cntp::CcAlgorithm::Cubic,
+                 ::crucible::cntp::LinkClass::CrossDatacenter>),
+    decltype(&::crucible::cntp::mint_cc_choice<
+                 ::crucible::cntp::CcAlgorithm::Cubic,
+                 ::crucible::cntp::LinkClass::CrossDatacenter>)>,
+    "FIXY-V-212: fixy::cap::cntp::mint_cc_choice must alias cntp::mint_cc_choice.");
+
+// (6) FIXY-V-212: DeclaredCcChoice type-carrier identity — alias
+//     preserves the safety::Tagged<CcSelection, source::CcAlgorithm>
+//     instantiation, not just a convertible-to substitute.
+static_assert(std::is_same_v<
+    ::crucible::fixy::cap::cntp::DeclaredCcChoice,
+    ::crucible::cntp::DeclaredCcChoice>,
+    "FIXY-V-212: fixy::cap::cntp::DeclaredCcChoice must alias cntp::DeclaredCcChoice.");
 
 }  // namespace crucible::fixy::cap::self_test

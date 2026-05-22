@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-22T18:17:35Z`.
+Snapshot generated: `2026-05-22T19:46:23Z`.
 
 ## bridges/
 
@@ -70,11 +70,11 @@ Snapshot generated: `2026-05-22T18:17:35Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_bg_context` | `include/crucible/effects/Capabilities.h:468` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:144` | HS14: 4 |
-| `mint_cap` | `include/crucible/effects/Capability.h:247` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:104` | HS14: 11 |
-| `mint_from_ctx` | `include/crucible/effects/Capability.h:319` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Cap.h:110` | HS14: 3 |
-| `mint_init_context` | `include/crucible/effects/Capabilities.h:478` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:153` | HS14: 4 |
-| `mint_test_context` | `include/crucible/effects/Capabilities.h:488` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:161` | HS14: 3 |
+| `mint_bg_context` | `include/crucible/effects/Capabilities.h:468` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:191` | HS14: 4 |
+| `mint_cap` | `include/crucible/effects/Capability.h:247` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:136` | HS14: 11 |
+| `mint_from_ctx` | `include/crucible/effects/Capability.h:319` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Cap.h:140` | HS14: 3 |
+| `mint_init_context` | `include/crucible/effects/Capabilities.h:478` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:200` | HS14: 4 |
+| `mint_test_context` | `include/crucible/effects/Capabilities.h:488` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:208` | HS14: 3 |
 
 ## perf/
 
@@ -82,7 +82,7 @@ Snapshot generated: `2026-05-22T18:17:35Z`.
 |---|---|---|---|---|---|---|---|---|
 | `mint_lock_contention` | `include/crucible/perf/LockContention.h:330` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:126` | HS14: 4 |
 | `mint_pmu_sample` | `include/crucible/perf/PmuSample.h:352` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:134` | HS14: 4 |
-| `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h:358` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:142` | HS14: 4 |
+| `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h:364` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:142` | HS14: 4 |
 | `mint_sched_tp_btf` | `include/crucible/perf/SchedTpBtf.h:194` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:150` | HS14: 4 |
 | `mint_sense_hub` | `include/crucible/perf/SenseHub.h:324` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:158` | HS14: 4 |
 | `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h:594` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:450` | HS14: 4 |

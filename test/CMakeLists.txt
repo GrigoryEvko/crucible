@@ -12022,3 +12022,28 @@ crucible_neg_compile_fixy_test(neg_fixy_sync_sync_prim_cv_qualified_permit_rejec
     "static assertion failed|IsBannedSyncPrim|permit_mutex|cv/ref propagation")
 crucible_neg_compile_fixy_test(neg_fixy_sync_sync_prim_hot_path_permit_rejected
     "constraints not satisfied|associated constraints are not satisfied|HotPathSyncPrimSafe|permit_mutex|hot_path_callable")
+
+# ── FIXY-V-212 — fixy::cap::cntp:: CC mint re-export HS14 ─────────
+#
+# fixy/Cap.h re-exports cntp::mint_cc_choice + mint_custom_cc_choice
+# under the fixy::cap::cntp:: surface.  The two substrate concept
+# gates (CcCompatible<Algorithm, Link>, CustomCcModule<Module>) MUST
+# survive the using-decl re-export — pointer-identity self_test
+# proves the same function template is named on both sides, but the
+# concept gate only fires at instantiation, so HS14 demands two
+# fixtures, one per gate:
+#
+#   #1 CcCompatible mismatch — DCTCP requires lossless fabric; calling
+#                              mint_cc_choice<Dctcp, CrossDatacenter>()
+#                              through the fixy surface must fail with
+#                              the substrate's requires-clause.
+#   #2 CustomCcModule mismatch — a struct lacking the static
+#                                congestion_control_name() accessor
+#                                is not a CustomCcModule; calling
+#                                mint_custom_cc_choice<NotAModule, ...>()
+#                                through the fixy surface must fail
+#                                with the substrate's concept gate.
+crucible_neg_compile_fixy_test(neg_fixy_cap_cntp_mint_cc_choice_dctcp_cross_dc
+    "constraints not satisfied|CcCompatible|LosslessDatacenterFabric")
+crucible_neg_compile_fixy_test(neg_fixy_cap_cntp_mint_custom_cc_missing_name
+    "constraints not satisfied|CustomCcModule|congestion_control_name")
