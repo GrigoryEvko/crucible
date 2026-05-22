@@ -853,6 +853,51 @@ consteval bool v061_assert_matches_witness() {
 }
 static_assert(v061_assert_matches_witness());
 
+// ─── 6n. SessRowExtraction.h reach — fixy::sess::row:: (V-062) ───────
+//
+// Witness that the payload-row projection surface (carrier
+// NumericalPayloadRow + payload_row + payload_row_effect +
+// payload_effect_row_t + protocol_effect_row + row_union_pack)
+// reaches the consumer through the umbrella include alone.  If a
+// future regression strips `#include <crucible/fixy/
+// SessRowExtraction.h>` from Fixy.h's Phase-C block, the claims
+// below fail to compile.
+
+namespace fsrow = ::crucible::fixy::sess::row;
+
+namespace v062_reach {
+using IoComp = ::crucible::effects::Computation<
+    ::crucible::effects::Row<::crucible::effects::Effect::IO>, int>;
+using SendIo = ::crucible::safety::proto::Send<IoComp,
+                  ::crucible::safety::proto::End>;
+}  // namespace v062_reach
+
+// 6n-a. NumericalPayloadRow aliases through the umbrella.
+static_assert(std::is_same_v<
+    fsrow::NumericalPayloadRow<::crucible::safety::Tolerance::BITEXACT,
+                               ::crucible::effects::Row<::crucible::effects::Effect::IO>>,
+    ::crucible::safety::proto::NumericalPayloadRow<
+        ::crucible::safety::Tolerance::BITEXACT,
+        ::crucible::effects::Row<::crucible::effects::Effect::IO>>>,
+    "umbrella reach: fixy::sess::row::NumericalPayloadRow must alias "
+    "safety::proto::NumericalPayloadRow.  If this red-lights, "
+    "fixy/SessRowExtraction.h is not pulled in by <crucible/Fixy.h>.");
+
+// 6n-b. payload_row_t extracts the Computation row.
+static_assert(std::is_same_v<
+    fsrow::payload_row_t<v062_reach::IoComp>,
+    ::crucible::effects::Row<::crucible::effects::Effect::IO>>);
+
+// 6n-c. payload_effect_row_t composed.
+static_assert(std::is_same_v<
+    fsrow::payload_effect_row_t<v062_reach::IoComp>,
+    ::crucible::effects::Row<::crucible::effects::Effect::IO>>);
+
+// 6n-d. protocol_effect_row_t walks Send and recovers payload row.
+static_assert(std::is_same_v<
+    fsrow::protocol_effect_row_t<v062_reach::SendIo>,
+    ::crucible::effects::Row<::crucible::effects::Effect::IO>>);
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }

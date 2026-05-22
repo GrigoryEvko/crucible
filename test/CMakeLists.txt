@@ -11183,6 +11183,37 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_checkpoint_wrong_base_branch
 crucible_neg_compile_fixy_test(neg_fixy_sess_checkpoint_wrong_rollback_branch
     "ProtocolViolation_State|assert_checkpointed_matches|checkpoint_rollback|static assertion failed|rollback branch")
 
+# FIXY-V-062 HS14 floor — three neg-compile fixtures across the
+# fixy::sess::row:: surface, one per structural discipline class:
+#   shape α (non-protocol input)         — primary template of
+#                                          protocol_effect_row<P> is
+#                                          forward-declared without
+#                                          definition; non-protocol
+#                                          P fires "incomplete type"
+#                                          / "use of undefined".
+#   shape β (NumericalTier non-Tolerance) — first template parameter
+#                                          of NumericalPayloadRow is
+#                                          a strong-enum NTTP; int
+#                                          literal cannot bind, fires
+#                                          "could not convert template
+#                                          argument".
+#   shape γ (Tagged unwrap drift)        — wrong-direction static
+#                                          assertion that pins the
+#                                          transparent-unwrap
+#                                          discipline; fires only as
+#                                          long as substrate keeps
+#                                          the Tagged specialisation.
+# Routing through the fixy::sess::row:: umbrella drift-protects the
+# re-export chain — a future refactor that strips
+# `using safety::proto::protocol_effect_row` (etc.) from
+# SessRowExtraction.h reds at HS14.
+crucible_neg_compile_fixy_test(neg_fixy_sess_row_non_protocol_input
+    "incomplete type|use of undefined|protocol_effect_row|invalid use of incomplete|no type named")
+crucible_neg_compile_fixy_test(neg_fixy_sess_row_numerical_tier_non_tolerance
+    "could not convert template argument|cannot convert|invalid conversion|Tolerance|enum class|expected primary-expression")
+crucible_neg_compile_fixy_test(neg_fixy_sess_row_tagged_unwrap_drift
+    "static assertion failed|Tagged|payload_row|transparent")
+
 # fixy-A2-016 — 12 negative-compile fixtures across 6 bridges/* mint
 # factories (≥2 per factory).  Each fixture's expected diagnostic
 # regex is wide enough to tolerate GCC phrasing drift across patch
