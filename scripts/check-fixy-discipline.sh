@@ -12,13 +12,16 @@
 # substrate signature into consumer code, and breaks the federation
 # cache-key story (FIXY-U-004 + FOUND-I02 row_hash_contribution).
 #
-# Opt-in surface (mirror of the CMake CRUCIBLE_FIXY_ONLY target
-# property — kept in-script for self-contained CI invocation):
-#   examples/fn/
-#   test/fixy_neg/
-# Plus any future cog/, mimic/, forge/, cntp/, canopy/, topology/
-# headers added after the fixy/ ship date (added via the
-# CRUCIBLE_FIXY_ONLY_PATHS extension below as those land).
+# Opt-in surface (CMakeLists.txt CRUCIBLE_FIXY_ONLY_PATHS GLOBAL
+# property is the single source of truth per FIXY-V-072; CMake
+# emits the list to ${CMAKE_BINARY_DIR}/fixy-only-paths.txt at
+# configure and this script consumes that file when present.  The
+# hardcoded fallback array below handles pre-configure CI and
+# standalone scans; CMake configure verifies the two lists agree.)
+# Current set per FIXY-V-070 (band-3 expansion):
+#   examples/fn/, test/fixy_neg/
+#   include/crucible/{cntp,canopy,cog,topology,forge,mimic,observe,warden}/
+#   src/{cntp,canopy,cog,topology,forge,mimic,observe,warden}/
 #
 # Exempt — fixy/ itself defines the aggregator and substrate
 # defines the slot type, so both refer to safety::fn::Fn freely.
@@ -229,7 +232,47 @@ PLANTED
             exit 2
         fi
         rm -f "$result_file"
-        printf 'check-fixy-discipline: self-test passed — regex fires on planted violation; stale allowlist entry detected and live entry preserved.\n' >&2
+        printf 'check-fixy-discipline: self-test phase 2 passed — stale allowlist entry detected and live entry preserved.\n' >&2
+
+        # ── Phase 3: FIXY-V-072 generated-file consumer ──────────────
+        # Verify CRUCIBLE_FIXY_ONLY_PATHS_FILE env-var override loads
+        # paths from the named file.  Plant a synthetic single-path
+        # generated file, invoke --list with the env-var pointing at
+        # it, and confirm exactly that path appears in the output.  A
+        # parser regression (blank-line filter, comment-skip, array
+        # population) reddens here, not silently in production.
+        generated_file="$(mktemp)"
+        printf '# header banner (skipped)\n\nplanted/v072/synthetic_path\n' \
+            >"$generated_file"
+        list_output_file="$(mktemp)"
+        if ! CRUCIBLE_FIXY_ONLY_PATHS_FILE="$generated_file" \
+             bash "${BASH_SOURCE[0]}" --list >"$list_output_file" 2>&1; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — generated-file consumer crashed on --list.\n' >&2
+            printf '── --list output ────\n%s\n────────────────────\n' \
+                "$(cat "$list_output_file")" >&2
+            rm -f "$generated_file" "$list_output_file"
+            exit 2
+        fi
+        if ! grep -Fq 'planted/v072/synthetic_path' "$list_output_file"; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — generated-file consumer did not pick up planted path.\n' >&2
+            printf '── --list output ────\n%s\n────────────────────\n' \
+                "$(cat "$list_output_file")" >&2
+            rm -f "$generated_file" "$list_output_file"
+            exit 2
+        fi
+        # Indented path lines start with two spaces in --list output.
+        printed_paths="$(grep -c '^  ' "$list_output_file" || true)"
+        if [[ "$printed_paths" -ne 1 ]]; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — generated-file consumer expected 1 path, got %s.\n' "$printed_paths" >&2
+            printf '── --list output ────\n%s\n────────────────────\n' \
+                "$(cat "$list_output_file")" >&2
+            rm -f "$generated_file" "$list_output_file"
+            exit 2
+        fi
+        rm -f "$generated_file" "$list_output_file"
+        printf 'check-fixy-discipline: self-test phase 3 passed — CRUCIBLE_FIXY_ONLY_PATHS_FILE loads paths from generated file.\n' >&2
+
+        printf 'check-fixy-discipline: self-test passed — all 3 phases green.\n' >&2
         exit 0
         ;;
     "") ;;
