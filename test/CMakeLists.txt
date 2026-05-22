@@ -11641,3 +11641,26 @@ crucible_neg_compile_fixy_test(neg_fixy_sync_memorder_tag_to_int_implicit
     "cannot convert|invalid conversion|narrowing conversion|enum class|MemOrderTag")
 crucible_neg_compile_fixy_test(neg_fixy_sync_memorder_strict_relax_up_rejected
     "no matching function|constraints not satisfied|MemOrderLattice::leq|relax|associated constraints are not satisfied")
+
+# ── FIXY-V-085 — fixy::sync::sync_prim banned-by-default permit HS14 ──
+#
+# fixy/sync/SyncPrim.h ships 14 banned-by-default permit tags
+# (permit_mutex / permit_futex / permit_atomic_wait / ... / permit_
+# thread_yield) + IsBannedSyncPrim concept + pack-fold helper +
+# HotPathSyncPrimSafe<Tier, Permits...> load-bearing gate.  CLAUDE.md
+# §IX.5 BANS all 14 primitives on the hot path; V-085 makes the ban
+# load-bearing at the type level.  Two distinct mismatch classes:
+#
+#   #1 CV-REF PROPAGATION half — IsBannedSyncPrim<permit_mutex const&>
+#                                MUST be concept-positive (cv-ref
+#                                pierce via std::remove_cvref_t).
+#                                Fixture asserts the NEGATION → must
+#                                fail to compile.
+#   #2 LOAD-BEARING REJECT half — a hot-tier-constrained callable
+#                                instantiated with permit_mutex in
+#                                the Permits pack fails the
+#                                HotPathSyncPrimSafe requires-clause.
+crucible_neg_compile_fixy_test(neg_fixy_sync_sync_prim_cv_qualified_permit_rejected
+    "static assertion failed|IsBannedSyncPrim|permit_mutex|cv/ref propagation")
+crucible_neg_compile_fixy_test(neg_fixy_sync_sync_prim_hot_path_permit_rejected
+    "constraints not satisfied|associated constraints are not satisfied|HotPathSyncPrimSafe|permit_mutex|hot_path_callable")
