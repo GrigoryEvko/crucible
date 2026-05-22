@@ -260,6 +260,7 @@ crucible_test(test_fixy_v_088_fp_mode)  # FIXY-V-088 DimensionAxis::FpMode + 11 
 crucible_test(test_fixy_v_089_fp_lattices)  # FIXY-V-089 11 FP-mode ChainLattice algebras + umbrella registration
 crucible_test(test_fixy_v_090_fp_wrappers)  # FIXY-V-090 11 safety/FpMode.h wrappers + composite + row_hash + DimensionTraits
 crucible_test(test_fixy_v_091_collision_fp_mode)  # FIXY-V-091 CollisionCatalog F101-F105 — FP-mode cross-axis rules
+crucible_test(test_fixy_v_092_fp_grants)  # FIXY-V-092 fixy/Fp.h — 12 FP-mode grant tags + per-tag which_dim
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -1590,6 +1591,24 @@ crucible_neg_compile_fixy_test(neg_fixy_grant_declassify_non_policy
     "constraints not satisfied|DeclassificationPolicy|secret_policy_base")
 crucible_neg_compile_fixy_test(neg_fixy_grant_from_source_non_empty
     "constraints not satisfied|IsProvenanceSource|is_empty|is_class")
+
+# FIXY-V-092 — HS14 floor for FpMode grant tags.  Two fixtures cover
+# orthogonal rejection classes that are FpMode-specific:
+#   1. NTTP-enum-type mismatch — substituting an FpFtz value for a
+#      with_fp_rounding<...> NTTP rejects at template-id formation,
+#      BEFORE the grant reaches the IsAcceptedGrants well-formedness
+#      gate.  Distinct from cv-ref or non-grant rejection paths.
+#   2. Duplicate engagement — pairing fp_strict_ieee with
+#      with_fp_rounding<...> in one Grants pack engages FpMode twice;
+#      Reject.h's UniqueEngagementPerAxis concept must fire.  The
+#      aggregate + per-axis combination is the V-092-specific bug
+#      class the discipline forbids.
+# Together they pin the new FpMode-axis surface from both sides:
+# pre-engagement template formation and post-pack engagement walk.
+crucible_neg_compile_fixy_test(neg_fixy_grant_fp_wrong_nttp_enum
+    "could not convert|cannot convert|FpRounding|FpFtz|enumeration type|wrong type")
+crucible_neg_compile_fixy_test(neg_fixy_grant_fp_duplicate_engagement
+    "UniqueEngagementPerAxis|FixyDuplicate_FpMode")
 
 # fixy-A4-018 — §XXI Universal-Mint-Pattern enforcement.  fixy::fn's
 # value ctor is private; only the three canonical mint factories
