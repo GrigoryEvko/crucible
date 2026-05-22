@@ -875,6 +875,7 @@ crucible_test(test_topology)
 crucible_test(test_parallelism_rule)
 crucible_test(test_pipeline_dispatch)
 crucible_test(test_pipeline_dag)
+crucible_test(test_workload_budget_coherent)
 crucible_test(test_permissioned_snapshot)
 crucible_test(test_auto_router)
 crucible_test(test_permissioned_mpsc_channel)
@@ -3998,6 +3999,21 @@ crucible_neg_compile_effects_test(neg_perf_workload_profiler_wrong_cap
     "could not convert|no matching function|cannot convert|expected.*Init")
 crucible_neg_compile_effects_test(neg_perf_workload_profiler_no_cap
     "too few arguments|no matching function|candidate expects 2-3 arguments")
+
+# FIXY-V-075: WorkloadBudgetCoherent<Ctx, Pipeline> static check.
+# Two HS14 fixtures pin the concept's distinct mismatch classes:
+#   (a) BYTE-BUDGET — ctx ByteBudget<8 KiB> + pipeline aggregate WS
+#       256 KiB → workload byte-budget axis fires.
+#   (b) ALLOC-CLASS — ctx_alloc::Stack (1 MiB ceiling) + pipeline
+#       aggregate WS 8 MiB → stack-overflow guard fires.
+# The third axis (NUMA-Spread floor below conservative L3) lives in
+# the positive smoke test via static_assert(!WorkloadBudgetCoherent
+# <ColdInitCtx, SmallPipeline>) — it doesn't need a neg-compile
+# fixture because the concept is opt-in, not a mint gate.
+crucible_neg_compile_effects_test(neg_workload_budget_coherent_byte_budget_exceeded
+    "static assertion failed|WorkloadBudgetCoherent|coherence|constraints not satisfied")
+crucible_neg_compile_effects_test(neg_workload_budget_coherent_stack_overflow
+    "static assertion failed|WorkloadBudgetCoherent|coherence|constraints not satisfied")
 
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
