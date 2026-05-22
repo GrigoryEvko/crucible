@@ -52,6 +52,7 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/fixy/Wrap.h>   // FIXY-U-096q: DetSafe / DetSafeTier_v / DetSafeLattice via the fixy umbrella
+#include <crucible/fixy/fp/Polynomial.h>  // FIXY-V-095: box_muller_polynomial_det implementation
 
 #include <array>
 #include <cmath>
@@ -168,11 +169,19 @@ struct Philox {
     //                        this bit-stable across hardware, so the
     //                        PhiloxRng promise (cross-hardware bit-
     //                        equality) is honest.
-    //   - box_muller_det:    PhiloxRng — but see the libm caveat
-    //                        below.  The DetSafe tier classifies
-    //                        bytes by SOURCE CLASS (Philox-derived);
-    //                        cross-platform bit-equality is a
-    //                        separate concern.
+    //   - box_muller_det:    MonotonicClockRead (FIXY-V-095 downgrade
+    //                        from PhiloxRng).  Bytes ARE Philox-
+    //                        derived, but libm sin/cos/log break
+    //                        cross-platform bit-equality.  Same-run
+    //                        replay only — Cipher write-fence
+    //                        REJECTS this tier.
+    //   - box_muller_polynomial_det:
+    //                        PhiloxRng (FIXY-V-095 new variant).
+    //                        Uses crucible-source polynomial sin/
+    //                        cos/log + correctly-rounded std::sqrt
+    //                        (fixy/fp/Polynomial.h).  No libm.
+    //                        Cross-platform bit-stable; admissible
+    //                        to the Cipher write-fence.
     //   - op_key_det:        Pure — bit-mix of three Pure inputs
     //                        (master_counter, op_index, content_hash
     //                        are all DAG/Cipher-derived deterministic
@@ -182,7 +191,8 @@ struct Philox {
     // Bit-equality contract: `generate_det(a, b).peek() ==
     // generate(a, b)` for ALL (a, b).  Same for `to_uniform_det`,
     // `to_uniform_d_det`, `op_key_det`.  `box_muller_det` is bit-
-    // equal to `box_muller` ON THE SAME PLATFORM (see caveat below).
+    // equal to `box_muller` ON THE SAME PLATFORM (see caveat below);
+    // `box_muller_polynomial_det` is bit-equal across ALL platforms.
     // Verified by test_philox_det.cpp.
     //
     // ── Libm bit-stability caveat for box_muller_det (FOUND-G17-AUDIT) ─
@@ -219,6 +229,19 @@ struct Philox {
         crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, float>;
     using DetSafePhiloxDouble = crucible::fixy::wrap::DetSafe<
         crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, double>;
+    // FIXY-V-095: box_muller_det's libm call (sin/cos/log) is NOT bit-
+    // stable across glibc/musl/Apple libm/MSVC CRT — bytes are only
+    // same-fleet/same-platform deterministic.  Downgraded to
+    // MonotonicClockRead tier (replay-deterministic within one run on
+    // one Relay).  Cipher write-fence REJECTS this tier; production
+    // call sites that record samples to the replay chain MUST route
+    // through box_muller_polynomial_det (PhiloxRng tier — see below).
+    using DetSafeMonoClockFloatPair = crucible::fixy::wrap::DetSafe<
+        crucible::fixy::wrap::DetSafeTier_v::MonotonicClockRead,
+        std::pair<float, float>>;
+    // FIXY-V-095: PhiloxRng-tier float pair from polynomial Box-Muller.
+    // Bit-stable across vendors via crucible-source polynomial sin/cos/
+    // log (see fixy/fp/Polynomial.h).  Admissible to Cipher write-fence.
     using DetSafePhiloxFloatPair = crucible::fixy::wrap::DetSafe<
         crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, std::pair<float, float>>;
     using DetSafePureKey = crucible::fixy::wrap::DetSafe<
@@ -270,9 +293,28 @@ struct Philox {
         return DetSafePhiloxDouble{to_uniform_d(x)};
     }
 
-    [[nodiscard]] static DetSafePhiloxFloatPair
+    // FIXY-V-095: libm-backed Box-Muller — same-platform deterministic
+    // ONLY.  Tier downgraded from PhiloxRng to MonotonicClockRead because
+    // glibc / musl / Apple libm / MSVC CRT differ in the low 1-3 ULPs.
+    // Production callers that need cross-fleet replay admissibility
+    // MUST use box_muller_polynomial_det instead.  The Cipher write-
+    // fence REJECTS MonotonicClockRead-tier bytes.
+    [[nodiscard]] static DetSafeMonoClockFloatPair
     box_muller_det(uint32_t u1_raw, uint32_t u2_raw) {
-        return DetSafePhiloxFloatPair{box_muller(u1_raw, u2_raw)};
+        return DetSafeMonoClockFloatPair{box_muller(u1_raw, u2_raw)};
+    }
+
+    // FIXY-V-095: polynomial Box-Muller — cross-platform PhiloxRng-tier
+    // determinism.  Routes through fixy::fp::box_muller_polynomial
+    // (crucible-source polynomial sin/cos/log + IEEE-754-correctly-
+    // rounded std::sqrt).  No libm dependency.  Admissible to the
+    // Cipher write-fence; safe for cross-fleet replay logs.  Defined
+    // in Philox.h (not Polynomial.h) because the DetSafe<PhiloxRng,...>
+    // type-level promise lives next to the rest of the Philox surface.
+    [[nodiscard]] static DetSafePhiloxFloatPair
+    box_muller_polynomial_det(uint32_t u1_raw, uint32_t u2_raw) {
+        return DetSafePhiloxFloatPair{
+            crucible::fixy::fp::box_muller_polynomial(u1_raw, u2_raw)};
     }
 
     [[nodiscard]] static constexpr DetSafePureKey

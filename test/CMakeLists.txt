@@ -263,6 +263,7 @@ crucible_test(test_fixy_v_091_collision_fp_mode)  # FIXY-V-091 CollisionCatalog 
 crucible_test(test_fixy_v_092_fp_grants)  # FIXY-V-092 fixy/Fp.h — 12 FP-mode grant tags + per-tag which_dim
 crucible_test(test_fixy_v_093_fp_canonicalize)  # FIXY-V-093 fixy::fp::canonicalize — merkle-hash-safe FP canonicalization
 crucible_test(test_fixy_v_094_fp_strict_floor)  # FIXY-V-094 crucible_fp_strict INTERFACE floor — compile-def + runtime witness
+crucible_test(test_fixy_v_095_box_muller_polynomial)  # FIXY-V-095 Philox::box_muller_polynomial_det runtime witness + tier wiring
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -1649,6 +1650,27 @@ crucible_neg_compile_fixy_test(neg_fixy_canonicalize_non_bitexact_recipe
     "BITEXACT_TC or BITEXACT_STRICT|is_bitexact|static assertion failed")
 crucible_neg_compile_fixy_test(neg_fixy_canonicalize_wrong_rounding_mode
     "RoundingMode::RN|round-to-nearest|static assertion failed")
+
+# FIXY-V-095 — HS14 floor for Philox::box_muller_det downgrade +
+# box_muller_polynomial_det creation.  Two fixtures pin orthogonal
+# corners of the (source-tier × gate-tier) lattice grid:
+#   1. cipher_fence — SOURCE is libm path (MonotonicClockRead), GATE
+#      is at PhiloxRng (Cipher write-fence).  Rejects because the
+#      source tier is strictly weaker than the boundary.  This is
+#      the load-bearing rejection that prevents libm sin/cos/log
+#      bit-instability from defeating cross-vendor replay.
+#   2. wrong_tier_consume — SOURCE is polynomial path (PhiloxRng),
+#      GATE is at Pure (strictly stronger than PhiloxRng).  Rejects
+#      because the gate demands fully-pure-function semantics the
+#      polynomial path cannot provide (still FP transcendentals).
+#      This pins the tier-upgrade boundary EXACTLY at PhiloxRng.
+# Both fixtures exercise the same DetSafe::satisfies<RequiredTier>
+# subsumption mechanism but at orthogonal lattice corners — HS14's
+# "distinct mismatch classes" floor is met.
+crucible_neg_compile_fixy_test(neg_fixy_v_095_box_muller_det_cipher_fence
+    "constraints not satisfied|admissible_at_cipher_fence|satisfies")
+crucible_neg_compile_fixy_test(neg_fixy_v_095_box_muller_polynomial_det_wrong_tier_consume
+    "constraints not satisfied|requires_pure_tier|satisfies")
 
 # fixy-A4-018 — §XXI Universal-Mint-Pattern enforcement.  fixy::fn's
 # value ctor is private; only the three canonical mint factories

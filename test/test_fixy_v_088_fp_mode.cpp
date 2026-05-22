@@ -125,7 +125,7 @@ static_assert(cal::detail::fp_mode_lattice_self_test::inf_policy_count == 2);
 static_assert(cal::detail::fp_mode_lattice_self_test::complex_layout_count
               == 3);
 static_assert(cal::detail::fp_mode_lattice_self_test::libm_policy_count
-              == 6);
+              == 7);  // FIXY-V-095 appended Polynomial
 static_assert(cal::detail::fp_mode_lattice_self_test::reassociate_count
               == 3);
 static_assert(cal::detail::fp_mode_lattice_self_test::fp_constant_count

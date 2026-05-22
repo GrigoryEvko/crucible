@@ -203,6 +203,19 @@ enum class FpLibmPolicy : std::uint8_t {
     VectorLibmLibmvec = 3,  // GCC libmvec
     FastApproxNv      = 4,  // CUDA `__sinf` / `__cosf` (relaxed ULP bound)
     FastApproxAm      = 5,  // AMD `v_sin_f32` instruction
+    // FIXY-V-095 (append-only per FOUND-I04 Universe extension rule):
+    // Polynomial — Crucible-source polynomial approximation evaluated
+    // strictly in IEEE 754 arithmetic, NO libm call.  This is the
+    // BIT-STABLE choice — result depends only on (a) the polynomial
+    // coefficients (constants pinned in source) and (b) IEEE 754 ops
+    // (portable per the FP-strict floor, V-094).  Ordinal placement
+    // here is INDEX-only: this is an off-chain axis-orthogonal
+    // enumerator that production discipline references via the
+    // grant tag `fixy::with_fp_libm_policy<Polynomial>` at call
+    // sites, NOT via leq/meets/joins.  BITEXACT_TC/STRICT recipes
+    // REQUIRE Polynomial; libm variants are admissible only at
+    // ORDERED-or-weaker recipe tiers.
+    Polynomial        = 6,  // Crucible polynomial — IEEE 754 bit-stable
 };
 
 // ── Sub-axis 10: Reassociation (algebraic rewrite eligibility) ──────
@@ -565,13 +578,21 @@ struct FpComplexLayoutLattice : ChainLatticeOps<FpComplexLayout> {
         case FpLibmPolicy::VectorLibmLibmvec: return "VectorLibmLibmvec";
         case FpLibmPolicy::FastApproxNv:      return "FastApproxNv";
         case FpLibmPolicy::FastApproxAm:      return "FastApproxAm";
+        case FpLibmPolicy::Polynomial:        return "Polynomial";  // FIXY-V-095
         default:                               return std::string_view{"<unknown FpLibmPolicy>"};
     }
 }
 
 struct FpLibmPolicyLattice : ChainLatticeOps<FpLibmPolicy> {
     [[nodiscard]] static constexpr FpLibmPolicy bottom() noexcept { return FpLibmPolicy::ScalarLibm; }
-    [[nodiscard]] static constexpr FpLibmPolicy top()    noexcept { return FpLibmPolicy::FastApproxAm; }
+    // FIXY-V-095: top() bumped to Polynomial after append-only universe
+    // extension (FOUND-I04 rule).  Lattice's leq() is value-based so the
+    // largest ordinal IS the chain top; semantic interpretation
+    // ("Polynomial is axis-orthogonal bit-stable") lives in the
+    // enumerator's docblock + production discipline (grant-tag at call
+    // site requires BITEXACT_TC/STRICT recipes use Polynomial), NOT in
+    // the chain ordering.
+    [[nodiscard]] static constexpr FpLibmPolicy top()    noexcept { return FpLibmPolicy::Polynomial; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpLibmPolicyLattice"; }
 
     template <FpLibmPolicy T>
@@ -595,6 +616,7 @@ struct FpLibmPolicyLattice : ChainLatticeOps<FpLibmPolicy> {
                 case FpLibmPolicy::VectorLibmLibmvec: return "FpLibmPolicyLattice::At<VectorLibmLibmvec>";
                 case FpLibmPolicy::FastApproxNv:      return "FpLibmPolicyLattice::At<FastApproxNv>";
                 case FpLibmPolicy::FastApproxAm:      return "FpLibmPolicyLattice::At<FastApproxAm>";
+                case FpLibmPolicy::Polynomial:        return "FpLibmPolicyLattice::At<Polynomial>";  // FIXY-V-095
                 default:                               return "FpLibmPolicyLattice::At<?>";
             }
         }
@@ -802,9 +824,10 @@ static_assert(inf_policy_count == 2,
 static_assert(complex_layout_count == 3,
     "FpComplexLayout diverged from {Interleaved, SplitRealImag, "
     "SplitImagReal}.");
-static_assert(libm_policy_count == 6,
+static_assert(libm_policy_count == 7,
     "FpLibmPolicy diverged from {ScalarLibm, VectorLibmSleef, "
-    "VectorLibmSvml, VectorLibmLibmvec, FastApproxNv, FastApproxAm}.");
+    "VectorLibmSvml, VectorLibmLibmvec, FastApproxNv, FastApproxAm, "
+    "Polynomial}.");  // FIXY-V-095 appended Polynomial
 static_assert(reassociate_count == 3,
     "FpReassociate diverged from {Forbidden, BoundedTreeDepth, "
     "UnrestrictedRewrite}.");
@@ -936,7 +959,7 @@ static_assert(FpInfPolicyLattice::top()           == FpInfPolicy::FlushInfToFini
 static_assert(FpComplexLayoutLattice::bottom()    == FpComplexLayout::Interleaved);
 static_assert(FpComplexLayoutLattice::top()       == FpComplexLayout::SplitImagReal);
 static_assert(FpLibmPolicyLattice::bottom()       == FpLibmPolicy::ScalarLibm);
-static_assert(FpLibmPolicyLattice::top()          == FpLibmPolicy::FastApproxAm);
+static_assert(FpLibmPolicyLattice::top()          == FpLibmPolicy::Polynomial);
 static_assert(FpReassociateLattice::bottom()      == FpReassociate::Forbidden);
 static_assert(FpReassociateLattice::top()         == FpReassociate::UnrestrictedRewrite);
 static_assert(FpConstantRoundingLattice::bottom() == FpConstantRounding::SameAsRuntime);
@@ -1076,9 +1099,9 @@ inline void fp_mode_lattice_runtime_smoke_test() {
     FpComplexLayout xb = FpComplexLayout::SplitImagReal;
     [[maybe_unused]] FpComplexLayout xj1 = FpComplexLayoutLattice::join(xa, xb);
 
-    // LibmPolicy (6-element).
+    // LibmPolicy (7-element).  FIXY-V-095 appended Polynomial at top.
     FpLibmPolicy la = FpLibmPolicy::ScalarLibm;
-    FpLibmPolicy lb = FpLibmPolicy::FastApproxAm;
+    FpLibmPolicy lb = FpLibmPolicy::Polynomial;
     [[maybe_unused]] FpLibmPolicy lj1 = FpLibmPolicyLattice::join(la, lb);
 
     // Reassociate (3-element).

@@ -187,9 +187,25 @@ static_assert(decltype(Philox::to_uniform_d_det(0u))::tier
               == DetSafeTier_v::PhiloxRng,
     "Philox::to_uniform_d_det MUST return DetSafe<PhiloxRng, double>.");
 
+// FIXY-V-095: box_muller_det downgraded to MonotonicClockRead tier
+// (libm sin/cos/log is NOT cross-platform bit-stable).  Same-platform
+// determinism only — Cipher write-fence REJECTS this tier.  Production
+// call sites that need cross-fleet replay use box_muller_polynomial_det.
 static_assert(decltype(Philox::box_muller_det(0u, 0u))::tier
+              == DetSafeTier_v::MonotonicClockRead,
+    "Philox::box_muller_det MUST return DetSafe<MonotonicClockRead, "
+    "pair<float,float>> — libm transcendentals (sin/cos/log) drift by "
+    "1-3 ULPs across glibc/musl/Apple libm/MSVC CRT, so the bytes are "
+    "NOT cross-platform bit-equal.  V-095 downgrade.");
+
+// FIXY-V-095: box_muller_polynomial_det IS the PhiloxRng-tier rail —
+// uses crucible-source polynomial sin/cos/log + correctly-rounded
+// std::sqrt, all IEEE 754, no libm.  Cross-platform bit-equal.
+static_assert(decltype(Philox::box_muller_polynomial_det(0u, 0u))::tier
               == DetSafeTier_v::PhiloxRng,
-    "Philox::box_muller_det MUST return DetSafe<PhiloxRng, pair<float,float>>.");
+    "Philox::box_muller_polynomial_det MUST return DetSafe<PhiloxRng, "
+    "pair<float,float>>.  V-095 polynomial Box-Muller variant; the "
+    "Cipher write-fence accepts this tier.");
 
 static_assert(decltype(Philox::op_key_det(0ull, 0u, ContentHash{0}))::tier
               == DetSafeTier_v::Pure,
@@ -219,9 +235,26 @@ static_assert(admissible_at_cipher_fence<
         decltype(Philox::to_uniform_d_det(0u))>,
     "to_uniform_d_det's PhiloxRng-pinned result MUST pass the Cipher write-fence.");
 
-static_assert(admissible_at_cipher_fence<
+// FIXY-V-095: box_muller_det's MonotonicClockRead tier is INTENTIONALLY
+// REJECTED by the Cipher write-fence — libm sin/cos/log is not cross-
+// platform bit-stable.  This negative assertion guards against any
+// future regression that promotes the tier back to PhiloxRng without
+// also fixing the libm dependency.
+static_assert(!admissible_at_cipher_fence<
         decltype(Philox::box_muller_det(0u, 0u))>,
-    "box_muller_det's PhiloxRng-pinned result MUST pass the Cipher write-fence.");
+    "box_muller_det's MonotonicClockRead-pinned result MUST NOT pass "
+    "the Cipher write-fence — libm sin/cos/log is not cross-platform "
+    "bit-stable.  If this fires, the V-095 downgrade has regressed or "
+    "the libm has been replaced by an IEEE 754 polynomial path.");
+
+// FIXY-V-095: box_muller_polynomial_det's PhiloxRng tier IS admissible
+// — IEEE 754 polynomial sin/cos/log + correctly-rounded sqrt, no libm.
+static_assert(admissible_at_cipher_fence<
+        decltype(Philox::box_muller_polynomial_det(0u, 0u))>,
+    "box_muller_polynomial_det's PhiloxRng-pinned result MUST pass the "
+    "Cipher write-fence — polynomial transcendentals are cross-platform "
+    "bit-equal.  If this fires, the polynomial header has regressed or "
+    "the DetSafe tier wiring is broken.");
 
 // op_key_det is Pure → strictly stronger than PhiloxRng → admissible.
 static_assert(admissible_at_cipher_fence<
@@ -367,13 +400,25 @@ static_assert(std::is_same_v<
         DetSafe<DetSafeTier_v::PhiloxRng, double>>,
     "to_uniform_d_det MUST return EXACTLY DetSafe<PhiloxRng, double>.");
 
+// FIXY-V-095: box_muller_det's return tier is MonotonicClockRead, not
+// PhiloxRng — libm sin/cos/log is not cross-platform bit-stable.  The
+// PhiloxRng-tier polynomial variant is box_muller_polynomial_det
+// (asserted below).
 static_assert(std::is_same_v<
         decltype(Philox::box_muller_det(0u, 0u)),
+        DetSafe<DetSafeTier_v::MonotonicClockRead, std::pair<float, float>>>,
+    "box_muller_det MUST return EXACTLY DetSafe<MonotonicClockRead, "
+    "std::pair<float, float>>.  V-095 downgrade.  If a future refactor "
+    "re-shapes the Box-Muller return (e.g., to std::array<float, 2>), "
+    "this must be considered an API break and propagated downstream.");
+
+// FIXY-V-095: polynomial Box-Muller variant — PhiloxRng tier.
+static_assert(std::is_same_v<
+        decltype(Philox::box_muller_polynomial_det(0u, 0u)),
         DetSafe<DetSafeTier_v::PhiloxRng, std::pair<float, float>>>,
-    "box_muller_det MUST return EXACTLY DetSafe<PhiloxRng, "
-    "std::pair<float, float>>.  If a future refactor re-shapes the "
-    "Box-Muller return (e.g., to std::array<float, 2>), this must be "
-    "considered an API break and propagated downstream.");
+    "box_muller_polynomial_det MUST return EXACTLY DetSafe<PhiloxRng, "
+    "std::pair<float, float>>.  V-095 polynomial Box-Muller; cross-"
+    "platform bit-stable via IEEE 754 polynomial sin/cos/log.");
 
 static_assert(std::is_same_v<
         decltype(Philox::op_key_det(0ull, 0u, ContentHash{0})),
