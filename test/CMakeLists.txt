@@ -5806,6 +5806,21 @@ crucible_neg_compile_test(neg_witness_relax_to_stronger
 crucible_neg_compile_test(neg_witness_mint_wrong_arg
   "constraints not satisfied|no matching function|associated constraints|cannot convert")
 
+# ─── FIXY-V-079 JoinPolicy carrier neg-compiles (2 fixtures = HS14 floor) ─
+#
+# JoinPolicy<Tier, T> = Graded<Comonad, JoinPolicyLattice::At<Tier>, T> —
+# the 6-tier fork-join engagement carrier (FORGET ⊏ DETACH ⊏ ABANDON
+# ⊏ CANCEL ⊏ WAIT_DEADLINE ⊏ JOIN_ALL).  HS14: every new mint factory
+# ships ≥2 neg-compile fixtures across distinct mismatch classes.  Here:
+#   1. relax-to-stricter — substrate tier-subsumption violation.
+#      Catches refactors that loosen relax<>()'s requires-clause.
+#   2. mint-wrong-arg     — substrate constructibility gate.  Catches
+#      refactors that loosen mint_join_policy's requires-clause.
+crucible_neg_compile_test(neg_join_policy_relax_to_stricter
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_join_policy_mint_wrong_arg
+  "constraints not satisfied|no matching function|associated constraints|cannot convert")
+
 # ─── FIXY-V-057 Affine wrapper neg-compiles (2 fixtures = HS14 floor) ─
 #
 # Affine<T> = Graded<Absolute, QttSemiring::At<Zero>, T> — substructural

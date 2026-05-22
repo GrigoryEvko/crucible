@@ -229,6 +229,7 @@ using ::crucible::safety::extract::is_stale_v;
 using ::crucible::safety::extract::is_swmr_reader_v;
 using ::crucible::safety::extract::is_swmr_writer_v;
 using ::crucible::safety::extract::is_tagged_v;
+using ::crucible::safety::extract::is_join_policy_v;
 using ::crucible::safety::extract::is_vendor_v;
 using ::crucible::safety::extract::is_wait_v;
 
@@ -290,6 +291,7 @@ using ::crucible::safety::extract::swmr_reader_value_t;
 using ::crucible::safety::extract::swmr_writer_value_t;
 using ::crucible::safety::extract::tagged_tag_t;
 using ::crucible::safety::extract::tagged_value_t;
+using ::crucible::safety::extract::join_policy_value_t;
 using ::crucible::safety::extract::vendor_value_t;
 using ::crucible::safety::extract::wait_value_t;
 

@@ -138,6 +138,7 @@ enum class Tolerance : std::uint8_t;
 enum class VendorBackend : std::uint8_t;
 enum class WaitStrategy : std::uint8_t;
 enum class Witness : std::uint8_t;            // FIXY-V-053
+enum class JoinPolicy : std::uint8_t;         // FIXY-V-078
 }  // namespace crucible::algebra::lattices
 
 namespace crucible::safety {
@@ -170,6 +171,8 @@ template <typename T> class NumaPlacement;
 template <typename T> class RecipeSpec;
 // ── FIXY-V-054 — Witness (Comonad over WitnessLattice chain) ───────
 template <algebra::lattices::Witness Tier, typename T> class Witness;
+// ── FIXY-V-079 — JoinPolicy (Comonad over JoinPolicyLattice chain) ─
+template <algebra::lattices::JoinPolicy Tier, typename T> class JoinPolicy;
 }  // namespace crucible::safety
 
 namespace crucible::safety::diag {
@@ -296,6 +299,25 @@ inline constexpr std::uint64_t WRAPPER_FIXY_FN_TAG          = 0x1E00'0000'0000'0
 // (0x1D-0x1E).  Low-byte folds the Tier enumerator the same way
 // Consistency / OpaqueLifetime / Crash / Wait / MemOrder / Progress do.
 inline constexpr std::uint64_t WRAPPER_WITNESS_TAG          = 0x1F00'0000'0000'0000ULL;
+
+// ── FIXY-V-079: JoinPolicy (Comonad over JoinPolicyLattice chain) ───
+//
+// `safety::JoinPolicy<algebra::lattices::JoinPolicy Tier, T>` is a
+// regime-1 Graded carrier on the Synchronization axis (CLAUDE.md §XVI
+// canonical wrapper-nesting order, dim 20 — shared with Wait + MemOrder
+// as concurrency-discipline annotations).  The 6-tier chain FORGET ⊏
+// DETACH ⊏ ABANDON ⊏ CANCEL ⊏ WAIT_DEADLINE ⊏ JOIN_ALL encodes the
+// parent's structural-concurrency engagement with its spawned children;
+// downstream consumers that demand a minimum tier (e.g. a region body
+// that needs `mint_spawn` to actually have joined every worker)
+// MUST cache to a slot disjoint from the same payload at a weaker
+// tier — otherwise a `JoinPolicy<JOIN_ALL, T>` result and a
+// `JoinPolicy<FORGET, T>` result collide at the federation key.
+// Salt 0x20 keeps the JoinPolicy specialization disjoint from the
+// existing 0x01-0x1F salts (Witness occupies 0x1F).  Low-byte folds
+// the Tier enumerator the same way Witness / Wait / MemOrder /
+// Progress / Crash / Consistency do.
+inline constexpr std::uint64_t WRAPPER_JOIN_POLICY_TAG      = 0x2000'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -829,6 +851,25 @@ template <algebra::lattices::Witness Tier, typename Inner>
 struct row_hash_contribution<safety::Witness<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::WRAPPER_WITNESS_TAG | static_cast<std::uint64_t>(Tier),
+        row_hash_contribution_v<Inner>);
+};
+
+// ── FIXY-V-079 — JoinPolicy<Tier, T> federation hash ────────────────
+//
+// `safety::JoinPolicy<algebra::lattices::JoinPolicy Tier, T>` pins the
+// parent's structural-concurrency engagement (FORGET ⊏ DETACH ⊏
+// ABANDON ⊏ CANCEL ⊏ WAIT_DEADLINE ⊏ JOIN_ALL) into the type.  A
+// consumer that demands a minimum tier MUST cache to a slot disjoint
+// from the same payload at a weaker tier — otherwise a region that
+// joined every child and a region that abandoned them silently
+// collide.  Salt 0x20 keeps the JoinPolicy specialization disjoint
+// from Witness (0x1F) and from every other wrapper salt; low-byte
+// folds the Tier enumerator the same way Witness / Wait / MemOrder
+// / Progress / Crash / Consistency do.
+template <algebra::lattices::JoinPolicy Tier, typename Inner>
+struct row_hash_contribution<safety::JoinPolicy<Tier, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_JOIN_POLICY_TAG | static_cast<std::uint64_t>(Tier),
         row_hash_contribution_v<Inner>);
 };
 

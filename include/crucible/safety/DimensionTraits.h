@@ -117,6 +117,7 @@
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>
+#include <crucible/safety/JoinPolicy.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/safety/Witness.h>
 
@@ -536,6 +537,18 @@ struct wrapper_dimension<Consistency<Level, T>>
 template <Witness_v Tier, typename T>
 struct wrapper_dimension<Witness<Tier, T>>
     : std::integral_constant<DimensionAxis, DimensionAxis::Observability> {};
+
+// FIXY-V-079 — JoinPolicy<Tier, T> occupies the Synchronization axis
+// (dim 20).  JoinPolicy encodes structural-concurrency engagement
+// (FORGET ⊏ DETACH ⊏ ABANDON ⊏ CANCEL ⊏ WAIT_DEADLINE ⊏ JOIN_ALL) —
+// i.e. the SYNCHRONIZATION DISCIPLINE the parent applied to its
+// spawned children.  Shares the axis with Wait (queue-side readiness
+// sync) and MemOrder (memory-side ordering sync), all three being
+// concurrency-discipline annotations; tier-S with par=join
+// (strictest-wins) reading per the same shape as Wait + MemOrder.
+template <JoinPolicy_v Tier, typename T>
+struct wrapper_dimension<JoinPolicy<Tier, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Synchronization> {};
 
 template <Lifetime_v Scope, typename T>
 struct wrapper_dimension<OpaqueLifetime<Scope, T>>

@@ -203,4 +203,6 @@
 #include <crucible/safety/IsTagged.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Witness.h>
+#include <crucible/safety/JoinPolicy.h>
+#include <crucible/safety/IsJoinPolicy.h>
 #include <crucible/safety/Workload.h>
