@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-22T07:50:40Z`.
+Snapshot generated: `2026-05-22T07:59:34Z`.
 
 ## bridges/
 
@@ -57,14 +57,14 @@ Snapshot generated: `2026-05-22T07:50:40Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_endpoint` | `include/crucible/concurrent/Endpoint.h:592` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:187` | HS14: 18 |
-| `mint_mpmc_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:529` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:108` | HS14: 4 |
-| `mint_pipeline` | `include/crucible/concurrent/Pipeline.h:1021` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:128` | HS14: 12 |
-| `mint_pipeline_dag` | `include/crucible/concurrent/Pipeline.h:1045` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:208` | HS14: 3 |
-| `mint_stage` | `include/crucible/concurrent/Stage.h:670` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:153` | HS14: 26 |
-| `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:510` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:107` | HS14: 7 |
-| `mint_substrate_session` | `include/crucible/concurrent/SubstrateSessionBridge.h:746` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:115` | HS14: 12 |
-| `mint_swmr_stage` | `include/crucible/concurrent/StageEndpointBridge.h:559` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:109` | HS14: 2 |
+| `mint_endpoint` | `include/crucible/concurrent/Endpoint.h:592` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:189` | HS14: 18 |
+| `mint_mpmc_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:529` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:110` | HS14: 4 |
+| `mint_pipeline` | `include/crucible/concurrent/Pipeline.h:1021` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:130` | HS14: 12 |
+| `mint_pipeline_dag` | `include/crucible/concurrent/Pipeline.h:1045` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:210` | HS14: 3 |
+| `mint_stage` | `include/crucible/concurrent/Stage.h:670` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:155` | HS14: 26 |
+| `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:510` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:109` | HS14: 7 |
+| `mint_substrate_session` | `include/crucible/concurrent/SubstrateSessionBridge.h:746` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:117` | HS14: 12 |
+| `mint_swmr_stage` | `include/crucible/concurrent/StageEndpointBridge.h:559` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:111` | HS14: 2 |
 
 ## effects/
 

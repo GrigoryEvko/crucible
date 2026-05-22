@@ -45,6 +45,8 @@
 //
 // Zero.  using-declarations are pure name-lookup directives.
 
+#include <crucible/concurrent/AutoRouter.h>        // V-077: AutoRouter family
+#include <crucible/concurrent/AutoSplit.h>         // V-077: AutoSplit family
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/ParallelismRule.h>  // V-076: WorkBudget / ParallelismRule / Tier / NumaPolicy
 #include <crucible/concurrent/Pipeline.h>
@@ -285,6 +287,105 @@ using ::crucible::concurrent::has_static_per_call_working_set;
 using ::crucible::concurrent::has_static_per_call_working_set_v;
 using ::crucible::concurrent::per_call_working_set_of_v;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── AutoRouter surface (V-077) ─────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// AutoRouter turns four compile-time facts (semantic intent, producer
+// cardinality, consumer cardinality, byte footprint) into a concrete
+// Permissioned* substrate.  V-076 surfaced the cost-model PRIMITIVES
+// (Tier / NumaPolicy / WorkBudget); V-077 surfaces the COMPOSITION
+// LAYER that uses those primitives to pick the routing substrate.
+//
+// Distinct from V-076: V-076 answers "HOW PARALLEL?" (Sequential vs
+// Parallel + factor + NUMA hint); V-077 answers "WHICH SUBSTRATE?"
+// (Spsc / Mpsc / Snapshot / Mpmc / WorkStealing / ShardedGrid).
+//
+//   RouteIntent              — semantic intent of the routed work
+//   RouteKind                — substrate the router selects
+//   AutoRouteDecision        — bare decision struct (kind + intent +
+//                              topology + producers + consumers +
+//                              workload_bytes + worker_fanout)
+//   AutoRoute / AutoRoute_t  — type-level route picker (struct + alias)
+//   StaticAutoRoute / _t / static_auto_route_v
+//                            — consteval route + decision variants
+//   auto_route_v             — constexpr template variable form
+//   AutoRouteRuntimeProfile  — runtime cache-size profile carrier
+//   auto_route_decision_runtime
+//                            — runtime decision factory
+//   auto_shard_factor_runtime
+//                            — runtime shard-factor pick
+
+using ::crucible::concurrent::RouteIntent;
+using ::crucible::concurrent::RouteKind;
+using ::crucible::concurrent::AutoRouteDecision;
+using ::crucible::concurrent::AutoRoute;
+using ::crucible::concurrent::AutoRoute_t;
+using ::crucible::concurrent::StaticAutoRoute;
+using ::crucible::concurrent::StaticAutoRoute_t;
+using ::crucible::concurrent::static_auto_route_v;
+using ::crucible::concurrent::auto_route_v;
+using ::crucible::concurrent::AutoRouteRuntimeProfile;
+using ::crucible::concurrent::auto_route_decision_runtime;
+using ::crucible::concurrent::auto_shard_factor_runtime;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── AutoSplit surface (V-077) ──────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// AutoSplit turns a single contiguous workload into concrete
+// [begin, end) shard ranges with a fanout decision, partition strategy,
+// schedule mode, placement policy, and completion mode.  Builds on
+// AutoRouter for substrate selection plus V-076 cost-model for the
+// per-stage tier classification.
+//
+// SchedulingIntent declares the caller's parallelism APPETITE — the
+// PRIMARY DIAL for the planner.  Sequential always collapses to F=1;
+// LatencyCritical skips break-even gating; Background only steals
+// idle cores; Throughput refuses fanout below the efficiency floor.
+//
+//   SchedulingIntent         — appetite dial
+//   AutoSplitPartitionStrategy / AutoSplitScheduleMode /
+//   AutoSplitPlacementPolicy / AutoSplitCompletionMode
+//                            — orthogonal-axis enums (BOTH Partition
+//                              and ScheduleMode have an Inline
+//                              enumerator; HS14 fixture pins them as
+//                              distinct enum classes)
+//   AutoSplitRoutingDecision — bundled (partition, schedule, placement,
+//                              completion) decision struct
+//   AutoSplitRuntimeProfile  — runtime profile (route + workers +
+//                              dispatch cost + min efficiency pct)
+//   AutoSplitRequest         — caller-supplied job description
+//   HintDirective / AutoSplitWorkloadHint
+//                            — typed-workload hint surface
+//   AutoSplitWorkloadTagged  — phantom-typed tag carrier
+//   workload_traits          — trait extracting hint from a Body type
+//   AutoSplitShard / AutoSplitPlan / AutoSplitDispatchResult
+//                            — output shapes
+//   AutoSplitShardBody       — concept gate for the shard-callable
+//   auto_split_plan          — central planning factory (constexpr)
+//   auto_split_runtime_profile_from_topology
+//                            — canonical profile builder
+
+using ::crucible::concurrent::SchedulingIntent;
+using ::crucible::concurrent::AutoSplitPartitionStrategy;
+using ::crucible::concurrent::AutoSplitScheduleMode;
+using ::crucible::concurrent::AutoSplitPlacementPolicy;
+using ::crucible::concurrent::AutoSplitCompletionMode;
+using ::crucible::concurrent::AutoSplitRoutingDecision;
+using ::crucible::concurrent::AutoSplitRuntimeProfile;
+using ::crucible::concurrent::AutoSplitRequest;
+using ::crucible::concurrent::HintDirective;
+using ::crucible::concurrent::AutoSplitWorkloadHint;
+using ::crucible::concurrent::AutoSplitWorkloadTagged;
+using ::crucible::concurrent::workload_traits;
+using ::crucible::concurrent::AutoSplitShard;
+using ::crucible::concurrent::AutoSplitPlan;
+using ::crucible::concurrent::AutoSplitDispatchResult;
+using ::crucible::concurrent::AutoSplitShardBody;
+using ::crucible::concurrent::auto_split_plan;
+using ::crucible::concurrent::auto_split_runtime_profile_from_topology;
+
 }  // namespace crucible::fixy::pipe
 
 // ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
@@ -340,6 +441,45 @@ static_assert(::crucible::fixy::pipe::hot_path_cache_line_bytes ==
 static_assert(::crucible::fixy::pipe::unknown_per_call_working_set ==
               ::crucible::concurrent::unknown_per_call_working_set);
 
+// V-077 type-identity witnesses — every AutoRouter + AutoSplit type
+// carrier must alias substrate exactly.  Pick one representative per
+// FAMILY (enum, decision struct, request shape, plan shape) so a
+// typedef regression on ANY of the families reds the sentinel.
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::RouteIntent,
+    ::crucible::concurrent::RouteIntent>,
+    "fixy::pipe::RouteIntent must alias substrate enum");
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::RouteKind,
+    ::crucible::concurrent::RouteKind>,
+    "fixy::pipe::RouteKind must alias substrate enum");
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::AutoRouteDecision,
+    ::crucible::concurrent::AutoRouteDecision>,
+    "fixy::pipe::AutoRouteDecision must alias substrate struct");
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::SchedulingIntent,
+    ::crucible::concurrent::SchedulingIntent>,
+    "fixy::pipe::SchedulingIntent must alias substrate enum");
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::AutoSplitRequest,
+    ::crucible::concurrent::AutoSplitRequest>,
+    "fixy::pipe::AutoSplitRequest must alias substrate struct");
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::AutoSplitPlan,
+    ::crucible::concurrent::AutoSplitPlan>,
+    "fixy::pipe::AutoSplitPlan must alias substrate struct");
+
+// V-077 distinct-enum witness — a regression that typedefs
+// AutoSplitPartitionStrategy ≡ AutoSplitScheduleMode would silently
+// admit cross-axis assignment (BOTH carry an Inline enumerator).
+static_assert(!std::is_same_v<
+    ::crucible::fixy::pipe::AutoSplitPartitionStrategy,
+    ::crucible::fixy::pipe::AutoSplitScheduleMode>,
+    "fixy::pipe::AutoSplitPartitionStrategy must be a DISTINCT type "
+    "from AutoSplitScheduleMode — both have an Inline enumerator and "
+    "a typedef collapse would let cross-axis values slip through.");
+
 // Cardinality witness — surface count of using-decls in this header.
 // Any add/remove of a using-decl above must update this number.
 // U-103 baseline: 18 (Tier-3 mint family + canonical concept gates).
@@ -351,8 +491,19 @@ static_assert(::crucible::fixy::pipe::unknown_per_call_working_set ==
 // V-076 extension: +14 cost-model re-exports (WorkBudget, Tier,
 // NumaPolicy, ParallelismDecision, ParallelismRule,
 // recommend_parallelism + 8 WorkingSet helpers).
-constexpr int pipe_surface_cardinality = 45;
-static_assert(pipe_surface_cardinality == 45,
+// V-077 extension: +30 AutoRouter + AutoSplit re-exports
+// (12 AutoRouter: RouteIntent/RouteKind/AutoRouteDecision/AutoRoute/
+//  AutoRoute_t/StaticAutoRoute/StaticAutoRoute_t/static_auto_route_v/
+//  auto_route_v/AutoRouteRuntimeProfile/auto_route_decision_runtime/
+//  auto_shard_factor_runtime;
+//  18 AutoSplit: SchedulingIntent + 4 axis enums +
+//  AutoSplitRoutingDecision + AutoSplitRuntimeProfile +
+//  AutoSplitRequest + HintDirective + AutoSplitWorkloadHint +
+//  AutoSplitWorkloadTagged + workload_traits + AutoSplitShard +
+//  AutoSplitPlan + AutoSplitDispatchResult + AutoSplitShardBody +
+//  auto_split_plan + auto_split_runtime_profile_from_topology).
+constexpr int pipe_surface_cardinality = 75;
+static_assert(pipe_surface_cardinality == 75,
     "fixy::pipe:: surface drifted — update Pipe.h using-decls + "
     "this sentinel + test_fixy_pipe.cpp coverage in lockstep.");
 

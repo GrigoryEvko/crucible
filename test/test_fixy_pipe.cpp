@@ -163,6 +163,101 @@ static_assert(fpipe::per_call_working_set_of_v<V076StaticWs> == 4096);
 static_assert(fpipe::per_call_working_set_of_v<V076NoStaticWs> ==
               fpipe::unknown_per_call_working_set);
 
+// ─── V-077 AutoRouter + AutoSplit reach witnesses ──────────────────
+//
+// Identity asserts on the type carriers prove the using-decls alias
+// substrate.  Enum-literal reach via `==` proves the substrate's
+// nested values can be spelled at the fixy surface.  `auto_route_v`
+// reach proves the constexpr template variable's BODY is fully
+// substituted via the alias (not just the name).  auto_split_plan
+// reach proves the central planning factory's constexpr body is
+// reachable through the alias.
+//
+// HS14 §XXI compliance for V-077: drift-catch fixtures live in
+// test/fixy_neg/neg_fixy_pipe_route_intent_to_scheduling_intent.cpp
+// (CROSS-ENUM-CLASS) and
+// test/fixy_neg/neg_fixy_pipe_partition_to_schedule_mode.cpp
+// (SAME-ENUMERATOR-NAME collision — both Partition and ScheduleMode
+// carry an Inline; type system must keep them DISTINCT).
+
+namespace conc_v077 = ::crucible::concurrent;
+
+// Type-identity (mirrors the in-header sentinel asserts so the test
+// TU exercises them under project warning flags too).
+static_assert(std::is_same_v<fpipe::RouteIntent, conc_v077::RouteIntent>);
+static_assert(std::is_same_v<fpipe::RouteKind, conc_v077::RouteKind>);
+static_assert(std::is_same_v<fpipe::AutoRouteDecision,
+                             conc_v077::AutoRouteDecision>);
+static_assert(std::is_same_v<fpipe::SchedulingIntent,
+                             conc_v077::SchedulingIntent>);
+static_assert(std::is_same_v<fpipe::AutoSplitRequest,
+                             conc_v077::AutoSplitRequest>);
+static_assert(std::is_same_v<fpipe::AutoSplitPlan,
+                             conc_v077::AutoSplitPlan>);
+
+// Enum-literal reach via the alias.
+static_assert(fpipe::RouteIntent::Stream == conc_v077::RouteIntent::Stream);
+static_assert(fpipe::RouteIntent::Shardable ==
+              conc_v077::RouteIntent::Shardable);
+static_assert(fpipe::RouteKind::Spsc == conc_v077::RouteKind::Spsc);
+static_assert(fpipe::RouteKind::ShardedGrid ==
+              conc_v077::RouteKind::ShardedGrid);
+static_assert(fpipe::SchedulingIntent::LatencyCritical ==
+              conc_v077::SchedulingIntent::LatencyCritical);
+static_assert(fpipe::SchedulingIntent::Background ==
+              conc_v077::SchedulingIntent::Background);
+
+// SAME-ENUMERATOR collision witness: AutoSplitPartitionStrategy and
+// AutoSplitScheduleMode both have `Inline` — distinct enum classes
+// MUST keep these typed-apart (the HS14 partition-to-schedule-mode
+// fixture exercises the cross-conversion).
+static_assert(static_cast<int>(fpipe::AutoSplitPartitionStrategy::Inline) ==
+              static_cast<int>(conc_v077::AutoSplitPartitionStrategy::Inline));
+static_assert(static_cast<int>(fpipe::AutoSplitScheduleMode::Inline) ==
+              static_cast<int>(conc_v077::AutoSplitScheduleMode::Inline));
+static_assert(!std::is_same_v<fpipe::AutoSplitPartitionStrategy,
+                              fpipe::AutoSplitScheduleMode>);
+
+// auto_route_v reach — the constexpr variable's BODY is fully
+// substituted via the alias.  A regression that aliases `auto_route_v`
+// to `static_auto_route_v` or vice-versa would change the .kind here.
+static_assert(
+    fpipe::auto_route_v<fpipe::RouteIntent::Stream,
+                        /*Producers=*/1,
+                        /*Consumers=*/1,
+                        /*WorkloadBytes=*/4096>.kind ==
+    fpipe::RouteKind::Spsc);
+
+// static_auto_route_v reach — separate template variable for the
+// type-level routing form.  Same expectation for a 1×1 Stream.
+static_assert(
+    fpipe::static_auto_route_v<fpipe::RouteIntent::Stream,
+                               int,
+                               /*Capacity=*/64,
+                               struct V077Tag,
+                               /*Producers=*/1,
+                               /*Consumers=*/1,
+                               /*WorkloadBytes=*/4096>.kind ==
+    fpipe::RouteKind::Spsc);
+
+// auto_split_plan reach — the central planning factory's constexpr
+// body must be reachable through the alias.  Sequential intent always
+// collapses shard_count to ≤1.
+static_assert([]{
+    fpipe::AutoSplitRequest req{};
+    req.item_count = 1024;
+    req.bytes_per_item = 64;
+    req.intent = fpipe::SchedulingIntent::Sequential;
+    return fpipe::auto_split_plan(req).runs_inline();
+}());
+
+// workload_traits<int> instantiates and exposes the substrate's
+// `hint()` static — the default for a bare type yields a
+// default-constructed hint whose directive is None.
+static_assert(fpipe::workload_traits<int>::hint().directive ==
+              fpipe::HintDirective::None,
+              "fixy::pipe::workload_traits must alias substrate trait");
+
 // ─── 3. Stage / Pipeline round-trip via the alias ─────────────────
 
 int main() {

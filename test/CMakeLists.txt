@@ -2076,6 +2076,21 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_tier_to_int_implicit
 crucible_neg_compile_fixy_test(neg_fixy_pipe_numa_to_tier_implicit
     "cannot convert.*NumaPolicy.*to.*Tier|invalid conversion from .*NumaPolicy|no known conversion|enum-conversion|conversion")
 
+# ── FIXY-V-077 HS14 — fixy::pipe re-export of AutoRouter + AutoSplit
+# surface (12 AutoRouter + 18 AutoSplit using-decls).  Two HS14
+# fixtures pin the using-decls as TRUE aliases on TWO distinct drift
+# classes:
+#   (1) CROSS-ENUM-CONVERSION: RouteIntent (AutoRouter semantic) vs
+#       SchedulingIntent (AutoSplit appetite) — both 6-element enum
+#       classes whose typedef collapse would silently misroute work.
+#   (2) SAME-ENUMERATOR-NAME-COLLISION: AutoSplitPartitionStrategy
+#       and AutoSplitScheduleMode both expose an `Inline` enumerator
+#       — typedef collapse would let cross-axis decisions compile.
+crucible_neg_compile_fixy_test(neg_fixy_pipe_route_intent_to_scheduling_intent_implicit
+    "cannot convert.*RouteIntent.*to.*SchedulingIntent|invalid conversion from .*RouteIntent|no known conversion|enum-conversion|conversion")
+crucible_neg_compile_fixy_test(neg_fixy_pipe_partition_to_schedule_mode_implicit
+    "cannot convert.*AutoSplitPartitionStrategy.*to.*AutoSplitScheduleMode|invalid conversion from .*AutoSplitPartitionStrategy|no known conversion|enum-conversion|conversion")
+
 # ── FIXY-MINT-Bridge — fixy/Bridge.h re-export of wrap factories
 # (mint_recording_session, mint_crash_watched_session,
 # mint_persisted_session, mint_recording_endpoint,
