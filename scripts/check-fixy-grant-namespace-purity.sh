@@ -25,8 +25,11 @@
 #                                                    catalog (9 family-tier grants).
 #   * include/crucible/fixy/syscall/Per.h         — V-098 SyscallSurface axis-specialized
 #                                                    catalog (per<SyscallId> parametric grants).
+#   * include/crucible/fixy/syscall/Ioctl.h       — V-099 SyscallSurface axis-specialized
+#                                                    catalog (ioctl::vendor<> + ioctl::subsystem<>
+#                                                    parametric grants).
 #
-# The four allowlisted headers all SPECIALIZE which_dim<>; they do NOT
+# The five allowlisted headers all SPECIALIZE which_dim<>; they do NOT
 # extend the grant_base hierarchy or introduce new structural-validation
 # concepts.  They are functionally part of Grant.h's authoring discipline,
 # split per-axis for human readability and per-axis self-tests.
@@ -68,6 +71,13 @@ while IFS=: read -r file line text; do
             # V-098 SyscallSurface axis-specialized catalog
             # (per<SyscallId> parametric grants).  Specializes which_dim<>
             # + family_tier<> only.
+            continue
+            ;;
+        include/crucible/fixy/syscall/Ioctl.h)
+            # V-099 SyscallSurface axis-specialized catalog
+            # (ioctl::vendor<IoctlVendor> + ioctl::subsystem<IoctlSubsystem>
+            # parametric grants).  Specializes which_dim<> + family_tier<>
+            # only.
             continue
             ;;
         test/safety_attack/attack_fixy_grant_*.cpp)

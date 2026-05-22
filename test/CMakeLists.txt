@@ -269,6 +269,7 @@ target_include_directories(test_fixy_v_096_welford_variance SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 crucible_test(test_fixy_v_097_syscall_family)  # FIXY-V-097 DimensionAxis::SyscallSurface + SyscallFamilyLattice 9-tier chain
 crucible_test(test_fixy_v_098_syscall_grants)  # FIXY-V-098 fixy/syscall/Family.h + Per.h — coarse + per-syscall grants
+crucible_test(test_fixy_v_099_syscall_ioctl)   # FIXY-V-099 fixy/syscall/Ioctl.h   — per-vendor + per-subsystem ioctl grants
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -6059,6 +6060,37 @@ crucible_neg_compile_test(neg_syscall_family_tier_misclassify
 crucible_neg_compile_fixy_test(neg_fixy_v_098_wrong_axis
   "could not convert|cannot convert|SyscallId|SyscallFamily|enumeration type|wrong type")
 crucible_neg_compile_fixy_test(neg_fixy_v_098_family_per_duplicate
+  "UniqueEngagementPerAxis|FixyDuplicate_SyscallSurface")
+
+# ─── FIXY-V-099 syscall ioctl neg-compile fixtures (2) ────────────────
+#
+# V-099 ships fixy/syscall/Ioctl.h: two parametric grants
+# `ioctl::vendor<IoctlVendor>` (12-element device-file catalog) and
+# `ioctl::subsystem<IoctlSubsystem>` (15-element kernel-subsystem
+# catalog), both routing which_dim<> → SyscallSurface and pinning
+# family_tier_v<> uniformly to Privilege (all ioctls go through
+# ioctl(2), top of V-097's chain).  HS14: 2 fixtures across distinct
+# mismatch classes:
+#
+#   1. wrong-axis (NTTP-enum-type mismatch) — substituting an
+#      IoctlSubsystem value for the IoctlVendor NTTP on
+#      ioctl::vendor<...>.  Template-id formation rejects BEFORE the
+#      grant reaches the pack; rejection path is the C++ overload-
+#      deduction surface ("cannot convert" / "IoctlVendor"). Mirrors
+#      V-098's neg_fixy_v_098_wrong_axis.cpp pattern.
+#
+#   2. vendor-subsystem-duplicate-engagement — a Grants pack containing
+#      BOTH `ioctl::vendor<IoctlVendor::nvidia_ctl>` AND
+#      `ioctl::subsystem<IoctlSubsystem::drm>`.  Both route to
+#      SyscallSurface; UniqueEngagementPerAxis concept fires AFTER the
+#      pack is fully formed; rejection path is the `mint_fn` requires-
+#      clause ("UniqueEngagementPerAxis" / "FixyDuplicate_SyscallSurface").
+#      Catches the "I added a per-vendor lock, then added the per-
+#      subsystem framing for portability documentation" contributor
+#      mistake that would be silently lossy under any first-wins rule.
+crucible_neg_compile_fixy_test(neg_fixy_v_099_wrong_axis
+  "could not convert|cannot convert|IoctlVendor|IoctlSubsystem|enumeration type|wrong type")
+crucible_neg_compile_fixy_test(neg_fixy_v_099_vendor_subsystem_duplicate
   "UniqueEngagementPerAxis|FixyDuplicate_SyscallSurface")
 
 # ─── FIXY-V-090 FpModePinned wrapper neg-compile fixtures (2) ─────────
