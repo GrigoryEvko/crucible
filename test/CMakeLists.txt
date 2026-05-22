@@ -11214,6 +11214,37 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_row_numerical_tier_non_tolerance
 crucible_neg_compile_fixy_test(neg_fixy_sess_row_tagged_unwrap_drift
     "static assertion failed|Tagged|payload_row|transparent")
 
+# FIXY-V-063 HS14 floor — three neg-compile fixtures across the
+# fixy::sess::view:: surface, one per structural discipline class:
+#   shape α (wrong position)            — mint_session_view's
+#                                         `HandleIsAt<H, Tag>`
+#                                         requires-clause rejects
+#                                         a tag that doesn't match
+#                                         the handle's Proto.
+#   shape β (message_type non-Send/Recv) — primary template of
+#                                         session_view_message_type
+#                                         has no `type` member;
+#                                         instantiation on
+#                                         AtSelect / AtOffer view
+#                                         fires "no type named
+#                                         'type'".
+#   shape γ (branch_count non-Sel/Off)  — primary template of
+#                                         session_view_branch_count
+#                                         has no `value` member;
+#                                         instantiation on AtSend
+#                                         / AtRecv view fires
+#                                         "no member named 'value'".
+# Routing through the fixy::sess::view:: umbrella drift-protects
+# the re-export chain — a future refactor that strips
+# `using safety::proto::mint_session_view` (etc.) from SessView.h
+# reds at HS14.
+crucible_neg_compile_fixy_test(neg_fixy_sess_view_wrong_position
+    "no matching function for call|constraints not satisfied|HandleIsAt|handle_is_at|mint_session_view")
+crucible_neg_compile_fixy_test(neg_fixy_sess_view_message_type_on_non_send_recv
+    "no type named|incomplete type|use of undefined|session_view_message_type")
+crucible_neg_compile_fixy_test(neg_fixy_sess_view_branch_count_on_non_select_offer
+    "no member named|incomplete type|use of undefined|session_view_branch_count|value")
+
 # fixy-A2-016 — 12 negative-compile fixtures across 6 bridges/* mint
 # factories (≥2 per factory).  Each fixture's expected diagnostic
 # regex is wide enough to tolerate GCC phrasing drift across patch

@@ -192,6 +192,7 @@
 #include <crucible/fixy/SessDelegate.h>   // FIXY-V-060
 #include <crucible/fixy/SessCheckpoint.h> // FIXY-V-061
 #include <crucible/fixy/SessRowExtraction.h> // FIXY-V-062
+#include <crucible/fixy/SessView.h>         // FIXY-V-063
 #include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/fixy/Wrap.h>

@@ -37,6 +37,7 @@
 #include <crucible/Fixy.h>
 
 #include <type_traits>
+#include <utility>
 
 namespace fixy  = ::crucible::fixy;
 namespace fcc   = ::crucible::fixy::contract::cipher;
@@ -897,6 +898,62 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     fsrow::protocol_effect_row_t<v062_reach::SendIo>,
     ::crucible::effects::Row<::crucible::effects::Effect::IO>>);
+
+// ─── 6o. SessView.h reach — fixy::sess::view:: (V-063) ──────────────
+//
+// Witness that the non-consuming inspection surface (10 position
+// tags + handle_is_at trait family + view_ok + mint_session_view +
+// session_view_protocol_name + session_view_message_type +
+// session_view_branch_count) reaches the consumer through the
+// umbrella include alone.  If a future regression strips
+// `#include <crucible/fixy/SessView.h>` from Fixy.h's Phase-C
+// block, the claims below fail to compile.
+
+namespace fsview = ::crucible::fixy::sess::view;
+
+namespace v063_reach {
+struct FakeResource {};
+struct Msg {};
+using SendProto = ::crucible::safety::proto::Send<Msg,
+                    ::crucible::safety::proto::End>;
+using SendHandle = ::crucible::safety::proto::SessionHandle<
+                    SendProto, FakeResource, void>;
+}  // namespace v063_reach
+
+// 6o-a. AtSend position tag aliases through the umbrella.
+static_assert(std::is_same_v<fsview::AtSend,
+    ::crucible::safety::proto::AtSend>,
+    "umbrella reach: fixy::sess::view::AtSend must alias "
+    "safety::proto::AtSend.  If this red-lights, "
+    "fixy/SessView.h is not pulled in by <crucible/Fixy.h>.");
+
+// 6o-b. AtTerminal covers End ∪ Stop (umbrella witnesses the
+// destruction-safe category).
+static_assert(std::is_same_v<fsview::AtTerminal,
+    ::crucible::safety::proto::AtTerminal>);
+
+// 6o-c. handle_is_at_v admits matching tag (positive case).
+static_assert(fsview::handle_is_at_v<v063_reach::SendHandle,
+                                      fsview::AtSend>);
+
+// 6o-d. HandleIsAt concept admits matching pair AND rejects
+// mismatch (negative case).
+static_assert( fsview::HandleIsAt<v063_reach::SendHandle, fsview::AtSend>);
+static_assert(!fsview::HandleIsAt<v063_reach::SendHandle, fsview::AtRecv>);
+
+// 6o-e. mint_session_view produces ScopedView<Handle, Tag>.
+// Pure type-level (Send-state handle has abandonment-check destructor
+// per substrate doc-block; substrate self-test uses the same idiom).
+using V063MintedView = decltype(
+    fsview::mint_session_view<fsview::AtSend>(
+        std::declval<v063_reach::SendHandle const&>()));
+static_assert(std::is_same_v<V063MintedView,
+    ::crucible::safety::ScopedView<v063_reach::SendHandle, fsview::AtSend>>);
+
+// 6o-f. session_view_message_type_t extracts the AtSend view payload.
+static_assert(std::is_same_v<
+    fsview::session_view_message_type_t<V063MintedView>,
+    v063_reach::Msg>);
 
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
