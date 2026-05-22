@@ -53,6 +53,7 @@
 #include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/SessionPatterns.h>
 #include <crucible/sessions/SessionPermPayloads.h>
+#include <crucible/sessions/SessionPhi.h>
 #include <crucible/sessions/SessionView.h>
 
 #include <string_view>
@@ -188,52 +189,87 @@ using ::crucible::safety::proto::is_returned_v;
 using ::crucible::safety::proto::is_delegated_session_v;
 
 // ═════════════════════════════════════════════════════════════════════
-// ── φ-predicate re-exports (FIXY-AUDIT-B5, fixy-CR-12) ─────────────
+// ── φ-predicate re-exports (FIXY-AUDIT-B5 → fixy-CR-12 → V-069) ─────
 // ═════════════════════════════════════════════════════════════════════
 //
 // The FX paper §11.18 catalogs seven session-safety levels: safe, df
-// (deadlock-free), term (terminating), nterm (non-terminating live),
-// live, live+ (positive liveness), live++ (precise liveness).  Of
-// those, only THREE map honestly to the predicates the substrate
-// proves today:
+// (deadlock-free), term (terminating), nterm (non-terminating but
+// well-formed), live, live+ (positive liveness), live++ (precise
+// liveness).
 //
-//   safe   → is_well_formed_v       — Honda 1998 binary session
-//                                      well-formedness.  Equivalent
-//                                      to FX phi_safe by definition.
-//   term   → is_terminal_state_v    — terminal-state check on the
-//                                      protocol head.  The closest
-//                                      substrate predicate to FX
-//                                      phi_term, sound but partial.
-//   nterm  → !is_terminal_state_v   — complement of term.
+// ── History ────────────────────────────────────────────────────────
 //
-// fixy-CR-12 closure: pre-CR-12 this header also re-exported
-// `phi_df_v`, `phi_live_v`, `phi_live_plus_v`, `phi_live_pp_v` — all
-// four ALIASED to `is_well_formed_v` even though well-formedness is
-// strictly weaker than each of those FX-paper properties (a well-
-// formed protocol can still deadlock or starve).  The names lied:
-// callers reading `phi_df_v<Proto>` plausibly believed the predicate
-// witnessed deadlock-freedom, but it accepted protocols that visibly
-// deadlock under any reasonable execution semantics.  CR-12 removes
-// those four aliases entirely — no backwards-compat shim — so the
-// floor `is_well_formed_v` must be spelled out at every call site
-// that wants it.
+//   Pre fixy-CR-12: this header re-exported `phi_df_v`,
+//                   `phi_live_v`, `phi_live_plus_v`, `phi_live_pp_v`
+//                   as ALIASES of is_well_formed_v.  The names lied —
+//                   well-formedness is strictly weaker than each of
+//                   those properties, and call sites reading
+//                   `phi_df_v<Proto>` plausibly believed the
+//                   predicate witnessed deadlock-freedom but in fact
+//                   accepted protocols that visibly deadlock.
+//   fixy-CR-12:     removed those four lying aliases entirely.  No
+//                   backwards-compat shim — call sites that wanted
+//                   the floor `is_well_formed_v` must spell it out.
+//   FIXY-V-069:     RESTORES the four aliases, now over HONEST
+//                   substrate predicates from sessions/SessionPhi.h.
+//                   Each predicate is now sound-but-conservatively-
+//                   incomplete (rejects more protocols than FX's
+//                   coinductive definitions would, but never accepts
+//                   a protocol that genuinely violates the property).
+//                   Additionally REFINES `phi_term_v` / `phi_nterm_v`
+//                   from the previous `is_terminal_state_v`-based
+//                   aliases (which asked the WRONG question — "is
+//                   this state terminal?" not "does this protocol
+//                   terminate?") to the substrate's true-termination
+//                   predicates.
 //
-// When the substrate ships dedicated predicates (Task #346 for df,
-// #348 for term/nterm refinement, #381 for live/live_plus/live_pp),
-// re-introduce the φ-predicates here as actual aliases over those
-// substrate names — at which point the names will match the proofs.
+// ── Lattice ────────────────────────────────────────────────────────
+//
+// Every predicate is STRICTLY STRONGER than its predecessor:
+//
+//   phi_safe ⊇ phi_df ⊇ phi_term ⊇ phi_live_pp
+//                 ⊇ phi_live ⊇ phi_live_plus ⊇ phi_live_pp
+//
+// phi_nterm is a sibling of phi_term (mutually exclusive — no
+// protocol is both terminating and non-terminating); both imply
+// phi_safe.
+//
+// ── Conservatism vs FX paper ──────────────────────────────────────
+//
+// Each fixy alias forwards to the corresponding substrate predicate
+// which witnesses the FX property via a STRUCTURAL refutation
+// strategy (find a deadlock witness / non-terminating loop body /
+// dead-branch payload duplicate).  Coinductive full decision is
+// deferred — see GAPS-FIXY-Sess-PhiRestore for future strengthening
+// from "structurally rejected" to "coinductively decided".
 
 template <typename P>
 inline constexpr bool phi_safe_v =
-    ::crucible::safety::proto::is_well_formed_v<P>;
+    ::crucible::safety::proto::phi_safe_v<P>;
+
+template <typename P>
+inline constexpr bool phi_df_v =
+    ::crucible::safety::proto::phi_df_v<P>;
 
 template <typename P>
 inline constexpr bool phi_term_v =
-    ::crucible::safety::proto::is_terminal_state_v<P>;
+    ::crucible::safety::proto::phi_term_v<P>;
 
 template <typename P>
 inline constexpr bool phi_nterm_v =
-    !::crucible::safety::proto::is_terminal_state_v<P>;
+    ::crucible::safety::proto::phi_nterm_v<P>;
+
+template <typename P>
+inline constexpr bool phi_live_v =
+    ::crucible::safety::proto::phi_live_v<P>;
+
+template <typename P>
+inline constexpr bool phi_live_plus_v =
+    ::crucible::safety::proto::phi_live_plus_v<P>;
+
+template <typename P>
+inline constexpr bool phi_live_pp_v =
+    ::crucible::safety::proto::phi_live_pp_v<P>;
 
 // ─── Crash-stop family (BSYZ22 / BHYZ23) ──────────────────────────
 //

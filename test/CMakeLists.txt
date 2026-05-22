@@ -1211,6 +1211,20 @@ crucible_test(test_session_view)
 # reports from the rejection tag.
 crucible_test(test_session_subtype_reason)
 
+# φ predicate family (FIXY-V-069, tasks #346/#348/#381) —
+# FX paper §11.18's 7-level safety hierarchy (safe / df / term /
+# nterm / live / live+ / live++) implemented as compile-time
+# variable templates over the substrate protocol-tree universe.
+# Each predicate uses structural refutation (find a deadlock /
+# non-termination / dead-branch witness): SOUND (accepted ⇒ has
+# the property) but conservatively incomplete (some FX-safe
+# protocols may be rejected).  Lattice ordering verified via
+# implication chain phi_live_pp ⇒ phi_live_plus ⇒ phi_live ⇒
+# phi_df ⇒ phi_safe; phi_term ∧ phi_nterm proven mutually
+# exclusive.  Backs fixy/Sess.h::phi_*_v re-exports (restoring
+# the 4 dropped by CR-12 + refining phi_term/phi_nterm).
+crucible_test(test_session_phi)
+
 # Lazy-established session channels (#403, SAFEINT-B14).
 # LazyEstablishedChannel<Proto, Resource> wraps PublishOnce so
 # session establishment is asynchronous and structurally correct:
@@ -8340,6 +8354,18 @@ crucible_neg_compile_test(neg_session_queue_head_empty
 # L5 SessionAssoc.h — assert_associated on Γ missing a role.
 crucible_neg_compile_test(neg_session_assoc_missing_role
     "condition .1. fails")
+
+# L7 SessionPhi.h — assert_phi_df<P>() on protocol with structural
+# deadlock (empty Select<> branch).  Witnesses that the φ_df gate
+# fires its classified [PhiDfViolation_HasEmptyBranch] static_assert.
+crucible_neg_compile_test(neg_session_phi_df_empty_branch
+    "PhiDfViolation_HasEmptyBranch")
+
+# L7 SessionPhi.h — assert_phi_term<P>() on protocol with unbounded
+# loop (every branch returns to Continue).  Witnesses that the φ_term
+# gate fires [PhiTermViolation_HasUnboundedLoop] static_assert.
+crucible_neg_compile_test(neg_session_phi_term_unbounded_loop
+    "PhiTermViolation_HasUnboundedLoop")
 
 # L8 SessionCrash.h — assert_has_crash_branch_for on missing branch.
 crucible_neg_compile_test(neg_session_crash_branch_missing
