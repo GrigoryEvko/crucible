@@ -608,6 +608,25 @@ add_test(NAME syscall_capability
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.sh)
 set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-100")
+# FIXY-V-210 process-spawn discipline (Agent 7 migration item 10 —
+# closes the regression-prevention surface for raw fork/exec/
+# posix_spawn/system/popen calls landing in production code).
+# scripts/check-fixy-spawn-discipline.sh + the GLOBAL property
+# CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS (CMakeLists.txt) form a coupled
+# pair: the script bans raw OS process-spawn calls in production
+# code; the CMake property is the opt-in surface for directories
+# that legitimately need shell-out.  Initial set is empty — no
+# production code today invokes any of the banned APIs outside
+# permission_fork (CSL parallel-rule, NOT OS fork) / session_fork /
+# cooperative_fork.  Self-test plants bare + qualified + suppression
+# + allowlist + stale-entry violations to verify every axis works.
+add_test(NAME spawn_discipline_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-spawn-discipline.sh
+          --self-test)
+add_test(NAME spawn_discipline
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-spawn-discipline.sh)
+set_tests_properties(spawn_discipline spawn_discipline_self_test PROPERTIES
+    LABELS "ci_guard;fixy-V-210")
 # FIXY-U-101 row-membership discipline (closes fixy-A5-039
 # regression-prevention surface).  scripts/check-row-contains-discipline.sh
 # flags inline `effects::row_contains_v<row_type_of_t<Ctx>, ...>` sites

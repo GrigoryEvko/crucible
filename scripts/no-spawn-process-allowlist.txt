@@ -1,0 +1,18 @@
+# scripts/no-spawn-process-allowlist.txt — FIXY-V-210 per-line opt-in
+#
+# Format: one `path:line` per line, relative to repo root.
+# Lines starting with `#` are comments.
+#
+# Companion to the GLOBAL CMake property CRUCIBLE_SPAWN_ALLOW_PROCESS_PATHS
+# (per-directory opt-in, preferred when shell-out is a cluster of calls)
+# and to inline `// SPAWN-PROCESS-OK: <reason>` markers (one-off case).
+# Use THIS file when you need exactly one line exempt and neither (1)
+# directory-wide grant nor (2) inline marker fits.  Each entry below
+# must have a comment on the preceding line explaining WHY this raw
+# spawn is correct — reviewers consult this file as the central audit
+# surface for every spawn-discipline waiver in the repo.
+#
+# CURRENTLY EMPTY: zero production sites need OS process spawn today
+# (verified via scripts/check-fixy-spawn-discipline.sh).  Future entries
+# must justify why permission_fork / std::jthread / Met(X) effect rows
+# don't suffice for the use case.
