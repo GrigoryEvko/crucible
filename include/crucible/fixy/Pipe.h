@@ -46,10 +46,12 @@
 // Zero.  using-declarations are pure name-lookup directives.
 
 #include <crucible/concurrent/Endpoint.h>
+#include <crucible/concurrent/ParallelismRule.h>  // V-076: WorkBudget / ParallelismRule / Tier / NumaPolicy
 #include <crucible/concurrent/Pipeline.h>
 #include <crucible/concurrent/Stage.h>
 #include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/concurrent/WorkingSet.h>        // V-076: working-set helpers
 #include <type_traits>  // FIXY-U-103 sentinel uses std::is_same_v
 
 namespace crucible::fixy::pipe {
@@ -227,20 +229,77 @@ using ::crucible::concurrent::CtxFitsPipelineDagMint;
 using ::crucible::concurrent::CtxFitsMpmcStageFromEndpoints;
 using ::crucible::concurrent::CtxFitsSwmrStageFromEndpoint;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── Cost-model surface (V-076) ─────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// `ParallelismRule` + `WorkBudget` + the WorkingSet helpers belong on
+// the same fixy:: layer as the Pipeline/Stage minters above — a stage
+// that fits a ctx still needs a cost-model gate to decide whether to
+// run sequentially, fan to N workers, and how to bind workers to NUMA
+// nodes.  Re-exporting at `fixy::pipe::` keeps the cost-model story
+// reachable without descending into `crucible::concurrent::*` directly.
+//
+// Distinct from `fixy::perf::TaggedParallelismDecision` (V-074-AUDIT)
+// — that re-exports the PROFILER's Tagged-typed output.  The substrate
+// `ParallelismDecision` here is the BARE struct the rule emits before
+// any profiler attestation.
+
+// ── ParallelismRule surface ────────────────────────────────────────
+//
+// `WorkBudget` is the read-bytes / write-bytes / item-count input.
+// `Tier` + `NumaPolicy` are the cost-model enums.
+// `ParallelismDecision` is the bare output struct (Kind + factor +
+// numa + tier).  `ParallelismRule` is the stateless utility class
+// (classify + recommend + budget_for_span).  `recommend_parallelism`
+// is the free-function shorthand.
+
+using ::crucible::concurrent::WorkBudget;
+using ::crucible::concurrent::Tier;
+using ::crucible::concurrent::NumaPolicy;
+using ::crucible::concurrent::ParallelismDecision;
+using ::crucible::concurrent::ParallelismRule;
+using ::crucible::concurrent::recommend_parallelism;
+
+// ── WorkingSet helpers (WorkingSet.h) ──────────────────────────────
+//
+// Compile-time facts used to compose per-stage / per-pipeline
+// aggregate working-set sizes.  No runtime probing; no allocation.
+// `hot_path_cache_line_bytes` = 64 (the InitSafe-pinned x86_64 +
+// aarch64 line width).  `unknown_per_call_working_set` = SIZE_MAX
+// (sentinel — used when a stage's WS isn't a static fact).
+//
+//   cell_line_footprint(N)           — ceil(N to nearest 64 B)
+//   lines_plus_cell_working_set_v    — control_lines * 64 + cell ceil
+//   saturating_ws_add(a, b)          — saturating sum into SIZE_MAX
+//   has_static_per_call_working_set  — trait
+//   has_static_per_call_working_set_v — _v alias
+//   per_call_working_set_of_v        — pulls the static, or returns SIZE_MAX
+
+using ::crucible::concurrent::hot_path_cache_line_bytes;
+using ::crucible::concurrent::unknown_per_call_working_set;
+using ::crucible::concurrent::cell_line_footprint;
+using ::crucible::concurrent::lines_plus_cell_working_set_v;
+using ::crucible::concurrent::saturating_ws_add;
+using ::crucible::concurrent::has_static_per_call_working_set;
+using ::crucible::concurrent::has_static_per_call_working_set_v;
+using ::crucible::concurrent::per_call_working_set_of_v;
+
 }  // namespace crucible::fixy::pipe
 
 // ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
 //
-// Drift-catch for the 31 using-decls above (U-103 baseline 18 +
-// U-050 extension +13; see per-extension breakdown at the
-// cardinality constant below).  Substrate identity witnessed via
-// std::is_same_v on the four type carriers (Endpoint, Stage,
-// Pipeline, Direction); cardinality witness traps additions or
-// removals at every consumer's include time, not just inside
-// test/test_fixy_pipe.cpp.  Same recipe as fixy/Bridge.h::self_test
-// + fixy/Diag.h::self_test + fixy/Handle.h::self_test.  Doc-block
-// prose count refreshed by FIXY-U-132 to match U-050 post-extension
-// state (Class G drift — comment count drifting from constant).
+// Drift-catch for the 45 using-decls above (U-103 baseline 18 +
+// U-050 extension +13 + V-076 extension +14; see per-extension
+// breakdown at the cardinality constant below).  Substrate identity
+// witnessed via std::is_same_v on the type carriers (Endpoint, Stage,
+// Pipeline, Direction, WorkBudget, Tier, NumaPolicy,
+// ParallelismDecision, ParallelismRule); cardinality witness traps
+// additions or removals at every consumer's include time, not just
+// inside test/test_fixy_pipe.cpp.  Same recipe as fixy/Bridge.h::
+// self_test + fixy/Diag.h::self_test + fixy/Handle.h::self_test.
+// Doc-block prose count refreshed by FIXY-V-076 (Class G drift —
+// comment count drifting from constant).
 
 namespace crucible::fixy::pipe::self_test {
 
@@ -252,6 +311,35 @@ static_assert(std::is_same_v<
     ::crucible::concurrent::Direction>,
     "fixy::pipe::Direction must alias substrate enum");
 
+// V-076 type-identity witnesses — type carriers must alias substrate.
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::WorkBudget,
+    ::crucible::concurrent::WorkBudget>,
+    "fixy::pipe::WorkBudget must alias substrate struct");
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::Tier,
+    ::crucible::concurrent::Tier>,
+    "fixy::pipe::Tier must alias substrate enum");
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::NumaPolicy,
+    ::crucible::concurrent::NumaPolicy>,
+    "fixy::pipe::NumaPolicy must alias substrate enum");
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::ParallelismDecision,
+    ::crucible::concurrent::ParallelismDecision>,
+    "fixy::pipe::ParallelismDecision must alias substrate struct");
+static_assert(std::is_same_v<
+    ::crucible::fixy::pipe::ParallelismRule,
+    ::crucible::concurrent::ParallelismRule>,
+    "fixy::pipe::ParallelismRule must alias substrate utility class");
+// V-076 constant witnesses — the constexpr values must come from
+// substrate exactly (catches accidental re-definition rather than
+// re-export).
+static_assert(::crucible::fixy::pipe::hot_path_cache_line_bytes ==
+              ::crucible::concurrent::hot_path_cache_line_bytes);
+static_assert(::crucible::fixy::pipe::unknown_per_call_working_set ==
+              ::crucible::concurrent::unknown_per_call_working_set);
+
 // Cardinality witness — surface count of using-decls in this header.
 // Any add/remove of a using-decl above must update this number.
 // U-103 baseline: 18 (Tier-3 mint family + canonical concept gates).
@@ -260,8 +348,11 @@ static_assert(std::is_same_v<
 // CtxFitsVariadicStage / CtxFitsSwmrPublishStage, IsStageEdge /
 // IsStageGraph, CtxFitsPipelineDag / CtxFitsPipelineDagMint,
 // CtxFitsMpmcStageFromEndpoints / CtxFitsSwmrStageFromEndpoint).
-constexpr int pipe_surface_cardinality = 31;
-static_assert(pipe_surface_cardinality == 31,
+// V-076 extension: +14 cost-model re-exports (WorkBudget, Tier,
+// NumaPolicy, ParallelismDecision, ParallelismRule,
+// recommend_parallelism + 8 WorkingSet helpers).
+constexpr int pipe_surface_cardinality = 45;
+static_assert(pipe_surface_cardinality == 45,
     "fixy::pipe:: surface drifted — update Pipe.h using-decls + "
     "this sentinel + test_fixy_pipe.cpp coverage in lockstep.");
 

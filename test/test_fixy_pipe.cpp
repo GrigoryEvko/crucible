@@ -17,6 +17,8 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 
+#include <cstddef>      // V-076 — std::size_t in WorkingSet witnesses
+#include <limits>       // V-076 — numeric_limits in WorkingSet witnesses
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -101,6 +103,65 @@ static_assert(fpipe::CtxFitsPipeline<eff::HotFgCtx,
         conc::Stage<&pass_through_a, eff::HotFgCtx>>
            == conc::CtxFitsPipeline<eff::HotFgCtx,
         conc::Stage<&pass_through_a, eff::HotFgCtx>>);
+
+// ─── V-076 cost-model reach witnesses ──────────────────────────────
+//
+// ParallelismRule + WorkBudget + Tier + NumaPolicy +
+// ParallelismDecision must surface through fixy::pipe:: with the
+// substrate's exact identity.  budget_for_span is the constexpr
+// factory — exercising it under static_assert proves the class is
+// reachable (and not just declared as opaque) through the alias.
+
+static_assert(std::is_same_v<fpipe::WorkBudget, conc::WorkBudget>);
+static_assert(std::is_same_v<fpipe::Tier, conc::Tier>);
+static_assert(std::is_same_v<fpipe::NumaPolicy, conc::NumaPolicy>);
+static_assert(std::is_same_v<fpipe::ParallelismDecision, conc::ParallelismDecision>);
+static_assert(std::is_same_v<fpipe::ParallelismRule, conc::ParallelismRule>);
+
+// Constexpr factory reach — proves ParallelismRule's body is fully
+// substituted via the alias, not just the name.
+static_assert(fpipe::ParallelismRule::budget_for_span<int>(100).read_bytes
+              == 100 * sizeof(int));
+
+// Enum literals reach via fixy::pipe::Tier / NumaPolicy.
+static_assert(fpipe::Tier::L1Resident == conc::Tier::L1Resident);
+static_assert(fpipe::NumaPolicy::NumaSpread == conc::NumaPolicy::NumaSpread);
+
+// ParallelismDecision::Kind reach — substrate enum-class surfaces
+// through the using-decl as a nested name.
+static_assert(fpipe::ParallelismDecision::Kind::Sequential ==
+              conc::ParallelismDecision::Kind::Sequential);
+
+// ─── V-076 WorkingSet helper witnesses ─────────────────────────────
+//
+// cell_line_footprint / lines_plus_cell / saturating_ws_add /
+// has_static_per_call_working_set / per_call_working_set_of_v all
+// surface through fixy::pipe:: with identical compile-time results.
+
+static_assert(fpipe::hot_path_cache_line_bytes == 64);
+static_assert(fpipe::unknown_per_call_working_set ==
+              std::numeric_limits<std::size_t>::max());
+static_assert(fpipe::cell_line_footprint(65) == 128);
+static_assert(fpipe::cell_line_footprint(0) == 0);
+static_assert(fpipe::saturating_ws_add(100, 200) == 300);
+static_assert(fpipe::saturating_ws_add(
+    fpipe::unknown_per_call_working_set, 1) ==
+    fpipe::unknown_per_call_working_set);
+
+// has_static_per_call_working_set witness — the trait surfaces and
+// returns the substrate's answer.
+struct V076StaticWs {
+    static constexpr std::size_t per_call_working_set = 4096;
+};
+struct V076NoStaticWs {};
+
+static_assert(fpipe::has_static_per_call_working_set_v<V076StaticWs>);
+static_assert(!fpipe::has_static_per_call_working_set_v<V076NoStaticWs>);
+
+// per_call_working_set_of_v extractor surfaces correctly.
+static_assert(fpipe::per_call_working_set_of_v<V076StaticWs> == 4096);
+static_assert(fpipe::per_call_working_set_of_v<V076NoStaticWs> ==
+              fpipe::unknown_per_call_working_set);
 
 // ─── 3. Stage / Pipeline round-trip via the alias ─────────────────
 

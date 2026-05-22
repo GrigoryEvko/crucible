@@ -2065,6 +2065,17 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_swmr_stage_non_consumer_ep
 crucible_neg_compile_fixy_test(neg_fixy_pipe_swmr_stage_non_writer
     "CtxFitsSwmrStageFromEndpoint|swmr_stage_from_endpoint_gate|is_swmr_writer|constraints not satisfied|associated constraints are not satisfied")
 
+# ── FIXY-V-076 HS14 — fixy::pipe re-export of cost-model surface
+# (Tier / NumaPolicy / ParallelismDecision / ParallelismRule /
+# WorkBudget + 8 WorkingSet helpers).  Two HS14 fixtures pin the
+# using-decls as TRUE aliases — a regression that silently widens
+# Tier to int (typedef alias) or conflates Tier ↔ NumaPolicy
+# (typedef misorder) would let bad values slip through DetSafe.
+crucible_neg_compile_fixy_test(neg_fixy_pipe_tier_to_int_implicit
+    "cannot convert.*Tier.*to.*int|invalid conversion from .*Tier|narrowing conversion of|enum-conversion|conversion")
+crucible_neg_compile_fixy_test(neg_fixy_pipe_numa_to_tier_implicit
+    "cannot convert.*NumaPolicy.*to.*Tier|invalid conversion from .*NumaPolicy|no known conversion|enum-conversion|conversion")
+
 # ── FIXY-MINT-Bridge — fixy/Bridge.h re-export of wrap factories
 # (mint_recording_session, mint_crash_watched_session,
 # mint_persisted_session, mint_recording_endpoint,
