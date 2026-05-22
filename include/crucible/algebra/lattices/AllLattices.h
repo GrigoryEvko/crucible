@@ -91,6 +91,7 @@
 #include <crucible/algebra/lattices/ResidencyHeatLattice.h> // FOUND-G48  — shipped
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>  // ALGEBRA-10 (#455) — shipped
 #include <crucible/algebra/lattices/StalenessSemiring.h> // ALGEBRA-11 (#456) — shipped
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h> // FIXY-V-097 — shipped (9-tier syscall-family chain)
 #include <crucible/algebra/lattices/ToleranceLattice.h>  // ALGEBRA-14 (#459) — shipped (3/3)
 #include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7  (#452) — shipped
 #include <crucible/algebra/lattices/VendorLattice.h>     // FOUND-G53  — shipped
@@ -230,6 +231,7 @@ static_assert(every_lattice_has_name<
     ResidencyHeatLattice,
     SeqPrefixLattice<LatticeNameProbeElement>,
     StalenessSemiring,
+    SyscallFamilyLattice,
     ToleranceLattice,
     TrustLattice<LatticeNameProbeSource>,
     VendorLattice,
