@@ -2235,6 +2235,23 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_mint_pool_submit_permission_capture
 crucible_neg_compile_fixy_test(neg_fixy_pipe_mint_pool_submit_ctx_no_bg
     "CtxFitsPoolSubmit|CtxOwnsCapability|row_contains|Effect::Bg|constraints not satisfied|associated constraints are not satisfied")
 
+# ── FIXY-V-216 — fixy::handle::EpochVersioned + fixy::bridge::EpochVersioned
+# re-export of safety::EpochVersioned<T> (Canopy fleet epoch + per-Relay
+# generation; FOUND-G68 substrate).  HS14 floor satisfied by two distinct
+# mismatch axes preserved through the alias:
+#   (1) handle_axis_swap   — Strong-typed Epoch/Generation distinction at
+#       ctor parameter position; swapping the (Epoch, Generation) pair
+#       fails because neither newtype is implicitly constructible from
+#       the other.  Tests the AXIS rejection axis.
+#   (2) bridge_cross_t_combine — combine_max requires same-T on both
+#       sides of the fan-in fold; EpochVersioned<int>::combine_max with
+#       EpochVersioned<double> argument fails for cross-T composition.
+#       Tests the COMPOSITION rejection axis.
+crucible_neg_compile_fixy_test(neg_fixy_handle_epoch_versioned_axis_swap
+    "EpochVersioned|Epoch|Generation|no matching function|cannot convert|no known conversion")
+crucible_neg_compile_fixy_test(neg_fixy_bridge_epoch_versioned_cross_t_combine
+    "EpochVersioned|combine_max|no matching function|cannot convert|no known conversion")
+
 # ── FIXY-MINT-Bridge — fixy/Bridge.h re-export of wrap factories
 # (mint_recording_session, mint_crash_watched_session,
 # mint_persisted_session, mint_recording_endpoint,

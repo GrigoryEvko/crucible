@@ -106,8 +106,12 @@
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/bridges/SessionPersistence.h>
 #include <crucible/bridges/VigilModeHandle.h>
+#include <crucible/fixy/Handle.h>                    // FIXY-V-216 — cross-tier identity sentinel
 #include <crucible/permissions/PermissionInherit.h>  // FIXY-U-070 sentinel
                                                      //   uses survivor_registry
+#include <crucible/safety/EpochVersioned.h>          // FIXY-V-216 — dual-export at bridge tier
+
+#include <cstdint>                                    // FIXY-V-216 sentinel uses std::uint64_t
 #include <type_traits>                                // FIXY-U-070 sentinel
 
 namespace crucible::fixy::bridge {
@@ -253,6 +257,33 @@ using ::crucible::mint_vigil_mode_bridge;
 
 using ::crucible::safety::mint_atomic_session;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── EpochVersioned<T> — fleet-epoch + per-Relay generation wrapper ─
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-V-216 (Agent 8 Part 4 #2 + Part 10 #8): dual-export of the
+// `safety/EpochVersioned.h` substrate wrapper that ALREADY backs
+// SessionPersistence's checkpoint headers, RecordingSessionHandle's
+// event-log emission, and the Cipher cold-tier roll-forward index.
+// The substrate ships at `crucible::safety::EpochVersioned<T>` and is
+// also re-exported at `fixy::handle::EpochVersioned` for handle-tier
+// consumers (TraceRing wrappers, PublishSlot publishers).  Bridges
+// consume the same wrapper to tag checkpoint values with the
+// (committed_epoch, local_generation) pair at which they were produced
+// — without this `using`, a band-3 bridge author had to reach into
+// `safety::` directly, bypassing the fixy:: discipline that catches
+// substrate-identity drift at the umbrella boundary.
+//
+// The Epoch + Generation strong-typed newtypes are re-exported too so
+// admission-gate sites can spell the axes via `fixy::bridge::Epoch{...}`
+// without descending into safety::.  Cross-axis confusion (passing a
+// Generation where an Epoch is expected) is a substrate-level compile
+// error preserved through the alias — verified by neg-fixture #1.
+
+using ::crucible::safety::Epoch;
+using ::crucible::safety::Generation;
+using ::crucible::safety::EpochVersioned;
+
 }  // namespace crucible::fixy::bridge
 
 // ─── Dual-export sentinel — FIXY-U-070 ─────────────────────────────
@@ -361,5 +392,72 @@ constexpr int crash_event_surface_cardinality = 6;
 static_assert(crash_event_surface_cardinality == 6,
     "fixy::bridge:: crash-event surface cardinality drifted — update "
     "Bridge.h sentinel block to match the substrate.");
+
+// FIXY-V-216 — EpochVersioned dual-export sentinels.  The wrapper is
+// also re-exported in fixy::handle::; the bridge-tier alias MUST
+// resolve to the IDENTICAL substrate type so a value attached at
+// handle tier (e.g. a TraceRing entry) and a value attached at
+// bridge tier (e.g. a checkpoint header) share representation when
+// they flow through the same Cipher cold-tier index.
+//
+// 1. Strong-typed axis identity preserved through alias.
+
+struct BridgeProbeEpochT {};
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::bridge::Epoch,
+    ::crucible::safety::Epoch>,
+    "fixy::bridge::Epoch must alias safety::Epoch — Canopy fleet-"
+    "epoch identity drift would break checkpoint admission gates "
+    "at bridge tier.");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::bridge::Generation,
+    ::crucible::safety::Generation>,
+    "fixy::bridge::Generation must alias safety::Generation — "
+    "per-Relay restart counter identity drift would silently equate "
+    "Generation and Epoch at the bridge-tier admission gates.");
+
+// 2. Wrapper template identity preserved through alias.
+static_assert(std::is_same_v<
+    ::crucible::fixy::bridge::EpochVersioned<BridgeProbeEpochT>,
+    ::crucible::safety::EpochVersioned<BridgeProbeEpochT>>,
+    "fixy::bridge::EpochVersioned<T> must alias safety::EpochVersioned<T> "
+    "— bridge-tier checkpoint values flow through Cipher cold-tier as "
+    "the same byte-representation handle-tier consumers see; drift "
+    "here breaks the federation cache key (FOUND-G68 row_hash).");
+
+// 3. Cross-tier representation identity — handle and bridge aliases
+//    MUST resolve to one substrate type.  Otherwise a value attached
+//    at handle tier cannot be admission-gated at bridge tier without
+//    a retag (which would force a fresh row_hash and miss the
+//    federation cache).
+static_assert(std::is_same_v<
+    ::crucible::fixy::bridge::EpochVersioned<BridgeProbeEpochT>,
+    ::crucible::fixy::handle::EpochVersioned<BridgeProbeEpochT>>,
+    "fixy::bridge::EpochVersioned<T> and fixy::handle::EpochVersioned<T> "
+    "MUST share substrate identity — dual-export discipline; drift would "
+    "force a retag at every handle→bridge crossing and invalidate the "
+    "FOUND-G68 row_hash federation cache key.");
+
+// 4. REGIME-4 storage contract — same as handle-tier sentinel, but
+//    surfaced at the bridge boundary too so a contributor reading
+//    Bridge.h doesn't have to grep into Handle.h to verify the
+//    contract.
+static_assert(
+    sizeof(::crucible::fixy::bridge::EpochVersioned<std::uint8_t>) >=
+        sizeof(std::uint64_t) * 2 + sizeof(std::uint8_t),
+    "fixy::bridge::EpochVersioned<T> must carry at least 16 bytes of "
+    "grade (Epoch + Generation) — REGIME-4 storage contract; drift "
+    "would silently shrink checkpoint headers below the (epoch, gen) "
+    "pair required by Cipher cold-tier roll-forward.");
+
+// FIXY-V-216 cardinality witness — 3 EpochVersioned-axis aliases
+// surfaced at fixy::bridge:: (Epoch, Generation, EpochVersioned<T>).
+constexpr int epoch_versioned_surface_cardinality = 3;
+static_assert(epoch_versioned_surface_cardinality == 3,
+    "fixy::bridge:: EpochVersioned surface cardinality drifted — "
+    "update Bridge.h sentinel block (FIXY-V-216) to track the "
+    "substrate EpochVersioned axis surface.");
 
 }  // namespace crucible::fixy::bridge::self_test

@@ -61,10 +61,12 @@
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/handles/PublishOnce.h>
 #include <crucible/safety/AlignedBuffer.h>     // FIXY-U-016b — RAII over-aligned buffer
+#include <crucible/safety/EpochVersioned.h>    // FIXY-V-216 — fleet-epoch + per-Relay generation
 #include <crucible/safety/HugePageBuffer.h>    // FIXY-V-034 — 2-MB-aligned RAII buffer
 #include <crucible/safety/OwnedFile.h>         // FIXY-V-032 audit — std::FILE* RAII
 #include <crucible/safety/PublishCommit.h>     // FIXY-U-016b — typed publish/commit cell
 
+#include <cstdint>       // FIXY-V-216 sentinel: std::uint8_t / std::uint64_t
 #include <type_traits>   // dual-export sentinel uses std::is_same_v
 
 namespace crucible::fixy::handle {
@@ -148,6 +150,32 @@ using ::crucible::safety::PublishCommitCell;
 // fixy::handle::; ADL routes through the substrate symbol unchanged.
 using ::crucible::safety::open_read;
 using ::crucible::safety::open_write_truncate;
+
+// ── Epoch / Generation strong-typed newtypes ───────────────────────
+// (FIXY-V-216) The (epoch, generation) pair attached to every
+// EpochVersioned<T> value.  Mixing the two axes (passing a Generation
+// where an Epoch is expected, or vice versa) is a compile error at
+// the substrate; the alias preserves that distinction at the fixy::
+// boundary so handle-tier consumers cannot launder the type via
+// `using ::crucible::safety::Epoch` themselves.
+using ::crucible::safety::Epoch;
+using ::crucible::safety::Generation;
+
+// ── EpochVersioned<T> — fleet-epoch + per-Relay generation wrapper ─
+// (FIXY-V-216) Per-instance Canopy fleet-epoch + Relay-generation
+// pair (FOUND-G68 substrate).  Used at every Canopy collective,
+// every reshard event, every Cipher hot-tier replication, and every
+// Keeper recovery path that loads a checkpoint.  Handle-tier
+// consumers (TraceRing wrappers, MetaLog readers, PublishSlot
+// publishers) attach (epoch, generation) to the value they hold so
+// downstream admission gates can reject stale-view reads via
+// `.is_at_least(min_epoch, min_gen)`.  Dual-exported at
+// `fixy::bridge::EpochVersioned` for bridge-tier consumers
+// (RecordingSessionHandle, PersistedSessionHandle).  Agent 8 Part 4
+// #2 + Part 10 #8: closes the gap where bridges/SessionPersistence.h
+// uses EpochVersioned implicitly but fixy/Bridge.h had no `using`
+// for the wrapper — see FOUND-G70 (production-call-site task).
+using ::crucible::safety::EpochVersioned;
 
 }  // namespace crucible::fixy::handle
 
@@ -403,12 +431,62 @@ static_assert(std::is_same_v<
     "safety::open_write_truncate — Cipher spill / federation entry "
     "write path depends on identity preservation.");
 
-// Cardinality witness: 15 aliases surfaced; future additions to
+// FIXY-V-216 — Epoch / Generation strong-typed newtype identity.
+// The two-axis distinction is load-bearing: Canopy reshards advance
+// Epoch (Raft-committed fleet membership); Relay restarts advance
+// Generation (local).  Mixing axes (passing Generation where Epoch
+// is expected) is a substrate-level compile error; the alias must
+// preserve identity exactly so handle-tier consumers can't launder
+// the distinction through the fixy:: surface.
+static_assert(std::is_same_v<
+    ::crucible::fixy::handle::Epoch,
+    ::crucible::safety::Epoch>,
+    "fixy::handle::Epoch must alias safety::Epoch — Canopy fleet-"
+    "epoch identity drift would break the EpochVersioned axis "
+    "distinction at every handle-tier admission gate.");
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::handle::Generation,
+    ::crucible::safety::Generation>,
+    "fixy::handle::Generation must alias safety::Generation — per-"
+    "Relay restart counter identity drift would silently equate "
+    "Generation and Epoch at consumer sites that rely on strong-"
+    "typed C++ overload resolution.");
+
+// FIXY-V-216 — EpochVersioned<T> wrapper identity (dual-export sentinel).
+// Mirrors the discipline in fixy/Bridge.h: bridge-tier consumers
+// (RecordingSessionHandle, PersistedSessionHandle) and handle-tier
+// consumers (TraceRing wrappers, PublishSlot publishers) MUST see
+// the same EpochVersioned<T> spelling so a value attached at one
+// tier can be admission-gated at the other without retag laundering.
+static_assert(std::is_same_v<
+    ::crucible::fixy::handle::EpochVersioned<HandleProbeT>,
+    ::crucible::safety::EpochVersioned<HandleProbeT>>,
+    "fixy::handle::EpochVersioned<T> must alias safety::EpochVersioned<T> "
+    "— Canopy fleet-state versioning identity must not drift across the "
+    "umbrella boundary; drift would silently bypass is_at_least admission "
+    "gates and re-admit pre-reshard checkpoints (CRUCIBLE.md §L14).");
+
+// FIXY-V-216 — sizeof contract.  EpochVersioned is REGIME-4 (per-
+// instance grade with TWO non-empty fields): `sizeof(T) + 16 bytes`
+// of grade (Epoch + Generation, each uint64_t) + alignment padding.
+// Critical for handle-tier consumers that allocate epoch-attached
+// values from arenas: a drift here would silently inflate per-region
+// memory plan offsets and break the L1d-residency budget.
+static_assert(
+    sizeof(::crucible::fixy::handle::EpochVersioned<std::uint8_t>) >=
+        sizeof(std::uint64_t) * 2 + sizeof(std::uint8_t),
+    "fixy::handle::EpochVersioned<T> must carry at least 16 bytes of "
+    "grade (Epoch + Generation) — drift would silently break the "
+    "REGIME-4 storage contract documented in safety/EpochVersioned.h.");
+
+// Cardinality witness: 18 aliases surfaced; future additions to
 // handles/ MUST extend this block + add a substrate type below.
 // FIXY-V-034: bumped 13 → 14 for HugePageBuffer<T>.
 // FIXY-V-032-audit: bumped 14 → 15 for OwnedFile.
-constexpr int handle_alias_cardinality = 15;
-static_assert(handle_alias_cardinality == 15,
+// FIXY-V-216: bumped 15 → 18 for Epoch + Generation + EpochVersioned<T>.
+constexpr int handle_alias_cardinality = 18;
+static_assert(handle_alias_cardinality == 18,
     "fixy::handle:: cardinality changed — update Handle.h sentinel "
     "block to track the substrate handles/ surface.");
 
