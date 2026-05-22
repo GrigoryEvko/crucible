@@ -68,9 +68,36 @@ USAGE
 # Mirror of CMake CRUCIBLE_FIXY_ONLY target property.  Add paths here
 # AND register `set_target_properties(... PROPERTIES CRUCIBLE_FIXY_ONLY ON)`
 # when a new directory opts in.  Order is presentational only.
+#
+# FIXY-V-070 — Band-3 expansion (Agent 2 CRITICAL-1).  fixy.md §5.3
+# names cntp/, canopy/, cog/, topology/, forge/, mimic/, observe/,
+# warden/ as "fixy-only from 17 May 2026 onward".  Each is added
+# below for both include/ and src/ trees so the safety::fn::Fn<
+# reach-past-the-umbrella gate fires on any future raw instantiation
+# (current site count in these dirs: 0 — allowlist stays empty;
+# CI catches new regressions).  Wider substrate types (Refined,
+# Tagged, Linear, etc.) remain on the original safety:: spelling
+# inside band-3 dirs; their fixy:: re-export migration is tracked
+# under FIXY-V-073 + FIXY-U-099.
 CRUCIBLE_FIXY_ONLY_PATHS=(
     examples/fn
     test/fixy_neg
+    include/crucible/cntp
+    include/crucible/canopy
+    include/crucible/cog
+    include/crucible/topology
+    include/crucible/forge
+    include/crucible/mimic
+    include/crucible/observe
+    include/crucible/warden
+    src/cntp
+    src/canopy
+    src/cog
+    src/topology
+    src/forge
+    src/mimic
+    src/observe
+    src/warden
 )
 
 case "${1:-}" in
