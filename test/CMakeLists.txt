@@ -196,6 +196,7 @@ crucible_test(test_fixy_modality)       # FIXY-U-060 — top-level modality surf
 crucible_test(test_fixy_sess_federation) # FIXY-U-072 — federation per-role reach
 crucible_test(test_fixy_cap)
 crucible_test(test_fixy_canopy)  # FIXY-V-213 — fixy::canopy::mint_hlc re-export sentinel
+crucible_test(test_fixy_observe) # FIXY-V-214 — fixy::observe:: metrics writer/reader mints sentinel
 crucible_test(test_fixy_perm)
 crucible_test(test_fixy_handle)  # FIXY-U-016 — per-namespace test_fixy_handle sentinel TU
 crucible_test(test_fixy_kernel)  # FIXY-V-038 — fixy::kernel:: Reduction + reduce_into surface
@@ -12068,3 +12069,29 @@ crucible_neg_compile_fixy_test(neg_fixy_canopy_mint_hlc_wrong_cap
     "cannot convert|no matching function|could not convert|Init|Bg")
 crucible_neg_compile_fixy_test(neg_fixy_canopy_mint_hlc_no_arg
     "no matching function|too few arguments|mint_hlc")
+
+# ── FIXY-V-214 — fixy::observe:: SWMR metrics mints HS14 ──────────
+#
+# fixy/Observe.h re-exports three §XXI mint factories from the
+# SWMR runtime metrics surface — one writer + two readers (keeper /
+# canopy roles).  Three fixtures, one per mint, cover distinct
+# mismatch classes:
+#
+#   #1 mint_metrics_writer WRONG PERMISSION TAG — passing
+#      Permission<ReaderTag> where Permission<WriterTag> is required
+#      must fail the conversion at the fixy:: surface, same as the
+#      bare substrate call (proves the typed Permission discipline
+#      survives the using-decl).
+#   #2 mint_keeper_metrics_reader NO ARG — overload resolution
+#      failure when calling without the RuntimeMetricsChannel&
+#      argument; proves the reader factory's positional discipline.
+#   #3 mint_canopy_metrics_reader WRONG TYPE — passing an int where
+#      RuntimeMetricsChannel& is expected fires the reference-binding
+#      conversion error; proves the channel parameter is strongly
+#      typed (not a void-pointer escape hatch).
+crucible_neg_compile_fixy_test(neg_fixy_observe_mint_metrics_writer_wrong_perm_tag
+    "cannot convert|no matching function|could not convert|Permission|WriterTag|ReaderTag")
+crucible_neg_compile_fixy_test(neg_fixy_observe_mint_keeper_metrics_reader_no_arg
+    "no matching function|too few arguments|mint_keeper_metrics_reader")
+crucible_neg_compile_fixy_test(neg_fixy_observe_mint_canopy_metrics_reader_wrong_arg
+    "cannot convert|no matching function|could not convert|invalid initialization|int")
