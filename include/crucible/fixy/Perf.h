@@ -187,6 +187,29 @@ using ::crucible::perf::mint_workload_profiler;
 using ::crucible::perf::CtxFitsWorkloadProfilerMint;
 using ::crucible::perf::WorkloadProfiler;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-V-074 — WorkloadProfiler decision dispatch surface ──────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Companion to `mint_workload_profiler` above.  Once a profiler is
+// minted, its `recommend(budget)` returns a `TaggedParallelismDecision`
+// — a phantom-typed `Tagged<ParallelismDecision, source::WorkloadProfiler>`
+// proving the decision originated from a profiler instance, not a
+// hand-crafted bare `ParallelismDecision`.
+//
+// `dispatch_workload_decision` is the only routing site that admits
+// the Tagged form; its `CtxFitsWorkloadDecisionDispatch` requires the
+// caller's ctx to carry `Effect::Bg` in the row.  HotFgCtx (empty row)
+// is rejected — V-074's load-bearing claim that profiler-authority
+// decisions never escape into the foreground.
+//
+// Both forms surface here so band-3 production code never reaches past
+// the `fixy::perf::` umbrella for V-074 dispatch.
+
+using ::crucible::perf::TaggedParallelismDecision;
+using ::crucible::perf::CtxFitsWorkloadDecisionDispatch;
+using ::crucible::perf::dispatch_workload_decision;
+
 }  // namespace crucible::fixy::perf
 
 // ─── Dual-export sentinel — FIXY-U-121 ─────────────────────────────
@@ -246,6 +269,17 @@ static_assert(std::is_same_v<
     ::crucible::fixy::perf::WorkloadProfiler,
     ::crucible::perf::WorkloadProfiler>,
     "fixy::perf::WorkloadProfiler must alias substrate.");
+
+// ─── FIXY-V-074 — dispatch surface identity witness ────────────────
+//
+// TaggedParallelismDecision is the Tagged-wrapped form returned by
+// WorkloadProfiler::recommend(); dispatch_workload_decision is the
+// only routing site that admits it.  Both alias the substrate.
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::perf::TaggedParallelismDecision,
+    ::crucible::perf::TaggedParallelismDecision>,
+    "fixy::perf::TaggedParallelismDecision must alias substrate.");
 
 // ─── Positive concept admittance (ColdInitCtx — the Init-row carrier)
 //
@@ -357,6 +391,37 @@ static_assert(!::crucible::fixy::perf::CtxFitsWorkloadProfilerMint<
     ::crucible::effects::HotFgCtx>,
     "fixy::perf::CtxFitsWorkloadProfilerMint must reject HotFgCtx.");
 
+// ─── FIXY-V-074 — dispatch concept admittance witnesses ────────────
+//
+// CtxFitsWorkloadDecisionDispatch admits contexts whose effect row
+// carries `Effect::Bg`.  Discipline is ORTHOGONAL to the mint gate
+// above (which admits Init-row ctx) — minting a profiler is a
+// once-per-fleet Init-time action; routing its decisions is a
+// per-iteration Bg-time action.  The four sentinel ctx types
+// witness both halves of the gate.
+
+// Bg-row contexts (BgDrainCtx + BgCompileCtx): admitted.
+static_assert(::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<
+    ::crucible::effects::BgDrainCtx>,
+    "fixy::perf::CtxFitsWorkloadDecisionDispatch must admit BgDrainCtx.");
+
+static_assert(::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<
+    ::crucible::effects::BgCompileCtx>,
+    "fixy::perf::CtxFitsWorkloadDecisionDispatch must admit BgCompileCtx.");
+
+// Empty / Init-only rows: rejected.  HotFgCtx (empty row) is the
+// load-bearing rejection — V-074 prohibits routing profiler-authored
+// decisions through the foreground hot-call site.
+static_assert(!::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<
+    ::crucible::effects::HotFgCtx>,
+    "fixy::perf::CtxFitsWorkloadDecisionDispatch must reject HotFgCtx "
+    "(empty Row<> — V-074's load-bearing rejection).");
+
+static_assert(!::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<
+    ::crucible::effects::ColdInitCtx>,
+    "fixy::perf::CtxFitsWorkloadDecisionDispatch must reject ColdInitCtx "
+    "(Init row carries no Bg).");
+
 // ─── Cardinality witness ─────────────────────────────────────────
 //
 // Eight V1 mint factories surface through `fixy::perf::`.  The ninth
@@ -418,6 +483,15 @@ inline void runtime_smoke_test() noexcept {
     (void)admits_cold;
     (void)rejects_bg;
     (void)rejects_hot;
+
+    // FIXY-V-074 — dispatch concept admits Bg-row ctx, rejects empty/Init.
+    // Orthogonal gate from the mint family above.
+    constexpr bool dispatch_admits_bg = CtxFitsWorkloadDecisionDispatch<
+        ::crucible::effects::BgDrainCtx>;
+    constexpr bool dispatch_rejects_hot = !CtxFitsWorkloadDecisionDispatch<
+        ::crucible::effects::HotFgCtx>;
+    (void)dispatch_admits_bg;
+    (void)dispatch_rejects_hot;
 }
 
 }  // namespace crucible::fixy::perf

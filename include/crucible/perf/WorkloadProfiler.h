@@ -60,14 +60,31 @@
 //     crucible::perf::WorkloadProfiler profiler{
 //         &senses, crucible::effects::testing::init()};
 //
+//     // The dispatch path requires a Bg-row ctx (BgDrainCtx / BgCompileCtx);
+//     // the foreground hot-call site holds no capability and is rejected
+//     // by `CtxFitsWorkloadDecisionDispatch` at the call-site requires-clause.
+//     crucible::effects::BgDrainCtx bg_ctx{};
+//
 //     while (running) {
 //         const auto budget = my_workload.budget();
-//         const auto dec = profiler.recommend(budget);
-//         if (dec.is_parallel()) {
-//             dispatch_parallel(my_workload, dec.factor, dec.numa);
-//         } else {
-//             my_workload.run_inline();
-//         }
+//
+//         // `recommend()` returns Tagged<ParallelismDecision, source::WorkloadProfiler>
+//         // — the type-level proof that the decision originated here.
+//         const auto tagged = profiler.recommend(budget);
+//
+//         // `dispatch_workload_decision` consumes the Tagged form, opens
+//         // the phantom tag inside the function body, and routes to the
+//         // sequential or parallel arm.  A hand-crafted bare
+//         // `ParallelismDecision{Sequential, 1, ...}` cannot reach this
+//         // call site — the signature requires the Tagged wrapper.
+//         dispatch_workload_decision(
+//             bg_ctx, tagged,
+//             [&](const auto& dec) noexcept {
+//                 my_workload.run_inline();
+//             },
+//             [&](const auto& dec) noexcept {
+//                 dispatch_parallel(my_workload, dec.factor, dec.numa);
+//             });
 //     }
 //
 // ─── COST ─────────────────────────────────────────────────────────────

@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-22T06:59:03Z`.
+Snapshot generated: `2026-05-22T07:09:39Z`.
 
 ## bridges/
 
@@ -85,10 +85,10 @@ Snapshot generated: `2026-05-22T06:59:03Z`.
 | `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h:358` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:142` | HS14: 4 |
 | `mint_sched_tp_btf` | `include/crucible/perf/SchedTpBtf.h:194` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:150` | HS14: 4 |
 | `mint_sense_hub` | `include/crucible/perf/SenseHub.h:324` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:158` | HS14: 4 |
-| `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h:594` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:385` | HS14: 4 |
+| `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h:594` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:450` | HS14: 4 |
 | `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h:317` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:166` | HS14: 4 |
 | `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h:203` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:174` | HS14: 4 |
-| `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h:388` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:186` | HS14: 4 |
+| `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h:405` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:186` | HS14: 4 |
 
 ## permissions/
 

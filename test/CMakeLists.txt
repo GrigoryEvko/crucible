@@ -2250,6 +2250,17 @@ crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_hot_fg
 crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_raw_decision
     "no matching function|dispatch_workload_decision|TaggedParallelismDecision|Tagged|ParallelismDecision|cannot convert")
 
+# FIXY-V-074-AUDIT — same two mismatch classes routed through the
+# `fixy::perf::` umbrella re-export instead of the substrate.  Proves
+# the using-decl `crucible::fixy::perf::dispatch_workload_decision`
+# inherits the requires-clause and parameter-type unchanged; closes
+# the audit-found gap where band-3 production code reaching for V-074
+# dispatch had no fixy::-routed negative-compile coverage.
+crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_hot_fg_via_fixy
+    "no matching function|dispatch_workload_decision|CtxFitsWorkloadDecisionDispatch|Bg|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_raw_decision_via_fixy
+    "no matching function|dispatch_workload_decision|TaggedParallelismDecision|Tagged|ParallelismDecision|cannot convert")
+
 # FIXY-U-122 — `fixy::perf::v2::mint_sense_hub_v2` HS14 floor (2
 # fixtures, BgDrainCtx + NotAnExecCtx) routed through the sibling
 # sub-umbrella `<crucible/fixy/perf/V2.h>`.  Closes the final
