@@ -184,9 +184,15 @@ template <std::integral T>
 // ── Compile-time capacity arithmetic (#408 SAFEINT-C19, §19) ────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Session-queue capacities are often computed at compile time:
+// Capacities of bounded containers are often computed at compile time:
 //
-//     using MyRing = MpmcRing<Job, NumProducers * BurstPerProducer>;
+//     // `BoundedQueue<T, N>` here is a STAND-IN for ANY consumer that
+//     // declares its capacity at the type level — e.g. SPSC rings,
+//     // MPMC rings, arenas, plan buffers, RecipePool slots, region
+//     // caches, ChaseLevDeque, MetaLog, etc.  The primitive below is
+//     // consumer-agnostic; the doc cites a concept-name to make the
+//     // shape obvious without preferring any single concrete client.
+//     using MyContainer = BoundedQueue<Job, NumProducers * BurstPerProducer>;
 //
 // A bare `*` is silently wrong if the product overflows the result
 // type — the corrupted capacity propagates into ring-buffer sizing,
@@ -195,6 +201,21 @@ template <std::integral T>
 // `checked_mul` primitives into compile-time-failing arithmetic so
 // the bug becomes a build error with a framework-controlled
 // diagnostic.
+//
+// ─── Layering position (FIXY-V-221) ────────────────────────────────
+//
+// `safety/Checked.h` is an L0 foundation primitive.  Its doc surface
+// MUST NOT name any concrete higher-layer (concurrent/ / cipher/ /
+// forge/ / mimic/ / canopy/ / cog/ / perf/ / warden/ / observe/ /
+// topology/ / cntp/) type as a motivating example, because that would
+// invert the architectural dependency — the foundation describing
+// itself in terms of its consumers.  Documentation examples here use
+// generic concept-names like `BoundedQueue<T, N>` so the primitive's
+// contract reads as "I serve any bounded container's compile-time-
+// capacity math" rather than implying any single canonical use case.
+// Concrete consumer-side docs (in the consumer's own header) ARE free
+// to cite `safe_capacity<...>` from their own doc surfaces; the
+// dependency direction matches the include direction.
 //
 // ─── Routing: helper struct, not consteval-lambda ──────────────────
 //
@@ -213,12 +234,13 @@ template <std::integral T>
 //
 // ─── Use ────────────────────────────────────────────────────────────
 //
-//     // Type-parameterised:
-//     using MyChannel = MpmcRing<Job,
+//     // Type-parameterised (BoundedQueue stands in for any
+//     // bounded-capacity consumer; see Layering position above):
+//     using MyContainer = BoundedQueue<Job,
 //         safe_mul<std::size_t, NumProducers, BurstPerProducer>>;
 //
-//     // size_t convenience (canonical session-queue capacity case):
-//     using MyChannel = MpmcRing<Job,
+//     // size_t convenience (canonical bounded-capacity declaration):
+//     using MyContainer = BoundedQueue<Job,
 //         safe_capacity<NumProducers, BurstPerProducer>>;
 //
 // ─── Diagnostics ────────────────────────────────────────────────────
