@@ -36,7 +36,12 @@
 //
 // ── Substrate added by this header ─────────────────────────────────
 //
-// Twenty `FixyNotEngaged_<Axis>` diagnostic tags, one per dimension.
+// `kFixyCatalogDocstringCardinality` `FixyNotEngaged_<Axis>` diagnostic
+// tags, one per dimension.  The current value of that constexpr (see
+// the static_asserts after the FixyCatalog tuple) IS the cardinality
+// every count in this doc-block refers to — when DIMENSION_AXIS_COUNT
+// grows, update `kFixyCatalogDocstringCardinality` and the prose
+// citations stay structurally pinned via the static_assert.
 // These inherit `safety::diag::tag_base` (so they participate in the
 // substrate's structural diagnostic surface) but do NOT enter the
 // closed `safety::diag::Category` enum (which is reserved for
@@ -52,9 +57,10 @@
 // When IsAccepted rejects a grant pack, the FIRST missing-engagement
 // dimension fires the structured diagnostic.  Compiler error message
 // names the specific dim (e.g., "FixyNotEngaged_Effect") + carries a
-// remediation message pointing at the relevant grants.  The other 19
-// dims surface in a single summary line to keep the diagnostic tight
-// (R4 of misc/16_05_2026_fixy.md §9).
+// remediation message pointing at the relevant grants.  The other
+// `kFixyCatalogDocstringCardinality - 1` dims surface in a single
+// summary line to keep the diagnostic tight (R4 of misc/16_05_2026_fixy.md
+// §9).  The exact count tracks DimensionAxis growth via static_assert.
 //
 // ── Axiom coverage ─────────────────────────────────────────────────
 //
@@ -339,8 +345,9 @@ using dup_tag_for_axis_t = typename dup_tag_for_axis<D>::type;
 // stable order) but lives entirely on the fixy side because per
 // `safety/Diagnostic.h:96-99` user-defined tags MUST NOT enter the
 // substrate's closed Category/Catalog — those are reserved for the
-// foundation's 31 axis violations.  Fixy's twenty-two `FixyNotEngaged_*`
-// tags still need to be enumerable as a closed set so callers can:
+// foundation's 31 axis violations.  Fixy's `kFixyCatalogDocstringCardinality`
+// `FixyNotEngaged_*` tags (one per DimensionAxis enumerator) still need
+// to be enumerable as a closed set so callers can:
 //
 //   (a) discriminate fixy tags from substrate tags via
 //       `is_fixy_diag_v<T>`;
@@ -477,6 +484,38 @@ static_assert(fixy_catalog_size == kDimAxisCount,
     "appending to FixyCatalog in DimensionAxis order, (c) the matching "
     "tag_for_axis specialization, and (d) the matching axis_for_tag "
     "specialization.");
+
+// FIXY-V-007 — Reject.h doc-block cardinality pin.
+//
+// Every prose count in this header's doc-block (search for
+// "kFixyCatalogDocstringCardinality") refers to this constant.  The
+// `static_assert` immediately below pins it to the reflection-derived
+// `kDimAxisCount`, so when a new DimensionAxis enumerator lands the
+// build fires HERE and the contributor updates BOTH the constant AND
+// the prose in lockstep.  Replaces the historically-stale prose
+// drifts ("Twenty"/"twenty-two") with a single source of truth.
+//
+// Discipline:
+//   * Update this constant ONLY when DimensionAxis grows.
+//   * Use the constant by NAME in every doc-block citation, never a
+//     hard-coded number — that's exactly the drift this pins.
+//   * The cross-check below is reflection-driven via kDimAxisCount,
+//     so the FixyCatalog cardinality, the DimensionAxis cardinality,
+//     and the doc-block prose all share one structural witness.
+inline constexpr ::std::size_t kFixyCatalogDocstringCardinality =
+    kDimAxisCount;
+
+static_assert(
+    kFixyCatalogDocstringCardinality == kDimAxisCount,
+    "Reject.h kFixyCatalogDocstringCardinality drifted from the "
+    "reflection-derived DimensionAxis enumerator count.  If you added "
+    "a DimensionAxis enumerator (and the matching FixyNotEngaged_* tag "
+    "+ FixyCatalog entry + tag_for_axis / axis_for_tag specs), update "
+    "kFixyCatalogDocstringCardinality to match AND search this header's "
+    "doc-block for any human-readable count words (e.g., 'twenty-four') "
+    "that need to grow in lockstep.  This pin closes the drift caught "
+    "in fixy-A3-008/A3-009 + FIXY-V-088/097 audits where the prose "
+    "count lagged the catalog cardinality by 2+ enumerators.");
 
 // Round-trip: for every catalog index I, both lookups agree and the
 // catalog ordering follows DimensionAxis value ordering.
