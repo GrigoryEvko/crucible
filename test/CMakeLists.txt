@@ -2252,6 +2252,20 @@ crucible_neg_compile_fixy_test(neg_fixy_handle_epoch_versioned_axis_swap
 crucible_neg_compile_fixy_test(neg_fixy_bridge_epoch_versioned_cross_t_combine
     "EpochVersioned|combine_max|no matching function|cannot convert|no known conversion")
 
+# ── FIXY-V-217 — fixy::cap::CtxAdmitsCap<Ctx, Cap> concept ────────
+# Two HS14 fixtures pin the concept's two distinct rejection axes:
+#   (1) IsExecCtx STRUCTURAL rejection — passing a non-ExecCtx
+#       type (int) reds via the IsExecCtx<Ctx> clause.  Tests the
+#       structural-fitness axis.
+#   (2) row_contains_v SEMANTIC rejection — HotFgCtx::row = Row<>
+#       (empty) reds because the Effect atom is not in the
+#       claimed row.  Tests the row-membership axis (distinct
+#       from CtxCanMint's permitted_row-membership axis).
+crucible_neg_compile_fixy_test(neg_fixy_cap_ctx_admits_not_exec_ctx
+    "CtxAdmitsCap|IsExecCtx|static assertion failed|fixture #1")
+crucible_neg_compile_fixy_test(neg_fixy_cap_ctx_admits_row_miss
+    "CtxAdmitsCap|row_contains|static assertion failed|fixture #2")
+
 # ── FIXY-MINT-Bridge — fixy/Bridge.h re-export of wrap factories
 # (mint_recording_session, mint_crash_watched_session,
 # mint_persisted_session, mint_recording_endpoint,

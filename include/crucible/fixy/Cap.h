@@ -62,6 +62,146 @@ using ::crucible::effects::mint_from_ctx;
 
 using ::crucible::effects::Capability;
 
+// ── Cap-admission concepts (FIXY-V-217) ────────────────────────────
+//
+// Agent 8 Part 6 + Part 10 #9: production code reaches for
+// `effects::is_subrow_v<effects::Row<E>, typename Ctx::row_type>`
+// directly when it wants to gate a function on "this ctx admits cap
+// E in its current row" (the row-axis check, distinct from
+// CtxCanMint's permitted_row-axis check).  No soundness bug — the
+// substrate enforcement holds — but the reach is a UX gap: there
+// is no named concept, every band-3 site spells the same trait
+// invocation, and a future tightening of the row-axis predicate has
+// no canonical migration point.
+//
+// CtxAdmitsCap<Ctx, Cap> closes the gap.  Consumers write
+//
+//     void worker(Ctx const& ctx)
+//         requires fixy::cap::CtxAdmitsCap<Ctx, Effect::Alloc>
+//     { ... }
+//
+// instead of
+//
+//     void worker(Ctx const& ctx)
+//         requires effects::is_subrow_v<effects::Row<Effect::Alloc>,
+//                                       typename Ctx::row_type>
+//     { ... }
+//
+// — same compile-time gate, named call site, grep-discoverable
+// migration target.  The relationship to the existing concept
+// family:
+//
+//   CtxCanMint<Ctx, E>    — `E ∈ cap_permitted_row<Ctx::cap_type>`
+//                           (mint authority: the cap-source COULD
+//                           grant E if the row promoted it).
+//   CapMatchesCtx<C, Ctx> — `cap_of<C> ∈ Ctx::row_type` over a
+//                           Capability<E, S> value type (the
+//                           Capability-typed flavour of the
+//                           row-axis check).
+//   CtxAdmitsCap<Ctx, E>  — `E ∈ Ctx::row_type` (the row-axis
+//                           check, taking the Effect enum directly
+//                           — enum-arg parity with CtxCanMint, the
+//                           form most call sites actually want).
+//
+// CtxAdmitsCap is the strictly-equivalent row-axis variant of
+// CapMatchesCtx — the only difference is the parameter shape.
+// Mirroring CtxCanMint's substrate spelling (row_contains_v rather
+// than is_subrow_v over a singleton row) keeps the diagnostic
+// surface consistent.
+
+template <class Ctx, ::crucible::effects::Effect Cap>
+concept CtxAdmitsCap =
+    ::crucible::effects::IsExecCtx<Ctx>
+    && ::crucible::effects::row_contains_v<
+           ::crucible::effects::row_type_of_t<Ctx>, Cap>;
+
+// ── Strict variant: row + NSDMI dual check (FIXY-V-217) ────────────
+//
+// CtxAdmitsCapStrict<Ctx, Cap> tightens CtxAdmitsCap by ALSO
+// verifying that the Ctx's cap-source carries an NSDMI member for
+// the requested Effect — i.e. the compile-time field layout
+// actually exposes the cap-tag that the row claims authority for.
+//
+// Within the well-formed-ExecCtx universe this is redundant: the
+// substrate's `WellFormedExecCtxAxes` static_assert enforces
+// `Row ⊆ cap_permitted_row<Cap>`, and `cap_permitted_row<Cap>`
+// matches the NSDMI layout of Cap (Bg has alloc/io/block, Init has
+// alloc/io, Test has alloc/io/block).  So a row-admitted effect is
+// ALWAYS NSDMI-backed.  CtxAdmitsCapStrict is therefore a
+// **defense-in-depth** concept:
+//
+//   1. Documentation — it pins the row↔NSDMI relationship at the
+//      call-site concept layer, not buried inside ExecCtx's class
+//      body where the well-formedness static_assert lives.
+//   2. Drift detection — if a future revision of
+//      `cap_permitted_row` is updated without a corresponding
+//      NSDMI update to Bg/Init/Test, CtxAdmitsCapStrict catches
+//      the divergence at every consumer call site.
+//   3. Synthetic-ctx hardening — if a future axis is added to
+//      IsExecCtx that bypasses ExecCtx's well-formedness check
+//      (e.g. a duck-typed concept that just demands a `row_type`
+//      member), CtxAdmitsCapStrict still rejects synthetic
+//      contexts that lie about their row vs cap.
+//
+// The check is two-leg:
+//
+//   • Row-axis: CtxAdmitsCap (delegated).
+//   • NSDMI-axis: `detail::ctx_cap_source_has_nsdmi_v` — a
+//     per-Effect SFINAE-friendly trait that maps each Effect to
+//     either a `requires { src.<field>; }` expression for
+//     value-effect tags (Alloc/IO/Block → field) or to a
+//     `std::same_as<Source, Bg/Init/Test>` identity check for
+//     thread-effect tags (the "field" IS the cap source itself).
+
+namespace detail {
+
+template <class CapSource, ::crucible::effects::Effect E>
+inline constexpr bool ctx_cap_source_has_nsdmi_v = false;
+
+// Value-effect tags — NSDMI is a per-effect field on the cap source.
+
+template <class CapSource>
+inline constexpr bool ctx_cap_source_has_nsdmi_v<
+    CapSource, ::crucible::effects::Effect::Alloc>
+    = requires(CapSource const& src) { src.alloc; };
+
+template <class CapSource>
+inline constexpr bool ctx_cap_source_has_nsdmi_v<
+    CapSource, ::crucible::effects::Effect::IO>
+    = requires(CapSource const& src) { src.io; };
+
+template <class CapSource>
+inline constexpr bool ctx_cap_source_has_nsdmi_v<
+    CapSource, ::crucible::effects::Effect::Block>
+    = requires(CapSource const& src) { src.block; };
+
+// Thread-effect tags — "NSDMI" is type identity (Bg-cap carries Bg
+// authority by being a Bg; Init-cap carries Init authority by being
+// an Init; Test-cap carries Test authority by being a Test).
+
+template <class CapSource>
+inline constexpr bool ctx_cap_source_has_nsdmi_v<
+    CapSource, ::crucible::effects::Effect::Bg>
+    = std::is_same_v<CapSource, ::crucible::effects::Bg>;
+
+template <class CapSource>
+inline constexpr bool ctx_cap_source_has_nsdmi_v<
+    CapSource, ::crucible::effects::Effect::Init>
+    = std::is_same_v<CapSource, ::crucible::effects::Init>;
+
+template <class CapSource>
+inline constexpr bool ctx_cap_source_has_nsdmi_v<
+    CapSource, ::crucible::effects::Effect::Test>
+    = std::is_same_v<CapSource, ::crucible::effects::Test>;
+
+}  // namespace detail
+
+template <class Ctx, ::crucible::effects::Effect Cap>
+concept CtxAdmitsCapStrict =
+    CtxAdmitsCap<Ctx, Cap>
+    && detail::ctx_cap_source_has_nsdmi_v<
+           ::crucible::effects::cap_type_of_t<Ctx>, Cap>;
+
 // ── Cap-context mints — passkey-gated Bg/Init/Test factories ───────
 //
 // FIXY-U-116: `mint_bg_context` / `mint_init_context` / `mint_test_context`
@@ -233,5 +373,100 @@ static_assert(std::is_same_v<
     ::crucible::fixy::cap::cntp::DeclaredCcChoice,
     ::crucible::cntp::DeclaredCcChoice>,
     "FIXY-V-212: fixy::cap::cntp::DeclaredCcChoice must alias cntp::DeclaredCcChoice.");
+
+// (7) FIXY-V-217: CtxAdmitsCap positive cases — BgDrainCtx claims
+//     {Bg, Alloc} in its row, so the concept evaluates true for
+//     both effects and false for any effect NOT in the row
+//     (e.g. IO, which Bg PERMITS but BgDrainCtx does not CLAIM —
+//     the deliberate distinction from CtxCanMint).
+static_assert(::crucible::fixy::cap::CtxAdmitsCap<
+                  ::crucible::effects::BgDrainCtx,
+                  ::crucible::effects::Effect::Bg>,
+    "FIXY-V-217: BgDrainCtx::row = Row<Bg, Alloc> — CtxAdmitsCap must "
+    "accept Effect::Bg (atom present in the claimed row).");
+static_assert(::crucible::fixy::cap::CtxAdmitsCap<
+                  ::crucible::effects::BgDrainCtx,
+                  ::crucible::effects::Effect::Alloc>,
+    "FIXY-V-217: BgDrainCtx::row = Row<Bg, Alloc> — CtxAdmitsCap must "
+    "accept Effect::Alloc (atom present in the claimed row).");
+static_assert(!::crucible::fixy::cap::CtxAdmitsCap<
+                  ::crucible::effects::BgDrainCtx,
+                  ::crucible::effects::Effect::IO>,
+    "FIXY-V-217: BgDrainCtx::row = Row<Bg, Alloc> — CtxAdmitsCap must "
+    "REJECT Effect::IO (not claimed in row, even though Bg permits it; "
+    "this is the row-axis check, not the permitted-row-axis check).");
+static_assert(!::crucible::fixy::cap::CtxAdmitsCap<
+                  ::crucible::effects::HotFgCtx,
+                  ::crucible::effects::Effect::Alloc>,
+    "FIXY-V-217: HotFgCtx::row = Row<> (empty) — CtxAdmitsCap must "
+    "REJECT every Effect (no row claim ⇒ no row-axis authority).");
+static_assert(!::crucible::fixy::cap::CtxAdmitsCap<
+                  int, ::crucible::effects::Effect::Alloc>,
+    "FIXY-V-217: int is not an ExecCtx — IsExecCtx<int> = false short-"
+    "circuits the row-axis clause; the concept evaluates to false "
+    "without hard-erroring on row_type_of_t<int>.");
+
+// (8) FIXY-V-217: CtxAdmitsCapStrict — within well-formed ExecCtx
+//     (Row ⊆ cap_permitted_row<Cap>) the strict concept is
+//     equivalent to the non-strict.  Pinned here as compile-time
+//     documentation of the row↔NSDMI invariant.
+static_assert(::crucible::fixy::cap::CtxAdmitsCapStrict<
+                  ::crucible::effects::BgDrainCtx,
+                  ::crucible::effects::Effect::Alloc>,
+    "FIXY-V-217: BgDrainCtx claims Alloc in row AND Bg cap source has "
+    "alloc NSDMI ⇒ CtxAdmitsCapStrict accepts.");
+static_assert(::crucible::fixy::cap::CtxAdmitsCapStrict<
+                  ::crucible::effects::BgCompileCtx,
+                  ::crucible::effects::Effect::IO>,
+    "FIXY-V-217: BgCompileCtx claims IO in row AND Bg cap source has "
+    "io NSDMI ⇒ CtxAdmitsCapStrict accepts.");
+static_assert(::crucible::fixy::cap::CtxAdmitsCapStrict<
+                  ::crucible::effects::BgDrainCtx,
+                  ::crucible::effects::Effect::Bg>,
+    "FIXY-V-217: BgDrainCtx claims Bg in row AND cap source IS Bg ⇒ "
+    "CtxAdmitsCapStrict accepts (thread-effect tag path).");
+static_assert(!::crucible::fixy::cap::CtxAdmitsCapStrict<
+                  ::crucible::effects::HotFgCtx,
+                  ::crucible::effects::Effect::Alloc>,
+    "FIXY-V-217: HotFgCtx::row = Row<> ⇒ CtxAdmitsCap fails ⇒ strict "
+    "variant fails by conjunction (no row claim).");
+static_assert(!::crucible::fixy::cap::CtxAdmitsCapStrict<
+                  ::crucible::effects::BgDrainCtx,
+                  ::crucible::effects::Effect::Init>,
+    "FIXY-V-217: BgDrainCtx cap source is Bg, not Init — even if a "
+    "synthetic row claimed Init the cap-source-NSDMI leg would still "
+    "fail (defense-in-depth against thread-effect tag confusion).");
+
+// (9) FIXY-V-217: per-Effect NSDMI presence on each canonical cap
+//     source — pinned so a future change to cap_permitted_row that
+//     adds/removes a value-effect must also touch the NSDMI layout
+//     of Bg/Init/Test, OR these assertions catch the drift.
+static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
+                  ::crucible::effects::Bg,
+                  ::crucible::effects::Effect::Alloc>,
+    "FIXY-V-217: Bg cap source must expose `alloc` NSDMI field.");
+static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
+                  ::crucible::effects::Bg,
+                  ::crucible::effects::Effect::IO>,
+    "FIXY-V-217: Bg cap source must expose `io` NSDMI field.");
+static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
+                  ::crucible::effects::Bg,
+                  ::crucible::effects::Effect::Block>,
+    "FIXY-V-217: Bg cap source must expose `block` NSDMI field.");
+static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
+                  ::crucible::effects::Init,
+                  ::crucible::effects::Effect::Alloc>,
+    "FIXY-V-217: Init cap source must expose `alloc` NSDMI field.");
+static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
+                  ::crucible::effects::Init,
+                  ::crucible::effects::Effect::IO>,
+    "FIXY-V-217: Init cap source must expose `io` NSDMI field.");
+static_assert(!::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
+                  ::crucible::effects::Init,
+                  ::crucible::effects::Effect::Block>,
+    "FIXY-V-217: Init cap source MUST NOT expose `block` NSDMI field — "
+    "Init's permitted_row is {Init, Alloc, IO}, no Block; this pin "
+    "catches NSDMI drift if Init ever gains a block field without a "
+    "permitted_row update.");
 
 }  // namespace crucible::fixy::cap::self_test
