@@ -268,6 +268,7 @@ crucible_test(test_fixy_v_096_welford_variance)  # FIXY-V-096 bench_harness Welf
 target_include_directories(test_fixy_v_096_welford_variance SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 crucible_test(test_fixy_v_097_syscall_family)  # FIXY-V-097 DimensionAxis::SyscallSurface + SyscallFamilyLattice 9-tier chain
+crucible_test(test_fixy_v_098_syscall_grants)  # FIXY-V-098 fixy/syscall/Family.h + Per.h — coarse + per-syscall grants
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -6030,6 +6031,35 @@ crucible_neg_compile_test(neg_syscall_family_cardinality_stale
   "static assertion failed|DIMENSION_AXIS_COUNT|FIXY-V-097|23")
 crucible_neg_compile_test(neg_syscall_family_tier_misclassify
   "static assertion failed|SyscallSurface|TierKind|Foundational|Semiring|FIXY-V-097")
+
+# ─── FIXY-V-098 syscall grant neg-compile fixtures (2) ────────────────
+#
+# V-098 ships fixy/syscall/Family.h (9 family-tier grants) +
+# fixy/syscall/Per.h (parametric per<SyscallId> over a 36-enumerator
+# catalog).  Both surfaces route which_dim<> → SyscallSurface (V-097
+# axis); both expose family_tier_v<> metadata for V-100's bridge.
+# HS14: 2 fixtures across distinct mismatch classes:
+#
+#   1. wrong-axis (NTTP-enum-type mismatch) — substituting a
+#      SyscallFamily value for the SyscallId NTTP on per<...>.
+#      Template-id formation rejects BEFORE the grant reaches the
+#      pack; rejection path is the C++ overload-deduction surface
+#      ("cannot convert" / "expected enum type SyscallId").  Mirrors
+#      V-092's neg_fixy_grant_fp_wrong_nttp_enum.cpp pattern.
+#
+#   2. family-per-duplicate-engagement — a Grants pack containing
+#      BOTH `family_file_mutation` (Family.h) AND
+#      `per<SyscallId::pwrite>` (Per.h).  Both route to SyscallSurface;
+#      UniqueEngagementPerAxis concept fires AFTER the pack is fully
+#      formed; rejection path is the `mint_fn` requires-clause
+#      ("UniqueEngagementPerAxis" / "FixyDuplicate_SyscallSurface").
+#      Catches the "I read Family.h, picked the coarse grant, then
+#      added the per<> 'for documentation'" contributor mistake that
+#      would be silently lossy under any first-wins resolver rule.
+crucible_neg_compile_fixy_test(neg_fixy_v_098_wrong_axis
+  "could not convert|cannot convert|SyscallId|SyscallFamily|enumeration type|wrong type")
+crucible_neg_compile_fixy_test(neg_fixy_v_098_family_per_duplicate
+  "UniqueEngagementPerAxis|FixyDuplicate_SyscallSurface")
 
 # ─── FIXY-V-090 FpModePinned wrapper neg-compile fixtures (2) ─────────
 #

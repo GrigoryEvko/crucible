@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-22T16:45:49Z`.
+Snapshot generated: `2026-05-22T17:14:07Z`.
 
 ## bridges/
 
@@ -112,7 +112,7 @@ Snapshot generated: `2026-05-22T16:45:49Z`.
 |---|---|---|---|---|---|---|---|---|
 | `mint_affine` | `include/crucible/safety/Affine.h:307` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:175` | HS14: 1 ⚠ |
 | `mint_diagnostic` | `include/crucible/safety/Diagnostic.h:1476` | Y | Y | - | Y | token | `include/crucible/fixy/Diag.h:211` | HS14: 2 |
-| `mint_fn` | `include/crucible/safety/Fn.h:547` | Y | Y | Y | Y | token | `include/crucible/fixy/Fn.h:1037` | HS14: 39 |
+| `mint_fn` | `include/crucible/safety/Fn.h:547` | Y | Y | Y | Y | token | `include/crucible/fixy/Fn.h:1037` | HS14: 40 |
 | `mint_fp_mode_composite` | `include/crucible/safety/FpMode.h:393` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_grid_permissions` | `include/crucible/safety/PermissionGridGenerator.h:219` | Y | Y | Y | Y | token | `include/crucible/fixy/Perm.h:159` | HS14: 12 |
 | `mint_join_policy` | `include/crucible/safety/JoinPolicy.h:390` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |

@@ -18,7 +18,18 @@
 #
 # Approved exceptions (specialization-only):
 #
-#   * include/crucible/fixy/Grant.h — the canonical authoring site.
+#   * include/crucible/fixy/Grant.h               — the canonical authoring site.
+#   * include/crucible/fixy/Fp.h                  — V-092 FpMode axis-specialized catalog
+#                                                    (12 with_fp_* parametric grants + fp_strict_ieee).
+#   * include/crucible/fixy/syscall/Family.h      — V-098 SyscallSurface axis-specialized
+#                                                    catalog (9 family-tier grants).
+#   * include/crucible/fixy/syscall/Per.h         — V-098 SyscallSurface axis-specialized
+#                                                    catalog (per<SyscallId> parametric grants).
+#
+# The four allowlisted headers all SPECIALIZE which_dim<>; they do NOT
+# extend the grant_base hierarchy or introduce new structural-validation
+# concepts.  They are functionally part of Grant.h's authoring discipline,
+# split per-axis for human readability and per-axis self-tests.
 #
 # All other openings of `namespace crucible::fixy::grant` (including
 # `test/`, `bench/`, `vis/`, `src/`, `examples/`) are review-rejected
@@ -39,6 +50,24 @@ while IFS=: read -r file line text; do
 
     case "$rel" in
         include/crucible/fixy/Grant.h)
+            continue
+            ;;
+        include/crucible/fixy/Fp.h)
+            # V-092 FpMode axis-specialized catalog (12 with_fp_* parametric
+            # grants + fp_strict_ieee).  Specializes which_dim<> only;
+            # does NOT extend grant_base hierarchy or introduce structural
+            # validation concepts.
+            continue
+            ;;
+        include/crucible/fixy/syscall/Family.h)
+            # V-098 SyscallSurface axis-specialized catalog (9 family-tier
+            # grants).  Specializes which_dim<> + family_tier<> only.
+            continue
+            ;;
+        include/crucible/fixy/syscall/Per.h)
+            # V-098 SyscallSurface axis-specialized catalog
+            # (per<SyscallId> parametric grants).  Specializes which_dim<>
+            # + family_tier<> only.
             continue
             ;;
         test/safety_attack/attack_fixy_grant_*.cpp)
