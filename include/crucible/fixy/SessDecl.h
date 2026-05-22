@@ -99,7 +99,7 @@ using ::crucible::safety::wire_policy_t;
 // ── In-header sentinel battery ─────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Same dual-export discipline as fixy/Mpst.h::u013_self_test +
+// Same dual-export discipline as fixy/SessGlobal.h::u013_self_test +
 // fixy/Rules.h::u062_self_test.  Drift between the substrate's
 // DeclassifyOnSend surface and the fixy projection here trips at
 // every consumer's include time — NOT only inside a downstream test

@@ -78,6 +78,21 @@
 //                          decl is re-exported so stale call sites
 //                          surface the canonical diagnostic via the
 //                          `fixy::` path.
+//   - fixy/SessGlobal.h  — sessions/SessionGlobal.h MPST global-types
+//                          surface under fixy::sess::mpst:: (End_G /
+//                          Var_G / Transmission / BranchG / Choice /
+//                          Rec_G / StopG + form predicates + role
+//                          machinery + well-formedness diagnostics +
+//                          plain_merge_t + Project / project_t — 27
+//                          surfaced names).  Renamed from fixy/Mpst.h
+//                          in FIXY-V-068 for naming consistency with
+//                          the Sess<Foo>.h convention; fixy/Mpst.h
+//                          stays as a one-release-cycle shim that
+//                          re-includes this canonical home.
+//   - fixy/Mpst.h        — DEPRECATED shim → fixy/SessGlobal.h
+//                          (FIXY-V-068).  Old call sites keep
+//                          compiling; new code should prefer
+//                          SessGlobal.h directly.
 //   - fixy/SessCT.h      — sessions/SessionCT.h CT-required payload
 //                          chokepoint surfaced under
 //                          fixy::sess::ct::* (CTPayload<T> + ct::eq
@@ -177,7 +192,8 @@
 #include <crucible/fixy/Pipe.h>
 #include <crucible/fixy/Safety.h>
 #include <crucible/fixy/Sess.h>
-#include <crucible/fixy/Mpst.h>
+#include <crucible/fixy/SessGlobal.h>          // FIXY-V-068 (canonical)
+#include <crucible/fixy/Mpst.h>                // FIXY-V-068 shim → SessGlobal.h
 #include <crucible/fixy/SessDecl.h>
 #include <crucible/fixy/SessCT.h>
 #include <crucible/fixy/SessContentAddr.h>

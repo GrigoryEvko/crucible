@@ -145,7 +145,7 @@ using ::crucible::safety::ct::ct_payload_value_type_t;
 // ═════════════════════════════════════════════════════════════════════
 //
 // Same dual-export discipline as fixy/SessDecl.h::u052a_self_test +
-// fixy/Mpst.h::u013_self_test + fixy/Rules.h::u062_self_test.  Drift
+// fixy/SessGlobal.h::u013_self_test + fixy/Rules.h::u062_self_test.  Drift
 // between the substrate's SessionCT.h surface and the fixy projection
 // here trips at every consumer's include time — NOT only inside a
 // downstream test TU.

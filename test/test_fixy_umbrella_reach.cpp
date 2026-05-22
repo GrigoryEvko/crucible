@@ -1229,6 +1229,125 @@ static_assert(fshape::is_send_v<v066_reach::SendP> ==
 static_assert(fshape::is_head_v<v066_reach::LoopP> ==
               fsess_umbrella::is_head_v<v066_reach::LoopP>);
 
+// ─── 6s. SessGlobal.h reach — fixy::sess::mpst:: (FIXY-V-068) ────────
+//
+// Witness that the MPST global-types surface (End_G / Var_G /
+// Transmission / BranchG / Choice / Rec_G / StopG + form predicates +
+// role machinery + projection + plain_merge_t) reaches the consumer
+// through the umbrella alone after V-068's rename of fixy/Mpst.h →
+// fixy/SessGlobal.h (canonical) + thin shim fixy/Mpst.h re-include.
+//
+// Cells below test:
+//   6s-a. Sub-namespace canonical reach via fixy::sess::mpst:: —
+//         the namespace IS preserved across the rename (the task is
+//         "pure cosmetic file rename" per FIXY-V-068).
+//   6s-b. Form predicates reach through the umbrella.
+//   6s-c. Cross-binding sentinel: the substrate type fed by the OLD
+//         shim path (`<crucible/fixy/Mpst.h>`) is THE SAME type fed
+//         by the NEW canonical path (`<crucible/fixy/SessGlobal.h>`);
+//         this is the load-bearing rename premise that namespace
+//         identity holds.
+//   6s-d. Projection metafunction reaches through the umbrella —
+//         producing the expected binary-session local type.
+//   6s-e. Role-list machinery reaches through the umbrella.
+//
+// If a future regression strips `#include <crucible/fixy/SessGlobal.h>`
+// or `#include <crucible/fixy/Mpst.h>` from Fixy.h's Phase-C block OR
+// replaces the Mpst.h shim with a non-re-include form (e.g., a
+// duplicated using-decl block, or an inline-namespace alias), one of
+// the claims below fails to compile.
+
+namespace fmpst = ::crucible::fixy::sess::mpst;
+namespace pproto_v068 = ::crucible::safety::proto;
+
+namespace v068_reach {
+struct Alice {};
+struct Bob   {};
+struct Carol {};
+struct Ping  {};
+}  // namespace v068_reach
+
+// 6s-a. Sub-namespace canonical reach — constructors land at
+//       fixy::sess::mpst::* (preserved namespace identity).
+using EndG_via_fixy = fmpst::End_G;
+using VarG_via_fixy = fmpst::Var_G;
+using Trans_via_fixy =
+    fmpst::Transmission<v068_reach::Alice, v068_reach::Bob,
+                        v068_reach::Ping, fmpst::End_G>;
+using Choice_via_fixy =
+    fmpst::Choice<v068_reach::Alice, v068_reach::Bob,
+                  fmpst::BranchG<v068_reach::Ping, fmpst::End_G>>;
+using RecG_via_fixy = fmpst::Rec_G<fmpst::End_G>;
+using StopG_via_fixy = fmpst::StopG<v068_reach::Alice>;
+
+// 6s-b. Form predicates reach through the umbrella.  Variable
+//       templates resolve against the umbrella-projected surface
+//       exactly as they would against the substrate.
+static_assert(fmpst::is_end_g_v<EndG_via_fixy>,
+    "umbrella reach: fixy::sess::mpst::is_end_g_v must admit End_G "
+    "through the umbrella.  If this red-lights, fixy/SessGlobal.h is "
+    "not pulled in by <crucible/Fixy.h> OR the substrate predicate "
+    "moved.");
+static_assert(fmpst::is_var_g_v<VarG_via_fixy>);
+static_assert(fmpst::is_transmission_v<Trans_via_fixy>);
+static_assert(fmpst::is_choice_v<Choice_via_fixy>);
+static_assert(fmpst::is_rec_g_v<RecG_via_fixy>);
+static_assert(fmpst::is_stop_g_v<StopG_via_fixy>);
+static_assert(!fmpst::is_end_g_v<VarG_via_fixy>);
+static_assert(!fmpst::is_transmission_v<EndG_via_fixy>);
+
+// 6s-c. Cross-binding sentinel — the load-bearing rename premise.
+//
+// `<crucible/Fixy.h>` includes BOTH `<crucible/fixy/SessGlobal.h>`
+// AND `<crucible/fixy/Mpst.h>` (the shim) in this TU.  The types
+// resolved through `fixy::sess::mpst::End_G` MUST be one-and-the-same
+// substrate type whether the user spells the include as the
+// pre-V-068 path or the post-V-068 path.  If the shim were rewritten
+// to redeclare types instead of re-include them, this static_assert
+// would red-light.  The check uses substrate-side identity because
+// both fixy paths route to the same substrate::safety::proto namespace.
+static_assert(std::is_same_v<EndG_via_fixy, pproto_v068::End_G>,
+    "umbrella reach: V-068 rename premise broken — fixy::sess::mpst::"
+    "End_G must resolve to safety::proto::End_G regardless of whether "
+    "the consumer reaches the surface through fixy/SessGlobal.h "
+    "(canonical) or fixy/Mpst.h (shim).  If this red-lights, the "
+    "rename's 'namespace identity preserved' premise was violated — "
+    "audit the shim header and the canonical header for divergent "
+    "type declarations.");
+static_assert(std::is_same_v<VarG_via_fixy, pproto_v068::Var_G>);
+static_assert(std::is_same_v<Trans_via_fixy,
+    pproto_v068::Transmission<v068_reach::Alice, v068_reach::Bob,
+                              v068_reach::Ping,
+                              pproto_v068::End_G>>);
+
+// 6s-d. Projection — fixy::sess::mpst::project_t reaches through the
+//       umbrella and lands the binary-session local type at the
+//       expected substrate namespace.
+using G_AB_v068 =
+    fmpst::Transmission<v068_reach::Alice, v068_reach::Bob,
+                        v068_reach::Ping, fmpst::End_G>;
+using L_Alice_v068 = fmpst::project_t<G_AB_v068, v068_reach::Alice>;
+using L_Bob_v068   = fmpst::project_t<G_AB_v068, v068_reach::Bob>;
+using L_Carol_v068 = fmpst::project_t<G_AB_v068, v068_reach::Carol>;
+static_assert(std::is_same_v<L_Alice_v068,
+    pproto_v068::Send<v068_reach::Ping, pproto_v068::End>>,
+    "umbrella reach: project_t<G_AB, Alice> must yield Send<Ping, End> "
+    "via the umbrella.  If this red-lights, the projection's substrate "
+    "wiring is severed at the fixy layer.");
+static_assert(std::is_same_v<L_Bob_v068,
+    pproto_v068::Recv<v068_reach::Ping, pproto_v068::End>>);
+static_assert(std::is_same_v<L_Carol_v068, pproto_v068::End>);
+
+// 6s-e. Role machinery — RoleList + insert_unique_t + roles_of_t
+//       reach through the umbrella.
+using RL_AB_v068 = fmpst::RoleList<v068_reach::Alice, v068_reach::Bob>;
+static_assert(std::is_same_v<
+    fmpst::insert_unique_t<v068_reach::Carol, RL_AB_v068>,
+    fmpst::RoleList<v068_reach::Carol, v068_reach::Alice, v068_reach::Bob>>,
+    "umbrella reach: insert_unique_t must reach + behave identically "
+    "through the fixy umbrella.");
+static_assert(std::is_same_v<fmpst::EmptyRoleList, fmpst::RoleList<>>);
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }
