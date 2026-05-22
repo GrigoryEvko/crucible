@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-22T06:03:40Z`.
+Snapshot generated: `2026-05-22T06:59:03Z`.
 
 ## bridges/
 
@@ -88,7 +88,7 @@ Snapshot generated: `2026-05-22T06:03:40Z`.
 | `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h:594` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:385` | HS14: 4 |
 | `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h:317` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:166` | HS14: 4 |
 | `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h:203` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:174` | HS14: 4 |
-| `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h:330` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:186` | HS14: 4 |
+| `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h:388` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Perf.h:186` | HS14: 4 |
 
 ## permissions/
 
@@ -120,7 +120,7 @@ Snapshot generated: `2026-05-22T06:03:40Z`.
 | `mint_refined` | `include/crucible/safety/Refined.h:363` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:998` | HS14: 4 |
 | `mint_sealed_refined` | `include/crucible/safety/SealedRefined.h:239` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1002` | HS14: 4 |
 | `mint_secret` | `include/crucible/safety/Secret.h:359` | Y | Y | Y | Y | token | `include/crucible/fixy/Safety.h:12` | HS14: 4 |
-| `mint_tagged` | `include/crucible/safety/Tagged.h:759` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1008` | HS14: 6 |
+| `mint_tagged` | `include/crucible/safety/Tagged.h:777` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1008` | HS14: 6 |
 | `mint_view` | `include/crucible/safety/ScopedView.h:100` | - | Y | Y | - | token | `include/crucible/fixy/Safety.h:41` | HS14: 10 |
 | `mint_witness` | `include/crucible/safety/Witness.h:411` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:396` | HS14: 1 ⚠ |
 

@@ -105,10 +105,35 @@
 #include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/perf/SenseHub.h>
+#include <crucible/safety/Tagged.h>         // FIXY-V-074: Tagged + source::WorkloadProfiler
 
 #include <cstdint>
+#include <utility>                          // FIXY-V-074: std::forward for dispatch bodies
 
 namespace crucible::perf {
+
+// ── FIXY-V-074: row-typed ParallelismDecision return ─────────────────
+//
+// `WorkloadProfiler::recommend()` is the AUTHORITY on per-call
+// parallelism decisions — it owns the cache-tier reasoning AND the
+// runtime-contention demotion path.  A bare `ParallelismDecision`
+// returned from recommend() could be confused with a hand-crafted
+// `ParallelismDecision{Sequential, 1, ...}` synthesized somewhere
+// downstream, defeating the profiler's gatekeeping role.
+//
+// `TaggedParallelismDecision` makes the profiler's authority visible
+// in the type: every decision routed through `dispatch_workload_decision`
+// MUST originate from a recommend() call.  Phantom tag is
+// `safety::source::WorkloadProfiler` (Tagged.h); zero-cost via EBO
+// (`sizeof(TaggedParallelismDecision) == sizeof(ParallelismDecision)`).
+//
+// Wrapper-nesting per CLAUDE.md §XVI: Tagged sits at the inner half
+// of the canonical stack — provenance is "close to the value".  No
+// other wrapper layered here; the value's federation cache slot is
+// `row_hash({source::WorkloadProfiler}, ParallelismDecision-hash)`.
+using TaggedParallelismDecision =
+    ::crucible::safety::Tagged<::crucible::concurrent::ParallelismDecision,
+                               ::crucible::safety::source::WorkloadProfiler>;
 
 class WorkloadProfiler {
 public:
@@ -164,8 +189,99 @@ public:
     // The decision is monotone-down: this method only ever returns
     // a decision <= the structural recommendation.  Sequential stays
     // Sequential; Parallel may be demoted to Sequential.
-    [[nodiscard]] concurrent::ParallelismDecision
+    //
+    // FIXY-V-074: returns `TaggedParallelismDecision` — Tagged carries
+    // the `safety::source::WorkloadProfiler` phantom tag, marking this
+    // value as authored by the profiler.  Downstream
+    // `dispatch_workload_decision` only admits Tagged-wrapped decisions,
+    // making it a compile error to route a hand-crafted
+    // `ParallelismDecision` through the parallel-dispatch path without
+    // explicit re-mint.  Zero runtime cost — Tagged is EBO-collapsed.
+    [[nodiscard]] TaggedParallelismDecision
     recommend(concurrent::WorkBudget budget) noexcept {
+        return TaggedParallelismDecision{recommend_raw_(budget)};
+    }
+
+    // FIXY-V-074: legacy bare-decision query for callers that genuinely
+    // need to inspect the structural value without committing to a
+    // dispatch (e.g., tests, diagnostics, would-be-parallel reasoning).
+    // The bare form is intentionally NOT routed through Tagged because
+    // its return value is for inspection, not for dispatch.
+    //
+    // Production code that ACTS on the decision MUST use recommend() +
+    // dispatch_workload_decision — the Tagged form is the only one
+    // that the dispatch gate accepts.
+    [[nodiscard]] concurrent::ParallelismDecision
+    recommend_bare(concurrent::WorkBudget budget) noexcept {
+        return recommend_raw_(budget);
+    }
+
+    // ── Diagnostics ───────────────────────────────────────────────────
+    //
+    // Inspectors for the most recent recommend() call.  Useful for
+    // logging "why did this Vigil go sequential?" and for tests that
+    // assert demotion behaviour.
+
+    // True iff the last recommend() returned Sequential as a result of
+    // demotion (rather than because the structural rule already said
+    // Sequential).  False on the first call, false when senses is null,
+    // false when SenseHub is unattached.
+    [[nodiscard]] bool last_was_demoted() const noexcept {
+        return was_demoted_;
+    }
+
+    // The per-call delta values that drove the most recent decision.
+    // Both zero before the second call (no delta available) and on
+    // calls where senses/sense_hub were unavailable.
+    [[nodiscard]] uint64_t last_futex_wait_delta() const noexcept {
+        return futex_delta_;
+    }
+    [[nodiscard]] uint64_t last_ctx_vol_delta() const noexcept {
+        return ctx_vol_delta_;
+    }
+
+    // Inspect the configured thresholds (read-only after construction).
+    [[nodiscard]] Config config() const noexcept { return cfg_; }
+
+    // Reset baseline.  After this call, the next recommend() captures
+    // a fresh baseline and returns the structural decision unchanged.
+    // Useful when the workload fundamentally changes (new region
+    // starts) and continuity of telemetry across the boundary would
+    // produce misleading deltas.
+    void reset() noexcept {
+        first_call_    = true;
+        was_demoted_   = false;
+        futex_delta_   = 0;
+        ctx_vol_delta_ = 0;
+        // Don't zero last_ — preserve memory layout.  first_call_ flag
+        // is the discriminator.
+    }
+
+    // Move-only — owns no resources, but the senses_ pointer's
+    // borrow contract (caller must keep Senses alive) makes copying
+    // a footgun (two profilers reading the same Senses concurrently
+    // is a benign race in principle, but the per-instance last_
+    // snapshot would diverge unhelpfully).  Move keeps the borrow
+    // single-rooted.
+    WorkloadProfiler(const WorkloadProfiler&) =
+        delete("WorkloadProfiler holds a borrowed Senses*; copying would "
+               "produce two profilers with diverging last_ snapshots that "
+               "race on the same underlying SenseHub state");
+    WorkloadProfiler& operator=(const WorkloadProfiler&) = delete(
+        "see copy ctor rationale");
+    WorkloadProfiler(WorkloadProfiler&&) noexcept = default;
+    WorkloadProfiler& operator=(WorkloadProfiler&&) noexcept = default;
+    ~WorkloadProfiler() = default;
+
+private:
+    // FIXY-V-074: structural recommend() body, returning the bare
+    // ParallelismDecision before Tagged wrapping.  Single point of
+    // truth for the cache-tier + telemetry-demotion logic — both
+    // recommend() (Tagged form for dispatch) and recommend_bare()
+    // (inspection form) forward here.  Refactored from the prior
+    // inline body to eliminate the 6 return-statement wrap sites.
+    [[nodiscard]] concurrent::ParallelismDecision
+    recommend_raw_(concurrent::WorkBudget budget) noexcept {
         // Always start from the structural rule.
         auto decision = concurrent::ParallelismRule::recommend(budget);
 
@@ -233,64 +349,6 @@ public:
         return decision;
     }
 
-    // ── Diagnostics ───────────────────────────────────────────────────
-    //
-    // Inspectors for the most recent recommend() call.  Useful for
-    // logging "why did this Vigil go sequential?" and for tests that
-    // assert demotion behaviour.
-
-    // True iff the last recommend() returned Sequential as a result of
-    // demotion (rather than because the structural rule already said
-    // Sequential).  False on the first call, false when senses is null,
-    // false when SenseHub is unattached.
-    [[nodiscard]] bool last_was_demoted() const noexcept {
-        return was_demoted_;
-    }
-
-    // The per-call delta values that drove the most recent decision.
-    // Both zero before the second call (no delta available) and on
-    // calls where senses/sense_hub were unavailable.
-    [[nodiscard]] uint64_t last_futex_wait_delta() const noexcept {
-        return futex_delta_;
-    }
-    [[nodiscard]] uint64_t last_ctx_vol_delta() const noexcept {
-        return ctx_vol_delta_;
-    }
-
-    // Inspect the configured thresholds (read-only after construction).
-    [[nodiscard]] Config config() const noexcept { return cfg_; }
-
-    // Reset baseline.  After this call, the next recommend() captures
-    // a fresh baseline and returns the structural decision unchanged.
-    // Useful when the workload fundamentally changes (new region
-    // starts) and continuity of telemetry across the boundary would
-    // produce misleading deltas.
-    void reset() noexcept {
-        first_call_    = true;
-        was_demoted_   = false;
-        futex_delta_   = 0;
-        ctx_vol_delta_ = 0;
-        // Don't zero last_ — preserve memory layout.  first_call_ flag
-        // is the discriminator.
-    }
-
-    // Move-only — owns no resources, but the senses_ pointer's
-    // borrow contract (caller must keep Senses alive) makes copying
-    // a footgun (two profilers reading the same Senses concurrently
-    // is a benign race in principle, but the per-instance last_
-    // snapshot would diverge unhelpfully).  Move keeps the borrow
-    // single-rooted.
-    WorkloadProfiler(const WorkloadProfiler&) =
-        delete("WorkloadProfiler holds a borrowed Senses*; copying would "
-               "produce two profilers with diverging last_ snapshots that "
-               "race on the same underlying SenseHub state");
-    WorkloadProfiler& operator=(const WorkloadProfiler&) = delete(
-        "see copy ctor rationale");
-    WorkloadProfiler(WorkloadProfiler&&) noexcept = default;
-    WorkloadProfiler& operator=(WorkloadProfiler&&) noexcept = default;
-    ~WorkloadProfiler() = default;
-
-private:
     const Senses*  senses_     = nullptr;
     Config         cfg_{};
     Snapshot       last_{};
@@ -349,5 +407,83 @@ mint_workload_profiler(Ctx const&,
 static_assert(CtxFitsWorkloadProfilerMint<::crucible::effects::ColdInitCtx>);
 static_assert(!CtxFitsWorkloadProfilerMint<::crucible::effects::BgDrainCtx>);
 static_assert(!CtxFitsWorkloadProfilerMint<::crucible::effects::HotFgCtx>);
+
+// ── FIXY-V-074: dispatch_workload_decision — Tagged-only consumer ────
+//
+// Routes a Tagged<ParallelismDecision, source::WorkloadProfiler> to
+// either a sequential body or a parallel body.  The function takes
+// the Tagged BY VALUE — the Tagged form is the proof-of-origin gate,
+// not transferred linearly; any caller holding a Tagged decision can
+// dispatch it (multiple dispatches against the same decision are
+// legitimate when, e.g., a retry path re-routes after observing the
+// first attempt's outcome).
+//
+// ── CTX GATE ──────────────────────────────────────────────────────────
+//
+// CtxFitsWorkloadDecisionDispatch admits contexts whose effect row
+// carries the Bg capability.  Dispatching to a parallel body launches
+// jthreads (via permission_fork / NumaThreadPool) — that is a
+// Bg-row activity.  Dispatching to the sequential body is uniform
+// with the parallel case so the call site doesn't need to know which
+// arm fired before deciding on the ctx requirement.  HotFgCtx and
+// ColdInitCtx are rejected at compile time.
+//
+// ── PARAMETER SHAPE ───────────────────────────────────────────────────
+//
+//   seq_body(ParallelismDecision)  // invoked on Sequential decisions
+//   par_body(ParallelismDecision)  // invoked on Parallel decisions
+//
+// Bodies receive the BARE ParallelismDecision (via Tagged::value()),
+// not the Tagged itself — once the dispatch gate has fired, the proof
+// has done its job and the inner value is what consumers want.
+//
+// ── RETURN ────────────────────────────────────────────────────────────
+//
+// Returns whatever the invoked body returns; if the bodies have
+// different return types, the common type is deduced.  Most call
+// sites use `void`-returning bodies (the bodies do the work; the
+// dispatch is just routing).
+//
+// ── ANTI-PATTERN ──────────────────────────────────────────────────────
+//
+// Do NOT pass a bare ParallelismDecision constructed in-line:
+//
+//   dispatch_workload_decision(bg_ctx,
+//       ParallelismDecision{Sequential, 1, ...}, seq, par);  // ✗ NO
+//
+// The function signature requires Tagged; the bare form fails to
+// match.  This is exactly the load-bearing discipline V-074 enforces.
+//
+// To dispatch, you MUST own a profiler instance and call recommend():
+//
+//   auto tagged = profiler.recommend(budget);
+//   dispatch_workload_decision(bg_ctx, tagged, seq_body, par_body);
+template <class Ctx>
+concept CtxFitsWorkloadDecisionDispatch =
+       ::crucible::effects::IsExecCtx<Ctx>
+    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>;
+
+template <::crucible::effects::IsExecCtx Ctx, class SeqBody, class ParBody>
+    requires CtxFitsWorkloadDecisionDispatch<Ctx>
+          && ::std::invocable<SeqBody&&, concurrent::ParallelismDecision>
+          && ::std::invocable<ParBody&&, concurrent::ParallelismDecision>
+constexpr auto
+dispatch_workload_decision(Ctx const&,
+                           TaggedParallelismDecision decision,
+                           SeqBody&& seq_body,
+                           ParBody&& par_body)
+    noexcept(::std::is_nothrow_invocable_v<SeqBody&&, concurrent::ParallelismDecision>
+          && ::std::is_nothrow_invocable_v<ParBody&&, concurrent::ParallelismDecision>) {
+    const auto& dec = decision.value();
+    if (dec.is_parallel()) {
+        return ::std::forward<ParBody>(par_body)(dec);
+    }
+    return ::std::forward<SeqBody>(seq_body)(dec);
+}
+
+static_assert(CtxFitsWorkloadDecisionDispatch<::crucible::effects::BgDrainCtx>);
+static_assert(CtxFitsWorkloadDecisionDispatch<::crucible::effects::BgCompileCtx>);
+static_assert(!CtxFitsWorkloadDecisionDispatch<::crucible::effects::HotFgCtx>);
+static_assert(!CtxFitsWorkloadDecisionDispatch<::crucible::effects::ColdInitCtx>);
 
 }  // namespace crucible::perf

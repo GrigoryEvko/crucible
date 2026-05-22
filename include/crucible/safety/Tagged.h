@@ -313,6 +313,24 @@ namespace source {
     };
     template <TransportPostureTag Posture>
     struct TransportPosture {};
+
+    // FIXY-V-074: WorkloadProfiler provenance tag.  A value carrying
+    // this tag was minted by perf::WorkloadProfiler::recommend() —
+    // the profiler is the AUTHORITY on parallelism decisions and the
+    // tag is the proof-of-origin that a downstream dispatch routine
+    // needs to admit the value.  Without this tag a caller could
+    // synthesize a free-standing ParallelismDecision and route it
+    // through dispatch_workload_decision, bypassing the profiler's
+    // cache-tier reasoning entirely.
+    //
+    // Phantom-only — zero storage, EBO-collapses in
+    // Tagged<ParallelismDecision, source::WorkloadProfiler>.
+    //
+    // Distinct from source::Calibrated (general-purpose calibration
+    // result) and source::Meridian (startup measurement): the
+    // WorkloadProfiler tag specifically marks PER-CALL parallelism
+    // recommendations driven by a sampled hardware-profiler state.
+    struct WorkloadProfiler {};
 }
 
 namespace trust {

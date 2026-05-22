@@ -2234,6 +2234,22 @@ crucible_neg_compile_fixy_test(neg_fixy_perf_workload_profiler_bg_ctx
 crucible_neg_compile_fixy_test(neg_fixy_perf_workload_profiler_not_exec_ctx
     "no matching function|mint_workload_profiler|CtxFitsWorkloadProfilerMint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
 
+# FIXY-V-074 — `dispatch_workload_decision` HS14 floor (2 fixtures, two
+# distinct mismatch classes per HS14 discipline).  The Tagged<>-typed
+# return shape of WorkloadProfiler::recommend() is the load-bearing
+# soundness gate; without these fixtures a regression that loosens
+# either (a) the CtxFitsWorkloadDecisionDispatch concept or (b) the
+# TaggedParallelismDecision parameter type would silently compile.
+#
+# Fixture (a) — hot_fg: HotFgCtx fails the concept gate because its
+# Row<> doesn't contain Effect::Bg.
+# Fixture (b) — raw_decision: a bare ParallelismDecision (not Tagged)
+# fails the function signature.  Tests the parameter-type half.
+crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_hot_fg
+    "no matching function|dispatch_workload_decision|CtxFitsWorkloadDecisionDispatch|Bg|row_contains|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_raw_decision
+    "no matching function|dispatch_workload_decision|TaggedParallelismDecision|Tagged|ParallelismDecision|cannot convert")
+
 # FIXY-U-122 — `fixy::perf::v2::mint_sense_hub_v2` HS14 floor (2
 # fixtures, BgDrainCtx + NotAnExecCtx) routed through the sibling
 # sub-umbrella `<crucible/fixy/perf/V2.h>`.  Closes the final
