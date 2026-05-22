@@ -893,6 +893,74 @@ static void test_online_calibrator_updates_ewma() {
             "dispatch EWMA must saturate instead of wrapping on huge samples");
 }
 
+// fixy-V-206 (Agent 7 Bug #2): the pre-fix `mix_` was a relaxed load /
+// compute / relaxed store — under concurrent record_dispatch() the
+// intermediate-overwrite path silently dropped samples that landed
+// between another thread's load and its matching store.  This
+// concurrent witness exercises N threads × K samples each, all
+// converging on the same observed value `target_ns`; the EWMA must
+// settle within a tight band of `target_ns` (any sample loss biases
+// the EWMA toward the seed of the first surviving thread or the
+// post-saturation contributions of the dropped samples — both visibly
+// off the target).
+//
+// This test also runs under the tsan preset; the pre-fix shape
+// reported a data race on the std::atomic load-modify-store, the
+// CAS-loop is race-free by construction (every read-modify-write is a
+// single compare_exchange).  Sample-count is also asserted: every
+// .record_dispatch call paths through `samples.fetch_add(1, ...)`
+// regardless of mix_ behaviour, so an off-by-one sample loss surfaces
+// here independently of EWMA convergence.
+static void test_online_calibrator_concurrent_no_sample_loss() {
+    cc::AutoSplitOnlineCalibrator cal;
+
+    constexpr std::size_t   thread_count   = 8;
+    constexpr std::size_t   samples_per_thr = 4'000;
+    constexpr std::uint64_t target_ns      = 16'000;
+
+    std::vector<std::jthread> threads;
+    threads.reserve(thread_count);
+    std::atomic<bool> go{false};
+    for (std::size_t t = 0; t < thread_count; ++t) {
+        threads.emplace_back([&] {
+            while (!go.load(std::memory_order_acquire)) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+            for (std::size_t i = 0; i < samples_per_thr; ++i) {
+                cal.record_dispatch(target_ns);
+            }
+        });
+    }
+    go.store(true, std::memory_order_release);
+    threads.clear();  // jthread dtors join all workers
+
+    require(cal.sample_count() == thread_count * samples_per_thr,
+            "concurrent record_dispatch must not lose sample-counter "
+            "increments — fetch_add is atomic regardless of mix_, so "
+            "a miscount here flags a deeper regression");
+
+    // EWMA with α=1/16 converges to the input within a few alpha-
+    // half-lives.  After 32'000 identical samples the value should be
+    // within ±1 of target_ns (the integer division rounds occasionally
+    // shave one ns).  The pre-V-206 broken code, under contention,
+    // dropped enough samples to leave the EWMA seeded by the very
+    // first observed value plus partial accumulations — drifting
+    // hundreds of ns from target on every run.  A ±64 ns band catches
+    // any sample-loss pattern far below that threshold while tolerating
+    // legitimate rounding under acq_rel.
+    const std::uint64_t observed_ewma = cal.dispatch_cost_ns();
+    const std::uint64_t lower         = target_ns - 64;
+    const std::uint64_t upper         = target_ns + 64;
+    if (observed_ewma < lower || observed_ewma > upper) {
+        std::fprintf(stderr,
+            "concurrent EWMA drifted out of band: target=%lu "
+            "observed=%lu band=[%lu, %lu] — V-206 CAS loop dropped "
+            "a sample under contention\n",
+            target_ns, observed_ewma, lower, upper);
+        std::exit(1);
+    }
+}
+
 static void test_background_intent_demotes_under_pool_pressure() {
     cc::Pool<cs::Fifo> pool{cc::CoreCount{1}};
     std::atomic<bool> blocker_started{false};
@@ -946,6 +1014,7 @@ int main() {
     test_runtime_profile_refresh_and_reprobe();
     test_cached_planner_matches_uncached_and_separates_shapes();
     test_online_calibrator_updates_ewma();
+    test_online_calibrator_concurrent_no_sample_loss();
     test_background_intent_demotes_under_pool_pressure();
 
     std::puts("test_auto_split: PASS");

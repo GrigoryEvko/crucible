@@ -352,16 +352,42 @@ struct AutoSplitOnlineCalibrator {
     }
 
 private:
+    // fixy-V-206 (Agent 7 Bug #2): replace the relaxed read-modify-write
+    // race with an acq_rel compare_exchange_weak loop.  The prior shape
+    // `load(relaxed) → compute → store(relaxed)` loses a sample whenever
+    // two threads call `record_dispatch` concurrently — statistically OK
+    // for an EWMA but NOT deterministic, and the cost model on
+    // AdaptiveScheduler reads this value to choose parallel-vs-sequential.
+    // A lost sample skews the rule's view of recent dispatch cost.
+    //
+    // The CAS loop preserves the same EWMA formula
+    //     next = (old==0) ? observed : (old*15 + observed) / 16
+    // but retries on contention, so every sample lands.  acq_rel covers
+    // both the producer's write-visibility (release on success) and the
+    // reader's view of prior history (acquire on the eventual settled
+    // value).  acquire on retry ensures we re-read the freshly-committed
+    // `old` from the other writer before recomputing `next`.
     static void mix_(std::atomic<std::uint64_t>& target,
                      std::uint64_t observed) noexcept {
-        const std::uint64_t old = target.load(std::memory_order_relaxed);
-        const std::uint64_t weighted =
-            autosplit_detail::saturating_mul_u64(old, 15);
-        const std::uint64_t next =
-            old == 0
+        std::uint64_t old = target.load(std::memory_order_acquire);
+        std::uint64_t next;
+        do {
+            // EWMA: (old * 15 + observed) / 16.  Saturating multiply +
+            // saturating add preserve the V-pre-206 overflow-clamps-to-
+            // MAX semantics — a sustained run of large `observed` values
+            // pins the EWMA at UINT64_MAX rather than wrapping to a
+            // tiny number that would flip parallel-vs-sequential mid-
+            // run.  Right-shift by 4 is the unsigned `/16` the prior
+            // shape used; for `uint64_t` this is exactly equivalent.
+            const std::uint64_t weighted =
+                autosplit_detail::saturating_mul_u64(old, 15);
+            next = (old == 0)
                 ? observed
-                : autosplit_detail::saturating_add_u64(weighted, observed) / 16;
-        target.store(next, std::memory_order_relaxed);
+                : autosplit_detail::saturating_add_u64(weighted, observed) >> 4;
+        } while (!target.compare_exchange_weak(
+                      old, next,
+                      std::memory_order_acq_rel,
+                      std::memory_order_acquire));
     }
 };
 
