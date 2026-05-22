@@ -3,14 +3,26 @@
 # unification layer (misc/16_05_2026_fixy.md §4 Phase F).
 #
 # Greenfield discipline: under directories explicitly opted into
-# CRUCIBLE_FIXY_ONLY, downstream consumers must spell
-#   fixy::fn<Type, Grants...>
-# instead of reaching past the umbrella to
-#   safety::fn::Fn<Type, ...>
-# directly.  The aggregator IS the umbrella; routing around it
-# defeats the IsAccepted engagement gate, leaks the 19-positional
-# substrate signature into consumer code, and breaks the federation
-# cache-key story (FIXY-U-004 + FOUND-I02 row_hash_contribution).
+# CRUCIBLE_FIXY_ONLY, downstream consumers must spell substrate
+# types through the fixy:: umbrella, not raw safety::*.  Two flavors:
+#
+#   (1) Aggregator form — the 19-positional substrate row.  Spell
+#       fixy::fn<Type, Grants...> instead of safety::fn::Fn<Type, ...>;
+#       the aggregator IS the umbrella, and reaching past it defeats
+#       the IsAccepted engagement gate, leaks the 19-positional
+#       substrate signature into consumer code, and breaks the
+#       federation cache-key story (FIXY-U-004 + FOUND-I02
+#       row_hash_contribution).
+#
+#   (2) Primitive form — Refined / Tagged / Linear / Monotonic /
+#       Stale / Secret / Permission / Affine.  Spell the fixy::wrap::
+#       re-export (e.g. fixy::wrap::Refined<positive, uint16_t>)
+#       instead of safety::Refined<>; the wrap:: namespace is the
+#       per-axis grant-discoverable surface and matches the discipline
+#       story for §XXI mint factories.  Raw safety::*<> reach in
+#       band-3 dirs is grandfathered through
+#       scripts/fixy-discipline-allowlist.txt and migrates as the
+#       per-tag fixy::wrap surfaces stabilize (FIXY-V-073 backlog).
 #
 # Opt-in surface (CMakeLists.txt CRUCIBLE_FIXY_ONLY_PATHS GLOBAL
 # property is the single source of truth per FIXY-V-072; CMake
@@ -24,8 +36,8 @@
 #   src/{cntp,canopy,cog,topology,forge,mimic,observe,warden}/
 #
 # Exempt — fixy/ itself defines the aggregator and substrate
-# defines the slot type, so both refer to safety::fn::Fn freely.
-# Existing pre-fixy code is grandfathered through
+# defines the slot types, so both refer to the raw safety::* spellings
+# freely.  Existing pre-fixy code is grandfathered through
 # scripts/fixy-discipline-allowlist.txt (one repo-relative path
 # per line; lines beginning with '#' are comments).
 #
@@ -38,13 +50,13 @@
 #   0  — clean (no raw substrate spellings, no stale allowlist entries)
 #   1  — at least one violation (takes precedence over stale)
 #   2  — stale allowlist entry (a grandfathered path with no remaining
-#        reach-past-the-umbrella site — the file migrated to fixy::fn;
+#        reach-past-the-umbrella site — the file migrated to fixy::*;
 #        prune it) OR bad invocation / missing dependency
 #
 # Stale-entry detection (parity with check-no-reinterpret-cast.sh):
 # every allowlist path must correspond to a file that STILL contains a
 # raw substrate spelling.  Once a grandfathered file migrates to
-# fixy::fn, its allowlist entry is dead weight and could silently
+# fixy::*, its allowlist entry is dead weight and could silently
 # re-grandfather a future raw spelling re-introduced in that file.
 
 set -euo pipefail
@@ -272,7 +284,55 @@ PLANTED
         rm -f "$generated_file" "$list_output_file"
         printf 'check-fixy-discipline: self-test phase 3 passed — CRUCIBLE_FIXY_ONLY_PATHS_FILE loads paths from generated file.\n' >&2
 
-        printf 'check-fixy-discipline: self-test passed — all 3 phases green.\n' >&2
+        # ── Phase 4: FIXY-V-073 expanded substrate alternation ──────
+        # Verify the banned_pattern matches Tier-1 primitive spellings
+        # beyond safety::fn::Fn< — Refined / Tagged / Linear / Monotonic
+        # / Stale / Secret / Permission / Affine.  Plant one violation
+        # per spelling, leave the allowlist empty, and confirm the
+        # scanner names each banned spelling in its diagnostic.  A
+        # regression that drops one alternation arm reddens here.
+        rm -rf "$tmp_root/examples/fn"
+        mkdir -p "$tmp_root/examples/fn"
+        cat >"$tmp_root/examples/fn/planted_substrate.cpp" <<'PLANTED'
+// Synthetic substrate violations for FIXY-V-073 self-test verification.
+// Each line plants one banned spelling; production callers spell each
+// via the fixy::wrap:: re-export instead.
+namespace crucible::planted {
+using PlantedRefined    = ::crucible::safety::Refined<int, int>;
+using PlantedTagged     = ::crucible::safety::Tagged<int, int>;
+using PlantedLinear     = ::crucible::safety::Linear<int>;
+using PlantedMonotonic  = ::crucible::safety::Monotonic<int>;
+using PlantedStale      = ::crucible::safety::Stale<int>;
+using PlantedSecret     = ::crucible::safety::Secret<int>;
+using PlantedPermission = ::crucible::safety::Permission<int>;
+using PlantedAffine     = ::crucible::safety::Affine<int>;
+}  // namespace crucible::planted
+PLANTED
+        : >"$tmp_root/scripts/fixy-discipline-allowlist.txt"
+        result_file="$(mktemp)"
+        if CRUCIBLE_FIXY_DISCIPLINE_TEST_ROOT="$tmp_root" \
+           bash "${BASH_SOURCE[0]}" 2>"$result_file"; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — planted substrate violations were not caught.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        for _spelling in Refined Tagged Linear Monotonic Stale Secret Permission Affine; do
+            if ! grep -Fq "safety::${_spelling}<" "$result_file"; then
+                printf 'check-fixy-discipline: SELF-TEST FAILED — alternation arm safety::%s< not diagnosed.\n' \
+                    "$_spelling" >&2
+                printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                    "$(cat "$result_file")" >&2
+                rm -f "$result_file"
+                exit 2
+            fi
+        done
+        unset _spelling
+        rm -f "$result_file"
+        printf 'check-fixy-discipline: self-test phase 4 passed — Tier-1 substrate alternation fires on all 8 primitives.\n' >&2
+
+        printf 'check-fixy-discipline: self-test passed — all 4 phases green.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -291,10 +351,16 @@ fi
 
 # ── Banned substrate spellings ────────────────────────────────────────
 # The discipline rejects raw reach-past-the-umbrella references to
-# the 19-axis aggregator.  Match the INSTANTIATION form (open-angle-
-# bracket immediately following) — bare mentions in prose comments
-# are filtered out below.
-banned_pattern='\b(::)?(crucible::)?safety::fn::Fn\s*<'
+# (1) the 19-axis aggregator safety::fn::Fn< and
+# (2) the eight Tier-1 substrate primitives that already have
+#     fixy::wrap:: re-exports: Refined / Tagged / Linear / Monotonic /
+#     Stale / Secret / Permission / Affine.
+# Match the INSTANTIATION form (open-angle-bracket immediately
+# following) — bare mentions in prose comments are filtered out below.
+# Adding a new substrate primitive: extend the alternation here AND
+# regenerate the allowlist for any band-3 file that legitimately uses
+# the new spelling pre-migration (FIXY-V-073 sweep).
+banned_pattern='\b(::)?(crucible::)?safety::(fn::Fn|Refined|Tagged|Linear|Monotonic|Stale|Secret|Permission|Affine)\s*<'
 
 # ── Per-path scan ─────────────────────────────────────────────────────
 violation_count=0
@@ -349,8 +415,16 @@ while IFS= read -r match; do
         continue
     fi
 
-    printf 'FIXY-DISCIPLINE violation: %s:%s — raw safety::fn::Fn< spelling.  Use fixy::fn<Type, Grants...> instead.\n' \
-        "$rel" "$line" >&2
+    # Identify which substrate spelling fired for a sharper diagnostic.
+    # Falls back to the generic banner if no alternation matches (regex
+    # drift / future extension that this branch doesn't know about).
+    if [[ "$text" =~ safety::(fn::Fn|Refined|Tagged|Linear|Monotonic|Stale|Secret|Permission|Affine)[[:space:]]*\< ]]; then
+        matched_spelling="safety::${BASH_REMATCH[1]}<"
+    else
+        matched_spelling="raw safety::<substrate><"
+    fi
+    printf 'FIXY-DISCIPLINE violation: %s:%s — raw %s spelling.  Use fixy::wrap::%s or fixy::fn<...> instead.\n' \
+        "$rel" "$line" "$matched_spelling" "${BASH_REMATCH[1]:-Fn}" >&2
     violation_count=$((violation_count + 1))
 done < <(
     rg -nP \
@@ -369,17 +443,24 @@ if [[ "$violation_count" -ne 0 ]]; then
     cat >&2 <<HINT
 
 check-fixy-discipline detected ${violation_count} reach-past-the-umbrella site(s).
-Each site lives under a CRUCIBLE_FIXY_ONLY directory and spells the
-substrate aggregator (safety::fn::Fn<...>) directly instead of the
-fixy::fn<Type, Grants...> umbrella entry point.  This breaks the
-IsAccepted engagement gate and bypasses the federation cache-key
-story (FIXY-U-004 + FOUND-I02 row_hash_contribution).
+Each site lives under a CRUCIBLE_FIXY_ONLY directory and spells a
+raw substrate type directly instead of through the fixy:: umbrella.
+Banned spellings (FIXY-V-073 expansion):
+  safety::fn::Fn<...>                    — the 19-axis aggregator
+  safety::{Refined,Tagged,Linear,Monotonic,Stale,Secret,Permission,Affine}<...>
+                                         — Tier-1 substrate primitives
+The umbrella enforces engagement gating (IsAccepted), the per-axis
+grant story, and the federation cache key (FIXY-U-004 + FOUND-I02
+row_hash_contribution).
 
 Three remediations:
 
-  (1) Rewrite the binding as fixy::fn<Type, Grants...> using the
-      grant tag catalog under crucible::fixy::grant::.  This is
-      the strongly preferred fix and matches the umbrella story.
+  (1) Rewrite the spelling through the fixy:: umbrella.  For the
+      aggregator: fixy::fn<Type, Grants...> using the grant tag
+      catalog under crucible::fixy::grant::.  For Tier-1 primitives:
+      fixy::wrap::Refined / fixy::wrap::Tagged / fixy::wrap::Linear /
+      etc. (header crucible/fixy/Wrap.h, FIXY-V-035..V-058 surfaces).
+      This is the strongly preferred fix.
   (2) If the site is a deliberate round-trip demonstration that
       MUST spell the substrate form (e.g. a doc fixture), annotate
       the line with '// FIXY-DISCIPLINE-OK: <reason>'.
@@ -392,12 +473,12 @@ HINT
 fi
 
 # ── Stale allowlist entries (parity with check-no-reinterpret-cast.sh) ─
-# A grandfathered path whose file no longer holds a raw substrate spelling
-# is dead weight: it would silently re-grandfather a future raw spelling
-# re-introduced in that file.  The live set above is allowlist-blind, so an
-# entry absent from it means the file migrated to fixy::fn.  Keys are bare
-# repo-relative paths (no line suffix, no trailing prose) — compare the whole
-# trimmed entry, NOT a first whitespace token.
+# A grandfathered path whose file no longer holds any banned substrate
+# spelling is dead weight: it would silently re-grandfather a future raw
+# spelling re-introduced in that file.  The live set above is allowlist-
+# blind, so an entry absent from it means the file migrated to fixy::*.
+# Keys are bare repo-relative paths (no line suffix, no trailing prose) —
+# compare the whole trimmed entry, NOT a first whitespace token.
 stale_count=0
 if [[ -f "$allowlist" ]]; then
     while IFS= read -r entry; do
@@ -406,7 +487,7 @@ if [[ -f "$allowlist" ]]; then
         trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
         [[ -z "$trimmed" ]] && continue
         if ! grep -Fxq -- "$trimmed" "$live_set_file" 2>/dev/null; then
-            printf 'FIXY-DISCIPLINE stale: %s — STALE allowlist entry (no raw safety::fn::Fn< spelling remains in this file; it migrated to fixy::fn — remove from allowlist).\n' \
+            printf 'FIXY-DISCIPLINE stale: %s — STALE allowlist entry (no raw safety:: substrate spelling remains in this file; it migrated to fixy::* — remove from allowlist).\n' \
                 "$trimmed" >&2
             stale_count=$((stale_count + 1))
         fi

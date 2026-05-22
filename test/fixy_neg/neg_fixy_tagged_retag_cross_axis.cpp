@@ -29,7 +29,7 @@ int main() {
     // Construct a Tagged with a source::* phantom reached via the
     // fixy alias.  The substrate type is `safety::source::External`;
     // the alias preserves typename identity.
-    crucible::safety::Tagged<int, ft::source::External> external{42};
+    crucible::safety::Tagged<int, ft::source::External> external{42};  // FIXY-DISCIPLINE-OK: neg fixture exercises substrate Tagged<> directly to hit the V-024 wired retag() requires-clause
 
     // Cross-axis retag — `ft::trust::Verified` aliases
     // `safety::trust::Verified`.  V-023's catalog never admits

@@ -23,8 +23,8 @@ namespace ft = crucible::fixy::tags;
 struct SourceNegFixture1_Marker {};
 
 int main() {
-    using FromUserTagged   = crucible::safety::Tagged<int, ft::source::FromUser>;
-    using SanitizedTagged  = crucible::safety::Tagged<int, ft::source::Sanitized>;
+    using FromUserTagged   = crucible::safety::Tagged<int, ft::source::FromUser>;   // FIXY-DISCIPLINE-OK: neg fixture exercises substrate Tagged<> directly to demonstrate alias-preserved type identity
+    using SanitizedTagged  = crucible::safety::Tagged<int, ft::source::Sanitized>;  // FIXY-DISCIPLINE-OK: neg fixture exercises substrate Tagged<> directly to demonstrate alias-preserved type identity
     static_assert(std::is_same_v<FromUserTagged, SanitizedTagged>,
         "Tagged<int, source::FromUser> and Tagged<int, source::Sanitized> "
         "must be the SAME type — fixy::tags alias must collapse source "

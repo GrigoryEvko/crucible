@@ -1,16 +1,108 @@
 # scripts/fixy-discipline-allowlist.txt — Phase F grandfather list.
 #
 # One repo-relative path per line.  Files listed here are exempted
-# from the check-fixy-discipline.sh "no raw safety::fn::Fn< in
-# fixy-only zones" rule.  Lines beginning with '#' are comments.
+# from the check-fixy-discipline.sh "no raw safety:: substrate
+# spellings in fixy-only zones" rule.  Lines beginning with '#' are
+# comments.
+#
+# Banned spellings (FIXY-V-073 expansion):
+#   safety::fn::Fn<...>                              the 19-axis aggregator
+#   safety::Refined<...>                             refinement-by-predicate
+#   safety::Tagged<...>                              provenance / trust phantom
+#   safety::Linear<...>                              move-only consume-once
+#   safety::Monotonic<...>                           only-advance per Cmp
+#   safety::Stale<...>                               value + staleness semiring
+#   safety::Secret<...>                              classified carrier
+#   safety::Permission<...>                          CSL frame-rule token
+#   safety::Affine<...>                              at-most-once carrier
 #
 # Trim discipline: every entry is a TODO.  When the listed file
-# migrates to fixy::fn< spellings or is deleted, REMOVE its line.
+# migrates to fixy::wrap::* spellings or is deleted, REMOVE its line.
 # A clean fixy-only file must not stay on the allowlist; the
-# allowlist exists for in-flight migrations only.
+# allowlist exists for in-flight migrations only.  The stale-entry
+# detector reddens (rc=2) if an allowlisted file no longer contains
+# a banned spelling — it migrated and the entry must be pruned.
 #
-# Current state: empty.  At the Phase F ship moment, no file under
-# examples/fn/ or test/fixy_neg/ reaches past the umbrella, so
-# zero grandfathering is needed.  Entries will be added if a
-# migration cycle widens the CRUCIBLE_FIXY_ONLY surface to a
-# directory that hasn't been fully ported yet.
+# Migration target per file: replace each raw safety::* spelling
+# with the fixy::wrap::* re-export from include/crucible/fixy/Wrap.h
+# (FIXY-V-035..V-058 surfaces).  The fixy::wrap aliases are literally
+# `using` declarations of the same substrate types — zero ABI change,
+# pure spelling discipline.  See misc/16_05_2026_fixy.md §5.3 +
+# fixy::wrap:: declarations in include/crucible/fixy/Wrap.h for the
+# canonical replacement table.
+#
+# Seeded FIXY-V-073 (2026-05-22): 56 files under the 8 band-3
+# directories that hold raw safety:: substrate spellings as of
+# the V-073 ship.  Future fixy::wrap migrations remove their entry.
+
+# ── canopy/ (8 files) ───────────────────────────────────────────
+include/crucible/canopy/Crdt.h
+include/crucible/canopy/Hlc.h
+include/crucible/canopy/HyParView.h
+include/crucible/canopy/Lifeguard.h
+include/crucible/canopy/Plumtree.h
+include/crucible/canopy/Scuttlebutt.h
+include/crucible/canopy/Swim.h
+include/crucible/canopy/VectorClock.h
+
+# ── cntp/ (25 files: 18 stable + 7 _wip) ────────────────────────
+include/crucible/cntp/AfXdp.h
+include/crucible/cntp/Backpressure.h
+include/crucible/cntp/CongestionControl.h
+include/crucible/cntp/ConnectionPool.h
+include/crucible/cntp/ConnectionPoolRuntime.h
+include/crucible/cntp/Fec.h
+include/crucible/cntp/Fountain.h
+include/crucible/cntp/GossipMulticast.h
+include/crucible/cntp/IncastControl.h
+include/crucible/cntp/Integrity.h
+include/crucible/cntp/MtlsTransport.h
+include/crucible/cntp/OverlayMulticast.h
+include/crucible/cntp/Pacing.h
+include/crucible/cntp/PathSwap.h
+include/crucible/cntp/RoceConfig.h
+include/crucible/cntp/Tcam.h
+include/crucible/cntp/dataplane/TcEbpf.h
+include/crucible/cntp/dataplane/Xdp.h
+include/crucible/cntp/_wip/Doca.h
+include/crucible/cntp/_wip/GpuDirect.h
+include/crucible/cntp/_wip/KtlsOffload.h
+include/crucible/cntp/_wip/P4.h
+include/crucible/cntp/_wip/QuicTransport.h
+include/crucible/cntp/_wip/Sharp.h
+include/crucible/cntp/_wip/Wireguard.h
+
+# ── cog/ (6 files) ──────────────────────────────────────────────
+include/crucible/cog/Calibrate.h
+include/crucible/cog/CogIdentity.h
+include/crucible/cog/NicConfig.h
+include/crucible/cog/OpcodeLatencyTable.h
+include/crucible/cog/SrIov.h
+include/crucible/cog/TargetCaps.h
+
+# ── forge/ (3 files: 2 stable + 1 _wip) ─────────────────────────
+include/crucible/forge/Ir001/Comm.h
+include/crucible/forge/recipes/Network.h
+include/crucible/forge/_wip/Phases/Comm.h
+
+# ── mimic/ (2 files: 1 stable + 1 _wip) ─────────────────────────
+include/crucible/mimic/CogMimic.h
+include/crucible/mimic/_wip/network/Backend.h
+
+# ── observe/ (3 files) ──────────────────────────────────────────
+include/crucible/observe/HdrHistogram.h
+include/crucible/observe/Metrics.h
+include/crucible/observe/SdcDetect.h
+
+# ── topology/ (8 files) ─────────────────────────────────────────
+include/crucible/topology/AsymmetricFailure.h
+include/crucible/topology/CongestionTelemetry.h
+include/crucible/topology/Discovery.h
+include/crucible/topology/Health.h
+include/crucible/topology/Pingmesh.h
+include/crucible/topology/Ptp.h
+include/crucible/topology/Telemetry.h
+include/crucible/topology/TopologyGraph.h
+
+# ── warden/ (1 file) ────────────────────────────────────────────
+include/crucible/warden/Quarantine.h
