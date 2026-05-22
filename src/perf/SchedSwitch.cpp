@@ -388,15 +388,19 @@ uint64_t SchedSwitch::timeline_write_index() const noexcept {
     return hdr->write_idx;
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t>
+// fixy-V-171: returns the §XVI parameterised alias
+// fixy::wrap::MaxBounded<8, std::size_t> — type-identical to the
+// pre-V-171 `safety::Refined<safety::bounded_above<8>, std::size_t>`
+// spelling (it IS that type via using-re-export; zero ABI change).
+fixy::wrap::MaxBounded<8, std::size_t>
 SchedSwitch::attached_programs() const noexcept {
-    using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
+    using R = fixy::wrap::MaxBounded<8, std::size_t>;
     return R{(state_ != nullptr) ? state_->links.size() : std::size_t{0}};
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t>
+fixy::wrap::MaxBounded<8, std::size_t>
 SchedSwitch::attach_failures() const noexcept {
-    using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
+    using R = fixy::wrap::MaxBounded<8, std::size_t>;
     return R{(state_ != nullptr) ? state_->attach_fail_cnt.get()
                                  : std::size_t{0}};
 }

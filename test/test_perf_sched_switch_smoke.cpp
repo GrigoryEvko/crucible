@@ -119,6 +119,15 @@ int main() {
         // by Refined<bounded_above<8>, size_t> — sched_switch.bpf.c
         // contains exactly one tracepoint program, so attached + failed
         // is in [0, 1] in practice and within [0, 8] structurally.
+        //
+        // fixy-V-171 type-equivalence witness: the public API returns
+        // fixy::wrap::MaxBounded<8, std::size_t>, which is a using-
+        // alias for safety::Refined<safety::bounded_above<8>, size_t>.
+        // Both spellings name the same type — proven by the dual
+        // static_assert below.  A future drift (e.g. MaxBounded
+        // re-pointed at a different predicate, or the substrate
+        // Refined renamed) would red the second static_assert at
+        // build time, BEFORE the wrong type silently reaches a caller.
         const auto attached_refined = hub->attached_programs();
         const auto failures_refined = hub->attach_failures();
         static_assert(std::is_same_v<
@@ -129,6 +138,13 @@ int main() {
             decltype(failures_refined),
             const crucible::safety::Refined<
                 crucible::safety::bounded_above<8>, std::size_t>>);
+        // fixy-V-171: same value, named via the fixy::wrap §XVI alias.
+        static_assert(std::is_same_v<
+            decltype(attached_refined),
+            const crucible::fixy::wrap::MaxBounded<8, std::size_t>>);
+        static_assert(std::is_same_v<
+            decltype(failures_refined),
+            const crucible::fixy::wrap::MaxBounded<8, std::size_t>>);
         const std::size_t attached = attached_refined.value();
         const std::size_t failures = failures_refined.value();
         if (attached == 0 && failures == 0) {

@@ -117,8 +117,8 @@
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
 #include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
 #include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/fixy/wrap/Refined.h>     // FIXY-V-171: fixy::wrap::MaxBounded
 #include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
-#include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
 
 #include <cstddef>
 #include <cstdint>
@@ -308,14 +308,20 @@ class SchedSwitch {
     // shape with future per-program facades that may attach more
     // probes (e.g. a future sched_wakeup pairing).  Same
     // bounded_above<8> envelope as attach_failures().
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
+    //
+    // fixy-V-171: returns fixy::wrap::MaxBounded<8, std::size_t> —
+    // the §XVI parameterised alias for Refined<bounded_above<8>, T>.
+    // Type-identical to the prior `safety::Refined<safety::bounded_
+    // above<8>, std::size_t>` spelling (`using` re-export, no ABI
+    // change); the alias is the grep-target form §XVI requires.
+    [[nodiscard]] fixy::wrap::MaxBounded<8, std::size_t>
         attached_programs() const noexcept;
 
     // Number of bpf_program__attach calls that failed (returned
     // NULL or an ERR_PTR).  Same bound as attached_programs().
     // Non-zero means the tracepoint was unavailable — set
     // CRUCIBLE_PERF_VERBOSE=1 to see why.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
+    [[nodiscard]] fixy::wrap::MaxBounded<8, std::size_t>
         attach_failures() const noexcept;
 
     SchedSwitch(const SchedSwitch&) =
