@@ -267,6 +267,7 @@ crucible_test(test_fixy_v_095_box_muller_polynomial)  # FIXY-V-095 Philox::box_m
 crucible_test(test_fixy_v_096_welford_variance)  # FIXY-V-096 bench_harness Welford-on-double variance — type-shape + ill-conditioned stability witness
 target_include_directories(test_fixy_v_096_welford_variance SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
+crucible_test(test_fixy_v_097_syscall_family)  # FIXY-V-097 DimensionAxis::SyscallSurface + SyscallFamilyLattice 9-tier chain
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -6006,6 +6007,29 @@ crucible_neg_compile_test(neg_fp_mode_cardinality_stale
   "static assertion failed|DIMENSION_AXIS_COUNT|FIXY-V-088|22")
 crucible_neg_compile_test(neg_fp_mode_tier_misclassify
   "static assertion failed|FpMode|TierKind|Foundational|Semiring|FIXY-V-088")
+
+# ─── FIXY-V-097 DimensionAxis::SyscallSurface neg-compile fixtures (2) ─
+#
+# V-097 ships DimensionAxis::SyscallSurface (ordinal 23, Tier-S Semiring)
+# + 9-tier SyscallFamily chain lattice in
+# algebra/lattices/SyscallFamilyLattice.h.  HS14: 2 fixtures across
+# distinct mismatch classes:
+#   1. cardinality-stale — asserts DIMENSION_AXIS_COUNT == 23.  V-097
+#      grew the count to 24; assertion fires and build reddens.
+#      Catches accidental REMOVAL of the SyscallSurface enumerator
+#      (downstream consumers that hard-code the axis count would
+#      silently lose their SyscallSurface slot otherwise).
+#   2. tier-misclassify — asserts SyscallSurface is Foundational.
+#      Actual classification is Semiring (par=join, strictest-wins);
+#      assertion fires and build reddens.  Catches accidental tier
+#      reclassification that would silently disable the hot-path
+#      admission gate's par=join composition law for syscall surface
+#      and the V-100 effect-row bridge that lifts SyscallSurface into
+#      Met(X) rows.
+crucible_neg_compile_test(neg_syscall_family_cardinality_stale
+  "static assertion failed|DIMENSION_AXIS_COUNT|FIXY-V-097|23")
+crucible_neg_compile_test(neg_syscall_family_tier_misclassify
+  "static assertion failed|SyscallSurface|TierKind|Foundational|Semiring|FIXY-V-097")
 
 # ─── FIXY-V-090 FpModePinned wrapper neg-compile fixtures (2) ─────────
 #

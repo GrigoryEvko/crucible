@@ -333,6 +333,27 @@ namespace fp_mode {
     struct Unconstrained {};   // default — no FP-mode wrapper claim at binding scope
 }
 
+// ── Dim 23 SyscallSurface (Tier-S, FIXY-V-097, 2026-05-22) ────────
+//
+// Like Synchronization / Regime / FpMode (dims 20 / 21 / 22),
+// SyscallSurface ships NO Fn<...> aggregator slot — the syscall-family
+// pin lives at the VALUE site (V-098 ships per-family / per-syscall
+// grant tags; V-100 will ship a forge-emitted wrapper that pins the
+// concrete SyscallFamily on a return type).  The sole reason this
+// namespace exists is so fixy/Default.h can give the SyscallSurface
+// axis a `type` alias that satisfies the `every_axis_resolves`
+// reflection-driven coverage check.
+//
+// `Unconstrained` IS the strict default — the binding makes no claim
+// about syscall surface.  A binding that wants to constrain the
+// surface uses `grant::accept_default_strict_for<DimensionAxis::
+// SyscallSurface>` to engage the axis (V-098+ will ship the
+// per-family / per-syscall grants that engage with a non-Unconstrained
+// claim).
+namespace syscall {
+    struct Unconstrained {};   // default — no syscall-surface wrapper claim at binding scope
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── ValidComposition concept gate (Phase 0 P0-2) ───────────────────
 // ═════════════════════════════════════════════════════════════════════

@@ -47,10 +47,11 @@ template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
 
 int main() {
-    // 22-element pack: 21 distinct axes engaged with strict markers +
+    // 23-element pack: 22 distinct axes engaged with strict markers +
     // BOTH fp_strict_ieee AND with_fp_rounding<RTE> covering FpMode
     // twice.  The duplicate FpMode engagement is the load-bearing
-    // rejection cause; every other axis is uniquely engaged.
+    // rejection cause; every other axis is uniquely engaged
+    // (including SyscallSurface, the V-097 axis).
     auto bad = fixy::mint_fn<int,
         strict<D::Refinement>, strict<D::Usage>,
         strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
@@ -60,6 +61,7 @@ int main() {
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
         strict<D::Synchronization>, strict<D::Regime>,
+        strict<D::SyscallSurface>,
         gr::fp_strict_ieee /* FpMode #1 */,
         gr::with_fp_rounding<sf::FpRounding::RoundToNearestEven>
                               /* FpMode #2 — duplicate */>(42);

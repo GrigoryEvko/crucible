@@ -50,7 +50,8 @@ using PackWithout = std::tuple<
     std::conditional_t<Omit == D::Staleness,      void, strict<D::Staleness>>,
     std::conditional_t<Omit == D::Synchronization, void, strict<D::Synchronization>>,
     std::conditional_t<Omit == D::Regime,         void, strict<D::Regime>>,
-    std::conditional_t<Omit == D::FpMode,         void, strict<D::FpMode>>>;
+    std::conditional_t<Omit == D::FpMode,         void, strict<D::FpMode>>,
+    std::conditional_t<Omit == D::SyscallSurface, void, strict<D::SyscallSurface>>>;
 
 // Filter `void`s out of the pack; the resulting tuple is what we
 // hand to IsAcceptedGrants.

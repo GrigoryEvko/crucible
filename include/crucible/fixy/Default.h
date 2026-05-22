@@ -344,6 +344,26 @@ struct strict_default_for<dim::DimensionAxis::FpMode> {
     using type = safety::fn::fp_mode::Unconstrained;
 };
 
+// FIXY-V-097: SyscallSurface (dim 23, Crucible extension 2026-05-22)
+// is a WRAPPER-ONLY axis — the syscall-family taxonomy
+// (`SyscallFamilyLattice` per algebra/lattices/SyscallFamilyLattice.h:
+// NoSyscall / VdsoOnly / ReadOnlyState / FileMutation / MemoryMapping
+// / ThreadSync / NetworkIo / ProcessControl / Privilege) is held at
+// the value site by V-098+'s forge-emitted wrapper, not as an
+// Fn<...> aggregator slot.  No Fn<int> alias to round-trip against
+// (parallel to Observability / Synchronization / Regime / FpMode).
+// The strict default is `safety::fn::syscall::Unconstrained` —
+// meaning "the binding makes no claim about syscall surface at this
+// scope; if any value flowing through carries a wrapper, that wrapper
+// carries the surface pin."  Tier-S Semiring: composition is
+// par=join along the chain NoSyscall ⊏ ... ⊏ Privilege (subset-
+// inclusion on the syscall set), matching Met(X) effect-row union
+// at finer granularity.
+template <>
+struct strict_default_for<dim::DimensionAxis::SyscallSurface> {
+    using type = safety::fn::syscall::Unconstrained;
+};
+
 // ─── has_strict_default — predicate concept ────────────────────────
 //
 // True iff a specialization exists for D AND it exposes either `type`

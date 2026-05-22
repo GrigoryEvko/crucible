@@ -230,6 +230,30 @@ enum class DimensionAxis : std::uint8_t {
     // and Forge phase E.RecipeSelect, parallel to Synchronization and
     // Regime).
     FpMode          = 22, // S  (Crucible extension, 2026-05-22)
+    // SyscallSurface (FIXY-V-097) — added 2026-05-22 to host the
+    // syscall-family taxonomy (V-098 ships the per-family grant catalog,
+    // V-099 ships the per-ioctl grants, V-100 ships the syscall→effect-row
+    // bridge).  Previously a function's "what kernel surface does this
+    // touch" was implicit in the effect row (`effects::IO` / `Block` /
+    // `Alloc`) which collapses files / network / mmap / process-control
+    // into a single bit — too coarse to drive (a) Forge phase E.RecipeSelect
+    // hot-path admission (NoSyscall vs VdsoOnly vs everything-else),
+    // (b) Mimic per-vendor backend gates that need to know whether a
+    // kernel emits direct ioctls, (c) Cipher cold-tier paths that must
+    // declare FileMutation vs Memory-mapping, and (d) Canopy peer-RX
+    // paths that must declare NetworkIo separately from ProcessControl.
+    // Pinning SyscallSurface as its own axis makes those gates expressible
+    // — V-098's grant catalog will route per-family tags here.
+    //
+    // Tier S with par=join (strictest-wins) reading along the chain
+    // NoSyscall ⊏ VdsoOnly ⊏ ReadOnlyState ⊏ FileMutation ⊏ MemoryMapping
+    // ⊏ ThreadSync ⊏ NetworkIo ⊏ ProcessControl ⊏ Privilege; composition
+    // of two sites' syscall surfaces is the JOIN (the larger family),
+    // matching subset-inclusion semantics on the underlying syscall set.
+    // No Fn<> aggregator slot (composes via wrapper-nesting at the value
+    // site + Forge phase E gating, parallel to Synchronization / Regime
+    // / FpMode).
+    SyscallSurface  = 23, // S  (Crucible extension, 2026-05-22)
 };
 
 inline constexpr std::size_t DIMENSION_AXIS_COUNT =
@@ -260,6 +284,7 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::Synchronization: return "Synchronization";
         case DimensionAxis::Regime:         return "Regime";
         case DimensionAxis::FpMode:         return "FpMode";
+        case DimensionAxis::SyscallSurface: return "SyscallSurface";
         default:                            return std::string_view{"<unknown DimensionAxis>"};
     }
 }
@@ -303,6 +328,7 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::Synchronization:
         case DimensionAxis::Regime:
         case DimensionAxis::FpMode:
+        case DimensionAxis::SyscallSurface:
             return TierKind::Semiring;
 
         default:
@@ -653,14 +679,16 @@ namespace detail::dimension_traits_self_test {
 static_assert(TIER_KIND_COUNT == 5,
     "TierKind catalog diverged from fixy.md §24.1 Tier S/L/T/F/V (5); "
     "if intentional, update fixy.md and this constant together.");
-static_assert(DIMENSION_AXIS_COUNT == 23,
-    "DimensionAxis catalog diverged from fixy.md §24.1 (23 dims: FX's "
+static_assert(DIMENSION_AXIS_COUNT == 24,
+    "DimensionAxis catalog diverged from fixy.md §24.1 (24 dims: FX's "
     "22 minus dim 12 Clock Domain and dim 17 FP Order, plus the Crucible "
     "Synchronization extension added 2026-05-18 for Wait + MemOrder, plus "
     "the Crucible Regime extension added 2026-05-18 for HotPath, plus "
     "the Crucible FpMode extension added 2026-05-22 for the 11-sub-axis "
-    "FP-mode taxonomy per FIXY-V-088); if intentional, update fixy.md "
-    "§24.1 + §24.14 + §24.15 + §24.16 and this constant.");
+    "FP-mode taxonomy per FIXY-V-088, plus the Crucible SyscallSurface "
+    "extension added 2026-05-22 for the syscall-family taxonomy per "
+    "FIXY-V-097); if intentional, update fixy.md §24.1 + §24.14 + §24.15 "
+    "+ §24.16 + §24.17 and this constant.");
 
 // ── Reflection-driven name coverage (TierKind) ─────────────────────
 [[nodiscard]] consteval bool every_tier_kind_has_name() noexcept {
@@ -735,11 +763,11 @@ static_assert(every_dimension_axis_has_tier(),
     return n;
 }
 
-static_assert(count_dims_in_tier(TierKind::Semiring)     == 18,
-    "fixy.md §24.1 declares 18 Tier-S dimensions (15 FX-inherited + "
+static_assert(count_dims_in_tier(TierKind::Semiring)     == 19,
+    "fixy.md §24.1 declares 19 Tier-S dimensions (15 FX-inherited + "
     "Synchronization 2026-05-18 per fixy-A3-008 + Regime 2026-05-18 per "
-    "fixy-A3-009 + FpMode 2026-05-22 per FIXY-V-088); tier_of_axis "
-    "disagrees.");
+    "fixy-A3-009 + FpMode 2026-05-22 per FIXY-V-088 + SyscallSurface "
+    "2026-05-22 per FIXY-V-097); tier_of_axis disagrees.");
 static_assert(count_dims_in_tier(TierKind::Lattice)      == 1,
     "fixy.md §24.1 declares 1 Tier-L dimension (Representation); "
     "tier_of_axis disagrees.");
@@ -859,6 +887,10 @@ static_assert(dimension_axis_name(DimensionAxis::Reentrancy)     == "Reentrancy"
 static_assert(dimension_axis_name(DimensionAxis::Size)           == "Size");
 static_assert(dimension_axis_name(DimensionAxis::Version)        == "Version");
 static_assert(dimension_axis_name(DimensionAxis::Staleness)      == "Staleness");
+static_assert(dimension_axis_name(DimensionAxis::Synchronization) == "Synchronization");
+static_assert(dimension_axis_name(DimensionAxis::Regime)         == "Regime");
+static_assert(dimension_axis_name(DimensionAxis::FpMode)         == "FpMode");
+static_assert(dimension_axis_name(DimensionAxis::SyscallSurface) == "SyscallSurface");
 
 // fixy.md §24.1 axis-to-Tier mapping spot checks.
 static_assert(tier_of_axis(DimensionAxis::Type)           == TierKind::Foundational);
@@ -869,6 +901,10 @@ static_assert(tier_of_axis(DimensionAxis::Protocol)       == TierKind::Typestate
 static_assert(tier_of_axis(DimensionAxis::Representation) == TierKind::Lattice);
 static_assert(tier_of_axis(DimensionAxis::Version)        == TierKind::Versioned);
 static_assert(tier_of_axis(DimensionAxis::Staleness)      == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::Synchronization) == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::Regime)         == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::FpMode)         == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::SyscallSurface) == TierKind::Semiring);
 
 // Variable-template form mirrors the function form.
 static_assert(tier_of_axis_v<DimensionAxis::Type>     == TierKind::Foundational);

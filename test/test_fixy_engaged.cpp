@@ -55,7 +55,7 @@ static_assert(fixy::IsAccepted<int,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
     strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
     strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>>,
+    strict<D::FpMode>, strict<D::SyscallSurface>>,
     "Witness 1: PureLinear (all-strict) baseline must accept.");
 
 // Witness 2: PureCopy — Usage relaxation to `copy`.
@@ -69,7 +69,7 @@ static_assert(fixy::IsAccepted<int,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
     strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
     strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>>,
+    strict<D::FpMode>, strict<D::SyscallSurface>>,
     "Witness 2: PureCopy stance — `copy` engages Usage.");
 
 // Witness 3: IoFunction — Effect relaxation to `with<IO>`.
@@ -93,7 +93,7 @@ static_assert(fixy::IsAccepted<int,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
     strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
     strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>>,
+    strict<D::FpMode>, strict<D::SyscallSurface>>,
     "Witness 3: IoFunction stance — `with<IO>` engages Effect; "
     "Security is `as_public` to satisfy fixy-CR-01 corpus.");
 
@@ -109,7 +109,7 @@ static_assert(fixy::IsAccepted<int,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
     strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
     strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>>,
+    strict<D::FpMode>, strict<D::SyscallSurface>>,
     "Witness 4: CtCrypto stance — Usage + Effect both engaged.");
 
 // Witness 5: SecretConsumer — same shape as PureLinear (default
@@ -125,7 +125,7 @@ static_assert(fixy::IsAccepted<int,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
     strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
     strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>>,
+    strict<D::FpMode>, strict<D::SyscallSurface>>,
     "Witness 5: SecretConsumer stance — explicit accept-strict on "
     "Security engages the Classified default.");
 
@@ -140,7 +140,7 @@ static_assert(fixy::IsAccepted<int,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
     strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
     strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>>,
+    strict<D::FpMode>, strict<D::SyscallSurface>>,
     "Witness 6: Tier-F Refinement relaxation via refined_with<Pred> "
     "engages the Refinement axis.");
 
@@ -155,7 +155,7 @@ static_assert(fixy::IsAccepted<int,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
     strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
     strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>>,
+    strict<D::FpMode>, strict<D::SyscallSurface>>,
     "Witness 7: Tier-S Lifetime relaxation via in_region<Tag>.");
 
 // Witness 8: Version (Tier V) relaxation via `version<N>`.
@@ -169,7 +169,7 @@ static_assert(fixy::IsAccepted<int,
     strict<D::Size>,
     gr::version<3>,    // <-- Version
     strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>>,
+    strict<D::FpMode>, strict<D::SyscallSurface>>,
     "Witness 8: Tier-V Version relaxation via version<N>.");
 
 // ─── Negative shape-witness — empty pack rejects ───────────────────
@@ -190,7 +190,7 @@ static_assert(!fixy::IsAccepted<void,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
     strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
     strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>>,
+    strict<D::FpMode>, strict<D::SyscallSurface>>,
     "Type=void must reject — Fn requires complete object type.");
 
 int main() { return 0; }

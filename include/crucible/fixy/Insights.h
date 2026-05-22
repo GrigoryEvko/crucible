@@ -375,6 +375,31 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "grant::accept_default_strict_for<dim::DimensionAxis::FpMode>",
     "fixy::fn<T, /* no FpMode grant */, ...>");
 
+// FIXY-V-097: SyscallSurface axis added 2026-05-22.  Strict default is
+// syscall::Unconstrained — bindings make no claim about syscall surface
+// at this scope, deferring to V-098+'s forge-emitted value wrapper if
+// one is present.  Missing engagement disables the §6.8 S101-S104
+// collision family (SyscallSurface × HotPath, SyscallSurface × DetSafe,
+// SyscallSurface × Vendor, SyscallSurface × Security) once V-100 wires
+// them — those rules dispatch on the SyscallFamily grade.
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_SyscallSurface,
+    ::crucible::safety::diag::Severity::Error,
+    "SyscallSurface engages the syscall-family taxonomy (NoSyscall / "
+    "VdsoOnly / ReadOnlyState / FileMutation / MemoryMapping / "
+    "ThreadSync / NetworkIo / ProcessControl / Privilege — the 9-tier "
+    "chain V-097 ships in algebra/lattices/SyscallFamilyLattice.h).  "
+    "Strict default is syscall::Unconstrained (the binding defers to "
+    "the value wrapper that V-098+ will ship).  Missing engagement "
+    "defeats the §6.8 S101-S104 collision family (SyscallSurface × "
+    "HotPath, SyscallSurface × DetSafe, SyscallSurface × Vendor, "
+    "SyscallSurface × Security) which V-100 will ship — those rules "
+    "dispatch on the SyscallFamily grade.",
+    "Grants pack omits grant::with_syscall<...> AND omits "
+    "accept_default_strict_for<SyscallSurface>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>",
+    "fixy::fn<T, /* no SyscallSurface grant */, ...>");
+
 // ═══════════════════════════════════════════════════════════════════
 // ── 4 §30.14 corpus entry specializations ─────────────────────────
 // ═══════════════════════════════════════════════════════════════════

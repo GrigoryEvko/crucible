@@ -49,7 +49,7 @@ static_assert(fixy::IsAccepted<int,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
     strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>>,
+    strict<D::FpMode>, strict<D::SyscallSurface>>,
     "fixy-H-05 floor: wrapper-discipline IsAccepted must reject "
     "explicit strict<D::Type> in the Grants pack (duplicate Type-axis "
     "engagement caused by ImplicitTypeMarker auto-injection).");
