@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-22T19:57:36Z`.
+Snapshot generated: `2026-05-22T20:18:58Z`.
 
 ## bridges/
 
@@ -57,14 +57,14 @@ Snapshot generated: `2026-05-22T19:57:36Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_endpoint` | `include/crucible/concurrent/Endpoint.h:592` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:189` | HS14: 18 |
-| `mint_mpmc_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:529` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:110` | HS14: 4 |
-| `mint_pipeline` | `include/crucible/concurrent/Pipeline.h:1021` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:130` | HS14: 12 |
-| `mint_pipeline_dag` | `include/crucible/concurrent/Pipeline.h:1045` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:210` | HS14: 3 |
-| `mint_stage` | `include/crucible/concurrent/Stage.h:670` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:155` | HS14: 26 |
-| `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:510` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:109` | HS14: 7 |
-| `mint_substrate_session` | `include/crucible/concurrent/SubstrateSessionBridge.h:746` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:117` | HS14: 12 |
-| `mint_swmr_stage` | `include/crucible/concurrent/StageEndpointBridge.h:559` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:111` | HS14: 2 |
+| `mint_endpoint` | `include/crucible/concurrent/Endpoint.h:592` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:193` | HS14: 18 |
+| `mint_mpmc_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:529` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:114` | HS14: 4 |
+| `mint_pipeline` | `include/crucible/concurrent/Pipeline.h:1021` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:101` | HS14: 12 |
+| `mint_pipeline_dag` | `include/crucible/concurrent/Pipeline.h:1045` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:102` | HS14: 3 |
+| `mint_stage` | `include/crucible/concurrent/Stage.h:670` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:159` | HS14: 26 |
+| `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:510` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:113` | HS14: 7 |
+| `mint_substrate_session` | `include/crucible/concurrent/SubstrateSessionBridge.h:746` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:121` | HS14: 12 |
+| `mint_swmr_stage` | `include/crucible/concurrent/StageEndpointBridge.h:559` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:115` | HS14: 2 |
 
 ## effects/
 
@@ -97,9 +97,9 @@ Snapshot generated: `2026-05-22T19:57:36Z`.
 | `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h:697` | - | Y | Y | - | token | `include/crucible/fixy/Perm.h:173` | HS14: 24 |
 | `mint_permission_combine` | `include/crucible/permissions/Permission.h:504` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:33` | HS14: 2 |
 | `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:533` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:35` | HS14: 2 |
-| `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/ctrl/Throws.h:16` | HS14: 9 |
+| `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/ctrl/Throws.h:16` | HS14: 10 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:287` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:108` | HS14: 6 |
-| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 164 |
+| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 165 |
 | `mint_permission_share` | `include/crucible/permissions/Permission.h:1038` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:19` | HS14: 4 |
 | `mint_permission_split` | `include/crucible/permissions/Permission.h:484` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 25 |
 | `mint_permission_split_n` | `include/crucible/permissions/Permission.h:516` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:34` | HS14: 4 |

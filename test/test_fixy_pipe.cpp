@@ -17,7 +17,10 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/fixy/Pipe.h>
 
+#include <atomic>       // V-215 — atomic counter in Pool runtime witness
 #include <cstddef>      // V-076 — std::size_t in WorkingSet witnesses
+#include <cstdio>       // V-215 — diagnostic on failed Pool runtime
+#include <cstdlib>      // V-215 — std::abort on failed Pool runtime
 #include <limits>       // V-076 — numeric_limits in WorkingSet witnesses
 #include <optional>
 #include <type_traits>
@@ -258,7 +261,45 @@ static_assert(fpipe::workload_traits<int>::hint().directive ==
               fpipe::HintDirective::None,
               "fixy::pipe::workload_traits must alias substrate trait");
 
-// ─── 3. Stage / Pipeline round-trip via the alias ─────────────────
+// ─── V-215 — Pool surface + permission-bypass gate witnesses ──────
+//
+// Compile-time witnesses for the new §XXI mints:
+//   * mint_pool_submit — gates job submission through PermissionFreeJob.
+//   * mint_pool_dispatch_with_workload — gates workload-shaped jobs
+//     through PermissionFreeJobWithShard.
+//
+// Bg-row ctx (eff::BgDrainCtx) is the production-facing positive
+// shape; HotFgCtx is held back for the HS14 negative fixture.
+
+// Capture-free job — copy-constructible, satisfies PermissionFreeJob.
+static_assert(fpipe::PermissionFreeJob<decltype([](){})>,
+    "PermissionFreeJob must accept a copyable no-capture closure.");
+
+// Shard-taking variant — accepted by the PermissionFreeJobWithShard
+// concept used by mint_pool_dispatch_with_workload.
+static_assert(fpipe::PermissionFreeJobWithShard<
+    decltype([](fpipe::WorkShard){})>,
+    "PermissionFreeJobWithShard must accept a shard-taking closure.");
+
+// Ctx-fit witnesses — BgDrainCtx (row = Row<Bg, Alloc>) admits
+// CtxFitsPoolSubmit; the safe-job + Bg-row pair is the canonical
+// production-facing positive shape.
+static_assert(fpipe::CtxFitsPoolSubmit<eff::BgDrainCtx,
+                                       decltype([](){})>,
+    "BgDrainCtx + copyable closure must satisfy CtxFitsPoolSubmit.");
+
+static_assert(fpipe::CtxFitsPoolDispatchWithWorkload<
+    eff::BgDrainCtx, decltype([](fpipe::WorkShard){})>,
+    "BgDrainCtx + shard-taking closure must satisfy "
+    "CtxFitsPoolDispatchWithWorkload.");
+
+// HotFgCtx::row = Row<> — the canonical no-Bg ctx.  Both ctx-fit
+// gates must REJECT.
+static_assert(!fpipe::CtxFitsPoolSubmit<eff::HotFgCtx,
+                                        decltype([](){})>,
+    "HotFgCtx must NOT satisfy CtxFitsPoolSubmit — fixture #2.");
+
+// ─── 3. Stage / Pipeline round-trip + V-215 Pool runtime ──────────
 
 int main() {
     eff::HotFgCtx ctx;
@@ -276,5 +317,48 @@ int main() {
     // mint_pipeline through fixy::pipe is callable.
     auto pl = fpipe::mint_pipeline(ctx, std::move(stage_a), std::move(stage_b));
     (void)pl;
+
+    // ─── V-215: Pool runtime — mint_pool_submit + dispatch ────────
+    //
+    // Mint a single-worker Pool, route a counter-bumping job through
+    // mint_pool_submit (the §XXI ctx-bound submission mint), then
+    // wait_idle and verify the counter advanced.  The job is
+    // capture-free + copy-constructible — the canonical safe shape.
+    //
+    // Bg-row ctx via the test-only TestWitness scaffold; production
+    // sites use a real Keeper-minted BgDrainCtx.
+    eff::BgDrainCtx bg{};
+    fpipe::Pool<> pool{fpipe::CoreCount{1}};
+
+    std::atomic<std::size_t> hits{0};
+    fpipe::mint_pool_submit(bg, pool, [&hits]() noexcept {
+        hits.fetch_add(1, std::memory_order_release);
+    });
+
+    auto result = fpipe::mint_pool_dispatch_with_workload(
+        bg,
+        pool,
+        fpipe::WorkloadProfile::from_budget(
+            fpipe::WorkBudget{
+                .read_bytes = 64,
+                .write_bytes = 64,
+                .item_count = 1
+            },
+            /*parallelism=*/1),
+        [&hits]() noexcept {
+            hits.fetch_add(1, std::memory_order_release);
+        });
+    (void)result;
+
+    pool.wait_idle();
+
+    if (hits.load(std::memory_order_acquire) < 1u) {
+        std::fprintf(stderr,
+            "V-215: mint_pool_submit + dispatch must increment hits "
+            "(observed %zu)\n",
+            hits.load(std::memory_order_acquire));
+        std::abort();
+    }
+
     return 0;
 }

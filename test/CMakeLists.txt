@@ -2215,6 +2215,26 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_route_intent_to_scheduling_intent_i
 crucible_neg_compile_fixy_test(neg_fixy_pipe_partition_to_schedule_mode_implicit
     "cannot convert.*AutoSplitPartitionStrategy.*to.*AutoSplitScheduleMode|invalid conversion from .*AutoSplitPartitionStrategy|no known conversion|enum-conversion|conversion")
 
+# ── FIXY-V-215 HS14 — fixy::pipe::mint_pool_submit Pool-submission
+# gate.  AdaptiveScheduler::Pool::submit accepts ANY closure satisfying
+# is_invocable_r_v<void, Job&>; a closure that captures a move-only
+# Permission<Tag> by value silently transfers ownership to a worker
+# jthread, bypassing the CSL parallel-rule (splits_into_pack +
+# structured fork-join + RAII rejoin) that mint_permission_fork
+# enforces.  V-215's fixy-side mint adds PermissionFreeJob as a
+# conjunct in CtxFitsPoolSubmit; the two HS14 fixtures pin the
+# distinct rejection AXES (not just two values on the same axis):
+#   (1) permission_capture — Ctx admits Bg but the JOB is non-copy-
+#       constructible (captured Permission<Tag> deletes copy).
+#       Rejects on the PermissionFreeJob conjunct.
+#   (2) ctx_no_bg          — Ctx does NOT admit Bg (HotFgCtx::row =
+#       Row<>) and the JOB is copy-constructible.  Rejects on the
+#       CtxOwnsCapability<Effect::Bg> conjunct.
+crucible_neg_compile_fixy_test(neg_fixy_pipe_mint_pool_submit_permission_capture
+    "CtxFitsPoolSubmit|PermissionFreeJob|is_copy_constructible|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_pipe_mint_pool_submit_ctx_no_bg
+    "CtxFitsPoolSubmit|CtxOwnsCapability|row_contains|Effect::Bg|constraints not satisfied|associated constraints are not satisfied")
+
 # ── FIXY-MINT-Bridge — fixy/Bridge.h re-export of wrap factories
 # (mint_recording_session, mint_crash_watched_session,
 # mint_persisted_session, mint_recording_endpoint,
