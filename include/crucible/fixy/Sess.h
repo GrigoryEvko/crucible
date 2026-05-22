@@ -386,126 +386,26 @@ using ::crucible::safety::proto::mint_session_view;
 using ::crucible::concurrent::mint_substrate_session;
 
 // ═════════════════════════════════════════════════════════════════════
-// ── Federation 3-role projection (FederationProtocol.h) ────────────
+// ── Federation 3-role projection — carved out (FIXY-V-065) ─────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// `mint_sender<KeyTag>(role_id)` / `mint_receiver` / `mint_coord` are
-// the per-role tag mints; `mint_channel<KeyTag>(...)` is the paired-
-// role channel mint (lives in `crucible::sessions::federation` rather
-// than `crucible::safety::proto`).
+// The federation 3-role projection surface (namespace alias
+// `federation = ::crucible::safety::proto::federation` + 4 per-role
+// mint using-decls + row gate using-decls + `mint_federation_channel`
+// fixy wrapper) moved to fixy/SessFederation.h on 2026-05-22.  Sess.h
+// includes it below so every historical fixy::sess::* federation call
+// site continues to resolve through fixy/Sess.h with byte-identical
+// semantics.  The new file is also pulled directly into Fixy.h's
+// Phase-C umbrella for grep-discoverability parallel to SessCrash.h /
+// SessView.h / SessRowExtraction.h.  See SessFederation.h for the
+// 8-entry fixy-side surface enumeration, sentinel battery, and
+// runtime smoke test.
 
-namespace federation = ::crucible::safety::proto::federation;
-using federation::mint_sender;
-using federation::mint_receiver;
-using federation::mint_coord;
-// fixy-A2-009: SharedPermission pool factory for fractional admittance.
-// Exclusive Permission<FederatedPeer<Org>> parks into a pool; per-call
-// sites lend() a guard and pass guard->token() to the per-role mints.
-using federation::mint_federation_pool;
+}  // namespace crucible::fixy::sess
 
-// ── mint_channel name-collision discipline (FIXY-AUDIT-B10) ────────
-//
-// Two `mint_channel` factories live in the substrate:
-//
-//   1. `crucible::safety::proto::mint_channel<Proto>(
-//          ctx_a, ctx_b, res_a, res_b)`
-//      — session-protocol channel mint
-//        (sessions/SessionMint.h:980).  Pairs two resource endpoints
-//        through a dual-typed Proto into a Session<Proto, A> +
-//        Session<dual<Proto>, B> pair under ctx-bound row-admission.
-//        Re-exported above as `fixy::sess::mint_channel` (the primary
-//        spelling — callers see this when they type
-//        `fixy::sess::mint_channel<MyProto>(...)`).
-//
-//   2. `crucible::safety::proto::federation::mint_channel<KeyTag>(
-//          ctx, sender_ep, receiver_ep)`
-//      — federation 3-role channel mint
-//        (sessions/FederationProtocol.h:142).  Pairs a sender and
-//        receiver endpoint through the federation's KeyTag-indexed
-//        Sender/Receiver protocols.  Different parameter shape (1 ctx,
-//        2 endpoints, KeyTag template) from the session-protocol
-//        channel mint above.
-//
-// Introducing BOTH into `fixy::sess::` via plain `using` declarations
-// is a name-lookup collision — C++ overload resolution would try to
-// disambiguate at every call site and produce confusing diagnostics
-// when the wrong template parameter shape is supplied.
-//
-// Resolution: only the session-protocol `mint_channel` is hoisted into
-// `fixy::sess::`.  The federation channel mint stays reachable under
-// the namespace-aliased path `fixy::sess::federation::mint_channel` AND
-// is exposed unambiguously under the explicit alias name
-// `fixy::sess::mint_federation_channel` for discoverability via grep:
-//
-//     fixy::sess::mint_channel<Proto>(ctx_a, ctx_b, ra, rb);
-//     fixy::sess::mint_federation_channel<KeyTag>(ctx, sender, recv);
-//
-// A `using federation::mint_channel;` here would silently shadow the
-// session-protocol form because the federation overload takes fewer
-// arguments and would win on some call sites.  Explicit alias names
-// keep both surfaces stable and grep-discoverable.
+#include <crucible/fixy/SessFederation.h>
 
-// ── fixy-CR-13: federation row gate at the fixy wrapper ────────────
-//
-// `mint_federation_channel` forwards to the substrate's
-// `federation::mint_channel`, which now requires
-// `CtxFitsFederation<Ctx>` (Row<IO, Block> ⊆ Ctx::row_type).  The
-// requires-clause is re-stated here so the fixy wrapper rejects at the
-// outer boundary — diagnostics fire on the fixy call site, not three
-// levels deep in the substrate.
-//
-// ── fixy-A4-009: §XXI single-concept gate packaging note ────────────
-//
-// Per §XXI Universal Mint Pattern, "The `requires` clause MUST be a
-// single concept (`CtxFitsX<X, Ctx>` for ctx-bound mints) ... Multi-
-// clause requires-lists belong INSIDE the concept definition, not at
-// the call site."  `CtxFitsFederation<Ctx>` (sessions/FederationProtocol.h:73-77)
-// packages BOTH:
-//   1. `IsExecCtx<Ctx>`       — proves Ctx is a well-formed ExecCtx,
-//   2. `Subrow<federation_required_row, typename Ctx::row_type>` —
-//      proves Ctx's row admits the IO+Block federation atoms.
-// A non-IsExecCtx first argument trips clause (1); a Ctx with empty
-// or insufficient row trips clause (2).  Coverage is witnessed by
-// `neg_fixy_federation_channel_non_ctx.cpp` (clause 1) and
-// `neg_fixy_federation_channel_no_row_*.cpp` (clause 2).
-//
-// Public anchors re-exported below for grep-discovery.
-
-using ::crucible::safety::proto::federation::federation_required_row;
-using ::crucible::safety::proto::federation::CtxFitsFederation;
-
-template <typename Org,
-          typename KeyTag = federation::AnyFederationKey,
-          typename Ctx,
-          typename SenderEndpoint,
-          typename ReceiverEndpoint>
-    requires ::crucible::safety::proto::federation::CtxFitsFederation<Ctx>
-[[nodiscard]] constexpr auto mint_federation_channel(
-    Ctx const& ctx,
-    SenderEndpoint&& sender_endpoint,
-    ReceiverEndpoint&& receiver_endpoint,
-    ::crucible::safety::SharedPermission<
-        ::crucible::permissions::tag::FederatedPeer<Org>> admittance) noexcept
-{
-    using ctx_row = typename Ctx::row_type;
-    using offending = ::crucible::effects::row_difference_t<
-        ::crucible::safety::proto::federation::federation_required_row,
-        ctx_row>;
-    CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::decide::row_subset<
-            ::crucible::safety::proto::federation::federation_required_row,
-            ctx_row>()),
-        EffectRowMismatch,
-        &::crucible::safety::proto::federation::federation_mint_boundary,
-        ctx_row,
-        ::crucible::safety::proto::federation::federation_required_row,
-        offending);
-    return federation::mint_channel<Org, KeyTag>(
-        ctx,
-        std::forward<SenderEndpoint>(sender_endpoint),
-        std::forward<ReceiverEndpoint>(receiver_endpoint),
-        admittance);
-}
+namespace crucible::fixy::sess {
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Verified session patterns (FIXY-AUDIT-C6) ──────────────────────

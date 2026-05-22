@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-22T03:43:25Z`.
+Snapshot generated: `2026-05-22T04:01:05Z`.
 
 ## bridges/
 
@@ -134,12 +134,12 @@ Snapshot generated: `2026-05-22T03:43:25Z`.
 | `mint_chainedge_signaler_session` | `include/crucible/sessions/ChainEdgeSession.h:77` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:523` | HS14: 3 |
 | `mint_chainedge_waiter` | `include/crucible/sessions/ChainEdgeSession.h:68` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:522` | HS14: 2 |
 | `mint_chainedge_waiter_session` | `include/crucible/sessions/ChainEdgeSession.h:85` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:524` | HS14: 3 |
-| `mint_channel` | `include/crucible/sessions/FederationProtocol.h:270` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:16` | HS14: 13 |
+| `mint_channel` | `include/crucible/sessions/FederationProtocol.h:270` | Y | Y | Y | Y | ctx | `include/crucible/fixy/SessFederation.h:119` | HS14: 13 |
 | `mint_chaselev_owner` | `include/crucible/sessions/ChaseLevDequeSession.h:86` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:350` | HS14: 3 |
 | `mint_chaselev_thief` | `include/crucible/sessions/ChaseLevDequeSession.h:94` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:351` | HS14: 3 |
 | `mint_consumer_session` | `include/crucible/sessions/CalendarGridSession.h:90` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:116` | HS14: 6 |
-| `mint_coord` | `include/crucible/sessions/FederationProtocol.h:289` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:24` | HS14: 3 |
-| `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h:209` | Y | Y | Y | - | token | `include/crucible/fixy/Sess.h:404` | HS14: 13 |
+| `mint_coord` | `include/crucible/sessions/FederationProtocol.h:289` | Y | Y | Y | Y | ctx | `include/crucible/fixy/SessFederation.h:118` | HS14: 3 |
+| `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h:209` | Y | Y | Y | - | token | `include/crucible/fixy/SessFederation.h:130` | HS14: 13 |
 | `mint_metalog_consumer` | `include/crucible/sessions/MetaLogSession.h:75` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:436` | HS14: 2 |
 | `mint_metalog_consumer_session` | `include/crucible/sessions/MetaLogSession.h:92` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:438` | HS14: 2 |
 | `mint_metalog_producer` | `include/crucible/sessions/MetaLogSession.h:67` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:435` | HS14: 2 |
@@ -153,8 +153,8 @@ Snapshot generated: `2026-05-22T03:43:25Z`.
 | `mint_producer_session` | `include/crucible/sessions/CalendarGridSession.h:79` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:116` | HS14: 7 |
 | `mint_reader_runtime_session` | `include/crucible/sessions/SwmrSession.h:250` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:268` | HS14: 2 |
 | `mint_reader_session` | `include/crucible/sessions/SwmrSession.h:231` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:266` | HS14: 2 |
-| `mint_receiver` | `include/crucible/sessions/FederationProtocol.h:245` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:23` | HS14: 6 |
-| `mint_sender` | `include/crucible/sessions/FederationProtocol.h:221` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:22` | HS14: 14 |
+| `mint_receiver` | `include/crucible/sessions/FederationProtocol.h:245` | Y | Y | Y | Y | ctx | `include/crucible/fixy/SessFederation.h:118` | HS14: 6 |
+| `mint_sender` | `include/crucible/sessions/FederationProtocol.h:221` | Y | Y | Y | Y | ctx | `include/crucible/fixy/SessFederation.h:118` | HS14: 14 |
 | `mint_session` | `include/crucible/sessions/SessionMint.h:977` | - | - | Y | - | ctx | `include/crucible/fixy/Sess.h:274` | HS14: 4 |
 | `mint_session_handle` | `include/crucible/sessions/Session.h:2422` | Y | Y | Y | - | token | `include/crucible/fixy/Sess.h:17` | HS14: 27 |
 | `mint_session_view` | `include/crucible/sessions/SessionView.h:279` | Y | Y | Y | Y | token | `include/crucible/fixy/Sess.h:374` | HS14: 7 |

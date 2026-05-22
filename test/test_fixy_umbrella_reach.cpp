@@ -1047,6 +1047,106 @@ static_assert(fscrash::CrashAwareForTransport<
 static_assert(fscrash::CrashAwareForTransport<
     v064_reach::StopProto, v064_reach::Alice>);
 
+// ─── 6q. SessFederation.h reach — fixy::sess::federation:: (V-065) ──
+//
+// Witness that the federation 3-role projection surface (namespace
+// alias + 4 per-role + admittance mints + row gate using-decls + 1
+// fixy wrapper = 8 fixy-side entries reaching 23 transitive substrate
+// symbols) reaches the consumer through the umbrella include alone.
+// Cells below test (a) substrate-identity preservation through the
+// namespace alias for representative symbols across all 7 substrate
+// categories, (b) `fixy::sess::mint_federation_channel` reachability
+// at the fixy:: level (the explicit alias that disambiguates from
+// the session-protocol `mint_channel`), and (c) the `CtxFitsFederation`
+// row gate. If a future regression strips `#include <crucible/fixy/
+// SessFederation.h>` from Fixy.h's Phase-C block, the claims below
+// fail to compile.
+
+namespace ffed = ::crucible::fixy::sess::federation;
+namespace pfed = ::crucible::safety::proto::federation;
+
+namespace v065_reach {
+struct ReachKey {};
+}  // namespace v065_reach
+
+// 6q-a. Role tag identity through the namespace alias.
+static_assert(std::is_same_v<ffed::SenderRole, pfed::SenderRole>,
+    "umbrella reach: fixy::sess::federation::SenderRole must alias "
+    "safety::proto::federation::SenderRole.  If this red-lights, "
+    "fixy/SessFederation.h is not pulled in by <crucible/Fixy.h>.");
+static_assert(std::is_same_v<ffed::ReceiverRole, pfed::ReceiverRole>);
+static_assert(std::is_same_v<ffed::CoordRole,    pfed::CoordRole>);
+static_assert(std::is_same_v<ffed::AnyFederationKey,
+                             pfed::AnyFederationKey>);
+
+// 6q-b. Per-role projection protocols reach (parameterized + default).
+static_assert(std::is_same_v<
+    ffed::SenderProto<v065_reach::ReachKey>,
+    pfed::SenderProto<v065_reach::ReachKey>>);
+static_assert(std::is_same_v<
+    ffed::ReceiverProto<v065_reach::ReachKey>,
+    pfed::ReceiverProto<v065_reach::ReachKey>>);
+static_assert(std::is_same_v<
+    ffed::CoordProto<v065_reach::ReachKey>,
+    pfed::CoordProto<v065_reach::ReachKey>>);
+
+// 6q-c. Expected canonical forms reach.
+static_assert(std::is_same_v<
+    ffed::ExpectedSenderProto<v065_reach::ReachKey>,
+    pfed::ExpectedSenderProto<v065_reach::ReachKey>>);
+static_assert(std::is_same_v<
+    ffed::ExpectedReceiverProto<v065_reach::ReachKey>,
+    pfed::ExpectedReceiverProto<v065_reach::ReachKey>>);
+static_assert(std::is_same_v<
+    ffed::ExpectedCoordProto<v065_reach::ReachKey>,
+    pfed::ExpectedCoordProto<v065_reach::ReachKey>>);
+
+// 6q-d. Global protocol + KeyTag-indexed alias reach.
+static_assert(std::is_same_v<ffed::FederationProtocol,
+                             pfed::FederationProtocol>);
+static_assert(std::is_same_v<
+    ffed::FederationProtocolFor<v065_reach::ReachKey>,
+    pfed::FederationProtocolFor<v065_reach::ReachKey>>);
+
+// 6q-e. Payload types reach.
+static_assert(std::is_same_v<ffed::Ack<v065_reach::ReachKey>,
+                             pfed::Ack<v065_reach::ReachKey>>);
+static_assert(std::is_same_v<ffed::PullRequest<v065_reach::ReachKey>,
+                             pfed::PullRequest<v065_reach::ReachKey>>);
+static_assert(std::is_same_v<
+    ffed::FederationEntryPayload<v065_reach::ReachKey>,
+    pfed::FederationEntryPayload<v065_reach::ReachKey>>);
+
+// 6q-f. Verifier trait reach — positive + negative.
+static_assert(ffed::role_protocol_matches_v<
+                  pfed::SenderRole,
+                  ffed::SenderProto<v065_reach::ReachKey>,
+                  v065_reach::ReachKey>,
+    "umbrella reach: role_protocol_matches_v admits matching "
+    "(role, proto) pair through fixy::sess::federation::.");
+static_assert(!ffed::role_protocol_matches_v<
+                  pfed::SenderRole,
+                  ffed::ReceiverProto<v065_reach::ReachKey>,
+                  v065_reach::ReachKey>,
+    "umbrella reach: role_protocol_matches_v rejects mismatched pair.");
+
+// 6q-g. Row gate using-decls reach at fixy::sess:: level.
+namespace fsess = ::crucible::fixy::sess;
+static_assert(std::is_same_v<
+    decltype(fsess::federation_required_row{}),
+    decltype(pfed::federation_required_row{})>,
+    "umbrella reach: fixy::sess::federation_required_row must alias "
+    "the substrate row.");
+
+// CtxFitsFederation concept reach — instantiate over a non-IsExecCtx
+// fixture and witness rejection.  We cannot positively-witness without
+// a fitting Ctx fixture; rejection of a plain struct suffices to prove
+// the concept reaches and evaluates through the umbrella.
+struct NonExecCtxProbe {};
+static_assert(!fsess::CtxFitsFederation<NonExecCtxProbe>,
+    "umbrella reach: fixy::sess::CtxFitsFederation must reach AND "
+    "reject a non-IsExecCtx argument (clause 1 of the packaged gate).");
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }
