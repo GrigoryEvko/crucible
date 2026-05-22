@@ -778,6 +778,46 @@ public:
         return dispatch_kind() == PipelineDispatchKind::Inline;
     }
 
+    // ── Consteval inline-dispatch witness (FIXY-V-218) ────────────
+    //
+    // `will_run_inline_v<L1dBytes, L2Bytes>()` is the compile-time
+    // sibling of `will_run_inline()`.  Same logic — aggregate working
+    // set ≤ cache size implies inline dispatch — but the cache sizes
+    // come from NTTPs instead of the runtime `Topology::instance()`
+    // probe.  A band-3 site can write
+    //
+    //     static_assert(Pipeline<S0, S1, S2>::
+    //         template will_run_inline_v<32 * 1024>(),
+    //         "this pipeline must run inline on a 32K-L1d target");
+    //
+    // and the assertion is decidable at compile time without any
+    // hardware probe.  The runtime path (`compute_dispatch_kind_`)
+    // remains the authoritative dispatch: it consults the actual
+    // topology, so a stance whose L1dBytes assumption is too
+    // optimistic gracefully falls back to thread-per-stage (no
+    // crash, no silent semantic violation — just the documented
+    // claim is wrong, which the runtime corrects).
+    //
+    // Defense-in-depth: the band-3 stance
+    // `fixy::pipe::stance::HotPathInline` wraps this witness as a
+    // `requires`-clause so producing a mismatched stance is a
+    // compile error at the consumer site, not a silent runtime
+    // regression.
+    //
+    // The check accepts the inline path if the aggregate fits in
+    // L1d OR L2 (matching `compute_dispatch_kind_`'s cascade), so
+    // an L2-fitting pipeline still witnesses inline-dispatch even
+    // if it exceeds L1d.
+    template <std::size_t L1dBytes, std::size_t L2Bytes = L1dBytes>
+    [[nodiscard]] static consteval bool will_run_inline_v() noexcept {
+        if constexpr (!inline_safe || !aggregate_working_set_known) {
+            return false;
+        } else {
+            return (aggregate_per_call_working_set <= L1dBytes)
+                || (aggregate_per_call_working_set <= L2Bytes);
+        }
+    }
+
     // ── Accessor (introspection only — does not consume) ───────────
     template <std::size_t I>
         requires (I < sizeof...(Stages))
@@ -934,6 +974,29 @@ public:
 
     [[nodiscard]] static bool will_run_inline() noexcept {
         return dispatch_kind() == PipelineDispatchKind::Inline;
+    }
+
+    // ── Consteval inline-dispatch witness (FIXY-V-218) ────────────
+    //
+    // Mirror of Pipeline::will_run_inline_v: same logic, same NTTP
+    // signature, same defense-in-depth role for PipelineDag.  See
+    // the Pipeline class block for the full rationale.
+    //
+    // Branching pipelines (PipelineDag's StageGraph) still report
+    // an aggregate working set as the sum over `Stages...`, which
+    // is the worst-case per-call cost (every stage in the DAG might
+    // fire on a single token).  A DAG that fans out 5 stages and
+    // joins back contributes 5× the per-stage working set to the
+    // witness — conservative but correct (PipelineDag's runtime
+    // dispatch uses the same aggregate in compute_dispatch_kind_).
+    template <std::size_t L1dBytes, std::size_t L2Bytes = L1dBytes>
+    [[nodiscard]] static consteval bool will_run_inline_v() noexcept {
+        if constexpr (!inline_safe || !aggregate_working_set_known) {
+            return false;
+        } else {
+            return (aggregate_per_call_working_set <= L1dBytes)
+                || (aggregate_per_call_working_set <= L2Bytes);
+        }
     }
 
     template <std::size_t I>

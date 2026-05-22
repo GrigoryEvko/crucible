@@ -2266,6 +2266,25 @@ crucible_neg_compile_fixy_test(neg_fixy_cap_ctx_admits_not_exec_ctx
 crucible_neg_compile_fixy_test(neg_fixy_cap_ctx_admits_row_miss
     "CtxAdmitsCap|row_contains|static assertion failed|fixture #2")
 
+# ── FIXY-V-218 — fixy::pipe::stance::HotPathInline<P, L1d, L2> stance
+# Lifts Pipeline::will_run_inline() (runtime Topology probe) into a
+# compile-time witness Pipeline::will_run_inline_v<L1d, L2>() that
+# band-3 stances can wrap as a requires-clause.  Two HS14 fixtures
+# pin the stance's two distinct rejection axes:
+#   (1) oversized — Pipeline IS inline_safe + WS known, but aggregate
+#       (100 MiB) exceeds BOTH default L1d (32 KiB) AND L2 (1 MiB).
+#       Rejects on the (ws ≤ L1d || ws ≤ L2) comparison branch.
+#       Tests the WORKING-SET-TOO-LARGE axis.
+#   (2) not_inline_safe — stages haven't opted in via
+#       stage_inline_safe specialisation; default primary template
+#       std::false_type makes Pipeline::inline_safe == false; the
+#       !inline_safe early-out fires before the WS compare runs.
+#       Tests the INLINE-SAFETY-MISSING axis (distinct from #1).
+crucible_neg_compile_fixy_test(neg_fixy_pipe_hot_path_inline_oversized
+    "HotPathInline|will_run_inline_v|static assertion failed|fixture #1")
+crucible_neg_compile_fixy_test(neg_fixy_pipe_hot_path_inline_not_inline_safe
+    "HotPathInline|inline_safe|static assertion failed|fixture #2")
+
 # ── FIXY-MINT-Bridge — fixy/Bridge.h re-export of wrap factories
 # (mint_recording_session, mint_crash_watched_session,
 # mint_persisted_session, mint_recording_endpoint,

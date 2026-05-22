@@ -57,6 +57,7 @@
 #include <crucible/concurrent/WorkingSet.h>        // V-076: working-set helpers
 #include <crucible/effects/Capabilities.h>         // V-215: Effect::Bg admission
 #include <crucible/effects/ExecCtx.h>              // V-215: IsExecCtx + CtxOwnsCapability
+#include <concepts>     // V-218: std::same_as in stance::HotPathInline
 #include <type_traits>  // FIXY-U-103 sentinel uses std::is_same_v
 #include <utility>      // V-215: std::forward in mint bodies
 
@@ -557,6 +558,86 @@ mint_pool_dispatch_with_workload(
     return pool.dispatch_with_workload(profile, std::forward<Job>(job));
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-V-218 — HotPathInline stance ──────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// `stance::HotPathInline<P, L1dBytes, L2Bytes>` is the band-3
+// compile-time witness that pipeline P will dispatch inline (no
+// jthread fan-out, no kernel-mediated handoff, no per-stage MESI
+// ping-pong) under the given cache budget.  Backs the consteval
+// substrate witness `Pipeline<Stages...>::will_run_inline_v<L1d, L2>()`
+// (concurrent/Pipeline.h FIXY-V-218 substrate addition) with a
+// production-grep-discoverable name.
+//
+// ── Why a separate stance ──────────────────────────────────────────
+//
+// The substrate's runtime `Pipeline<Stages...>::will_run_inline()`
+// consults `Topology::instance()` at call time — perfect for the
+// runtime dispatcher but invisible at compile time.  A band-3 site
+// that wants its inline-fit claim CHECKED at compile time needs a
+// concept it can spell in a `requires`-clause:
+//
+//     template <class P>
+//         requires stance::HotPathInline<P>
+//     void enqueue_hot_stage(...);
+//
+// Without the stance, the band-3 site can only assert at runtime
+// after Topology probes; the static claim "this code path runs
+// inline" silently becomes "this code path MIGHT run inline,
+// depending on the box".  With the stance, mismatched callers red
+// at COMPILE TIME against the assumed cache budget.
+//
+// ── Defaults ───────────────────────────────────────────────────────
+//
+// Default L1dBytes = 32 KiB, L2Bytes = 1 MiB.  Both numbers are the
+// CLAUDE.md §VIII pinned x86_64+aarch64 baseline (private L1d 32-48K,
+// private L2 ≥ 1 MiB per core).  Callers targeting different microarchs
+// (Apple M1 128 KiB L1d, Bergamo 4 MiB L2) spell the NTTPs explicitly.
+//
+// FORWARD-POINTER: FIXY-V-223 plans to plumb `Topology::instance()`
+// startup-probed L1d/L2 sizes through a constexpr surface so the
+// defaults can be derived from real silicon facts at compile time
+// instead of hard-coded.  Until V-223 lands, callers whose deployment
+// fleet diverges from the 32 KiB / 1 MiB baseline must spell the
+// NTTPs explicitly — the type-level claim remains sound either way;
+// the only thing that changes is whether the defaults are picked up
+// from a startup probe or from hard-coded constants.
+//
+// ── HS14 — two distinct rejection axes ─────────────────────────────
+//
+// Fixture #1 (oversized): a Pipeline of 5 × 10 MiB-per-stage = 100 MiB
+//   aggregate exceeds BOTH the 32 KiB default L1dBytes AND the 1 MiB
+//   default L2Bytes.  `will_run_inline_v<32KiB, 1MiB>()` returns false
+//   via the (aggregate ≤ L1d || aggregate ≤ L2) branch.  Tests the
+//   WORKING-SET-TOO-LARGE axis.
+//
+// Fixture #2 (!inline_safe): a Pipeline whose stages opt out of
+//   `stage_inline_safe` (or whose primary template `false_type` was
+//   never specialised) gives `inline_safe == false`.
+//   `will_run_inline_v<L1d, L2>()` returns false via the early-out
+//   `!inline_safe || !aggregate_working_set_known` branch.  Tests
+//   the INLINE-SAFETY-MISSING axis — distinct from #1: a stage might
+//   spill registers, use TLS, or hold a mutex; declaring `inline_safe`
+//   is an explicit promise, and absence of the trait is the absence
+//   of the promise.
+//
+// Two distinct fault classes ⇒ HS14 floor satisfied.
+
+namespace stance {
+
+template <typename P,
+          std::size_t L1dBytes = 32ULL * 1024ULL,
+          std::size_t L2Bytes  = 1024ULL * 1024ULL>
+concept HotPathInline =
+    requires {
+        { P::template will_run_inline_v<L1dBytes, L2Bytes>() }
+            -> std::same_as<bool>;
+    }
+    && P::template will_run_inline_v<L1dBytes, L2Bytes>();
+
+}  // namespace stance
+
 }  // namespace crucible::fixy::pipe
 
 // ─── FIXY-U-103 in-header sentinel ─────────────────────────────────
@@ -720,6 +801,111 @@ static_assert(
     "this is the canonical Pool::submit permission-bypass shape "
     "that V-215's gate exists to reject.");
 
+// V-218 stance witness — the requires-clause that gates
+// `will_run_inline_v<L1d, L2>()` plus the value-conjunct (the body
+// of the call returning true).  Witnessed via three lightweight
+// Pipeline-shaped probes that obey the substrate's static-member
+// interface but don't materialise stages.  Real Pipeline instances
+// are exercised by the test/fixy_neg/ HS14 fixtures.
+
+namespace v218_witness {
+
+// Tiny probe: 12 KiB aggregate fits in default 32 KiB L1dBytes →
+// will_run_inline_v returns true → HotPathInline holds.
+struct TinyPipelineProbe {
+    static constexpr bool inline_safe = true;
+    static constexpr bool aggregate_working_set_known = true;
+    static constexpr std::size_t aggregate_per_call_working_set =
+        12ULL * 1024ULL;
+    template <std::size_t L1d, std::size_t L2 = L1d>
+    static consteval bool will_run_inline_v() noexcept {
+        if constexpr (!inline_safe || !aggregate_working_set_known) {
+            return false;
+        } else {
+            return (aggregate_per_call_working_set <= L1d)
+                || (aggregate_per_call_working_set <= L2);
+        }
+    }
+};
+
+// Huge probe: 600 MiB aggregate exceeds default 32 KiB / 1 MiB →
+// will_run_inline_v returns false → HotPathInline rejects.
+struct HugePipelineProbe {
+    static constexpr bool inline_safe = true;
+    static constexpr bool aggregate_working_set_known = true;
+    static constexpr std::size_t aggregate_per_call_working_set =
+        600ULL * 1024ULL * 1024ULL;
+    template <std::size_t L1d, std::size_t L2 = L1d>
+    static consteval bool will_run_inline_v() noexcept {
+        if constexpr (!inline_safe || !aggregate_working_set_known) {
+            return false;
+        } else {
+            return (aggregate_per_call_working_set <= L1d)
+                || (aggregate_per_call_working_set <= L2);
+        }
+    }
+};
+
+// Not-inline-safe probe: inline_safe = false → early-out branch →
+// will_run_inline_v returns false → HotPathInline rejects even
+// though the working-set is small.  Distinct fault class from
+// HugePipelineProbe (oversized vs missing-inline-safe).
+struct UnsafePipelineProbe {
+    static constexpr bool inline_safe = false;
+    static constexpr bool aggregate_working_set_known = true;
+    static constexpr std::size_t aggregate_per_call_working_set =
+        4ULL * 1024ULL;
+    template <std::size_t L1d, std::size_t L2 = L1d>
+    static consteval bool will_run_inline_v() noexcept {
+        if constexpr (!inline_safe || !aggregate_working_set_known) {
+            return false;
+        } else {
+            return (aggregate_per_call_working_set <= L1d)
+                || (aggregate_per_call_working_set <= L2);
+        }
+    }
+};
+
+}  // namespace v218_witness
+
+static_assert(
+    ::crucible::fixy::pipe::stance::HotPathInline<
+        v218_witness::TinyPipelineProbe>,
+    "V-218: 12KiB inline-safe pipeline MUST satisfy "
+    "stance::HotPathInline at the 32KiB/1MiB cache budget.");
+
+static_assert(
+    !::crucible::fixy::pipe::stance::HotPathInline<
+        v218_witness::HugePipelineProbe>,
+    "V-218: 600MiB inline-safe pipeline MUST FAIL "
+    "stance::HotPathInline — aggregate exceeds both L1d and L2.");
+
+static_assert(
+    !::crucible::fixy::pipe::stance::HotPathInline<
+        v218_witness::UnsafePipelineProbe>,
+    "V-218: !inline_safe pipeline MUST FAIL HotPathInline — "
+    "the early-out branch fires regardless of working-set size.");
+
+// Custom NTTP path — explicit cache budget defeats the rejection
+// when the budget is wide enough to admit the aggregate.  Pins
+// that the NTTPs actually flow through to will_run_inline_v.
+static_assert(
+    ::crucible::fixy::pipe::stance::HotPathInline<
+        v218_witness::HugePipelineProbe,
+        /*L1dBytes=*/4ULL * 1024ULL * 1024ULL * 1024ULL,
+        /*L2Bytes =*/8ULL * 1024ULL * 1024ULL * 1024ULL>,
+    "V-218: HugePipelineProbe MUST satisfy HotPathInline under a "
+    "4GiB/8GiB cache budget — NTTPs must reach will_run_inline_v.");
+
+// Non-Pipeline type — the requires-clause that gates
+// `will_run_inline_v<L1d, L2>()` must reject NON-Pipeline shapes
+// (which lack the template static method) cleanly via SFINAE
+// rather than hard-erroring.  `int` is the canonical probe.
+static_assert(
+    !::crucible::fixy::pipe::stance::HotPathInline<int>,
+    "V-218: non-Pipeline type MUST fail HotPathInline via the "
+    "requires-clause SFINAE — not via hard error.");
+
 // Cardinality witness — surface count of using-decls in this header.
 // Any add/remove of a using-decl above must update this number.
 // U-103 baseline: 18 (Tier-3 mint family + canonical concept gates).
@@ -747,8 +933,9 @@ static_assert(
 //  2 PermissionFree* concepts: PermissionFreeJob, PermissionFreeJobWithShard;
 //  2 ctx-fit gates: CtxFitsPoolSubmit, CtxFitsPoolDispatchWithWorkload;
 //  2 §XXI mints: mint_pool_submit, mint_pool_dispatch_with_workload).
-constexpr int pipe_surface_cardinality = 87;
-static_assert(pipe_surface_cardinality == 87,
+// V-218 extension: +1 stance::HotPathInline concept.
+constexpr int pipe_surface_cardinality = 88;
+static_assert(pipe_surface_cardinality == 88,
     "fixy::pipe:: surface drifted — update Pipe.h using-decls + "
     "this sentinel + test_fixy_pipe.cpp coverage in lockstep.");
 
