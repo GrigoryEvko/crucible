@@ -245,6 +245,74 @@ namespace source {
     // through cntp/Tcam.h. Raw five-tuples and actions cannot directly
     // program NIC or switch TCAM tables.
     struct TcamFlowRule {};
+
+    // ── FIXY-V-058 enrichments ────────────────────────────────────
+    //
+    // ForgePhase<P>: Forge 12-phase pipeline provenance per FORGE.md
+    // §5.  Phase letter P encodes which phase produced the value:
+    //
+    //   A=INGEST  B=ANALYZE  C=REWRITE  D=FUSE
+    //   E=LOWER_TO_KERNELS    F=TILE    G=MEMPLAN  H=COMPILE
+    //   I=SCHEDULE           J=EMIT    K=DISTRIBUTE  L=VALIDATE
+    //
+    // Used by Forge phase composition to verify cross-phase
+    // provenance flow at the type level — a function taking
+    // Tagged<KernelGraph, source::ForgePhase<'F'>> (post-TILE)
+    // rejects a Tagged<KernelGraph, source::ForgePhase<'A'>> (pre-
+    // INGEST) at compile time; cross-phase retag is mediated by the
+    // FIXY-V-023 retag_policy catalog (forward edges admitted, back-
+    // edges rejected by default).  Phantom-only — sizeof(ForgePhase
+    // <P>) is 1 but EBO-collapses in Tagged<T, ForgePhase<P>> per
+    // the standard Graded regime-1 storage rule.
+    //
+    // Distinct from Ir001 / NetworkRecipeRegistry which are entry-
+    // boundary admission tags (raw → typed at the boundary).
+    // ForgePhase is the in-pipeline provenance lane that flows
+    // along the topological phase chain.
+    template <char Phase>
+    struct ForgePhase {
+        static_assert(Phase >= 'A' && Phase <= 'L',
+            "source::ForgePhase<P>: P must be one of A..L "
+            "(Forge 12-phase pipeline: A=INGEST, B=ANALYZE, "
+            "C=REWRITE, D=FUSE, E=LOWER_TO_KERNELS, F=TILE, "
+            "G=MEMPLAN, H=COMPILE, I=SCHEDULE, J=EMIT, "
+            "K=DISTRIBUTE, L=VALIDATE).");
+    };
+
+    // TransportPosture<T>: CNT-P transport family posture tag for
+    // values that crossed a TransportPosture-T transport boundary
+    // (AfXdp / Mtls / Quic / Wireguard family per cntp/).
+    //
+    //   LowLatency:           ultra-low-latency oneshot RPC / control
+    //                         plane (sub-microsecond budget)
+    //   BulkData:             throughput-optimized large transfer
+    //                         (training-step gradient sync)
+    //   Reliable:             ordered delivery with retransmission
+    //                         (RPC, federation control)
+    //   UnreliableMulticast:  gossip-style fanout (SWIM, HyParView,
+    //                         Plumtree, GossipMulticast)
+    //
+    // Used by CNT-P composition to verify posture-compatible flow:
+    // a sink expecting Tagged<Payload, TransportPosture<Reliable>>
+    // rejects Tagged<Payload, TransportPosture<UnreliableMulticast>>
+    // at compile time.  The TransportPostureTag enum is the type-
+    // level parameter (one enum class for grep-discoverability).
+    // Phantom-only — TransportPosture<T> has 0 storage and EBO-
+    // collapses in Tagged<U, TransportPosture<T>>.
+    //
+    // Distinct from CcAlgorithm / QdiscConfig / Mtls / AfXdp /
+    // QuicTransport / WireguardTransport which are admission tags
+    // for raw transport CONFIGURATION.  TransportPosture is the
+    // value-flow tag once a payload has actually transited a
+    // posture-T transport.
+    enum class TransportPostureTag : unsigned char {
+        LowLatency           = 0,
+        BulkData             = 1,
+        Reliable             = 2,
+        UnreliableMulticast  = 3,
+    };
+    template <TransportPostureTag Posture>
+    struct TransportPosture {};
 }
 
 namespace trust {

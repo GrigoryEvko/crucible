@@ -5741,6 +5741,28 @@ crucible_neg_compile_test(neg_affine_construct_unbuildable
 crucible_neg_compile_test(neg_affine_wrap_permission
   "unsound|static assertion failed|is_already_consume_disciplined")
 
+# ─── FIXY-V-058 source-tag enrichment neg-compiles (2 fixtures) ─────
+#
+# 2-fixture HS14 floor for the non-type-parameter source-tag families
+# introduced by V-058:
+#
+#   1. ForgePhase<P>           — char template parameter (A..L for the
+#                                Forge 12-phase pipeline).  Cross-phase
+#                                mis-provenance is rejected by typed-
+#                                argument mismatch at the Tagged<...>
+#                                consumer boundary.
+#   2. TransportPosture<T>     — enum-class template parameter
+#                                (LowLatency / BulkData / Reliable /
+#                                UnreliableMulticast).  Cross-posture
+#                                mismatch is rejected the same way.
+#
+# Pairs with neg_tagged_unrelated_source_mismatch.cpp (class-type tag)
+# to pin the discipline across all three Tagged tag-parameter shapes.
+crucible_neg_compile_test(neg_forge_phase_cross_phase_misprovenance
+  "could not convert|cannot convert|no matching function|no known conversion")
+crucible_neg_compile_test(neg_transport_posture_mismatch
+  "could not convert|cannot convert|no matching function|no known conversion")
+
 # ─── FOUND-G11 OpaqueLifetime wrapper neg-compiles (4 fixtures) ─────
 #
 # Mirror of the NumericalTier and Consistency neg-compile suites for

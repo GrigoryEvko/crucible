@@ -100,6 +100,7 @@
 
 #include <crucible/effects/Computation.h>      // canonical: Computation<R,T>
 #include <crucible/permissions/Permission.h>  // SharedPermission
+#include <crucible/safety/Affine.h>            // FIXY-V-057: substructural at-most-once
 #include <crucible/safety/AllocClass.h>        // canonical Tier-S
 #include <crucible/safety/Bits.h>              // structural (typed bit-field)
 #include <crucible/safety/Borrowed.h>          // non-owning lifetime-tagged view
@@ -162,6 +163,21 @@ namespace crucible::fixy::wrap {
 using ::crucible::safety::Linear;
 using ::crucible::safety::mint_linear;
 using ::crucible::safety::drop;
+
+// Affine<T> — substructural at-most-once carrier (FIXY-V-057).  Move-only
+// like Linear, but silent-drop is PERMITTED (no contract violation on
+// destruction without consume).  Substrate is
+// Graded<Absolute, QttSemiring::At<Zero>, T> — the QTT grade-0 (erased)
+// slot, with the C++ move-only discipline supplying the "max 1" upper
+// bound.  Rejects Affine<Permission<Tag>> / Affine<SharedPermission<Tag>>
+// via is_already_consume_disciplined — Permission carries an EXACTLY-once
+// CSL frame-rule obligation that Affine would downgrade to optional.
+// §XXI mint_affine factory; drop(Affine<T>&&) is the explicit-discard
+// affine-no-op (peer to safety::drop for Linear).
+using ::crucible::safety::Affine;
+using ::crucible::safety::mint_affine;
+using ::crucible::safety::is_already_consume_disciplined;
+using ::crucible::safety::is_already_consume_disciplined_v;
 
 // Refined<Pred, T> family + predicates + combinator + implication trait
 // are surfaced via the granular <crucible/fixy/wrap/Refined.h> header
@@ -930,6 +946,32 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_witness<
         ::crucible::safety::Witness_v::FORMALLY_VERIFIED, int, int>)>,
     "FIXY-V-056: fixy::wrap::mint_witness must alias safety::mint_witness.");
+
+// FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
+// fixy::wrap:: surface is the V-058 re-export).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Affine<int>,
+    ::crucible::safety::Affine<int>>,
+    "fixy::wrap::Affine must alias safety::Affine.");
+
+// mint_affine §XXI factory reach via qualified-id decltype identity —
+// same pattern as mint_linear / mint_witness / mint_view / mint_sealed_refined.
+// Pins the fixy surface to the substrate factory: a refactor of
+// safety::mint_affine's signature reds this cell at the fixy boundary.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_affine<int, int>),
+    decltype(&::crucible::safety::mint_affine<int, int>)>,
+    "FIXY-V-058: fixy::wrap::mint_affine must alias safety::mint_affine.");
+
+// is_already_consume_disciplined trait reach — proves the rejection
+// table referenced by Affine's class-body static_assert is reachable
+// from the fixy surface (so consumers can witness the trait without
+// descending into safety/).  Permission/SharedPermission are tagged
+// true; plain T is false.
+static_assert(::crucible::fixy::wrap::is_already_consume_disciplined_v<int> ==
+              ::crucible::safety::is_already_consume_disciplined_v<int>,
+    "FIXY-V-058: fixy::wrap::is_already_consume_disciplined_v must "
+    "alias safety::is_already_consume_disciplined_v.");
 
 // ─── Structural wrappers (7 cells, FIXY-U-010) ────────────────────
 
