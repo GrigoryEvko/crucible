@@ -11613,3 +11613,31 @@ crucible_neg_compile_fixy_test(neg_fixy_spawn_mint_parallel_for_ctx_no_bg
     "CtxFitsParallelFor|CtxOwnsCapability|row_contains_v|constraints not satisfied|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_spawn_mint_parallel_for_body_signature
     "CtxFitsParallelFor|is_nothrow_invocable|Slice|constraints not satisfied|associated constraints are not satisfied")
+
+# ── FIXY-V-084 — fixy::sync::{Wait,MemOrder} surface HS14 floor ─────
+#
+# fixy/sync/WaitGrant.h + fixy/sync/MemOrderGrant.h ship the band-3
+# re-export surface for the substrate's two value-level synchronization
+# wrappers (FOUND-G24 Wait + FOUND-G29 MemOrder).  No new mint factory
+# — Synchronization is wrapper-only per Fn.h Dim 23 — but the surface
+# integrity needs HS14-class fixtures to pin two distinct rejection
+# classes for each header (V-076 precedent for re-export surfaces):
+#
+#   #1 (WaitGrant)     SCOPED-ENUM half — Strategy → int rejection
+#   #2 (WaitGrant)     DISCIPLINE PROPAGATION — relax<SpinPause>() on
+#                      Block-pinned wrapper rejects via the substrate's
+#                      WaitLattice::leq requires-clause through the
+#                      fixy alias.
+#   #3 (MemOrderGrant) SCOPED-ENUM half — Order → int rejection
+#   #4 (MemOrderGrant) DISCIPLINE PROPAGATION — relax<Relaxed>() on
+#                      SeqCst-pinned wrapper rejects via the substrate's
+#                      MemOrderLattice::leq requires-clause through
+#                      the fixy alias.
+crucible_neg_compile_fixy_test(neg_fixy_sync_wait_strategy_to_int_implicit
+    "cannot convert|invalid conversion|narrowing conversion|enum class|WaitStrategy")
+crucible_neg_compile_fixy_test(neg_fixy_sync_wait_strict_relax_up_rejected
+    "no matching function|constraints not satisfied|WaitLattice::leq|relax|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_sync_memorder_tag_to_int_implicit
+    "cannot convert|invalid conversion|narrowing conversion|enum class|MemOrderTag")
+crucible_neg_compile_fixy_test(neg_fixy_sync_memorder_strict_relax_up_rejected
+    "no matching function|constraints not satisfied|MemOrderLattice::leq|relax|associated constraints are not satisfied")
