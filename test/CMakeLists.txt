@@ -259,6 +259,7 @@ crucible_test(test_fixy_a3_009_regime)  # fixy-A3-009 HotPath → Regime (Progre
 crucible_test(test_fixy_v_088_fp_mode)  # FIXY-V-088 DimensionAxis::FpMode + 11 sub-axis enum scaffolding
 crucible_test(test_fixy_v_089_fp_lattices)  # FIXY-V-089 11 FP-mode ChainLattice algebras + umbrella registration
 crucible_test(test_fixy_v_090_fp_wrappers)  # FIXY-V-090 11 safety/FpMode.h wrappers + composite + row_hash + DimensionTraits
+crucible_test(test_fixy_v_091_collision_fp_mode)  # FIXY-V-091 CollisionCatalog F101-F105 — FP-mode cross-axis rules
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -5941,6 +5942,27 @@ crucible_neg_compile_test(neg_fp_mode_cross_mode_assign
   "cannot convert|no match|deleted function|FpModePinned|FpRounding")
 crucible_neg_compile_test(neg_fp_mode_cross_axis_pass
   "cannot convert|no match|could not match|FpModePinned|FpFtz|FpRounding")
+
+# ─── FIXY-V-091 CollisionCatalog F101/F104 neg-compiles (HS14 floor) ──
+#
+# V-091 ships 5 new CollisionCatalog rules (F101..F105) gating
+# Replay-required and CT carriers against toxic FP-mode wrapper values.
+# HS14: 2 fixtures across 2 distinct mismatch classes:
+#   1. F101 — Replay-required × FpReassociate<UnrestrictedRewrite>.
+#      Algebraic rewrite reorders FP additions; bit pattern diverges
+#      across NV/AMD/Intel backends → bit-exact replay broken.
+#   2. F104 — CT × FpDenormalInput<HonorDenormals>.  DAZ=0 introduces a
+#      30-100× cycle delta on denormal input — textbook FP timing
+#      side-channel.
+# Distinct axes (Replay vs CT) AND distinct sub-axes (Reassociate vs
+# DenormalInput).  Together they pin the load-bearing F101_OK..F105_OK
+# concept atoms AND the validate() static_assert chain — relaxing the
+# detector, swapping the predicate, or weakening wraps_fp_axis_mode
+# turns one of these fixtures from RED to GREEN at the spec boundary.
+crucible_neg_compile_test(neg_collision_f101_replay_fp_reassoc
+  "F101|replay-required|UnrestrictedRewrite|FpReassoc")
+crucible_neg_compile_test(neg_collision_f104_ct_fp_denormal_honored
+  "F104|HonorDenormals|DAZ|FpDenormalInput")
 
 # ─── FIXY-V-057 Affine wrapper neg-compiles (2 fixtures = HS14 floor) ─
 #

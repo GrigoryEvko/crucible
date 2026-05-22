@@ -22,6 +22,7 @@
 #include <crucible/effects/EffectRow.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/FpMode.h>          // FIXY-V-091 F-family detectors
 
 #include <cstdint>
 #include <string_view>
@@ -37,6 +38,34 @@
 namespace crucible::safety {
     template <::crucible::algebra::lattices::WaitStrategy Strategy, typename T>
     class Wait;
+}
+
+// Forward-declaration of safety::FpModePinned<auto Mode, T> — FIXY-V-091
+// detects this type pattern from F::type_t for the F-family FP-mode
+// cross-axis rules.  Including safety/FpMode.h here would pull in
+// algebra/lattices/FpModeLattice.h and the full 11-axis composite which
+// the catalog header has no other reason to depend on.  RowHashFold.h
+// already uses the same forward-decl pattern (the row-hash specialization
+// for FpModePinned has to fwd-decl the class for the same reason).
+//
+// The 11 FP-mode enum classes are forward-declared as opaque
+// `enum class : std::uint8_t` here; the partial spec of fp_axis_mode_of<>
+// below binds to FpModePinned<Mode, U> with `AxisEnum Mode` as a
+// constrained NTTP — substitution rejects when Mode's type doesn't match
+// AxisEnum, so a single generic detector covers all 11 sub-axes.
+namespace crucible::safety {
+    enum class FpRounding         : std::uint8_t;
+    enum class FpFtz              : std::uint8_t;
+    enum class FpContract         : std::uint8_t;
+    enum class FpTrapMask         : std::uint8_t;
+    enum class FpDenormalInput    : std::uint8_t;
+    enum class FpNanPolicy        : std::uint8_t;
+    enum class FpInfPolicy        : std::uint8_t;
+    enum class FpComplexLayout    : std::uint8_t;
+    enum class FpLibmPolicy       : std::uint8_t;
+    enum class FpReassociate      : std::uint8_t;
+    enum class FpConstantRounding : std::uint8_t;
+    template <auto Mode, typename T> class FpModePinned;
 }
 
 namespace crucible::safety::fn::collision {
@@ -92,6 +121,48 @@ enum class RuleCode : std::uint8_t {
     // so the scheduler can do useful work elsewhere.  Active-spin in a
     // Bg row is the back-pressure-trap shape B001 catches one axis over.
     W002 = 21,  // Bg-row × Wait<SpinPause> or Wait<BoundedSpin> (active-spin in cold thread)
+    // ── FIXY-V-091 F-family — FP-mode cross-axis rules ─────────────────
+    //
+    // V-090 ships 11 per-axis FP-mode wrappers (FpReassociatePinned,
+    // FpContractPinned, FpFtzPinned, FpDenormalInputPinned, ...).  Each
+    // pins a sub-axis at the type level.  The F-family rules guard
+    // cross-axis compositions where pinning one FP sub-axis defeats a
+    // load-bearing property on a DIFFERENT Fn axis:
+    //
+    //   F101: marks_replay_required × FpReassociate<UnrestrictedRewrite>
+    //         Algebraic rewrite (`-fassociative-math`) reorders FP
+    //         additions; the bit pattern depends on the compiler's
+    //         instruction-scheduler micro-state and diverges across
+    //         vendors.  Bit-exact replay requires Forbidden (the IEEE
+    //         754 default) or BoundedTreeDepth with canonical topology.
+    //
+    //   F102: marks_replay_required × FpContract<Fast>
+    //         `-ffp-contract=fast` allows cross-statement FMA folding.
+    //         NVIDIA SASS / AMD CDNA / Intel SPR contract at different
+    //         expression boundaries; same source → different bits.
+    //
+    //   F103: has_ct × FpReassociate<UnrestrictedRewrite>
+    //         Reassociation introduces data-dependent reduction-tree
+    //         topology (the compiler may pick different orderings
+    //         based on operand magnitudes), violating CT timing
+    //         independence.
+    //
+    //   F104: has_ct × FpDenormalInput<HonorDenormals>
+    //         DAZ=0 on x86 introduces a 30-100× slowdown when the
+    //         input IS denormal — textbook FP timing side-channel.
+    //         Crypto and CT paths PIN DAZ=1 (DenormalsAreZero) to make
+    //         denormal-vs-normal-input timing identical.
+    //
+    //   F105: has_ct × FpFtz<PreserveSubnormals>
+    //         FTZ=0 introduces the same 30-100× slowdown PRODUCING
+    //         denormal outputs (output side; F104 is input side).  CT
+    //         paths PIN FlushToZero so the result-magnitude doesn't
+    //         leak through cycle count.
+    F101 = 22,  // Replay-required × FpReassociate<UnrestrictedRewrite>
+    F102 = 23,  // Replay-required × FpContract<Fast>
+    F103 = 24,  // CT × FpReassociate<UnrestrictedRewrite>
+    F104 = 25,  // CT × FpDenormalInput<HonorDenormals>
+    F105 = 26,  // CT × FpFtz<PreserveSubnormals>
     None = 255,
 };
 
@@ -169,6 +240,23 @@ struct W002_BgWaitActiveSpin : diag::tag_base {
     static constexpr std::string_view name = "W002_BgWaitActiveSpin";
 };
 
+// ── FIXY-V-091 F-family (FP-mode cross-axis) ────────────────────────
+struct F101_ReplayFpReassocPermitted : diag::tag_base {
+    static constexpr std::string_view name = "F101_ReplayFpReassocPermitted";
+};
+struct F102_ReplayFpContractFast : diag::tag_base {
+    static constexpr std::string_view name = "F102_ReplayFpContractFast";
+};
+struct F103_CtFpReassocPermitted : diag::tag_base {
+    static constexpr std::string_view name = "F103_CtFpReassocPermitted";
+};
+struct F104_CtFpDenormalInputHonored : diag::tag_base {
+    static constexpr std::string_view name = "F104_CtFpDenormalInputHonored";
+};
+struct F105_CtFpFtzPreserved : diag::tag_base {
+    static constexpr std::string_view name = "F105_CtFpFtzPreserved";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -191,11 +279,16 @@ using Catalog = std::tuple<
     H003_HotPathTerminatingAllocIo,
     F002_FederationPeerTerminatingBudget,
     W001_HotPathWaitParkOrBlocker,
-    W002_BgWaitActiveSpin
+    W002_BgWaitActiveSpin,
+    F101_ReplayFpReassocPermitted,
+    F102_ReplayFpContractFast,
+    F103_CtFpReassocPermitted,
+    F104_CtFpDenormalInputHonored,
+    F105_CtFpFtzPreserved
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 22);
+static_assert(catalog_size == 27);
 
 template <RuleCode R>
 struct rule_tag;
@@ -222,6 +315,11 @@ template <> struct rule_tag<RuleCode::H003> { using type = H003_HotPathTerminati
 template <> struct rule_tag<RuleCode::F002> { using type = F002_FederationPeerTerminatingBudget; };
 template <> struct rule_tag<RuleCode::W001> { using type = W001_HotPathWaitParkOrBlocker; };
 template <> struct rule_tag<RuleCode::W002> { using type = W002_BgWaitActiveSpin; };
+template <> struct rule_tag<RuleCode::F101> { using type = F101_ReplayFpReassocPermitted; };
+template <> struct rule_tag<RuleCode::F102> { using type = F102_ReplayFpContractFast; };
+template <> struct rule_tag<RuleCode::F103> { using type = F103_CtFpReassocPermitted; };
+template <> struct rule_tag<RuleCode::F104> { using type = F104_CtFpDenormalInputHonored; };
+template <> struct rule_tag<RuleCode::F105> { using type = F105_CtFpFtzPreserved; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -294,6 +392,21 @@ template <> struct rule_code_of<W001_HotPathWaitParkOrBlocker> {
 };
 template <> struct rule_code_of<W002_BgWaitActiveSpin> {
     static constexpr RuleCode value = RuleCode::W002;
+};
+template <> struct rule_code_of<F101_ReplayFpReassocPermitted> {
+    static constexpr RuleCode value = RuleCode::F101;
+};
+template <> struct rule_code_of<F102_ReplayFpContractFast> {
+    static constexpr RuleCode value = RuleCode::F102;
+};
+template <> struct rule_code_of<F103_CtFpReassocPermitted> {
+    static constexpr RuleCode value = RuleCode::F103;
+};
+template <> struct rule_code_of<F104_CtFpDenormalInputHonored> {
+    static constexpr RuleCode value = RuleCode::F104;
+};
+template <> struct rule_code_of<F105_CtFpFtzPreserved> {
+    static constexpr RuleCode value = RuleCode::F105;
 };
 
 template <typename Tag>
@@ -432,6 +545,70 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(W002, "W002",
     "Active-spin in a Bg row is the back-pressure-trap shape — Bg threads are by "
     "contract permitted to block so the scheduler can do useful work elsewhere",
     "fixy.md §24.2 W002");
+// FIXY-V-091 F-family diagnostics (5 FP-mode cross-axis rules).
+CRUCIBLE_COLLISION_DIAGNOSTIC(F101, "F101",
+    "Replay-required functions do not wrap return/parameter type in "
+    "FpReassociatePinned<UnrestrictedRewrite>",
+    "marks_replay_required is true AND F::type_t is "
+    "safety::FpReassociatePinned<FpReassociate::UnrestrictedRewrite, U>. "
+    "Algebraic rewrite (-fassociative-math) reorders FP additions; "
+    "the bit pattern depends on the compiler's instruction-scheduler "
+    "micro-state and diverges across vendors, defeating bit-exact replay",
+    "drop the FpReassociatePinned wrapper on the replay-required path, "
+    "switch to FpReassociatePinned<Forbidden> (IEEE 754 default) or "
+    "FpReassociatePinned<BoundedTreeDepth> with a canonical reduction "
+    "topology, or move the rewrite-eligible work outside the replay region",
+    "fixy.md §24.2 F101 (V-091)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(F102, "F102",
+    "Replay-required functions do not wrap return/parameter type in "
+    "FpContractPinned<Fast>",
+    "marks_replay_required is true AND F::type_t is "
+    "safety::FpContractPinned<FpContract::Fast, U>. "
+    "Cross-statement FMA folding (-ffp-contract=fast) lets the compiler "
+    "fuse `a*b + c` boundaries that differ per vendor (NVIDIA SASS, "
+    "AMD CDNA, Intel SPR contract at different expression boundaries); "
+    "same source → different bit patterns",
+    "drop the FpContractPinned wrapper or switch to FpContractPinned<Off> "
+    "/ FpContractPinned<OnInExpr> (within-statement FMA only, IEEE 754-2008 "
+    "default — bit-equivalent across vendors)",
+    "fixy.md §24.2 F102 (V-091)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(F103, "F103",
+    "Constant-time functions do not wrap return/parameter type in "
+    "FpReassociatePinned<UnrestrictedRewrite>",
+    "marks_ct is true AND F::type_t is "
+    "safety::FpReassociatePinned<FpReassociate::UnrestrictedRewrite, U>. "
+    "Reassociation introduces data-dependent reduction-tree topology — "
+    "the compiler may pick different orderings based on operand magnitudes "
+    "or constant-foldability, violating the timing-independence guarantee",
+    "drop the FpReassociatePinned wrapper on the CT path or switch to "
+    "FpReassociatePinned<Forbidden>; reassociation in a CT region must "
+    "either be eliminated or constrained to a topology-pinned tree",
+    "fixy.md §24.2 F103 (V-091)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(F104, "F104",
+    "Constant-time functions do not wrap return/parameter type in "
+    "FpDenormalInputPinned<HonorDenormals>",
+    "marks_ct is true AND F::type_t is "
+    "safety::FpDenormalInputPinned<FpDenormalInput::HonorDenormals, U>. "
+    "DAZ=0 (denormal inputs are honored) introduces a 30-100× slowdown "
+    "on x86 / ARM when the input IS denormal — textbook FP timing side-channel. "
+    "Crypto and CT paths PIN DenormalsAreZero (DAZ=1) so denormal-vs-normal "
+    "input cycle counts are identical",
+    "switch to FpDenormalInputPinned<DenormalsAreZero> on the CT path "
+    "(MXCSR.DAZ / FPCR.FZ bit on x86 / ARM), or move the denormal-honoring "
+    "code outside the constant-time region",
+    "fixy.md §24.2 F104 (V-091)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(F105, "F105",
+    "Constant-time functions do not wrap return/parameter type in "
+    "FpFtzPinned<PreserveSubnormals>",
+    "marks_ct is true AND F::type_t is "
+    "safety::FpFtzPinned<FpFtz::PreserveSubnormals, U>. "
+    "FTZ=0 (subnormal outputs are preserved) introduces a 30-100× slowdown "
+    "PRODUCING denormal outputs (output side; F104 catches the input side). "
+    "Result-magnitude can leak through cycle count, defeating CT timing",
+    "switch to FpFtzPinned<FlushToZero> on the CT path so the output is "
+    "always a normal value or ±0.0 in constant time, or move the "
+    "subnormal-preserving code outside the constant-time region",
+    "fixy.md §24.2 F105 (V-091)");
 
 #undef CRUCIBLE_COLLISION_DIAGNOSTIC
 
@@ -705,6 +882,90 @@ concept W002_OK = !(row_has_effect_v<typename F::effect_row_t, effects::Effect::
                     wait_strategy_of<typename F::type_t>::has_wait &&
                     is_active_spin_v<wait_strategy_of<typename F::type_t>::value>);
 
+// ── FIXY-V-091 F-family detector — FpModePinned wrapper inspection ──
+//
+// `wraps_fp_axis_mode<AxisMode, T>` is true iff T is structurally
+// `safety::FpModePinned<AxisMode, U>` for some U.  ONE generic detector
+// covers all 11 FP sub-axes because `auto AxisMode` binds to the actual
+// enum type at the call site — a partial-spec match requires the
+// FpModePinned's first template arg to have the SAME enum type AND
+// the SAME value as the AxisMode supplied at the consumer site.
+//
+// Probing for `<FpReassociate::UnrestrictedRewrite, FpRoundingPinned<...>>`
+// falls back to the false_type primary template — the inner FpRoundingPinned
+// pins `Mode` of type FpRounding, not FpReassociate, so the partial spec
+// substitution rejects.  No per-axis specialization needed.
+template <auto AxisMode, typename T>
+struct wraps_fp_axis_mode : std::false_type {};
+
+template <auto AxisMode, typename U>
+struct wraps_fp_axis_mode<AxisMode,
+    ::crucible::safety::FpModePinned<AxisMode, U>> : std::true_type {};
+
+// Pierce reference / cv qualifiers — a hot-path return of
+// `FpReassociatePinned<UnrestrictedRewrite, T> const&` is just as toxic
+// as the bare wrapper (mirrors wait_strategy_of's CV-piercing).
+template <auto AxisMode, typename T>
+struct wraps_fp_axis_mode<AxisMode, T&>
+    : wraps_fp_axis_mode<AxisMode, T> {};
+template <auto AxisMode, typename T>
+struct wraps_fp_axis_mode<AxisMode, T const>
+    : wraps_fp_axis_mode<AxisMode, T> {};
+template <auto AxisMode, typename T>
+struct wraps_fp_axis_mode<AxisMode, T const&>
+    : wraps_fp_axis_mode<AxisMode, T> {};
+
+template <auto AxisMode, typename T>
+inline constexpr bool wraps_fp_axis_mode_v = wraps_fp_axis_mode<AxisMode, T>::value;
+
+// F101: Replay-required × FpReassociate<UnrestrictedRewrite> rejected.
+// Algebraic rewrite reorders FP additions; bit pattern diverges across
+// vendors.  IEEE 754 default (Forbidden) is the only setting compatible
+// with bit-exact replay across the CI matrix.
+template <typename F>
+concept F101_OK = !(marks_replay_required<F>::value &&
+                    wraps_fp_axis_mode_v<
+                        ::crucible::safety::FpReassociate::UnrestrictedRewrite,
+                        typename F::type_t>);
+
+// F102: Replay-required × FpContract<Fast> rejected.  Cross-statement
+// FMA folding picks DIFFERENT contraction boundaries per vendor; same
+// source → different bits across the cross-vendor numerics CI matrix.
+template <typename F>
+concept F102_OK = !(marks_replay_required<F>::value &&
+                    wraps_fp_axis_mode_v<
+                        ::crucible::safety::FpContract::Fast,
+                        typename F::type_t>);
+
+// F103: CT × FpReassociate<UnrestrictedRewrite> rejected.  Reassociation
+// introduces data-dependent reduction-tree topology (compiler picks the
+// tree based on operand magnitudes / constant-foldability), violating
+// timing-independence in a constant-time region.
+template <typename F>
+concept F103_OK = !(has_ct_v<F> &&
+                    wraps_fp_axis_mode_v<
+                        ::crucible::safety::FpReassociate::UnrestrictedRewrite,
+                        typename F::type_t>);
+
+// F104: CT × FpDenormalInput<HonorDenormals> rejected.  DAZ=0 introduces
+// a 30-100× cycle-count delta when the input IS denormal — textbook FP
+// timing side-channel.  Crypto / CT paths PIN DenormalsAreZero so the
+// cycle count is data-independent.
+template <typename F>
+concept F104_OK = !(has_ct_v<F> &&
+                    wraps_fp_axis_mode_v<
+                        ::crucible::safety::FpDenormalInput::HonorDenormals,
+                        typename F::type_t>);
+
+// F105: CT × FpFtz<PreserveSubnormals> rejected.  Output-side dual of
+// F104 — FTZ=0 introduces the same 30-100× slowdown PRODUCING denormal
+// outputs.  Result-magnitude leaks through cycle count.
+template <typename F>
+concept F105_OK = !(has_ct_v<F> &&
+                    wraps_fp_axis_mode_v<
+                        ::crucible::safety::FpFtz::PreserveSubnormals,
+                        typename F::type_t>);
+
 template <typename F>
 concept AllRulesOK =
     I002_OK<F> && L002_OK<F> && E044_OK<F> && I003_OK<F> &&
@@ -712,7 +973,8 @@ concept AllRulesOK =
     L003_OK<F> && M011_OK<F> && S010_OK<F> && S011_OK<F> &&
     L004_OK<F> && B001_OK<F> && H001_OK<F> && H002_OK<F> &&
     L005_OK<F> && F001_OK<F> && H003_OK<F> && F002_OK<F> &&
-    W001_OK<F> && W002_OK<F>;
+    W001_OK<F> && W002_OK<F> &&
+    F101_OK<F> && F102_OK<F> && F103_OK<F> && F104_OK<F> && F105_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -760,6 +1022,16 @@ template <typename F>
         return RuleCode::W001;
     } else if constexpr (!W002_OK<F>) {
         return RuleCode::W002;
+    } else if constexpr (!F101_OK<F>) {
+        return RuleCode::F101;
+    } else if constexpr (!F102_OK<F>) {
+        return RuleCode::F102;
+    } else if constexpr (!F103_OK<F>) {
+        return RuleCode::F103;
+    } else if constexpr (!F104_OK<F>) {
+        return RuleCode::F104;
+    } else if constexpr (!F105_OK<F>) {
+        return RuleCode::F105;
     } else {
         return RuleCode::None;
     }
@@ -997,6 +1269,27 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             }
         }();
 
+    // ── FIXY-V-091 F-family predicates (FP-mode cross-axis) ──────────
+    //
+    // Each predicate checks whether Type is an FpModePinned wrapper for
+    // the load-bearing toxic mode value on its sub-axis.  Per-axis
+    // detector is `wraps_fp_axis_mode_v<AxisMode, T>` — one generic
+    // detector covers all 11 sub-axes because the NTTP type-discriminates.
+    static constexpr bool replay_required =
+        collision::marks_replay_required<F>::value;
+    static constexpr bool fp_reassoc_unrestricted =
+        collision::wraps_fp_axis_mode_v<
+            ::crucible::safety::FpReassociate::UnrestrictedRewrite, Type>;
+    static constexpr bool fp_contract_fast =
+        collision::wraps_fp_axis_mode_v<
+            ::crucible::safety::FpContract::Fast, Type>;
+    static constexpr bool fp_denormal_input_honored =
+        collision::wraps_fp_axis_mode_v<
+            ::crucible::safety::FpDenormalInput::HonorDenormals, Type>;
+    static constexpr bool fp_ftz_preserved =
+        collision::wraps_fp_axis_mode_v<
+            ::crucible::safety::FpFtz::PreserveSubnormals, Type>;
+
     [[nodiscard]] static consteval bool validate() noexcept {
         static_assert(!(classified && fail && !fail_secret),
             "I002: classified value cannot flow through Fail(E) with "
@@ -1088,6 +1381,36 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "onto the core. Switch to Wait<UmwaitC01> (power-aware), "
             "Wait<AcquireWait> (futex), Wait<Park> (condvar), or Wait<Block> "
             "(poll/epoll).");
+        // ── FIXY-V-091 F-family static asserts ───────────────────────
+        static_assert(!(replay_required && fp_reassoc_unrestricted),
+            "F101: Replay-required x FpReassociatePinned<UnrestrictedRewrite>. "
+            "Algebraic rewrite (-fassociative-math) reorders FP additions; "
+            "bit pattern diverges across vendors. Switch to "
+            "FpReassociatePinned<Forbidden> (IEEE 754 default) or "
+            "FpReassociatePinned<BoundedTreeDepth> with canonical topology, "
+            "or remove the marks_replay_required marker.");
+        static_assert(!(replay_required && fp_contract_fast),
+            "F102: Replay-required x FpContractPinned<Fast>. Cross-statement "
+            "FMA folding picks different contraction boundaries per vendor "
+            "(NVIDIA SASS vs AMD CDNA vs Intel SPR); same source produces "
+            "different bit patterns. Switch to FpContractPinned<Off> or "
+            "FpContractPinned<OnInExpr> (within-statement FMA, IEEE 754-2008 "
+            "default).");
+        static_assert(!(ct && fp_reassoc_unrestricted),
+            "F103: CT x FpReassociatePinned<UnrestrictedRewrite>. "
+            "Reassociation introduces data-dependent reduction-tree topology, "
+            "violating the timing-independence guarantee. Switch to "
+            "FpReassociatePinned<Forbidden> on the CT path.");
+        static_assert(!(ct && fp_denormal_input_honored),
+            "F104: CT x FpDenormalInputPinned<HonorDenormals>. DAZ=0 "
+            "introduces a 30-100x cycle-count delta when the input IS "
+            "denormal (textbook FP timing side-channel). Switch to "
+            "FpDenormalInputPinned<DenormalsAreZero> (MXCSR.DAZ / FPCR.FZ).");
+        static_assert(!(ct && fp_ftz_preserved),
+            "F105: CT x FpFtzPinned<PreserveSubnormals>. FTZ=0 introduces a "
+            "30-100x slowdown when the result IS denormal; result-magnitude "
+            "leaks through cycle count. Switch to FpFtzPinned<FlushToZero> "
+            "on the CT path.");
         // L005 and F001 are pack-level rules (no single-Fn enforcement
         // shape); fixy/Fn.h checks them across the Grants pack via
         // pack::no_linear_region_alias_v and pack::frame_axis_consistent_v.
@@ -1117,7 +1440,12 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(hot_path && row_has_alloc_or_io && unbounded_cost) &&
                !(federation_peer && unbounded_cost) &&
                !(hot_path && type_has_park_or_blockier_wait) &&
-               !(row_has_bg && type_has_active_spin_wait);
+               !(row_has_bg && type_has_active_spin_wait) &&
+               !(replay_required && fp_reassoc_unrestricted) &&
+               !(replay_required && fp_contract_fast) &&
+               !(ct && fp_reassoc_unrestricted) &&
+               !(ct && fp_denormal_input_honored) &&
+               !(ct && fp_ftz_preserved);
     }
 
     static constexpr bool valid = validate();
@@ -1141,7 +1469,7 @@ namespace detail::collision_catalog_self_test {
 
 using DefaultFn = Fn<int>;
 static_assert(ValidComposition<DefaultFn>);
-static_assert(collision::catalog_size == 22);
+static_assert(collision::catalog_size == 27);
 static_assert(std::is_same_v<
     collision::rule_tag_t<collision::RuleCode::I002>,
     collision::I002_ClassifiedFailPayload>);
@@ -1169,6 +1497,11 @@ static_assert(collision::rule_bijection_v<collision::RuleCode::H003>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::F002>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::W001>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::W002>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::F101>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::F102>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::F103>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::F104>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::F105>);
 static_assert(collision::CollisionDiagnosticByRule<DefaultFn, collision::RuleCode::I002>::rule_code()
               == std::string_view{"I002"});
 static_assert(collision::CollisionDiagnostic<DefaultFn>::category()
