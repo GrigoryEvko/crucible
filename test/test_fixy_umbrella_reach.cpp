@@ -955,6 +955,98 @@ static_assert(std::is_same_v<
     fsview::session_view_message_type_t<V063MintedView>,
     v063_reach::Msg>);
 
+// ─── 6p. SessCrash.h reach — fixy::sess::crash:: (V-064) ────────────
+//
+// Witness that the BSYZ22/BHYZ23 crash-stop surface (5 stop combinator
+// re-exports + 3 crash payload re-exports + UnavailableQueue + 4
+// reliability-set entries + 3 per-Offer crash-branch entries + 2 per-
+// tree walker entries + 1 synthesis concept = 19 entries) reaches the
+// consumer through the umbrella include alone.  Cells below test
+// (a) substrate identity preservation, (b) the per-Offer / per-tree
+// gates' positive-vs-negative behaviour, and (c) the CrashAwareForTransport
+// synthesis concept's two-part discipline.  If a future regression
+// strips `#include <crucible/fixy/SessCrash.h>` from Fixy.h's Phase-C
+// block, the claims below fail to compile.
+
+namespace fscrash = ::crucible::fixy::sess::crash;
+
+namespace v064_reach {
+struct Alice {};
+struct Bob   {};
+struct Msg   {};
+struct Ack   {};
+
+namespace proto = ::crucible::safety::proto;
+
+using EndProto  = proto::End;
+using StopProto = fscrash::Stop;
+
+using AliceCrashOffer = proto::Offer<
+    proto::Recv<Msg,                  EndProto>,
+    proto::Recv<fscrash::Crash<Alice>, EndProto>>;
+using NormalOffer = proto::Offer<
+    proto::Recv<Msg, EndProto>,
+    proto::Recv<Ack, EndProto>>;
+
+using CrashAwareClient = proto::Send<Msg, AliceCrashOffer>;
+using CrashOblivClient = proto::Send<Msg, NormalOffer>;
+}  // namespace v064_reach
+
+// 6p-a. Stop combinator + CrashClass alias through the umbrella.
+static_assert(std::is_same_v<fscrash::Stop,
+    ::crucible::safety::proto::Stop>,
+    "umbrella reach: fixy::sess::crash::Stop must alias "
+    "safety::proto::Stop.  If this red-lights, "
+    "fixy/SessCrash.h is not pulled in by <crucible/Fixy.h>.");
+static_assert(std::is_same_v<fscrash::CrashClass,
+    ::crucible::safety::proto::CrashClass>);
+static_assert(std::is_same_v<
+    fscrash::Stop_g<fscrash::CrashClass::NoThrow>,
+    ::crucible::safety::proto::Stop_g<
+        ::crucible::safety::proto::CrashClass::NoThrow>>);
+
+// 6p-b. Crash payload + reliability-set reach.
+static_assert(std::is_same_v<fscrash::Crash<v064_reach::Alice>,
+    ::crucible::safety::proto::Crash<v064_reach::Alice>>);
+static_assert( fscrash::is_crash_v<fscrash::Crash<v064_reach::Alice>>);
+static_assert(!fscrash::is_crash_v<v064_reach::Msg>);
+static_assert(std::is_same_v<fscrash::UnreliableAll,
+    fscrash::ReliableSet<>>);
+static_assert( fscrash::is_reliable_v<
+    fscrash::ReliableSet<v064_reach::Alice>, v064_reach::Alice>);
+static_assert(!fscrash::is_reliable_v<
+    fscrash::ReliableSet<v064_reach::Alice>, v064_reach::Bob>);
+
+// 6p-c. Per-Offer crash-branch predicate reach.
+static_assert(!fscrash::has_crash_branch_for_peer_v<
+    v064_reach::NormalOffer, v064_reach::Alice>);
+static_assert( fscrash::has_crash_branch_for_peer_v<
+    v064_reach::AliceCrashOffer, v064_reach::Alice>);
+
+// 6p-d. Per-tree crash-branch walker reach (positive + negative).
+static_assert( fscrash::every_offer_has_crash_branch_for_peer_v<
+    v064_reach::CrashAwareClient, v064_reach::Alice>);
+static_assert(!fscrash::every_offer_has_crash_branch_for_peer_v<
+    v064_reach::CrashOblivClient, v064_reach::Alice>);
+
+// 6p-e. CrashAwareForTransport synthesis concept reach.
+// The concept's two-part gate fires through the umbrella include:
+// crash-aware client satisfies; crash-oblivious client rejects.
+static_assert( fscrash::CrashAwareForTransport<
+    v064_reach::CrashAwareClient, v064_reach::Alice>,
+    "CrashAwareForTransport must admit a well-formed client whose "
+    "every Offer<> has a Recv<Crash<Alice>, _> branch.");
+static_assert(!fscrash::CrashAwareForTransport<
+    v064_reach::CrashOblivClient, v064_reach::Alice>,
+    "CrashAwareForTransport must REJECT a well-formed but crash-"
+    "oblivious client — well-formedness alone is insufficient.");
+
+// 6p-f. End / Stop are vacuously crash-aware (no Offer<> on the tree).
+static_assert(fscrash::CrashAwareForTransport<
+    v064_reach::EndProto, v064_reach::Alice>);
+static_assert(fscrash::CrashAwareForTransport<
+    v064_reach::StopProto, v064_reach::Alice>);
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }

@@ -11245,6 +11245,37 @@ crucible_neg_compile_fixy_test(neg_fixy_sess_view_message_type_on_non_send_recv
 crucible_neg_compile_fixy_test(neg_fixy_sess_view_branch_count_on_non_select_offer
     "no member named|incomplete type|use of undefined|session_view_branch_count|value")
 
+# FIXY-V-064 HS14 floor — three neg-compile fixtures across the
+# fixy::sess::crash:: surface, one per structural discipline class:
+#   shape α (oblivious protocol)         — CrashAwareForTransport's
+#                                          per-tree crash-branch
+#                                          walker rejects a well-
+#                                          formed but crash-oblivious
+#                                          client (NormalOffer in tree).
+#   shape β (ill-formed protocol)        — CrashAwareForTransport's
+#                                          well-formedness gate rejects
+#                                          a vacuously-crash-covered
+#                                          but ill-formed protocol
+#                                          (Loop<End>); the two-part
+#                                          gate keeps both predicates
+#                                          load-bearing.
+#   shape γ (per-Offer assertion miss)  — assert_has_crash_branch_for
+#                                         <NormalOffer, Alice>() fires
+#                                         the consteval embedded
+#                                         static_assert; distinct
+#                                         diagnostic surface from the
+#                                         concept-overload-rejection
+#                                         of α/β.
+# Routing through the fixy::sess::crash:: umbrella drift-protects
+# the re-export chain — a future refactor that strips the substrate
+# predicates or the synthesis concept from SessCrash.h reds at HS14.
+crucible_neg_compile_fixy_test(neg_fixy_sess_crash_oblivious_protocol
+    "static assertion failed|CrashAwareForTransport|every_offer_has_crash_branch|FIXY-V-064 fixture 1")
+crucible_neg_compile_fixy_test(neg_fixy_sess_crash_ill_formed
+    "static assertion failed|CrashAwareForTransport|is_well_formed|FIXY-V-064 fixture 2")
+crucible_neg_compile_fixy_test(neg_fixy_sess_crash_assert_per_offer_missing
+    "static assertion failed|CrashBranch_Missing|assert_has_crash_branch_for|has_crash_branch_for_peer")
+
 # fixy-A2-016 — 12 negative-compile fixtures across 6 bridges/* mint
 # factories (≥2 per factory).  Each fixture's expected diagnostic
 # regex is wide enough to tolerate GCC phrasing drift across patch
