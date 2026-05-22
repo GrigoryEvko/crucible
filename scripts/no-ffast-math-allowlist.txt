@@ -1,0 +1,11 @@
+# scripts/no-ffast-math-allowlist.txt — fast-math-family per-line override allowlist.
+#
+# Each non-comment line is `path:line` (relative to project root).
+# Empty initially — every entry that ever gets added requires a
+# documented rationale in the surrounding code.  The check script
+# (scripts/check-no-ffast-math.sh) consumes this file; a stale
+# entry (path:line no longer matches a violation) reddens CI with
+# exit 2 so the allowlist cannot rot silently.
+#
+# This file maps 1:1 to scripts/no-reinterpret-allowlist.txt in
+# shape — same discipline, different flag family.

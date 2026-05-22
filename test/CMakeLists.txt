@@ -262,6 +262,7 @@ crucible_test(test_fixy_v_090_fp_wrappers)  # FIXY-V-090 11 safety/FpMode.h wrap
 crucible_test(test_fixy_v_091_collision_fp_mode)  # FIXY-V-091 CollisionCatalog F101-F105 — FP-mode cross-axis rules
 crucible_test(test_fixy_v_092_fp_grants)  # FIXY-V-092 fixy/Fp.h — 12 FP-mode grant tags + per-tag which_dim
 crucible_test(test_fixy_v_093_fp_canonicalize)  # FIXY-V-093 fixy::fp::canonicalize — merkle-hash-safe FP canonicalization
+crucible_test(test_fixy_v_094_fp_strict_floor)  # FIXY-V-094 crucible_fp_strict INTERFACE floor — compile-def + runtime witness
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -536,6 +537,24 @@ add_test(NAME no_reinterpret_cast
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reinterpret-cast.sh)
 set_tests_properties(no_reinterpret_cast no_reinterpret_cast_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-105")
+# FIXY-V-094 fast-math-family flag ban enforcement (CLAUDE.md §V "NEVER"
+# matrix + cmake/FpStrict.cmake floor).  scripts/check-no-ffast-math.sh
+# is the per-TU guard against `#pragma GCC optimize("fast-math")` or
+# `__attribute__((optimize("-ffast-math")))` overrides that would punch
+# through the `crucible_fp_strict` INTERFACE floor — and against any
+# build-file (CMakeLists.txt, *.cmake, presets) adding a fast-math flag
+# directly.  The allowlist (scripts/no-ffast-math-allowlist.txt) is
+# empty at ship; every entry that ever gets added requires a documented
+# rationale in the surrounding code.  Self-test plants build-file
+# violation, source-pragma violation, allowlist exempt, inline marker
+# exempt, comment-line filter, and stale-allowlist-entry detection.
+add_test(NAME no_ffast_math_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-ffast-math.sh
+          --self-test)
+add_test(NAME no_ffast_math
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-ffast-math.sh)
+set_tests_properties(no_ffast_math no_ffast_math_self_test PROPERTIES
+    LABELS "ci_guard;fixy-V-094")
 # FIXY-U-096z migration lock-in.  The FIXY-U-096* sweep brought 14
 # top-level include/crucible/*.h headers to literal-zero `safety::`
 # (reaching the substrate only through the fixy:: umbrella).

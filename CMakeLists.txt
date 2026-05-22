@@ -109,6 +109,17 @@ target_compile_options(crucible PUBLIC
   -fcontracts
 )
 
+# FIXY-V-094 — crucible_fp_strict INTERFACE library defines THE FLOOR
+# for FP discipline across every consumer of `crucible`.  PUBLIC link
+# propagates the strict-IEEE-754 flag pack to every test / bench /
+# vessel / tool / example TU.  See cmake/FpStrict.cmake for the
+# per-flag rationale.  Deliberate opt-out (bench micro-benchmarks
+# that want fast-math for measurement) is review-discoverable: the
+# target deliberately does NOT link `crucible_fp_strict` and the
+# author documents the engagement.
+include(cmake/FpStrict.cmake)
+target_link_libraries(crucible PUBLIC crucible_fp_strict)
+
 add_executable(crucible_diag_lsp
   tools/lsp_code_action_plugin/crucible_diag_lsp.cpp
 )
