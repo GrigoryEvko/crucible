@@ -118,10 +118,14 @@ struct PathTraversal {};
 // can switch on it for logging or fall through to a generic
 // `path rejected by sanitize_path` diagnostic.
 enum class PathTraversalError : std::uint8_t {
-    Empty            = 0,  // Path is empty
-    TooLong          = 1,  // Path exceeds MAX_PATH_BYTES
-    EmbeddedNul      = 2,  // Path contains embedded NUL byte
-    DotDotComponent  = 3,  // Path contains a `..` component
+    Empty                = 0,  // Path is empty
+    TooLong              = 1,  // Path exceeds MAX_PATH_BYTES
+    EmbeddedNul          = 2,  // Path contains embedded NUL byte
+    DotDotComponent      = 3,  // Path contains a `..` component
+    // ── V-233 extensions — `absolute_root_locked` predicate ────────
+    CandidateNotAbsolute = 4,  // Candidate path is not absolute
+    AnchorNotAbsolute    = 5,  // Root anchor itself is not absolute
+    EscapesAnchor        = 6,  // Candidate lies outside the root anchor
 };
 
 // ── MAX_PATH_BYTES ────────────────────────────────────────────────

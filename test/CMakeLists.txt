@@ -11627,6 +11627,19 @@ crucible_neg_compile_fixy_test(neg_fixy_cipher_open_rejects_sanitized_input
 crucible_neg_compile_fixy_test(neg_fixy_sanitize_path_rejects_wrong_source
     "no matching function|could not convert|cannot convert|conversion from")
 
+# ── FIXY-V-233 — sanitize::path_traversal runtime predicates ────────
+# Runtime smoke test exercising both V-233 predicates
+# (check_no_dotdot + check_absolute_root_locked) plus the two
+# compositional sanitize_path_* entry-points across every V-232 source
+# tag → Sanitized admittance.  The two HS14 fixtures called out in the
+# V-233 task description are pinned at the top of main():
+#   * ../etc/passwd                → DotDotComponent
+#   * /abs/path under /home/user   → EscapesAnchor
+# Followed by per-rule coverage for every PathTraversalError enumerator
+# and per-source-tag happy-path coverage (External + FromUserPath +
+# FromEnvPath + FromConfigPath).
+crucible_test(test_path_traversal_predicates)
+
 # ── FIXY-IS round 2 — concept-gate coverage extension ───────────────
 # Existing Is.h coverage pins 3 wrappers (Linear, Secret, SessionHandle);
 # this round adds 6 more, covering canonical wrapper-nesting order from
