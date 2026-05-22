@@ -257,6 +257,7 @@ crucible_test(test_fixy_a3_007_insights)  # fixy-A3-007 substrate-tag insight cl
 crucible_test(test_fixy_a3_008_synchronization)  # fixy-A3-008 Wait + MemOrder → Synchronization
 crucible_test(test_fixy_a3_009_regime)  # fixy-A3-009 HotPath → Regime (Progress stays on Complexity)
 crucible_test(test_fixy_v_088_fp_mode)  # FIXY-V-088 DimensionAxis::FpMode + 11 sub-axis enum scaffolding
+crucible_test(test_fixy_v_089_fp_lattices)  # FIXY-V-089 11 FP-mode ChainLattice algebras + umbrella registration
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 

@@ -73,6 +73,7 @@
 #include <crucible/algebra/lattices/CrashLattice.h>      // FOUND-G58  — shipped
 #include <crucible/algebra/lattices/DetSafeLattice.h>    // FOUND-G13  — shipped
 #include <crucible/algebra/lattices/EpochLattice.h>      // FOUND-G67  — shipped (1/2 EpochVersioned axes)
+#include <crucible/algebra/lattices/FpModeLattice.h>     // FIXY-V-088/089 — shipped (11 FP-mode sub-axes)
 #include <crucible/algebra/lattices/FractionalLattice.h> // ALGEBRA-8  (#453) — shipped
 #include <crucible/algebra/lattices/GenerationLattice.h> // FOUND-G67  — shipped (2/2 EpochVersioned axes)
 #include <crucible/algebra/lattices/HappensBefore.h>     // ALGEBRA-13 (#458) — shipped
@@ -192,6 +193,17 @@ static_assert(every_lattice_has_name<
     CrashLattice,
     DetSafeLattice,
     EpochLattice,
+    FpComplexLayoutLattice,
+    FpConstantRoundingLattice,
+    FpContractLattice,
+    FpDenormalInputLattice,
+    FpFtzLattice,
+    FpInfPolicyLattice,
+    FpLibmPolicyLattice,
+    FpNanPolicyLattice,
+    FpReassociateLattice,
+    FpRoundingLattice,
+    FpTrapMaskLattice,
     FractionalLattice,
     GenerationLattice,
     HappensBeforeLattice<4>,
