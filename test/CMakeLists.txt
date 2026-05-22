@@ -2285,6 +2285,21 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_hot_path_inline_oversized
 crucible_neg_compile_fixy_test(neg_fixy_pipe_hot_path_inline_not_inline_safe
     "HotPathInline|inline_safe|static assertion failed|fixture #2")
 
+# ── FIXY-V-219 — fixy::effect::RowEngagementWitnessed<C> concept ──
+# Band-3 stance that surfaces the row-engagement claim on a Computation
+# (companion to the substrate-side `weaken<R2>` guard added in
+# effects/Computation.h:210-237).  Two HS14 fixtures pin the concept's
+# two distinct rejection axes:
+#   (1) not_computation — passing a non-Computation type (int) reds
+#       via the IsComputation<C> clause.  Tests the structural axis.
+#   (2) empty_row — passing Computation<Row<>, T> (legitimately pure)
+#       reds via the effect_count_in_row > 0 clause.  Tests the
+#       semantic row-engagement axis (distinct from #1).
+crucible_neg_compile_fixy_test(neg_fixy_effect_row_engagement_not_computation
+    "RowEngagementWitnessed|IsComputation|static assertion failed|fixture #1")
+crucible_neg_compile_fixy_test(neg_fixy_effect_row_engagement_empty_row
+    "RowEngagementWitnessed|effect_count_in_row|static assertion failed|fixture #2")
+
 # ── FIXY-MINT-Bridge — fixy/Bridge.h re-export of wrap factories
 # (mint_recording_session, mint_crash_watched_session,
 # mint_persisted_session, mint_recording_endpoint,

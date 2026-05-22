@@ -217,8 +217,32 @@ public:
     // operates on the singleton grade and is degenerate).  This
     // member function performs the type-level widening; the substrate
     // grade carries no information here.
+    //
+    // ── FIXY-V-219 row-engagement guard (Agent 8 Bug 7) ─────────────
+    //
+    // Subrow<Row<>, R2> is TRUE for every R2 (Row<> is the bottom of
+    // the row lattice).  Without an extra guard, the chain
+    //
+    //     Computation<Row<>, T>::mk(x).weaken<Row<Effect::Alloc>>()
+    //
+    // synthesises a `Computation<Row<Effect::Alloc>, T>` whose row
+    // claim is structurally honest (substitution principle) but
+    // discipline-unfriendly: a reviewer reading the result type
+    // expects the body to demonstrate Alloc, and weaken-from-pure
+    // HIDES that the body never engaged Alloc.  V-219 closes the
+    // hole by adding `(row_size_v<R> > 0 || row_size_v<R2> == 0)` —
+    // weakening is allowed only when the SOURCE row is already
+    // engaged (widening within non-empty rows) OR when both sides
+    // stay empty (degenerate Row<> → Row<> identity).  Production
+    // call sites that legitimately want to attach a row at pure-
+    // construction time must use `lift<Cap>(x)` (which engages the
+    // row at construction) or a stage mint (which announces the row
+    // at the stage signature).  See the `fixy::effect` namespace's
+    // `RowEngagementWitnessed<C>` concept for the band-3 stance
+    // that surfaces this guarantee at call sites.
     template <typename R2>
         requires Subrow<R, R2>
+              && (row_size_v<R> > 0 || row_size_v<R2> == 0)
     [[nodiscard]] constexpr Computation<R2, T> weaken() const &
         noexcept(std::is_nothrow_copy_constructible_v<T>)
     {
@@ -227,6 +251,7 @@ public:
 
     template <typename R2>
         requires Subrow<R, R2>
+              && (row_size_v<R> > 0 || row_size_v<R2> == 0)
     [[nodiscard]] constexpr Computation<R2, T> weaken() &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
     {
@@ -452,8 +477,12 @@ static_assert([] consteval {
 // `weaken` rvalue overload moves instead of copies (correctness check
 // via consteval round-trip; the move-vs-copy choice is observable in
 // nothrow inference, exercised by the compile-time noexcept assertion).
+// FIXY-V-219: source row is non-empty (Row<Effect::Bg>) so the
+// V-219 row-engagement guard (row_size_v<R> > 0) is satisfied; the
+// noexcept-inference check focuses on the move-vs-copy choice, not
+// on whether the source-row gate fires.
 static_assert(
-    noexcept(std::declval<Computation<Row<>, int>>().template weaken<Row<Effect::Bg>>()),
+    noexcept(std::declval<Computation<Row<Effect::Bg>, int>>().template weaken<Row<Effect::Bg, Effect::IO>>()),
     "Computation<R, int>::weaken() && must be noexcept for trivially-"
     "move-constructible payloads.");
 
