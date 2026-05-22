@@ -440,12 +440,41 @@ struct Percentiles {
         p.p99_9  = percentile_interp(ns_samples, 0.999);
         p.p99_99 = percentile_interp(ns_samples, 0.9999);
 
-        long double sum = 0, sum2 = 0;
-        for (double v : ns_samples) { sum += v; sum2 += static_cast<long double>(v) * v; }
-        p.mean = static_cast<double>(sum / p.n);
+        // FIXY-V-096: Welford's one-pass online algorithm + IEEE 754
+        // binary64 (double) accumulators.  Two simultaneous fixes:
+        //
+        // (1) Numerical stability.  The previous 2-pass formula
+        //     var = (Σx² − (Σx)²/n) / (n−1) catastrophically cancels
+        //     when σ² ≪ μ² — the common case for bench timing where
+        //     mean=50ns σ=5ns gives Σx²≈n·2500 minus (Σx)²/n≈n·2500
+        //     and the small difference is the variance.  Welford
+        //     accumulates Σ(x−mean)² directly, no cancellation.
+        //     Welford 1962, "Note on a Method for Calculating
+        //     Corrected Sums of Squares and Products".
+        //
+        // (2) Cross-platform bit-equality.  `long double` is 80-bit
+        //     on x86-64 (x87 extended precision) but 64-bit on
+        //     AArch64/Apple-Silicon — same input would give
+        //     bit-different stddev across the fleet.  `double` is
+        //     IEEE 754 binary64 on every conforming platform.  The
+        //     project's crucible_fp_strict floor (-ffp-contract=off,
+        //     -fno-fast-math, -fno-associative-math) blocks compiler
+        //     FMA fusion that would otherwise perturb the
+        //     accumulator update order.
+        double mean = 0.0;
+        double m2 = 0.0;
+        size_t k = 0;
+        for (double v : ns_samples) {
+            ++k;
+            const double delta = v - mean;
+            mean += delta / static_cast<double>(k);
+            const double delta2 = v - mean;
+            m2 += delta * delta2;
+        }
+        p.mean = mean;
         if (p.n > 1) {
-            const long double var = (sum2 - sum * sum / p.n) / (p.n - 1);
-            p.stddev = static_cast<double>(std::sqrt(std::max<long double>(0, var)));
+            const double var = m2 / static_cast<double>(p.n - 1);
+            p.stddev = std::sqrt(std::max(0.0, var));
         }
         p.cv = (p.mean > 0) ? (p.stddev / p.mean) : 0.0;
         return p;
@@ -961,8 +990,14 @@ struct Compare {
     // i+1 through j+1. Simultaneously accumulate the tie-correction
     // sum T = Σ(tᵢ³ − tᵢ), where tᵢ is each tie-group's size; used
     // below to adjust sigma for ties.
-    long double r1 = 0;
-    long double tie_sum = 0;
+    // FIXY-V-096: accumulators in `double` (IEEE 754 binary64) instead
+    // of `long double` — `long double` is 80-bit on x86 but 64-bit on
+    // AArch64; same rank-sum input would produce bit-different sigma
+    // across the fleet.  `double` precision is sufficient: for the
+    // worst-case n=10⁴ the maximum tie_sum ≤ N³ ≈ 8·10¹² fits in
+    // double (15-16 decimal digits); maximum r1 ≤ n·N ≤ 2·10⁸ same.
+    double r1 = 0.0;
+    double tie_sum = 0.0;
     size_t i = 0;
     while (i < all.size()) {
         size_t j = i;
@@ -972,7 +1007,7 @@ struct Compare {
             ++j;
         }
         const double avg_rank = (static_cast<double>(i + j) + 2.0) / 2.0;
-        const long double t = static_cast<long double>(j - i + 1);
+        const double t = static_cast<double>(j - i + 1);
         tie_sum += t * t * t - t;  // 0 for tie groups of size 1
         for (size_t k = i; k <= j; ++k) {
             if (all[k].src == 0) r1 += avg_rank;
@@ -982,7 +1017,7 @@ struct Compare {
 
     const double    dn1   = static_cast<double>(n1);
     const double    dn2   = static_cast<double>(n2);
-    const double    u1    = static_cast<double>(r1) - dn1 * (dn1 + 1.0) / 2.0;
+    const double    u1    = r1 - dn1 * (dn1 + 1.0) / 2.0;
     const double    u2    = dn1 * dn2 - u1;
     const double    u_min = std::min(u1, u2);
     const double    mu    = dn1 * dn2 / 2.0;
@@ -990,12 +1025,12 @@ struct Compare {
     // Tie-corrected variance (Mann & Whitney 1947 §5; Siegel 1956):
     //   sigma² = (n1·n2 / 12) · (N + 1 − T / (N·(N − 1)))
     // For T = 0 (no ties) this reduces to the classical form.
-    const long double N       = static_cast<long double>(n1) + static_cast<long double>(n2);
-    const long double n1n2_12 = (static_cast<long double>(n1) * n2) / 12.0L;
-    const long double Ncorr   = (N > 1.0L)
-        ? (N + 1.0L - tie_sum / (N * (N - 1.0L)))
-        : (N + 1.0L);
-    const double sigma = static_cast<double>(std::sqrt(std::max<long double>(0, n1n2_12 * Ncorr)));
+    const double N       = static_cast<double>(n1) + static_cast<double>(n2);
+    const double n1n2_12 = (static_cast<double>(n1) * dn2) / 12.0;
+    const double Ncorr   = (N > 1.0)
+        ? (N + 1.0 - tie_sum / (N * (N - 1.0)))
+        : (N + 1.0);
+    const double sigma = std::sqrt(std::max(0.0, n1n2_12 * Ncorr));
 
     // Continuity correction: subtract 0.5 from |u_min − mu| before
     // dividing by sigma (normal approximation of a discrete statistic).

@@ -264,6 +264,9 @@ crucible_test(test_fixy_v_092_fp_grants)  # FIXY-V-092 fixy/Fp.h — 12 FP-mode 
 crucible_test(test_fixy_v_093_fp_canonicalize)  # FIXY-V-093 fixy::fp::canonicalize — merkle-hash-safe FP canonicalization
 crucible_test(test_fixy_v_094_fp_strict_floor)  # FIXY-V-094 crucible_fp_strict INTERFACE floor — compile-def + runtime witness
 crucible_test(test_fixy_v_095_box_muller_polynomial)  # FIXY-V-095 Philox::box_muller_polynomial_det runtime witness + tier wiring
+crucible_test(test_fixy_v_096_welford_variance)  # FIXY-V-096 bench_harness Welford-on-double variance — type-shape + ill-conditioned stability witness
+target_include_directories(test_fixy_v_096_welford_variance SYSTEM PRIVATE
+  ${CMAKE_SOURCE_DIR}/bench)
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
