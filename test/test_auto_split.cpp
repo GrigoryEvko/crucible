@@ -766,7 +766,7 @@ static void test_shape_cache_concurrent_slot_overwrite_is_coherent() {
     std::atomic<bool> stop{false};
     std::atomic<bool> bad_read{false};
 
-    std::thread writer{[&] {
+    std::jthread writer{[&] {
         while (!stop.load(std::memory_order_acquire)) {
             cache.record(key_a, cc::SchedulingIntent::Throughput, 3);
             cache.record(key_b, cc::SchedulingIntent::Throughput, 11);

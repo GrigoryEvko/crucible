@@ -107,7 +107,7 @@ void test_owner_pushes_thieves_steal() {
 
     std::atomic<int> total_handled{0};
     std::atomic<bool> owner_done{false};
-    std::vector<std::thread> thieves;
+    std::vector<std::jthread> thieves;
     thieves.reserve(N_THIEVES);
 
     for (int t = 0; t < N_THIEVES; ++t) {

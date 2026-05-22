@@ -145,8 +145,8 @@ void test_multi_thread_drain() {
     std::atomic<int> total_popped{0};
     std::atomic<bool> producers_done{false};
 
-    std::vector<std::thread> producers;
-    std::vector<std::thread> consumers;
+    std::vector<std::jthread> producers;
+    std::vector<std::jthread> consumers;
 
     auto push_loop = [&](auto handle, int prod_id) {
         for (int i = 0; i < PER_PRODUCER; ++i) {

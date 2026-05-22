@@ -172,7 +172,7 @@ int run_worked_example_vessel_startup() {
     std::atomic<int> worker_processed{0};
     std::atomic<int> worker_fell_back{0};
 
-    auto worker = std::thread([&]{
+    auto worker = std::jthread([&]{
         // Poll until established.  Real production would check
         // periodically with backoff or via a one-shot signal; this
         // test polls tightly to keep the runtime short.

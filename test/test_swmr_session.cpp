@@ -205,10 +205,10 @@ void test_async_interleaving_never_observes_torn_or_reversed_state() {
     std::atomic<bool> done{false};
     std::atomic<bool> failed{false};
     std::array<std::uint64_t, kReaders> final_seen{};
-    std::array<std::thread, kReaders> reader_threads{};
+    std::array<std::jthread, kReaders> reader_threads{};
 
     for (std::size_t idx = 0; idx < kReaders; ++idx) {
-        reader_threads[idx] = std::thread{[&, idx] {
+        reader_threads[idx] = std::jthread{[&, idx] {
             auto reader = ses::mint_swmr_reader<PayloadSwmr>(swmr);
             if (!reader) {
                 failed.store(true, std::memory_order_release);
@@ -313,7 +313,7 @@ void test_sixteen_readers_stress_latest_snapshot() {
     std::atomic<bool> start{false};
     std::atomic<bool> done{false};
     std::atomic<bool> failed{false};
-    std::vector<std::thread> readers;
+    std::vector<std::jthread> readers;
     readers.reserve(kReaders);
 
     for (std::size_t idx = 0; idx < kReaders; ++idx) {

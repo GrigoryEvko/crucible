@@ -68,7 +68,7 @@ void test_spinlock_try_lock_semantics() {
     {
         conc::SpinGuard primary{lock};
         std::atomic<bool> contender_saw_failure{false};
-        std::thread contender{[&]() noexcept {
+        std::jthread contender{[&]() noexcept {
             contender_saw_failure.store(!lock.try_lock(),
                                         std::memory_order_release);
         }};
@@ -123,9 +123,9 @@ void test_spinlock_mutual_exclusion_under_contention() {
     std::atomic<int> max_concurrent_inside{0};
     std::atomic<int> inside_now{0};
 
-    std::array<std::thread, kThreads> workers;
+    std::array<std::jthread, kThreads> workers;
     for (std::size_t t = 0; t < kThreads; ++t) {
-        workers[t] = std::thread{[&]() noexcept {
+        workers[t] = std::jthread{[&]() noexcept {
             for (std::size_t i = 0; i < kIterationsPerThread; ++i) {
                 conc::SpinGuard guard{lock};
                 const int cur = inside_now.fetch_add(1,

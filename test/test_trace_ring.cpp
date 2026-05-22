@@ -125,7 +125,7 @@ int main() {
     std::atomic<bool>     producer_done{false};
     std::atomic<uint32_t> producer_spins{0};
 
-    std::thread producer{[&]{
+    std::jthread producer{[&]{
       for (uint32_t i = 0; i < N; /* advance only on success */) {
         crucible::TraceRing::Entry entry{};
         entry.schema_hash = SchemaHash{i + 1};     // non-zero, unique
@@ -143,7 +143,7 @@ int main() {
       producer_done.store(true, std::memory_order_release);
     }};
 
-    std::thread consumer{[&]{
+    std::jthread consumer{[&]{
       // Bounded drain buffer — smaller than CAPACITY so we exercise the
       // multi-drain path. 4096 is enough to keep up with a reasonable
       // producer but small enough to see real pipelining.
@@ -302,7 +302,7 @@ int main() {
     std::atomic<bool>     producer_done{false};
     std::atomic<uint32_t> producer_spins{0};
 
-    std::thread producer{[&]{
+    std::jthread producer{[&]{
       for (uint32_t i = 0; i < N; /* advance only on success */) {
         crucible::TraceRing::Entry entry{};
         entry.schema_hash = SchemaHash{i + 7};
@@ -321,7 +321,7 @@ int main() {
       producer_done.store(true, std::memory_order_release);
     }};
 
-    std::thread consumer{[&]{
+    std::jthread consumer{[&]{
       constexpr uint32_t DRAIN_CAP = 2048;
       crucible::TraceRing::Entry pure_out[DRAIN_CAP];
       MetaIndex    pure_meta [DRAIN_CAP];

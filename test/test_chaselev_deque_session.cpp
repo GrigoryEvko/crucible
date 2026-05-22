@@ -201,10 +201,10 @@ void test_four_thief_sessions_steal_fixed_work() {
     std::atomic<int> stolen_count{0};
     std::atomic<int> stolen_sum{0};
     std::atomic<bool> failed{false};
-    std::array<std::thread, kThieves> thieves{};
+    std::array<std::jthread, kThieves> thieves{};
 
     for (int idx = 0; idx < kThieves; ++idx) {
-        thieves[static_cast<std::size_t>(idx)] = std::thread{[&] {
+        thieves[static_cast<std::size_t>(idx)] = std::jthread{[&] {
             auto thief_opt = ses::mint_chaselev_thief<MultiDeque>(deque);
             if (!thief_opt) {
                 failed.store(true, std::memory_order_release);

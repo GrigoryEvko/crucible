@@ -109,8 +109,8 @@ void test_multi_producer_multi_consumer_drain() {
     std::atomic<int> total_pushed{0};
     std::atomic<int> total_popped{0};
 
-    std::vector<std::thread> producers;
-    std::vector<std::thread> consumers;
+    std::vector<std::jthread> producers;
+    std::vector<std::jthread> consumers;
     producers.reserve(N_PRODUCERS);
     consumers.reserve(N_CONSUMERS);
 

@@ -130,7 +130,7 @@ void test_multi_producer_drain() {
     auto consumer = ch.consumer(std::move(cons_perm));
 
     std::atomic<int> total_pushed{0};
-    std::vector<std::thread> producers;
+    std::vector<std::jthread> producers;
     producers.reserve(N_PRODUCERS);
 
     for (int t = 0; t < N_PRODUCERS; ++t) {

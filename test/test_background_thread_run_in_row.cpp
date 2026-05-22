@@ -222,7 +222,7 @@ static void test_t05_runtime_smoke() {
     // Since running=false, run()'s while-loop body never executes;
     // it falls through to the trailing-drain (which is empty).
     bool done = false;
-    std::thread t([&]() {
+    std::jthread t([&]() {
         bt.run_in_row<Required>();
         done = true;
     });
@@ -245,7 +245,7 @@ static void test_t06_f_star_alias_all_row() {
     bt.stop_requested.signal();
 
     bool done = false;
-    std::thread t([&]() {
+    std::jthread t([&]() {
         bt.run_in_row<eff::AllRow>();
         done = true;
     });
@@ -284,7 +284,7 @@ static void test_t07_multi_row_caller() {
     bt.stop_requested.signal();
 
     bool done = false;
-    std::thread t([&]() {
+    std::jthread t([&]() {
         bt.run_in_row<SuperRow>();
         done = true;
     });
@@ -533,7 +533,7 @@ static void test_audit_f_concurrent_spsc_drain() {
 
     // Spawn the bg via run_in_row<Required>.  The fence is
     // satisfied; the bg blocks on try_pop_batch + spin_pause.
-    std::thread bg_thread([&]() {
+    std::jthread bg_thread([&]() {
         bt.run_in_row<Required>();
     });
 
@@ -706,7 +706,7 @@ static void test_audit_i_large_batch_drain() {
 
     using Required = BackgroundThread::run_required_row;
 
-    std::thread bg_thread([&]() {
+    std::jthread bg_thread([&]() {
         bt.run_in_row<Required>();
     });
 
@@ -778,7 +778,7 @@ static void test_audit_j_rearm_cycle() {
         bt.stop_requested.reset_in_quiescent_context(
             crucible::safety::OneShotFlag::QuiescenceProof{});
 
-        std::thread bg([&]() {
+        std::jthread bg([&]() {
             bt.run_in_row<Required>();
         });
 

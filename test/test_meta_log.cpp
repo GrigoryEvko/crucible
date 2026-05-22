@@ -162,7 +162,7 @@ static void test_spsc_concurrent_integrity() {
     std::atomic<bool>     producer_done{false};
     std::atomic<uint32_t> lost_spin{0};        // diagnostic only
 
-    std::thread producer{[&]{
+    std::jthread producer{[&]{
         for (uint32_t i = 0; i < N; /* advance only on success */) {
             TensorMeta m = make_meta(
                 std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
@@ -179,7 +179,7 @@ static void test_spsc_concurrent_integrity() {
         producer_done.store(true, std::memory_order_release);
     }};
 
-    std::thread consumer{[&]{
+    std::jthread consumer{[&]{
         uint32_t next = 0;  // next expected sequence number (0-based)
         while (next < N) {
             const uint32_t avail = log.size().peek();
@@ -319,7 +319,7 @@ static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
     std::atomic<bool>     producer_done{false};
     std::atomic<uint32_t> lost_spin{0};
 
-    std::thread producer{[&]{
+    std::jthread producer{[&]{
         for (uint32_t i = 0; i < N; /* advance only on success */) {
             TensorMeta m = make_meta(
                 std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
@@ -335,7 +335,7 @@ static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
         producer_done.store(true, std::memory_order_release);
     }};
 
-    std::thread consumer{[&]{
+    std::jthread consumer{[&]{
         uint32_t next = 0;
         while (next < N) {
             const uint32_t avail = log.size().peek();

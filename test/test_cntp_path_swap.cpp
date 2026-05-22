@@ -110,7 +110,7 @@ void test_concurrent_observer_sees_only_valid_states() {
     std::atomic<bool> writer_done{false};
     std::atomic<std::uint32_t> torn_observations{0};
     std::atomic<std::uint32_t> total_observations{0};
-    std::thread observer{[&]() noexcept {
+    std::jthread observer{[&]() noexcept {
         // do-while ensures at least one observation even if writer races to
         // completion before the observer thread first wakes — the structural
         // claim is "no torn read", not "observer wins the start-up race".
@@ -229,9 +229,9 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
     std::atomic<int> losers{0};
     std::atomic<bool> start{false};
 
-    std::thread racers[kRacers];
+    std::jthread racers[kRacers];
     for (int idx = 0; idx < kRacers; ++idx) {
-        racers[idx] = std::thread{[&, idx]() noexcept {
+        racers[idx] = std::jthread{[&, idx]() noexcept {
             // Spin to align thread starts as tightly as the OS allows so
             // multiple threads enter the CAS-loop with the same `prev`
             // observation.  Without this the first thread typically wins
