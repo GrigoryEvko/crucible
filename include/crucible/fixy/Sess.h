@@ -281,6 +281,155 @@ using ::crucible::safety::proto::is_terminal_state_v;
 using ::crucible::safety::proto::is_dual_v;
 
 // ═════════════════════════════════════════════════════════════════════
+// ── Ctx-fit concepts (FIXY-V-168) ──────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// The five concepts below are the construction-time gates that the
+// `mint_permissioned_session<Proto>(ctx, res, perms...)` /
+// `mint_channel<Proto>(ctx_a, ctx_b, ...)` factories evaluate before
+// returning a `PermissionedSessionHandle`.  They live in
+// `sessions/SessionMint.h:898-940` under `safety::proto::` and gate:
+//
+//   ProtocolVendorAdmittedByLoopCtx<Proto, LoopCtx>
+//       Every VendorPinned<Vendor, ...> position within Proto must be
+//       admitted by the LoopCtx's vendor manifest.  Refines the
+//       per-position vendor admission down to a single concept
+//       (sessions/SessionMint.h:898-901).
+//
+//   ProtocolEpochAdmittedByLoopCtx<Proto, LoopCtx>
+//       Every EpochedDelegate / EpochedAccept position within Proto
+//       must clear the LoopCtx's (CurrentEpoch, GenerationCount)
+//       thresholds.  Pairs with the vendor predicate above to gate
+//       LoopCtx-routable protocols (sessions/SessionMint.h:903-906).
+//
+//   ProtocolPermissionedRunnable<Proto>
+//       Proto carries the structural shape needed to thread
+//       PermSet evolution through Send/Recv positions (Transferable /
+//       Borrowed / Returned markers admit Permission tokens; close
+//       requires EmptyPermSet).  Witnessed structurally — not by
+//       presence of Permission positions, but by absence of
+//       structurally-malformed shapes that would corrupt the PermSet
+//       walk (sessions/SessionMint.h:908-910).
+//
+//   CtxFitsPermissionedProtocol<Proto, Ctx, InitialPS, LoopCtx = ...>
+//       Composite gate: Ctx row admits the protocol AND the
+//       permission flow closes (sender's InitialPS lands at
+//       EmptyPermSet by the protocol's End) AND vendor + epoch are
+//       admitted by the surrounding LoopCtx.  Sole `requires`-clause
+//       on mint_permissioned_session (sessions/SessionMint.h:954) and
+//       the foundation of CtxFitsChannel (sessions/SessionMint.h:939-
+//       940).
+//
+//   CtxFitsChannel<Proto, CtxA, CtxB>
+//       Both endpoints must independently pass
+//       CtxFitsPermissionedProtocol with EmptyPermSet — endpoint A
+//       runs Proto, endpoint B runs dual(Proto), and channel
+//       construction has no token parameters to consume.
+//       Sole `requires`-clause on mint_channel (sessions/
+//       SessionMint.h:1005).
+//
+// ── Why through the fixy:: umbrella ────────────────────────────────
+//
+// Without these re-exports, production code that wanted to write
+// `static_assert(fixy::sess::CtxFitsPermissionedProtocol<Proto, MyCtx,
+// EmptyPermSet>, "wire the row up");` had to reach past the umbrella
+// into `::crucible::safety::proto::CtxFitsPermissionedProtocol` —
+// breaking the §XVI promise that `fixy::sess::` is the structurally
+// complete user-facing surface.  After V-168, every gate the mint
+// factories check is reachable through the same namespace as the
+// factories themselves; failed admission diagnostics can be issued
+// against `fixy::sess::CtxFits*` and read the same as a successful
+// match.
+//
+// ── Cost ───────────────────────────────────────────────────────────
+//
+// Zero.  Every entry is a using-decl (pure name-lookup directive);
+// the concept resolves to the substrate symbol.  The dual-export
+// sentinels below confirm structural identity at the type system
+// level — no two concept templates with the same name but different
+// substrate origins can drift apart without red-lighting the
+// `static_assert(std::same_as_v<...>)` cells.
+
+using ::crucible::safety::proto::ProtocolVendorAdmittedByLoopCtx;
+using ::crucible::safety::proto::ProtocolEpochAdmittedByLoopCtx;
+using ::crucible::safety::proto::ProtocolPermissionedRunnable;
+using ::crucible::safety::proto::CtxFitsPermissionedProtocol;
+using ::crucible::safety::proto::CtxFitsChannel;
+
+// ── Dual-export sentinels ───────────────────────────────────────────
+//
+// Every concept above is structurally pinned to its substrate origin
+// via a `requires`-instantiation cell.  If the umbrella ever rewrites
+// the using-decl to introduce a fresh concept (e.g. by accident
+// during a future carve-out), the sentinel fails to compile because
+// the instantiated concept disagrees with the substrate-side
+// instantiation on the same argument pack.  Negative cells use a
+// non-IsExecCtx / structurally-malformed probe to witness REJECTION
+// through the umbrella, proving the concept's predicate body
+// evaluates (not just the name resolves).
+//
+// Probes are intentionally minimal — substantive positive +
+// negative coverage with a permissioned protocol + fitting Ctx +
+// LoopCtx lives in test/test_fixy_umbrella_reach.cpp's V-168 block.
+
+namespace fixy_v168_sentinel_probes {
+struct NonExecCtxProbe {};
+}  // namespace fixy_v168_sentinel_probes
+
+static_assert(!CtxFitsPermissionedProtocol<
+                  ::crucible::safety::proto::End,
+                  fixy_v168_sentinel_probes::NonExecCtxProbe,
+                  EmptyPermSet>,
+    "FIXY-V-168: fixy::sess::CtxFitsPermissionedProtocol must "
+    "reject a non-IsExecCtx Ctx argument through the umbrella.  If "
+    "this red-lights, the using-decl above is either missing or "
+    "resolves to a different substrate concept.");
+
+static_assert(!CtxFitsChannel<
+                  ::crucible::safety::proto::End,
+                  fixy_v168_sentinel_probes::NonExecCtxProbe,
+                  fixy_v168_sentinel_probes::NonExecCtxProbe>,
+    "FIXY-V-168: fixy::sess::CtxFitsChannel must reject "
+    "non-IsExecCtx CtxA/CtxB through the umbrella.");
+
+// `ProtocolPermissionedRunnable` is a permissive structural witness
+// over the protocol shape alone; the cell below confirms it ADMITS
+// the canonical End and Send<Probe, End> shapes, proving the concept
+// body evaluates through the umbrella.  A rejecting probe lives in
+// the umbrella-reach harness (where a more elaborate ill-formed
+// protocol fixture justifies the wiring).
+namespace fixy_v168_sentinel_probes {
+struct PayloadProbe {};
+using SendEndProbe = ::crucible::safety::proto::Send<
+    PayloadProbe, ::crucible::safety::proto::End>;
+}  // namespace fixy_v168_sentinel_probes
+
+static_assert(ProtocolPermissionedRunnable<
+                  ::crucible::safety::proto::End>,
+    "FIXY-V-168: fixy::sess::ProtocolPermissionedRunnable must "
+    "admit the End terminal protocol through the umbrella.");
+static_assert(ProtocolPermissionedRunnable<
+                  fixy_v168_sentinel_probes::SendEndProbe>,
+    "FIXY-V-168: fixy::sess::ProtocolPermissionedRunnable must "
+    "admit Send<Probe, End> through the umbrella.");
+
+// `ProtocolVendorAdmittedByLoopCtx` / `ProtocolEpochAdmittedByLoopCtx`
+// are LoopCtx-templated.  Reaching them through the umbrella with
+// `void` as the LoopCtx witness — the default for protocols that
+// declare no vendor/epoch positions — exercises the concept body
+// without requiring a fully-formed EpochCtx fixture.
+static_assert(ProtocolVendorAdmittedByLoopCtx<
+                  ::crucible::safety::proto::End, void>,
+    "FIXY-V-168: fixy::sess::ProtocolVendorAdmittedByLoopCtx must "
+    "admit End under the no-LoopCtx (void) sentinel through the "
+    "umbrella.");
+static_assert(ProtocolEpochAdmittedByLoopCtx<
+                  ::crucible::safety::proto::End, void>,
+    "FIXY-V-168: fixy::sess::ProtocolEpochAdmittedByLoopCtx must "
+    "admit End under the no-LoopCtx (void) sentinel through the "
+    "umbrella.");
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Recording / crash-watched handle re-exports ────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //

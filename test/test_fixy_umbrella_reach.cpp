@@ -1348,6 +1348,208 @@ static_assert(std::is_same_v<
     "through the fixy umbrella.");
 static_assert(std::is_same_v<fmpst::EmptyRoleList, fmpst::RoleList<>>);
 
+// ─── 6t. Ctx-fit concept reach — fixy::sess:: (FIXY-V-168) ───────────
+//
+// Witness that the 5 Ctx-fit concepts moved into fixy::sess:: in V-168
+// reach through the umbrella AND evaluate identically to their
+// substrate-side counterparts.  Five concepts:
+//
+//   ProtocolVendorAdmittedByLoopCtx<Proto, LoopCtx>
+//   ProtocolEpochAdmittedByLoopCtx<Proto, LoopCtx>
+//   ProtocolPermissionedRunnable<Proto>
+//   CtxFitsPermissionedProtocol<Proto, Ctx, InitialPS, LoopCtx = ...>
+//   CtxFitsChannel<Proto, CtxA, CtxB>
+//
+// Coverage matrix per concept:
+//   (a) substrate-side baseline — a concrete value that the substrate
+//       admits (positive) and one it rejects (negative) under the
+//       same arguments.
+//   (b) umbrella-side reach — the SAME arguments evaluated through
+//       `fixy::sess::*`, witnessing that the using-decl forwards
+//       structurally.
+//   (c) cross-binding sentinel — `fixy::sess::Concept<args>` value
+//       equals `safety::proto::Concept<args>` value for both the
+//       admitted and rejected cell.  Failure here means the using-
+//       decl was inadvertently rewritten to introduce a fresh
+//       concept (e.g. accidental renaming during a future carve-out).
+//
+// Pre-V-168, every cell that resolved through fixy::sess::CtxFits*
+// failed to compile because the symbol did not exist at the umbrella
+// level — production callers had to reach `::crucible::safety::proto::`
+// directly, breaking §XVI's "fixy::sess:: is structurally complete"
+// promise.  Post-V-168 the cells pass and the umbrella covers the
+// concept gate at every mint-factory entry point.
+
+namespace v168_reach {
+struct PayloadProbe {};
+using EndP   = pproto::End;
+using SendP  = pproto::Send<PayloadProbe, EndP>;
+// Empty-Offer is structurally not runnable per substrate's fixy-CR-15
+// specialization — the canonical negative witness for
+// ProtocolPermissionedRunnable.
+using EmptyOfferP = pproto::Offer<>;
+// Non-IsExecCtx probe — drives every CtxFits* rejection cell.
+struct NonExecCtxProbe {};
+// Witness Ctx — TestRunnerCtx carries Row<Test, Alloc, IO, Block>
+// which is a superrow of Row<> (the row engaged by End).
+using FittingCtx = ::crucible::effects::TestRunnerCtx;
+}  // namespace v168_reach
+
+namespace fsess_v168       = ::crucible::fixy::sess;
+namespace pproto_v168      = ::crucible::safety::proto;
+
+// 6t-a. ProtocolVendorAdmittedByLoopCtx — End admits, umbrella reach,
+//       cross-binding sentinel.
+static_assert(pproto_v168::ProtocolVendorAdmittedByLoopCtx<
+                  v168_reach::EndP, void>,
+    "FIXY-V-168 baseline: substrate ProtocolVendorAdmittedByLoopCtx "
+    "must admit End under the no-LoopCtx (void) sentinel.");
+static_assert(fsess_v168::ProtocolVendorAdmittedByLoopCtx<
+                  v168_reach::EndP, void>,
+    "FIXY-V-168 reach: fixy::sess::ProtocolVendorAdmittedByLoopCtx "
+    "must admit the same baseline through the umbrella.  If this "
+    "red-lights, the using-decl in fixy/Sess.h was dropped.");
+static_assert(fsess_v168::ProtocolVendorAdmittedByLoopCtx<
+                  v168_reach::EndP, void>
+              == pproto_v168::ProtocolVendorAdmittedByLoopCtx<
+                  v168_reach::EndP, void>,
+    "FIXY-V-168 cross-binding: umbrella concept value must equal "
+    "substrate concept value on identical arguments.");
+
+// 6t-b. ProtocolEpochAdmittedByLoopCtx — same triplet, End admits.
+static_assert(pproto_v168::ProtocolEpochAdmittedByLoopCtx<
+                  v168_reach::EndP, void>);
+static_assert(fsess_v168::ProtocolEpochAdmittedByLoopCtx<
+                  v168_reach::EndP, void>,
+    "FIXY-V-168 reach: fixy::sess::ProtocolEpochAdmittedByLoopCtx "
+    "must admit End under the no-LoopCtx (void) sentinel through "
+    "the umbrella.");
+static_assert(fsess_v168::ProtocolEpochAdmittedByLoopCtx<
+                  v168_reach::EndP, void>
+              == pproto_v168::ProtocolEpochAdmittedByLoopCtx<
+                  v168_reach::EndP, void>);
+
+// 6t-c. ProtocolPermissionedRunnable — End admits, Send<Probe, End>
+//       admits (recurses into K), Offer<> rejects (fixy-CR-15).
+static_assert(pproto_v168::ProtocolPermissionedRunnable<
+                  v168_reach::EndP>,
+    "FIXY-V-168 baseline: substrate ProtocolPermissionedRunnable "
+    "must admit End.");
+static_assert(pproto_v168::ProtocolPermissionedRunnable<
+                  v168_reach::SendP>,
+    "FIXY-V-168 baseline: substrate ProtocolPermissionedRunnable "
+    "must admit Send<Probe, End> via tail recursion.");
+static_assert(!pproto_v168::ProtocolPermissionedRunnable<
+                  v168_reach::EmptyOfferP>,
+    "FIXY-V-168 baseline: substrate ProtocolPermissionedRunnable "
+    "must reject empty Offer<> (fixy-CR-15: empty branch packs are "
+    "structurally not runnable — guards against vacuous-truth admission "
+    "of unrunnable protocols at the channel mint boundary).");
+static_assert(fsess_v168::ProtocolPermissionedRunnable<
+                  v168_reach::EndP>,
+    "FIXY-V-168 reach: fixy::sess::ProtocolPermissionedRunnable "
+    "must admit End through the umbrella.");
+static_assert(fsess_v168::ProtocolPermissionedRunnable<
+                  v168_reach::SendP>,
+    "FIXY-V-168 reach: fixy::sess::ProtocolPermissionedRunnable "
+    "must admit Send<Probe, End> through the umbrella.");
+static_assert(!fsess_v168::ProtocolPermissionedRunnable<
+                  v168_reach::EmptyOfferP>,
+    "FIXY-V-168 reach: fixy::sess::ProtocolPermissionedRunnable "
+    "must reject empty Offer<> through the umbrella.");
+static_assert(fsess_v168::ProtocolPermissionedRunnable<v168_reach::EndP>
+              == pproto_v168::ProtocolPermissionedRunnable<v168_reach::EndP>);
+static_assert(fsess_v168::ProtocolPermissionedRunnable<v168_reach::EmptyOfferP>
+              == pproto_v168::ProtocolPermissionedRunnable<v168_reach::EmptyOfferP>);
+
+// 6t-d. CtxFitsPermissionedProtocol — fitting Ctx + EmptyPermSet
+//       admits End; non-IsExecCtx Ctx rejects.
+static_assert(pproto_v168::CtxFitsPermissionedProtocol<
+                  v168_reach::EndP,
+                  v168_reach::FittingCtx,
+                  fsess_v168::EmptyPermSet>,
+    "FIXY-V-168 baseline: substrate CtxFitsPermissionedProtocol "
+    "must admit End under TestRunnerCtx + EmptyPermSet — the row "
+    "engaged by End is Row<> ⊆ Row<Test, Alloc, IO, Block>, and the "
+    "empty PermSet trivially closes.");
+static_assert(!pproto_v168::CtxFitsPermissionedProtocol<
+                  v168_reach::EndP,
+                  v168_reach::NonExecCtxProbe,
+                  fsess_v168::EmptyPermSet>,
+    "FIXY-V-168 baseline: substrate CtxFitsPermissionedProtocol "
+    "must reject a non-IsExecCtx Ctx argument (CtxFitsProtocol's "
+    "IsExecCtx clause must fire first, before any row check).");
+static_assert(fsess_v168::CtxFitsPermissionedProtocol<
+                  v168_reach::EndP,
+                  v168_reach::FittingCtx,
+                  fsess_v168::EmptyPermSet>,
+    "FIXY-V-168 reach: fixy::sess::CtxFitsPermissionedProtocol "
+    "must admit the same fitting (End, TestRunnerCtx, EmptyPermSet) "
+    "triple through the umbrella.");
+static_assert(!fsess_v168::CtxFitsPermissionedProtocol<
+                  v168_reach::EndP,
+                  v168_reach::NonExecCtxProbe,
+                  fsess_v168::EmptyPermSet>,
+    "FIXY-V-168 reach: fixy::sess::CtxFitsPermissionedProtocol "
+    "must reject the same non-IsExecCtx Ctx through the umbrella.");
+static_assert(fsess_v168::CtxFitsPermissionedProtocol<
+                  v168_reach::EndP,
+                  v168_reach::FittingCtx,
+                  fsess_v168::EmptyPermSet>
+              == pproto_v168::CtxFitsPermissionedProtocol<
+                  v168_reach::EndP,
+                  v168_reach::FittingCtx,
+                  fsess_v168::EmptyPermSet>,
+    "FIXY-V-168 cross-binding: umbrella + substrate must agree on "
+    "the fitting cell.");
+static_assert(fsess_v168::CtxFitsPermissionedProtocol<
+                  v168_reach::EndP,
+                  v168_reach::NonExecCtxProbe,
+                  fsess_v168::EmptyPermSet>
+              == pproto_v168::CtxFitsPermissionedProtocol<
+                  v168_reach::EndP,
+                  v168_reach::NonExecCtxProbe,
+                  fsess_v168::EmptyPermSet>);
+
+// 6t-e. CtxFitsChannel — both endpoints fitting; non-IsExecCtx
+//       rejects.  End is self-dual at the structural level under
+//       sessions/SessionMint.h's dual_of_t<End> = End, so both
+//       endpoints can carry End under TestRunnerCtx.
+static_assert(pproto_v168::CtxFitsChannel<
+                  v168_reach::EndP,
+                  v168_reach::FittingCtx,
+                  v168_reach::FittingCtx>,
+    "FIXY-V-168 baseline: substrate CtxFitsChannel must admit "
+    "(End, TestRunnerCtx, TestRunnerCtx) — End is self-dual, "
+    "EmptyPermSet closes on both endpoints.");
+static_assert(!pproto_v168::CtxFitsChannel<
+                  v168_reach::EndP,
+                  v168_reach::NonExecCtxProbe,
+                  v168_reach::FittingCtx>,
+    "FIXY-V-168 baseline: substrate CtxFitsChannel must reject "
+    "when either endpoint's Ctx is not an IsExecCtx (the per-endpoint "
+    "CtxFitsPermissionedProtocol gate fires).");
+static_assert(fsess_v168::CtxFitsChannel<
+                  v168_reach::EndP,
+                  v168_reach::FittingCtx,
+                  v168_reach::FittingCtx>,
+    "FIXY-V-168 reach: fixy::sess::CtxFitsChannel must admit the "
+    "same baseline through the umbrella.");
+static_assert(!fsess_v168::CtxFitsChannel<
+                  v168_reach::EndP,
+                  v168_reach::NonExecCtxProbe,
+                  v168_reach::FittingCtx>,
+    "FIXY-V-168 reach: fixy::sess::CtxFitsChannel must reject the "
+    "same non-IsExecCtx endpoint through the umbrella.");
+static_assert(fsess_v168::CtxFitsChannel<
+                  v168_reach::EndP,
+                  v168_reach::FittingCtx,
+                  v168_reach::FittingCtx>
+              == pproto_v168::CtxFitsChannel<
+                  v168_reach::EndP,
+                  v168_reach::FittingCtx,
+                  v168_reach::FittingCtx>);
+
 // Every claim above is consteval; main() exists so the runner can
 // link the TU as a stand-alone executable.
 int main() { return 0; }
