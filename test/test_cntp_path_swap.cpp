@@ -199,6 +199,76 @@ void test_commit_sender_loses_in_flight_bytes() {
     std::printf("  test_commit_sender_loses_in_flight_bytes: PASSED\n");
 }
 
+// fixy-V-207 regression: pre-fix, `transition_to` was a read-then-store
+// pair that two threads could both observe (prev = NewPathFlushing) and both
+// fire `append_event(prev=NewPathFlushing, to=Complete, ts)` — corrupting
+// the audit log with TWO Complete transitions out of one NewPathFlushing
+// source.  The CAS-loop replacement and [[nodiscard]] bool return guarantee:
+//   (a) exactly one transition succeeds when N threads race the same edge,
+//   (b) the audit log gains exactly ONE event per successful transition,
+//   (c) losing threads get InvalidTransition because the post-CAS state
+//       (Complete) is not a valid source for Complete (table rejects).
+void test_concurrent_complete_receiver_exactly_one_wins() {
+    constexpr int kRacers = 16;
+    crucible::effects::ColdInitCtx init{};
+    crucible::effects::BgDrainCtx bg{};
+
+    auto swapper = cntp::mint_path_swapper<32>(init);
+    auto plan = make_plan();
+
+    // Drive to NewPathFlushing — the single state from which N readers will
+    // race `complete_receiver`.  These setup transitions are sequential so
+    // the event count up to here is exactly 3 (Stable→Draining,
+    // Draining→BidirReceive, BidirReceive→NewPathFlushing).
+    assert(swapper.begin_swap(bg, plan, 100).has_value());
+    assert(swapper.receiver_accepts_bidir(bg, 200).has_value());
+    assert(swapper.sender_observed_drain_ack(bg, 300).has_value());
+    assert(swapper.event_count() == 3);
+
+    std::atomic<int> winners{0};
+    std::atomic<int> losers{0};
+    std::atomic<bool> start{false};
+
+    std::thread racers[kRacers];
+    for (int idx = 0; idx < kRacers; ++idx) {
+        racers[idx] = std::thread{[&, idx]() noexcept {
+            // Spin to align thread starts as tightly as the OS allows so
+            // multiple threads enter the CAS-loop with the same `prev`
+            // observation.  Without this the first thread typically wins
+            // before the others wake and the race is unobserved.
+            while (!start.load(std::memory_order_acquire)) {
+                // PAUSE — but std::this_thread::yield is the portable form.
+                std::this_thread::yield();
+            }
+            const std::uint64_t now_ns = 400 + static_cast<std::uint64_t>(idx);
+            auto result = swapper.complete_receiver(bg, now_ns);
+            if (result.has_value()) {
+                winners.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                assert(result.error() == cntp::SwapError::InvalidTransition);
+                losers.fetch_add(1, std::memory_order_relaxed);
+            }
+        }};
+    }
+
+    start.store(true, std::memory_order_release);
+    for (auto& t : racers) t.join();
+
+    // EXACTLY ONE transition succeeded — the CAS-loop guarantee.
+    assert(winners.load() == 1);
+    assert(losers.load() == kRacers - 1);
+
+    // Audit log gained EXACTLY ONE Complete event.  Pre-fix this would have
+    // been kRacers Complete events (one per stale-prev append_event call),
+    // corrupting the swap history.
+    assert(swapper.event_count() == 4);
+    assert(swapper.event_at(3).from == cntp::SwapState::NewPathFlushing);
+    assert(swapper.event_at(3).to == cntp::SwapState::Complete);
+    assert(swapper.state() == cntp::SwapState::Complete);
+
+    std::printf("  test_concurrent_complete_receiver_exactly_one_wins: PASSED\n");
+}
+
 void test_invalid_transition_and_timeout() {
     crucible::effects::ColdInitCtx init{};
     crucible::effects::BgDrainCtx bg{};
@@ -252,6 +322,7 @@ int main() {
     test_state_machine_and_session_resource_transition();
     test_commit_sender_loses_in_flight_bytes();
     test_concurrent_observer_sees_only_valid_states();
+    test_concurrent_complete_receiver_exactly_one_wins();
     test_invalid_transition_and_timeout();
     std::printf("test_cntp_path_swap: all PASSED\n");
     return 0;
