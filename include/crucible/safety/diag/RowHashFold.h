@@ -159,6 +159,7 @@ enum class SimdIsa             : std::uint8_t;  // FIXY-V-250 (wrapper V-256)
 enum class MemoryScope         : std::uint8_t;  // FIXY-V-265 (wrapper V-267)
 enum class ClockSource         : std::uint8_t;  // FIXY-V-184 (wrapper V-185)
 enum class SchedulerPolicy     : std::uint8_t;  // FIXY-V-183 (wrapper V-186)
+enum class SuspendBehavior     : std::uint8_t;  // FIXY-V-181 (wrapper V-188)
 }  // namespace crucible::algebra::lattices
 
 namespace crucible::safety {
@@ -174,6 +175,7 @@ template <algebra::lattices::ClockSource Source, typename T> class ClockSource;
 template <algebra::lattices::SchedulerPolicy Policy, typename T,
           std::uint64_t RuntimeNs, std::uint64_t DeadlineNs, std::uint64_t PeriodNs>
 class SchedClass;
+template <algebra::lattices::SuspendBehavior Behavior, typename T> class SuspendBehavior;
 template <algebra::lattices::MemOrderTag Tag, typename T> class MemOrder;
 template <algebra::lattices::ProgressClass Class, typename T> class Progress;
 template <algebra::lattices::ResidencyHeatTag Tier, typename T> class ResidencyHeat;
@@ -413,6 +415,11 @@ inline constexpr std::uint64_t WRAPPER_SCHED_CLASS_TAG       = 0x3100'0000'0000'
 // specialization lives in safety/CpuPinned.h (which already has AffinityMask
 // complete); only the collision-checked salt constant is centralized here.
 inline constexpr std::uint64_t WRAPPER_CPU_PINNED_TAG       = 0x3200'0000'0000'0000ULL;
+// FIXY-V-188 — SuspendBehavior<SuspendBehavior Behavior, T> discriminator.
+// Salt 0x33 is the next free high-byte after 0x32 (CpuPinned); the low byte
+// folds the SuspendBehavior enumerator (0..2).  This is the row_hash the
+// V-181 SuspendBehaviorLattice deferred — on the WRAPPER, never the At<>.
+inline constexpr std::uint64_t WRAPPER_SUSPEND_BEHAVIOR_TAG = 0x3300'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -783,6 +790,16 @@ struct row_hash_contribution<
         detail::combine_ids(
             detail::WRAPPER_SCHED_CLASS_TAG | static_cast<std::uint64_t>(Policy),
             RuntimeNs ^ (DeadlineNs << 1) ^ (PeriodNs << 2)),
+        row_hash_contribution_v<Inner>);
+};
+
+// FIXY-V-188 — SuspendBehavior is a Synchronization-neighborhood witness
+// peer to ClockSource / SchedClass; the pinned pause-on-suspend behavior
+// discriminates the slot.  This is the row_hash V-181 deferred.
+template <algebra::lattices::SuspendBehavior Behavior, typename Inner>
+struct row_hash_contribution<safety::SuspendBehavior<Behavior, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_SUSPEND_BEHAVIOR_TAG | static_cast<std::uint64_t>(Behavior),
         row_hash_contribution_v<Inner>);
 };
 

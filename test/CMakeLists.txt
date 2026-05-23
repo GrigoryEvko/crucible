@@ -305,6 +305,7 @@ crucible_test(test_fixy_v_184_clock_source)             # FIXY-V-184 ClockSource
 crucible_test(test_fixy_v_185_clock_source)             # FIXY-V-185 safety/ClockSource.h — regime-1 Graded provenance carrier + per-source aliases + IsClockSource + row_hash (Agent 6 §3.3)
 crucible_test(test_fixy_v_186_sched_class)              # FIXY-V-186 safety/SchedClass.h — regime-1 Graded scheduler-class carrier + pool-fit + DEADLINE CBS budget + IsSchedClass + row_hash (Agent 6 §3.3)
 crucible_test(test_fixy_v_187_cpu_pinned)               # FIXY-V-187 safety/CpuPinned.h — move-only AffinityMask×PinningPosture pin proof + singleton/posture gates + IsCpuPinned + row_hash 0x32 (Agent 6 §3.3)
+crucible_test(test_fixy_v_188_suspend_behavior)         # FIXY-V-188 safety/SuspendBehavior.h — regime-1 pause-on-suspend witness + KeepsTicking watchdog gate + IsSuspendBehavior + row_hash 0x33 (Agent 6 §3.3)
 crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScopeLattice — non-distributive accel×ARM visibility-scope partial order (WMEM keystone)
 crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/ScopedFence.h — partial-order provider Graded carrier for MemoryScope axis + IsScopedFence + row_hash
 crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
@@ -6637,6 +6638,14 @@ crucible_neg_compile_test(neg_cpu_pinned_two_bit_mask_singleton
   "constraints not satisfied|no matching function|is_singleton_pin|require_singleton_pin")
 crucible_neg_compile_test(neg_cpu_pinned_auto_on_hotpath
   "constraints not satisfied|no matching function|meets_posture|on_hot_path")
+
+# ─── FIXY-V-188 SuspendBehavior HS14 negative-compile fixtures ─────
+#   - neg_suspend_behavior_pauses_at_watchdog  (satisfies gate: Pauses ⋤ KeepsTicking)
+#   - neg_suspend_behavior_cross_assign        (distinct-behavior type mismatch)
+crucible_neg_compile_test(neg_suspend_behavior_pauses_at_watchdog
+  "constraints not satisfied|no matching function|satisfies|arm_watchdog")
+crucible_neg_compile_test(neg_suspend_behavior_cross_assign
+  "conversion from|cannot convert|no viable|no match for")
 
 # ─── FIXY-V-268 CollisionCatalog V401/V402 neg-compiles (per-rule, HS14) ──
 #
