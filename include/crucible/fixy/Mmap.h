@@ -97,6 +97,7 @@
 #include <crucible/safety/DimensionTraits.h>// DimensionAxis::SyscallSurface
 #include <crucible/safety/Linear.h>         // safety::Linear
 #include <crucible/safety/OwnedMmap.h>      // safety::OwnedMmap — V-231 promoted RAII
+#include <crucible/permissions/Permission.h>// Permission<Tag> — V-234 borrow-proof
 
 #include <crucible/effects/ExecCtx.h>       // IsExecCtx + row_type_of_t
 #include <crucible/effects/EffectRow.h>     // row_contains_v
@@ -730,12 +731,39 @@ advise(Ctx const&,
     return {};
 }
 
-// ── advise_release_aware<Advice, RegionTag>(ctx, OwnedMmap&) ──────────
+// ── advise_release_aware<Advice, RegionTag>(ctx, OwnedMmap&, ...) ─────
 //
-// Bug 5 narrow surface.  Compile-time witness that the caller has
-// declared release-awareness for `RegionTag`.  V-234 will fold a
-// SharedPermission<RegionTag> consume into this signature so the
-// runtime proof "no live ReadView<RegionTag>" is enforced.
+// Bug 5 narrow surface (FIXY-V-234 — SharedPermission composition shipped).
+//
+// Three independent gates close the "DontNeed mid-read zeroes the page" hole
+// Agent 9 surfaced on the SenseHub MAP_SHARED reader:
+//
+//   (1) `CtxFitsReleaseAwareAdvise` static-rejects non-dangerous Advice on
+//       this path (callers MUST route safe advice through `advise<>`).  Also
+//       fires on missing IO + Block effects in the Ctx row.
+//   (2) `RegionTag` template parameter forces the caller to NAME which
+//       region's readers matter.  A cross-tag Permission can't fit (V-234
+//       fixture #3) — the type system rejects laundering at compile time.
+//   (3) `Permission<RegionTag> const&` is the runtime-witnessed CSL borrow
+//       proof that the caller is the unique exclusive holder.  Combined
+//       with `SharedPermissionPool<RegionTag>::try_upgrade()`'s atomic
+//       state machine (which transitions only when ALL outstanding shares
+//       have been deposited), the borrow witnesses "no live reader".
+//       Linearity at the caller (Permission is move-only) ensures the
+//       caller cannot have given the Permission away to a concurrent
+//       reader between try_upgrade and advise_release_aware.
+//
+// The Permission is borrowed const& not consumed — `MADV_DONTNEED` leaves
+// the region usable, so the caller keeps the Permission and may deposit
+// it back to the pool for new readers (V-234 positive integration test).
+//
+// CollisionCatalog rule `M001_DontNeedRequiresReleaseAware` (in
+// `safety/CollisionCatalog.h`) names this collision class for fleet-wide
+// audit purposes.  The catalog entry IS documentation-of-record; the
+// actual static gate is `CtxFitsReleaseAwareAdvise` rejecting Advice that
+// is NOT in the dangerous set on this surface AND `CtxFitsSafeAdvise`
+// rejecting Advice that IS in the dangerous set on the safe surface —
+// the two concepts together form the disjoint-routing rule M001 names.
 
 template <typename Advice, typename RegionTag,
           typename Tag, typename Prot, typename Share,
@@ -743,7 +771,8 @@ template <typename Advice, typename RegionTag,
     requires CtxFitsReleaseAwareAdvise<Ctx, Advice, RegionTag>
 [[nodiscard]] inline std::expected<void, std::error_code>
 advise_release_aware(Ctx const&,
-                     OwnedMmap<Tag, Prot, Share>& region) noexcept {
+                     OwnedMmap<Tag, Prot, Share>& region,
+                     ::crucible::safety::Permission<RegionTag> const& /*exclusive_proof*/) noexcept {
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }

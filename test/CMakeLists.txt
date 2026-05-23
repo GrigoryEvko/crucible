@@ -288,6 +288,7 @@ crucible_test(test_fixy_v_097_syscall_family)  # FIXY-V-097 DimensionAxis::Sysca
 crucible_test(test_fixy_v_098_syscall_grants)  # FIXY-V-098 fixy/syscall/Family.h + Per.h — coarse + per-syscall grants
 crucible_test(test_fixy_v_099_syscall_ioctl)   # FIXY-V-099 fixy/syscall/Ioctl.h   — per-vendor + per-subsystem ioctl grants
 crucible_test(test_fixy_v_100_syscall_bridge)  # FIXY-V-100 fixy/syscall/Bridge.h — SyscallSurface → Met(X) effect-row lift
+crucible_test(test_fixy_v_234_release_aware_permission)  # FIXY-V-234 advise_release_aware<DontNeed, RegionTag> + SharedPermission composition — Agent 9 Bug 5 HIGH
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
 
@@ -11717,6 +11718,27 @@ crucible_neg_compile_fixy_test(neg_fixy_v_225_mint_mmap_ctx_lacks_block
     "no matching function|CtxAdmitsIoBlock|CtxFitsMmapMint|constraints not satisfied|row_contains")
 crucible_neg_compile_fixy_test(neg_fixy_v_225_advise_dontneed_safe_surface
     "no matching function|CtxFitsSafeAdvise|constraints not satisfied|is_dangerous_advice")
+
+# ── FIXY-V-234 — advise_release_aware + SharedPermission composition ─
+#
+# V-225 shipped the dangerous-Advice gate + the release_aware<RegionTag>
+# tag.  V-234 closes the loop by adding `Permission<RegionTag> const&`
+# as a required borrow proof on advise_release_aware<>.  Two new HS14
+# fixtures (the V-225 safe-surface fixture above is the third gate's
+# witness — together they form the full distinct-mismatch-class set):
+#
+#   #2 missing-permission-proof — call without Permission arg.  Compiler
+#      rejects via "too few arguments" against the new 3-param signature.
+#   #3 cross-tag-permission     — call with Permission<RegionB> where
+#      RegionTag = RegionA.  Compiler rejects via reference-binding
+#      mismatch between Permission<A> const& and Permission<B>.
+#
+# Catalog rule `M001_DontNeedRequiresReleaseAware` names this collision
+# class in `safety/CollisionCatalog.h` for fleet-wide audit.
+crucible_neg_compile_fixy_test(neg_fixy_v_234_advise_release_aware_missing_permission
+    "no matching function|too few arguments|Permission|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_v_234_advise_release_aware_cross_tag_permission
+    "cannot bind|no matching function|invalid initialization|deduced conflicting|could not convert")
 
 # ── FIXY-V-226 — fixy/Io.h HS14 neg-compile fixtures (#2104) ────────
 #

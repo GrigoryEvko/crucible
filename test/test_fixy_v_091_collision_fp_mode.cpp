@@ -58,17 +58,21 @@ namespace {
 
 // ── (a) Catalog cardinality + bijection witnesses ──────────────────
 //
-// V-091 extends the 22-entry catalog to 27 entries.  The body-side
-// self-test in detail::collision_catalog_self_test already asserts
-// catalog_size == 27 and the 5 new rule_bijection cells; re-asserting
-// in this sentinel TU catches ODR / include-order drift.
-static_assert(csc::catalog_size == 27);
-static_assert(std::tuple_size_v<csc::Catalog> == 27);
+// V-091 extends the 22-entry catalog to 27 entries; V-234 appends M001
+// for 28 total.  Use a floor (`>=`) on cardinality so future appends
+// don't silently red this sentinel — the catalog_cardinality_test_drift
+// pattern (feedback memory) prevents the silent-skip class of
+// regression that strict equality assertions cause.  Per-rule
+// rule_bijection assertions still pin each entry individually.
+static_assert(csc::catalog_size >= 28,
+              "FIXY-V-091 / FIXY-V-234 floor: catalog must include F101..F105 + M001");
+static_assert(std::tuple_size_v<csc::Catalog> >= 28);
 static_assert(csc::rule_bijection_v<csc::RuleCode::F101>);
 static_assert(csc::rule_bijection_v<csc::RuleCode::F102>);
 static_assert(csc::rule_bijection_v<csc::RuleCode::F103>);
 static_assert(csc::rule_bijection_v<csc::RuleCode::F104>);
 static_assert(csc::rule_bijection_v<csc::RuleCode::F105>);
+static_assert(csc::rule_bijection_v<csc::RuleCode::M001>);
 
 // ── (b) Diagnostic-string identity ─────────────────────────────────
 //

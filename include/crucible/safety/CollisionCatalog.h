@@ -163,6 +163,36 @@ enum class RuleCode : std::uint8_t {
     F103 = 24,  // CT × FpReassociate<UnrestrictedRewrite>
     F104 = 25,  // CT × FpDenormalInput<HonorDenormals>
     F105 = 26,  // CT × FpFtz<PreserveSubnormals>
+    // ── FIXY-V-234 M-family — mmap-syscall-surface cross-axis rules ───
+    //
+    // M001 names the collision class Agent 9 Bug 5 surfaced on the
+    // SenseHub MAP_SHARED reader: a future "release pressure on cold
+    // gauges" change that called `madvise(MADV_DONTNEED)` on the same
+    // region a concurrent `__atomic_load_n` reader was sampling would
+    // zero the pages mid-load, returning a bogus counter value.  The
+    // rule pins the disjoint-routing discipline V-225 + V-234 shipped:
+    //
+    //   safe surface  (`fixy::mmap::advise<Advice>`)
+    //                  refuses `is_dangerous_advice_v<Advice>` Advice;
+    //                  callers needing DontNeed/Free MUST switch to
+    //                  the release-aware surface.
+    //
+    //   release-aware (`fixy::mmap::advise_release_aware<Advice,
+    //                                                    RegionTag>`)
+    //                  takes a `Permission<RegionTag> const&` borrow
+    //                  proof so the type system witnesses unique-
+    //                  exclusive-access; combined with
+    //                  `SharedPermissionPool<RegionTag>::try_upgrade()`
+    //                  the runtime state machine guarantees no live
+    //                  shared reader.
+    //
+    // Routing collision — `advise<DontNeed>` on the safe surface — is
+    // rejected by `CtxFitsSafeAdvise` (one half of M001).  Calling
+    // `advise_release_aware<HugePage>` (non-dangerous advice on the
+    // release-aware surface) is rejected by `CtxFitsReleaseAwareAdvise`
+    // (the other half).  Together: dangerous Advice flows EXCLUSIVELY
+    // through the Permission-witnessed surface.
+    M001 = 27,  // mmap.advise<DontNeed> without release_aware<RegionTag>
     None = 255,
 };
 
@@ -257,6 +287,11 @@ struct F105_CtFpFtzPreserved : diag::tag_base {
     static constexpr std::string_view name = "F105_CtFpFtzPreserved";
 };
 
+// ── FIXY-V-234 M-family (mmap-syscall-surface cross-axis) ──────────
+struct M001_DontNeedRequiresReleaseAware : diag::tag_base {
+    static constexpr std::string_view name = "M001_DontNeedRequiresReleaseAware";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -284,11 +319,12 @@ using Catalog = std::tuple<
     F102_ReplayFpContractFast,
     F103_CtFpReassocPermitted,
     F104_CtFpDenormalInputHonored,
-    F105_CtFpFtzPreserved
+    F105_CtFpFtzPreserved,
+    M001_DontNeedRequiresReleaseAware
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 27);
+static_assert(catalog_size == 28);
 
 template <RuleCode R>
 struct rule_tag;
@@ -320,6 +356,7 @@ template <> struct rule_tag<RuleCode::F102> { using type = F102_ReplayFpContract
 template <> struct rule_tag<RuleCode::F103> { using type = F103_CtFpReassocPermitted; };
 template <> struct rule_tag<RuleCode::F104> { using type = F104_CtFpDenormalInputHonored; };
 template <> struct rule_tag<RuleCode::F105> { using type = F105_CtFpFtzPreserved; };
+template <> struct rule_tag<RuleCode::M001> { using type = M001_DontNeedRequiresReleaseAware; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -407,6 +444,9 @@ template <> struct rule_code_of<F104_CtFpDenormalInputHonored> {
 };
 template <> struct rule_code_of<F105_CtFpFtzPreserved> {
     static constexpr RuleCode value = RuleCode::F105;
+};
+template <> struct rule_code_of<M001_DontNeedRequiresReleaseAware> {
+    static constexpr RuleCode value = RuleCode::M001;
 };
 
 template <typename Tag>
@@ -1469,7 +1509,12 @@ namespace detail::collision_catalog_self_test {
 
 using DefaultFn = Fn<int>;
 static_assert(ValidComposition<DefaultFn>);
-static_assert(collision::catalog_size == 27);
+// FIXY-V-234 bump: 27 → 28 with M001_DontNeedRequiresReleaseAware.
+// Use `>=` floor pattern (per feedback_catalog_cardinality_test_drift) so
+// future appends don't silently red this self-test; the per-rule
+// rule_bijection assertions below pin each catalog entry individually.
+static_assert(collision::catalog_size >= 28,
+              "FIXY-V-091/V-234 floor: catalog must include F101..F105 + M001");
 static_assert(std::is_same_v<
     collision::rule_tag_t<collision::RuleCode::I002>,
     collision::I002_ClassifiedFailPayload>);
@@ -1502,6 +1547,7 @@ static_assert(collision::rule_bijection_v<collision::RuleCode::F102>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::F103>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::F104>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::F105>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::M001>);
 static_assert(collision::CollisionDiagnosticByRule<DefaultFn, collision::RuleCode::I002>::rule_code()
               == std::string_view{"I002"});
 static_assert(collision::CollisionDiagnostic<DefaultFn>::category()
