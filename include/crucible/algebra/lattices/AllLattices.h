@@ -90,6 +90,7 @@
 #include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9  (#454) — shipped
 #include <crucible/algebra/lattices/NumaNodeLattice.h>   // FOUND-G71  — shipped (1/2 NumaPlacement axes)
 #include <crucible/algebra/lattices/PeakBytesLattice.h>  // FOUND-G63  — shipped (2/2 Budgeted axes)
+#include <crucible/algebra/lattices/PinningRequirementLattice.h> // FIXY-V-182 — shipped (4-element CPU-coherence-domain chain)
 #include <crucible/algebra/lattices/ProductLattice.h>    // ALGEBRA-15 (#460) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4  (#449) — shipped
 #include <crucible/algebra/lattices/RecipeFamilyLattice.h> // FOUND-G75  — shipped (1/2 RecipeSpec axes)
@@ -228,6 +229,7 @@ static_assert(every_lattice_has_name<
     MonotoneLattice<int, std::less<int>>,
     NumaNodeLattice,
     PeakBytesLattice,
+    PinningRequirementLattice,
     ProductLattice<HotPathLattice, DetSafeLattice>,
     // FIXY-V-090 — FpModeProductLattice composite (11-way ProductLattice
     // over the V-089 per-axis ChainLattices).  Already covered structurally
