@@ -342,7 +342,11 @@ class CRUCIBLE_OWNER Cipher {
         // symlinked leaf would redirect fdatasync to whatever the
         // symlink targets, bypassing the idempotency invariant we
         // depend on for cross-process recovery.
-        const std::string obj_rel = obj_relpath_(hash.raw());
+        // WRAP-Cipher-3 #886 follow-up: obj_relpath_ returns Tagged<
+        // std::string, source::CipherPath>; .value() unwraps to a
+        // const ref the local fdatasync_at_ call chain consumes.
+        const auto obj_rel_tagged = obj_relpath_(hash.raw());
+        const std::string& obj_rel = obj_rel_tagged.value();
         if (std::filesystem::exists(path)) {
             if (!fdatasync_at_(root_dirfd_.get(), obj_rel)) {
                 return ContentHash{};
@@ -1754,7 +1758,17 @@ class CRUCIBLE_OWNER Cipher {
     // with O_NOFOLLOW.  Returns "objects/<XX>/<14hex>" — no leading
     // slash because openat with a relative path resolves under the
     // parent_dirfd inode, not under "/".
-    static std::string obj_relpath_(std::uint64_t hash) {
+    //
+    // WRAP-Cipher-3 #886 follow-up: returns Tagged<std::string,
+    // source::CipherPath> so the relpath carries the same internally-
+    // constructed-path provenance as obj_path's absolute form.  Keeps
+    // the two Cipher-path emitters symmetric: a future syscall
+    // helper that tightens to demand CipherPath proof at its
+    // signature catches BOTH the absolute and the relative forms.
+    [[nodiscard]] static auto obj_relpath_(std::uint64_t hash)
+        -> ::crucible::safety::Tagged<
+              std::string, ::crucible::safety::source::CipherPath>
+    {
         char hex[16];
         hex16_(hash, hex);
         std::string r;
@@ -1763,7 +1777,9 @@ class CRUCIBLE_OWNER Cipher {
         r.append(hex, 2);
         r.push_back('/');
         r.append(hex + 2, 14);
-        return r;
+        return ::crucible::safety::Tagged<
+            std::string, ::crucible::safety::source::CipherPath>{
+                std::move(r)};
     }
 
     std::string session_event_dir(
