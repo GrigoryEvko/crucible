@@ -81,11 +81,13 @@ static_assert(fd::Category::LinearAliasViolation          == cd::Category::Linea
 static_assert(fd::Category::SharedPermissionPoolSaturated == cd::Category::SharedPermissionPoolSaturated);
 static_assert(fd::Category::HugePageAllocationFailed      == cd::Category::HugePageAllocationFailed);
 static_assert(fd::Category::PublishOnceDoublePublish      == cd::Category::PublishOnceDoublePublish);
+static_assert(fd::Category::BitsInvariantViolation        == cd::Category::BitsInvariantViolation);
+static_assert(fd::Category::BorrowedBoundsViolation       == cd::Category::BorrowedBoundsViolation);
 
 // ─── 2. Bidirectional map round-trip ──────────────────────────────
 //
 // Exhaustive — every Category value MUST resolve through tag_of_t back
-// to a tag whose category_of_v matches.  31 round-trips.
+// to a tag whose category_of_v matches.  33 round-trips.
 
 #define DIAG_ROUNDTRIP(name) \
     static_assert(fd::category_of_v<fd::name> == fd::Category::name); \
@@ -122,6 +124,8 @@ DIAG_ROUNDTRIP(LinearAliasViolation);
 DIAG_ROUNDTRIP(SharedPermissionPoolSaturated);
 DIAG_ROUNDTRIP(HugePageAllocationFailed);
 DIAG_ROUNDTRIP(PublishOnceDoublePublish);
+DIAG_ROUNDTRIP(BitsInvariantViolation);
+DIAG_ROUNDTRIP(BorrowedBoundsViolation);
 
 #undef DIAG_ROUNDTRIP
 
@@ -146,6 +150,9 @@ static_assert(fd::is_diagnostic_class_v<fd::ResidencyHeatViolation>);
 static_assert(fd::is_diagnostic_class_v<fd::SharedPermissionPoolSaturated>);
 static_assert(fd::is_diagnostic_class_v<fd::HugePageAllocationFailed>);
 static_assert(fd::is_diagnostic_class_v<fd::PublishOnceDoublePublish>);
+// WRAP-Bits-Borrowed-Diagnostic #1092: 2 new tags (entries 31-32).
+static_assert(fd::is_diagnostic_class_v<fd::BitsInvariantViolation>);
+static_assert(fd::is_diagnostic_class_v<fd::BorrowedBoundsViolation>);
 
 // Accessors return non-empty strings.
 static_assert(!fd::diagnostic_name_v<fd::HotPathViolation>.empty());
@@ -222,6 +229,17 @@ static_assert(!fd::insight_provider<fd::HugePageAllocationFailed>::violating_exa
 static_assert(!fd::insight_provider<fd::PublishOnceDoublePublish>::symptom_pattern.empty());
 static_assert(!fd::insight_provider<fd::PublishOnceDoublePublish>::correct_example.empty());
 static_assert(!fd::insight_provider<fd::PublishOnceDoublePublish>::violating_example.empty());
+// WRAP-Bits-Borrowed-Diagnostic #1092: Bits + Borrowed runtime violation tags.
+static_assert(!fd::insight_provider<fd::BitsInvariantViolation>::why_this_matters.empty(),
+    "BitsInvariantViolation insight_provider must be specialized");
+static_assert(!fd::insight_provider<fd::BitsInvariantViolation>::symptom_pattern.empty());
+static_assert(!fd::insight_provider<fd::BitsInvariantViolation>::correct_example.empty());
+static_assert(!fd::insight_provider<fd::BitsInvariantViolation>::violating_example.empty());
+static_assert(!fd::insight_provider<fd::BorrowedBoundsViolation>::why_this_matters.empty(),
+    "BorrowedBoundsViolation insight_provider must be specialized");
+static_assert(!fd::insight_provider<fd::BorrowedBoundsViolation>::symptom_pattern.empty());
+static_assert(!fd::insight_provider<fd::BorrowedBoundsViolation>::correct_example.empty());
+static_assert(!fd::insight_provider<fd::BorrowedBoundsViolation>::violating_example.empty());
 
 // ─── 9. Runtime sanity — emit a Category through the alias ────────
 
