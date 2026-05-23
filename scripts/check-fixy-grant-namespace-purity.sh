@@ -75,6 +75,14 @@ while IFS=: read -r file line text; do
             # hierarchy or introduce new structural-validation concepts.
             continue
             ;;
+        include/crucible/fixy/grant/Dispatch.h)
+            # V-245 CallShape axis-specialized catalog (4 grant::dispatch::*
+            # grants: indirect_call<FnPtrFamily>/virtual_call<BaseClass>/
+            # recurses<MaxDepth>/tail_call + accept_default_strict_for_CallShape).
+            # Specializes which_dim<> only; does NOT extend grant_base
+            # hierarchy or introduce new structural-validation concepts.
+            continue
+            ;;
         include/crucible/fixy/Fp.h)
             # V-092 FpMode axis-specialized catalog (12 with_fp_* parametric
             # grants + fp_strict_ieee).  Specializes which_dim<> only;

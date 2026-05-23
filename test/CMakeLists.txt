@@ -294,6 +294,7 @@ crucible_test(test_fixy_v_241_stack_global_stdio) # FIXY-V-241 StackUse/GlobalSt
 crucible_test(test_fixy_v_242_hazard_wrappers)    # FIXY-V-242 5 safety/* Graded carriers (ControlFlow/CallShape/StackUse/GlobalState/Stdio)
 crucible_test(test_fixy_v_243_control_flow_collisions)  # FIXY-V-243 CollisionCatalog C001/D001/D002/G001/L006/P003/S001/S004 hazard-axis cross-axis rules
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
+crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_234_release_aware_permission)  # FIXY-V-234 advise_release_aware<DontNeed, RegionTag> + SharedPermission composition — Agent 9 Bug 5 HIGH
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
@@ -1724,6 +1725,24 @@ crucible_neg_compile_fixy_test(neg_fixy_ctrl_abort_requires_rationale
 crucible_neg_compile_fixy_test(neg_fixy_ctrl_abort_rationale_not_string
     "could not convert|cannot convert|deduction failed|no matching function|rationale|conversion")
 crucible_neg_compile_fixy_test(neg_fixy_ctrl_cv_qualified
+    "IsGrantTag|static assertion|cv-qualified")
+
+# FIXY-V-245 — HS14 floor for the fixy/grant/Dispatch.h CallShape grants.
+# Three fixtures cover orthogonal rejection classes around the
+# LOAD-BEARING recurses<MaxDepth> grant + the shared grant cv-purity gate:
+#   1. recurses missing-bound ARITY — recurses carries no default NTTP,
+#      so a bare recurses<> is "wrong number of template arguments".
+#      Witnesses that every recursion grant MUST declare a depth ceiling.
+#   2. virtual_call value-where-TYPE — virtual_call<42> substitutes a
+#      value where a base-class type is expected; rejected at template-id
+#      formation.  Witnesses the grant is parameterized by a hierarchy.
+#   3. IsGrantTag CV-PURITY — a const-qualified dispatch grant tag is
+#      rejected by IsGrantTag (fixy-A4-033), exercised from the dispatch side.
+crucible_neg_compile_fixy_test(neg_fixy_dispatch_recurses_requires_bound
+    "wrong number of template arguments|too few template arguments|template argument")
+crucible_neg_compile_fixy_test(neg_fixy_dispatch_virtual_call_value_arg
+    "expected a type|type/value mismatch|invalid|template argument")
+crucible_neg_compile_fixy_test(neg_fixy_dispatch_cv_qualified
     "IsGrantTag|static assertion|cv-qualified")
 
 # FIXY-V-093 — HS14 floor for fixy::fp::canonicalize.  Two fixtures
