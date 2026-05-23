@@ -5443,6 +5443,29 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_above_max
 crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# WRAP-Serialize-5 #1014 — write_meta() zero_ptr / zero_grad_fn_hash
+# wire-format invariants now ride through safety::Refined<is_zero,
+# uint64_t>.  The wrapper pins "must-be-zero on disk" at the type
+# level: a future refactor that swaps the `0` literal for any non-
+# zero expression (typically `m.data_ptr` cast or `grad_fn_hash`
+# leakage) contract-fires at the construction site instead of
+# silently corrupting DetSafe bit-stable replay.  Two fixtures per
+# HS14 mandate:
+#   * neg_serialize_is_zero_nonzero_construct — boundary edge (v == 1)
+#     catches "predicate accidentally relaxed to admit non-negative
+#     values" regressions (since for uint64_t both >= 0 and <= 0
+#     admit zero AND every other value, the strict equality check
+#     is the only meaningful gate).
+#   * neg_serialize_is_zero_uint64_max — wide miss (UINT64_MAX)
+#     catches "drop the predicate entirely" regression where
+#     Refined<is_zero, ...> degrades into a transparent wrapper and
+#     a uint64_t-encoded process-local address silently enters the
+#     on-disk bytes.
+crucible_neg_compile_test(neg_serialize_is_zero_nonzero_construct
+  "contract|Refined|is_zero|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_serialize_is_zero_uint64_max
+  "contract|Refined|is_zero|not a constant|non-constant|constexpr")
+
 # WRAP-TensorMeta-1 (#1034) — TensorMeta sizes/strides lanes now
 # write through TensorDim = Refined<bounded_above<INT64_MAX / 16>,
 # int64_t> while keeping the raw 64-byte lane blocks for SIMD loads.

@@ -68,6 +68,12 @@ using ::crucible::safety::RefinedLinear;
 using ::crucible::safety::positive;
 using ::crucible::safety::non_negative;
 using ::crucible::safety::non_zero;
+// is_zero — dual of non_zero per WRAP-Serialize-5 #1014.  Pins
+// "must-be-zero" sentinel invariants at the type level (Serialize.h
+// zero_ptr / zero_grad_fn_hash on-disk write contract).  Together
+// with non_zero the pair covers both sides of the zero-reservation
+// pattern that recurs across wire / cipher / hash-Family-A storage.
+using ::crucible::safety::is_zero;
 using ::crucible::safety::non_null;
 using ::crucible::safety::power_of_two;
 using ::crucible::safety::non_empty;

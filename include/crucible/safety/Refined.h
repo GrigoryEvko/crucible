@@ -87,6 +87,26 @@ inline constexpr auto non_zero = [](const auto& x) constexpr noexcept {
         return x != decltype(x){0};
 };
 
+// is_zero is the dual of non_zero: the predicate is satisfied iff the
+// value compares equal to its zero-initialized form.  Use when a
+// downstream invariant requires the value to be *exactly* zero — most
+// commonly when a wire / disk format reserves zero as the only valid
+// payload for a field (Serialize.h zero_ptr / zero_grad_fn_hash write
+// invariant per WRAP-Serialize-5 #1014: runtime addresses and process-
+// local autograd identities must never enter persistent bytes).
+//
+// Symmetric with non_zero: same strong-hash projection via `.raw()`,
+// same scalar comparison otherwise.  Together they let "must-be-zero"
+// and "must-not-be-zero" invariants be expressed at the type level
+// rather than discovered by reading a write_*() body and noticing the
+// `const uint64_t zero_X = 0` literal.
+inline constexpr auto is_zero = [](const auto& x) constexpr noexcept {
+    if constexpr (requires { x.raw(); })
+        return x.raw() == 0;
+    else
+        return x == decltype(x){0};
+};
+
 inline constexpr auto non_null = [](auto* p) constexpr noexcept {
     return p != nullptr;
 };

@@ -123,12 +123,22 @@ struct Reader {
 // runtime address; grad_fn_hash is a Family-B autograd identity. Neither
 // is meaningful after reload and neither may enter persistent bytes.
 // Pad bytes are written as zero for deterministic serialization.
+//
+// WRAP-Serialize-5 #1014: the two "MUST be zero" write sites pin their
+// invariant at the type level via safety::Refined<safety::is_zero, ...>.
+// A future refactor that accidentally feeds m.data_ptr (or any non-zero
+// expression) into either constructor contract-fires immediately at the
+// construction site — the violation surfaces as a clean Refined-ctor
+// failure rather than as silent wire-format corruption that breaks
+// DetSafe bit-stable replay.  Regime-1 EBO collapses the wrapper to
+// sizeof(uint64_t), so write_meta still emits exactly the same 8 bytes.
 inline void write_meta(Writer& w, const TensorMeta& m) {
     w.write_bytes(m.sizes.raw_data(),   sizeof(m.sizes));
     w.write_bytes(m.strides.raw_data(), sizeof(m.strides));
-    // data_ptr → always 0 on disk
-    const uint64_t zero_ptr = 0;
-    w.w(zero_ptr);
+    // data_ptr → always 0 on disk (runtime address, meaningless persisted).
+    const safety::Refined<safety::is_zero, std::uint64_t> zero_ptr{
+        std::uint64_t{0}};
+    w.w(zero_ptr.value());
     w.w(m.ndim);
     w.w(m.dtype);
     w.w(m.device_type);
@@ -140,8 +150,10 @@ inline void write_meta(Writer& w, const TensorMeta& m) {
     w.w(m.storage_offset);
     w.w(m.version);
     w.w(m.storage_nbytes);
-    const uint64_t zero_grad_fn_hash = 0;
-    w.w(zero_grad_fn_hash);
+    // grad_fn_hash → always 0 on disk (Family-B process-local identity).
+    const safety::Refined<safety::is_zero, std::uint64_t> zero_grad_fn_hash{
+        std::uint64_t{0}};
+    w.w(zero_grad_fn_hash.value());
 }
 
 // Read TensorMeta: process-local fields are always null/zero after
