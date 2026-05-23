@@ -768,7 +768,8 @@ struct row_hash_contribution<safety::ScopedFence<S, Inner>> {
 // / ScopedFence) and ResidencyHeat; the pinned clock source discriminates
 // the federation-cache slot.  This is the row_hash the V-184 composite
 // lattice deferred — the contribution lives on the WRAPPER, never the
-// lattice At<>.  The low byte folds the ClockSource enumerator (0..8).
+// lattice At<>.  The low byte folds the ClockSource enumerator (0..9 after
+// FIXY-V-201 appended PtpHwClock at ordinal 9).
 template <algebra::lattices::ClockSource Source, typename Inner>
 struct row_hash_contribution<safety::ClockSource<Source, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(

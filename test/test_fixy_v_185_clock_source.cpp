@@ -91,6 +91,19 @@ static_assert(dg::row_hash_contribution_v<sf::TscBytes<int>>
     "TscRaw and PmuCounter project to the same (DetSafe,Suspend,Pin) tuple "
     "but are DISTINCT sources — they MUST occupy distinct row_hash slots.");
 
+// FIXY-V-201: PHC and Boot collapse to the same (MonotonicClockRead,
+// KeepsTicking, NotRequired) projected tuple — the WORST possible aliasing
+// risk at the federation-cache layer.  This sentinel guarantees the
+// per-source-ordinal salt in row_hash_contribution<ClockSource<Source, T>>
+// keeps them apart.  A regression here would silently merge PHC reads and
+// CLOCK_BOOTTIME reads into one cache slot across the fleet.
+static_assert(dg::row_hash_contribution_v<sf::BootClockBytes<unsigned long long>>
+              != dg::row_hash_contribution_v<sf::PtpHwClockBytes<unsigned long long>>,
+    "FIXY-V-201: BootClockBytes and PtpHwClockBytes project to the SAME "
+    "lattice tuple but are DISTINCT sources — they MUST occupy distinct "
+    "row_hash slots.  The source-ordinal salt (Boot=3, PtpHwClock=9) is the "
+    "ONLY discriminator at the federation-cache key.");
+
 // ── Salt-disjointness from the sister Repr wrapper (ScopedFence 0x2F) ─
 static_assert(dg::row_hash_contribution_v<sf::BootClockBytes<int>>
               != dg::row_hash_contribution_v<sf::ScopedFence<Ms_t::Cta, int>>,

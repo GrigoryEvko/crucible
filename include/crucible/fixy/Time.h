@@ -75,10 +75,18 @@ namespace ml  = ::crucible::algebra::lattices;
 using sf::ClockSource_v;
 using TscMode = ::crucible::fixy::hw::TscMode;
 
-// ── clockid mapping — only the clock_gettime-backed sources ─────────
+// ── clockid mapping — only the static-clockid clock_gettime sources ─
 //
-// Returns a sentinel of -1 for the TSC / PMU sources, which are NOT
-// clock_gettime-backed (they go through mint_tsc_reader).
+// Returns -1 for sources that the generic `ClockReader<Source>` cannot
+// serve.  Two disjoint reasons land in the sentinel:
+//   - TscRaw / TscSerialized / PmuCounter — not clock_gettime-backed at
+//     all; consumers use mint_tsc_reader<Mode, PinT> instead.
+//   - PtpHwClock (FIXY-V-201) — IS clock_gettime-backed but the clockid
+//     is *per-fd* (derived via `(~fd << 3) | 3` from a /dev/ptpN fd),
+//     not a static `CLOCK_*` constant.  A static-NTTP `ClockReader`
+//     cannot satisfy it; consumers use topology::ptp_now(PtpClockFd) at
+//     src/topology/Ptp.cpp, which mints the PtpHwClockBytes carrier at
+//     the syscall boundary itself.
 [[nodiscard]] consteval ::clockid_t clockid_for(ClockSource_v source) noexcept {
     switch (source) {
         case ClockSource_v::Realtime:     return CLOCK_REALTIME;
@@ -90,7 +98,10 @@ using TscMode = ::crucible::fixy::hw::TscMode;
         case ClockSource_v::TscRaw:
         case ClockSource_v::TscSerialized:
         case ClockSource_v::PmuCounter:
-        default:                          return -1;  // sentinel: not clock_gettime-backed
+            return -1;  // not clock_gettime-backed; use mint_tsc_reader
+        case ClockSource_v::PtpHwClock:
+            return -1;  // FIXY-V-201: per-fd clockid; use topology::ptp_now(fd)
+        default:                          return -1;
     }
 }
 

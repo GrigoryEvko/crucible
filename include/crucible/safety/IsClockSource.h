@@ -64,12 +64,14 @@ using M_u64    = ::crucible::safety::MonotonicClockBytes<unsigned long long>;
 using R_u64    = ::crucible::safety::RealtimeClockBytes<unsigned long long>;
 using Tsc_u64  = ::crucible::safety::TscBytes<unsigned long long>;
 using Pmu_int  = ::crucible::safety::PmuBytes<int>;
+using Phc_u64  = ::crucible::safety::PtpHwClockBytes<unsigned long long>;  // FIXY-V-201
 
 static_assert(is_clock_source_v<B_u64>);
 static_assert(is_clock_source_v<M_u64>);
 static_assert(is_clock_source_v<R_u64>);
 static_assert(is_clock_source_v<Tsc_u64>);
 static_assert(is_clock_source_v<Pmu_int>);
+static_assert(is_clock_source_v<Phc_u64>);  // FIXY-V-201: PHC must detect identically
 
 static_assert(is_clock_source_v<B_u64&>);
 static_assert(is_clock_source_v<B_u64 const&>);
@@ -93,8 +95,13 @@ static_assert(clock_source_source_v<M_u64>   == ClockSource_v::Monotonic);
 static_assert(clock_source_source_v<R_u64>   == ClockSource_v::Realtime);
 static_assert(clock_source_source_v<Tsc_u64> == ClockSource_v::TscRaw);
 static_assert(clock_source_source_v<Pmu_int> == ClockSource_v::PmuCounter);
+static_assert(clock_source_source_v<Phc_u64> == ClockSource_v::PtpHwClock);  // FIXY-V-201
 
 static_assert(clock_source_source_v<B_u64> != clock_source_source_v<M_u64>);
+static_assert(clock_source_source_v<B_u64> != clock_source_source_v<Phc_u64>,
+    "FIXY-V-201: PHC and Boot have the SAME projected tuple but DISTINCT "
+    "source identities — the detector must read different ClockSource_v "
+    "values, NOT collapse them.");
 
 }  // namespace detail::is_clock_source_self_test
 
