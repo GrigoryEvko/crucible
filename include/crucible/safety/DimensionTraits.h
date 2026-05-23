@@ -305,6 +305,21 @@ enum class DimensionAxis : std::uint8_t {
     HwInstruction   = 29, // S  (Crucible extension, 2026-05-23)
     BarrierStrength = 30, // S  (Crucible extension, 2026-05-23)
     SimdIsa         = 31, // L  (Crucible extension, 2026-05-23)
+    // MemoryScope (FIXY-V-266, Agent WMEM keystone) — added 2026-05-23 to
+    // host the memory-visibility-scope taxonomy that MemoryScopeLattice
+    // (V-265) populates and safety/ScopedFence.h (V-267) wraps:
+    //   MemoryScope — MemoryScopeLattice, a Tier-L NON-DISTRIBUTIVE partial
+    //                 order: accel trunk Thread ⊏ Warp ⊏ Cta ⊏ Cluster ⊏ Gpu
+    //                 × ARM trunk Inner(ISH) ⊏ Outer(OSH), joined only at
+    //                 the shared sentinels Thread(⊥) / System(⊤) (where GPU
+    //                 `.sys` and ARM `DMB SY` converge); WHICH visibility
+    //                 scope a fence / async-copy boundary must publish to.
+    //                 Distinct from BarrierStrength (the fence-STRENGTH
+    //                 ladder) — the two compose via wrapper-nesting at the
+    //                 value site, never via a single lattice op.  Third
+    //                 Tier-L axis (peer to Representation + SimdIsa); no Fn<>
+    //                 aggregator slot.
+    MemoryScope     = 32, // L  (Crucible extension, 2026-05-23)
 };
 
 inline constexpr std::size_t DIMENSION_AXIS_COUNT =
@@ -344,6 +359,7 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::HwInstruction:  return "HwInstruction";
         case DimensionAxis::BarrierStrength: return "BarrierStrength";
         case DimensionAxis::SimdIsa:        return "SimdIsa";
+        case DimensionAxis::MemoryScope:    return "MemoryScope";
         default:                            return std::string_view{"<unknown DimensionAxis>"};
     }
 }
@@ -365,6 +381,7 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
 
         case DimensionAxis::Representation:
         case DimensionAxis::SimdIsa:
+        case DimensionAxis::MemoryScope:
             return TierKind::Lattice;
 
         case DimensionAxis::Version:
@@ -767,8 +784,8 @@ namespace detail::dimension_traits_self_test {
 static_assert(TIER_KIND_COUNT == 5,
     "TierKind catalog diverged from fixy.md §24.1 Tier S/L/T/F/V (5); "
     "if intentional, update fixy.md and this constant together.");
-static_assert(DIMENSION_AXIS_COUNT == 32,
-    "DimensionAxis catalog diverged from fixy.md §24.1 (32 dims: FX's "
+static_assert(DIMENSION_AXIS_COUNT == 33,
+    "DimensionAxis catalog diverged from fixy.md §24.1 (33 dims: FX's "
     "22 minus dim 12 Clock Domain and dim 17 FP Order, plus the Crucible "
     "Synchronization extension added 2026-05-18 for Wait + MemOrder, plus "
     "the Crucible Regime extension added 2026-05-18 for HotPath, plus "
@@ -779,8 +796,10 @@ static_assert(DIMENSION_AXIS_COUNT == 32,
     "2026-05-23 (ControlFlow / CallShape / StackUse / GlobalState / Stdio) "
     "per FIXY-V-238, plus the three Crucible hardware-instruction "
     "extensions added 2026-05-23 (HwInstruction / BarrierStrength / "
-    "SimdIsa) per FIXY-V-253); if intentional, update fixy.md §24.1 + "
-    "§24.14 + §24.15 + §24.16 + §24.17 + §24.18 + §24.19 and this "
+    "SimdIsa) per FIXY-V-253, plus the Crucible MemoryScope extension "
+    "added 2026-05-23 for the memory-visibility-scope taxonomy per "
+    "FIXY-V-266); if intentional, update fixy.md §24.1 + "
+    "§24.14 + §24.15 + §24.16 + §24.17 + §24.18 + §24.19 + §24.20 and this "
     "constant.");
 
 // ── Reflection-driven name coverage (TierKind) ─────────────────────
@@ -864,9 +883,10 @@ static_assert(count_dims_in_tier(TierKind::Semiring)     == 26,
     "GlobalState / Stdio 2026-05-23 per FIXY-V-238 + HwInstruction / "
     "BarrierStrength 2026-05-23 per FIXY-V-253); tier_of_axis "
     "disagrees.");
-static_assert(count_dims_in_tier(TierKind::Lattice)      == 2,
-    "fixy.md §24.1 declares 2 Tier-L dimensions (Representation + SimdIsa "
-    "2026-05-23 per FIXY-V-253); tier_of_axis disagrees.");
+static_assert(count_dims_in_tier(TierKind::Lattice)      == 3,
+    "fixy.md §24.1 declares 3 Tier-L dimensions (Representation + SimdIsa "
+    "2026-05-23 per FIXY-V-253 + MemoryScope 2026-05-23 per FIXY-V-266); "
+    "tier_of_axis disagrees.");
 static_assert(count_dims_in_tier(TierKind::Typestate)    == 1,
     "fixy.md §24.1 declares 1 Tier-T dimension (Protocol); "
     "tier_of_axis disagrees.");
@@ -995,6 +1015,7 @@ static_assert(dimension_axis_name(DimensionAxis::Stdio)          == "Stdio");
 static_assert(dimension_axis_name(DimensionAxis::HwInstruction)  == "HwInstruction");
 static_assert(dimension_axis_name(DimensionAxis::BarrierStrength) == "BarrierStrength");
 static_assert(dimension_axis_name(DimensionAxis::SimdIsa)        == "SimdIsa");
+static_assert(dimension_axis_name(DimensionAxis::MemoryScope)    == "MemoryScope");
 
 // fixy.md §24.1 axis-to-Tier mapping spot checks.
 static_assert(tier_of_axis(DimensionAxis::Type)           == TierKind::Foundational);

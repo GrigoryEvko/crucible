@@ -413,6 +413,23 @@ namespace simd_isa {
     struct Unconstrained {};   // default — no SIMD-ISA wrapper claim at binding scope
 }
 
+// ── Dim 32 MemoryScope (FIXY-V-266, 2026-05-23) ──────────────────────
+//
+// Wrapper-only Tier-L axis sharing the SimdIsa pattern: NO Fn<...>
+// aggregator slot — the discipline lives at the VALUE site (V-265 ships
+// MemoryScopeLattice; V-267 ships safety::ScopedFence; V-269 the grant
+// tags).  This namespace exists solely so fixy/Default.h can give the
+// axis a `type` alias satisfying `every_axis_resolves`.  `Unconstrained`
+// IS the strict default — the binding makes no memory-visibility-scope
+// claim; the scoped fence, if any, lives on the value itself.
+//
+//   MemoryScope — Thread / Warp / Cta / Cluster / Gpu (accel trunk) ×
+//                 Inner(ISH) / Outer(OSH) (ARM trunk), joined at
+//                 Thread(⊥) / System(⊤) (Tier-L, non-distributive)
+namespace memory_scope {
+    struct Unconstrained {};   // default — no memory-scope wrapper claim at binding scope
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── ValidComposition concept gate (Phase 0 P0-2) ───────────────────
 // ═════════════════════════════════════════════════════════════════════

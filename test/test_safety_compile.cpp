@@ -163,7 +163,7 @@ static_assert(every_tier_kind_has_name());
 static_assert(every_dimension_axis_has_name());
 static_assert(every_dimension_axis_has_tier());
 static_assert(count_dims_in_tier(cs::TierKind::Semiring) == 26);  // fixy-V-238: +ControlFlow/CallShape/StackUse/GlobalState/Stdio (2026-05-23); fixy-V-253: +HwInstruction/BarrierStrength (2026-05-23)
-static_assert(count_dims_in_tier(cs::TierKind::Lattice) == 2);   // fixy-V-253: +SimdIsa (2026-05-23)
+static_assert(count_dims_in_tier(cs::TierKind::Lattice) == 3);   // fixy-V-253: +SimdIsa (2026-05-23); fixy-V-266: +MemoryScope (2026-05-23)
 static_assert(count_dims_in_tier(cs::TierKind::Typestate) == 1);
 static_assert(count_dims_in_tier(cs::TierKind::Foundational) == 2);
 static_assert(count_dims_in_tier(cs::TierKind::Versioned) == 1);

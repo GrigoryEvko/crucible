@@ -68,7 +68,7 @@ int main() {
         strict<D::Synchronization>, strict<D::Regime>,
         strict<D::FpMode>,
         strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>,
-        strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>,
+        strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>, strict<D::MemoryScope>,
         grs::family_file_mutation        /* SyscallSurface #1 */,
         grs::per<SI::pwrite>             /* SyscallSurface #2 — duplicate */>(42);
     (void)bad;

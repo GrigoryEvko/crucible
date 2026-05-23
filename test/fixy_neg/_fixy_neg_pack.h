@@ -59,7 +59,8 @@ using PackWithout = std::tuple<
     std::conditional_t<Omit == D::Stdio,          void, strict<D::Stdio>>,
     std::conditional_t<Omit == D::HwInstruction,  void, strict<D::HwInstruction>>,
     std::conditional_t<Omit == D::BarrierStrength, void, strict<D::BarrierStrength>>,
-    std::conditional_t<Omit == D::SimdIsa,        void, strict<D::SimdIsa>>>;
+    std::conditional_t<Omit == D::SimdIsa,        void, strict<D::SimdIsa>>,
+    std::conditional_t<Omit == D::MemoryScope,    void, strict<D::MemoryScope>>>;
 
 // Filter `void`s out of the pack; the resulting tuple is what we
 // hand to IsAcceptedGrants.

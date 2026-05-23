@@ -440,6 +440,18 @@ struct strict_default_for<dim::DimensionAxis::SimdIsa> {
     using type = safety::fn::simd_isa::Unconstrained;
 };
 
+// FIXY-V-266: MemoryScope (DimensionAxis 32, Crucible extension
+// 2026-05-23) is a WRAPPER-ONLY Tier-L axis — the memory-visibility-scope
+// taxonomy (MemoryScopeLattice, accel Thread⊏Warp⊏Cta⊏Cluster⊏Gpu × ARM
+// Inner(ISH)⊏Outer(OSH), joined at Thread(⊥)/System(⊤), non-distributive)
+// is held at the value site by V-265's lattice + V-267's safety::ScopedFence
+// Graded wrapper, NOT as an Fn<...> aggregator slot.  Third Tier-L axis,
+// peer to Representation + SimdIsa.
+template <>
+struct strict_default_for<dim::DimensionAxis::MemoryScope> {
+    using type = safety::fn::memory_scope::Unconstrained;
+};
+
 // ─── has_strict_default — predicate concept ────────────────────────
 //
 // True iff a specialization exists for D AND it exposes either `type`
