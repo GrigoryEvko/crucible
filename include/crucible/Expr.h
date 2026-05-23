@@ -4,6 +4,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>
+#include <crucible/safety/Tagged.h>     // WRAP-Expr-1 #911: Tagged<u64, hash_family::FamilyB>
 #include <crucible/Types.h>
 
 #include <bit>
@@ -46,7 +47,23 @@ struct Expr {
   // speed — the same structural input hashes differently per process.
   // If FORGE federation ever needs Expr identity, compute a separate
   // structural `content_hash()` that ignores `args` pointer values.
-  const uint64_t hash = 0;            // 8 bytes — Family-B intern key (see Types.h)
+  //
+  // WRAP-Expr-1 #911: pinned as Tagged<uint64_t, hash_family::FamilyB>
+  // so the Family-B-ness is enforced at the TYPE level.  Builds on
+  // #1069's hash_family::FamilyB tag.  Regime-1 EBO-collapse preserves
+  // the 8B field width — the 32B Expr layout is unchanged (the
+  // static_assert at the file end pins this).  ExprPool::intern probe
+  // sites unwrap via .value() at the Swiss-table modular-probe step.
+  //
+  // The bug class this prevents: a maintainer accidentally feeding
+  // Expr::hash into a Family-A computation (merkle_hash, ContentHash,
+  // Cipher key) — Tagged<u64, FamilyB> cannot be implicitly converted
+  // to Tagged<u64, FamilyA>; the cross-family confusion fails to
+  // compile at the call site.
+  const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>
+      hash{std::uint64_t{0}};         // 8 bytes — Family-B intern key
+                                      // Tagged has no default ctor; mint
+                                      // the zero hash explicitly.
   const int64_t payload = 0;          // 8 bytes — integer value, or bitcast double, or symbol name ptr
   const Expr* const* const args = nullptr;  // 8 bytes — pointer to arena-allocated array of children
                                             // ──────────
@@ -193,6 +210,25 @@ struct Expr {
 
 // Compile-time check: Expr must be 32 bytes for cache efficiency.
 static_assert(sizeof(Expr) == 32, "Expr must be exactly 32 bytes");
+
+// ── WRAP-Expr-1 #911 sentinel: Expr::hash Family-B pin ────────────
+//
+// The Tagged<u64, hash_family::FamilyB> wrap MUST regime-1 EBO-collapse
+// to sizeof(u64) — if it doesn't, the 32B Expr layout breaks and the
+// static_assert above catches it.  Pin the field's exact type and
+// width so a future regression cannot silently drop the wrap (or
+// switch to FamilyA, allowing Cipher confusion).
+static_assert(
+    std::is_same_v<
+        decltype(std::declval<Expr>().hash),
+        const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>>,
+    "WRAP-Expr-1 #911: Expr::hash must be "
+    "const Tagged<u64, hash_family::FamilyB> — Family-B intern key.");
+static_assert(
+    sizeof(::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>) ==
+        sizeof(std::uint64_t),
+    "WRAP-Expr-1 #911: Tagged<u64, FamilyB> must be regime-1 EBO-"
+    "collapsible to preserve the 32B Expr layout.");
 
 namespace detail {
 

@@ -1531,7 +1531,9 @@ class CRUCIBLE_OWNER ExprPool {
         // Packed metadata compare: catches the astronomically rare hash
         // collision where different (op,nargs,flags,symbol_id) produce
         // the same 64-bit hash.
-        if (existing_expr->hash == expr_full_hash &&
+        // WRAP-Expr-1 #911: Expr::hash is Tagged<u64, FamilyB>; .value()
+        // unwraps to the raw u64 for the Swiss-table full-hash compare.
+        if (existing_expr->hash.value() == expr_full_hash &&
             existing_expr->payload == payload) [[likely]] {
           // Pack the existing expr's metadata the same way for single compare
           uint64_t existing_packed_metadata =
@@ -1696,9 +1698,12 @@ class CRUCIBLE_OWNER ExprPool {
         continue;
 
       const Expr* existing_expr = old_slots[i];
-      int8_t slot_match_tag = detail::h2_tag(existing_expr->hash);
+      // WRAP-Expr-1 #911: Expr::hash is Tagged<u64, FamilyB>; .value()
+      // unwraps for Swiss-table rehash (h2_tag + modular probe-base).
+      const std::uint64_t existing_hash_raw = existing_expr->hash.value();
+      int8_t slot_match_tag = detail::h2_tag(existing_hash_raw);
       size_t probe_base_slot =
-          (existing_expr->hash * detail::group_width()) & slot_mask;
+          (existing_hash_raw * detail::group_width()) & slot_mask;
       size_t probe_iteration = 0;
 
       while (true) {

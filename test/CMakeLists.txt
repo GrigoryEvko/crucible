@@ -6741,6 +6741,14 @@ crucible_neg_compile_test(neg_types_hash_family_unspecialized
 crucible_neg_compile_test(neg_types_hash_family_cross_lane
   "static assertion failed|WRAP-Types-3|Family-B|IsFamilyB")
 
+# ─── WRAP-Expr-1 #911 HS14 negative-compile fixtures ───────────────
+#   - neg_expr_hash_bare_u64_assign    (no implicit u64 → Tagged<u64, FamilyB>)
+#   - neg_expr_hash_cross_family       (FamilyA ≠ FamilyB Tagged)
+crucible_neg_compile_test(neg_expr_hash_bare_u64_assign
+  "conversion from|cannot convert|no viable|no match for")
+crucible_neg_compile_test(neg_expr_hash_cross_family
+  "conversion from|cannot convert|no viable|no match for")
+
 # ─── FIXY-V-186 SchedClass HS14 negative-compile fixtures ──────────
 #   - neg_sched_class_fifo_task_on_other_pool       (pool-fit: Fifo ⋤ Other)
 #   - neg_sched_class_deadline_runtime_gt_deadline  (CBS assert: runtime > deadline)
