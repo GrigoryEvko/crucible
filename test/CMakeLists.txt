@@ -298,6 +298,7 @@ crucible_test(test_fixy_v_250_simd_isa)                 # FIXY-V-250 SimdIsaLatt
 crucible_test(test_fixy_v_251_hw_instruction)           # FIXY-V-251 HwInstructionLattice — 5-tier hw-instruction capability chain
 crucible_test(test_fixy_v_252_barrier_strength)         # FIXY-V-252 BarrierStrengthLattice — 7-tier memory-fence strength chain
 crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
+crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
@@ -6418,6 +6419,10 @@ crucible_neg_compile_test(neg_hw_consumer_too_weak
   "constraints not satisfied|no matching function|satisfies|admit_at_tsc_ceiling")
 crucible_neg_compile_test(neg_hw_widen_to_lower
   "constraints not satisfied|no matching function|widen|Hw")
+crucible_neg_compile_test(neg_barrier_consumer_too_weak
+  "constraints not satisfied|no matching function|satisfies|require_acqrel_floor")
+crucible_neg_compile_test(neg_barrier_strengthen_up
+  "constraints not satisfied|no matching function|weaken|BarrierGuarded")
 
 # ─── FIXY-V-091 CollisionCatalog F101..F105 neg-compiles (per-rule) ──
 #

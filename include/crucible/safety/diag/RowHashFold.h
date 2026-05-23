@@ -154,6 +154,7 @@ enum class FpLibmPolicy       : std::uint8_t;
 enum class FpReassociate      : std::uint8_t;
 enum class FpConstantRounding : std::uint8_t;
 enum class HwInstruction       : std::uint8_t;  // FIXY-V-251 (wrapper V-254)
+enum class BarrierStrength     : std::uint8_t;  // FIXY-V-252 (wrapper V-255)
 }  // namespace crucible::algebra::lattices
 
 namespace crucible::safety {
@@ -162,6 +163,7 @@ template <algebra::lattices::CipherTierTag Tier, typename T> class CipherTier;
 template <algebra::lattices::DetSafeTier Tier, typename T> class DetSafe;
 template <algebra::lattices::HotPathTier Tier, typename T> class HotPath;
 template <algebra::lattices::HwInstruction Tier, typename T> class Hw;
+template <algebra::lattices::BarrierStrength Tier, typename T> class BarrierGuarded;
 template <algebra::lattices::MemOrderTag Tag, typename T> class MemOrder;
 template <algebra::lattices::ProgressClass Class, typename T> class Progress;
 template <algebra::lattices::ResidencyHeatTag Tier, typename T> class ResidencyHeat;
@@ -353,10 +355,11 @@ inline constexpr std::uint64_t WRAPPER_JOIN_POLICY_TAG      = 0x2000'0000'0000'0
 // computed under FpRounding::RoundToNearestEven from the same value
 // under RoundToZero (the two are NOT byte-equivalent under any FP
 // operation that crosses a rounding boundary).  Salts 0x21..0x2B map
-// 1-to-1 with the V-088 sub-axis ordinal; 0x2C reserved for the
-// 11-axis composite type, but composite row_hash composes through the
+// 1-to-1 with the V-088 sub-axis ordinal; the 11-axis FpModeComposite
+// type carries NO salt of its own — its row_hash composes through the
 // per-axis specializations automatically (see safety/FpMode.h's
-// FpModeComposite alias), so 0x2C is unused at present.
+// FpModeComposite alias).  The Agent-11 HW-axis wrappers continue the
+// sequence: 0x2C = Hw (V-254), 0x2D = BarrierGuarded (V-255).
 inline constexpr std::uint64_t WRAPPER_FP_ROUNDING_TAG          = 0x2100'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_FP_FTZ_TAG               = 0x2200'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_FP_CONTRACT_TAG          = 0x2300'0000'0000'0000ULL;
@@ -370,6 +373,8 @@ inline constexpr std::uint64_t WRAPPER_FP_REASSOCIATE_TAG       = 0x2A00'0000'00
 inline constexpr std::uint64_t WRAPPER_FP_CONSTANT_ROUNDING_TAG = 0x2B00'0000'0000'0000ULL;
 // FIXY-V-254 — Hw<HwInstruction Tier, T> federation-cache discriminator.
 inline constexpr std::uint64_t WRAPPER_HW_INSTRUCTION_TAG       = 0x2C00'0000'0000'0000ULL;
+// FIXY-V-255 — BarrierGuarded<BarrierStrength Tier, T> discriminator.
+inline constexpr std::uint64_t WRAPPER_BARRIER_STRENGTH_TAG     = 0x2D00'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -679,6 +684,15 @@ template <algebra::lattices::HwInstruction Tier, typename Inner>
 struct row_hash_contribution<safety::Hw<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::WRAPPER_HW_INSTRUCTION_TAG | static_cast<std::uint64_t>(Tier),
+        row_hash_contribution_v<Inner>);
+};
+
+// FIXY-V-255 — BarrierGuarded is a Repr-neighborhood wrapper peer to Hw;
+// the publication-fence tier discriminates the federation-cache slot.
+template <algebra::lattices::BarrierStrength Tier, typename Inner>
+struct row_hash_contribution<safety::BarrierGuarded<Tier, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_BARRIER_STRENGTH_TAG | static_cast<std::uint64_t>(Tier),
         row_hash_contribution_v<Inner>);
 };
 

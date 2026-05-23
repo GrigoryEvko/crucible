@@ -94,6 +94,7 @@
 #include <crucible/algebra/GradedTrait.h>
 #include <crucible/algebra/Lattice.h>
 #include <crucible/safety/AllocClass.h>
+#include <crucible/safety/BarrierGuarded.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/Consistency.h>
@@ -609,6 +610,13 @@ struct wrapper_dimension<Vendor<Backend, T>>
 template <HwInstruction_v Tier, typename T>
 struct wrapper_dimension<Hw<Tier, T>>
     : std::integral_constant<DimensionAxis, DimensionAxis::HwInstruction> {};
+
+// FIXY-V-255 — BarrierGuarded<BarrierStrength Tier, T> occupies the
+// BarrierStrength axis (V-253, Tier-S Semiring).  Repr-neighborhood peer
+// to Hw; the publication-fence tier the value was released under.
+template <BarrierStrength_v Tier, typename T>
+struct wrapper_dimension<BarrierGuarded<Tier, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::BarrierStrength> {};
 
 template <ResidencyHeatTag_v Tier, typename T>
 struct wrapper_dimension<ResidencyHeat<Tier, T>>
