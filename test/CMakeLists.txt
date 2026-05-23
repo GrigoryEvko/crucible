@@ -291,6 +291,7 @@ crucible_test(test_fixy_v_100_syscall_bridge)  # FIXY-V-100 fixy/syscall/Bridge.
 crucible_test(test_fixy_v_239_control_flow)    # FIXY-V-239 DimensionAxis::ControlFlow + ControlFlowLattice 5-tier escape chain
 crucible_test(test_fixy_v_240_call_shape)      # FIXY-V-240 DimensionAxis::CallShape + CallShapeLattice 5-tier dispatch chain
 crucible_test(test_fixy_v_241_stack_global_stdio) # FIXY-V-241 StackUse/GlobalState/Stdio — 3 hazard-axis 4-tier chains
+crucible_test(test_fixy_v_242_hazard_wrappers)    # FIXY-V-242 5 safety/* Graded carriers (ControlFlow/CallShape/StackUse/GlobalState/Stdio)
 crucible_test(test_fixy_v_234_release_aware_permission)  # FIXY-V-234 advise_release_aware<DontNeed, RegionTag> + SharedPermission composition — Agent 9 Bug 5 HIGH
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
@@ -6313,6 +6314,34 @@ crucible_neg_compile_test(neg_fp_mode_cross_mode_assign
   "cannot convert|no match|deleted function|FpModePinned|FpRounding")
 crucible_neg_compile_test(neg_fp_mode_cross_axis_pass
   "cannot convert|no match|could not match|FpModePinned|FpFtz|FpRounding")
+
+# ─── FIXY-V-242 hazard-wrapper HS14 neg-compiles (2 per mint × 5) ────
+#
+# V-242 ships 5 value-level Graded carriers (ControlFlow/CallShape/
+# StackUse/GlobalState/Stdio).  Each mint gets two distinct-mismatch-
+# class fixtures per HS14: (1) widen-to-LOWER — the unsound "tighten"
+# direction the `requires (Lattice::leq(Tier, Higher))` clause rejects;
+# (2) mint-wrong-arg — payload not constructible from the supplied args.
+crucible_neg_compile_test(neg_control_flow_widen_to_lower
+  "constraints not satisfied|no matching function|widen|ControlFlowPinned")
+crucible_neg_compile_test(neg_control_flow_mint_wrong_arg
+  "constraints not satisfied|no matching function|mint_control_flow|is_constructible")
+crucible_neg_compile_test(neg_call_shape_widen_to_lower
+  "constraints not satisfied|no matching function|widen|CallShapePinned")
+crucible_neg_compile_test(neg_call_shape_mint_wrong_arg
+  "constraints not satisfied|no matching function|mint_call_shape|is_constructible")
+crucible_neg_compile_test(neg_stack_use_widen_to_lower
+  "constraints not satisfied|no matching function|widen|StackUsePinned")
+crucible_neg_compile_test(neg_stack_use_mint_wrong_arg
+  "constraints not satisfied|no matching function|mint_stack_use|is_constructible")
+crucible_neg_compile_test(neg_global_state_widen_to_lower
+  "constraints not satisfied|no matching function|widen|GlobalStatePinned")
+crucible_neg_compile_test(neg_global_state_mint_wrong_arg
+  "constraints not satisfied|no matching function|mint_global_state|is_constructible")
+crucible_neg_compile_test(neg_stdio_widen_to_lower
+  "constraints not satisfied|no matching function|widen|StdioPinned")
+crucible_neg_compile_test(neg_stdio_mint_wrong_arg
+  "constraints not satisfied|no matching function|mint_stdio|is_constructible")
 
 # ─── FIXY-V-091 CollisionCatalog F101..F105 neg-compiles (per-rule) ──
 #
