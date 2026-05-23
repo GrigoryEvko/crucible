@@ -27,6 +27,7 @@
 #include <crucible/Platform.h>
 #include <crucible/fixy/Source.h>
 #include <crucible/fixy/Wrap.h>
+#include <crucible/safety/ClockSource.h>  // WRAP-Transaction-3: MonotonicClockBytes
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Post.h>
 
@@ -81,13 +82,42 @@ struct Transaction {
     ContentHash  content_hash;        // default (0) until COMMITTED
     MerkleHash   merkle_root;         // default (0) until COMMITTED
     ArenaRegion  region{nullptr};     // null until COMMITTED; arena-owned
-    uint64_t     ts_ns = 0;           // timestamp of last state change
+    // ── ts_ns (WRAP-Transaction-3 #1062) ───────────────────────────
+    // MonotonicClockBytes<u64> pins the timestamp's clock-source
+    // provenance at the type level: any drift to a wall-clock,
+    // boot-clock, or bare-u64 source trips at every TU including
+    // Transaction.h.  Regime-1 EBO collapse preserves the 8B field
+    // width — the 48B Transaction layout is unchanged (static_assert
+    // below).  Six internal assignment sites already use
+    // `tx->ts_ns = now_ns()`; now_ns() returns the same wrapped type,
+    // so no body updates are required.  Parallels FIXY-V-198
+    // (Cipher::now_ns) exactly.
+    ::crucible::safety::MonotonicClockBytes<std::uint64_t> ts_ns{};
     TxStatus     status = TxStatus::RECORDING;
     uint8_t      pad[7]{};
 };
 
 static_assert(sizeof(Transaction) == 48, "Transaction layout must be 48 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Transaction);
+
+// ── WRAP-Transaction-3 #1062 sentinel: ts_ns clock-source pin ────
+// MonotonicClockBytes<u64> is the type-level proof that
+// Transaction::ts_ns is a CLOCK_MONOTONIC reading.  Any regression
+// — accidentally switching to WallClockBytes (NTP-jumpy) or
+// BootClockBytes (suspend-aware), or returning a bare u64 from a
+// helper — trips at compile time.  Regime-1 EBO collapse is also
+// asserted: without it, the 48B Transaction layout would break.
+static_assert(
+    std::is_same_v<
+        decltype(std::declval<Transaction>().ts_ns),
+        ::crucible::safety::MonotonicClockBytes<std::uint64_t>>,
+    "WRAP-Transaction-3 #1062: Transaction::ts_ns must be "
+    "MonotonicClockBytes<u64> — clock-source provenance pin.");
+static_assert(
+    sizeof(::crucible::safety::MonotonicClockBytes<std::uint64_t>) ==
+        sizeof(std::uint64_t),
+    "WRAP-Transaction-3 #1062: MonotonicClockBytes<u64> must be "
+    "regime-1 EBO-collapsible to preserve 48B Transaction layout.");
 
 // ─── TransactionLog<N>: circular ring of the last N transactions ───
 //
@@ -335,13 +365,41 @@ class TransactionLog {
     }
 
  private:
-    // Nanosecond timestamp from the monotonic clock.
-    static uint64_t now_ns() {
-        using namespace std::chrono;
-        return static_cast<uint64_t>(
-            duration_cast<nanoseconds>(
-                steady_clock::now().time_since_epoch()).count());
+    // ── now_ns() (WRAP-Transaction-3 #1062) ────────────────────────
+    // Returns MonotonicClockBytes<u64> so the typed clock-source
+    // witness propagates straight into Transaction::ts_ns.  The
+    // returned wrap is regime-1 EBO-collapsed (sizeof == sizeof u64)
+    // and pinned to ClockSource_v::Monotonic, rejecting cross-source
+    // assignments at every call site.  steady_clock IS the
+    // CLOCK_MONOTONIC reading on Linux; the mint just stamps the
+    // provenance lattice value on top.  Parallels Cipher::now_ns
+    // (FIXY-V-198) and Mutation::MonotonicClock::now_ns (FIXY-V-193).
+    [[nodiscard]] static auto now_ns() noexcept
+        -> ::crucible::safety::MonotonicClockBytes<std::uint64_t>
+    {
+        const auto tp = std::chrono::steady_clock::now();
+        const std::uint64_t raw = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                tp.time_since_epoch()).count());
+        return ::crucible::safety::mint_clock_source<
+            ::crucible::safety::ClockSource_v::Monotonic,
+            std::uint64_t>(raw);
     }
+
+    // ── WRAP-Transaction-3 #1062 sentinel: now_ns return-type pin ──
+    // Pin the typed return.  If a future maintainer accidentally
+    // reverts to `static uint64_t now_ns()` or returns a wall-clock
+    // wrap, this sentinel fires at every TU.
+    static_assert(
+        std::is_same_v<
+            decltype(now_ns()),
+            ::crucible::safety::MonotonicClockBytes<std::uint64_t>>,
+        "WRAP-Transaction-3 #1062: Transaction::now_ns must return "
+        "MonotonicClockBytes<u64>.");
+    static_assert(
+        sizeof(decltype(now_ns())) == sizeof(std::uint64_t),
+        "WRAP-Transaction-3 #1062: now_ns return must be regime-1 "
+        "EBO-collapsed to preserve hot-path layout.");
 
     // The (entries_ + head_ + count_) ring triple, now one audited
     // composition (see the Ring alias above).  active_tx_ stays a raw

@@ -6717,6 +6717,14 @@ crucible_neg_compile_test(neg_clock_source_cross_source_assign
 crucible_neg_compile_test(neg_clock_source_suspend_gate_rejects_monotonic
   "constraints not satisfied|no matching function|satisfies|arm_deadline")
 
+# ─── WRAP-Transaction-3 #1062 HS14 negative-compile fixtures ───────
+#   - neg_transaction_ts_ns_bare_u64_assign  (no implicit u64 → wrap)
+#   - neg_transaction_ts_ns_cross_source     (Boot ≠ Monotonic wrap)
+crucible_neg_compile_test(neg_transaction_ts_ns_bare_u64_assign
+  "conversion from|cannot convert|no viable|no match for")
+crucible_neg_compile_test(neg_transaction_ts_ns_cross_source
+  "conversion from|cannot convert|no viable|no match for")
+
 # ─── FIXY-V-186 SchedClass HS14 negative-compile fixtures ──────────
 #   - neg_sched_class_fifo_task_on_other_pool       (pool-fit: Fifo ⋤ Other)
 #   - neg_sched_class_deadline_runtime_gt_deadline  (CBS assert: runtime > deadline)
