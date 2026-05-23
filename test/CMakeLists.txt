@@ -292,6 +292,7 @@ crucible_test(test_fixy_v_239_control_flow)    # FIXY-V-239 DimensionAxis::Contr
 crucible_test(test_fixy_v_240_call_shape)      # FIXY-V-240 DimensionAxis::CallShape + CallShapeLattice 5-tier dispatch chain
 crucible_test(test_fixy_v_241_stack_global_stdio) # FIXY-V-241 StackUse/GlobalState/Stdio — 3 hazard-axis 4-tier chains
 crucible_test(test_fixy_v_242_hazard_wrappers)    # FIXY-V-242 5 safety/* Graded carriers (ControlFlow/CallShape/StackUse/GlobalState/Stdio)
+crucible_test(test_fixy_v_243_control_flow_collisions)  # FIXY-V-243 CollisionCatalog C001/D001/D002/G001/L006/P003/S001/S004 hazard-axis cross-axis rules
 crucible_test(test_fixy_v_234_release_aware_permission)  # FIXY-V-234 advise_release_aware<DontNeed, RegionTag> + SharedPermission composition — Agent 9 Bug 5 HIGH
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
@@ -6389,6 +6390,32 @@ crucible_neg_compile_test(neg_collision_f104_ct_fp_denormal_honored
   "F104|HonorDenormals|DAZ|FpDenormalInput")
 crucible_neg_compile_test(neg_collision_f105_ct_fp_ftz_preserved
   "F105|PreserveSubnormals|FpFtzPinned|FTZ=0")
+
+# ─── FIXY-V-243 CollisionCatalog hazard-axis neg-compiles (8 = 1/rule) ─
+#
+# V-243 ships 8 new CollisionCatalog rules gating cross-axis hazard
+# compositions atop the V-242 ControlFlowPinned / StdioPinned carriers.
+# HS14 floor (>= 2 distinct mismatch classes) is far exceeded: one
+# fixture per rule, spanning marker-driven (C001/D001/D002/G001/S004),
+# wrapper-tier × Linear axis (L006), and wrapper-tier × marker
+# (P003/S001) trigger classes.  Each greps the per-rule diagnostic
+# substring; a refactor that relaxes a rule flips RED→GREEN and reds CI.
+crucible_neg_compile_test(neg_collision_C001_abort_no_witness
+  "C001|abort|ControlFlow|AbortOnly")
+crucible_neg_compile_test(neg_collision_D001_indirect_call_throws
+  "D001|indirect-call|noexcept")
+crucible_neg_compile_test(neg_collision_D002_recursion_unbounded
+  "D002|recursion|MaxDepth")
+crucible_neg_compile_test(neg_collision_G001_thread_local_untagged
+  "G001|thread_local|TLSTag")
+crucible_neg_compile_test(neg_collision_L006_linear_longjmp
+  "L006|Linear|longjmp|MayLongjmp")
+crucible_neg_compile_test(neg_collision_P003_fork_body_throws
+  "P003|fork|ThrowOnly|terminate")
+crucible_neg_compile_test(neg_collision_S001_hotpath_stdio
+  "S001|hot-path|stdio|BufferedWrite")
+crucible_neg_compile_test(neg_collision_S004_singleton_cycle
+  "S004|singleton|cycle")
 
 # ─── FIXY-V-057 Affine wrapper neg-compiles (2 fixtures = HS14 floor) ─
 #

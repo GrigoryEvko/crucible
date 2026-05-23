@@ -18,12 +18,15 @@
 // the rejection today, while future compiler passes can specialize the
 // same traits from analyzed bodies without changing Fn's ABI.
 
+#include <crucible/algebra/lattices/ControlFlowLattice.h>  // FIXY-V-243 C001/L006/P003 ControlFlow tier
+#include <crucible/algebra/lattices/StdioLattice.h>        // FIXY-V-243 S001 Stdio tier
 #include <crucible/algebra/lattices/WaitLattice.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/FpMode.h>          // FIXY-V-091 F-family detectors
 
+#include <array>
 #include <cstdint>
 #include <string_view>
 #include <tuple>
@@ -66,6 +69,23 @@ namespace crucible::safety {
     enum class FpReassociate      : std::uint8_t;
     enum class FpConstantRounding : std::uint8_t;
     template <auto Mode, typename T> class FpModePinned;
+}
+
+// Forward-declaration of the V-242 hazard-axis Graded carriers
+// safety::ControlFlowPinned<Tier, T> and safety::StdioPinned<Tier, T> —
+// FIXY-V-243 detects these type patterns from F::type_t for the
+// ControlFlow-tier (C001/L006/P003) and Stdio-tier (S001) rules without
+// pulling in the full safety/ControlFlow.h + safety/Stdio.h wrapper
+// headers (which would re-enter Graded → DimensionTraits → Witness → Fn
+// and create a header cycle).  The ControlFlow / Stdio enums themselves
+// arrive via the lattice headers included above (the same shape as the
+// WaitLattice.h include that W001 uses), so the NTTP enum types are
+// complete here; only the wrapper class templates are forward-declared.
+namespace crucible::safety {
+    template <::crucible::algebra::lattices::ControlFlow Tier, typename T>
+    class ControlFlowPinned;
+    template <::crucible::algebra::lattices::Stdio Tier, typename T>
+    class StdioPinned;
 }
 
 namespace crucible::safety::fn::collision {
@@ -193,6 +213,59 @@ enum class RuleCode : std::uint8_t {
     // (the other half).  Together: dangerous Advice flows EXCLUSIVELY
     // through the Permission-witnessed surface.
     M001 = 27,  // mmap.advise<DontNeed> without release_aware<RegionTag>
+    // ── FIXY-V-243 hazard-axis cross-axis rules (Agent 10 §4) ──────────
+    //
+    // V-242 ships 5 hazard-axis Graded carriers (ControlFlowPinned,
+    // CallShapePinned, StackUsePinned, GlobalStatePinned, StdioPinned).
+    // These eight rules gate cross-axis compositions where a hazard
+    // declaration is inconsistent with another Fn axis.  Per the catalog
+    // decoupling discipline (W-family / F-family precedent), each rule
+    // reads either a SHIPPED V-242 wrapper tier off `F::type_t` (C001 /
+    // L006 / P003 / S001 — testable today) or an opt-in marker trait that
+    // the V-244/V-245/V-246 grant headers will specialize once they land
+    // (D001 / D002 / G001 / S004 — default-SAFE until a grant opts in).
+    //
+    //   C001: marks_aborts × ControlFlow tier < AbortOnly.  A function
+    //         declaring it may abort (grant::ctrl::abort<Rationale>, V-244)
+    //         MUST carry a ControlFlow tier ≥ AbortOnly — the type-level
+    //         witness of the escape.  Claiming abort while typed Pure is
+    //         the ControlFlow↔escape inconsistency Agent 10 §4 names.
+    //   D001: marks_indirect_call_not_noexcept.  An indirect-call grant
+    //         (grant::dispatch::indirect_call<Family>, V-245) whose RunFn
+    //         type is NOT noexcept reds — closes Scenario A
+    //         (BackgroundThread::RegionReadyCallback::Fn missing noexcept).
+    //   D002: marks_recurses_unbounded.  grant::dispatch::recurses<> (V-245)
+    //         without an NTTP MaxDepth reds — the implicit-recursion-bound
+    //         anti-pattern.
+    //   G001: marks_thread_local_untagged.  grant::global::thread_local_<>
+    //         (V-246) without a TLSTag NTTP reds.
+    //   L006: Usage::Linear × ControlFlow tier ≥ MayLongjmp (or the
+    //         marks_longjmp_unsafe marker).  longjmp SKIPS destructors —
+    //         a Linear resource in scope would leak / dangle across the
+    //         non-local jump.  The TYPE-LEVEL companion to the C++ rule
+    //         that already rejects goto across a destructor scope.
+    //   P003: marks_fork_worker × ControlFlow tier ≥ ThrowOnly (or the
+    //         marks_throws marker).  A throwing permission_fork worker
+    //         body terminates the hosting jthread (no exception crosses
+    //         the thread boundary; -fno-exceptions makes throw == abort).
+    //         The catalog-level codification of the V-087 fork-body
+    //         static_assert.
+    //   S001: marks_hot_path × Stdio tier ≥ BufferedWrite.  A hot-path
+    //         function (TraceRing / Arena / KernelCache) MUST NOT do stdio
+    //         — format parsing ≥ 100 ns, output syscalls flush buffers
+    //         (CLAUDE.md §XII).
+    //   S004: marks_singleton_init_cycle.  The V-248 tag-graph closure
+    //         walk over registered Meyers-singleton tags detects a cycle
+    //         at consteval and flags the participating Fn.  The reusable
+    //         cycle detector ships here as pack::singleton_init_acyclic<>.
+    C001 = 28,  // marks_aborts × ControlFlow tier < AbortOnly (escape unwitnessed)
+    D001 = 29,  // indirect_call grant with non-noexcept callable
+    D002 = 30,  // recurses grant without a bounded MaxDepth
+    G001 = 31,  // thread_local_ grant without a TLSTag
+    L006 = 32,  // Linear × ControlFlow tier ≥ MayLongjmp (destructor-skipping jump)
+    P003 = 33,  // fork-worker × ControlFlow tier ≥ ThrowOnly (throw terminates jthread)
+    S001 = 34,  // HotPath × Stdio tier ≥ BufferedWrite (stdio on hot path)
+    S004 = 35,  // Meyers-singleton init-dependency cycle
     None = 255,
 };
 
@@ -292,6 +365,32 @@ struct M001_DontNeedRequiresReleaseAware : diag::tag_base {
     static constexpr std::string_view name = "M001_DontNeedRequiresReleaseAware";
 };
 
+// ── FIXY-V-243 hazard-axis cross-axis rule tags (Agent 10 §4) ──────
+struct C001_AbortRequiresControlFlowWitness : diag::tag_base {
+    static constexpr std::string_view name = "C001_AbortRequiresControlFlowWitness";
+};
+struct D001_IndirectCallNoexcept : diag::tag_base {
+    static constexpr std::string_view name = "D001_IndirectCallNoexcept";
+};
+struct D002_RecursionRequiresBound : diag::tag_base {
+    static constexpr std::string_view name = "D002_RecursionRequiresBound";
+};
+struct G001_ThreadLocalNeedsTag : diag::tag_base {
+    static constexpr std::string_view name = "G001_ThreadLocalNeedsTag";
+};
+struct L006_NoLongjmpAcrossLinear : diag::tag_base {
+    static constexpr std::string_view name = "L006_NoLongjmpAcrossLinear";
+};
+struct P003_ForkBodyNoThrows : diag::tag_base {
+    static constexpr std::string_view name = "P003_ForkBodyNoThrows";
+};
+struct S001_StdioForbiddenOnHotPath : diag::tag_base {
+    static constexpr std::string_view name = "S001_StdioForbiddenOnHotPath";
+};
+struct S004_MeyersSingletonInitCycle : diag::tag_base {
+    static constexpr std::string_view name = "S004_MeyersSingletonInitCycle";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -320,11 +419,19 @@ using Catalog = std::tuple<
     F103_CtFpReassocPermitted,
     F104_CtFpDenormalInputHonored,
     F105_CtFpFtzPreserved,
-    M001_DontNeedRequiresReleaseAware
+    M001_DontNeedRequiresReleaseAware,
+    C001_AbortRequiresControlFlowWitness,
+    D001_IndirectCallNoexcept,
+    D002_RecursionRequiresBound,
+    G001_ThreadLocalNeedsTag,
+    L006_NoLongjmpAcrossLinear,
+    P003_ForkBodyNoThrows,
+    S001_StdioForbiddenOnHotPath,
+    S004_MeyersSingletonInitCycle
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 28);
+static_assert(catalog_size == 36);
 
 template <RuleCode R>
 struct rule_tag;
@@ -357,6 +464,14 @@ template <> struct rule_tag<RuleCode::F103> { using type = F103_CtFpReassocPermi
 template <> struct rule_tag<RuleCode::F104> { using type = F104_CtFpDenormalInputHonored; };
 template <> struct rule_tag<RuleCode::F105> { using type = F105_CtFpFtzPreserved; };
 template <> struct rule_tag<RuleCode::M001> { using type = M001_DontNeedRequiresReleaseAware; };
+template <> struct rule_tag<RuleCode::C001> { using type = C001_AbortRequiresControlFlowWitness; };
+template <> struct rule_tag<RuleCode::D001> { using type = D001_IndirectCallNoexcept; };
+template <> struct rule_tag<RuleCode::D002> { using type = D002_RecursionRequiresBound; };
+template <> struct rule_tag<RuleCode::G001> { using type = G001_ThreadLocalNeedsTag; };
+template <> struct rule_tag<RuleCode::L006> { using type = L006_NoLongjmpAcrossLinear; };
+template <> struct rule_tag<RuleCode::P003> { using type = P003_ForkBodyNoThrows; };
+template <> struct rule_tag<RuleCode::S001> { using type = S001_StdioForbiddenOnHotPath; };
+template <> struct rule_tag<RuleCode::S004> { using type = S004_MeyersSingletonInitCycle; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -447,6 +562,30 @@ template <> struct rule_code_of<F105_CtFpFtzPreserved> {
 };
 template <> struct rule_code_of<M001_DontNeedRequiresReleaseAware> {
     static constexpr RuleCode value = RuleCode::M001;
+};
+template <> struct rule_code_of<C001_AbortRequiresControlFlowWitness> {
+    static constexpr RuleCode value = RuleCode::C001;
+};
+template <> struct rule_code_of<D001_IndirectCallNoexcept> {
+    static constexpr RuleCode value = RuleCode::D001;
+};
+template <> struct rule_code_of<D002_RecursionRequiresBound> {
+    static constexpr RuleCode value = RuleCode::D002;
+};
+template <> struct rule_code_of<G001_ThreadLocalNeedsTag> {
+    static constexpr RuleCode value = RuleCode::G001;
+};
+template <> struct rule_code_of<L006_NoLongjmpAcrossLinear> {
+    static constexpr RuleCode value = RuleCode::L006;
+};
+template <> struct rule_code_of<P003_ForkBodyNoThrows> {
+    static constexpr RuleCode value = RuleCode::P003;
+};
+template <> struct rule_code_of<S001_StdioForbiddenOnHotPath> {
+    static constexpr RuleCode value = RuleCode::S001;
+};
+template <> struct rule_code_of<S004_MeyersSingletonInitCycle> {
+    static constexpr RuleCode value = RuleCode::S004;
 };
 
 template <typename Tag>
@@ -649,6 +788,70 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(F105, "F105",
     "always a normal value or ±0.0 in constant time, or move the "
     "subnormal-preserving code outside the constant-time region",
     "fixy.md §24.2 F105 (V-091)");
+// FIXY-V-243 hazard-axis diagnostics (8 control-flow / dispatch / global / stdio rules).
+CRUCIBLE_COLLISION_DIAGNOSTIC(C001, "C001",
+    "abort-declaring functions witness the escape in their ControlFlow tier",
+    "marks_aborts is true (grant::ctrl::abort<Rationale>) AND F::type_t carries "
+    "no ControlFlowPinned tier >= AbortOnly. Declaring a function may std::abort "
+    "while its ControlFlow axis says Pure is the escape inconsistency Agent 10 §4 names",
+    "wrap the result in ControlFlowPinned<AbortOnly, U> (or a higher tier), or remove "
+    "the abort grant if the function genuinely always returns",
+    "fixy.md §24.2 C001 (V-243)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(D001, "D001",
+    "indirect-call grants carry a noexcept callable",
+    "grant::dispatch::indirect_call<FnPtrFamily> where the family's RunFn type is "
+    "NOT noexcept. An indirect call that may throw across a -fno-exceptions boundary "
+    "terminates (Scenario A: BackgroundThread::RegionReadyCallback::Fn missing noexcept)",
+    "add noexcept to the callable family's RunFn signature, or move the throwing call "
+    "behind a noexcept trampoline that converts the failure into std::expected",
+    "fixy.md §24.2 D001 (V-243)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(D002, "D002",
+    "recursion grants declare a static depth bound",
+    "grant::dispatch::recurses<> declared without an NTTP MaxDepth — the implicit-"
+    "recursion-bound anti-pattern that risks unbounded stack growth",
+    "declare grant::dispatch::recurses<MaxDepth> with the proven worst-case depth, "
+    "or convert the recursion to an explicit bounded iterative loop",
+    "fixy.md §24.2 D002 (V-243)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(G001, "G001",
+    "thread_local grants carry an identity tag",
+    "grant::global::thread_local_<> declared without a TLSTag NTTP — an untagged "
+    "thread_local cannot be distinguished in the federation cache key or audited "
+    "for per-thread-singleton init-order hazards",
+    "declare grant::global::thread_local_<TLSTag> with a unique phantom tag identifying "
+    "the storage (mirrors the safety::ThreadLocalRef<Tag, T> discipline)",
+    "fixy.md §24.2 G001 (V-243)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(L006, "L006",
+    "Linear resources are not held across a destructor-skipping non-local jump",
+    "Usage::Linear AND F::type_t carries a ControlFlowPinned tier >= MayLongjmp "
+    "(or the marks_longjmp_unsafe marker). longjmp SKIPS destructors — a Linear "
+    "resource in scope would leak / dangle across the jump",
+    "lower the ControlFlow tier below MayLongjmp (longjmp is RAII-unsafe with a "
+    "Linear in scope), release the Linear before the jump, or convert Usage out of Linear",
+    "fixy.md §24.2 L006 (V-243)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(P003, "P003",
+    "permission_fork worker bodies do not throw",
+    "marks_fork_worker AND F::type_t carries a ControlFlowPinned tier >= ThrowOnly "
+    "(or the marks_throws marker). A throw inside a jthread fork body crosses no thread "
+    "boundary; under -fno-exceptions it is std::terminate",
+    "lower the ControlFlow tier below ThrowOnly on the fork body, convert the failure "
+    "into a std::expected return, or handle the error inside the worker before it escapes",
+    "fixy.md §24.2 P003 (V-243)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(S001, "S001",
+    "hot-path functions perform no stdio",
+    "marks_hot_path AND F::type_t carries a StdioPinned tier >= BufferedWrite. "
+    "TraceRing / Arena / KernelCache MUST NOT do stdio — format parsing >= 100 ns "
+    "and output syscalls flush buffers, blowing the hot-path budget (CLAUDE.md §XII)",
+    "drop the StdioPinned wrapper from the hot path (use StdioPinned<NoStdio>), push "
+    "structured events to an SPSC ring for bg drain, or move the stdio into a Bg context",
+    "fixy.md §24.2 S001 (V-243)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(S004, "S004",
+    "registered Meyers-singletons have an acyclic init-dependency graph",
+    "marks_singleton_init_cycle is true — the V-248 tag-graph closure walk over "
+    "registered grant::global::singleton<Tag> annotations detected a cycle, the "
+    "static-initialization-order fiasco in its most subtle (lazy-init) form",
+    "break the init-dependency cycle (inject the dependency, or merge the singletons "
+    "into one initialization unit); see pack::singleton_init_acyclic for the detector",
+    "fixy.md §24.2 S004 (V-243)");
 
 #undef CRUCIBLE_COLLISION_DIAGNOSTIC
 
@@ -686,6 +889,33 @@ template <typename F> struct marks_lifetime_region_unprotected : std::true_type 
 template <typename F> struct marks_hot_path                    : std::false_type {};
 template <typename F> struct marks_externally_observable       : std::false_type {};
 template <typename F> struct marks_federation_peer             : std::false_type {};
+
+// ── FIXY-V-243 hazard-axis marker traits (Agent 10 §4) ──────────────
+//
+// Default-SAFE opt-ins, specialized by the V-244/V-245/V-246 grant
+// headers (and the V-248 singleton walk) when they land.  Until a grant
+// opts in, every one defaults to the non-toxic value so no existing
+// Fn<...> instantiation reds.  The C001/L006/P003/S001 rules ALSO read a
+// shipped V-242 wrapper tier off F::type_t (see the detectors below), so
+// they are triggerable today without any grant — the marker is the
+// second, grant-driven trigger path.
+//
+//   marks_aborts                       — grant::ctrl::abort<Rationale> (V-244)
+//   marks_indirect_call_not_noexcept   — grant::dispatch::indirect_call<NonNoexcept> (V-245)
+//   marks_recurses_unbounded           — grant::dispatch::recurses<> w/o MaxDepth (V-245)
+//   marks_thread_local_untagged        — grant::global::thread_local_<> w/o TLSTag (V-246)
+//   marks_longjmp_unsafe               — grant::ctrl::longjmp_unsafe<Rationale> (V-244)
+//   marks_fork_worker                  — permission_fork worker body (V-087 / V-245)
+//   marks_throws                       — grant::ctrl::throws<Family> (V-244)
+//   marks_singleton_init_cycle         — V-248 tag-graph closure walk verdict
+template <typename F> struct marks_aborts                     : std::false_type {};
+template <typename F> struct marks_indirect_call_not_noexcept : std::false_type {};
+template <typename F> struct marks_recurses_unbounded         : std::false_type {};
+template <typename F> struct marks_thread_local_untagged      : std::false_type {};
+template <typename F> struct marks_longjmp_unsafe             : std::false_type {};
+template <typename F> struct marks_fork_worker                : std::false_type {};
+template <typename F> struct marks_throws                     : std::false_type {};
+template <typename F> struct marks_singleton_init_cycle       : std::false_type {};
 
 template <typename T> struct is_exact_decimal             : std::false_type {};
 
@@ -1006,6 +1236,118 @@ concept F105_OK = !(has_ct_v<F> &&
                         ::crucible::safety::FpFtz::PreserveSubnormals,
                         typename F::type_t>);
 
+// ── FIXY-V-243 hazard-axis detectors (ControlFlow / Stdio tiers) ────
+//
+// control_flow_tier_of<T> / stdio_tier_of<T> extract the tier pinned by
+// a shipped V-242 ControlFlowPinned<Tier, U> / StdioPinned<Tier, U>
+// wrapper around T — mirrors wait_strategy_of's design (sentinel value on
+// the primary template + CV/reference piercing).  For a non-wrapper T,
+// `has_*` is false and the rule reading the tier trivially passes via the
+// `&&` short-circuit in cf_at_or_above_v / stdio_at_or_above_v.  The
+// sentinel `value` lives on the primary template too, so GCC-16 concept
+// normalization can substitute the NTTP argument of *_at_or_above_v even
+// when the short-circuit chops the predicate off (the same eager-
+// substitution workaround wait_strategy_of documents).
+template <typename T> struct control_flow_tier_of {
+    static constexpr bool has_cf = false;
+    static constexpr ::crucible::algebra::lattices::ControlFlow value =
+        ::crucible::algebra::lattices::ControlFlow::Pure;
+};
+template <::crucible::algebra::lattices::ControlFlow Tier, typename U>
+struct control_flow_tier_of<::crucible::safety::ControlFlowPinned<Tier, U>> {
+    static constexpr bool has_cf = true;
+    static constexpr ::crucible::algebra::lattices::ControlFlow value = Tier;
+};
+template <typename T> struct control_flow_tier_of<T&>       : control_flow_tier_of<T> {};
+template <typename T> struct control_flow_tier_of<T const>  : control_flow_tier_of<T> {};
+template <typename T> struct control_flow_tier_of<T const&> : control_flow_tier_of<T> {};
+
+template <typename T> struct stdio_tier_of {
+    static constexpr bool has_stdio = false;
+    static constexpr ::crucible::algebra::lattices::Stdio value =
+        ::crucible::algebra::lattices::Stdio::NoStdio;
+};
+template <::crucible::algebra::lattices::Stdio Tier, typename U>
+struct stdio_tier_of<::crucible::safety::StdioPinned<Tier, U>> {
+    static constexpr bool has_stdio = true;
+    static constexpr ::crucible::algebra::lattices::Stdio value = Tier;
+};
+template <typename T> struct stdio_tier_of<T&>       : stdio_tier_of<T> {};
+template <typename T> struct stdio_tier_of<T const>  : stdio_tier_of<T> {};
+template <typename T> struct stdio_tier_of<T const&> : stdio_tier_of<T> {};
+
+// cf_at_or_above_v<Floor, T>: wrapper present AND its tier is at-or-above
+// `Floor` on the ControlFlow chain (leq(Floor, tier) ⇔ Floor ⊑ tier).
+// ControlFlow is a capability-CEILING axis: higher ordinal = MORE
+// hazardous, so "tier ≥ Floor" reads as "at least this dangerous".
+template <::crucible::algebra::lattices::ControlFlow Floor, typename T>
+inline constexpr bool cf_at_or_above_v =
+    control_flow_tier_of<T>::has_cf &&
+    ::crucible::algebra::lattices::ControlFlowLattice::leq(
+        Floor, control_flow_tier_of<T>::value);
+
+template <::crucible::algebra::lattices::Stdio Floor, typename T>
+inline constexpr bool stdio_at_or_above_v =
+    stdio_tier_of<T>::has_stdio &&
+    ::crucible::algebra::lattices::StdioLattice::leq(
+        Floor, stdio_tier_of<T>::value);
+
+// ── FIXY-V-243 hazard-axis rule concepts (8 of 8) ───────────────────
+
+// C001: marks_aborts × ControlFlow tier < AbortOnly.  A function
+// declaring it may abort (grant::ctrl::abort<Rationale>) MUST carry a
+// ControlFlow tier that witnesses the escape (≥ AbortOnly).  "Claims
+// abort but typed Pure" is the ControlFlow↔escape inconsistency.
+template <typename F>
+concept C001_OK = !(marks_aborts<F>::value &&
+                    !cf_at_or_above_v<
+                        ::crucible::algebra::lattices::ControlFlow::AbortOnly,
+                        typename F::type_t>);
+
+// D001: indirect-call grant whose callable is NOT noexcept (Scenario A).
+template <typename F>
+concept D001_OK = !marks_indirect_call_not_noexcept<F>::value;
+
+// D002: recursion grant declared without a bounded MaxDepth.
+template <typename F>
+concept D002_OK = !marks_recurses_unbounded<F>::value;
+
+// G001: thread_local grant declared without a TLSTag.
+template <typename F>
+concept G001_OK = !marks_thread_local_untagged<F>::value;
+
+// L006: Usage::Linear × ControlFlow tier ≥ MayLongjmp (or the
+// marks_longjmp_unsafe marker).  longjmp SKIPS destructors; a Linear
+// resource in scope would leak / dangle across the non-local jump.
+template <typename F>
+concept L006_OK = !(F::usage_v == UsageMode::Linear &&
+                    (marks_longjmp_unsafe<F>::value ||
+                     cf_at_or_above_v<
+                         ::crucible::algebra::lattices::ControlFlow::MayLongjmp,
+                         typename F::type_t>));
+
+// P003: marks_fork_worker × ControlFlow tier ≥ ThrowOnly (or the
+// marks_throws marker).  A throw inside a jthread fork body crosses no
+// thread boundary; under -fno-exceptions it is std::terminate.
+template <typename F>
+concept P003_OK = !(marks_fork_worker<F>::value &&
+                    (marks_throws<F>::value ||
+                     cf_at_or_above_v<
+                         ::crucible::algebra::lattices::ControlFlow::ThrowOnly,
+                         typename F::type_t>));
+
+// S001: marks_hot_path × Stdio tier ≥ BufferedWrite.  Hot-path code
+// (TraceRing / Arena / KernelCache) MUST NOT do stdio (CLAUDE.md §XII).
+template <typename F>
+concept S001_OK = !(marks_hot_path<F>::value &&
+                    stdio_at_or_above_v<
+                        ::crucible::algebra::lattices::Stdio::BufferedWrite,
+                        typename F::type_t>);
+
+// S004: Meyers-singleton init-dependency cycle (V-248 walk verdict).
+template <typename F>
+concept S004_OK = !marks_singleton_init_cycle<F>::value;
+
 template <typename F>
 concept AllRulesOK =
     I002_OK<F> && L002_OK<F> && E044_OK<F> && I003_OK<F> &&
@@ -1014,7 +1356,9 @@ concept AllRulesOK =
     L004_OK<F> && B001_OK<F> && H001_OK<F> && H002_OK<F> &&
     L005_OK<F> && F001_OK<F> && H003_OK<F> && F002_OK<F> &&
     W001_OK<F> && W002_OK<F> &&
-    F101_OK<F> && F102_OK<F> && F103_OK<F> && F104_OK<F> && F105_OK<F>;
+    F101_OK<F> && F102_OK<F> && F103_OK<F> && F104_OK<F> && F105_OK<F> &&
+    C001_OK<F> && D001_OK<F> && D002_OK<F> && G001_OK<F> &&
+    L006_OK<F> && P003_OK<F> && S001_OK<F> && S004_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -1072,6 +1416,22 @@ template <typename F>
         return RuleCode::F104;
     } else if constexpr (!F105_OK<F>) {
         return RuleCode::F105;
+    } else if constexpr (!C001_OK<F>) {
+        return RuleCode::C001;
+    } else if constexpr (!D001_OK<F>) {
+        return RuleCode::D001;
+    } else if constexpr (!D002_OK<F>) {
+        return RuleCode::D002;
+    } else if constexpr (!G001_OK<F>) {
+        return RuleCode::G001;
+    } else if constexpr (!L006_OK<F>) {
+        return RuleCode::L006;
+    } else if constexpr (!P003_OK<F>) {
+        return RuleCode::P003;
+    } else if constexpr (!S001_OK<F>) {
+        return RuleCode::S001;
+    } else if constexpr (!S004_OK<F>) {
+        return RuleCode::S004;
     } else {
         return RuleCode::None;
     }
@@ -1207,6 +1567,59 @@ template <typename... Fs>
 template <typename... Fs>
 inline constexpr bool frame_axis_consistent_v = frame_axis_consistent<Fs...>();
 
+// ── S004 Meyers-singleton init-cycle detector ───────────────────────
+//
+// Reusable consteval cycle detector over a compile-time directed-edge
+// list on `NodeCount` singleton tags.  An edge (from, to) reads "the
+// lazy initializer of singleton `from` touches singleton `to`", so a
+// cycle is the static-initialization-order fiasco in its subtlest
+// (lazy-init) form: the first thread to touch either singleton triggers
+// a re-entrant initialization that observes a half-constructed peer.
+//
+// V-248 (Scenario D) supplies the edges from registered
+// grant::global::singleton<Tag> annotations and specializes
+// marks_singleton_init_cycle<F> for any Fn whose tag participates in a
+// detected cycle.  Kahn's algorithm: repeatedly retire a zero-in-degree
+// node; if any node survives when none can be retired, the graph has a
+// cycle.  Returns true iff ACYCLIC.
+template <std::size_t NodeCount, std::size_t EdgeCount>
+[[nodiscard]] consteval bool singleton_init_acyclic(
+    const std::array<std::pair<std::size_t, std::size_t>, EdgeCount>& edges) noexcept {
+    std::array<std::size_t, NodeCount> in_degree{};
+    for (const auto& edge : edges) {
+        if (edge.second < NodeCount) {
+            ++in_degree[edge.second];
+        }
+    }
+    std::array<bool, NodeCount> retired{};
+    std::size_t retired_count = 0;
+    bool made_progress = true;
+    while (made_progress) {
+        made_progress = false;
+        for (std::size_t node = 0; node < NodeCount; ++node) {
+            if (retired[node] || in_degree[node] != 0) {
+                continue;
+            }
+            retired[node] = true;
+            ++retired_count;
+            made_progress = true;
+            for (const auto& edge : edges) {
+                if (edge.first == node && edge.second < NodeCount &&
+                    !retired[edge.second]) {
+                    --in_degree[edge.second];
+                }
+            }
+        }
+    }
+    return retired_count == NodeCount;
+}
+
+template <std::size_t NodeCount, std::size_t EdgeCount>
+inline constexpr bool singleton_init_has_cycle(
+    const std::array<std::pair<std::size_t, std::size_t>, EdgeCount>& edges) noexcept {
+    return !singleton_init_acyclic<NodeCount>(edges);
+}
+
 }  // namespace pack
 
 }  // namespace crucible::safety::fn::collision
@@ -1330,6 +1743,32 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
         collision::wraps_fp_axis_mode_v<
             ::crucible::safety::FpFtz::PreserveSubnormals, Type>;
 
+    // ── FIXY-V-243 hazard-axis predicates (8 cross-axis rules) ───────
+    static constexpr bool aborts = collision::marks_aborts<F>::value;
+    static constexpr bool cf_witnesses_abort =
+        collision::cf_at_or_above_v<
+            ::crucible::algebra::lattices::ControlFlow::AbortOnly, Type>;
+    static constexpr bool indirect_call_not_noexcept =
+        collision::marks_indirect_call_not_noexcept<F>::value;
+    static constexpr bool recurses_unbounded =
+        collision::marks_recurses_unbounded<F>::value;
+    static constexpr bool thread_local_untagged =
+        collision::marks_thread_local_untagged<F>::value;
+    static constexpr bool longjmp_unsafe =
+        collision::marks_longjmp_unsafe<F>::value ||
+        collision::cf_at_or_above_v<
+            ::crucible::algebra::lattices::ControlFlow::MayLongjmp, Type>;
+    static constexpr bool fork_worker = collision::marks_fork_worker<F>::value;
+    static constexpr bool fork_body_throws =
+        collision::marks_throws<F>::value ||
+        collision::cf_at_or_above_v<
+            ::crucible::algebra::lattices::ControlFlow::ThrowOnly, Type>;
+    static constexpr bool hot_path_stdio =
+        collision::stdio_at_or_above_v<
+            ::crucible::algebra::lattices::Stdio::BufferedWrite, Type>;
+    static constexpr bool singleton_init_cycle =
+        collision::marks_singleton_init_cycle<F>::value;
+
     [[nodiscard]] static consteval bool validate() noexcept {
         static_assert(!(classified && fail && !fail_secret),
             "I002: classified value cannot flow through Fail(E) with "
@@ -1451,6 +1890,45 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "30-100x slowdown when the result IS denormal; result-magnitude "
             "leaks through cycle count. Switch to FpFtzPinned<FlushToZero> "
             "on the CT path.");
+        // ── FIXY-V-243 hazard-axis static asserts ─────────────────────
+        static_assert(!(aborts && !cf_witnesses_abort),
+            "C001: abort-declaring function (grant::ctrl::abort<Rationale>) MUST "
+            "carry a ControlFlow tier >= AbortOnly that witnesses the escape. "
+            "Wrap the result in ControlFlowPinned<AbortOnly, U> (or higher), or "
+            "remove the abort grant if the function always returns.");
+        static_assert(!indirect_call_not_noexcept,
+            "D001: indirect-call grant (grant::dispatch::indirect_call<Family>) "
+            "carries a callable whose RunFn is NOT noexcept. A throwing indirect "
+            "call across a -fno-exceptions boundary terminates. Add noexcept to "
+            "the callable family or wrap it in a noexcept trampoline.");
+        static_assert(!recurses_unbounded,
+            "D002: recursion grant (grant::dispatch::recurses<>) declared without "
+            "an NTTP MaxDepth. Declare grant::dispatch::recurses<MaxDepth> with "
+            "the proven worst-case depth, or rewrite as a bounded iterative loop.");
+        static_assert(!thread_local_untagged,
+            "G001: thread_local grant (grant::global::thread_local_<>) declared "
+            "without a TLSTag NTTP. Declare grant::global::thread_local_<TLSTag> "
+            "with a unique phantom tag (mirrors safety::ThreadLocalRef<Tag, T>).");
+        static_assert(!(Usage == UsageMode::Linear && longjmp_unsafe),
+            "L006: Linear resource held across a ControlFlow tier >= MayLongjmp "
+            "(or a marks_longjmp_unsafe grant). longjmp SKIPS destructors — the "
+            "Linear would leak / dangle across the jump. Lower the ControlFlow "
+            "tier, release the Linear before the jump, or move Usage out of Linear.");
+        static_assert(!(fork_worker && fork_body_throws),
+            "P003: permission_fork worker body carries a ControlFlow tier >= "
+            "ThrowOnly (or a marks_throws grant). A throw inside a jthread fork "
+            "body is std::terminate under -fno-exceptions. Lower the ControlFlow "
+            "tier, or convert the failure into a std::expected return.");
+        static_assert(!(hot_path && hot_path_stdio),
+            "S001: hot-path function carries a Stdio tier >= BufferedWrite. "
+            "TraceRing / Arena / KernelCache MUST NOT do stdio (CLAUDE.md §XII). "
+            "Use StdioPinned<NoStdio>, push events to an SPSC ring for bg drain, "
+            "or move the stdio into a Bg context.");
+        static_assert(!singleton_init_cycle,
+            "S004: Meyers-singleton init-dependency cycle detected by the V-248 "
+            "tag-graph closure walk — the lazy-init form of the static-init-order "
+            "fiasco. Break the cycle (inject the dependency or merge the "
+            "singletons); see pack::singleton_init_acyclic for the detector.");
         // L005 and F001 are pack-level rules (no single-Fn enforcement
         // shape); fixy/Fn.h checks them across the Grants pack via
         // pack::no_linear_region_alias_v and pack::frame_axis_consistent_v.
@@ -1485,7 +1963,15 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(replay_required && fp_contract_fast) &&
                !(ct && fp_reassoc_unrestricted) &&
                !(ct && fp_denormal_input_honored) &&
-               !(ct && fp_ftz_preserved);
+               !(ct && fp_ftz_preserved) &&
+               !(aborts && !cf_witnesses_abort) &&
+               !indirect_call_not_noexcept &&
+               !recurses_unbounded &&
+               !thread_local_untagged &&
+               !(Usage == UsageMode::Linear && longjmp_unsafe) &&
+               !(fork_worker && fork_body_throws) &&
+               !(hot_path && hot_path_stdio) &&
+               !singleton_init_cycle;
     }
 
     static constexpr bool valid = validate();
@@ -1513,8 +1999,9 @@ static_assert(ValidComposition<DefaultFn>);
 // Use `>=` floor pattern (per feedback_catalog_cardinality_test_drift) so
 // future appends don't silently red this self-test; the per-rule
 // rule_bijection assertions below pin each catalog entry individually.
-static_assert(collision::catalog_size >= 28,
-              "FIXY-V-091/V-234 floor: catalog must include F101..F105 + M001");
+static_assert(collision::catalog_size >= 36,
+              "FIXY-V-091/V-234/V-243 floor: catalog must include F101..F105 + M001 "
+              "+ C001/D001/D002/G001/L006/P003/S001/S004");
 static_assert(std::is_same_v<
     collision::rule_tag_t<collision::RuleCode::I002>,
     collision::I002_ClassifiedFailPayload>);
@@ -1548,6 +2035,14 @@ static_assert(collision::rule_bijection_v<collision::RuleCode::F103>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::F104>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::F105>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::M001>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::C001>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::D001>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::D002>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::G001>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::L006>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::P003>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::S001>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::S004>);
 static_assert(collision::CollisionDiagnosticByRule<DefaultFn, collision::RuleCode::I002>::rule_code()
               == std::string_view{"I002"});
 static_assert(collision::CollisionDiagnostic<DefaultFn>::category()
