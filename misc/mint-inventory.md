@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-23T19:17:18Z`.
+Snapshot generated: `2026-05-23T19:38:33Z`.
 
 ## bridges/
 
@@ -244,8 +244,8 @@ mints) are listed in the substrate section instead.
 | `mint_asm_grant` | `include/crucible/fixy/Hw.h:490` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_async_copy` | `include/crucible/fixy/Async.h:203` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_async_pipeline` | `include/crucible/fixy/AsyncPipeline.h:224` | Y | Y | Y | Y | ctx | HS14: 3 |
-| `mint_bounded_sleep` | `include/crucible/fixy/Time.h:295` | Y | Y | Y | Y | ctx | HS14: 2 |
-| `mint_clock_reader` | `include/crucible/fixy/Time.h:282` | Y | Y | Y | Y | ctx | HS14: 2 |
+| `mint_bounded_sleep` | `include/crucible/fixy/Time.h:306` | Y | Y | Y | Y | ctx | HS14: 2 |
+| `mint_clock_reader` | `include/crucible/fixy/Time.h:293` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_cold_writer` | `include/crucible/fixy/CipherDurable.h:243` | - | - | Y | - | ctx | HS14: 2 |
 | `mint_durable_append_file` | `include/crucible/fixy/Fs.h:692` | Y | - | Y | - | ctx | HS14: 0 ⚠ |
 | `mint_durable_truncate_file` | `include/crucible/fixy/Fs.h:661` | Y | - | Y | - | ctx | HS14: 0 ⚠ |
@@ -273,7 +273,7 @@ mints) are listed in the substrate section instead.
 | `mint_spsc_consumer_endpoint` | `include/crucible/fixy/Substr.h:217` | Y | Y | Y | - | token | HS14: 2 |
 | `mint_spsc_producer_endpoint` | `include/crucible/fixy/Substr.h:208` | Y | Y | Y | - | token | HS14: 2 |
 | `mint_tsc_grant` | `include/crucible/fixy/Hw.h:518` | Y | Y | Y | Y | ctx | HS14: 2 |
-| `mint_tsc_reader` | `include/crucible/fixy/Time.h:289` | Y | Y | Y | Y | ctx | HS14: 3 |
+| `mint_tsc_reader` | `include/crucible/fixy/Time.h:300` | Y | Y | Y | Y | ctx | HS14: 3 |
 | `mint_vendor_intrinsic` | `include/crucible/fixy/Hw.h:511` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_warm_writer` | `include/crucible/fixy/CipherDurable.h:235` | - | - | Y | - | ctx | HS14: 2 |
 | `mint_zerocopy_transfer` | `include/crucible/fixy/Io.h:765` | Y | - | Y | Y | ctx | HS14: 2 |
