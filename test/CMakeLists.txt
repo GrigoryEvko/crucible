@@ -306,6 +306,7 @@ crucible_test(test_fixy_v_258_vendor_intrinsic)         # FIXY-V-258 fixy/Vendor
 crucible_test(test_fixy_v_259_simd_width)               # FIXY-V-259 fixy/Simd.h — WidthBits enum (6 width classes) + strong-typed grant::simd::width<W> + 4 canonical aliases
 crucible_test(test_fixy_v_261_arch_pinned)              # FIXY-V-261 safety/source/Arch.h — source::ArchPinned<Arch> tag + ArchComposable cross-arch gate + Portable→concrete retag admittance
 crucible_test(test_fixy_v_262_swisstable_hw_grants)     # FIXY-V-262 SwissTable.h #if arms declare vendor::intrinsic<V,I> + simd::width<W> per ISA arm + width↔group-bytes consistency
+crucible_test(test_fixy_v_263_fec_hw_grants)            # FIXY-V-263 cntp/Fec.h #if arms declare vendor::intrinsic<V,I> + simd::width<W> per ISA arm (AVX2/NEON/portable) + stride↔width consistency
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
@@ -12033,6 +12034,16 @@ crucible_neg_compile_fixy_test(neg_fixy_v_258_intrinsic_amd_neon
 crucible_neg_compile_fixy_test(neg_fixy_v_262_width_byte_mismatch
     "FIXY-V-262|static assertion")
 crucible_neg_compile_fixy_test(neg_fixy_v_262_vendor_arch_mismatch
+    "constraints not satisfied|vendor_isa_consistent|intrinsic|no matching")
+
+# ─── FIXY-V-263 cntp/Fec.h hardware-grant declaration discipline ────
+# Same two mismatch classes as V-262, FEC-framed with distinct values:
+# (1) stride↔width consistency (32-byte AVX2 block must declare
+# width_256); (2) the V-258 vendor↔ISA gate (AMD GPU + ARM NEON is
+# ill-formed — the FEC-relevant trap since FEC has a NEON arm).
+crucible_neg_compile_fixy_test(neg_fixy_v_263_width_byte_mismatch
+    "FIXY-V-263|static assertion")
+crucible_neg_compile_fixy_test(neg_fixy_v_263_vendor_arch_mismatch
     "constraints not satisfied|vendor_isa_consistent|intrinsic|no matching")
 
 # ── FIXY-V-259 — fixy/Simd.h is_known_width gate (HS14 structural) ───

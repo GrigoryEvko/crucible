@@ -13,6 +13,8 @@
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Simd.h>
+#include <crucible/fixy/Vendor.h>           // FIXY-V-263: vendor::intrinsic<V,I> + canonical aliases
+#include <crucible/fixy/Simd.h>             // FIXY-V-263: simd::width<W> + width_* aliases
 
 #include <algorithm>
 #include <array>
@@ -226,6 +228,66 @@ make_nibble_tables(std::uint8_t coeff) noexcept {
     return tables;
 }
 #endif
+
+// ── FIXY-V-263: hardware-axis grant declarations ───────────────────
+//
+// Each compile-time SIMD arm of the Reed-Solomon GF(2^8) kernels
+// (xor_bytes / mul_xor) declares — at the TYPE level — which
+// vendor::intrinsic<V, I> (FIXY-V-258) and simd::width<W> (FIXY-V-259)
+// it uses, so the FEC hardware dependency is a named, greppable,
+// type-checked surface (the V-264 check-fixy-hw-discipline.sh lint reads
+// it) rather than an invisible `#ifdef`.  Mirrors the SwissTable
+// declaration block (FIXY-V-262).  Reached through the fixy:: umbrella,
+// not raw safety::*, per the band-3 discipline.  Zero runtime cost —
+// empty grant tags + using-aliases, all consumed at compile time.
+//
+//   AVX2     → avx2_intrinsic + width_256  (32-byte XOR / shuffle blocks)
+//   NEON     → neon_intrinsic + width_128  (16-byte vld1q / vqtbl blocks)
+//   Portable → width_scalar, NO vendor intrinsic (byte-at-a-time GF(2^8)
+//              multiply over general-purpose registers — the absence of a
+//              vendor dependency IS the point of the scalar fallback).
+//
+// `ActiveSimdWidth` is defined on every arm; `ActiveVendorIsa` only on
+// the two real-SIMD arms.  The per-arm static_assert pins the declared
+// register width (bits) to the kernel's block stride (bytes × 8).
+namespace fec_hw {
+
+namespace fv = ::crucible::fixy::vendor;
+namespace fs = ::crucible::fixy::simd;
+
+#if defined(__AVX2__)
+using ActiveVendorIsa = fv::avx2_intrinsic;
+using ActiveSimdWidth = fs::width_256;
+static_assert(32u * 8u == std::to_underlying(fs::WidthBits::Bits256),
+              "FIXY-V-263: AVX2 FEC kernels stride 32-byte blocks = 256-bit width");
+#elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
+using ActiveVendorIsa = fv::neon_intrinsic;
+using ActiveSimdWidth = fs::width_128;
+static_assert(16u * 8u == std::to_underlying(fs::WidthBits::Bits128),
+              "FIXY-V-263: NEON FEC kernels stride 16-byte blocks = 128-bit width");
+#else
+using ActiveSimdWidth = fs::width_scalar;  // portable byte-at-a-time GF(2^8)
+#endif
+
+// Arm-independent: the active SIMD-width grant is always well-formed and
+// routes to the SimdIsa axis (FIXY-V-253).
+static_assert(::crucible::fixy::grant::IsGrantTag<ActiveSimdWidth>,
+              "FIXY-V-263: the active simd::width grant must be well-formed");
+static_assert(::crucible::fixy::grant::which_dim_v<ActiveSimdWidth>
+                  == ::crucible::fixy::dim::DimensionAxis::SimdIsa,
+              "FIXY-V-263: simd::width routes to the SimdIsa axis");
+
+#if defined(__AVX2__) || ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
+// The two real-SIMD arms additionally pin a vendor intrinsic; the
+// portable scalar fallback has no vendor dependency.
+static_assert(::crucible::fixy::grant::IsGrantTag<ActiveVendorIsa>,
+              "FIXY-V-263: the active vendor::intrinsic grant must be well-formed");
+static_assert(::crucible::fixy::grant::which_dim_v<ActiveVendorIsa>
+                  == ::crucible::fixy::dim::DimensionAxis::HwInstruction,
+              "FIXY-V-263: vendor::intrinsic routes to the HwInstruction axis");
+#endif
+
+}  // namespace fec_hw
 
 #if defined(__AVX2__)
 // FIXY-U-082 / fixy-A5-028: std::start_lifetime_as is the C++23 idiom for
