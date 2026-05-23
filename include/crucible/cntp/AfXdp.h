@@ -292,6 +292,15 @@ public:
     using packet_view =
         safety::Borrowed<byte_type, AfXdpSocket>;
 
+    // FIXY-V-172 — RX frames carry untrusted wire data (network origin, fed
+    // by kernel XDP_REDIRECT into the rx ring).  `dequeue_rx` hands them out
+    // source::External-tagged so no consumer can pass RX bytes to a
+    // sanitized-only API without first laundering them through the single
+    // `sanitize_rx_frame` boundary (External → Sanitized).  TX frames stay
+    // bare `packet_view` — they are internally minted, not untrusted input.
+    using rx_frame        = safety::Tagged<packet_view, safety::source::External>;
+    using sanitized_frame = safety::Tagged<packet_view, safety::source::Sanitized>;
+
     struct Descriptor {
         std::uint32_t frame_id = 0;
         std::uint32_t length = 0;
@@ -433,13 +442,33 @@ public:
         return {};
     }
 
-    [[nodiscard]] CRUCIBLE_HOT std::optional<packet_view>
+    [[nodiscard]] CRUCIBLE_HOT std::optional<rx_frame>
     dequeue_rx() noexcept {
         auto desc = rx_.pop();
         if (!desc.has_value()) {
             return std::nullopt;
         }
-        return view(*desc);
+        // RX bytes are untrusted wire data — hand out External-tagged.
+        return rx_frame{view(*desc)};
+    }
+
+    // FIXY-V-172 — the SINGLE External → Sanitized laundering boundary.
+    // Validates an untrusted RX frame (non-empty, within frame bounds) and,
+    // on success, retags External → Sanitized — the only transition the
+    // retag_policy catalog admits here, so the laundering point is the one
+    // grep-able `retag<Sanitized>` site.  A frame that fails validation is
+    // dropped (nullopt); it never reaches a sanitized-only consumer.  Pure
+    // (no socket state — `static`); the frame's backing UMEM is this
+    // socket's, hence the method association.  Zero hot-path cost: rx_frame
+    // and sanitized_frame are phantom-tag newtypes over packet_view, and
+    // retag moves the tag, not the bytes.
+    [[nodiscard]] CRUCIBLE_HOT static std::optional<sanitized_frame>
+    sanitize_rx_frame(rx_frame&& frame) noexcept {
+        packet_view const& view_ref = frame.value();
+        if (view_ref.empty() || view_ref.size() > FrameSize) {
+            return std::nullopt;
+        }
+        return std::move(frame).template retag<safety::source::Sanitized>();
     }
 
     [[nodiscard]] CRUCIBLE_HOT std::uint32_t poll() noexcept {

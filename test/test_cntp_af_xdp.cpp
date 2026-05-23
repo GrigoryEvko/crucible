@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+#include <utility>   // FIXY-V-172: std::move for rx_frame laundering
 
 namespace cntp = crucible::cntp;
 namespace effects = crucible::effects;
@@ -57,6 +58,18 @@ void test_socket_substrate_rings() {
     static_assert(!std::copy_constructible<decltype(socket)>);
     static_assert(!std::move_constructible<decltype(socket)>);
 
+    // FIXY-V-172 — RX frames are source::External-tagged (untrusted wire
+    // data); the laundering boundary yields source::Sanitized.  Both are
+    // zero-cost phantom newtypes over packet_view.
+    static_assert(std::is_same_v<
+        decltype(socket)::rx_frame,
+        saf::Tagged<decltype(socket)::packet_view, saf::source::External>>);
+    static_assert(std::is_same_v<
+        decltype(socket)::sanitized_frame,
+        saf::Tagged<decltype(socket)::packet_view, saf::source::Sanitized>>);
+    static_assert(sizeof(decltype(socket)::rx_frame) ==
+                  sizeof(decltype(socket)::packet_view));
+
     auto oversized = socket.alloc_tx_buffer(4'096);
     assert(!oversized.has_value());
 
@@ -76,7 +89,12 @@ void test_socket_substrate_rings() {
     assert(socket.poll() == 1);
     auto rx = socket.dequeue_rx();
     assert(rx.has_value());
-    assert(rx->size() == 96);
+    // FIXY-V-172: rx is Tagged<packet_view, source::External> — untrusted
+    // wire data.  Launder it through the single sanitize boundary before
+    // reading any bytes; only the Sanitized result is safe to consume.
+    auto clean = decltype(socket)::sanitize_rx_frame(std::move(*rx));
+    assert(clean.has_value());
+    assert(clean->value().size() == 96);
     assert(socket.rx_pending() == 0);
 
     std::printf("  test_socket_substrate_rings: PASSED\n");
@@ -153,7 +171,9 @@ void test_rings_are_in_process_only() {
     assert(socket.rx_pending() == 1);
     auto staged = socket.dequeue_rx();
     assert(staged.has_value());
-    assert(staged->size() == 64);
+    auto staged_clean = decltype(socket)::sanitize_rx_frame(std::move(*staged));
+    assert(staged_clean.has_value());
+    assert(staged_clean->value().size() == 64);
     assert(socket.rx_pending() == 0);
 
     // (2d) UMEM ownership remains LINEAR — the `Linear<AlignedBuffer>`

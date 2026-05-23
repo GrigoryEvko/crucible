@@ -5813,6 +5813,11 @@ crucible_neg_compile_test(neg_af_xdp_non_power_of_two_frame
   "constraints not satisfied|AfXdpStaticShape|1500")
 crucible_neg_compile_test(neg_af_xdp_cross_source_packet
   "cannot convert|no matching function|Borrowed|OtherOwner|AfXdpSocket")
+# FIXY-V-172 — the External → Sanitized RX laundering boundary has teeth:
+#   * neg_af_xdp_unsanitized_rx: an External-tagged rx_frame cannot reach a
+#     sanitized-only consumer without passing through sanitize_rx_frame.
+crucible_neg_compile_test(neg_af_xdp_unsanitized_rx
+  "could not convert|no matching function|Tagged|Sanitized|External")
 
 # GAPS-136 — cntp/ConnectionPool.h + cntp/ConnectionPoolRuntime.h substrate.
 #   * neg_connection_pool_raw_event: pool events must carry source::ConnectionPool.
