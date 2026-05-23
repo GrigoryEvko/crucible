@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-23T18:19:43Z`.
+Snapshot generated: `2026-05-23T18:56:05Z`.
 
 ## bridges/
 
@@ -73,7 +73,7 @@ Snapshot generated: `2026-05-23T18:19:43Z`.
 | `mint_bg_context` | `include/crucible/effects/Capabilities.h:468` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:207` | HS14: 4 |
 | `mint_cap` | `include/crucible/effects/Capability.h:247` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:17` | HS14: 11 |
 | `mint_from_ctx` | `include/crucible/effects/Capability.h:319` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Cap.h:18` | HS14: 3 |
-| `mint_init_context` | `include/crucible/effects/Capabilities.h:478` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:207` | HS14: 4 |
+| `mint_init_context` | `include/crucible/effects/Capabilities.h:478` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:207` | HS14: 5 |
 | `mint_test_context` | `include/crucible/effects/Capabilities.h:488` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:207` | HS14: 3 |
 
 ## perf/
@@ -217,7 +217,7 @@ to distinguish this third authorization shape.
 
 | class::mint_name | file:line | nd | cx | ne | rq | cb | HS14 |
 |---|---|---|---|---|---|---|---|
-| `Cipher::mint_open_view` | `include/crucible/Cipher.h:304` | Y | - | Y | - | member | HS14: 18 |
+| `Cipher::mint_open_view` | `include/crucible/Cipher.h:305` | Y | - | Y | - | member | HS14: 18 |
 | `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h:463` | Y | - | Y | - | member | HS14: 4 |
 | `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h:469` | Y | - | Y | - | member | HS14: 3 |
 | `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h:320` | Y | Y | Y | - | member | HS14: 3 |
@@ -266,7 +266,7 @@ mints) are listed in the substrate section instead.
 | `mint_parallel_for` | `include/crucible/fixy/spawn/Spawn.h:229` | Y | - | Y | Y | ctx | HS14: 2 |
 | `mint_pool_dispatch_with_workload` | `include/crucible/fixy/Pipe.h:553` | Y | - | Y | Y | ctx | HS14: 0 ⚠ |
 | `mint_pool_submit` | `include/crucible/fixy/Pipe.h:534` | - | - | Y | Y | ctx | HS14: 2 |
-| `mint_priority` | `include/crucible/fixy/Sched.h:272` | Y | - (alloc) | Y | Y | ctx | HS14: 2 |
+| `mint_priority` | `include/crucible/fixy/Sched.h:272` | Y | - (alloc) | Y | Y | ctx | HS14: 4 |
 | `mint_scheduler_policy` | `include/crucible/fixy/Sched.h:256` | Y | - (alloc) | Y | Y | ctx | HS14: 2 |
 | `mint_simd_width` | `include/crucible/fixy/Hw.h:497` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_spawn` | `include/crucible/fixy/spawn/Spawn.h:165` | Y | - | Y | Y | ctx | HS14: 2 |

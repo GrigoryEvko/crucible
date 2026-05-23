@@ -46,6 +46,7 @@
 #include <crucible/fixy/SessEventLog.h>     // SessionEvent / StepId / SessionTagId / KeyFn / Less
 #include <crucible/fixy/Source.h>           // tags::source::Durable
 #include <crucible/fixy/Wrap.h>             // Tagged / WriteOnce / OrderedAppendOnly / Positive / Refined / Wait / CipherTier(Tag_v) / cipher_tier / Lifetime_v / mint_view / ScopedView / no_scoped_view_field_check
+#include <crucible/safety/ClockSource.h>   // FIXY-V-198: MonotonicClockBytes
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
@@ -822,8 +823,11 @@ class CRUCIBLE_OWNER Cipher {
                 std::span<const std::uint8_t>{buf, sizeof(buf)});
         }
 
-        // Append log entry.
-        const uint64_t ts = now_ns();
+        // Append log entry.  FIXY-V-198: now_ns() returns
+        // MonotonicClockBytes<u64>; consume the typed wrap exactly once
+        // to extract the raw u64 timestamp LogEntry stores.
+        auto ts_bytes = now_ns();
+        const uint64_t ts = std::move(ts_bytes).consume();
         log_.emplace(LogEntry::cipher_store_committed(
             crucible::fixy::sess::eventlog::StepId{step_id}, content_hash, ts));
         {
@@ -1987,12 +1991,47 @@ class CRUCIBLE_OWNER Cipher {
         return crucible::fixy::wrap::Positive<std::size_t>{sz + 256}; // headroom
     }
 
-    static uint64_t now_ns() {
+    // FIXY-V-198: cipher_store_committed audit timestamp.  Returns a
+    // typed `MonotonicClockBytes<uint64_t>` provenance witness rather
+    // than a bare u64 — std::chrono::steady_clock on Linux IS
+    // CLOCK_MONOTONIC, so the wrap documents the actual underlying
+    // source.  MONOTONIC is the right semantic for ordering Cipher
+    // commit events within a single process run: it freezes through
+    // suspend (matching the cipher process's wall-clock perception)
+    // and is immune to NTP back-jumps that would scramble the log's
+    // ordering invariant.  Caller `.consume()`s the bytes once to
+    // extract the raw u64 for LogEntry construction (whose field is
+    // declared as a plain timestamp).
+    [[nodiscard]] static auto now_ns() noexcept
+        -> ::crucible::safety::MonotonicClockBytes<std::uint64_t>
+    {
         const auto tp = std::chrono::steady_clock::now();
-        return static_cast<uint64_t>(
+        const std::uint64_t raw = static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(
                 tp.time_since_epoch()).count());
+        return ::crucible::safety::mint_clock_source<
+            ::crucible::safety::ClockSource_v::Monotonic,
+            std::uint64_t>(raw);
     }
+
+    // FIXY-V-198 sentinel: the now_ns() mint produces a
+    // MonotonicClockBytes<u64> witness.  Any future drift away from
+    // CLOCK_MONOTONIC (e.g. accidentally switching steady_clock back
+    // to a wall-clock source, or returning a bare u64) trips at every
+    // TU including Cipher.h.  Provenance lattice value is pinned to
+    // ClockSource_v::Monotonic.
+    static_assert(
+        std::is_same_v<
+            decltype(now_ns()),
+            ::crucible::safety::MonotonicClockBytes<std::uint64_t>>,
+        "FIXY-V-198: Cipher::now_ns must return MonotonicClockBytes<u64>.");
+    static_assert(
+        sizeof(decltype(now_ns())) == sizeof(std::uint64_t),
+        "FIXY-V-198: MonotonicClockBytes is regime-2 — zero-cost wrap.");
+    static_assert(
+        decltype(now_ns())::source
+            == ::crucible::safety::ClockSource_v::Monotonic,
+        "FIXY-V-198: Cipher commit timestamp provenance must be Monotonic.");
 };
 
 // ── Validated head witness (#884 WRAP-Cipher-1) ────────────────────
