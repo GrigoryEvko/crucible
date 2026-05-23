@@ -298,6 +298,7 @@ crucible_test(test_fixy_v_249_thread_local_atomic)      # FIXY-V-249 CollisionCa
 crucible_test(test_fixy_v_250_simd_isa)                 # FIXY-V-250 SimdIsaLattice — non-distributive x86×ARM ISA partial order
 crucible_test(test_fixy_v_251_hw_instruction)           # FIXY-V-251 HwInstructionLattice — 5-tier hw-instruction capability chain
 crucible_test(test_fixy_v_252_barrier_strength)         # FIXY-V-252 BarrierStrengthLattice — 7-tier memory-fence strength chain
+crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScopeLattice — non-distributive accel×ARM visibility-scope partial order (WMEM keystone)
 crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
@@ -8284,6 +8285,14 @@ crucible_neg_compile_test(neg_hw_instruction_at_element_disjoint
 crucible_neg_compile_test(neg_barrier_strength_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 crucible_neg_compile_test(neg_barrier_strength_at_element_disjoint
+  "no match for|cannot convert|conversion from|no viable")
+
+# ─── FIXY-V-265 MemoryScopeLattice negative-compile fixtures ────────
+#   - neg_memory_scope_cross_lattice_mixing  MemoryScope ≠ BarrierStrength at leq op
+#   - neg_memory_scope_at_element_disjoint   At<> singleton grade disjointness
+crucible_neg_compile_test(neg_memory_scope_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_memory_scope_at_element_disjoint
   "no match for|cannot convert|conversion from|no viable")
 
 # ─── FOUND-G61 Crash negative-compile fixtures ──────────────────────
