@@ -1762,6 +1762,17 @@ crucible_neg_compile_fixy_test(neg_sched_affinity_runtime_hot_ctx
 crucible_neg_compile_fixy_test(neg_sched_affinity_runtime_non_exec_ctx
   "constraints not satisfied|IsExecCtx|no matching function|apply_affinity_to_cpu")
 
+# ─── FIXY-V-193 MonotonicClock::now_ns neg-compiles (HS14) ─────────────
+#   safety::MonotonicClock::now_ns is Bg/Init/Test-row-gated via
+#   CtxFitsMonotonicClock — keeps a hot-foreground replay-bound thread
+#   from sampling steady_clock (a bit-exact replay-breaking divergence).
+#   Two distinct-mismatch-class fixtures: HotFgCtx (row-content) and a
+#   bare `int` (ctx-type).
+crucible_neg_compile_fixy_test(neg_monotonic_clock_hot_ctx
+  "constraints not satisfied|CtxFitsMonotonicClock|no matching function|now_ns")
+crucible_neg_compile_fixy_test(neg_monotonic_clock_non_exec_ctx
+  "constraints not satisfied|IsExecCtx|no matching function|now_ns")
+
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_regime         "FixyNotEngaged_Regime")
 
 # FIXY-AUDIT-D2 — HS14 floor for mint_fn factory.

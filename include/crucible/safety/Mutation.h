@@ -42,6 +42,8 @@
 #include <crucible/algebra/GradedTrait.h>
 #include <crucible/algebra/lattices/MonotoneLattice.h>
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>
+#include <crucible/effects/ExecCtx.h>           // FIXY-V-193: MonotonicClock ctx-gate
+#include <crucible/safety/ClockSource.h>        // FIXY-V-193: MonotonicClockBytes return type
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Post.h>
@@ -1185,6 +1187,31 @@ using MaxObserved = AtomicMonotonic<T, std::less<T>>;
 // Cost: one atomic load + (rarely) one CAS per now().  Used for
 // step-id generation and iteration timing in hot paths that record,
 // not per-op.
+//
+// FIXY-V-193 (Agent 6 Scenario 1 P0):
+//   * now_ns takes an `effects::IsExecCtx` first parameter — a
+//     HotFgCtx is rejected (the hot foreground replay-bound path has
+//     no business reading the wall clock; bit-exact replay would
+//     diverge across machines).  BgDrainCtx / ColdInitCtx /
+//     TestRunnerCtx are admitted because they own Bg / Init / Test
+//     respectively.  Gate: CtxFitsMonotonicClock<Ctx>.
+//   * The return type is MonotonicClockBytes<std::uint64_t> from
+//     safety/ClockSource.h — a regime-1 Graded carrier of the
+//     ClockSource::Monotonic provenance.  sizeof unchanged.  The
+//     compiler refuses to mix it with BootClockBytes or raw uint64_t,
+//     so downstream code (V-194 DeadlineWatchdog, V-198 Cipher
+//     timestamps, V-199 SessionPersistence) consumes a single typed
+//     family.
+
+// CtxFitsMonotonicClock<Ctx> — Bg, Init, or Test row admits a
+// monotonic clock read; everything else (e.g. HotFgCtx with empty
+// row) is rejected at compile time.
+template <typename Ctx>
+concept CtxFitsMonotonicClock =
+    ::crucible::effects::CtxOwnsAnyOf<Ctx,
+        ::crucible::effects::Effect::Bg,
+        ::crucible::effects::Effect::Init,
+        ::crucible::effects::Effect::Test>;
 
 class MonotonicClock : Pinned<MonotonicClock> {
     AtomicMonotonic<uint64_t> last_ns_{0};
@@ -1192,12 +1219,19 @@ class MonotonicClock : Pinned<MonotonicClock> {
 public:
     MonotonicClock() noexcept = default;
 
-    // Returns a nanosecond timestamp that never regresses across
-    // threads.  If steady_clock::now() goes backward, returns the
-    // previously-observed value instead — detection of the clock bug
-    // is the responsibility of the host monitoring layer.
-    [[nodiscard]] uint64_t now_ns() noexcept {
-        const uint64_t raw = static_cast<uint64_t>(
+    // Returns a typed nanosecond timestamp that never regresses
+    // across threads.  If steady_clock::now() goes backward, returns
+    // the previously-observed value instead — detection of the clock
+    // bug is the responsibility of the host monitoring layer.
+    //
+    // Ctx-gated per CtxFitsMonotonicClock: HotFgCtx (no Bg / Init /
+    // Test row) is rejected.
+    template <::crucible::effects::IsExecCtx Ctx>
+        requires CtxFitsMonotonicClock<Ctx>
+    [[nodiscard]] auto now_ns(Ctx const&) noexcept
+        -> ::crucible::safety::MonotonicClockBytes<std::uint64_t>
+    {
+        const std::uint64_t raw = static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::steady_clock::now().time_since_epoch())
                 .count());
@@ -1205,8 +1239,11 @@ public:
         // we return the observed value (same-or-forward).  The caller
         // sees a monotonic sequence regardless of underlying regress.
         (void)last_ns_.try_advance(raw);
-        const uint64_t observed = last_ns_.get();
-        return observed > raw ? observed : raw;
+        const std::uint64_t observed = last_ns_.get();
+        const std::uint64_t value = observed > raw ? observed : raw;
+        return ::crucible::safety::mint_clock_source<
+            ::crucible::safety::ClockSource_v::Monotonic,
+            std::uint64_t>(value);
     }
 };
 
@@ -1295,6 +1332,40 @@ inline void runtime_smoke_test() {
     if (am.get() != 10u) std::abort();
     auto prev = am.bump();                    // returns prev = 10, advances to 11
     if (prev != 10u || am.get() != 11u) std::abort();
+
+    // FIXY-V-193: MonotonicClock — ctx-gated now_ns returning
+    // MonotonicClockBytes<uint64_t>.  Exercises the BgDrainCtx admit
+    // path; HotFgCtx rejection is covered by the neg fixtures.
+    MonotonicClock clock{};
+    ::crucible::effects::BgDrainCtx const bg_ctx{};
+    using BytesT = ::crucible::safety::MonotonicClockBytes<std::uint64_t>;
+    BytesT const t0 = clock.now_ns(bg_ctx);
+    BytesT const t1 = clock.now_ns(bg_ctx);
+    // The wrapper is regime-1 (sizeof == sizeof(T)) and exposes
+    // the underlying value via peek_mut after move-out; we use the
+    // satisfies<> gate to confirm provenance at compile time.
+    static_assert(BytesT::template satisfies<
+        ::crucible::safety::ClockSource_v::Monotonic>,
+        "FIXY-V-193: MonotonicClock::now_ns return must carry the "
+        "Monotonic clock-source provenance.");
+    static_assert(!BytesT::template satisfies<
+        ::crucible::safety::ClockSource_v::Boot>,
+        "FIXY-V-193: MonotonicClock::now_ns return must NOT subsume "
+        "a Boot requirement (Monotonic pauses on suspend, Boot does "
+        "not).");
+    static_assert(sizeof(BytesT) == sizeof(std::uint64_t),
+        "FIXY-V-193: MonotonicClockBytes must be regime-1 (EBO).");
+    // Compile-time gate-shape assertions.
+    static_assert(CtxFitsMonotonicClock<
+        ::crucible::effects::BgDrainCtx>);
+    static_assert(CtxFitsMonotonicClock<
+        ::crucible::effects::ColdInitCtx>);
+    static_assert(CtxFitsMonotonicClock<
+        ::crucible::effects::TestRunnerCtx>);
+    static_assert(!CtxFitsMonotonicClock<
+        ::crucible::effects::HotFgCtx>);
+    (void)t0;
+    (void)t1;
 }
 
 }  // namespace detail::mutation_self_test
