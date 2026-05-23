@@ -201,6 +201,14 @@ struct AffinityLattice {
         return r;
     }
 
+    // FIXY-V-187 — exactly-one-core test, the singleton-pin gate the
+    // safety/CpuPinned.h proof + the V-190 CtxFitsTscReader concept assert
+    // (a TSC read is only sound when the thread is pinned to ONE core, so
+    // the affinity mask must have exactly one bit set).
+    [[nodiscard]] static constexpr bool is_singleton(element_type m) noexcept {
+        return m.popcount() == 1;
+    }
+
     [[nodiscard]] static consteval std::string_view name() noexcept {
         return "AffinityLattice";
     }
@@ -265,6 +273,15 @@ static_assert(AffinityMask::single(127).popcount() == 1);
 static_assert(AffinityMask::single(255).popcount() == 1);
 static_assert(AffinityLattice::bottom().popcount() == 0);
 static_assert(AffinityLattice::top().popcount()    == AffinityMask::kBits);
+
+// FIXY-V-187 — is_singleton: exactly one bit set (the CpuPinned/TSC gate).
+static_assert( AffinityLattice::is_singleton(AffinityMask::single(0)));
+static_assert( AffinityLattice::is_singleton(AffinityMask::single(255)));
+static_assert(!AffinityLattice::is_singleton(AffinityLattice::bottom()),
+    "the empty mask is NOT a singleton — no core pinned.");
+static_assert(!AffinityLattice::is_singleton(AffinityMask::range(0, 1)),
+    "a 2-core mask is NOT a singleton — a TSC read across two cores is unsound.");
+static_assert(!AffinityLattice::is_singleton(AffinityLattice::top()));
 
 // ── Ordering witnesses (set inclusion, componentwise) ─────────────
 static_assert( AffinityLattice::leq(AffinityMask{},

@@ -304,6 +304,7 @@ crucible_test(test_fixy_v_183_scheduler_policy)         # FIXY-V-183 SchedulerPo
 crucible_test(test_fixy_v_184_clock_source)             # FIXY-V-184 ClockSourceLattice — DetSafe×Suspend×Pinning product composite + 9-source projection (Agent 6 §3.1)
 crucible_test(test_fixy_v_185_clock_source)             # FIXY-V-185 safety/ClockSource.h — regime-1 Graded provenance carrier + per-source aliases + IsClockSource + row_hash (Agent 6 §3.3)
 crucible_test(test_fixy_v_186_sched_class)              # FIXY-V-186 safety/SchedClass.h — regime-1 Graded scheduler-class carrier + pool-fit + DEADLINE CBS budget + IsSchedClass + row_hash (Agent 6 §3.3)
+crucible_test(test_fixy_v_187_cpu_pinned)               # FIXY-V-187 safety/CpuPinned.h — move-only AffinityMask×PinningPosture pin proof + singleton/posture gates + IsCpuPinned + row_hash 0x32 (Agent 6 §3.3)
 crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScopeLattice — non-distributive accel×ARM visibility-scope partial order (WMEM keystone)
 crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/ScopedFence.h — partial-order provider Graded carrier for MemoryScope axis + IsScopedFence + row_hash
 crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
@@ -6625,6 +6626,17 @@ crucible_neg_compile_test(neg_sched_class_deadline_runtime_gt_deadline
   "static assertion failed|SCHED_DEADLINE requires|CBS admission")
 crucible_neg_compile_test(neg_sched_class_batch_on_hotpath
   "constraints not satisfied|no matching function|hot_path|on_hot_path")
+
+# ─── FIXY-V-187 CpuPinned HS14 negative-compile fixtures ───────────
+#   - neg_cpu_pinned_rdtsc_without_proof      (proof-required: non-CpuPinned rejected)
+#   - neg_cpu_pinned_two_bit_mask_singleton   (singleton gate: 2-core mask rejected)
+#   - neg_cpu_pinned_auto_on_hotpath          (posture gate: PinnedAuto rejected at HotPath)
+crucible_neg_compile_test(neg_cpu_pinned_rdtsc_without_proof
+  "constraints not satisfied|no matching function|IsCpuPinned|read_tsc")
+crucible_neg_compile_test(neg_cpu_pinned_two_bit_mask_singleton
+  "constraints not satisfied|no matching function|is_singleton_pin|require_singleton_pin")
+crucible_neg_compile_test(neg_cpu_pinned_auto_on_hotpath
+  "constraints not satisfied|no matching function|meets_posture|on_hot_path")
 
 # ─── FIXY-V-268 CollisionCatalog V401/V402 neg-compiles (per-rule, HS14) ──
 #

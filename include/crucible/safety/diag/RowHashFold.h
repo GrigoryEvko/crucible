@@ -403,6 +403,16 @@ inline constexpr std::uint64_t WRAPPER_CLOCK_SOURCE_TAG       = 0x3000'0000'0000
 // budget NTTPs are mixed in so distinct CBS budgets occupy distinct slots
 // (non-DEADLINE policies carry a zero budget → the mix vanishes).
 inline constexpr std::uint64_t WRAPPER_SCHED_CLASS_TAG       = 0x3100'0000'0000'0000ULL;
+// FIXY-V-187 — CpuPinned<AffinityMask Mask, PinningPosture Posture, T>
+// discriminator.  Salt 0x32 is the next free high-byte after 0x31
+// (SchedClass).  UNLIKE every other wrapper, CpuPinned's `Mask` is a CLASS
+// NTTP (the 256-bit AffinityMask), not an enum — using it in a
+// forward-declared specialization here would force this widely-included
+// header to #include the full algebra/lattices/AffinityLattice.h.  To keep
+// RowHashFold lean, the `row_hash_contribution<CpuPinned<...>>`
+// specialization lives in safety/CpuPinned.h (which already has AffinityMask
+// complete); only the collision-checked salt constant is centralized here.
+inline constexpr std::uint64_t WRAPPER_CPU_PINNED_TAG       = 0x3200'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
