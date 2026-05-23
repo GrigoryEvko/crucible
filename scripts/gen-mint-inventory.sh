@@ -329,6 +329,90 @@ scan_member_function_mints() {
     )
 }
 
+# ── Scan fixy/ for fixy-ORIGIN mint declarations (FIXY-V-271) ────────
+# The substrate scan above cross-references each substrate mint INTO
+# fixy/ for its re-export site (fixy_reexport_for).  But a mint whose
+# CANONICAL declaration lives in fixy/ with NO substrate counterpart —
+# the hardware-axis grant mints (mint_simd_width / mint_vendor_intrinsic
+# / mint_tsc_grant / mint_msr_grant / mint_asm_grant), the syscall/mmap/
+# io factories (mint_file / mint_mmap / mint_io_uring_ring / ...), the
+# durable-Cipher writers (mint_warm_writer / mint_cold_writer / ...), the
+# spawn factories (mint_spawn / mint_parallel_for), and the async-pipeline
+# mints (mint_async_copy / mint_mbarrier_arrive / mint_mbarrier_wait) —
+# never appears in any `trees=()` directory, so it was previously
+# INVISIBLE to the inventory.  This scanner closes that gap: it walks
+# include/crucible/fixy/ (recursing into grant/, sync/, spawn/, syscall/)
+# and emits every free-function mint_* declaration whose name is NOT
+# already a substrate mint.
+#
+# Names present in BOTH fixy/ and a substrate tree are EXCLUDED here:
+#   * A substrate mint forwarded/re-exported through fixy/ is already
+#     tracked in the substrate section (its `fixy` cell records the
+#     re-export site).
+#   * A name-collision between a substrate token mint and a DISTINCT
+#     fixy grant mint (e.g. safety::mint_scoped_fence the token mint vs
+#     the grant::hw::scope mint_scoped_fence) is the pre-existing by-name
+#     attribution limitation: the substrate row absorbs the shared name.
+#     Resolving the collision is out of scope for V-271 (whose premise is
+#     the previously-untracked fixy-ORIGIN mints, not name disambiguation).
+#
+# The "fixy re-export" column is structurally inapplicable here (these
+# mints ARE the fixy declaration), exactly like the member-function
+# section — so the emitted row omits it.  nd/cx/ne/rq/cb compliance and
+# HS14 fixture coverage are still audited.
+#
+# Input:  $1 = path to a sorted file of substrate mint names (one per
+#              line) to exclude.
+# Emits TAB-separated rows:
+#   name<TAB>file:line<TAB>nd<TAB>cx<TAB>ne<TAB>rq<TAB>cb<TAB>cv
+scan_fixy_mints() {
+    local exclude_file="$1"
+    local dir="$scan_root/include/crucible/fixy"
+    [[ -d "$dir" ]] || return 0
+
+    while IFS=: read -r file line text; do
+        # Same line-skip discipline as scan_substrate: drop comment lines,
+        # pure-call lines, defaulted/deleted special members, string-literal
+        # continuations, and friend declarations.
+        local stripped="${text#"${text%%[![:space:]]*}"}"
+        case "$stripped" in
+            '//'*|'///'*|'*'*|'/*'*) continue ;;
+            'return '*|'return('*|'auto '*=*) continue ;;
+            *'= default'*|*'=default'*|*'= delete'*|*'=delete'*) continue ;;
+            '"'*) continue ;;
+            'friend '*|'friend('*) continue ;;
+        esac
+
+        local name
+        name="$(awk 'match($0, /(^|[^A-Za-z0-9_])mint_[a-z0-9_]+[[:space:]]*\(/) {
+                         s = substr($0, RSTART, RLENGTH);
+                         sub(/^[^A-Za-z0-9_]*/, "", s);
+                         sub(/[[:space:]]*\(.*$/, "", s);
+                         print s; exit }' <<<"$text")"
+        [[ -z "$name" ]] && continue
+
+        # Exclude substrate-origin names (forwarders / re-exports /
+        # name-collisions) — those belong in the substrate section.
+        # `grep -qxF` is a whole-line fixed match so `mint_fn` excludes
+        # ONLY `mint_fn`, never `mint_fn_for`.
+        if [[ -s "$exclude_file" ]] && grep -qxF "$name" "$exclude_file"; then
+            continue
+        fi
+
+        local quals
+        quals="$(extract_qualifiers "$file" "$line")"
+
+        local rel="${file#"$scan_root"/}"
+        printf '%s\t%s:%s\t%s\n' "$name" "$rel" "$line" "$quals"
+    done < <(
+        rg -nP \
+           --no-heading \
+           --type=cpp \
+           --glob '!_*.h' \
+           '\bmint_[a-z0-9_]+\s*\(' "$dir" 2>/dev/null || true
+    )
+}
+
 # ── Cross-reference one mint_name into fixy/ for re-export status ────
 # Returns: fixy_path (e.g. "include/crucible/fixy/Sess.h:123") or empty.
 # We accept the FIRST match (sorted by file then line) as the canonical
@@ -354,23 +438,48 @@ fixy_reexport_for() {
 # the fixtures — counting only fixy_neg falsely flagged ~33 such mints.
 # Span every test/*_neg/ tree so the count reflects ACTUAL coverage; the
 # separate NO-FIXY cell still records whether the mint is fixy-re-exported.
-hs14_count_for() {
-    local name="$1"
+# FIXY-V-271: the count is the number of FILES under test/*_neg/ that
+# mention a `mint_*` name (word-boundary match).  The per-mint form
+# (`rg -lP "\bNAME\b" | wc -l`, one rg spawn per mint, ~150 for the full
+# inventory) pushed the generator past the FIXY-U-106 <5s acceptance
+# budget once the fixy-origin section added 30 more lookups.  Replaced
+# with a SINGLE rg pass (build_hs14_index) that tokenizes every
+# `\bmint_[a-z0-9_]+\b` occurrence across all neg trees, deduplicates
+# (file, token) pairs, and counts distinct files per token into
+# CRUCIBLE_HS14_INDEX.  The broad token regex captures the WHOLE
+# identifier (underscores + digits), so `mint_async_copy` and
+# `mint_async_copy_extra` stay distinct — semantically identical to the
+# old per-name `\bNAME\b` form.  The --check drift gate + --self-test
+# HS14:2 assertion validate the counts match.
+declare -A CRUCIBLE_HS14_INDEX=()
+
+build_hs14_index() {
     local dirs=() d
     for d in "$scan_root"/test/*_neg/; do
         [[ -d "$d" ]] && dirs+=("$d")
     done
-    [[ ${#dirs[@]} -eq 0 ]] && { printf '0'; return; }
-    local raw
-    raw="$(rg -lP --no-heading "\b${name}\b" "${dirs[@]}" 2>/dev/null || true)"
-    if [[ -z "$raw" ]]; then
-        printf '0'
-    else
-        # `printf '%s\n'` ensures a trailing newline so wc -l counts the
-        # final line; without it `wc -l` reports an off-by-one (counts
-        # only embedded \n, not the implicit final line).
-        printf '%s\n' "$raw" | wc -l | awk '{print $1}'
-    fi
+    [[ ${#dirs[@]} -eq 0 ]] && return 0
+
+    local name count
+    # Process substitution (`< <(...)`) runs the while loop in THIS shell
+    # so the global associative-array assignments persist; a pipe would
+    # spawn a subshell and lose them.  No -n, so the token is the last
+    # colon-field and the file is $1 (test/*_neg/ paths contain no colon).
+    while IFS=$'\t' read -r name count; do
+        [[ -n "$name" ]] && CRUCIBLE_HS14_INDEX["$name"]="$count"
+    done < <(
+        rg -oP --no-heading --with-filename '\bmint_[a-z0-9_]+\b' \
+           "${dirs[@]}" 2>/dev/null \
+          | awk -F: '{
+                file = $1; tok = $NF;
+                key = file SUBSEP tok;
+                if (!(key in seen)) { seen[key] = 1; cnt[tok]++ }
+            } END { for (t in cnt) printf "%s\t%s\n", t, cnt[t] }'
+    )
+}
+
+hs14_count_for() {
+    printf '%s' "${CRUCIBLE_HS14_INDEX[$1]:-0}"
 }
 
 # ── --self-test ──────────────────────────────────────────────────────
@@ -393,7 +502,17 @@ PLANTED
 #pragma once
 #include <crucible/safety/PlantedSelfTest.h>
 namespace crucible::fixy::planted {
-using ::crucible::planted::mint_planted_token;
+// FIXY-V-271: forwarding DEFINITION re-exporting the substrate mint.  Shares
+// the name mint_planted_token with safety/PlantedSelfTest.h, so it (a) feeds
+// the substrate row's `fixy` re-export cell AND (b) MUST be EXCLUDED from the
+// fixy-origin section (the substrate section owns the canonical row).
+[[nodiscard]] constexpr ::crucible::planted::PlantedToken
+mint_planted_token() noexcept { return ::crucible::planted::mint_planted_token(); }
+// FIXY-V-271: a fixy-ORIGIN mint with NO substrate counterpart — MUST
+// surface in the "fixy-origin mints" section.
+struct FixyOriginToken {};
+[[nodiscard]] constexpr FixyOriginToken
+mint_planted_fixy_origin() noexcept { return {}; }
 }
 FIXY
     cat >"$tmp_root/test/fixy_neg/neg_fixy_planted_a.cpp" <<'NEG'
@@ -490,8 +609,27 @@ HOST
         rm -f "$out"
         exit 2
     fi
+    # ── fixy-origin mint discovery (FIXY-V-271) ──
+    # Planted fixy/Planted.h DEFINES mint_planted_fixy_origin (no substrate
+    # counterpart) and a same-named forwarding mint_planted_token (substrate
+    # origin).  Assert the fixy-origin SECTION captures the former and
+    # EXCLUDES the latter — a substrate mint re-exported through fixy/
+    # belongs in the substrate section, not fixy-origin.
+    fixy_section="$(awk '/^## fixy-origin mints$/{f=1;next} /^## /{f=0} f' "$out")"
+    if ! grep -qF 'mint_planted_fixy_origin' <<<"$fixy_section"; then
+        printf 'gen-mint-inventory: SELF-TEST FAILED — fixy-origin mint not captured in fixy-origin section.\n' >&2
+        printf '── output ───\n%s\n────────────\n' "$(cat "$out")" >&2
+        rm -f "$out"
+        exit 2
+    fi
+    if grep -qF 'mint_planted_token' <<<"$fixy_section"; then
+        printf 'gen-mint-inventory: SELF-TEST FAILED — substrate mint_planted_token leaked into fixy-origin section (must be excluded).\n' >&2
+        printf '── output ───\n%s\n────────────\n' "$(cat "$out")" >&2
+        rm -f "$out"
+        exit 2
+    fi
     rm -f "$out"
-    printf 'gen-mint-inventory: self-test passed — substrate mint + fixy re-export + HS14 count + member-function discovery (CRUCIBLE_* + [[...]] annotation families) all honoured.\n' >&2
+    printf 'gen-mint-inventory: self-test passed — substrate mint + fixy re-export + HS14 count + member-function discovery (CRUCIBLE_* + [[...]] annotation families) + fixy-origin capture/exclusion all honoured.\n' >&2
     exit 0
 fi
 
@@ -513,6 +651,10 @@ done | sort -t$'\t' -k1,1 -k2,2 -k3,3 | \
 
 # ── Emit markdown ────────────────────────────────────────────────────
 emit_inventory() {
+    # FIXY-V-271: one-time HS14 fixture-count index (replaces ~150 per-mint
+    # rg spawns) — keeps generation under the FIXY-U-106 <5s budget.
+    build_hs14_index
+
     local generated_at
     generated_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
     cat <<HEADER
@@ -655,11 +797,64 @@ HEADER
         done <<<"$mf_rows"
     fi
 
+    # ── fixy-origin mints (FIXY-V-271) ───────────────────────────────
+    # Free-function mints whose canonical declaration lives in fixy/ with
+    # no substrate counterpart.  See scan_fixy_mints() for the discovery +
+    # substrate-name exclusion algorithm.  The "fixy re-export" cell is
+    # structurally inapplicable (these ARE fixy), so it is omitted — but
+    # §XXI nd/cx/ne/rq/cb compliance and HS14 fixture coverage are audited
+    # exactly as for substrate mints.
+    local fixy_rows fixy_origin_count=0 sub_names_tmp
+    sub_names_tmp="$(mktemp)"
+    cut -f2 "$inventory_tmp" | sort -u >"$sub_names_tmp"
+    fixy_rows="$(scan_fixy_mints "$sub_names_tmp" \
+                   | sort -t$'\t' -k1,1 -k2,2 | awk -F'\t' '!seen[$1]++')"
+    rm -f "$sub_names_tmp"
+    if [[ -n "$fixy_rows" ]]; then
+        printf '\n## fixy-origin mints\n\n'
+        printf 'These §XXI mints are declared canonically in `include/crucible/fixy/`\n'
+        printf 'with no substrate counterpart (the hardware-axis grant mints, the\n'
+        printf 'syscall/mmap/io factories, the durable-Cipher writers, the spawn\n'
+        printf 'factories, the async-pipeline mints).  Because their origin IS\n'
+        printf 'fixy::, the "fixy re-export" column is structurally inapplicable —\n'
+        printf 'but `nd cx ne rq cb` §XXI compliance and HS14 fixture coverage are\n'
+        printf 'audited exactly as for substrate mints.  Names that collide with a\n'
+        printf 'substrate mint (forwarders, re-exports, or distinct same-named\n'
+        printf 'mints) are listed in the substrate section instead.\n\n'
+        printf '| mint_name | file:line | nd | cx | ne | rq | cb | HS14 |\n'
+        printf '|---|---|---|---|---|---|---|---|\n'
+        while IFS=$'\t' read -r name fileline nd cx ne rq cb cv; do
+            [[ -z "$name" ]] && continue
+            local fo_nd_cell="-" fo_cx_cell="-" fo_ne_cell="-" fo_rq_cell="-" fo_cb_cell="token"
+            [[ "$nd" == "1" ]] && fo_nd_cell="Y"
+            [[ "$cx" == "1" ]] && fo_cx_cell="Y"
+            [[ "$ne" == "1" ]] && fo_ne_cell="Y"
+            [[ "$rq" == "1" ]] && fo_rq_cell="Y"
+            [[ "$cb" == "1" ]] && fo_cb_cell="ctx"
+
+            # FIXY-V-021: §XXI alloc carve-out — see substrate loop.
+            if [[ "$cv" == "1" && "$cx" == "0" ]]; then
+                fo_cx_cell="- (alloc)"
+            fi
+
+            local fo_hs14 fo_hs14_cell
+            fo_hs14="$(hs14_count_for "$name")"
+            fo_hs14_cell="HS14: $fo_hs14"
+            (( fo_hs14 < 2 )) && fo_hs14_cell="HS14: $fo_hs14 ⚠"
+
+            printf '| `%s` | `%s` | %s | %s | %s | %s | %s | %s |\n' \
+                "$name" "$fileline" "$fo_nd_cell" "$fo_cx_cell" "$fo_ne_cell" \
+                "$fo_rq_cell" "$fo_cb_cell" "$fo_hs14_cell"
+            fixy_origin_count=$((fixy_origin_count + 1))
+        done <<<"$fixy_rows"
+    fi
+
     printf '\n'
     printf '## Summary\n\n'
     printf -- '- Total substrate mints: %d\n' "$(wc -l <"$inventory_tmp")"
     printf -- '- Missing fixy re-export: %d\n' "$violation_count"
     printf -- '- Member-function mints: %d (separate §XXI grep-target — see above)\n' "$mf_count"
+    printf -- '- fixy-origin mints: %d (declared in fixy/, no substrate counterpart — see above)\n' "$fixy_origin_count"
     printf -- '- See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.\n'
 }
 
