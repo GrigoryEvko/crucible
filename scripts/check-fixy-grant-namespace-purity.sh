@@ -138,6 +138,15 @@ while IFS=: read -r file line text; do
             # structural-validation concepts.
             continue
             ;;
+        include/crucible/fixy/Hw.h)
+            # V-257 HwInstruction / BarrierStrength / SimdIsa / Representation
+            # axis-specialized catalog (10 grant::hw::* families: cache<>/
+            # barrier<>/tsc<>/rng<>/cpuid<>/msr<>/port_io<>/asm_<>/
+            # simd_width<>/vendor_intrinsic<> routing onto the V-253 hardware
+            # axes).  Specializes which_dim<> only; does NOT extend grant_base
+            # hierarchy or introduce new structural-validation concepts.
+            continue
+            ;;
         include/crucible/fixy/syscall/Family.h)
             # V-098 SyscallSurface axis-specialized catalog (9 family-tier
             # grants).  Specializes which_dim<> + family_tier<> only.

@@ -300,6 +300,7 @@ crucible_test(test_fixy_v_252_barrier_strength)         # FIXY-V-252 BarrierStre
 crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
+crucible_test(test_fixy_v_257_hw_grants)                # FIXY-V-257 fixy/Hw.h — 10 grant::hw::* families (cache/barrier/tsc/rng/cpuid/msr/port_io/asm_/simd_width/vendor_intrinsic) + 5 §XXI mints
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
@@ -11928,6 +11929,38 @@ crucible_neg_compile_fixy_test(neg_fixy_v_234_advise_release_aware_missing_permi
     "no matching function|too few arguments|Permission|constraints not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_v_234_advise_release_aware_cross_tag_permission
     "cannot bind|no matching function|invalid initialization|deduced conflicting|could not convert")
+
+# ── FIXY-V-257 — fixy/Hw.h §XXI hw-grant mint discipline (HS14) ─────
+# Ten fixtures cover two distinct mismatch classes per NEW mint (5 mints
+# → ≥2 each, per HS14):
+#   asm_            : empty-rationale (rationale_nonempty) + non-ExecCtx
+#   simd_width      : invalid-width (valid_simd_width)     + non-ExecCtx
+#   vendor_intrinsic: empty-id (rationale_nonempty)        + non-ExecCtx
+#   tsc             : Mode==NotAllowed (strict default)    + missing CpuPinProof
+#   msr             : missing Permission<root>             + wrong-tag Permission
+# Together they witness the §XXI fit-check fires along EVERY load-bearing
+# gate (rationale × width × strict-default posture × proof-token presence
+# × authority-tag identity × ExecCtx floor).
+crucible_neg_compile_fixy_test(neg_fixy_v_257_asm_empty_rationale
+    "no matching function|CtxFitsAsmMint|constraints not satisfied|rationale_nonempty")
+crucible_neg_compile_fixy_test(neg_fixy_v_257_asm_non_ctx
+    "no matching function|constraints not satisfied|IsExecCtx")
+crucible_neg_compile_fixy_test(neg_fixy_v_257_simd_width_invalid
+    "no matching function|CtxFitsSimdWidthMint|constraints not satisfied|valid_simd_width")
+crucible_neg_compile_fixy_test(neg_fixy_v_257_simd_width_non_ctx
+    "no matching function|constraints not satisfied|IsExecCtx")
+crucible_neg_compile_fixy_test(neg_fixy_v_257_vendor_intrinsic_empty_id
+    "no matching function|CtxFitsVendorIntrinsicMint|constraints not satisfied|rationale_nonempty")
+crucible_neg_compile_fixy_test(neg_fixy_v_257_vendor_intrinsic_non_ctx
+    "no matching function|constraints not satisfied|IsExecCtx")
+crucible_neg_compile_fixy_test(neg_fixy_v_257_tsc_not_allowed
+    "no matching function|CtxFitsTscMint|constraints not satisfied|NotAllowed")
+crucible_neg_compile_fixy_test(neg_fixy_v_257_tsc_missing_proof
+    "no matching function|too few arguments|CpuPinProof")
+crucible_neg_compile_fixy_test(neg_fixy_v_257_msr_missing_permission
+    "no matching function|too few arguments|Permission")
+crucible_neg_compile_fixy_test(neg_fixy_v_257_msr_wrong_permission
+    "no matching function|could not convert|cannot bind|Permission")
 
 # ── FIXY-V-226 — fixy/Io.h HS14 neg-compile fixtures (#2104) ────────
 #
