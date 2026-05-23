@@ -111,9 +111,11 @@
 //   delta, one for ts_ns).  Matches SchedSwitch's canonical pattern;
 //   saves one helper call (~50 ns per event).
 
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
 #include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
 #include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/fixy/syscall/Per.h>                       // FIXY-V-179
 #include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
 #include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
 
@@ -121,6 +123,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <tuple>                            // FIXY-V-179
 
 namespace crucible::perf {
 
@@ -319,6 +322,37 @@ template <class Ctx>
 concept CtxFitsLockContentionMint =
        ::crucible::effects::IsExecCtx<Ctx>
     && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+
+// ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
+//
+// `mint_lock_contention_syscall_grants` enumerates every privileged
+// Linux syscall LockContention::load() issues.  Audit-trail discipline
+// mirroring FIXY-V-180's mint_hardening (warden/Hardening.h).
+//
+// Family-tier table:
+//   bpf             (41) → Privilege      → Row<IO, Block>     [V-179]
+//   perf_event_open (42) → Privilege      → Row<IO, Block>     [V-179]
+//   mmap            (21) → MemoryMapping  → Row<IO>
+using mint_lock_contention_syscall_grants = std::tuple<
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::bpf>,
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::mmap>>;
+
+namespace detail::v179_lock_contention_grant_check {
+namespace fsc = ::crucible::fixy::grant::syscall;
+namespace fll = ::crucible::algebra::lattices;
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::bpf>>             == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::perf_event_open>> == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::mmap>>            == fll::SyscallFamily::MemoryMapping);
+static_assert(std::tuple_size_v<mint_lock_contention_syscall_grants> == 3,
+    "FIXY-V-179: mint_lock_contention_syscall_grants drifted from 3 entries.");
+}  // namespace detail::v179_lock_contention_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsLockContentionMint<Ctx>

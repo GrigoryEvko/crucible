@@ -44,9 +44,11 @@
 // libbpf load/verify fails), load() returns nullopt and the caller
 // proceeds without sensory data — ns/cycles latencies are unaffected.
 
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
 #include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
 #include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/fixy/syscall/Per.h>                       // FIXY-V-179
 #include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
 #include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
 
@@ -54,6 +56,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <tuple>                            // FIXY-V-179
 
 namespace crucible::perf {
 
@@ -313,6 +316,45 @@ template <class Ctx>
 concept CtxFitsSenseHubMint =
        ::crucible::effects::IsExecCtx<Ctx>
     && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+
+// ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
+//
+// `mint_sense_hub_syscall_grants` enumerates every privileged Linux
+// syscall SenseHub::load() issues.  Audit-trail discipline mirroring
+// FIXY-V-180's mint_hardening (warden/Hardening.h).
+//
+// Family-tier table (V-097 SyscallFamily; V-100 Bridge.h row-lift):
+//   bpf             (41) → Privilege      → Row<IO, Block>     [V-179]
+//   perf_event_open (42) → Privilege      → Row<IO, Block>     [V-179]
+//   mmap            (21) → MemoryMapping  → Row<IO>
+//
+// Row note: ColdInitCtx is `Row<Init, Alloc, IO>`; Init is the startup
+// pass-through capability admitting blocking work without `Block` in
+// the row.  This declaration is a CLASSIFICATION annotation, not a
+// row-subrow tightening (see V-180 doc-block for the rationale).
+using mint_sense_hub_syscall_grants = std::tuple<
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::bpf>,
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::mmap>>;
+
+namespace detail::v179_sense_hub_grant_check {
+namespace fsc = ::crucible::fixy::grant::syscall;
+namespace fll = ::crucible::algebra::lattices;
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::bpf>>             == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::perf_event_open>> == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::mmap>>            == fll::SyscallFamily::MemoryMapping);
+static_assert(std::tuple_size_v<mint_sense_hub_syscall_grants> == 3,
+    "FIXY-V-179: mint_sense_hub_syscall_grants drifted from 3 entries.  "
+    "If you added a syscall to SenseHub::load(), append the new "
+    "per<SyscallId::X> to the tuple AND extend SyscallId in "
+    "fixy/syscall/Per.h (append-only) AND add a family_tier_v check.");
+}  // namespace detail::v179_sense_hub_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSenseHubMint<Ctx>

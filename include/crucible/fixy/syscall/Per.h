@@ -157,6 +157,15 @@ enum class SyscallId : std::uint16_t {
     mlock            = 38,  // page locking (MemoryMapping)
     munlock          = 39,  // page unlocking (MemoryMapping)
     prctl            = 40,  // process control (PR_SET_THP_DISABLE etc., Privilege)
+
+    // ── Append-only V-179 extensions (perf/* hub surface) ──────────
+    // Two BPF-loader syscalls the 7 perf hubs share (SenseHub /
+    // PmuSample / LockContention / SchedSwitch / SchedTpBtf /
+    // SyscallTpBtf / SyscallLatency).  Both are PRIVILEGED — bpf(2)
+    // requires CAP_BPF, perf_event_open(2) requires CAP_PERFMON (kernel
+    // ≥5.8) or CAP_SYS_ADMIN.  Ordinals 41-42 frozen forever.
+    bpf              = 41,  // BPF program load + map ops (Privilege)
+    perf_event_open  = 42,  // perf event fd open + ringbuf map (Privilege)
 };
 
 // ── family_of(SyscallId) — the load-bearing classifier ─────────────
@@ -226,6 +235,10 @@ family_of(SyscallId id) noexcept {
         case SyscallId::ptrace:            return SF::Privilege;
         case SyscallId::capset:            return SF::Privilege;
         case SyscallId::prctl:             return SF::Privilege;
+        // V-179: BPF + perf_event_open both require capabilities
+        // (CAP_BPF / CAP_PERFMON).  Privilege tier per the V-097 chain.
+        case SyscallId::bpf:               return SF::Privilege;
+        case SyscallId::perf_event_open:   return SF::Privilege;
 
         // V-180 MemoryMapping additions — mem-locking is a mapping-state
         // modifier (locks pages into RAM, attribute of an existing mapping).
@@ -372,6 +385,10 @@ static_assert(family_tier_v<sc::per<SI::mlock2>>            == SF::MemoryMapping
 static_assert(family_tier_v<sc::per<SI::munlock>>           == SF::MemoryMapping);
 static_assert(family_tier_v<sc::per<SI::prctl>>             == SF::Privilege);
 
+// V-179: perf/* hub surface additions — BPF + perf_event_open.
+static_assert(family_tier_v<sc::per<SI::bpf>>               == SF::Privilege);
+static_assert(family_tier_v<sc::per<SI::perf_event_open>>   == SF::Privilege);
+
 // ── Layer 5: NTTP-distinctness — distinct Ids → distinct types ──────
 // Sampled across every tier boundary; sentinel TU runs the full
 // 36×35/2 = 630-cell distinctness matrix.
@@ -446,10 +463,12 @@ static_assert(!std::is_same_v<sc::per<SI::clock_gettime>,   sc::family_vdso_only
     // ProcessControl tier — 2 enumerators
     if (sc::family_of(SI::clone)             != SF::ProcessControl) return false;
     if (sc::family_of(SI::execve)            != SF::ProcessControl) return false;
-    // Privilege tier — 3 enumerators (V-180 added prctl)
+    // Privilege tier — 5 enumerators (V-180 added prctl; V-179 added bpf, perf_event_open)
     if (sc::family_of(SI::ptrace)            != SF::Privilege)      return false;
     if (sc::family_of(SI::capset)            != SF::Privilege)      return false;
     if (sc::family_of(SI::prctl)             != SF::Privilege)      return false;
+    if (sc::family_of(SI::bpf)               != SF::Privilege)      return false;
+    if (sc::family_of(SI::perf_event_open)   != SF::Privilege)      return false;
     // V-180 MemoryMapping additions — mem-locking syscalls
     if (sc::family_of(SI::mlock2)            != SF::MemoryMapping)  return false;
     if (sc::family_of(SI::mlock)             != SF::MemoryMapping)  return false;
@@ -464,20 +483,21 @@ static_assert(every_syscall_id_classified_correctly(),
     "under-restrictive).");
 
 // ── Cardinality pin — SyscallId catalog size ────────────────────────
-// V-098 shipped 36 enumerators (4 + 8 + 9 + 4 + 3 + 4 + 2 + 2).  V-180
-// appended 5 more (sched_setattr / mlock2 / mlock / munlock / prctl) at
-// ordinals 36..40 to cover the warden/Hardening.h surface; new total 41
-// = 4 + 8 + 9 + (4+3) + (3+1) + 4 + 2 + (2+1).  Growing the catalog
-// is fine (append-only); shrinking or reordering is a federation-cache
-// silent invalidation.
+// V-098 shipped 36 enumerators.  V-180 appended 5 (sched_setattr /
+// mlock2 / mlock / munlock / prctl) at ordinals 36..40 for the warden
+// surface.  V-179 appended 2 more (bpf / perf_event_open) at ordinals
+// 41..42 for the perf hub surface.  New total 43 = 4 + 8 + 9 + (4+3)
+// + (3+1) + 4 + 2 + (2+1+2).  Growing the catalog is fine (append-
+// only); shrinking or reordering is a federation-cache silent
+// invalidation.
 static constexpr std::size_t syscall_id_count =
     std::meta::enumerators_of(^^SI).size();
-static_assert(syscall_id_count == 41,
-    "FIXY-V-180: SyscallId catalog drifted from the 41-enumerator "
-    "shipped surface (V-098's 36 + V-180's 5 warden additions).  If "
-    "you're adding a new syscall, append it at the next free ordinal "
-    "AND extend the family_of() switch arm AND add an arm to "
-    "every_syscall_id_classified_correctly().  Reordering / shrinking "
+static_assert(syscall_id_count == 43,
+    "FIXY-V-179/V-180: SyscallId catalog drifted from the 43-enumerator "
+    "shipped surface (V-098's 36 + V-180's 5 warden + V-179's 2 perf "
+    "additions).  If you're adding a new syscall, append it at the next "
+    "free ordinal AND extend the family_of() switch arm AND add an arm "
+    "to every_syscall_id_classified_correctly().  Reordering / shrinking "
     "the enum silently invalidates every stored row_hash (federation "
     "cache key).");
 

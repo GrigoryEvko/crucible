@@ -319,6 +319,7 @@ crucible_test(test_fixy_v_274_async_pipeline)           # FIXY-V-274 fixy/AsyncP
 crucible_test(test_fixy_v_203_spawn_join_policy)        # FIXY-V-203 fixy/spawn/JoinPolicy.h — spawn-MECHANISM phantom tag tree (AutoJoin/ManualJoin/Detached/Cloned/Forked/PosixSpawn) + IsJoinMechanismTag identity allowlist (Agent 7 §fixy::spawn::; orthogonal to V-078 strictness lattice)
 crucible_test(test_fixy_v_204_spawn_grant)              # FIXY-V-204 fixy/spawn/SpawnGrant.h — 5 engagement grants (detach_with/syscall_only/subprocess/fork_parent/exec_ctx) + rationale_nonempty_v in-class static_assert + JoinPolicyGrantsCoherent V-203×V-204 bridge concept (Agent 7 §fixy::spawn::)
 crucible_test(test_fixy_v_180_hardening_syscall_grants) # FIXY-V-180 warden/Hardening.h — mint_hardening_syscall_grants 7-tuple + SyscallId universe extension (sched_setattr/mlock/mlock2/munlock/prctl at ordinals 36-40, append-only) + family_tier + V-100 Bridge row-lift pin (Agent 3 Σ4)
+crucible_test(test_fixy_v_179_perf_hubs_syscall_grants) # FIXY-V-179 perf/{SenseHub,PmuSample,LockContention,SchedSwitch,SchedTpBtf,SyscallTpBtf,SyscallLatency}.h — 7 mint_<hub>_syscall_grants 3-tuples + SyscallId universe extension (bpf/perf_event_open at ordinals 41-42, append-only Privilege-tier) + family_tier + V-100 Bridge row-lift pin (Agent 3 Σ3)
 crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
@@ -12999,6 +13000,23 @@ crucible_neg_compile_fixy_test(neg_fixy_v_180_hardening_bg_drain_reject
     "CtxFitsHardeningMint|CtxOwnsCapability|constraints not satisfied|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_v_180_hardening_hot_fg_reject
     "CtxFitsHardeningMint|CtxOwnsCapability|constraints not satisfied|associated constraints are not satisfied")
+
+# ── FIXY-V-179 — perf hub syscall-grant annotations HS14 floor ──────
+#
+# Two fixtures cover distinct Init-rejection axes across the 7 perf
+# hubs (the syscall_grants tuples + CtxFits*Mint gates are siblings):
+#   1. bg_drain_reject — Bg-cap context, mint_sense_hub call site
+#      (admits Bg+Alloc+IO+Block, no Init).  Perf hubs' bpf()/perf_event_open
+#      load is startup-only.
+#   2. hot_fg_reject — Fg-cap context, mint_pmu_sample call site
+#      (admits Fg only, no Init).  Blocking startup syscalls don't
+#      belong on the hot recording path.
+# Distinct fixtures exercise distinct mint sites (mint_sense_hub vs
+# mint_pmu_sample) — HS14 floor satisfied per CLAUDE.md §XXI.
+crucible_neg_compile_fixy_test(neg_fixy_v_179_perf_hubs_bg_drain_reject
+    "CtxFitsSenseHubMint|CtxOwnsCapability|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_v_179_perf_hubs_hot_fg_reject
+    "CtxFitsPmuSampleMint|CtxOwnsCapability|constraints not satisfied|associated constraints are not satisfied")
 
 # ── FIXY-V-084 — fixy::sync::{Wait,MemOrder} surface HS14 floor ─────
 #
