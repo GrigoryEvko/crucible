@@ -9532,17 +9532,37 @@ crucible_neg_compile_test(neg_owned_file_copy_assign_rejected
 # wrapper for mmap'd (addr, len) pairs, paralleling OwnedFile / FileHandle.
 # Exclusive ownership = copy-ctor + copy-assign deleted with the structured
 # reason string; phantom Tag is load-bearing for overload resolution.
-# Three distinct mismatch classes:
-#   #1 copy-ctor side of the deleted-copy pair
-#   #2 copy-assignment side of the deleted-copy pair
+# Five distinct mismatch classes (the three task-specified gates plus
+# two structural follow-ons):
+#   #1 copy-ctor side of the deleted-copy pair (task spec gate #1).
+#   #2 copy-assignment side of the deleted-copy pair (structural follow-
+#      on; not separately named in the task, but is the symmetric red of
+#      gate #1 — the same "mmap region is unique" reason fires).
 #   #3 cross-Tag mismatch — Tag is per-call-site identity, no implicit
 #      conversion between OwnedMmap<TagA,...> and OwnedMmap<TagB,...>.
+#   #4 release-without-leak-grant (task spec gate #2) — `release()` is
+#      gated by `requires IsLeakGrant<LeakGrant>`; calling with a random
+#      type (`int`) fires SFINAE/concept rejection.  The leak grant
+#      family is `fixy::grant::leak::resource<RationaleTag>` (a
+#      partial specialization at the fixy layer flips the safety-layer
+#      primary trait to true).
+#   #5 release-on-lvalue (task spec gate #3, post-consume static-reject)
+#      — `release()` is `&&`-qualified, so calling it on an lvalue
+#      fails ref-qualifier binding.  Combined with the internal
+#      sentinel swap (addr_ <- MAP_FAILED on the way out), double-
+#      munmap is structurally impossible.  This IS the post-consume
+#      static-assert in C++ syntax — the rvalue-ref qualifier IS the
+#      consume-once gate.
 crucible_neg_compile_test(neg_owned_mmap_copy_rejected
     "use of deleted function|deleted|copy|double-unmap")
 crucible_neg_compile_test(neg_owned_mmap_copy_assign_rejected
     "use of deleted function|deleted|copy|double-unmap")
 crucible_neg_compile_test(neg_owned_mmap_cross_tag_mismatch
     "invalid initialization|cannot convert|no matching function|deduced conflicting")
+crucible_neg_compile_test(neg_owned_mmap_release_without_leak_grant
+    "no matching function|constraints not satisfied|IsLeakGrant|is_leak_grant")
+crucible_neg_compile_test(neg_owned_mmap_release_on_lvalue
+    "no matching function|cannot bind|rvalue|ref-qualif|discards qualifiers")
 
 # fixy-A1-014 HS14 floor — `ct::eq` is a span-only API and fires
 # CRUCIBLE_PRE on length mismatch.  Pre-fix `(ptr, ptr, size_t)` silently

@@ -118,6 +118,37 @@
 
 namespace crucible::safety {
 
+// ── IsLeakGrant<G> — type-system hook for deliberate-leak rationale ─
+//
+// The primary template returns false; only types explicitly
+// whitelisted via partial specialization satisfy the concept.  The
+// canonical specializer is `fixy/Mmap.h`, which flips
+// `is_leak_grant<crucible::fixy::grant::leak::resource<Rationale>>`
+// to true.
+//
+// Why a trait rather than a base class: the grant tag family lives
+// at the FIXY layer (where syscall surfaces are gated); the safety
+// wrapper is meant to be substrate-pure.  A primary trait here +
+// partial specialization at the fixy layer is the canonical
+// extension-by-trait pattern — the safety wrapper never names the
+// fixy grant types, but the gate still fires because the trait
+// pivot lives in safety/.
+//
+// Consumers that try to call `release()` without supplying a leak
+// grant get a substitution failure ("no matching function") because
+// `IsLeakGrant<LeakGrant>` is unsatisfied — this IS the V-231 HS14
+// fixture #4 (release-without-grant) gate.
+
+template <typename G>
+struct is_leak_grant : std::false_type {};
+
+template <typename G>
+inline constexpr bool is_leak_grant_v =
+    is_leak_grant<std::remove_cv_t<std::remove_reference_t<G>>>::value;
+
+template <typename G>
+concept IsLeakGrant = is_leak_grant_v<G>;
+
 // ── OwnedMmap<Tag, Prot, Share> — Linear RAII region ─────────────────
 //
 // Move-only RAII over an mmap'd region.  Destructor calls
@@ -181,7 +212,35 @@ public:
     // subsystem (e.g. perf_event_open ringbuf transferred to the
     // kernel) that will close it on its own schedule.  Rare; almost
     // every owner-transfer uses move-construction instead.
-    [[nodiscard]] std::pair<void*, std::size_t> release() noexcept {
+    //
+    // Two type-system gates make accidental misuse impossible:
+    //
+    //   (1) `LeakGrant` template parameter MUST satisfy
+    //       `IsLeakGrant` — i.e. be a type explicitly whitelisted
+    //       via partial specialization (canonically
+    //       `fixy::grant::leak::resource<RationaleTag>`).  This is
+    //       V-231 HS14 fixture #2: calling `release(unrelated_obj)`
+    //       fires SFINAE rejection because the random type doesn't
+    //       satisfy `IsLeakGrant`.
+    //
+    //   (2) The method is `&&`-qualified — only callable on an
+    //       rvalue OwnedMmap.  Calling `region.release(grant)` on
+    //       an lvalue is a hard compile error ("cannot bind to
+    //       lvalue").  This is V-231 HS14 fixture #3 (post-consume
+    //       static-rejection): once you have a `release(...)`
+    //       outcome, *this is rvalue-only, so a SECOND release on
+    //       the moved-from lvalue cannot type-check without
+    //       another explicit `std::move`.  Combined with the
+    //       internal sentinel-swap (addr_ -> MAP_FAILED on the way
+    //       out), double-munmap is structurally impossible.
+    //
+    // The grant is passed by-value (typically empty struct, EBO-
+    // collapsed) so the rationale lives in the type system rather
+    // than at runtime.  Zero runtime cost beyond the sentinel swap.
+    template <typename LeakGrant>
+        requires IsLeakGrant<LeakGrant>
+    [[nodiscard]] std::pair<void*, std::size_t>
+    release(LeakGrant) && noexcept {
         return {std::exchange(addr_, MAP_FAILED),
                 std::exchange(len_,  0)};
     }

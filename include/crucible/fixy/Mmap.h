@@ -308,6 +308,30 @@ struct release_aware   final : grant_base {};
 
 }  // namespace mmap
 
+// ── leak — deliberate-resource-leak rationale grants ─────────────────
+//
+// `grant::leak::resource<RationaleTag>` gates the
+// `safety::OwnedMmap::release()` method (V-231 HS14 fixture #2 — the
+// release-without-grant rejection).  Calling `release()` without
+// supplying one of these grants is a hard compile error because the
+// `IsLeakGrant<LeakGrant>` concept primary template returns false; only
+// the partial specialization below flips it to true for this family.
+//
+// `RationaleTag` is an empty struct naming WHY the leak is acceptable.
+// Production rationales: handed-to-perf-event-kernel-ringbuf, handed-
+// to-XDP-socket-umem, handed-to-io_uring-fixed-buffer, etc.  Each call
+// site declares its own RationaleTag so a code reviewer sees the
+// rationale in the source AND a grep for the tag finds every leak.
+//
+// Empty struct + EBO-collapsible: zero runtime cost.
+
+namespace leak {
+
+template <typename RationaleTag>
+struct resource final : grant_base {};
+
+}  // namespace leak
+
 // ── which_dim routing ────────────────────────────────────────────────
 
 template <typename Prot>
@@ -326,7 +350,33 @@ template <typename RegionTag>
 struct which_dim<mmap::release_aware<RegionTag>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
 
+// leak::resource<RationaleTag> routes to the SyscallSurface axis
+// because a deliberate leak is the ABSENCE of the matching munmap
+// syscall — the axis tracks the syscall surface engaged (or, in
+// this case, deliberately NOT engaged) by the call site.
+
+template <typename RationaleTag>
+struct which_dim<leak::resource<RationaleTag>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
+
 }  // namespace crucible::fixy::grant
+
+// ── safety::is_leak_grant<grant::leak::resource<...>> = true ─────────
+//
+// Re-open the safety namespace to add the partial specialization that
+// flips the primary `is_leak_grant<G>` trait to true for the
+// canonical leak grant family.  This is the extension-by-trait
+// pattern: the safety/OwnedMmap.h primary template never names this
+// type; only the fixy layer's specialization makes it satisfy
+// `IsLeakGrant`.
+
+namespace crucible::safety {
+
+template <typename RationaleTag>
+struct is_leak_grant<::crucible::fixy::grant::leak::resource<RationaleTag>>
+    : std::true_type {};
+
+}  // namespace crucible::safety
 
 // ═════════════════════════════════════════════════════════════════════
 // ── OwnedMmap + concept gates + mints + advise ────────────────────────
@@ -829,6 +879,26 @@ static_assert(!CtxFitsSafeAdvise<::crucible::effects::TestRunnerCtx, advice::Don
 static_assert(CtxFitsReleaseAwareAdvise<::crucible::effects::TestRunnerCtx, advice::DontNeed, RegionA>);
 // Release-aware advise REJECTS non-dangerous advices (use safe surface).
 static_assert(!CtxFitsReleaseAwareAdvise<::crucible::effects::TestRunnerCtx, advice::HugePage, RegionA>);
+
+// ── V-231 leak-grant trait pivot ─────────────────────────────────────
+//
+// The `safety::is_leak_grant` primary returns false for non-grant
+// types; the partial specialization (added by this header in the
+// safety namespace block above) flips it to true for the canonical
+// `leak::resource<RationaleTag>` family.  Anchor both directions
+// here so the trait survives any future header refactor.
+
+struct DummyLeakRationale {};
+using LeakGrant = ::crucible::fixy::grant::leak::resource<DummyLeakRationale>;
+
+static_assert(::crucible::safety::is_leak_grant_v<LeakGrant>,
+              "leak::resource<RationaleTag> must satisfy IsLeakGrant");
+static_assert(::crucible::safety::IsLeakGrant<LeakGrant>,
+              "leak::resource<RationaleTag> must satisfy IsLeakGrant concept");
+static_assert(!::crucible::safety::is_leak_grant_v<int>,
+              "int must NOT satisfy IsLeakGrant");
+static_assert(!::crucible::safety::is_leak_grant_v<G_RO_Priv>,
+              "non-leak grants must NOT satisfy IsLeakGrant");
 
 }  // namespace self_test
 
