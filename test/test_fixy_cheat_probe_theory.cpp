@@ -66,7 +66,7 @@ namespace counter_witness {
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>,
+        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>>,
         "Counter-witness: the canonical fully-engaged strict pack MUST "
         "accept (Round 2 gate is not broken-shut).");
 }
@@ -298,7 +298,7 @@ namespace cheat_6_declassify_threading {
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>,
+        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>>,
         "Cheat 6 counter-witness: declassify<Policy> correctly "
         "discharges the corpus — the binding ACCEPTS even with the "
         "Secret×IO pattern present.");
@@ -342,7 +342,7 @@ namespace cheat_7_strict_default_security_bypass {
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>,
+        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>>,
         "Cheat 7 defense witness (classified_io): the corpus now "
         "rejects strict-default Security × IO without declassify, "
         "closing the fixy-CR-01 syntactic-vs-semantic bypass.");
@@ -357,7 +357,7 @@ namespace cheat_7_strict_default_security_bypass {
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>,
+        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>>,
         "Cheat 7 defense witness (classified_bg): the corpus now "
         "rejects strict-default Security × Bg without declassify.");
 
@@ -438,7 +438,7 @@ namespace cheat_8_wrong_axis_declassify {
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>,
+        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>>,
         "Cheat 8 defense witness (wrong-axis declassify rejected): "
         "AuditedLogging discharges IO export, not Staleness-replay; "
         "the corpus correctly rejects this combination per Hunt-Sands "
@@ -457,7 +457,7 @@ namespace cheat_8_wrong_axis_declassify {
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>,
+        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>>,
         "Cheat 8 counter-witness: AuthorizedReplay correctly "
         "discharges the staleness axis — the binding ACCEPTS with the "
         "Secret × stale_to pattern present because the named policy "
@@ -478,7 +478,7 @@ namespace cheat_8_wrong_axis_declassify {
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>,
+        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>>,
         "Cheat 8 defense witness (HashForCompare doesn't discharge "
         "Staleness): hash-release is a Security-axis discharge, not "
         "temporal.");
@@ -493,7 +493,7 @@ namespace cheat_8_wrong_axis_declassify {
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>,
+        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>>,
         "Cheat 8 defense witness (LengthOnly doesn't discharge "
         "Staleness): length-metadata release is a Security-axis "
         "discharge, not temporal.");
@@ -508,7 +508,7 @@ namespace cheat_8_wrong_axis_declassify {
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>,
+        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>>,
         "Cheat 8 defense witness (UserDisplay doesn't discharge "
         "Staleness): UI-display release is an IO-axis discharge, not "
         "temporal.");

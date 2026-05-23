@@ -64,7 +64,7 @@ int main() {
         strict<D::Synchronization>, strict<D::Regime>,
         strict<D::SyscallSurface>,
         strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>,
-        strict<D::GlobalState>, strict<D::Stdio>,
+        strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>,
         gr::fp_strict_ieee /* FpMode #1 */,
         gr::with_fp_rounding<sf::FpRounding::RoundToNearestEven>
                               /* FpMode #2 — duplicate */>(42);

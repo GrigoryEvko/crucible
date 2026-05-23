@@ -415,6 +415,31 @@ struct strict_default_for<dim::DimensionAxis::Stdio> {
     using type = safety::fn::stdio::Unconstrained;
 };
 
+// FIXY-V-253: HwInstruction / BarrierStrength / SimdIsa (DimensionAxis
+// 29-31, Crucible extension 2026-05-23) are WRAPPER-ONLY HW axes — the
+// capability taxonomy (HwInstructionLattice NoneAllowed ⊏ Scalar ⊏
+// Vectorizable ⊏ NonDeterministicTsc ⊏ PrivilegedMsr; BarrierStrength
+// None ⊏ .. ⊏ FullFence; SimdIsa Tier-L non-distributive x86×ARM trunk)
+// is held at the value site by V-250/251/252's lattices + V-254/255/256's
+// safety::* Graded wrappers, NOT as an Fn<...> aggregator slot.  Each
+// strict default is the matching `safety::fn::<ns>::Unconstrained`.
+// HwInstruction / BarrierStrength are Tier-S (par=join, strictest-wins);
+// SimdIsa is Tier-L (the second Tier-L axis, peer to Representation).
+template <>
+struct strict_default_for<dim::DimensionAxis::HwInstruction> {
+    using type = safety::fn::hw_instruction::Unconstrained;
+};
+
+template <>
+struct strict_default_for<dim::DimensionAxis::BarrierStrength> {
+    using type = safety::fn::barrier_strength::Unconstrained;
+};
+
+template <>
+struct strict_default_for<dim::DimensionAxis::SimdIsa> {
+    using type = safety::fn::simd_isa::Unconstrained;
+};
+
 // ─── has_strict_default — predicate concept ────────────────────────
 //
 // True iff a specialization exists for D AND it exposes either `type`

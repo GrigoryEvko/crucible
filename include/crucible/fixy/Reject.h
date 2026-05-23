@@ -172,6 +172,15 @@ CRUCIBLE_FIXY_NOT_ENGAGED_TAG(GlobalState,
     "global-state surface (none / readonly / thread-local / mutable-global)");
 CRUCIBLE_FIXY_NOT_ENGAGED_TAG(Stdio,
     "C stdio surface (none / reads / writes) — Meyers-singleton + I/O gating");
+CRUCIBLE_FIXY_NOT_ENGAGED_TAG(HwInstruction,
+    "hw-instruction capability tier (NoneAllowed / Scalar / Vectorizable / "
+    "NonDeterministicTsc / PrivilegedMsr) — rdtsc/rdmsr admission gating");
+CRUCIBLE_FIXY_NOT_ENGAGED_TAG(BarrierStrength,
+    "memory-fence strength ladder (None / CompilerBarrier / AcquireLoad / "
+    "ReleaseStore / AcqRel / SeqCst / FullFence) — explicit-fence grant");
+CRUCIBLE_FIXY_NOT_ENGAGED_TAG(SimdIsa,
+    "SIMD ISA family (Scalar / Portable / SSE2..AVX512 / NEON..SVE) — "
+    "Tier-L non-distributive x86×ARM trunk lattice, width pinning");
 
 #undef CRUCIBLE_FIXY_NOT_ENGAGED_TAG
 
@@ -252,6 +261,15 @@ CRUCIBLE_FIXY_DUPLICATE_TAG(GlobalState,
     "global-state surface (none / readonly / thread-local / mutable-global)");
 CRUCIBLE_FIXY_DUPLICATE_TAG(Stdio,
     "C stdio surface (none / reads / writes) — Meyers-singleton + I/O gating");
+CRUCIBLE_FIXY_DUPLICATE_TAG(HwInstruction,
+    "hw-instruction capability tier (NoneAllowed / Scalar / Vectorizable / "
+    "NonDeterministicTsc / PrivilegedMsr) — rdtsc/rdmsr admission gating");
+CRUCIBLE_FIXY_DUPLICATE_TAG(BarrierStrength,
+    "memory-fence strength ladder (None / CompilerBarrier / AcquireLoad / "
+    "ReleaseStore / AcqRel / SeqCst / FullFence) — explicit-fence grant");
+CRUCIBLE_FIXY_DUPLICATE_TAG(SimdIsa,
+    "SIMD ISA family (Scalar / Portable / SSE2..AVX512 / NEON..SVE) — "
+    "Tier-L non-distributive x86×ARM trunk lattice, width pinning");
 
 #undef CRUCIBLE_FIXY_DUPLICATE_TAG
 
@@ -323,6 +341,9 @@ template <> struct tag_for_axis<dim::DimensionAxis::CallShape>      { using type
 template <> struct tag_for_axis<dim::DimensionAxis::StackUse>       { using type = FixyNotEngaged_StackUse; };
 template <> struct tag_for_axis<dim::DimensionAxis::GlobalState>    { using type = FixyNotEngaged_GlobalState; };
 template <> struct tag_for_axis<dim::DimensionAxis::Stdio>          { using type = FixyNotEngaged_Stdio; };
+template <> struct tag_for_axis<dim::DimensionAxis::HwInstruction>  { using type = FixyNotEngaged_HwInstruction; };
+template <> struct tag_for_axis<dim::DimensionAxis::BarrierStrength> { using type = FixyNotEngaged_BarrierStrength; };
+template <> struct tag_for_axis<dim::DimensionAxis::SimdIsa>        { using type = FixyNotEngaged_SimdIsa; };
 
 template <dim::DimensionAxis D>
 using tag_for_axis_t = typename tag_for_axis<D>::type;
@@ -366,6 +387,9 @@ template <> struct dup_tag_for_axis<dim::DimensionAxis::CallShape>      { using 
 template <> struct dup_tag_for_axis<dim::DimensionAxis::StackUse>       { using type = FixyDuplicate_StackUse; };
 template <> struct dup_tag_for_axis<dim::DimensionAxis::GlobalState>    { using type = FixyDuplicate_GlobalState; };
 template <> struct dup_tag_for_axis<dim::DimensionAxis::Stdio>          { using type = FixyDuplicate_Stdio; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::HwInstruction>  { using type = FixyDuplicate_HwInstruction; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::BarrierStrength> { using type = FixyDuplicate_BarrierStrength; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::SimdIsa>        { using type = FixyDuplicate_SimdIsa; };
 
 template <dim::DimensionAxis D>
 using dup_tag_for_axis_t = typename dup_tag_for_axis<D>::type;
@@ -435,7 +459,10 @@ using FixyCatalog = ::std::tuple<
     FixyNotEngaged_CallShape,       // 25  (FIXY-V-238, 2026-05-23)
     FixyNotEngaged_StackUse,        // 26  (FIXY-V-238, 2026-05-23)
     FixyNotEngaged_GlobalState,     // 27  (FIXY-V-238, 2026-05-23)
-    FixyNotEngaged_Stdio            // 28  (FIXY-V-238, 2026-05-23)
+    FixyNotEngaged_Stdio,           // 28  (FIXY-V-238, 2026-05-23)
+    FixyNotEngaged_HwInstruction,   // 29  (FIXY-V-253, 2026-05-23)
+    FixyNotEngaged_BarrierStrength, // 30  (FIXY-V-253, 2026-05-23)
+    FixyNotEngaged_SimdIsa          // 31  (FIXY-V-253, 2026-05-23)
 >;
 
 inline constexpr ::std::size_t fixy_catalog_size =
@@ -503,6 +530,9 @@ template <> struct axis_for_tag<FixyNotEngaged_CallShape>      { static constexp
 template <> struct axis_for_tag<FixyNotEngaged_StackUse>       { static constexpr auto value = dim::DimensionAxis::StackUse; };
 template <> struct axis_for_tag<FixyNotEngaged_GlobalState>    { static constexpr auto value = dim::DimensionAxis::GlobalState; };
 template <> struct axis_for_tag<FixyNotEngaged_Stdio>          { static constexpr auto value = dim::DimensionAxis::Stdio; };
+template <> struct axis_for_tag<FixyNotEngaged_HwInstruction>  { static constexpr auto value = dim::DimensionAxis::HwInstruction; };
+template <> struct axis_for_tag<FixyNotEngaged_BarrierStrength> { static constexpr auto value = dim::DimensionAxis::BarrierStrength; };
+template <> struct axis_for_tag<FixyNotEngaged_SimdIsa>        { static constexpr auto value = dim::DimensionAxis::SimdIsa; };
 
 template <typename Tag>
 inline constexpr dim::DimensionAxis axis_for_tag_v = axis_for_tag<Tag>::value;
@@ -1280,7 +1310,7 @@ using S = ::crucible::fixy::grant::accept_default_strict_for<A>;
 
 using D = dim::DimensionAxis;
 
-// Engage all 28 axes EXCEPT Observability.  Type axis is implicitly
+// Engage all 31 axes EXCEPT Observability.  Type axis is implicitly
 // engaged through fixy::fn<T, ...>; we still pass strict<Type> here
 // because this witness exercises engagement::first_missing_axis<>
 // directly (not through fn<>), which treats every axis uniformly.
@@ -1295,7 +1325,8 @@ inline constexpr bool observability_diagnostic_is_alive_v =
         S<D::Size>, S<D::Version>, S<D::Staleness>,
         S<D::Synchronization>, S<D::Regime>, S<D::FpMode>,
         S<D::SyscallSurface>, S<D::ControlFlow>, S<D::CallShape>,
-        S<D::StackUse>, S<D::GlobalState>, S<D::Stdio>>()
+        S<D::StackUse>, S<D::GlobalState>, S<D::Stdio>,
+        S<D::HwInstruction>, S<D::BarrierStrength>, S<D::SimdIsa>>()
     == D::Observability;
 
 // Companion: the inverse witness — engaging every axis (including
@@ -1314,7 +1345,8 @@ inline constexpr bool every_axis_pack_engages_observability_v =
         S<D::Size>, S<D::Version>, S<D::Staleness>,
         S<D::Synchronization>, S<D::Regime>, S<D::FpMode>,
         S<D::SyscallSurface>, S<D::ControlFlow>, S<D::CallShape>,
-        S<D::StackUse>, S<D::GlobalState>, S<D::Stdio>>().has_value();
+        S<D::StackUse>, S<D::GlobalState>, S<D::Stdio>,
+        S<D::HwInstruction>, S<D::BarrierStrength>, S<D::SimdIsa>>().has_value();
 
 }  // namespace detail::observability_witness
 
@@ -1607,8 +1639,9 @@ namespace detail::reject_self_test {
 template <dim::DimensionAxis D>
 using strict = grant::accept_default_strict_for<D>;
 
-// All 29 axes accepted-strict (post-V-238 ControlFlow / CallShape /
-// StackUse / GlobalState / Stdio addition).
+// All 32 axes accepted-strict (post-V-253 HwInstruction /
+// BarrierStrength / SimdIsa addition, on top of V-238's ControlFlow /
+// CallShape / StackUse / GlobalState / Stdio).
 using AllStrictPack = std::tuple<
     strict<dim::DimensionAxis::Type>,
     strict<dim::DimensionAxis::Refinement>,
@@ -1638,7 +1671,10 @@ using AllStrictPack = std::tuple<
     strict<dim::DimensionAxis::CallShape>,
     strict<dim::DimensionAxis::StackUse>,
     strict<dim::DimensionAxis::GlobalState>,
-    strict<dim::DimensionAxis::Stdio>>;
+    strict<dim::DimensionAxis::Stdio>,
+    strict<dim::DimensionAxis::HwInstruction>,
+    strict<dim::DimensionAxis::BarrierStrength>,
+    strict<dim::DimensionAxis::SimdIsa>>;
 
 // Apply Grants pack from a tuple to a template — helper.
 template <template <typename...> class Tmpl, typename Tuple>
@@ -1728,7 +1764,10 @@ using CopyForUsagePack = std::tuple<
     strict<dim::DimensionAxis::CallShape>,
     strict<dim::DimensionAxis::StackUse>,
     strict<dim::DimensionAxis::GlobalState>,
-    strict<dim::DimensionAxis::Stdio>>;
+    strict<dim::DimensionAxis::Stdio>,
+    strict<dim::DimensionAxis::HwInstruction>,
+    strict<dim::DimensionAxis::BarrierStrength>,
+    strict<dim::DimensionAxis::SimdIsa>>;
 
 static_assert(accepts_pack_v<int, CopyForUsagePack>,
     "Replacing accept-strict<Usage> with `grant::copy` must still "
@@ -1765,7 +1804,10 @@ using MinusEffectPack = std::tuple<
     strict<dim::DimensionAxis::CallShape>,
     strict<dim::DimensionAxis::StackUse>,
     strict<dim::DimensionAxis::GlobalState>,
-    strict<dim::DimensionAxis::Stdio>>;
+    strict<dim::DimensionAxis::Stdio>,
+    strict<dim::DimensionAxis::HwInstruction>,
+    strict<dim::DimensionAxis::BarrierStrength>,
+    strict<dim::DimensionAxis::SimdIsa>>;
 
 static_assert(!accepts_pack_v<int, MinusEffectPack>,
     "Removing accept-strict<Effect> without replacement must reject.");
@@ -1815,7 +1857,10 @@ using MinusRefinementPack = std::tuple<
     strict<dim::DimensionAxis::CallShape>,
     strict<dim::DimensionAxis::StackUse>,
     strict<dim::DimensionAxis::GlobalState>,
-    strict<dim::DimensionAxis::Stdio>>;
+    strict<dim::DimensionAxis::Stdio>,
+    strict<dim::DimensionAxis::HwInstruction>,
+    strict<dim::DimensionAxis::BarrierStrength>,
+    strict<dim::DimensionAxis::SimdIsa>>;
 
 inline constexpr std::optional<dim::DimensionAxis>
 first_missing_for_minus_refinement = []() consteval {
@@ -1828,12 +1873,13 @@ static_assert(first_missing_for_minus_refinement == dim::DimensionAxis::Refineme
     "first_missing_axis_v points at Refinement when only that axis "
     "is omitted from an otherwise full strict pack.");
 
-// fixy-H-08 sentinel: a fully engaged 29-axis pack yields `nullopt`
+// fixy-H-08 sentinel: a fully engaged 32-axis pack yields `nullopt`
 // — proves the type-system leak (0xFF cast to DimensionAxis) is
 // eliminated.  Reuses MinusRefinementPack minus its omission by
-// re-adding the Refinement strict marker inline.  Post-V-238 the
-// pack extends to 29 entries with the 5 hazard axes (ControlFlow,
-// CallShape, StackUse, GlobalState, Stdio).
+// re-adding the Refinement strict marker inline.  Post-V-253 the
+// pack extends to 32 entries with the 5 V-238 hazard axes (ControlFlow,
+// CallShape, StackUse, GlobalState, Stdio) plus the 3 V-253 hardware
+// axes (HwInstruction, BarrierStrength, SimdIsa).
 
 using AllAxesStrictPack = std::tuple<
     strict<dim::DimensionAxis::Type>,
@@ -1864,7 +1910,10 @@ using AllAxesStrictPack = std::tuple<
     strict<dim::DimensionAxis::CallShape>,
     strict<dim::DimensionAxis::StackUse>,
     strict<dim::DimensionAxis::GlobalState>,
-    strict<dim::DimensionAxis::Stdio>>;
+    strict<dim::DimensionAxis::Stdio>,
+    strict<dim::DimensionAxis::HwInstruction>,
+    strict<dim::DimensionAxis::BarrierStrength>,
+    strict<dim::DimensionAxis::SimdIsa>>;
 
 inline constexpr std::optional<dim::DimensionAxis>
 first_missing_for_full_strict_pack = []() consteval {

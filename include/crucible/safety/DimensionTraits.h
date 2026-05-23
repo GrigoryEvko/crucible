@@ -135,8 +135,8 @@ namespace crucible::safety {
 // ═════════════════════════════════════════════════════════════════════
 
 enum class TierKind : std::uint8_t {
-    Semiring     = 0,  // Tier S — par=+, seq=*, 0 annihilator (24 dims)
-    Lattice      = 1,  // Tier L — par=join, seq=meet, valid_D check (1 dim)
+    Semiring     = 0,  // Tier S — par=+, seq=*, 0 annihilator (26 dims)
+    Lattice      = 1,  // Tier L — par=join, seq=meet, valid_D check (2 dims)
     Typestate    = 2,  // Tier T — transitions on state; no par/seq (1 dim)
     Foundational = 3,  // Tier F — bidirectional elaboration (2 dims)
     Versioned    = 4,  // Tier V — consistency check at each site (1 dim)
@@ -277,6 +277,31 @@ enum class DimensionAxis : std::uint8_t {
     StackUse        = 26, // S  (Crucible extension, 2026-05-23)
     GlobalState     = 27, // S  (Crucible extension, 2026-05-23)
     Stdio           = 28, // S  (Crucible extension, 2026-05-23)
+    // HwInstruction / BarrierStrength / SimdIsa (FIXY-V-253, Agent 11
+    // §3.2) — added 2026-05-23 to host the hardware-instruction taxonomy
+    // that V-251/V-252/V-250 populate and V-254/V-255/V-256 wrap:
+    //   HwInstruction  — HwInstructionLattice NoneAllowed ⊏ Scalar ⊏
+    //                    Vectorizable ⊏ NonDeterministicTsc ⊏ PrivilegedMsr;
+    //                    what instruction CLASS a kernel may issue (the
+    //                    Tier-0 Mimic blocker — Mimic must know per kernel
+    //                    whether SIMD / rdtsc / ring-0 MSR are emitted).
+    //   BarrierStrength— BarrierStrengthLattice None ⊏ CompilerBarrier ⊏
+    //                    AcquireLoad ⊏ ReleaseStore ⊏ AcqRel ⊏ SeqCst ⊏
+    //                    FullFence; what fence strength a boundary requires
+    //                    (distinct from the Synchronization axis's MemOrder
+    //                    tag — this is the standalone HW-fence ladder).
+    //   SimdIsa        — SimdIsaLattice, a Tier-L NON-DISTRIBUTIVE partial
+    //                    order (x86 trunk × ARM trunk joined only at
+    //                    Scalar / Portable); which ISA-extension the host
+    //                    must provide for a compiled SIMD kernel to issue.
+    // HwInstruction / BarrierStrength are Tier-S with par=join (strictest-
+    // wins along their chains, parallel to ControlFlow / CallShape);
+    // SimdIsa is Tier-L (the second Tier-L axis, peer to Representation).
+    // No Fn<> aggregator slot (compose via wrapper-nesting at the value
+    // site + grant engagement).
+    HwInstruction   = 29, // S  (Crucible extension, 2026-05-23)
+    BarrierStrength = 30, // S  (Crucible extension, 2026-05-23)
+    SimdIsa         = 31, // L  (Crucible extension, 2026-05-23)
 };
 
 inline constexpr std::size_t DIMENSION_AXIS_COUNT =
@@ -313,6 +338,9 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::StackUse:       return "StackUse";
         case DimensionAxis::GlobalState:    return "GlobalState";
         case DimensionAxis::Stdio:          return "Stdio";
+        case DimensionAxis::HwInstruction:  return "HwInstruction";
+        case DimensionAxis::BarrierStrength: return "BarrierStrength";
+        case DimensionAxis::SimdIsa:        return "SimdIsa";
         default:                            return std::string_view{"<unknown DimensionAxis>"};
     }
 }
@@ -333,6 +361,7 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
             return TierKind::Typestate;
 
         case DimensionAxis::Representation:
+        case DimensionAxis::SimdIsa:
             return TierKind::Lattice;
 
         case DimensionAxis::Version:
@@ -362,6 +391,8 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::StackUse:
         case DimensionAxis::GlobalState:
         case DimensionAxis::Stdio:
+        case DimensionAxis::HwInstruction:
+        case DimensionAxis::BarrierStrength:
             return TierKind::Semiring;
 
         default:
@@ -712,8 +743,8 @@ namespace detail::dimension_traits_self_test {
 static_assert(TIER_KIND_COUNT == 5,
     "TierKind catalog diverged from fixy.md §24.1 Tier S/L/T/F/V (5); "
     "if intentional, update fixy.md and this constant together.");
-static_assert(DIMENSION_AXIS_COUNT == 29,
-    "DimensionAxis catalog diverged from fixy.md §24.1 (29 dims: FX's "
+static_assert(DIMENSION_AXIS_COUNT == 32,
+    "DimensionAxis catalog diverged from fixy.md §24.1 (32 dims: FX's "
     "22 minus dim 12 Clock Domain and dim 17 FP Order, plus the Crucible "
     "Synchronization extension added 2026-05-18 for Wait + MemOrder, plus "
     "the Crucible Regime extension added 2026-05-18 for HotPath, plus "
@@ -722,8 +753,11 @@ static_assert(DIMENSION_AXIS_COUNT == 29,
     "extension added 2026-05-22 for the syscall-family taxonomy per "
     "FIXY-V-097, plus the five Crucible function-behavior extensions added "
     "2026-05-23 (ControlFlow / CallShape / StackUse / GlobalState / Stdio) "
-    "per FIXY-V-238); if intentional, update fixy.md §24.1 + §24.14 + "
-    "§24.15 + §24.16 + §24.17 + §24.18 and this constant.");
+    "per FIXY-V-238, plus the three Crucible hardware-instruction "
+    "extensions added 2026-05-23 (HwInstruction / BarrierStrength / "
+    "SimdIsa) per FIXY-V-253); if intentional, update fixy.md §24.1 + "
+    "§24.14 + §24.15 + §24.16 + §24.17 + §24.18 + §24.19 and this "
+    "constant.");
 
 // ── Reflection-driven name coverage (TierKind) ─────────────────────
 [[nodiscard]] consteval bool every_tier_kind_has_name() noexcept {
@@ -798,16 +832,17 @@ static_assert(every_dimension_axis_has_tier(),
     return n;
 }
 
-static_assert(count_dims_in_tier(TierKind::Semiring)     == 24,
-    "fixy.md §24.1 declares 24 Tier-S dimensions (15 FX-inherited + "
+static_assert(count_dims_in_tier(TierKind::Semiring)     == 26,
+    "fixy.md §24.1 declares 26 Tier-S dimensions (15 FX-inherited + "
     "Synchronization 2026-05-18 per fixy-A3-008 + Regime 2026-05-18 per "
     "fixy-A3-009 + FpMode 2026-05-22 per FIXY-V-088 + SyscallSurface "
     "2026-05-22 per FIXY-V-097 + ControlFlow / CallShape / StackUse / "
-    "GlobalState / Stdio 2026-05-23 per FIXY-V-238); tier_of_axis "
+    "GlobalState / Stdio 2026-05-23 per FIXY-V-238 + HwInstruction / "
+    "BarrierStrength 2026-05-23 per FIXY-V-253); tier_of_axis "
     "disagrees.");
-static_assert(count_dims_in_tier(TierKind::Lattice)      == 1,
-    "fixy.md §24.1 declares 1 Tier-L dimension (Representation); "
-    "tier_of_axis disagrees.");
+static_assert(count_dims_in_tier(TierKind::Lattice)      == 2,
+    "fixy.md §24.1 declares 2 Tier-L dimensions (Representation + SimdIsa "
+    "2026-05-23 per FIXY-V-253); tier_of_axis disagrees.");
 static_assert(count_dims_in_tier(TierKind::Typestate)    == 1,
     "fixy.md §24.1 declares 1 Tier-T dimension (Protocol); "
     "tier_of_axis disagrees.");
@@ -933,6 +968,9 @@ static_assert(dimension_axis_name(DimensionAxis::CallShape)      == "CallShape")
 static_assert(dimension_axis_name(DimensionAxis::StackUse)       == "StackUse");
 static_assert(dimension_axis_name(DimensionAxis::GlobalState)    == "GlobalState");
 static_assert(dimension_axis_name(DimensionAxis::Stdio)          == "Stdio");
+static_assert(dimension_axis_name(DimensionAxis::HwInstruction)  == "HwInstruction");
+static_assert(dimension_axis_name(DimensionAxis::BarrierStrength) == "BarrierStrength");
+static_assert(dimension_axis_name(DimensionAxis::SimdIsa)        == "SimdIsa");
 
 // fixy.md §24.1 axis-to-Tier mapping spot checks.
 static_assert(tier_of_axis(DimensionAxis::Type)           == TierKind::Foundational);
@@ -952,6 +990,9 @@ static_assert(tier_of_axis(DimensionAxis::CallShape)      == TierKind::Semiring)
 static_assert(tier_of_axis(DimensionAxis::StackUse)       == TierKind::Semiring);
 static_assert(tier_of_axis(DimensionAxis::GlobalState)    == TierKind::Semiring);
 static_assert(tier_of_axis(DimensionAxis::Stdio)          == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::HwInstruction)  == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::BarrierStrength) == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::SimdIsa)        == TierKind::Lattice);
 
 // Variable-template form mirrors the function form.
 static_assert(tier_of_axis_v<DimensionAxis::Type>     == TierKind::Foundational);

@@ -387,6 +387,32 @@ namespace stdio {
     struct Unconstrained {};   // default — no stdio wrapper claim at binding scope
 }
 
+// ── Dims 29-31 HwInstruction / BarrierStrength / SimdIsa
+//    (FIXY-V-253, 2026-05-23) ─────────────────────────────────────────
+//
+// Three wrapper-only HW axes sharing the Synchronization / Regime /
+// FpMode / SyscallSurface / V-238 pattern: NO Fn<...> aggregator slot —
+// the discipline lives at the VALUE site (V-250/251/252 ship the
+// lattices; V-254/255/256 ship the safety::* Graded wrappers; V-257..259
+// the grant tags).  Each namespace exists solely so fixy/Default.h can
+// give the axis a `type` alias satisfying the `every_axis_resolves`
+// reflection-driven coverage check.  `Unconstrained` IS the strict
+// default — the binding makes no claim; the wrapper, if any, lives on
+// the value itself.
+//
+//   HwInstruction   — NoneAllowed / Scalar / Vectorizable / Tsc / Msr
+//   BarrierStrength — None / CompilerBarrier / Acquire / Release / .. / FullFence
+//   SimdIsa         — Scalar / Portable / SSE2..AVX512 / NEON..SVE (Tier-L)
+namespace hw_instruction {
+    struct Unconstrained {};   // default — no hw-instruction wrapper claim at binding scope
+}
+namespace barrier_strength {
+    struct Unconstrained {};   // default — no barrier-strength wrapper claim at binding scope
+}
+namespace simd_isa {
+    struct Unconstrained {};   // default — no SIMD-ISA wrapper claim at binding scope
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── ValidComposition concept gate (Phase 0 P0-2) ───────────────────
 // ═════════════════════════════════════════════════════════════════════

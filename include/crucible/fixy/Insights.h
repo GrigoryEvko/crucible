@@ -477,6 +477,51 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "grant::accept_default_strict_for<dim::DimensionAxis::Stdio>",
     "fixy::fn<T, /* no Stdio grant */, ...>");
 
+// FIXY-V-253: HwInstruction / BarrierStrength / SimdIsa providers.
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_HwInstruction,
+    ::crucible::safety::diag::Severity::Error,
+    "HwInstruction engages the hw-instruction capability tier "
+    "(NoneAllowed / Scalar / Vectorizable / NonDeterministicTsc / "
+    "PrivilegedMsr — the chain V-251 ships in "
+    "algebra/lattices/HwInstructionLattice.h).  Strict default is "
+    "hw_instruction::Unconstrained.  Missing engagement defeats the "
+    "§6.8 H001/H002 rdtsc/rdmsr admission rules which V-260 will ship — "
+    "those rules dispatch on the HwInstruction grade.",
+    "Grants pack omits grant::hw::* AND omits "
+    "accept_default_strict_for<HwInstruction>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::HwInstruction>",
+    "fixy::fn<T, /* no HwInstruction grant */, ...>");
+
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_BarrierStrength,
+    ::crucible::safety::diag::Severity::Error,
+    "BarrierStrength engages the memory-fence strength ladder (None / "
+    "CompilerBarrier / AcquireLoad / ReleaseStore / AcqRel / SeqCst / "
+    "FullFence — the chain V-252 ships in "
+    "algebra/lattices/BarrierStrengthLattice.h).  Strict default is "
+    "barrier_strength::Unconstrained.  Missing engagement defeats the "
+    "§6.8 B001 explicit-fence rule which V-260 will ship — that rule "
+    "dispatches on the BarrierStrength grade.",
+    "Grants pack omits grant::hw::barrier<...> AND omits "
+    "accept_default_strict_for<BarrierStrength>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::BarrierStrength>",
+    "fixy::fn<T, /* no BarrierStrength grant */, ...>");
+
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_SimdIsa,
+    ::crucible::safety::diag::Severity::Error,
+    "SimdIsa engages the SIMD ISA family (Scalar / Portable / "
+    "SSE2..AVX512 / NEON..SVE — the Tier-L non-distributive x86×ARM "
+    "trunk lattice V-250 ships in algebra/lattices/SimdIsaLattice.h).  "
+    "Strict default is simd_isa::Unconstrained.  Missing engagement "
+    "defeats the §6.8 V001/V002/S001/S002 cross-ISA + width rules which "
+    "V-260 will ship — those rules dispatch on the SimdIsa grade.",
+    "Grants pack omits grant::simd::width<...> AND omits "
+    "accept_default_strict_for<SimdIsa>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::SimdIsa>",
+    "fixy::fn<T, /* no SimdIsa grant */, ...>");
+
 // ═══════════════════════════════════════════════════════════════════
 // ── 4 §30.14 corpus entry specializations ─────────────────────────
 // ═══════════════════════════════════════════════════════════════════

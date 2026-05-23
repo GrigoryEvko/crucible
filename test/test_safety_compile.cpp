@@ -162,8 +162,8 @@ static_assert(cs::DIMENSION_AXIS_COUNT >= 22,  // fixy-A3-009 floor: +Regime (20
 static_assert(every_tier_kind_has_name());
 static_assert(every_dimension_axis_has_name());
 static_assert(every_dimension_axis_has_tier());
-static_assert(count_dims_in_tier(cs::TierKind::Semiring) == 24);  // fixy-V-238: +ControlFlow/CallShape/StackUse/GlobalState/Stdio (2026-05-23)
-static_assert(count_dims_in_tier(cs::TierKind::Lattice) == 1);
+static_assert(count_dims_in_tier(cs::TierKind::Semiring) == 26);  // fixy-V-238: +ControlFlow/CallShape/StackUse/GlobalState/Stdio (2026-05-23); fixy-V-253: +HwInstruction/BarrierStrength (2026-05-23)
+static_assert(count_dims_in_tier(cs::TierKind::Lattice) == 2);   // fixy-V-253: +SimdIsa (2026-05-23)
 static_assert(count_dims_in_tier(cs::TierKind::Typestate) == 1);
 static_assert(count_dims_in_tier(cs::TierKind::Foundational) == 2);
 static_assert(count_dims_in_tier(cs::TierKind::Versioned) == 1);

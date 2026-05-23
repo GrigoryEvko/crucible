@@ -1117,7 +1117,7 @@ using PureLinear = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 // ── PureCopy — copy usage, strict elsewhere ───────────────────────
 template <typename Type>
@@ -1144,7 +1144,7 @@ using PureCopy = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 // ── IoFunction — IO effect, public-emit Security, strict elsewhere ─
 //
@@ -1185,7 +1185,7 @@ using IoFunction = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 // ── BgWorker — Bg + Alloc effects, public Security, strict else ───
 //
@@ -1224,7 +1224,7 @@ using BgWorker = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 // ── SecretConsumer — declassifies a secret value ──────────────────
 //
@@ -1256,7 +1256,7 @@ using SecretConsumer = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 // ── CtCrypto — constant-time crypto path (FIXY-AUDIT-B3) ──────────
 //
@@ -1308,7 +1308,7 @@ using CtCrypto = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 // ── PublicEmit<Policy> — publicly-observable emission (FIXY-AUDIT-B3) ─
 //
@@ -1356,7 +1356,7 @@ using PublicEmit = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 // ── AsyncEndpoint — coroutine + IO + public Security ──────────────
 //
@@ -1392,7 +1392,7 @@ using AsyncEndpoint = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── FIXY-U-041 stance extension — 4 additional canonical aliases ─
@@ -1454,7 +1454,7 @@ using NamedSession = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 // ── CooperativeBg<Type> — Bg + coroutine + as_public ──────────────
 //
@@ -1487,7 +1487,7 @@ using CooperativeBg = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 // ── SyncBlocking<Type> — IO + Block + as_public ────────────────────
 //
@@ -1523,7 +1523,7 @@ using SyncBlocking = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 // ── RealtimeHot<Type> — empty Effect row + as_public + strict ─────
 //
@@ -1562,7 +1562,7 @@ using RealtimeHot = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Synchronization>,
     detail_stance::strict<dim::DimensionAxis::Regime>,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>>;
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>>;
 
 }  // namespace stance
 
@@ -1653,7 +1653,7 @@ using direct_fixy = ::crucible::fixy::fn<int,
     grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>,
     grant::accept_default_strict_for<dim::DimensionAxis::Regime>,
     grant::accept_default_strict_for<dim::DimensionAxis::FpMode>,
-    grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>, grant::accept_default_strict_for<dim::DimensionAxis::ControlFlow>, grant::accept_default_strict_for<dim::DimensionAxis::CallShape>, grant::accept_default_strict_for<dim::DimensionAxis::StackUse>, grant::accept_default_strict_for<dim::DimensionAxis::GlobalState>, grant::accept_default_strict_for<dim::DimensionAxis::Stdio>>;
+    grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>, grant::accept_default_strict_for<dim::DimensionAxis::ControlFlow>, grant::accept_default_strict_for<dim::DimensionAxis::CallShape>, grant::accept_default_strict_for<dim::DimensionAxis::StackUse>, grant::accept_default_strict_for<dim::DimensionAxis::GlobalState>, grant::accept_default_strict_for<dim::DimensionAxis::Stdio>, grant::accept_default_strict_for<dim::DimensionAxis::HwInstruction>, grant::accept_default_strict_for<dim::DimensionAxis::BarrierStrength>, grant::accept_default_strict_for<dim::DimensionAxis::SimdIsa>>;
 
 using direct_substrate = safety::fn::Fn<int,
     safety::fn::pred::True,
@@ -1742,7 +1742,7 @@ constexpr auto minted = mint_fn<int,
     grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>,
     grant::accept_default_strict_for<dim::DimensionAxis::Regime>,
     grant::accept_default_strict_for<dim::DimensionAxis::FpMode>,
-    grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>, grant::accept_default_strict_for<dim::DimensionAxis::ControlFlow>, grant::accept_default_strict_for<dim::DimensionAxis::CallShape>, grant::accept_default_strict_for<dim::DimensionAxis::StackUse>, grant::accept_default_strict_for<dim::DimensionAxis::GlobalState>, grant::accept_default_strict_for<dim::DimensionAxis::Stdio>>(42);
+    grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>, grant::accept_default_strict_for<dim::DimensionAxis::ControlFlow>, grant::accept_default_strict_for<dim::DimensionAxis::CallShape>, grant::accept_default_strict_for<dim::DimensionAxis::StackUse>, grant::accept_default_strict_for<dim::DimensionAxis::GlobalState>, grant::accept_default_strict_for<dim::DimensionAxis::Stdio>, grant::accept_default_strict_for<dim::DimensionAxis::HwInstruction>, grant::accept_default_strict_for<dim::DimensionAxis::BarrierStrength>, grant::accept_default_strict_for<dim::DimensionAxis::SimdIsa>>(42);
 static_assert(minted.value() == 42,
     "mint_fn must construct fixy::fn carrying the supplied value.");
 
