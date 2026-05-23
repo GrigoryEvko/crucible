@@ -282,16 +282,20 @@ class TransactionLog {
         }
 
         // Demote the current active transaction.
+        // WRAP-Transaction-6 #1065: extract via .value() — active_tx_
+        // is now Tagged<Transaction*, source::Ring>; deref / boolean
+        // / assignment paths route through the underlying pointer
+        // without changing observable behavior.
         Transaction* prev = nullptr;
-        if (active_tx_) {
-            active_tx_->status = TxStatus::SUPERSEDED;
-            active_tx_->ts_ns  = now_ns();
-            prev = active_tx_;
+        if (active_tx_.value() != nullptr) {
+            active_tx_.value()->status = TxStatus::SUPERSEDED;
+            active_tx_.value()->ts_ns  = now_ns();
+            prev = active_tx_.value();
         }
 
         tx->status = TxStatus::ACTIVE;
         tx->ts_ns  = now_ns();
-        active_tx_ = tx;
+        active_tx_ = ActiveTxPtr{tx};
         // CONTRACT-Tx-Activate-POST: successful-promotion path —
         // strengthen invariants for the success case:
         //   (1) tx->status == ACTIVE          (set above)
@@ -318,7 +322,7 @@ class TransactionLog {
         // CRUCIBLE_PRE/POST disjunction pattern where the consequent
         // dereferences the antecedent's witnessed non-null pointer.
         CRUCIBLE_POST(prev, tx->status == TxStatus::ACTIVE);
-        CRUCIBLE_POST(prev, active_tx_ == tx);
+        CRUCIBLE_POST(prev, active_tx_.value() == tx);
         CRUCIBLE_POST(prev, prev == nullptr ||
                             prev->status == TxStatus::SUPERSEDED);
         return prev;
@@ -331,19 +335,22 @@ class TransactionLog {
         Transaction* prev = previous();
         if (!prev) return false;
 
-        if (active_tx_) {
-            active_tx_->status = TxStatus::ROLLED_BACK;
-            active_tx_->ts_ns  = now_ns();
+        if (active_tx_.value() != nullptr) {
+            active_tx_.value()->status = TxStatus::ROLLED_BACK;
+            active_tx_.value()->ts_ns  = now_ns();
         }
         prev->status = TxStatus::ACTIVE;
         prev->ts_ns  = now_ns();
-        active_tx_   = prev;
+        active_tx_   = ActiveTxPtr{prev};
         return true;
     }
 
     // Latest ACTIVE transaction, or nullptr.
     // Non-const: callers may mutate the returned transaction (e.g. rollback).
-    [[nodiscard]] Transaction* active() CRUCIBLE_LIFETIMEBOUND  { return active_tx_; }
+    // WRAP-Transaction-6 #1065: extracts the raw Transaction* from the
+    // Tagged<Transaction*, source::Ring> field — callers continue to see
+    // the unwrapped pointer for compatibility with existing read paths.
+    [[nodiscard]] Transaction* active() CRUCIBLE_LIFETIMEBOUND  { return active_tx_.value(); }
 
     [[nodiscard]] Transaction* previous() CRUCIBLE_LIFETIMEBOUND {
         // Walk the ring backward from the cursor for the most recent
@@ -402,15 +409,28 @@ class TransactionLog {
         "EBO-collapsed to preserve hot-path layout.");
 
     // The (entries_ + head_ + count_) ring triple, now one audited
-    // composition (see the Ring alias above).  active_tx_ stays a raw
-    // pointer into ring_'s inline slots — it tracks WHICH slot is live,
-    // not WHERE the next write goes, so it is not part of the ring
-    // storage; its provenance/lifetime tagging is the separate
-    // WRAP-Transaction-6 (#1065) task.  TransactionLog is move/copy-
+    // composition (see the Ring alias above).  active_tx_ tracks WHICH
+    // ring slot is live (not WHERE the next write goes), so it is not
+    // part of the ring storage itself.  TransactionLog is move/copy-
     // deleted, so ring_ never relocates and the interior pointer stays
     // valid for the log's lifetime.
+    //
+    // WRAP-Transaction-6 #1065: active_tx_ is provenance-tagged as
+    // safety::Tagged<Transaction*, source::Ring>.  The Ring source tag
+    // (Tagged.h, near QdiscConfig) encodes "this pointer was obtained
+    // from a fixed-capacity ring's inline slot pool" — distinct from
+    // arena-owned (source::Arena) and from generic borrowed-from-owner
+    // (Borrowed<T, Owner>).  Regime-1 EBO collapses the wrapper to
+    // sizeof(Transaction*) = 8 B, so the TransactionLog layout is
+    // bit-identical to the pre-migration shape — no ABI / wire impact.
+    // Internal code extracts via `.value()` at each access site; the
+    // public `active()` accessor continues to return raw Transaction*
+    // so external callers (CipherTransactionLog wiring, BackgroundThread
+    // rollback paths) are not changed by this ship.
+    using ActiveTxPtr = ::crucible::safety::Tagged<
+        Transaction*, ::crucible::safety::source::Ring>;
     Ring         ring_{};
-    Transaction* active_tx_{nullptr};
+    ActiveTxPtr  active_tx_{nullptr};
 };
 
 // Zero-cost ring wiring (#1063 WRAP-Transaction-4): CyclicBuffer<Transaction, N>
@@ -424,5 +444,26 @@ static_assert(
          + sizeof(::crucible::safety::Cyclic<std::size_t, 16>)
          + sizeof(::crucible::safety::BoundedMonotonic<std::size_t, 16>),
     "CyclicBuffer<Transaction, N> must stay a zero-overhead composition");
+
+// WRAP-Transaction-6 #1065: zero-cost field migration sentinel.
+// active_tx_'s Tagged<Transaction*, source::Ring> wrapper MUST collapse
+// via regime-1 EBO to sizeof(Transaction*) — otherwise the
+// TransactionLog<N> total size shifts and the hot-path layout audit
+// (cache-line residency, prefetch hints, struct packing) is no longer
+// bit-identical to the pre-migration shape.  A future Tagged refactor
+// that drops EBO collapse, or a Ring tag that grows beyond an empty
+// struct, reddens here.
+static_assert(
+    sizeof(::crucible::safety::Tagged<Transaction*,
+                                      ::crucible::safety::source::Ring>)
+        == sizeof(Transaction*),
+    "WRAP-Transaction-6 #1065: Tagged<Transaction*, source::Ring> must "
+    "preserve pointer size via regime-1 EBO collapse.");
+static_assert(
+    alignof(::crucible::safety::Tagged<Transaction*,
+                                       ::crucible::safety::source::Ring>)
+        == alignof(Transaction*),
+    "WRAP-Transaction-6 #1065: Tagged<Transaction*, source::Ring> must "
+    "preserve pointer alignment via regime-1 EBO collapse.");
 
 } // namespace crucible

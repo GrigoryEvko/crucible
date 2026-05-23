@@ -6167,6 +6167,27 @@ crucible_neg_compile_test(neg_content_hash_zero_literal
 crucible_neg_compile_test(neg_content_hash_default_construct
   "contract|Refined|non_zero|not a constant|non-constant|constexpr")
 
+# ─── WRAP-Transaction-6 #1065 neg-compile tests ─────────────────────
+#
+# active_tx_ field migrates from raw `Transaction*` to
+# `safety::Tagged<Transaction*, source::Ring>`.  The Ring source tag
+# encodes "this pointer was obtained from a fixed-capacity ring's
+# inline slot pool, valid for the log's lifetime" — distinct from
+# Arena-owned and from generic Borrowed<T, Owner>.  Two fixtures per
+# HS14 mandate, demonstrating distinct mismatch classes:
+#   * neg_active_tx_ptr_raw_assignment — provenance BYPASS.  Catches
+#     `active_tx_ = some_tx` (implicit raw-pointer admission) without
+#     the explicit `ActiveTxPtr{some_tx}` ctor.  Rejected by Tagged's
+#     `explicit` ctor.
+#   * neg_active_tx_ptr_cross_source_assignment — provenance
+#     LAUNDERING.  Catches `Tagged<T, source::Arena> → Tagged<T,
+#     source::Ring>` swap: both wrap `T*` but the Tag distinguishes
+#     them as nominally distinct types.
+crucible_neg_compile_test(neg_active_tx_ptr_raw_assignment
+  "no match|cannot convert|no viable|could not convert|explicit|constructor")
+crucible_neg_compile_test(neg_active_tx_ptr_cross_source_assignment
+  "no match|cannot convert|no viable|could not convert|Tagged|source")
+
 # ─── #897 WRAP-CostModel-3 neg-compile tests ────────────────────────
 #
 # Per #897, ValidRegsPerThread is

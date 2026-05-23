@@ -160,6 +160,16 @@ namespace source {
     // admitted through cntp/Pacing.h. Raw interface strings / qdisc
     // names cannot directly drive pacing policy.
     struct QdiscConfig {};
+    // Ring: pointer borrowed from a fixed-capacity ring's inline slot
+    // storage (WRAP-Transaction-6 #1065). The pointee lives inside the
+    // ring buffer's own array and is valid for the ring's lifetime —
+    // the ring is move/copy-deleted so the interior pointer never
+    // dangles via relocation. Distinct from Arena (arena-owned region
+    // pointer) and Borrowed<T, Owner> (lifetime-scoped borrow): Ring
+    // additionally encodes the ring-slot identity, useful for asserts
+    // and audit ("this Transaction* came from THIS log's slot pool,
+    // not some other log instance or fresh heap allocation").
+    struct Ring         {};
     // IncastConfig: CNT-P fan-in mitigation configuration admitted through
     // cntp/IncastControl.h. Raw booleans / byte counts cannot directly
     // tune socket RTO or receiver-issued credit pacing.
