@@ -706,6 +706,40 @@ using ::crucible::fixy::mmap::advise_release_aware;
 
 }  // namespace crucible::fixy::wrap::mmap
 
+// ── FIXY-V-226 — fixy/Io.h umbrella re-export ────────────────────────
+//
+// Lift the V-226 async-I/O surface (engine / zerocopy / ring_flag type-
+// tag namespaces + grant::io:: + IoUringRing Linear RAII handle + ctx-
+// fit concepts + mint_io_uring_ring + mint_zerocopy_transfer) under
+// fixy::wrap::io:: so callers reach the whole async-engine surface
+// through one entry point.
+
+#include <crucible/fixy/Io.h>           // FIXY-V-226 substrate
+
+namespace crucible::fixy::wrap::io {
+
+// Type-tag namespaces — empty-final marker tags partitioning the
+// engine / zerocopy / ring_flag axes.
+namespace engine    = ::crucible::fixy::io::engine;
+namespace zerocopy  = ::crucible::fixy::io::zerocopy;
+namespace ring_flag = ::crucible::fixy::io::ring_flag;
+
+// Grant tag tree — what the user writes at every Io call site.
+namespace grant     = ::crucible::fixy::grant::io;
+
+// Type aliases — IoUringRing + concepts.
+using IoUringRing = ::crucible::fixy::io::IoUringRing;
+
+using ::crucible::fixy::io::CtxAdmitsIoBlock;
+using ::crucible::fixy::io::CtxFitsIoUringMint;
+using ::crucible::fixy::io::CtxFitsZerocopyMint;
+
+// §XXI mint factories.
+using ::crucible::fixy::io::mint_io_uring_ring;
+using ::crucible::fixy::io::mint_zerocopy_transfer;
+
+}  // namespace crucible::fixy::wrap::io
+
 // ─── Dual-export sentinel — FIXY-U-020 (#1732) ─────────────────────
 //
 // Header-internal static_asserts pin each `using ::crucible::safety::X`

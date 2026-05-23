@@ -28,6 +28,10 @@
 #                                                    catalog (5 mmap::* parametric/leaf grants:
 #                                                    with_prot<>/with_share<>/with_advice<>/
 #                                                    trusted_jit/release_aware<>).
+#   * include/crucible/fixy/Io.h                   — V-226 SyscallSurface axis-specialized
+#                                                    catalog (5 io::* parametric grants:
+#                                                    engine<>/zerocopy<>/ring_flag<>/
+#                                                    sq_entries<N>/cq_entries<N>).
 #   * include/crucible/fixy/syscall/Family.h      — V-098 SyscallSurface axis-specialized
 #                                                    catalog (9 family-tier grants).
 #   * include/crucible/fixy/syscall/Per.h         — V-098 SyscallSurface axis-specialized
@@ -83,6 +87,16 @@ while IFS=: read -r file line text; do
             # grants: with_prot<>/with_share<>/with_advice<>/trusted_jit/
             # release_aware<> routing the mmap-prot / share-mode / madvise
             # / Exec-gating / Bug-5 release-witness tiers to
+            # DimensionAxis::SyscallSurface).  Specializes which_dim<>
+            # only; does NOT extend grant_base hierarchy or introduce new
+            # structural-validation concepts.
+            continue
+            ;;
+        include/crucible/fixy/Io.h)
+            # V-226 SyscallSurface axis-specialized catalog (5 io::*
+            # grants: engine<>/zerocopy<>/ring_flag<>/sq_entries<N>/
+            # cq_entries<N> routing the async-engine / zerocopy /
+            # io_uring_setup / queue-depth tiers to
             # DimensionAxis::SyscallSurface).  Specializes which_dim<>
             # only; does NOT extend grant_base hierarchy or introduce new
             # structural-validation concepts.

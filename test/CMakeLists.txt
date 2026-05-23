@@ -11682,6 +11682,36 @@ crucible_neg_compile_fixy_test(neg_fixy_v_225_mint_mmap_ctx_lacks_block
 crucible_neg_compile_fixy_test(neg_fixy_v_225_advise_dontneed_safe_surface
     "no matching function|CtxFitsSafeAdvise|constraints not satisfied|is_dangerous_advice")
 
+# ── FIXY-V-226 — fixy/Io.h HS14 neg-compile fixtures (#2104) ────────
+#
+# Seven mismatch classes for the V-226 substrate's three concept gates
+# (CtxAdmitsIoBlock × CtxFitsIoUringMint × CtxFitsZerocopyMint):
+#   #1 mint_io_uring_ring empty Grants     → no engine, no sq_entries
+#   #2 mint_io_uring_ring engine<Synchronous> → engine_is_io_uring gate
+#   #3 mint_io_uring_ring sq_entries<3>    → power-of-2 gate on sq_entries
+#   #4 mint_io_uring_ring dup engine<>     → engine-axis uniqueness
+#   #5 mint_io_uring_ring(ColdInitCtx, …)  → ctx row lacks Effect::Block
+#   #6 mint_zerocopy_transfer zerocopy<None>   → sentinel rejected
+#   #7 mint_zerocopy_transfer zerocopy<Splice> → simple-transfer subset
+# Together they witness the §XXI fit-check fires at construction along
+# EVERY load-bearing predicate (engine engagement × engine enumerator ×
+# sq_entries pow2 × engine uniqueness × ctx row Effect::Block ×
+# zerocopy sentinel × simple-transfer channeling).
+crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_io_uring_ring_empty_grants
+    "no matching function|CtxFitsIoUringMint|constraints not satisfied|has_engine_grant|has_sq_entries_grant")
+crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_io_uring_ring_wrong_engine
+    "no matching function|CtxFitsIoUringMint|constraints not satisfied|engine_is_io_uring")
+crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_io_uring_ring_sq_not_pow2
+    "no matching function|CtxFitsIoUringMint|constraints not satisfied|sq_entries_is_pow2")
+crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_io_uring_ring_duplicate_engine
+    "no matching function|CtxFitsIoUringMint|constraints not satisfied|has_duplicate_engine")
+crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_io_uring_ring_ctx_lacks_block
+    "no matching function|CtxAdmitsIoBlock|CtxFitsIoUringMint|constraints not satisfied|row_contains")
+crucible_neg_compile_fixy_test(neg_fixy_v_226_zerocopy_none_sentinel
+    "no matching function|CtxFitsZerocopyMint|constraints not satisfied|pack_zerocopy_is_none")
+crucible_neg_compile_fixy_test(neg_fixy_v_226_zerocopy_splice_not_simple
+    "no matching function|CtxFitsZerocopyMint|constraints not satisfied|pack_zerocopy_is_simple_transfer")
+
 # ── FIXY-V-233 — sanitize::path_traversal runtime predicates ────────
 # Runtime smoke test exercising both V-233 predicates
 # (check_no_dotdot + check_absolute_root_locked) plus the two
