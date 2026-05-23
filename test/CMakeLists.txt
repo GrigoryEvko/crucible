@@ -289,6 +289,7 @@ crucible_test(test_fixy_v_098_syscall_grants)  # FIXY-V-098 fixy/syscall/Family.
 crucible_test(test_fixy_v_099_syscall_ioctl)   # FIXY-V-099 fixy/syscall/Ioctl.h   — per-vendor + per-subsystem ioctl grants
 crucible_test(test_fixy_v_100_syscall_bridge)  # FIXY-V-100 fixy/syscall/Bridge.h — SyscallSurface → Met(X) effect-row lift
 crucible_test(test_fixy_v_239_control_flow)    # FIXY-V-239 DimensionAxis::ControlFlow + ControlFlowLattice 5-tier escape chain
+crucible_test(test_fixy_v_240_call_shape)      # FIXY-V-240 DimensionAxis::CallShape + CallShapeLattice 5-tier dispatch chain
 crucible_test(test_fixy_v_234_release_aware_permission)  # FIXY-V-234 advise_release_aware<DontNeed, RegionTag> + SharedPermission composition — Agent 9 Bug 5 HIGH
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
