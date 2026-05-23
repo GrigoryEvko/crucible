@@ -83,6 +83,25 @@ while IFS=: read -r file line text; do
             # hierarchy or introduce new structural-validation concepts.
             continue
             ;;
+        include/crucible/fixy/grant/Stack.h)
+            # V-246 StackUse axis-specialized catalog (grant::stack::alloc
+            # <MaxBytes>/vla_ok/alloca_ok + accept_default_strict_for_StackUse).
+            # Specializes which_dim<> only.
+            continue
+            ;;
+        include/crucible/fixy/grant/Global.h)
+            # V-246 GlobalState axis-specialized catalog (grant::global::
+            # singleton<Tag>/thread_local_<Tag>/namespace_static<Tag>/
+            # atexit_handler + accept_default_strict_for_GlobalState).
+            # Specializes which_dim<> only.
+            continue
+            ;;
+        include/crucible/fixy/grant/Stdio.h)
+            # V-246 Stdio axis-specialized catalog (grant::stdio::write<Stream>
+            # + streams::* policy tags + accept_default_strict_for_Stdio).
+            # Specializes which_dim<> only.
+            continue
+            ;;
         include/crucible/fixy/Fp.h)
             # V-092 FpMode axis-specialized catalog (12 with_fp_* parametric
             # grants + fp_strict_ieee).  Specializes which_dim<> only;

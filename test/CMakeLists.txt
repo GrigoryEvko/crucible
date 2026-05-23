@@ -295,6 +295,7 @@ crucible_test(test_fixy_v_242_hazard_wrappers)    # FIXY-V-242 5 safety/* Graded
 crucible_test(test_fixy_v_243_control_flow_collisions)  # FIXY-V-243 CollisionCatalog C001/D001/D002/G001/L006/P003/S001/S004 hazard-axis cross-axis rules
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
+crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
 crucible_test(test_fixy_v_234_release_aware_permission)  # FIXY-V-234 advise_release_aware<DontNeed, RegionTag> + SharedPermission composition — Agent 9 Bug 5 HIGH
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
@@ -1743,6 +1744,23 @@ crucible_neg_compile_fixy_test(neg_fixy_dispatch_recurses_requires_bound
 crucible_neg_compile_fixy_test(neg_fixy_dispatch_virtual_call_value_arg
     "expected a type|type/value mismatch|invalid|template argument")
 crucible_neg_compile_fixy_test(neg_fixy_dispatch_cv_qualified
+    "IsGrantTag|static assertion|cv-qualified")
+
+# FIXY-V-246 — HS14 floor for the 3 hazard-axis grant headers (Stack /
+# Global / Stdio).  Two fixtures per header, each a distinct rejection
+# class: a mandatory-parameter ARITY or value-where-TYPE check on the
+# axis's central grant, plus the shared IsGrantTag cv-purity gate.
+crucible_neg_compile_fixy_test(neg_fixy_stack_alloc_requires_bound
+    "wrong number of template arguments|too few template arguments|template argument")
+crucible_neg_compile_fixy_test(neg_fixy_stack_cv_qualified
+    "IsGrantTag|static assertion|cv-qualified")
+crucible_neg_compile_fixy_test(neg_fixy_global_thread_local_requires_tag
+    "wrong number of template arguments|too few template arguments|template argument")
+crucible_neg_compile_fixy_test(neg_fixy_global_singleton_value_arg
+    "expected a type|type/value mismatch|invalid|template argument")
+crucible_neg_compile_fixy_test(neg_fixy_stdio_write_value_arg
+    "expected a type|type/value mismatch|invalid|template argument")
+crucible_neg_compile_fixy_test(neg_fixy_stdio_cv_qualified
     "IsGrantTag|static assertion|cv-qualified")
 
 # FIXY-V-093 — HS14 floor for fixy::fp::canonicalize.  Two fixtures
