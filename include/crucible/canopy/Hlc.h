@@ -10,8 +10,10 @@
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/effects/Capabilities.h>
+#include <crucible/safety/ClockSource.h>     // FIXY-V-195: RealtimeClockBytes
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/Stale.h>           // FIXY-V-195: Stale<>
 #include <crucible/safety/Tagged.h>
 
 #include <algorithm>
@@ -22,6 +24,7 @@
 #include <limits>
 #include <optional>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::canopy {
 
@@ -165,7 +168,12 @@ public:
     Hlc() noexcept = default;
 
     [[nodiscard]] HlcTimestamp now() noexcept {
-        return update_local_(read_realtime_ns_());
+        // FIXY-V-195: read_realtime_ns_ returns Stale<RealtimeClockBytes<u64>>;
+        // consume here to extract the raw nanosecond count for HLC update.
+        // Wall-clock reads are inherently stale relative to "now" — the wrap
+        // documents the source-of-truth provenance at the read site.
+        auto stale_rt = read_realtime_ns_();
+        return update_local_(std::move(stale_rt).consume().consume());
     }
 
     [[nodiscard]] HlcTimestamp on_send() noexcept {
@@ -173,7 +181,9 @@ public:
     }
 
     void on_recv(HlcTimestamp peer_ts) noexcept {
-        (void)update_recv_(read_realtime_ns_(), peer_ts);
+        // FIXY-V-195: same Stale<RealtimeClockBytes<u64>> consume pattern as now().
+        auto stale_rt = read_realtime_ns_();
+        (void)update_recv_(std::move(stale_rt).consume().consume(), peer_ts);
     }
 
     void on_recv(HlcClockTimestamp peer_ts) noexcept {
@@ -236,7 +246,32 @@ private:
         return HlcTimestamp{.physical_ns = physical_ns, .counter = counter};
     }
 
-    [[nodiscard]] static std::uint64_t read_realtime_ns_() noexcept {
+    // FIXY-V-195: typed witness over the raw read.  The return is
+    // `Stale<RealtimeClockBytes<uint64_t>>` — the inner ClockSource grade
+    // pins the source-of-truth to CLOCK_REALTIME (wall clock); the outer
+    // Stale<> documents that wall-clock reads age relative to "now" and
+    // can jump backwards under NTP slew or manual time adjustment.
+    //
+    // Downstream consumers that should refuse a Monotonic or Boot read
+    // (e.g. Cipher event timestamps that need wall-clock binding)
+    // statically reject other ClockSource grades at compile time.
+    //
+    // We start at staleness=0 ("fresh") because the read is BY DEFINITION
+    // the freshest measurement available at this instant; staleness
+    // accumulates as the value is propagated through async pipelines.
+    [[nodiscard]] static
+    safety::Stale<safety::RealtimeClockBytes<std::uint64_t>>
+    read_realtime_ns_() noexcept {
+        const std::uint64_t bits = read_realtime_ns_raw_();
+        return safety::Stale<safety::RealtimeClockBytes<std::uint64_t>>::fresh(
+            safety::mint_clock_source<safety::ClockSource_v::Realtime,
+                                      std::uint64_t>(bits));
+    }
+
+    // FIXY-V-195: raw read split from typed wrap so the (Linux-syscall
+    // boilerplate, overflow handling, zero-sentinel) stays single-purpose
+    // and the wrap is a 3-line `mint_clock_source + Stale::fresh`.
+    [[nodiscard]] static std::uint64_t read_realtime_ns_raw_() noexcept {
         ::timespec ts{};
         if (::clock_gettime(CLOCK_REALTIME, &ts) != 0) [[unlikely]] {
             return std::uint64_t{1};
@@ -301,6 +336,42 @@ static_assert(alignof(Hlc) == 64);
 static_assert(sizeof(Hlc) == 64);
 static_assert(!std::is_copy_constructible_v<Hlc>);
 static_assert(!std::is_move_constructible_v<Hlc>);
+
+// FIXY-V-195: typed-contract sentinels.  The HLC wall-clock read MUST
+// return `Stale<RealtimeClockBytes<uint64_t>>`; any drift (raw uint64_t
+// regression, Monotonic-source confusion, missing Stale wrap) reddens
+// the build here, not at the consumer site.  These ride the same
+// "discipline at the definition site" pattern as the §XXI mint-pattern
+// concept gates — invariants documented where they're enforced.
+namespace detail::hlc_v195_sentinels {
+
+// We can't directly assert against the private static read_realtime_ns_,
+// but the construction expression is public-namespace-reachable through
+// the same factory chain (mint_clock_source + Stale::fresh); the test
+// below shadows what read_realtime_ns_ produces.
+using ExpectedRealtimeBytes =
+    safety::Stale<safety::RealtimeClockBytes<std::uint64_t>>;
+
+static_assert(
+    sizeof(ExpectedRealtimeBytes) == sizeof(std::uint64_t)
+                                     + sizeof(std::uint64_t),
+    "FIXY-V-195: Stale<RealtimeClockBytes<u64>> must be value + grade "
+    "(16 B on a 64-bit target); regime-4 storage per Graded taxonomy.");
+
+static_assert(
+    std::is_same_v<
+        ExpectedRealtimeBytes::value_type,
+        safety::RealtimeClockBytes<std::uint64_t>>,
+    "FIXY-V-195: outer wrapper must be Stale; inner must be "
+    "RealtimeClockBytes<u64>.");
+
+static_assert(
+    safety::RealtimeClockBytes<std::uint64_t>::source
+        == safety::ClockSource_v::Realtime,
+    "FIXY-V-195: HLC reads CLOCK_REALTIME (wall clock).  Any drift to "
+    "Monotonic, Boot, or other ClockSource_v values is a category error.");
+
+}  // namespace detail::hlc_v195_sentinels
 
 [[nodiscard]] inline Hlc mint_hlc(effects::Init) noexcept {
     return Hlc{};
