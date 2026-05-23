@@ -155,6 +155,7 @@ enum class FpReassociate      : std::uint8_t;
 enum class FpConstantRounding : std::uint8_t;
 enum class HwInstruction       : std::uint8_t;  // FIXY-V-251 (wrapper V-254)
 enum class BarrierStrength     : std::uint8_t;  // FIXY-V-252 (wrapper V-255)
+enum class SimdIsa             : std::uint8_t;  // FIXY-V-250 (wrapper V-256)
 }  // namespace crucible::algebra::lattices
 
 namespace crucible::safety {
@@ -164,6 +165,7 @@ template <algebra::lattices::DetSafeTier Tier, typename T> class DetSafe;
 template <algebra::lattices::HotPathTier Tier, typename T> class HotPath;
 template <algebra::lattices::HwInstruction Tier, typename T> class Hw;
 template <algebra::lattices::BarrierStrength Tier, typename T> class BarrierGuarded;
+template <algebra::lattices::SimdIsa W, typename T> class SimdWidthPinned;
 template <algebra::lattices::MemOrderTag Tag, typename T> class MemOrder;
 template <algebra::lattices::ProgressClass Class, typename T> class Progress;
 template <algebra::lattices::ResidencyHeatTag Tier, typename T> class ResidencyHeat;
@@ -359,7 +361,8 @@ inline constexpr std::uint64_t WRAPPER_JOIN_POLICY_TAG      = 0x2000'0000'0000'0
 // type carries NO salt of its own — its row_hash composes through the
 // per-axis specializations automatically (see safety/FpMode.h's
 // FpModeComposite alias).  The Agent-11 HW-axis wrappers continue the
-// sequence: 0x2C = Hw (V-254), 0x2D = BarrierGuarded (V-255).
+// sequence: 0x2C = Hw (V-254), 0x2D = BarrierGuarded (V-255),
+// 0x2E = SimdWidthPinned (V-256).
 inline constexpr std::uint64_t WRAPPER_FP_ROUNDING_TAG          = 0x2100'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_FP_FTZ_TAG               = 0x2200'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_FP_CONTRACT_TAG          = 0x2300'0000'0000'0000ULL;
@@ -375,6 +378,8 @@ inline constexpr std::uint64_t WRAPPER_FP_CONSTANT_ROUNDING_TAG = 0x2B00'0000'00
 inline constexpr std::uint64_t WRAPPER_HW_INSTRUCTION_TAG       = 0x2C00'0000'0000'0000ULL;
 // FIXY-V-255 — BarrierGuarded<BarrierStrength Tier, T> discriminator.
 inline constexpr std::uint64_t WRAPPER_BARRIER_STRENGTH_TAG     = 0x2D00'0000'0000'0000ULL;
+// FIXY-V-256 — SimdWidthPinned<SimdIsa W, T> discriminator.
+inline constexpr std::uint64_t WRAPPER_SIMD_ISA_TAG            = 0x2E00'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -693,6 +698,15 @@ template <algebra::lattices::BarrierStrength Tier, typename Inner>
 struct row_hash_contribution<safety::BarrierGuarded<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::WRAPPER_BARRIER_STRENGTH_TAG | static_cast<std::uint64_t>(Tier),
+        row_hash_contribution_v<Inner>);
+};
+
+// FIXY-V-256 — SimdWidthPinned is a Repr-neighborhood wrapper (Tier-L
+// Lattice) peer to Vendor; the pinned SIMD ISA discriminates the slot.
+template <algebra::lattices::SimdIsa W, typename Inner>
+struct row_hash_contribution<safety::SimdWidthPinned<W, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_SIMD_ISA_TAG | static_cast<std::uint64_t>(W),
         row_hash_contribution_v<Inner>);
 };
 

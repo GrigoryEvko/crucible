@@ -115,6 +115,7 @@
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Secret.h>
+#include <crucible/safety/SimdWidthPinned.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
@@ -617,6 +618,13 @@ struct wrapper_dimension<Hw<Tier, T>>
 template <BarrierStrength_v Tier, typename T>
 struct wrapper_dimension<BarrierGuarded<Tier, T>>
     : std::integral_constant<DimensionAxis, DimensionAxis::BarrierStrength> {};
+
+// FIXY-V-256 — SimdWidthPinned<SimdIsa W, T> occupies the SimdIsa axis
+// (V-253, Tier-L Lattice — the second Tier-L dimension peer to
+// Representation).  Partial-order provider wrapper, sibling to Vendor.
+template <SimdIsa_v W, typename T>
+struct wrapper_dimension<SimdWidthPinned<W, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::SimdIsa> {};
 
 template <ResidencyHeatTag_v Tier, typename T>
 struct wrapper_dimension<ResidencyHeat<Tier, T>>

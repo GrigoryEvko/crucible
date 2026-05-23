@@ -299,6 +299,7 @@ crucible_test(test_fixy_v_251_hw_instruction)           # FIXY-V-251 HwInstructi
 crucible_test(test_fixy_v_252_barrier_strength)         # FIXY-V-252 BarrierStrengthLattice — 7-tier memory-fence strength chain
 crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
+crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
@@ -6423,6 +6424,10 @@ crucible_neg_compile_test(neg_barrier_consumer_too_weak
   "constraints not satisfied|no matching function|satisfies|require_acqrel_floor")
 crucible_neg_compile_test(neg_barrier_strengthen_up
   "constraints not satisfied|no matching function|weaken|BarrierGuarded")
+crucible_neg_compile_test(neg_simd_provider_too_weak
+  "constraints not satisfied|no matching function|satisfies|require_avx512_provider")
+crucible_neg_compile_test(neg_simd_relax_up_or_cross_trunk
+  "constraints not satisfied|no matching function|relax|SimdWidthPinned")
 
 # ─── FIXY-V-091 CollisionCatalog F101..F105 neg-compiles (per-rule) ──
 #
