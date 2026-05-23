@@ -302,6 +302,7 @@ crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/Barr
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
 crucible_test(test_fixy_v_257_hw_grants)                # FIXY-V-257 fixy/Hw.h — 10 grant::hw::* families (cache/barrier/tsc/rng/cpuid/msr/port_io/asm_/simd_width/vendor_intrinsic) + 5 §XXI mints
 crucible_test(test_fixy_v_258_vendor_intrinsic)         # FIXY-V-258 fixy/Vendor.h — IsaTag enum (22 ISA families) + strong-typed grant::vendor::intrinsic<V,I> + 7 canonical aliases
+crucible_test(test_fixy_v_259_simd_width)               # FIXY-V-259 fixy/Simd.h — WidthBits enum (6 width classes) + strong-typed grant::simd::width<W> + 4 canonical aliases
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
@@ -11976,6 +11977,18 @@ crucible_neg_compile_fixy_test(neg_fixy_v_258_intrinsic_cpu_ptx
     "constraints not satisfied|vendor_isa_consistent|intrinsic|no matching")
 crucible_neg_compile_fixy_test(neg_fixy_v_258_intrinsic_amd_neon
     "constraints not satisfied|vendor_isa_consistent|intrinsic|no matching")
+
+# ── FIXY-V-259 — fixy/Simd.h is_known_width gate (HS14 structural) ───
+# Two fixtures witness the `is_known_width_v<W>` strong-typing gate at
+# the grant template-id:
+#   out_of_enum  : width<WidthBits{777}> → garbage width value
+#   unlisted_64  : width<WidthBits{64}>  → plausible-but-unenumerated
+# The width<512>-on-AVX2 COMPOSITION fixture (Agent 11 4.2) ships with
+# V-260's S001 collision rule (cross-grant value compatibility).
+crucible_neg_compile_fixy_test(neg_fixy_v_259_width_out_of_enum
+    "constraints not satisfied|is_known_width|width|no matching")
+crucible_neg_compile_fixy_test(neg_fixy_v_259_width_unlisted_64
+    "constraints not satisfied|is_known_width|width|no matching")
 
 # ── FIXY-V-226 — fixy/Io.h HS14 neg-compile fixtures (#2104) ────────
 #

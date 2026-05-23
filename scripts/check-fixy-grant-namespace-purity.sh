@@ -154,6 +154,13 @@ while IFS=: read -r file line text; do
             # which_dim<> only; does NOT extend grant_base hierarchy.
             continue
             ;;
+        include/crucible/fixy/Simd.h)
+            # V-259 SimdIsa axis-specialized catalog (grant::simd::width<W>
+            # over the WidthBits register-width enum, gated by
+            # is_known_width_v<W>).  Specializes which_dim<> only; does NOT
+            # extend grant_base hierarchy.
+            continue
+            ;;
         include/crucible/fixy/syscall/Family.h)
             # V-098 SyscallSurface axis-specialized catalog (9 family-tier
             # grants).  Specializes which_dim<> + family_tier<> only.
