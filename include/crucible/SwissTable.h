@@ -27,6 +27,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/fixy/Wrap.h>              // FIXY-U-096i: PowerOfTwo + Refined + bounded_above
+#include <crucible/fixy/Vendor.h>            // FIXY-V-262: vendor::intrinsic<V,I> + canonical aliases
+#include <crucible/fixy/Simd.h>              // FIXY-V-262: simd::width<W> + width_* aliases
 #include <crucible/safety/Decide.h>          // decide::* lives at top-level, not under safety::
 
 // FIXY-U-096i production migration: PowerOfTwo / Refined / bounded_above
@@ -44,6 +46,7 @@
 #include <cstring>
 #include <limits>
 #include <type_traits>
+#include <utility>                           // FIXY-V-262: std::to_underlying for the width-byte consistency assert
 
 #if defined(__AVX512BW__)
 #include <immintrin.h>
@@ -102,6 +105,79 @@ static_assert(std::is_standard_layout_v<GroupWidth>);
 static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(
                   group_width(), std::size_t{64}),
               "kGroupWidth must be a power of two ≤ 64 (AVX-512 width)");
+
+// ── FIXY-V-262: hardware-axis grant declarations ───────────────────
+//
+// Each compile-time SIMD arm declares — at the TYPE level — which
+// vendor::intrinsic<V, I> (FIXY-V-258) and simd::width<W> (FIXY-V-259)
+// the active build uses for the control-byte probe.  This promotes the
+// SwissTable's hardware dependency from an invisible `#ifdef` to a
+// named, greppable, type-checked surface that the V-264
+// check-fixy-hw-discipline.sh lint reads.  Zero runtime cost — empty
+// grant tags + using-aliases, all consumed at compile time.
+//
+//   AVX-512BW → avx512bw_intrinsic + width_512   (64-byte group)
+//   AVX2      → avx2_intrinsic     + width_256   (32-byte group)
+//   SSE2      → sse2_intrinsic     + width_128   (16-byte group)
+//   NEON      → neon_intrinsic     + width_128   (16-byte group)
+//   Portable  → width_scalar, NO vendor intrinsic (16-byte SWAR over
+//               general-purpose registers — no SIMD vector register;
+//               the absence of a vendor dependency IS the point of the
+//               portable fallback).
+//
+// `ActiveSimdWidth` is defined on every arm; `ActiveVendorIsa` only on
+// the four real-SIMD arms.  The per-arm static_assert pins the declared
+// register width (bits) to the actual group width (bytes × 8), so a
+// future kGroupWidth edit that forgets to update the width grant reds
+// at the definition site.
+namespace swiss_hw {
+
+namespace fv = ::crucible::fixy::vendor;
+namespace fs = ::crucible::fixy::simd;
+
+#if defined(__AVX512BW__)
+using ActiveVendorIsa = fv::avx512bw_intrinsic;
+using ActiveSimdWidth = fs::width_512;
+static_assert(group_width() * 8u == std::to_underlying(fs::WidthBits::Bits512),
+              "FIXY-V-262: AVX-512BW group bytes × 8 must equal width_512 bits");
+#elif defined(__AVX2__)
+using ActiveVendorIsa = fv::avx2_intrinsic;
+using ActiveSimdWidth = fs::width_256;
+static_assert(group_width() * 8u == std::to_underlying(fs::WidthBits::Bits256),
+              "FIXY-V-262: AVX2 group bytes × 8 must equal width_256 bits");
+#elif defined(__SSE2__)
+using ActiveVendorIsa = fv::sse2_intrinsic;
+using ActiveSimdWidth = fs::width_128;
+static_assert(group_width() * 8u == std::to_underlying(fs::WidthBits::Bits128),
+              "FIXY-V-262: SSE2 group bytes × 8 must equal width_128 bits");
+#elif defined(__aarch64__)
+using ActiveVendorIsa = fv::neon_intrinsic;
+using ActiveSimdWidth = fs::width_128;
+static_assert(group_width() * 8u == std::to_underlying(fs::WidthBits::Bits128),
+              "FIXY-V-262: NEON group bytes × 8 must equal width_128 bits");
+#else
+using ActiveSimdWidth = fs::width_scalar;  // portable SWAR — no vector register
+#endif
+
+// Arm-independent: the active SIMD-width grant is always well-formed and
+// routes to the SimdIsa axis (FIXY-V-253).
+static_assert(::crucible::fixy::grant::IsGrantTag<ActiveSimdWidth>,
+              "FIXY-V-262: the active simd::width grant must be well-formed");
+static_assert(::crucible::fixy::grant::which_dim_v<ActiveSimdWidth>
+                  == ::crucible::fixy::dim::DimensionAxis::SimdIsa,
+              "FIXY-V-262: simd::width routes to the SimdIsa axis");
+
+#if defined(__AVX512BW__) || defined(__AVX2__) || defined(__SSE2__) || defined(__aarch64__)
+// The four real-SIMD arms additionally pin a vendor intrinsic; the
+// portable SWAR fallback has no vendor dependency.
+static_assert(::crucible::fixy::grant::IsGrantTag<ActiveVendorIsa>,
+              "FIXY-V-262: the active vendor::intrinsic grant must be well-formed");
+static_assert(::crucible::fixy::grant::which_dim_v<ActiveVendorIsa>
+                  == ::crucible::fixy::dim::DimensionAxis::HwInstruction,
+              "FIXY-V-262: vendor::intrinsic routes to the HwInstruction axis");
+#endif
+
+}  // namespace swiss_hw
 
 [[nodiscard]] consteval uint64_t group_mask_ceiling(std::size_t width) noexcept {
   return width == 64 ? std::numeric_limits<uint64_t>::max()
