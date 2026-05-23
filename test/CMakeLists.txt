@@ -1784,6 +1784,24 @@ crucible_neg_compile_fixy_test(neg_deadline_watchdog_hot_ctx
 crucible_neg_compile_fixy_test(neg_deadline_watchdog_non_exec_ctx
   "constraints not satisfied|IsExecCtx|no matching function|observe")
 
+# ─── FIXY-V-196 RdtscPinned witness neg-compiles (mint discipline) ─────
+#   RdtscPinned is the bench-local move-only proof that the
+#   measurement thread was pinned to a single core via
+#   BenchHarness::pin_().  Two distinct mismatch classes prove the
+#   forge-resistance:
+#     (1) no public default ctor (custom-ctor suppression)
+#     (2) private nested mint_tag (friend-only access)
+#   Both fixtures live in safety_neg/ but need bench/ on the include
+#   path; the per-target include directive below threads it in.
+crucible_neg_compile_test(neg_bench_rdtsc_pinned_default_ctor
+  "no matching|deleted|no default constructor|RdtscPinned|cannot bind|use of deleted")
+target_include_directories(neg_bench_rdtsc_pinned_default_ctor
+  SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/bench)
+crucible_neg_compile_test(neg_bench_rdtsc_pinned_mint_tag_access
+  "private|inaccessible|mint_tag|is private|protected member|within this context")
+target_include_directories(neg_bench_rdtsc_pinned_mint_tag_access
+  SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/bench)
+
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_regime         "FixyNotEngaged_Regime")
 
 # FIXY-AUDIT-D2 — HS14 floor for mint_fn factory.

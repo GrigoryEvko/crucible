@@ -143,6 +143,65 @@ static_assert(sizeof(CpuId) == sizeof(int));
 #endif
 }
 
+// ── FIXY-V-196: RdtscPinned witness + pinned-overload rdtsc primitives ─
+//
+// Modern x86 has invariant_tsc, so cross-core TSC reads ARE comparable
+// in absolute value — but a thread that migrates BETWEEN the rdtsc_start
+// and rdtsc_end of a short-window measurement still sees pipeline-state
+// artifacts (warm-vs-cold L1, branch-predictor reset, store-buffer
+// drain on context switch).  Short-window measurements MUST be pinned
+// for the duration of the pair.
+//
+// `RdtscPinned` is a move-only phantom witness — its existence at a
+// call site is a static proof that `BenchHarness::pin_()` succeeded
+// just prior, and the thread has not migrated since.  The construction
+// is mint-private to BenchHarness, so the only legitimate way to
+// produce a witness is the bench-harness affinity-set path.
+//
+// The pinned-overload `rdtsc_start(RdtscPinned const&) / rdtsc_end(...)`
+// share the body of the bare forms — the overload is pure type-system
+// discipline, zero runtime cost.  The bare forms remain available for
+// startup-time Timer calibration / overhead measurement (pre-pin) and
+// for ad-hoc external benches that don't run the harness affinity path.
+//
+// safety::CpuPinned<Mask, Posture, Unit> (V-187) requires Mask as an
+// NTTP — fits production code where the target core is compile-time
+// chosen, but bench's `warden::select_hot_cpu` picks the target at
+// runtime.  RdtscPinned is the dynamic-mask analogue specifically for
+// bench measurement loops.
+class RdtscPinned {
+    CpuId core_ = CpuId::none();
+    struct mint_tag {};
+
+    constexpr RdtscPinned(CpuId core, mint_tag) noexcept : core_{core} {}
+
+    // BenchHarness is the sole mint authority; the witness is produced
+    // immediately after sched_setaffinity success and travels through
+    // the measurement loop by const-ref.
+    friend class BenchHarness;
+
+public:
+    RdtscPinned(const RdtscPinned&)            = delete;
+    RdtscPinned& operator=(const RdtscPinned&) = delete;
+    constexpr RdtscPinned(RdtscPinned&&) noexcept            = default;
+    constexpr RdtscPinned& operator=(RdtscPinned&&) noexcept = default;
+
+    [[nodiscard]] constexpr CpuId core() const noexcept { return core_; }
+};
+
+// Pinned-overload rdtsc_start / rdtsc_end — gate per-iteration TSC
+// reads on the RdtscPinned proof.  Body is identical to the bare form;
+// the witness parameter is the type-level discipline marker.
+[[nodiscard, gnu::always_inline]] inline uint64_t
+rdtsc_start(RdtscPinned const&) noexcept {
+    return rdtsc_start();
+}
+
+[[nodiscard, gnu::always_inline]] inline uint64_t
+rdtsc_end(RdtscPinned const&) noexcept {
+    return rdtsc_end();
+}
+
 // Defeat dead-code elimination of values we want the optimizer to treat
 // as consumed.
 //
@@ -1135,7 +1194,18 @@ class Run {
         const uint64_t ovh  = Timer::overhead_cycles();
         const size_t   S    = samples_ ? samples_ : env_samples_();
 
-        const size_t batch = (batch_ == 0) ? auto_batch_(body) : batch_;
+        // FIXY-V-196: mint the RdtscPinned witness immediately after
+        // sched_setaffinity (or warden hardening apply) — the proof
+        // travels by const-ref through the measurement loop and
+        // auto_batch_; calls to rdtsc_start/end go through the
+        // pinned-overload pair, gated on the witness.  CpuId::none()
+        // (pin failure) still mints a witness — the type-system
+        // invariant is "we tried to pin"; runtime observation of
+        // pin_witness.core().is_valid() distinguishes hard-failed
+        // from successful pins on the report.
+        const RdtscPinned pin_witness{pinned_cpu, RdtscPinned::mint_tag{}};
+
+        const size_t batch = (batch_ == 0) ? auto_batch_(body, pin_witness) : batch_;
 
         // Wall-time cap: explicit `.max_wall_ms()` wins; else env var
         // CRUCIBLE_BENCH_WALL_MS; else default `kDefaultMaxWallMs`.
@@ -1189,9 +1259,12 @@ class Run {
         const auto wall0 = std::chrono::steady_clock::now();
 
         for (size_t i = 0; i < S; ++i) {
-            const uint64_t t0 = rdtsc_start();
+            // FIXY-V-196: pinned-overload form — the witness's existence
+            // proves a sched_setaffinity (or hardening apply) ran above
+            // and the thread has not migrated since.
+            const uint64_t t0 = rdtsc_start(pin_witness);
             for (size_t j = 0; j < batch; ++j) body();
-            const uint64_t t1 = rdtsc_end();
+            const uint64_t t1 = rdtsc_end(pin_witness);
             // RDTSCP+LFENCE guarantees t1 >= t0 (each RDTSC pair is
             // monotone on a single core); modular unsigned subtraction
             // is therefore safe. The older form `(t1 > t0 + ovh)`
@@ -1485,8 +1558,13 @@ class Run {
     // Older form compared `best` (includes overhead) to MIN_CYCLES, so
     // the terminator fired ~30 cycles early. Add `ovh` to the threshold
     // so the real body cost crosses 1000, not body+overhead.
+    //
+    // FIXY-V-196: takes `RdtscPinned const&` so the auto-tune pilot
+    // loops use the pinned-overload TSC reads — same discipline as
+    // the main measurement loop.  auto_batch_ runs *after* pin_() so
+    // a witness is always available at the call site (measure()).
     template <typename Body>
-    [[nodiscard]] size_t auto_batch_(Body&& body) const {
+    [[nodiscard]] size_t auto_batch_(Body&& body, RdtscPinned const& pin) const {
         constexpr uint64_t MIN_CYCLES     = 1000;
         constexpr size_t   MAX_BATCH      = 1u << 18;
         constexpr size_t   PILOT_SAMPLES  = 100;
@@ -1497,9 +1575,9 @@ class Run {
         while (batch <= MAX_BATCH) {
             uint64_t best = UINT64_MAX;
             for (size_t i = 0; i < PILOT_SAMPLES; ++i) {
-                const uint64_t t0 = rdtsc_start();
+                const uint64_t t0 = rdtsc_start(pin);
                 for (size_t j = 0; j < batch; ++j) body();
-                const uint64_t t1 = rdtsc_end();
+                const uint64_t t1 = rdtsc_end(pin);
                 // Same wrap-safety argument as in the main loop.
                 const uint64_t d  = t1 - t0;
                 if (d < best) best = d;
