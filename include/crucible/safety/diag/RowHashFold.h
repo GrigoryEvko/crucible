@@ -157,6 +157,7 @@ enum class HwInstruction       : std::uint8_t;  // FIXY-V-251 (wrapper V-254)
 enum class BarrierStrength     : std::uint8_t;  // FIXY-V-252 (wrapper V-255)
 enum class SimdIsa             : std::uint8_t;  // FIXY-V-250 (wrapper V-256)
 enum class MemoryScope         : std::uint8_t;  // FIXY-V-265 (wrapper V-267)
+enum class ClockSource         : std::uint8_t;  // FIXY-V-184 (wrapper V-185)
 }  // namespace crucible::algebra::lattices
 
 namespace crucible::safety {
@@ -168,6 +169,7 @@ template <algebra::lattices::HwInstruction Tier, typename T> class Hw;
 template <algebra::lattices::BarrierStrength Tier, typename T> class BarrierGuarded;
 template <algebra::lattices::SimdIsa W, typename T> class SimdWidthPinned;
 template <algebra::lattices::MemoryScope S, typename T> class ScopedFence;
+template <algebra::lattices::ClockSource Source, typename T> class ClockSource;
 template <algebra::lattices::MemOrderTag Tag, typename T> class MemOrder;
 template <algebra::lattices::ProgressClass Class, typename T> class Progress;
 template <algebra::lattices::ResidencyHeatTag Tier, typename T> class ResidencyHeat;
@@ -384,6 +386,13 @@ inline constexpr std::uint64_t WRAPPER_BARRIER_STRENGTH_TAG     = 0x2D00'0000'00
 inline constexpr std::uint64_t WRAPPER_SIMD_ISA_TAG            = 0x2E00'0000'0000'0000ULL;
 // FIXY-V-267 — ScopedFence<MemoryScope S, T> discriminator.
 inline constexpr std::uint64_t WRAPPER_MEMORY_SCOPE_TAG       = 0x2F00'0000'0000'0000ULL;
+// FIXY-V-185 — ClockSource<ClockSource Source, T> discriminator.  Salt
+// 0x30 is the next free high-byte after 0x2F (MemoryScope); the low byte
+// folds the ClockSource enumerator (0..8) so distinct sources land in
+// disjoint slots.  The composite ClockSourceLattice (V-184) carries NO
+// salt of its own — the federation-cache contribution lives HERE, on the
+// wrapper, exactly as V-184 deferred it.
+inline constexpr std::uint64_t WRAPPER_CLOCK_SOURCE_TAG       = 0x3000'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -724,6 +733,19 @@ template <algebra::lattices::MemoryScope S, typename Inner>
 struct row_hash_contribution<safety::ScopedFence<S, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::WRAPPER_MEMORY_SCOPE_TAG | static_cast<std::uint64_t>(S),
+        row_hash_contribution_v<Inner>);
+};
+
+// FIXY-V-185 — ClockSource is a Representation-neighborhood wrapper
+// (Tier-L Lattice) sitting between the Repr cluster (Vendor / SimdWidthPinned
+// / ScopedFence) and ResidencyHeat; the pinned clock source discriminates
+// the federation-cache slot.  This is the row_hash the V-184 composite
+// lattice deferred — the contribution lives on the WRAPPER, never the
+// lattice At<>.  The low byte folds the ClockSource enumerator (0..8).
+template <algebra::lattices::ClockSource Source, typename Inner>
+struct row_hash_contribution<safety::ClockSource<Source, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_CLOCK_SOURCE_TAG | static_cast<std::uint64_t>(Source),
         row_hash_contribution_v<Inner>);
 };
 

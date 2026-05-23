@@ -212,6 +212,57 @@ struct ClockSourceLattice
         ClockSourceLattice::get<2>(point) = pin;
         return point;
     }
+
+    // ── At<Source>: singleton grade pinning ONE clock source ────────
+    //
+    // Empty-element singleton sub-lattice indexed by a `ClockSource`
+    // value — the regime-1 grade the FIXY-V-185 safety/ClockSource.h
+    // wrapper carries:
+    //   ClockSource<Source, T> =
+    //       Graded<Absolute, ClockSourceLattice::At<Source>, T>
+    // Mirrors the chain lattices' At<P> and MemoryScopeLattice::At<Scope>
+    // (a non-chain lattice with a per-value singleton).  The pinned
+    // source's projected (DetSafe, Suspend, Pinning) tuple is read by the
+    // wrapper via `clock_source_project(Source)` — At<> deliberately does
+    // NOT embed the projection (it would forward-reference the free
+    // function defined below); At<> only pins the source identity at the
+    // type level.  element_type is empty so the Graded carrier
+    // EBO-collapses to sizeof(T).
+    template <ClockSource Source>
+    struct At {
+        struct element_type {
+            using clock_source_value_type = ClockSource;
+            [[nodiscard]] constexpr operator clock_source_value_type() const noexcept {
+                return Source;
+            }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
+                return true;
+            }
+        };
+
+        static constexpr ClockSource source = Source;
+
+        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
+        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
+        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
+        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
+
+        [[nodiscard]] static consteval std::string_view name() noexcept {
+            switch (Source) {
+                case ClockSource::Realtime:      return "ClockSourceLattice::At<Realtime>";
+                case ClockSource::Monotonic:     return "ClockSourceLattice::At<Monotonic>";
+                case ClockSource::MonotonicRaw:  return "ClockSourceLattice::At<MonotonicRaw>";
+                case ClockSource::Boot:          return "ClockSourceLattice::At<Boot>";
+                case ClockSource::ThreadCpu:     return "ClockSourceLattice::At<ThreadCpu>";
+                case ClockSource::ProcessCpu:    return "ClockSourceLattice::At<ProcessCpu>";
+                case ClockSource::TscRaw:        return "ClockSourceLattice::At<TscRaw>";
+                case ClockSource::TscSerialized: return "ClockSourceLattice::At<TscSerialized>";
+                case ClockSource::PmuCounter:    return "ClockSourceLattice::At<PmuCounter>";
+                default:                         return "ClockSourceLattice::At<?>";
+            }
+        }
+    };
 };
 
 // ── clock_source_project — the value→tuple FIXING function ──────────
@@ -509,6 +560,50 @@ static_assert(sizeof(ClockGraded<EightByteValue>) <= sizeof(EightByteValue) + 8,
     "FIXY-V-184: ClockGraded<EightByteValue> exceeded sizeof + 8 — the "
     "3-byte grade plus ≤ 5 bytes alignment padding must fit in 8 trailing "
     "bytes.");
+
+// ── At<Source> singleton grade — regime-1 EBO (FIXY-V-185 dependency) ─
+//
+// The per-source empty singleton the safety/ClockSource.h wrapper grades
+// on.  Unlike the full ClockSourceLattice grade (the 3-byte product
+// tuple, exercised above), At<Source> carries the source as an NTTP with
+// an EMPTY element_type, so Graded<Absolute, At<Source>, T> collapses to
+// sizeof(T) — the regime-1 path V-185 needs for BootClockBytes<T> etc.
+static_assert(crucible::algebra::Lattice<ClockSourceLattice::At<ClockSource::Boot>>);
+static_assert(crucible::algebra::BoundedLattice<ClockSourceLattice::At<ClockSource::TscRaw>>);
+static_assert(std::is_empty_v<ClockSourceLattice::At<ClockSource::Boot>::element_type>,
+    "FIXY-V-185 dependency: At<Source>::element_type must be empty so the "
+    "ClockSource wrapper EBO-collapses to sizeof(T).");
+static_assert(ClockSourceLattice::At<ClockSource::Boot>::source == ClockSource::Boot);
+static_assert(ClockSourceLattice::At<ClockSource::Realtime>::source == ClockSource::Realtime);
+static_assert(ClockSourceLattice::At<ClockSource::TscRaw>::name()
+              == std::string_view{"ClockSourceLattice::At<TscRaw>"});
+
+[[nodiscard]] consteval bool every_at_clock_source_has_name() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^ClockSource));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        if (ClockSourceLattice::At<([:en:])>::name() ==
+            std::string_view{"ClockSourceLattice::At<?>"}) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_at_clock_source_has_name(),
+    "ClockSourceLattice::At<Source>::name() switch missing an arm for at "
+    "least one source — add the arm or the new source leaks the "
+    "'ClockSourceLattice::At<?>' sentinel.");
+
+static_assert(
+    sizeof(crucible::algebra::Graded<crucible::algebra::ModalityKind::Absolute,
+                                     ClockSourceLattice::At<ClockSource::Boot>,
+                                     EightByteValue>)
+    == sizeof(EightByteValue),
+    "FIXY-V-185 dependency: At<Boot> regime-1 EBO collapse adds zero bytes "
+    "to an 8-byte payload.");
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //
