@@ -187,8 +187,13 @@ public:
             pct = 100.0;
         }
 
-        const long double rank_f =
-            (static_cast<long double>(pct) / 100.0L) * static_cast<long double>(total);
+        // FIXY-V-096b: compute the rank in `double`, not `long double`.
+        // `long double` is 80-bit on x86 but 64-bit on aarch64, so the same
+        // (pct, total) could pick a DIFFERENT bucket near a boundary across
+        // the fleet (DetSafe violation).  IEEE-754 double mul/div + ceil are
+        // correctly rounded and bit-identical on every target.
+        const double rank_f =
+            (pct / 100.0) * static_cast<double>(total);
         std::uint64_t rank = static_cast<std::uint64_t>(std::ceil(rank_f));
         if (rank == 0) {
             rank = 1;
@@ -210,16 +215,25 @@ public:
             return 0;
         }
 
-        long double sum = 0.0L;
+        // FIXY-V-096b: exact integer accumulation in unsigned __int128 — no
+        // float at all.  Replaces a `long double` weighted sum that was (a)
+        // 80-bit on x86 / 64-bit on aarch64 (cross-platform bit-different
+        // mean = DetSafe violation) and (b) inexact once the running sum
+        // exceeded the mantissa.  value_from_index × count is exact in
+        // __int128; for realistic latency/bandwidth histograms (MaxValue ·
+        // total well under 2^128) the accumulation never overflows.
+        wide_unsigned sum = 0;
         for (std::size_t i = 0; i < counts_.size(); ++i) {
             const std::uint64_t count = counts_[i].load(std::memory_order_relaxed);
             if (count != 0) {
-                sum += static_cast<long double>(layout_type::value_from_index(i)) *
-                       static_cast<long double>(count);
+                sum += static_cast<wide_unsigned>(layout_type::value_from_index(i)) *
+                       static_cast<wide_unsigned>(count);
             }
         }
-        return static_cast<std::uint64_t>(
-            (sum / static_cast<long double>(total)) + 0.5L);
+        // Round-half-up integer division (mean is reported in integer units);
+        // matches the prior `+ 0.5` truncation, now exact and float-free.
+        const wide_unsigned total128 = static_cast<wide_unsigned>(total);
+        return static_cast<std::uint64_t>((sum + total128 / 2) / total128);
     }
 
     [[nodiscard]] std::uint64_t std_dev() const noexcept {
@@ -228,19 +242,28 @@ public:
             return 0;
         }
 
-        const long double avg = static_cast<long double>(mean());
-        long double variance = 0.0L;
+        // FIXY-V-096b: exact Σ count·(value − mean)² in unsigned __int128,
+        // then a single IEEE-754 division + sqrt (both correctly rounded, so
+        // bit-identical on every target).  The deviation form Σ(x−mean)² is
+        // already cancellation-free (V-096 lesson); this additionally drops
+        // `long double` (80-bit x86 / 64-bit aarch64) from the accumulation,
+        // so the variance is computed identically across the fleet.
+        const std::uint64_t avg = mean();
+        wide_unsigned sum_sq = 0;
         for (std::size_t i = 0; i < counts_.size(); ++i) {
             const std::uint64_t count = counts_[i].load(std::memory_order_relaxed);
             if (count != 0) {
-                const long double delta =
-                    static_cast<long double>(layout_type::value_from_index(i)) - avg;
-                variance += delta * delta * static_cast<long double>(count);
+                const wide_signed delta =
+                    static_cast<wide_signed>(layout_type::value_from_index(i)) -
+                    static_cast<wide_signed>(avg);
+                const wide_unsigned sq =
+                    static_cast<wide_unsigned>(delta * delta);
+                sum_sq += sq * static_cast<wide_unsigned>(count);
             }
         }
-        return static_cast<std::uint64_t>(
-            std::sqrt(static_cast<double>(variance / static_cast<long double>(total))) +
-            0.5);
+        const double variance =
+            static_cast<double>(sum_sq) / static_cast<double>(total);
+        return static_cast<std::uint64_t>(std::sqrt(variance) + 0.5);
     }
 
     void merge_from(const HdrHistogram& other) noexcept {
@@ -325,6 +348,14 @@ public:
     }
 
 private:
+    // FIXY-V-096b: 128-bit integer aliases for the exact mean()/std_dev()
+    // accumulators.  `__extension__` suppresses -Wpedantic on the GCC
+    // `__int128` keyword here (per safety/Vendor / canopy/Hlc precedent);
+    // every downstream use refers to these names and never re-spells the
+    // keyword, so the rest of the header stays ISO-pedantic-clean.
+    __extension__ using wide_unsigned = unsigned __int128;
+    __extension__ using wide_signed   = __int128;
+
     static void saturating_sub(std::atomic<std::uint64_t>& dst,
                                std::uint64_t amount,
                                std::memory_order success =

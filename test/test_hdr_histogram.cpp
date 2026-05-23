@@ -72,6 +72,24 @@ int main() {
     assert(h.mean() > 0);
     assert(h.std_dev() > 0);
 
+    // FIXY-V-096b exactness witness: all-identical samples → variance is
+    // EXACTLY zero.  Σ count·(value − mean)² now accumulates in unsigned
+    // __int128 (exact, cross-platform bit-identical) instead of `long double`
+    // (80-bit x86 / 64-bit aarch64).  With every sample in one bucket the
+    // deviation is identically zero, so std_dev() must be precisely 0 — and
+    // mean() must equal that single bucket's reported value (its p50 == p100).
+    {
+        Hist same;
+        for (int rep = 0; rep < 1000; ++rep) {
+            same.record(Hist::checked_value(777));
+        }
+        assert(same.total_count() == 1000);
+        assert(same.std_dev() == 0);
+        assert(same.mean() == same.percentile(100.0));
+        assert(same.mean() == same.percentile(50.0));
+        assert(same.mean() > 0);
+    }
+
     std::uint64_t exported_count = 0;
     const std::size_t nonzero = h.for_each_nonzero([&](Hist::EncodedBucket bucket) {
         assert(bucket.count > 0);
