@@ -30,6 +30,7 @@
 #include <crucible/fixy/Vendor.h>            // FIXY-V-262: vendor::intrinsic<V,I> + canonical aliases
 #include <crucible/fixy/Simd.h>              // FIXY-V-262: simd::width<W> + width_* aliases
 #include <crucible/safety/Decide.h>          // decide::* lives at top-level, not under safety::
+#include <crucible/safety/Pre.h>             // WRAP-SwissTab-4: CRUCIBLE_PRE for BitMask::lowest()
 
 // FIXY-U-096i production migration: PowerOfTwo / Refined / bounded_above
 // reached through the fixy:: umbrella instead of safety::* directly.
@@ -246,8 +247,18 @@ struct BitMask {
     return raw() != 0;
   }
 
-  // Index of lowest set bit. Undefined if mask == 0.
+  // Index of lowest set bit.  Pre-emptive WRAP-SwissTab-4 guard: the
+  // canonical iteration idiom is `while (m) { use m.lowest(); m.clear_lowest(); }`
+  // (line 228 above), so reaching lowest() on an empty mask is a
+  // caller bug, not a domain query.  std::countr_zero(uint64_t{0})
+  // returns 64 per C++ spec — a value outside every group's slot
+  // range (kGroupWidth ∈ {16, 32, 64}) that the table-probe loop
+  // would silently interpret as a phantom slot index.  The CRUCIBLE_PRE
+  // catches the empty-mask call at consteval AND under
+  // -fcontract-evaluation-semantic=enforce at runtime, before the
+  // bogus index leaks into a slot read.
   [[nodiscard]] CRUCIBLE_INLINE uint32_t lowest() const {
+    CRUCIBLE_PRE(raw() != uint64_t{0});
     return static_cast<uint32_t>(std::countr_zero(raw()));
   }
 
