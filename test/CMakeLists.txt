@@ -317,6 +317,7 @@ crucible_test(test_fixy_v_272_fence)                    # FIXY-V-272 mimic/Fence
 crucible_test(test_fixy_v_273_async_pipeline_session)   # FIXY-V-273 sessions/AsyncPipelineSession.h — binary producer/consumer mbarrier protocol + Linear<SmemSlot> + 2 ctx-bound mints
 crucible_test(test_fixy_v_274_async_pipeline)           # FIXY-V-274 fixy/AsyncPipeline.h — mint_async_pipeline derives Stages from live-set width + Bytes=Refined<equals_slot_size> from the MemoryPlan
 crucible_test(test_fixy_v_203_spawn_join_policy)        # FIXY-V-203 fixy/spawn/JoinPolicy.h — spawn-MECHANISM phantom tag tree (AutoJoin/ManualJoin/Detached/Cloned/Forked/PosixSpawn) + IsJoinMechanismTag identity allowlist (Agent 7 §fixy::spawn::; orthogonal to V-078 strictness lattice)
+crucible_test(test_fixy_v_204_spawn_grant)              # FIXY-V-204 fixy/spawn/SpawnGrant.h — 5 engagement grants (detach_with/syscall_only/subprocess/fork_parent/exec_ctx) + rationale_nonempty_v in-class static_assert + JoinPolicyGrantsCoherent V-203×V-204 bridge concept (Agent 7 §fixy::spawn::)
 crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
@@ -12963,6 +12964,27 @@ crucible_neg_compile_fixy_test(neg_fixy_v_203_join_concept_rejects_non_tag
     "IsJoinMechanismTag|constraints not satisfied|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_v_203_join_imposter_struct
     "IsJoinMechanismTag|constraints not satisfied|associated constraints are not satisfied")
+
+# ── FIXY-V-204 — fixy/spawn/SpawnGrant.h engagement-grant tree
+#                 HS14 floor (Agent 7 §fixy::spawn::).
+#
+# Three fixtures cover orthogonal rejection axes:
+#   1. empty_rationale — in-class static_assert(rationale_nonempty_v)
+#      fires on `detach_with<"">` BEFORE the grant reaches any
+#      consumer.  Mismatch class: in-class static_assert.
+#   2. detached_missing_detach_with — JoinPolicyGrantsCoherent
+#      concept rejects Detached + grant pack lacking detach_with<>.
+#      Mismatch class: detach-spawn axis missing audit grant.
+#   3. forked_missing_subprocess — JoinPolicyGrantsCoherent concept
+#      rejects Forked + grant pack lacking subprocess<>.  Mismatch
+#      class: process-spawn axis (distinct syscall family +
+#      CMake-level CRUCIBLE_SPAWN_ALLOW_PROCESS opt-in).
+crucible_neg_compile_fixy_test(neg_fixy_v_204_grant_empty_rationale
+    "rationale_nonempty_v|static assertion failed|Rationale must be")
+crucible_neg_compile_fixy_test(neg_fixy_v_204_grant_detached_missing_detach_with
+    "JoinPolicyGrantsCoherent|constraints not satisfied|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_v_204_grant_forked_missing_subprocess
+    "JoinPolicyGrantsCoherent|constraints not satisfied|associated constraints are not satisfied")
 
 # ── FIXY-V-084 — fixy::sync::{Wait,MemOrder} surface HS14 floor ─────
 #
