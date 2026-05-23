@@ -96,6 +96,7 @@
 #include <crucible/fixy/Grant.h>            // grant_base, which_dim primary
 #include <crucible/safety/DimensionTraits.h>// DimensionAxis::SyscallSurface
 #include <crucible/safety/Linear.h>         // safety::Linear
+#include <crucible/safety/OwnedMmap.h>      // safety::OwnedMmap — V-231 promoted RAII
 
 #include <crucible/effects/ExecCtx.h>       // IsExecCtx + row_type_of_t
 #include <crucible/effects/EffectRow.h>     // row_contains_v
@@ -511,64 +512,22 @@ inline constexpr bool pack_has_anonymous_v = (is_anonymous_share_v<Grants> || ..
 
 }  // namespace detail
 
-// ── OwnedMmap<Tag, Prot, Share> — Linear RAII region ─────────────────
+// ── OwnedMmap<Tag, Prot, Share> — Linear RAII region (V-231 promoted) ─
 //
 // Move-only RAII over a mmap'd region.  Destructor calls ::munmap if
 // `is_mapped()` (the addr_ != MAP_FAILED && addr_ != nullptr predicate).
 // Move semantics swap the carrier to MAP_FAILED so the moved-from
 // instance no longer claims the region.
 //
-// V-231 will promote this to safety/OwnedMmap.h with the same shape;
-// the fixy substrate keeps it here for V-225's call-site convenience.
+// V-231 promoted the underlying RAII to safety/OwnedMmap.h so consumers
+// outside the fixy syscall surface (V-236 perf hubs, future Cipher
+// warm-tier mmap users) can reach the discipline without pulling
+// fixy/Mmap.h.  This alias keeps V-225's call-site spelling stable;
+// `crucible::fixy::mmap::OwnedMmap<...>` and
+// `crucible::safety::OwnedMmap<...>` are the SAME type.
 
 template <typename Tag, typename Prot, typename Share>
-class [[nodiscard]] OwnedMmap {
-    void*       addr_ = MAP_FAILED;
-    std::size_t len_  = 0;
-
-public:
-    using tag_type   = Tag;
-    using prot_type  = Prot;
-    using share_type = Share;
-
-    OwnedMmap() noexcept = default;
-
-    explicit OwnedMmap(void* address, std::size_t length) noexcept
-        : addr_{address}, len_{length} {}
-
-    OwnedMmap(const OwnedMmap&)            = delete("mmap region is unique; copy would double-unmap");
-    OwnedMmap& operator=(const OwnedMmap&) = delete("mmap region is unique; copy would double-unmap");
-
-    OwnedMmap(OwnedMmap&& other) noexcept
-        : addr_{std::exchange(other.addr_, MAP_FAILED)},
-          len_ {std::exchange(other.len_, 0)} {}
-
-    OwnedMmap& operator=(OwnedMmap&& other) noexcept {
-        if (this != &other) {
-            release_();
-            addr_ = std::exchange(other.addr_, MAP_FAILED);
-            len_  = std::exchange(other.len_, 0);
-        }
-        return *this;
-    }
-
-    ~OwnedMmap() noexcept { release_(); }
-
-    [[nodiscard]] void*       data()      const noexcept { return addr_; }
-    [[nodiscard]] std::size_t size()      const noexcept { return len_; }
-    [[nodiscard]] bool        is_mapped() const noexcept {
-        return addr_ != MAP_FAILED && addr_ != nullptr;
-    }
-
-private:
-    void release_() noexcept {
-        if (is_mapped()) {
-            ::munmap(addr_, len_);
-            addr_ = MAP_FAILED;
-            len_  = 0;
-        }
-    }
-};
+using OwnedMmap = ::crucible::safety::OwnedMmap<Tag, Prot, Share>;
 
 // ── §XXI ctx-bound mint gates — single-concept requires per family ───
 //

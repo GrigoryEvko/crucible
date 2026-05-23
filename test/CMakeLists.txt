@@ -9528,6 +9528,22 @@ crucible_neg_compile_test(neg_owned_file_copy_rejected
 crucible_neg_compile_test(neg_owned_file_copy_assign_rejected
     "use of deleted function|deleted|copy|double-close")
 
+# FIXY-V-231 HS14 floor — OwnedMmap (safety/OwnedMmap.h) is the RAII
+# wrapper for mmap'd (addr, len) pairs, paralleling OwnedFile / FileHandle.
+# Exclusive ownership = copy-ctor + copy-assign deleted with the structured
+# reason string; phantom Tag is load-bearing for overload resolution.
+# Three distinct mismatch classes:
+#   #1 copy-ctor side of the deleted-copy pair
+#   #2 copy-assignment side of the deleted-copy pair
+#   #3 cross-Tag mismatch — Tag is per-call-site identity, no implicit
+#      conversion between OwnedMmap<TagA,...> and OwnedMmap<TagB,...>.
+crucible_neg_compile_test(neg_owned_mmap_copy_rejected
+    "use of deleted function|deleted|copy|double-unmap")
+crucible_neg_compile_test(neg_owned_mmap_copy_assign_rejected
+    "use of deleted function|deleted|copy|double-unmap")
+crucible_neg_compile_test(neg_owned_mmap_cross_tag_mismatch
+    "invalid initialization|cannot convert|no matching function|deduced conflicting")
+
 # fixy-A1-014 HS14 floor — `ct::eq` is a span-only API and fires
 # CRUCIBLE_PRE on length mismatch.  Pre-fix `(ptr, ptr, size_t)` silently
 # dereferenced null at any non-zero length and swallowed sized
