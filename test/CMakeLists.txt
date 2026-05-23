@@ -307,6 +307,7 @@ crucible_test(test_fixy_v_259_simd_width)               # FIXY-V-259 fixy/Simd.h
 crucible_test(test_fixy_v_261_arch_pinned)              # FIXY-V-261 safety/source/Arch.h — source::ArchPinned<Arch> tag + ArchComposable cross-arch gate + Portable→concrete retag admittance
 crucible_test(test_fixy_v_262_swisstable_hw_grants)     # FIXY-V-262 SwissTable.h #if arms declare vendor::intrinsic<V,I> + simd::width<W> per ISA arm + width↔group-bytes consistency
 crucible_test(test_fixy_v_263_fec_hw_grants)            # FIXY-V-263 cntp/Fec.h #if arms declare vendor::intrinsic<V,I> + simd::width<W> per ISA arm (AVX2/NEON/portable) + stride↔width consistency
+crucible_test(test_fixy_v_264_hw_grants)               # FIXY-V-264 TraceRing cache<Prefetch,3> (HwInstruction) + ChaseLevDeque barrier<Compiler,SeqCst> (BarrierStrength) grant declarations on distinct axes
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
@@ -585,6 +586,21 @@ add_test(NAME no_raw_ofstream
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-ofstream.sh)
 set_tests_properties(no_raw_ofstream no_raw_ofstream_self_test PROPERTIES
     LABELS "ci_guard;fixy-V-237")
+# FIXY-V-264 hardware-axis grant-declaration presence gate (Agent 11 Tier
+# 2 #17).  scripts/check-fixy-hw-discipline.sh asserts the four Tier-2
+# sites (SwissTable swiss_hw / Fec fec_hw / TraceRing tracering_hw /
+# ChaseLevDeque chaselev_hw) each keep their 'namespace <site>_hw' block
+# with the IsGrantTag<> + which_dim_v<> static_asserts.  Complements the
+# C++ build (which proves the asserts CORRECT) with a cheap PRESENCE gate
+# guarding against silent deletion/gutting.  Self-test plants a gutted
+# site, a complete site, and a missing file to verify all three axes.
+add_test(NAME fixy_hw_discipline_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.sh
+          --self-test)
+add_test(NAME fixy_hw_discipline
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.sh)
+set_tests_properties(fixy_hw_discipline fixy_hw_discipline_self_test PROPERTIES
+    LABELS "ci_guard;fixy-V-264")
 # FIXY-U-105 reinterpret_cast ban enforcement (CLAUDE.md §III opt-out
 # matrix).  scripts/check-no-reinterpret-cast.sh flags every NEW
 # `reinterpret_cast<` call site outside the allowlist; 20 grandfathered
@@ -12045,6 +12061,14 @@ crucible_neg_compile_fixy_test(neg_fixy_v_263_width_byte_mismatch
     "FIXY-V-263|static assertion")
 crucible_neg_compile_fixy_test(neg_fixy_v_263_vendor_arch_mismatch
     "constraints not satisfied|vendor_isa_consistent|intrinsic|no matching")
+
+# ── FIXY-V-264 — TraceRing prefetch + ChaseLevDeque fence grants ────
+# Two fixtures witness the HwInstruction cache grant's NTTP-range gate
+# and the BarrierStrength fence grant's axis routing (distinct classes).
+crucible_neg_compile_fixy_test(neg_fixy_v_264_cache_locality_overflow
+    "constraints not satisfied|Locality|cache|associated constraints")
+crucible_neg_compile_fixy_test(neg_fixy_v_264_barrier_axis_mismatch
+    "FIXY-V-264|static assertion|SimdIsa|BarrierStrength")
 
 # ── FIXY-V-259 — fixy/Simd.h is_known_width gate (HS14 structural) ───
 # Two fixtures witness the `is_known_width_v<W>` strong-typing gate at

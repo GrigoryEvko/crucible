@@ -79,6 +79,9 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
+#include <crucible/fixy/Hw.h>                 // FIXY-V-264: grant::hw::barrier<Arch, Kind> + which_dim
+#include <crucible/fixy/Dim.h>                // FIXY-V-264: dim::DimensionAxis (BarrierStrength)
+#include <crucible/algebra/lattices/BarrierStrengthLattice.h>  // FIXY-V-264: leq/join over fence strength
 
 #include <array>
 #include <atomic>
@@ -90,6 +93,50 @@
 #include <type_traits>
 
 namespace crucible::concurrent {
+
+// ── FIXY-V-264: hardware-axis grant declaration (BarrierStrength) ───
+//
+// push_bottom / pop_bottom / steal_top rest on two fence strengths:
+//   * push_bottom's std::atomic_thread_fence(release)         → ReleaseStore
+//   * the two Lê 2013 §3.3 seq_cst fences (pop/steal critical
+//     points, via AtomicMonotonic<int64_t>::fence_seq_cst())  → SeqCst
+// Per the BarrierStrengthLattice "par=join" reading (V-252), a region
+// containing both sites is graded at the JOIN (the stronger fence) — so
+// the deque's characterizing barrier grant is SeqCst.  This block pins
+// that grant on the portable BarrierArch::Compiler family (the fences are
+// std::atomic_thread_fence, which the compiler lowers to mfence / DMB ISH
+// per target) and proves SeqCst is the lattice join of the two strengths.
+namespace chaselev_hw {
+
+namespace fh   = ::crucible::fixy::hw;
+namespace fgh  = ::crucible::fixy::grant::hw;
+using BSL      = ::crucible::algebra::lattices::BarrierStrengthLattice;
+using BS       = ::crucible::fixy::hw::BarrierStrength;  // == lattices::BarrierStrength
+
+// The strongest fence the algorithm needs (the two §3.3 seq_cst points),
+// expressed portably (compiler lowers std::atomic_thread_fence per arch).
+using ActiveBarrierGrant = fh::barrier_compiler_seqcst;  // barrier<Compiler, SeqCst>
+
+// Well-formed grant tag routing to the BarrierStrength axis (FIXY-V-253) —
+// a DISTINCT axis from the SimdIsa/HwInstruction grants of V-262/V-263.
+static_assert(::crucible::fixy::grant::IsGrantTag<ActiveBarrierGrant>,
+              "FIXY-V-264: the active barrier grant must be a well-formed grant tag");
+static_assert(::crucible::fixy::grant::which_dim_v<ActiveBarrierGrant>
+                  == ::crucible::fixy::dim::DimensionAxis::BarrierStrength,
+              "FIXY-V-264: grant::hw::barrier routes to the BarrierStrength axis");
+
+// Strength consistency — SeqCst is the lattice JOIN of the deque's two
+// fence strengths (release fence ⊔ seq_cst fence), so it is the correct
+// characterizing grant; a weaker declaration would under-claim the fence
+// the §3.3 critical points actually emit.  Uses the lattice ordering
+// (robust to enum renumbering), not raw underlying values.
+static_assert(BSL::leq(BS::ReleaseStore, BS::SeqCst),
+              "FIXY-V-264: release fence is weaker than the §3.3 seq_cst fence");
+static_assert(BSL::join(BS::ReleaseStore, BS::SeqCst) == BS::SeqCst,
+              "FIXY-V-264: the deque's barrier grade is the join of its two "
+              "fence strengths — SeqCst dominates the release fence");
+
+}  // namespace chaselev_hw
 
 // ── DequeValue<T> concept ─────────────────────────────────────────
 //

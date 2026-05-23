@@ -53,6 +53,8 @@
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
+#include <crucible/fixy/Hw.h>                 // FIXY-V-264: grant::hw::cache<Prefetch, L> + which_dim
+#include <crucible/fixy/Dim.h>                // FIXY-V-264: dim::DimensionAxis (HwInstruction)
 
 // FIXY-U-031b (S1-TraceRing of #1736): TraceRing spells its safety
 // wrappers through fixy::wrap:: / fixy::tags:: , never safety::* — see
@@ -129,6 +131,44 @@ enum class ScalarType2 : uint8_t {
   BOOL  = 2,   // 0 or 1 — canonicalized at record time
   ENUM  = 3,   // underlying integer of an enum class (e.g. ScalarType, Layout)
 };
+
+// ── FIXY-V-264: hardware-axis grant declaration (HwInstruction) ─────
+//
+// try_append() prefetches the NEXT ring slot into L1d via four
+// __builtin_prefetch(addr, /*rw=*/1, /*locality=*/3) calls.  A prefetch
+// is a cache-control instruction on the HwInstruction axis (V-251); this
+// block pins the (CacheOp, Locality) the kernel emits so a future locality
+// edit cannot drift from the declared grant.  `kPrefetchLocality` is the
+// SINGLE source of truth — it parameterizes BOTH the grant tag AND the
+// builtin's third argument below, so the declaration is load-bearing
+// (changing it changes the actual instruction), not documentation.
+namespace tracering_hw {
+
+namespace fh  = ::crucible::fixy::hw;
+namespace fgh = ::crucible::fixy::grant::hw;
+
+// Temporal-locality hint for the four try_append prefetches: 3 = highest
+// reuse (keep in all cache levels), matching the "next slot is touched on
+// the very next append" access pattern.  Wired into the builtin calls.
+inline constexpr int kPrefetchLocality = 3;
+
+using ActiveCacheGrant = fgh::cache<fh::CacheOp::Prefetch, kPrefetchLocality>;
+
+// Well-formed grant tag routing to the HwInstruction axis (FIXY-V-253).
+static_assert(::crucible::fixy::grant::IsGrantTag<ActiveCacheGrant>,
+              "FIXY-V-264: the active cache grant must be a well-formed grant tag");
+static_assert(::crucible::fixy::grant::which_dim_v<ActiveCacheGrant>
+                  == ::crucible::fixy::dim::DimensionAxis::HwInstruction,
+              "FIXY-V-264: grant::hw::cache routes to the HwInstruction axis");
+
+// Locality consistency — the declared hint MUST be a valid prefetch
+// temporal-locality level [0, 3].  __builtin_prefetch's third argument
+// has the same domain; a value outside it is undefined.
+static_assert(kPrefetchLocality >= 0 && kPrefetchLocality <= 3,
+              "FIXY-V-264: prefetch locality must be in [0, 3] — the "
+              "__builtin_prefetch third-argument domain");
+
+}  // namespace tracering_hw
 
 // 2 MB alignment so make_unique lands on a PMD-aligned region and
 // MADV_HUGEPAGE doesn't EINVAL (kernel 5.8+).
@@ -331,10 +371,12 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // completes during the caller's post-append work (Python dispatch, etc.).
     {
       const uint32_t next_slot = (slot + 1u) & MASK;
-      __builtin_prefetch(&entries[next_slot],         1, 3);
-      __builtin_prefetch(&meta_starts[next_slot],     1, 3);
-      __builtin_prefetch(&scope_hashes[next_slot],    1, 3);
-      __builtin_prefetch(&callsite_hashes[next_slot], 1, 3);
+      // Locality is the FIXY-V-264-declared tracering_hw::kPrefetchLocality
+      // (write intent, T0) — the grant tag and these calls share one source.
+      __builtin_prefetch(&entries[next_slot],         1, tracering_hw::kPrefetchLocality);
+      __builtin_prefetch(&meta_starts[next_slot],     1, tracering_hw::kPrefetchLocality);
+      __builtin_prefetch(&scope_hashes[next_slot],    1, tracering_hw::kPrefetchLocality);
+      __builtin_prefetch(&callsite_hashes[next_slot], 1, tracering_hw::kPrefetchLocality);
     }
 
     // advance: publish the entry data (stored above) to the consumer; the
