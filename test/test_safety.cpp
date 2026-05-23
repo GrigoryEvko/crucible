@@ -873,8 +873,12 @@ static void test_constant_time() {
 
     assert(less<std::uint32_t>(5u, 10u) == 1u);
     assert(less<std::uint32_t>(10u, 5u) == 0u);
-    assert(is_zero<std::uint32_t>(0u) == 1u);
-    assert(is_zero<std::uint32_t>(1u) == 0u);
+    // Qualify ct::is_zero — disambiguates from
+    // crucible::safety::is_zero predicate (WRAP-Serialize-5 #1014)
+    // which is also pulled in via the file-scope `using namespace
+    // crucible::safety` at line 29.
+    assert(ct::is_zero<std::uint32_t>(0u) == 1u);
+    assert(ct::is_zero<std::uint32_t>(1u) == 0u);
 
     std::uint32_t x = 100u, y = 200u;
     cswap<std::uint32_t>(1u, x, y);

@@ -252,13 +252,15 @@ struct TraceGraph {
   //
   // CONTRACT-106 cite — non-zero hash sentinel via decide::is_non_zero
   // (CONTRACT-072 catalog).
-  [[nodiscard]] crucible::fixy::wrap::Refined<
-      crucible::fixy::wrap::non_zero, ContentHash>
+  // PROD-WRAP-6 #535: routes through the shared `ValidContentHash`
+  // alias declared in MerkleDag.h (alongside ValidMerkleRoot) — pure
+  // rename of the previous spelled-out Refined<non_zero, ContentHash>,
+  // equivalent at the type level, pins the canonical §XVI grep target.
+  [[nodiscard]] ValidContentHash
   computed_content_hash() const noexcept
       pre (::crucible::decide::is_non_zero(content_hash))
   {
-    return crucible::fixy::wrap::Refined<
-        crucible::fixy::wrap::non_zero, ContentHash>{content_hash};
+    return ValidContentHash{content_hash};
   }
 };
 

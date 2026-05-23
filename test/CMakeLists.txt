@@ -6131,6 +6131,42 @@ crucible_neg_compile_test(neg_merkle_root_zero_literal
 crucible_neg_compile_test(neg_merkle_root_default_construct
   "contract|Refined|non_zero|not a constant|non-constant|constexpr")
 
+# ─── PROD-WRAP-6 #535 neg-compile tests ─────────────────────────────
+#
+# Per PROD-WRAP-6 (#535), ValidContentHash is
+# safety::Refined<safety::non_zero, ContentHash> declared in
+# MerkleDag.h alongside ValidMerkleRoot.  ContentHash{0} is the
+# structural sentinel for "this region was never folded by
+# compute_content_hash" — empty regions legitimately carry it
+# (make_region with num_ops==0), but it is never a valid
+# cache-publish / federation / merkle-fold key.  Three accessors
+# now route through the typed alias instead of inline spellings of
+# Refined<non_zero, ContentHash>:
+#   * RegionNode::computed_content_hash (MerkleDag.h)
+#   * LoopNode::computed_body_content_hash (MerkleDag.h)
+#   * TraceGraph::computed_content_hash (TraceGraph.h)
+#
+# Two fixtures per HS14 mandate, mirroring the ValidMerkleRoot
+# fixture pair (the predicate non_zero is the same; only the strong-
+# hash family differs):
+#   * neg_content_hash_zero_literal — explicit-literal mismatch
+#     (= ContentHash{uint64_t{0}}).  Catches caller-typed-zero drift.
+#   * neg_content_hash_default_construct — NSDMI-default wide miss
+#     (= ContentHash{}).  Catches the realistic mode: a freshly
+#     allocated RegionNode / TraceGraph whose content_hash field is
+#     default-zero and hasn't yet been populated by the streaming
+#     fold.
+#
+# Defense-in-depth: each accessor's `pre(decide::is_non_zero(...))`
+# runtime gate is retained.  ValidContentHash catches the value at
+# the construction call; the pre clause catches it at the accessor
+# body's entry.  Both layers must reject for the type-level
+# invariant and the runtime path to disagree.
+crucible_neg_compile_test(neg_content_hash_zero_literal
+  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_content_hash_default_construct
+  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
+
 # ─── #897 WRAP-CostModel-3 neg-compile tests ────────────────────────
 #
 # Per #897, ValidRegsPerThread is

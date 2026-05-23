@@ -598,6 +598,56 @@ MerkleHash make_merkle_root(ValidMerkleRoot raw) noexcept {
     return raw.value();
 }
 
+// ── Validated ContentHash witness (PROD-WRAP-6 / #535) ───────────────
+//
+// The ContentHash a caller passes to KernelCache::publish_l* / Cipher
+// ContentAddressed* lookups / federation round-trip keys MUST be
+// non-zero — zero is the structural sentinel for "this region was
+// never folded by compute_content_hash" (an empty op list produces
+// zero by design, but empty regions are never cache-publishable
+// because their kernel hash is meaningless).  Propagating zero into
+// content-addressed paths silently corrupts:
+//   (1) KernelCache::publish_l1/l2/l3 — the `(content_hash,
+//       device_capability)` lookup key folds with zero on one side,
+//       so two different region sub-DAGs with different op lists but
+//       both lacking a computed hash would alias to the same cache
+//       slot — wrong-kernel dispatch on a hash collision;
+//   (2) Cipher ContentAddressed* federation key — the receiving Relay
+//       would accept a zero-hash region as proof-of-equivalence with
+//       any other unbuilt region (same defect mode as ValidMerkleRoot
+//       at the federation boundary);
+//   (3) LoopNode::body_content_hash mixing into compute_merkle_hash
+//       at line 880 — XOR-fold with zero is a no-op, so the parent
+//       merkle hash is structurally indistinguishable from "loop has
+//       empty body" (a construction bug, not a legal state, because
+//       make_loop only accepts non-empty body chains).
+//
+// `ValidContentHash` is the type-level witness that the caller has
+// validated the hash at its source.  Mirror of ValidMerkleRoot —
+// same `Refined<non_zero, T>` shape, same regime-1 EBO collapse to
+// sizeof(ContentHash) == 8 B.  Sites that legitimately tolerate zero
+// (the degenerate empty-region case produced by
+// make_region(arena, ops, /*num_ops=*/0)) continue to read the raw
+// `content_hash` field; sites that ALREADY assume non-zero (cache
+// publish, federation round-trip, merkle hash fold) route through
+// the accessor and get the type-level proof.
+//
+// Defense-in-depth: each accessor's `pre(decide::is_non_zero(...))`
+// is retained as the runtime gate.  ValidContentHash catches the
+// value at the construction call; the pre clause catches it at the
+// accessor body's entry.  Both layers must reject for the type-level
+// invariant and the runtime path to disagree.
+//
+// Cost: regime-1 EBO collapse — sizeof(ValidContentHash) ==
+// sizeof(ContentHash) == sizeof(uint64_t) == 8 B.
+using ValidContentHash = ::crucible::fixy::wrap::Refined<
+    ::crucible::fixy::wrap::non_zero, ContentHash>;
+
+[[nodiscard, gnu::const]] inline constexpr
+ContentHash make_content_hash(ValidContentHash raw) noexcept {
+    return raw.value();
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // RegionNode: A compilable sequence of ops
 //
@@ -723,13 +773,17 @@ struct RegionNode : TraceNode {
   // on a region whose num_ops > 0 cannot fire the precondition.
   // The accessor's pre-clause refuses the degenerate empty-region case
   // — those callers should branch on num_ops first or use the raw field.
-  [[nodiscard]] crucible::fixy::wrap::Refined<
-      crucible::fixy::wrap::non_zero, ContentHash>
+  // PROD-WRAP-6 #535: routes through the shared `ValidContentHash`
+  // alias (declared above with ValidMerkleRoot).  Equivalent to the
+  // spelled-out `Refined<non_zero, ContentHash>` at the type level
+  // — pure rename — but pins the canonical alias name as the §XVI
+  // grep target so future refactors don't reintroduce inline
+  // duplicates of the same Refined family.
+  [[nodiscard]] ValidContentHash
   computed_content_hash() const noexcept
       pre (::crucible::decide::is_non_zero(content_hash))
   {
-    return crucible::fixy::wrap::Refined<
-        crucible::fixy::wrap::non_zero, ContentHash>{content_hash};
+    return ValidContentHash{content_hash};
   }
 
   // Set the active variant.  CONTRACT-106 routes the non-zero sentinel
@@ -892,13 +946,13 @@ struct LoopNode : TraceNode {
   // CONTRACT-106 cite — non-zero hash sentinel via decide::is_non_zero
   // (CONTRACT-072 catalog).  Mirror of RegionNode::computed_content_hash
   // and TraceNode::computed_merkle_hash.
-  [[nodiscard]] crucible::fixy::wrap::Refined<
-      crucible::fixy::wrap::non_zero, ContentHash>
+  // PROD-WRAP-6 #535: routes through the shared `ValidContentHash`
+  // alias (see RegionNode::computed_content_hash for rationale).
+  [[nodiscard]] ValidContentHash
   computed_body_content_hash() const noexcept
       pre (::crucible::decide::is_non_zero(body_content_hash))
   {
-    return crucible::fixy::wrap::Refined<
-        crucible::fixy::wrap::non_zero, ContentHash>{body_content_hash};
+    return ValidContentHash{body_content_hash};
   }
 };
 
