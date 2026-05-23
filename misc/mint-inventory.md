@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-23T16:28:53Z`.
+Snapshot generated: `2026-05-23T16:38:29Z`.
 
 ## bridges/
 
@@ -126,6 +126,7 @@ Snapshot generated: `2026-05-23T16:28:53Z`.
 | `mint_linear_view` | `include/crucible/safety/ScopedView.h:200` | Y | Y | Y | - | token | `include/crucible/fixy/Safety.h:43` | HS14: 3 |
 | `mint_machine` | `include/crucible/safety/Machine.h:139` | Y | Y | Y | Y | token | `include/crucible/fixy/Mach.h:154` | HS14: 6 |
 | `mint_refined` | `include/crucible/safety/Refined.h:363` | Y | Y | Y | Y | token | `include/crucible/fixy/AsyncPipeline.h:179` | HS14: 4 |
+| `mint_sched_class` | `include/crucible/safety/SchedClass.h:196` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 3 |
 | `mint_scoped_fence` | `include/crucible/safety/ScopedFence.h:209` | Y | Y | Y | Y | token | `include/crucible/fixy/Hw.h:124` | HS14: 2 |
 | `mint_sealed_refined` | `include/crucible/safety/SealedRefined.h:239` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1191` | HS14: 4 |
 | `mint_secret` | `include/crucible/safety/Secret.h:359` | Y | Y | Y | Y | token | `include/crucible/fixy/Safety.h:12` | HS14: 4 |
@@ -269,8 +270,8 @@ mints) are listed in the substrate section instead.
 
 ## Summary
 
-- Total substrate mints: 119
-- Missing fixy re-export: 13
+- Total substrate mints: 120
+- Missing fixy re-export: 14
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - fixy-origin mints: 31 (declared in fixy/, no substrate counterpart — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

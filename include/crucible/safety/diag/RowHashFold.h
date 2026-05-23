@@ -158,6 +158,7 @@ enum class BarrierStrength     : std::uint8_t;  // FIXY-V-252 (wrapper V-255)
 enum class SimdIsa             : std::uint8_t;  // FIXY-V-250 (wrapper V-256)
 enum class MemoryScope         : std::uint8_t;  // FIXY-V-265 (wrapper V-267)
 enum class ClockSource         : std::uint8_t;  // FIXY-V-184 (wrapper V-185)
+enum class SchedulerPolicy     : std::uint8_t;  // FIXY-V-183 (wrapper V-186)
 }  // namespace crucible::algebra::lattices
 
 namespace crucible::safety {
@@ -170,6 +171,9 @@ template <algebra::lattices::BarrierStrength Tier, typename T> class BarrierGuar
 template <algebra::lattices::SimdIsa W, typename T> class SimdWidthPinned;
 template <algebra::lattices::MemoryScope S, typename T> class ScopedFence;
 template <algebra::lattices::ClockSource Source, typename T> class ClockSource;
+template <algebra::lattices::SchedulerPolicy Policy, typename T,
+          std::uint64_t RuntimeNs, std::uint64_t DeadlineNs, std::uint64_t PeriodNs>
+class SchedClass;
 template <algebra::lattices::MemOrderTag Tag, typename T> class MemOrder;
 template <algebra::lattices::ProgressClass Class, typename T> class Progress;
 template <algebra::lattices::ResidencyHeatTag Tier, typename T> class ResidencyHeat;
@@ -393,6 +397,12 @@ inline constexpr std::uint64_t WRAPPER_MEMORY_SCOPE_TAG       = 0x2F00'0000'0000
 // salt of its own — the federation-cache contribution lives HERE, on the
 // wrapper, exactly as V-184 deferred it.
 inline constexpr std::uint64_t WRAPPER_CLOCK_SOURCE_TAG       = 0x3000'0000'0000'0000ULL;
+// FIXY-V-186 — SchedClass<SchedulerPolicy Policy, T, R, D, P> discriminator.
+// Salt 0x31 is the next free high-byte after 0x30 (ClockSource); the low
+// byte folds the SchedulerPolicy enumerator (0..5) and the SCHED_DEADLINE
+// budget NTTPs are mixed in so distinct CBS budgets occupy distinct slots
+// (non-DEADLINE policies carry a zero budget → the mix vanishes).
+inline constexpr std::uint64_t WRAPPER_SCHED_CLASS_TAG       = 0x3100'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -746,6 +756,23 @@ template <algebra::lattices::ClockSource Source, typename Inner>
 struct row_hash_contribution<safety::ClockSource<Source, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::WRAPPER_CLOCK_SOURCE_TAG | static_cast<std::uint64_t>(Source),
+        row_hash_contribution_v<Inner>);
+};
+
+// FIXY-V-186 — SchedClass is a Synchronization-neighborhood wrapper (peer
+// to Wait / MemOrder); the pinned scheduler policy discriminates the slot,
+// and the SCHED_DEADLINE budget NTTPs are folded so two DEADLINE tasks
+// with different (runtime, deadline, period) never alias.  This is the
+// row_hash the V-183 SchedulerPolicyLattice deferred — on the WRAPPER,
+// never the lattice At<>.
+template <algebra::lattices::SchedulerPolicy Policy, typename Inner,
+          std::uint64_t RuntimeNs, std::uint64_t DeadlineNs, std::uint64_t PeriodNs>
+struct row_hash_contribution<
+    safety::SchedClass<Policy, Inner, RuntimeNs, DeadlineNs, PeriodNs>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::combine_ids(
+            detail::WRAPPER_SCHED_CLASS_TAG | static_cast<std::uint64_t>(Policy),
+            RuntimeNs ^ (DeadlineNs << 1) ^ (PeriodNs << 2)),
         row_hash_contribution_v<Inner>);
 };
 

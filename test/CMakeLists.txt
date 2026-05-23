@@ -303,6 +303,7 @@ crucible_test(test_fixy_v_182_pinning_requirement)      # FIXY-V-182 PinningRequ
 crucible_test(test_fixy_v_183_scheduler_policy)         # FIXY-V-183 SchedulerPolicyLattice — 6-element Linux scheduler-class preemption chain (Agent 6 sched-axis foundation)
 crucible_test(test_fixy_v_184_clock_source)             # FIXY-V-184 ClockSourceLattice — DetSafe×Suspend×Pinning product composite + 9-source projection (Agent 6 §3.1)
 crucible_test(test_fixy_v_185_clock_source)             # FIXY-V-185 safety/ClockSource.h — regime-1 Graded provenance carrier + per-source aliases + IsClockSource + row_hash (Agent 6 §3.3)
+crucible_test(test_fixy_v_186_sched_class)              # FIXY-V-186 safety/SchedClass.h — regime-1 Graded scheduler-class carrier + pool-fit + DEADLINE CBS budget + IsSchedClass + row_hash (Agent 6 §3.3)
 crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScopeLattice — non-distributive accel×ARM visibility-scope partial order (WMEM keystone)
 crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/ScopedFence.h — partial-order provider Graded carrier for MemoryScope axis + IsScopedFence + row_hash
 crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
@@ -6613,6 +6614,17 @@ crucible_neg_compile_test(neg_clock_source_cross_source_assign
   "conversion from|cannot convert|no viable|no match for")
 crucible_neg_compile_test(neg_clock_source_suspend_gate_rejects_monotonic
   "constraints not satisfied|no matching function|satisfies|arm_deadline")
+
+# ─── FIXY-V-186 SchedClass HS14 negative-compile fixtures ──────────
+#   - neg_sched_class_fifo_task_on_other_pool       (pool-fit: Fifo ⋤ Other)
+#   - neg_sched_class_deadline_runtime_gt_deadline  (CBS assert: runtime > deadline)
+#   - neg_sched_class_batch_on_hotpath              (HotPath stance rejects BATCH)
+crucible_neg_compile_test(neg_sched_class_fifo_task_on_other_pool
+  "constraints not satisfied|no matching function|runnable_on|host_on_other_pool")
+crucible_neg_compile_test(neg_sched_class_deadline_runtime_gt_deadline
+  "static assertion failed|SCHED_DEADLINE requires|CBS admission")
+crucible_neg_compile_test(neg_sched_class_batch_on_hotpath
+  "constraints not satisfied|no matching function|hot_path|on_hot_path")
 
 # ─── FIXY-V-268 CollisionCatalog V401/V402 neg-compiles (per-rule, HS14) ──
 #
