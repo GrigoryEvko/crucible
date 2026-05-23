@@ -293,6 +293,7 @@ crucible_test(test_fixy_v_240_call_shape)      # FIXY-V-240 DimensionAxis::CallS
 crucible_test(test_fixy_v_241_stack_global_stdio) # FIXY-V-241 StackUse/GlobalState/Stdio — 3 hazard-axis 4-tier chains
 crucible_test(test_fixy_v_242_hazard_wrappers)    # FIXY-V-242 5 safety/* Graded carriers (ControlFlow/CallShape/StackUse/GlobalState/Stdio)
 crucible_test(test_fixy_v_243_control_flow_collisions)  # FIXY-V-243 CollisionCatalog C001/D001/D002/G001/L006/P003/S001/S004 hazard-axis cross-axis rules
+crucible_test(test_fixy_v_260_hw_collisions)  # FIXY-V-260 CollisionCatalog V001/V002/V101/V102/V201/V202/V203/V301 hardware-axis cross-axis rules
 crucible_test(test_fixy_v_249_thread_local_atomic)      # FIXY-V-249 CollisionCatalog G002 thread_local × atomic (Scenario E)
 crucible_test(test_fixy_v_250_simd_isa)                 # FIXY-V-250 SimdIsaLattice — non-distributive x86×ARM ISA partial order
 crucible_test(test_fixy_v_251_hw_instruction)           # FIXY-V-251 HwInstructionLattice — 5-tier hw-instruction capability chain
@@ -4608,6 +4609,37 @@ crucible_neg_compile_test(neg_collision_W002_bg_wait_spinpause
   "W002:")
 crucible_neg_compile_test(neg_collision_W002_bg_wait_boundedspin
   "W002:")
+
+# ─── FIXY-V-260 hardware-axis collision rules (8 fixtures = one per rule) ──
+#
+# Five type/row-readable rules fire production-path (real Fn carrier reds
+# at Fn<>'s ValidComposition static_assert); three marker rules fire
+# concept-direct (standalone V*_OK<Probe> on a non-Fn probe).  Each probes
+# a distinct mismatch class on the V-254/255/256 hardware-band carriers:
+#   V201 : hot-path × Hw NonDeterministicTsc  (Hw tier)
+#   V202 : PrivilegedMsr × non-Init row        (Hw tier + effect_row)
+#   V203 : replay × Hw NonDeterministicTsc     (Hw tier, replay marker)
+#   V301 : hot-path × BarrierGuarded FullFence (Barrier tier)
+#   V101 : replay × SimdWidthPinned Avx2       (SimdIsa tier)
+#   V001 : inconsistent vendor pack            (marker, concept-direct)
+#   V002 : cross-arch intrinsic composition    (marker, concept-direct)
+#   V102 : simd width exceeds ISA family       (marker, concept-direct)
+crucible_neg_compile_test(neg_collision_V201_hotpath_nondet_tsc
+  "V201:")
+crucible_neg_compile_test(neg_collision_V202_privileged_msr_no_init
+  "V202:")
+crucible_neg_compile_test(neg_collision_V203_replay_nondet_tsc
+  "V203:")
+crucible_neg_compile_test(neg_collision_V301_hotpath_full_fence
+  "V301:")
+crucible_neg_compile_test(neg_collision_V101_replay_simd_isa
+  "V101:")
+crucible_neg_compile_test(neg_collision_V001_vendor_isa_inconsistent
+  "V001")
+crucible_neg_compile_test(neg_collision_V002_vendor_cross_arch
+  "V002")
+crucible_neg_compile_test(neg_collision_V102_simd_width_exceeds_isa
+  "V102")
 
 # ─── SwmrSession role and token discipline (GAPS-021) ────────────────
 crucible_neg_compile_test(neg_swmr_writer_cannot_recv

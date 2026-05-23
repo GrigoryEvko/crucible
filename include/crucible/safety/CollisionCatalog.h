@@ -18,7 +18,10 @@
 // the rejection today, while future compiler passes can specialize the
 // same traits from analyzed bodies without changing Fn's ABI.
 
+#include <crucible/algebra/lattices/BarrierStrengthLattice.h>  // FIXY-V-260 V301 BarrierStrength tier
 #include <crucible/algebra/lattices/ControlFlowLattice.h>  // FIXY-V-243 C001/L006/P003 ControlFlow tier
+#include <crucible/algebra/lattices/HwInstructionLattice.h>    // FIXY-V-260 V201..V203 HwInstruction tier
+#include <crucible/algebra/lattices/SimdIsaLattice.h>          // FIXY-V-260 V101 SimdIsa tier
 #include <crucible/algebra/lattices/StdioLattice.h>        // FIXY-V-243 S001 Stdio tier
 #include <crucible/algebra/lattices/WaitLattice.h>
 #include <crucible/effects/EffectRow.h>
@@ -86,6 +89,24 @@ namespace crucible::safety {
     class ControlFlowPinned;
     template <::crucible::algebra::lattices::Stdio Tier, typename T>
     class StdioPinned;
+}
+
+// Forward-declaration of the V-254/V-255/V-256 hardware-axis Graded
+// carriers — FIXY-V-260 reads their pinned tier off F::type_t for the
+// V101 (SimdIsa) / V201..V203 (HwInstruction) / V301 (BarrierStrength)
+// rules without pulling in the full safety/{Hw,BarrierGuarded,
+// SimdWidthPinned}.h wrapper headers (which would re-enter Graded →
+// DimensionTraits → Witness → Fn and create a header cycle, the same
+// reason the ControlFlowPinned / StdioPinned block above forward-decls).
+// The three lattice enums arrive complete via the lattice headers
+// included above; only the wrapper class templates are forward-declared.
+namespace crucible::safety {
+    template <::crucible::algebra::lattices::HwInstruction Tier, typename T>
+    class Hw;
+    template <::crucible::algebra::lattices::BarrierStrength Tier, typename T>
+    class BarrierGuarded;
+    template <::crucible::algebra::lattices::SimdIsa W, typename T>
+    class SimdWidthPinned;
 }
 
 namespace crucible::safety::fn::collision {
@@ -274,6 +295,89 @@ enum class RuleCode : std::uint8_t {
     S001 = 34,  // HotPath × Stdio tier ≥ BufferedWrite (stdio on hot path)
     S004 = 35,  // Meyers-singleton init-dependency cycle
     G002 = 36,  // thread_local_ grant × atomic MemOrder (per-thread atomic nonsensical)
+    // ── FIXY-V-260 V-family — hardware-axis cross-axis rules (Agent 11 §3.6) ──
+    //
+    // V-254/V-255/V-256 ship three hardware-band Graded carriers:
+    // Hw<HwInstruction, T> (the instruction-capability ceiling),
+    // BarrierGuarded<BarrierStrength, T> (the memory-fence strength), and
+    // SimdWidthPinned<SimdIsa, T> (the pinned vector ISA).  V-258/V-259
+    // ship the vendor::intrinsic<V, I> and simd::width<W> GRANTS.  These
+    // eight rules guard cross-axis compositions where a hardware
+    // declaration is unsound against another Fn axis.  Per the catalog
+    // decoupling discipline (W-/F-family precedent), each rule reads
+    // either a SHIPPED V-254/255/256 wrapper tier off F::type_t (V101 /
+    // V201 / V202 / V203 / V301 — testable today) or an opt-in marker
+    // trait that the V-258/V-259 grant-pack analysis specializes once it
+    // lands (V001 / V002 / V102 — default-SAFE until a grant opts in).
+    //
+    // The V band is FREE (no V### existed); the eight rules re-home Agent
+    // 11 §3.6's V001/V002/S001/S002/H001/H002/H003/B001 onto collision-
+    // free codes because S001/H001/H002/H003/B001 are already taken by the
+    // V-243 Stdio / Phase-B HotPath / Bg rules.  Number ranges encode the
+    // sub-axis exactly like the F-family (Frame F0xx + Fp F1xx): vendor
+    // V0xx, SimdIsa V1xx, HwInstruction V2xx, BarrierStrength V3xx.
+    //
+    //   V001: marks_vendor_isa_inconsistent.  The pack declares
+    //         vendor::intrinsic<V, I> grants whose (V, I) disagree across
+    //         bindings (one binding pins NV, another an x86 ISA family) —
+    //         the grant-pack version of the per-grant
+    //         vendor_isa_consistent_v<V, I> gate V-258 enforces on a
+    //         SINGLE intrinsic.  Default-SAFE marker.
+    //   V002: marks_vendor_cross_arch.  A single binding composes
+    //         intrinsics from incompatible architecture trunks (an x86
+    //         intrinsic AND an ARM intrinsic) — the catalog companion to
+    //         the V-261 source::ArchPinned<Arch> cross-arch gate.  An
+    //         x86+ARM kernel can never run on either; the binary would
+    //         #UD on whichever ISA it lands.  Default-SAFE marker.
+    //   V101: marks_replay_required × SimdWidthPinned tier ∉ {Scalar,
+    //         Portable}.  A replay-required function MUST NOT pin a
+    //         specific vector ISA: AVX-512 and NEON have different lane
+    //         counts, so the same IR produces a different FP-reduction
+    //         tree and the bit pattern diverges across the cross-vendor
+    //         CI matrix (CLAUDE.md DetSafe: FP reductions are forbidden
+    //         because chunked-fold reorders).  Scalar (no SIMD) and
+    //         Portable (⊤, identical on every ISA) are replay-safe.
+    //         Type-readable off F::type_t today.
+    //   V102: marks_simd_width_exceeds_isa.  A simd::width<W> grant whose
+    //         W exceeds the declared vendor ISA family's native width —
+    //         the marquee "width<512> on AVX2 family" reject the V-259
+    //         sentinel reserved for this rule (AVX2 tops out at 256-bit;
+    //         pinning a 512-bit width on an AVX2 binding would emit
+    //         instructions the target #UDs on).  Reasons about cross-grant
+    //         VALUE compatibility, so it ships as a default-SAFE marker
+    //         the V-258/V-259 grant-pack analysis specializes.
+    //   V201: marks_hot_path × Hw tier ≥ NonDeterministicTsc.  A hot-path
+    //         function (TraceRing / Arena / KernelCache) MUST NOT carry a
+    //         Hw<NonDeterministicTsc> or Hw<PrivilegedMsr> tier: rdtsc /
+    //         rdtscp are serializing (≈ 20-40 cycles), rdmsr / wrmsr are
+    //         privileged ring-0 traps — both blow the ≤ 40 ns intra-socket
+    //         hot budget (CLAUDE.md §IX).  Type-readable.
+    //   V202: Hw tier == PrivilegedMsr WITHOUT effect_row ⊇ Effect::Init.
+    //         rdmsr / wrmsr / IN / OUT require ring 0 and a Permission
+    //         proof; the HwInstructionLattice doc pins them to the Init
+    //         context (one-shot privileged setup, never the steady state).
+    //         A PrivilegedMsr tier on a non-Init row is the unguarded-
+    //         privilege shape.  Type + row-readable.
+    //   V203: marks_replay_required × Hw tier ≥ NonDeterministicTsc.  rdtsc
+    //         is hardware-dependent (different cycle base / invariant-TSC
+    //         behavior on H100 vs 3090 hosts), so a replay-required body
+    //         reading it diverges across reincarnation hardware — the
+    //         instruction-axis dual of the F101 FP-replay rule.
+    //         Type-readable.
+    //   V301: marks_hot_path × BarrierStrength tier ≥ SeqCst.  A hot-path
+    //         function MUST NOT carry a BarrierGuarded<SeqCst> or
+    //         BarrierGuarded<FullFence> tier: a full fence (mfence /
+    //         lock-prefixed) drains the store buffer (≈ 20-40+ cycles) —
+    //         CLAUDE.md §IX mandates acquire/release only on the hot path
+    //         (free on x86 TSO).  Type-readable.
+    V001 = 37,  // vendor::intrinsic pack with inconsistent (V, I)
+    V002 = 38,  // single binding composes cross-arch intrinsics (x86 + ARM)
+    V101 = 39,  // replay-required × SimdWidthPinned pins a specific vector ISA
+    V102 = 40,  // simd::width<W> exceeds the declared ISA family native width
+    V201 = 41,  // HotPath × Hw tier ≥ NonDeterministicTsc (rdtsc / privileged)
+    V202 = 42,  // Hw tier == PrivilegedMsr without an Init-context row
+    V203 = 43,  // replay-required × Hw tier ≥ NonDeterministicTsc (rdtsc nondeterminism)
+    V301 = 44,  // HotPath × BarrierStrength tier ≥ SeqCst (full fence on hot path)
     None = 255,
 };
 
@@ -402,6 +506,32 @@ struct G002_ThreadLocalAtomicNonsensical : diag::tag_base {
     static constexpr std::string_view name = "G002_ThreadLocalAtomicNonsensical";
 };
 
+// ── FIXY-V-260 hardware-axis cross-axis rule tags (Agent 11 §3.6) ──
+struct V001_VendorIsaInconsistent : diag::tag_base {
+    static constexpr std::string_view name = "V001_VendorIsaInconsistent";
+};
+struct V002_VendorCrossArch : diag::tag_base {
+    static constexpr std::string_view name = "V002_VendorCrossArch";
+};
+struct V101_ReplaySimdIsaPinned : diag::tag_base {
+    static constexpr std::string_view name = "V101_ReplaySimdIsaPinned";
+};
+struct V102_SimdWidthExceedsIsa : diag::tag_base {
+    static constexpr std::string_view name = "V102_SimdWidthExceedsIsa";
+};
+struct V201_HotPathNondetTscOrPrivileged : diag::tag_base {
+    static constexpr std::string_view name = "V201_HotPathNondetTscOrPrivileged";
+};
+struct V202_PrivilegedMsrNeedsInit : diag::tag_base {
+    static constexpr std::string_view name = "V202_PrivilegedMsrNeedsInit";
+};
+struct V203_ReplayNondetTsc : diag::tag_base {
+    static constexpr std::string_view name = "V203_ReplayNondetTsc";
+};
+struct V301_HotPathFullFence : diag::tag_base {
+    static constexpr std::string_view name = "V301_HotPathFullFence";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -439,11 +569,19 @@ using Catalog = std::tuple<
     P003_ForkBodyNoThrows,
     S001_StdioForbiddenOnHotPath,
     S004_MeyersSingletonInitCycle,
-    G002_ThreadLocalAtomicNonsensical
+    G002_ThreadLocalAtomicNonsensical,
+    V001_VendorIsaInconsistent,
+    V002_VendorCrossArch,
+    V101_ReplaySimdIsaPinned,
+    V102_SimdWidthExceedsIsa,
+    V201_HotPathNondetTscOrPrivileged,
+    V202_PrivilegedMsrNeedsInit,
+    V203_ReplayNondetTsc,
+    V301_HotPathFullFence
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 37);
+static_assert(catalog_size == 45);
 
 template <RuleCode R>
 struct rule_tag;
@@ -485,6 +623,14 @@ template <> struct rule_tag<RuleCode::P003> { using type = P003_ForkBodyNoThrows
 template <> struct rule_tag<RuleCode::S001> { using type = S001_StdioForbiddenOnHotPath; };
 template <> struct rule_tag<RuleCode::S004> { using type = S004_MeyersSingletonInitCycle; };
 template <> struct rule_tag<RuleCode::G002> { using type = G002_ThreadLocalAtomicNonsensical; };
+template <> struct rule_tag<RuleCode::V001> { using type = V001_VendorIsaInconsistent; };
+template <> struct rule_tag<RuleCode::V002> { using type = V002_VendorCrossArch; };
+template <> struct rule_tag<RuleCode::V101> { using type = V101_ReplaySimdIsaPinned; };
+template <> struct rule_tag<RuleCode::V102> { using type = V102_SimdWidthExceedsIsa; };
+template <> struct rule_tag<RuleCode::V201> { using type = V201_HotPathNondetTscOrPrivileged; };
+template <> struct rule_tag<RuleCode::V202> { using type = V202_PrivilegedMsrNeedsInit; };
+template <> struct rule_tag<RuleCode::V203> { using type = V203_ReplayNondetTsc; };
+template <> struct rule_tag<RuleCode::V301> { using type = V301_HotPathFullFence; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -602,6 +748,30 @@ template <> struct rule_code_of<S004_MeyersSingletonInitCycle> {
 };
 template <> struct rule_code_of<G002_ThreadLocalAtomicNonsensical> {
     static constexpr RuleCode value = RuleCode::G002;
+};
+template <> struct rule_code_of<V001_VendorIsaInconsistent> {
+    static constexpr RuleCode value = RuleCode::V001;
+};
+template <> struct rule_code_of<V002_VendorCrossArch> {
+    static constexpr RuleCode value = RuleCode::V002;
+};
+template <> struct rule_code_of<V101_ReplaySimdIsaPinned> {
+    static constexpr RuleCode value = RuleCode::V101;
+};
+template <> struct rule_code_of<V102_SimdWidthExceedsIsa> {
+    static constexpr RuleCode value = RuleCode::V102;
+};
+template <> struct rule_code_of<V201_HotPathNondetTscOrPrivileged> {
+    static constexpr RuleCode value = RuleCode::V201;
+};
+template <> struct rule_code_of<V202_PrivilegedMsrNeedsInit> {
+    static constexpr RuleCode value = RuleCode::V202;
+};
+template <> struct rule_code_of<V203_ReplayNondetTsc> {
+    static constexpr RuleCode value = RuleCode::V203;
+};
+template <> struct rule_code_of<V301_HotPathFullFence> {
+    static constexpr RuleCode value = RuleCode::V301;
 };
 
 template <typename Tag>
@@ -879,6 +1049,82 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(G002, "G002",
     "if cross-thread, or drop the atomic for a plain thread_local (keeping the "
     "grant::global::thread_local_<Tag>) if genuinely per-thread",
     "fixy.md §24.2 G002 (V-249)");
+// FIXY-V-260 V-family diagnostics (8 hardware-axis cross-axis rules).
+CRUCIBLE_COLLISION_DIAGNOSTIC(V001, "V001",
+    "vendor::intrinsic grants in a pack declare a consistent (vendor, ISA-family)",
+    "marks_vendor_isa_inconsistent — the binding pack declares vendor::intrinsic<V, I> "
+    "grants whose (V, I) disagree (one pins NV, another an x86 ISA family). The "
+    "per-grant vendor_isa_consistent_v<V, I> gate (V-258) only checks a single "
+    "intrinsic; the pack can still mix incompatible vendors",
+    "pin one vendor for the whole binding, or split the multi-vendor work into "
+    "separate per-vendor Fn signatures (the Mimic per-vendor backend pattern)",
+    "fixy.md §24.2 V001 (V-260)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(V002, "V002",
+    "a single binding does not compose intrinsics from incompatible arch trunks",
+    "marks_vendor_cross_arch — one binding composes an x86-trunk intrinsic AND an "
+    "ARM-trunk intrinsic. The emitted binary would #UD on whichever ISA it lands; "
+    "x86 code never runs on ARM and vice versa (SimdIsaLattice cross-trunk leq = false)",
+    "select the architecture at the dispatch boundary and keep each arch's intrinsics "
+    "in its own single-target binary (CLAUDE.md §VIII single-target rule); see the "
+    "V-261 source::ArchPinned<Arch> gate",
+    "fixy.md §24.2 V002 (V-260)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(V101, "V101",
+    "replay-required functions do not pin a specific vector ISA",
+    "marks_replay_required is true AND F::type_t is SimdWidthPinned<W, U> for a W "
+    "that is neither Scalar nor Portable. AVX-512 and NEON have different lane counts, "
+    "so the same IR produces a different FP-reduction tree and the bit pattern "
+    "diverges across the cross-vendor CI matrix (CLAUDE.md DetSafe: FP reductions "
+    "reorder under chunked fold)",
+    "pin SimdIsa::Scalar (no SIMD) or SimdIsa::Portable (⊤, identical on every ISA) "
+    "for replay-required bodies, or drop replay eligibility and let Mimic pick the "
+    "per-vendor vector kernel",
+    "fixy.md §24.2 V101 (V-260)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(V102, "V102",
+    "a simd::width<W> grant does not exceed the declared ISA family native width",
+    "marks_simd_width_exceeds_isa — a simd::width<W> grant pins a register width "
+    "wider than the bound vendor ISA family supports (the marquee width<512> on an "
+    "AVX2 binding: AVX2 tops out at 256-bit, so a 512-bit width would emit "
+    "instructions the target #UDs on)",
+    "lower the pinned width to the ISA family's native maximum, or raise the ISA "
+    "family (vendor::avx512bw_intrinsic) so the width is representable",
+    "fixy.md §24.2 V102 (V-260)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(V201, "V201",
+    "HotPath functions do not carry a serializing or privileged Hw instruction tier",
+    "marks_hot_path is true AND F::type_t is Hw<NonDeterministicTsc, U> or "
+    "Hw<PrivilegedMsr, U>. rdtsc / rdtscp are serializing (≈ 20-40 cycles); "
+    "rdmsr / wrmsr are ring-0 privileged traps — both blow the ≤ 40 ns intra-socket "
+    "hot budget (CLAUDE.md §IX)",
+    "move the timestamp / MSR read into an Init or Bg context that owns the "
+    "instruction cost, or drop the Hw tier to Hw<Vectorizable> / Hw<Scalar> on the "
+    "hot path",
+    "fixy.md §24.2 V201 (V-260)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(V202, "V202",
+    "a PrivilegedMsr Hw tier is carried only inside an Init-context row",
+    "F::type_t is Hw<PrivilegedMsr, U> but the effect_row does NOT contain "
+    "Effect::Init. rdmsr / wrmsr / IN / OUT require ring 0 and a Permission proof; "
+    "the HwInstructionLattice doc pins them to one-shot privileged Init setup, never "
+    "the steady state",
+    "thread the privileged MSR access through an Init context (effects::Init) that "
+    "owns the ring-0 capability, or drop the PrivilegedMsr tier",
+    "fixy.md §24.2 V202 (V-260)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(V203, "V203",
+    "replay-required functions do not read a non-deterministic timestamp counter",
+    "marks_replay_required is true AND F::type_t is Hw<NonDeterministicTsc, U> or "
+    "Hw<PrivilegedMsr, U>. rdtsc is hardware-dependent (different cycle base / "
+    "invariant-TSC behavior on H100 vs 3090 hosts), so a replay body reading it "
+    "diverges across reincarnation hardware — the instruction-axis dual of F101",
+    "use the deterministic Philox / logical-clock source instead of rdtsc in replay "
+    "bodies, or drop replay eligibility",
+    "fixy.md §24.2 V203 (V-260)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(V301, "V301",
+    "HotPath functions do not carry a full-fence barrier strength",
+    "marks_hot_path is true AND F::type_t is BarrierGuarded<SeqCst, U> or "
+    "BarrierGuarded<FullFence, U>. A full fence (mfence / lock-prefixed) drains the "
+    "store buffer (≈ 20-40+ cycles) — CLAUDE.md §IX mandates acquire/release only on "
+    "the hot path (free on x86 TSO)",
+    "use BarrierGuarded<AcquireLoad> / <ReleaseStore> / <AcqRel> on the hot path; "
+    "reserve SeqCst / FullFence for Init or Bg sequencing",
+    "fixy.md §24.2 V301 (V-260)");
 
 #undef CRUCIBLE_COLLISION_DIAGNOSTIC
 
@@ -946,6 +1192,29 @@ template <typename F> struct marks_fork_worker                : std::false_type 
 template <typename F> struct marks_throws                     : std::false_type {};
 template <typename F> struct marks_singleton_init_cycle       : std::false_type {};
 template <typename F> struct marks_thread_local_atomic        : std::false_type {};
+
+// ── FIXY-V-260 hardware-axis marker traits (Agent 11 §3.6) ──────────
+//
+// Default-SAFE opt-ins, specialized by the V-258/V-259 grant-pack
+// analysis (and the V-261 source::ArchPinned cross-arch gate) when it
+// lands.  Until a grant opts in, every one defaults to the non-toxic
+// value so no existing Fn<...> instantiation reds.  The V101 / V201 /
+// V202 / V203 / V301 rules ALSO read a shipped V-254/255/256 wrapper
+// tier off F::type_t (see the hardware detectors below), so they are
+// triggerable today without any grant — these three markers are the
+// grant-driven trigger path for the three rules that reason about
+// cross-grant VALUE compatibility (which a single type_t wrapper read
+// cannot express):
+//
+//   marks_vendor_isa_inconsistent  — vendor::intrinsic<V, I> pack with
+//                                     disagreeing (V, I) (V-258 pack)
+//   marks_vendor_cross_arch        — x86-trunk + ARM-trunk intrinsics in
+//                                     one binding (V-261 ArchPinned gate)
+//   marks_simd_width_exceeds_isa   — simd::width<W> exceeds the bound ISA
+//                                     family native width (V-259 pack)
+template <typename F> struct marks_vendor_isa_inconsistent    : std::false_type {};
+template <typename F> struct marks_vendor_cross_arch          : std::false_type {};
+template <typename F> struct marks_simd_width_exceeds_isa     : std::false_type {};
 
 template <typename T> struct is_exact_decimal             : std::false_type {};
 
@@ -1384,6 +1653,127 @@ concept S004_OK = !marks_singleton_init_cycle<F>::value;
 template <typename F>
 concept G002_OK = !marks_thread_local_atomic<F>::value;
 
+// ── FIXY-V-260 hardware-axis detectors (Hw / BarrierGuarded /
+//    SimdWidthPinned tier extraction off F::type_t) ──────────────────
+//
+// Mirror the control_flow_tier_of / stdio_tier_of design: a sentinel
+// value on the primary template + CV / reference piercing, plus a
+// partial spec that reads the pinned tier from the V-254/255/256
+// wrapper.  For a non-wrapper T, has_* is false and the at_or_above
+// predicate short-circuits to false (rule trivially passes).
+template <typename T> struct hw_tier_of {
+    static constexpr bool has_hw = false;
+    static constexpr ::crucible::algebra::lattices::HwInstruction value =
+        ::crucible::algebra::lattices::HwInstruction::NoneAllowed;
+};
+template <::crucible::algebra::lattices::HwInstruction Tier, typename U>
+struct hw_tier_of<::crucible::safety::Hw<Tier, U>> {
+    static constexpr bool has_hw = true;
+    static constexpr ::crucible::algebra::lattices::HwInstruction value = Tier;
+};
+template <typename T> struct hw_tier_of<T&>       : hw_tier_of<T> {};
+template <typename T> struct hw_tier_of<T const>  : hw_tier_of<T> {};
+template <typename T> struct hw_tier_of<T const&> : hw_tier_of<T> {};
+
+template <typename T> struct barrier_tier_of {
+    static constexpr bool has_barrier = false;
+    static constexpr ::crucible::algebra::lattices::BarrierStrength value =
+        ::crucible::algebra::lattices::BarrierStrength::None;
+};
+template <::crucible::algebra::lattices::BarrierStrength Tier, typename U>
+struct barrier_tier_of<::crucible::safety::BarrierGuarded<Tier, U>> {
+    static constexpr bool has_barrier = true;
+    static constexpr ::crucible::algebra::lattices::BarrierStrength value = Tier;
+};
+template <typename T> struct barrier_tier_of<T&>       : barrier_tier_of<T> {};
+template <typename T> struct barrier_tier_of<T const>  : barrier_tier_of<T> {};
+template <typename T> struct barrier_tier_of<T const&> : barrier_tier_of<T> {};
+
+template <typename T> struct simd_isa_of {
+    static constexpr bool has_simd = false;
+    static constexpr ::crucible::algebra::lattices::SimdIsa value =
+        ::crucible::algebra::lattices::SimdIsa::Scalar;
+};
+template <::crucible::algebra::lattices::SimdIsa W, typename U>
+struct simd_isa_of<::crucible::safety::SimdWidthPinned<W, U>> {
+    static constexpr bool has_simd = true;
+    static constexpr ::crucible::algebra::lattices::SimdIsa value = W;
+};
+template <typename T> struct simd_isa_of<T&>       : simd_isa_of<T> {};
+template <typename T> struct simd_isa_of<T const>  : simd_isa_of<T> {};
+template <typename T> struct simd_isa_of<T const&> : simd_isa_of<T> {};
+
+// hw_at_or_above_v<Floor, T>: wrapper present AND its tier is at-or-above
+// Floor on the HwInstruction capability chain (higher ordinal = MORE
+// hazardous, so "≥ Floor" reads as "at least this dangerous").
+template <::crucible::algebra::lattices::HwInstruction Floor, typename T>
+inline constexpr bool hw_at_or_above_v =
+    hw_tier_of<T>::has_hw &&
+    ::crucible::algebra::lattices::HwInstructionLattice::leq(
+        Floor, hw_tier_of<T>::value);
+
+template <::crucible::algebra::lattices::BarrierStrength Floor, typename T>
+inline constexpr bool barrier_at_or_above_v =
+    barrier_tier_of<T>::has_barrier &&
+    ::crucible::algebra::lattices::BarrierStrengthLattice::leq(
+        Floor, barrier_tier_of<T>::value);
+
+// simd_isa_pins_specific_vector_v<T>: a SimdWidthPinned wrapper present
+// whose tier is a SPECIFIC vector ISA — neither Scalar (no SIMD, runs
+// everywhere identically) nor Portable (⊤, ISA-agnostic).  Both poles
+// are replay-safe; any concrete trunk point pins a lane count that
+// reorders FP reductions across ISAs.
+template <typename T>
+inline constexpr bool simd_isa_pins_specific_vector_v =
+    simd_isa_of<T>::has_simd &&
+    simd_isa_of<T>::value != ::crucible::algebra::lattices::SimdIsa::Scalar &&
+    simd_isa_of<T>::value != ::crucible::algebra::lattices::SimdIsa::Portable;
+
+// ── FIXY-V-260 hardware-axis rule concepts (8 of 8) ─────────────────
+
+// V001 / V002 / V102: grant-pack rules — default-SAFE markers the
+// V-258 / V-259 / V-261 grant-pack analysis specializes (cross-grant
+// VALUE compatibility a single type_t wrapper read cannot express).
+template <typename F>
+concept V001_OK = !marks_vendor_isa_inconsistent<F>::value;
+template <typename F>
+concept V002_OK = !marks_vendor_cross_arch<F>::value;
+template <typename F>
+concept V102_OK = !marks_simd_width_exceeds_isa<F>::value;
+
+// V101: replay-required × SimdWidthPinned pins a specific vector ISA.
+template <typename F>
+concept V101_OK = !(marks_replay_required<F>::value &&
+                    simd_isa_pins_specific_vector_v<typename F::type_t>);
+
+// V201: HotPath × Hw tier ≥ NonDeterministicTsc (rdtsc / privileged).
+template <typename F>
+concept V201_OK = !(marks_hot_path<F>::value &&
+                    hw_at_or_above_v<
+                        ::crucible::algebra::lattices::HwInstruction::NonDeterministicTsc,
+                        typename F::type_t>);
+
+// V202: Hw tier == PrivilegedMsr without an Init-context row.
+template <typename F>
+concept V202_OK = !(hw_tier_of<typename F::type_t>::has_hw &&
+                    hw_tier_of<typename F::type_t>::value ==
+                        ::crucible::algebra::lattices::HwInstruction::PrivilegedMsr &&
+                    !row_has_effect_v<typename F::effect_row_t, effects::Effect::Init>);
+
+// V203: replay-required × Hw tier ≥ NonDeterministicTsc (rdtsc nondeterminism).
+template <typename F>
+concept V203_OK = !(marks_replay_required<F>::value &&
+                    hw_at_or_above_v<
+                        ::crucible::algebra::lattices::HwInstruction::NonDeterministicTsc,
+                        typename F::type_t>);
+
+// V301: HotPath × BarrierStrength tier ≥ SeqCst (full fence on hot path).
+template <typename F>
+concept V301_OK = !(marks_hot_path<F>::value &&
+                    barrier_at_or_above_v<
+                        ::crucible::algebra::lattices::BarrierStrength::SeqCst,
+                        typename F::type_t>);
+
 template <typename F>
 concept AllRulesOK =
     I002_OK<F> && L002_OK<F> && E044_OK<F> && I003_OK<F> &&
@@ -1395,7 +1785,9 @@ concept AllRulesOK =
     F101_OK<F> && F102_OK<F> && F103_OK<F> && F104_OK<F> && F105_OK<F> &&
     C001_OK<F> && D001_OK<F> && D002_OK<F> && G001_OK<F> &&
     L006_OK<F> && P003_OK<F> && S001_OK<F> && S004_OK<F> &&
-    G002_OK<F>;
+    G002_OK<F> &&
+    V001_OK<F> && V002_OK<F> && V101_OK<F> && V102_OK<F> &&
+    V201_OK<F> && V202_OK<F> && V203_OK<F> && V301_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -1471,6 +1863,22 @@ template <typename F>
         return RuleCode::S004;
     } else if constexpr (!G002_OK<F>) {
         return RuleCode::G002;
+    } else if constexpr (!V001_OK<F>) {
+        return RuleCode::V001;
+    } else if constexpr (!V002_OK<F>) {
+        return RuleCode::V002;
+    } else if constexpr (!V101_OK<F>) {
+        return RuleCode::V101;
+    } else if constexpr (!V102_OK<F>) {
+        return RuleCode::V102;
+    } else if constexpr (!V201_OK<F>) {
+        return RuleCode::V201;
+    } else if constexpr (!V202_OK<F>) {
+        return RuleCode::V202;
+    } else if constexpr (!V203_OK<F>) {
+        return RuleCode::V203;
+    } else if constexpr (!V301_OK<F>) {
+        return RuleCode::V301;
     } else {
         return RuleCode::None;
     }
@@ -1810,6 +2218,27 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
     static constexpr bool thread_local_atomic =
         collision::marks_thread_local_atomic<F>::value;
 
+    // ── FIXY-V-260 hardware-axis predicates (8 cross-axis rules) ─────
+    static constexpr bool vendor_isa_inconsistent =
+        collision::marks_vendor_isa_inconsistent<F>::value;
+    static constexpr bool vendor_cross_arch =
+        collision::marks_vendor_cross_arch<F>::value;
+    static constexpr bool simd_width_exceeds_isa =
+        collision::marks_simd_width_exceeds_isa<F>::value;
+    static constexpr bool replay_simd_isa_pinned =
+        collision::simd_isa_pins_specific_vector_v<Type>;
+    static constexpr bool hot_path_nondet_tsc =
+        collision::hw_at_or_above_v<
+            ::crucible::algebra::lattices::HwInstruction::NonDeterministicTsc, Type>;
+    static constexpr bool privileged_msr_no_init =
+        collision::hw_tier_of<Type>::has_hw &&
+        collision::hw_tier_of<Type>::value ==
+            ::crucible::algebra::lattices::HwInstruction::PrivilegedMsr &&
+        !collision::row_has_effect_v<EffectRow, effects::Effect::Init>;
+    static constexpr bool hot_path_full_fence =
+        collision::barrier_at_or_above_v<
+            ::crucible::algebra::lattices::BarrierStrength::SeqCst, Type>;
+
     [[nodiscard]] static consteval bool validate() noexcept {
         static_assert(!(classified && fail && !fail_secret),
             "I002: classified value cannot flow through Fail(E) with "
@@ -1976,6 +2405,54 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "(one instance per thread) — either drop thread_local for a "
             "process-wide static std::atomic<T>, or drop the atomic for a plain "
             "thread_local (Scenario E: bench_smoke.cpp:78).");
+        // ── FIXY-V-260 hardware-axis static asserts ───────────────────
+        static_assert(!vendor_isa_inconsistent,
+            "V001: vendor::intrinsic grants in the binding pack declare an "
+            "inconsistent (vendor, ISA-family). The per-grant "
+            "vendor_isa_consistent_v<V, I> gate (V-258) only checks a single "
+            "intrinsic; pin one vendor for the binding or split the multi-vendor "
+            "work into per-vendor Fn signatures (the Mimic per-vendor pattern).");
+        static_assert(!vendor_cross_arch,
+            "V002: a single binding composes intrinsics from incompatible "
+            "architecture trunks (x86 + ARM). The emitted binary would #UD on "
+            "whichever ISA it lands. Select the architecture at the dispatch "
+            "boundary and keep each arch's intrinsics in its own single-target "
+            "binary (CLAUDE.md §VIII); see the V-261 source::ArchPinned gate.");
+        static_assert(!(replay_required && replay_simd_isa_pinned),
+            "V101: replay-required function pins a specific vector ISA via "
+            "SimdWidthPinned<W>. AVX-512 and NEON have different lane counts, so "
+            "the same IR produces a different FP-reduction tree and the bit "
+            "pattern diverges across the cross-vendor CI matrix. Pin "
+            "SimdIsa::Scalar or SimdIsa::Portable, or drop replay eligibility.");
+        static_assert(!simd_width_exceeds_isa,
+            "V102: a simd::width<W> grant pins a register width wider than the "
+            "declared vendor ISA family supports (the width<512>-on-AVX2 case: "
+            "AVX2 tops out at 256-bit). Lower the pinned width to the ISA family's "
+            "native maximum, or raise the ISA family so the width is representable.");
+        static_assert(!(hot_path && hot_path_nondet_tsc),
+            "V201: hot-path function carries a Hw tier >= NonDeterministicTsc. "
+            "rdtsc/rdtscp are serializing (~20-40 cycles); rdmsr/wrmsr are ring-0 "
+            "privileged traps — both blow the <= 40 ns intra-socket hot budget "
+            "(CLAUDE.md §IX). Move the timestamp/MSR read into an Init or Bg "
+            "context, or drop the Hw tier to Hw<Vectorizable>/<Scalar>.");
+        static_assert(!privileged_msr_no_init,
+            "V202: a Hw<PrivilegedMsr> tier is carried outside an Init-context "
+            "row. rdmsr/wrmsr/IN/OUT require ring 0 and a Permission proof; the "
+            "HwInstructionLattice doc pins them to one-shot privileged Init setup. "
+            "Thread the access through an Init context (effects::Init), or drop "
+            "the PrivilegedMsr tier.");
+        static_assert(!(replay_required && hot_path_nondet_tsc),
+            "V203: replay-required function reads a non-deterministic timestamp "
+            "counter (Hw tier >= NonDeterministicTsc). rdtsc is hardware-dependent "
+            "(different cycle base / invariant-TSC behavior across hosts), so a "
+            "replay body diverges across reincarnation hardware. Use the "
+            "deterministic Philox / logical-clock source, or drop replay eligibility.");
+        static_assert(!(hot_path && hot_path_full_fence),
+            "V301: hot-path function carries a BarrierStrength tier >= SeqCst. "
+            "A full fence (mfence / lock-prefixed) drains the store buffer "
+            "(~20-40+ cycles) — CLAUDE.md §IX mandates acquire/release only on the "
+            "hot path (free on x86 TSO). Use BarrierGuarded<AcquireLoad>/"
+            "<ReleaseStore>/<AcqRel>; reserve SeqCst/FullFence for Init or Bg.");
         // L005 and F001 are pack-level rules (no single-Fn enforcement
         // shape); fixy/Fn.h checks them across the Grants pack via
         // pack::no_linear_region_alias_v and pack::frame_axis_consistent_v.
@@ -2019,7 +2496,15 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(fork_worker && fork_body_throws) &&
                !(hot_path && hot_path_stdio) &&
                !singleton_init_cycle &&
-               !thread_local_atomic;
+               !thread_local_atomic &&
+               !vendor_isa_inconsistent &&
+               !vendor_cross_arch &&
+               !(replay_required && replay_simd_isa_pinned) &&
+               !simd_width_exceeds_isa &&
+               !(hot_path && hot_path_nondet_tsc) &&
+               !privileged_msr_no_init &&
+               !(replay_required && hot_path_nondet_tsc) &&
+               !(hot_path && hot_path_full_fence);
     }
 
     static constexpr bool valid = validate();
