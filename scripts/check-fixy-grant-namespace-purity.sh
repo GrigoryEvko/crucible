@@ -163,6 +163,13 @@ while IFS=: read -r file line text; do
             # which_dim<> only; does NOT extend grant_base hierarchy.
             continue
             ;;
+        include/crucible/fixy/Sched.h)
+            # V-191 SyscallSurface axis-specialized catalog (4 grant::sched::*
+            # families: affinity / scheduler_policy<Policy> / priority<Nice> /
+            # thread_name → SyscallSurface).  Specializes which_dim<> only;
+            # does NOT extend grant_base hierarchy.
+            continue
+            ;;
         include/crucible/fixy/Vendor.h)
             # V-258 HwInstruction axis-specialized catalog (grant::vendor::
             # intrinsic<V, I> over the IsaTag per-vendor ISA-family enum,

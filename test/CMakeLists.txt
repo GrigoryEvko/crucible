@@ -312,6 +312,7 @@ crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/Scop
 crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
 crucible_test(test_fixy_v_270_async)                    # FIXY-V-270 fixy/Async.h — grant::async::{copy,mbarrier_arrive,mbarrier_wait} → Synchronization + 3 §XXI mints (accel-scope gated)
 crucible_test(test_fixy_v_190_time)                     # FIXY-V-190 fixy/Time.h — grant::time::{clock_read,tsc_read,sleep} + mint_clock_reader / mint_tsc_reader (single-core pin) / mint_bounded_sleep (Agent 6 §3.4)
+crucible_test(test_fixy_v_191_sched)                    # FIXY-V-191 fixy/Sched.h — grant::sched::{affinity,scheduler_policy,priority,thread_name} + mint_affinity (→CpuPinned) / mint_scheduler_policy (→SchedClass, CBS) / mint_priority (Agent 6 §3.5)
 crucible_test(test_fixy_v_272_fence)                    # FIXY-V-272 mimic/Fence.h — lower_fence<Strength,Scope,Arch>() consteval lowering table (V401/V402 gated) + fence_mnemonic
 crucible_test(test_fixy_v_273_async_pipeline_session)   # FIXY-V-273 sessions/AsyncPipelineSession.h — binary producer/consumer mbarrier protocol + Linear<SmemSlot> + 2 ctx-bound mints
 crucible_test(test_fixy_v_274_async_pipeline)           # FIXY-V-274 fixy/AsyncPipeline.h — mint_async_pipeline derives Stages from live-set width + Bytes=Refined<equals_slot_size> from the MemoryPlan
@@ -1731,6 +1732,23 @@ crucible_neg_compile_fixy_test(neg_time_bounded_sleep_no_block
   "constraints not satisfied|CtxCanMint|Block|no matching function|mint_bounded_sleep")
 crucible_neg_compile_fixy_test(neg_time_bounded_sleep_zero
   "constraints not satisfied|MaxNanos|no matching function|mint_bounded_sleep")
+
+# ─── FIXY-V-191 fixy/Sched.h neg-compiles (HS14, two per NEW mint) ─────
+#   mint_affinity         : non-ExecCtx · Posture == NotPinned
+#   mint_scheduler_policy : non-ExecCtx · Deadline CBS budget violation
+#   mint_priority         : Nice out of [-20,19] · non-ExecCtx
+crucible_neg_compile_fixy_test(neg_sched_affinity_non_exec_ctx
+  "constraints not satisfied|IsExecCtx|no matching function|mint_affinity")
+crucible_neg_compile_fixy_test(neg_sched_affinity_not_pinned
+  "constraints not satisfied|CtxFitsAffinityMint|NotPinned|no matching function|mint_affinity")
+crucible_neg_compile_fixy_test(neg_sched_policy_non_exec_ctx
+  "constraints not satisfied|IsExecCtx|no matching function|mint_scheduler_policy")
+crucible_neg_compile_fixy_test(neg_sched_policy_deadline_budget
+  "static assertion|CBS admission|RuntimeNs|DeadlineNs")
+crucible_neg_compile_fixy_test(neg_sched_priority_out_of_range
+  "constraints not satisfied|CtxFitsPriorityMint|no matching function|mint_priority")
+crucible_neg_compile_fixy_test(neg_sched_priority_non_exec_ctx
+  "constraints not satisfied|IsExecCtx|no matching function|mint_priority")
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_regime         "FixyNotEngaged_Regime")
 
 # FIXY-AUDIT-D2 — HS14 floor for mint_fn factory.
