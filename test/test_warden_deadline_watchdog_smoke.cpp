@@ -111,7 +111,7 @@ int main() {
         DeadlineWatchdog watchdog{
             /*senses=*/nullptr, policy, ::crucible::effects::testing::init()};
         for (int i = 0; i < 5; ++i) {
-            const auto v = watchdog.observe();
+            const auto v = watchdog.observe(::crucible::effects::TestRunnerCtx{});
             if (v != WatchdogVerdict::InsufficientData) {
                 std::fprintf(stderr,
                     "nullptr-Senses Watchdog should return "
@@ -141,7 +141,7 @@ int main() {
         policy.deadline_miss_budget = 0;
         DeadlineWatchdog watchdog{
             /*senses=*/nullptr, policy, ::crucible::effects::testing::init()};
-        const auto v = watchdog.observe();
+        const auto v = watchdog.observe(::crucible::effects::TestRunnerCtx{});
         if (v != WatchdogVerdict::InsufficientData) {
             std::fprintf(stderr,
                 "budget=0 should disable watchdog; got %s\n",
@@ -168,7 +168,7 @@ int main() {
         DeadlineWatchdog watchdog{
             /*senses=*/nullptr, policy, ::crucible::effects::testing::init()};
         for (int i = 0; i < 5; ++i) {
-            const auto v = watchdog.observe();
+            const auto v = watchdog.observe(::crucible::effects::TestRunnerCtx{});
             if (v != WatchdogVerdict::InsufficientData) {
                 std::fprintf(stderr,
                     "AUDIT-2 regression: window_sec=0 should disable "
@@ -254,7 +254,7 @@ int main() {
         Policy policy = Policy::production();
         DeadlineWatchdog watchdog{
             /*senses=*/nullptr, policy, ::crucible::effects::testing::init()};
-        (void)watchdog.observe();  // observe with nullptr Senses — no state change
+        (void)watchdog.observe(::crucible::effects::TestRunnerCtx{});  // observe with nullptr Senses — no state change
         watchdog.reset();
         if (watchdog.baseline_count() != 0u
             || watchdog.latest_count() != 0u
@@ -271,7 +271,7 @@ int main() {
         DeadlineWatchdog watchdog_src{
             /*senses=*/nullptr, policy, ::crucible::effects::testing::init()};
         DeadlineWatchdog watchdog_sink = std::move(watchdog_src);
-        const auto v = watchdog_sink.observe();
+        const auto v = watchdog_sink.observe(::crucible::effects::TestRunnerCtx{});
         if (v != WatchdogVerdict::InsufficientData) {
             std::fprintf(stderr,
                 "moved-into watchdog should still observe; got %s\n",

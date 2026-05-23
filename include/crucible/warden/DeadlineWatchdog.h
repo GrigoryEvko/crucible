@@ -24,7 +24,7 @@
 //     three callers want different actuation, but the same observation.
 //
 //   • The watchdog must be cheap enough to call from any cold-path
-//     hook — one Senses lookup + one steady_clock read + one budget
+//     hook — one Senses lookup + one CLOCK_BOOTTIME read + one budget
 //     comparison.  If it owned a thread, every consumer would pay for
 //     a thread; pure logic is free for non-consumers.
 //
@@ -68,7 +68,7 @@
 // ─── COST DISCIPLINE ──────────────────────────────────────────────────
 //
 // Per observe() call (steady state):
-//   • 1 std::chrono::steady_clock::now() (~30 ns)
+//   • 1 clock_gettime(CLOCK_BOOTTIME) (~30 ns; vDSO fastpath)
 //   • 1 Senses::sched_switch() pointer read (~1 ns)
 //   • 1 SchedSwitch::context_switches() syscall (~1 µs — bpf_map_lookup)
 //   • 1 budget comparison + window-elapsed branch (~5 ns)
@@ -98,7 +98,7 @@
 //                outside the watchdog — do NOT add atomics inside.
 // • LeakSafe   ✓ No resources owned; trivial dtor.
 // • DetSafe    ✗ NON-DETERMINISTIC by design — observe() reads
-//                steady_clock::now() and a kernel BPF-map counter that
+//                clock_gettime(CLOCK_BOOTTIME) and a kernel BPF-map counter that
 //                varies with system load.  The watchdog is an OBSERVER
 //                of wall-clock reality; it is not part of the bit-exact
 //                replay path.  Calling it from a deterministic context
@@ -119,9 +119,11 @@
 #include <crucible/perf/Senses.h>           // Senses + SchedSwitch facade
 #include <crucible/warden/Policy.h>             // Policy + SchedClass + budget
 #include <crucible/safety/Checked.h>        // crucible::sat::sub_sat
+#include <crucible/safety/ClockSource.h>    // FIXY-V-194: BootClockBytes
 
 #include <chrono>
 #include <cstdint>
+#include <ctime>                            // FIXY-V-194: clock_gettime, CLOCK_BOOTTIME
 
 namespace crucible::warden {
 
@@ -176,6 +178,19 @@ watchdog_verdict_name(WatchdogVerdict v) noexcept {
 // Documented contract instead of typed contract — this matches the
 // warden/Hardening.h convention for borrowed Linux-syscall state.
 
+// FIXY-V-194 (Agent 6 Scenario 6 P0):
+//   CtxFitsDeadlineWatchdog<Ctx> — observe() admits Bg / Init / Test
+//   row contexts (the warden enforcement loop, the keeper init phase,
+//   and test drivers).  HotFgCtx is rejected: a watchdog poll from
+//   the hot replay-bound foreground would be a category error.  Same
+//   row-shape as V-193's CtxFitsMonotonicClock for consistency.
+template <typename Ctx>
+concept CtxFitsDeadlineWatchdog =
+    ::crucible::effects::CtxOwnsAnyOf<Ctx,
+        ::crucible::effects::Effect::Bg,
+        ::crucible::effects::Effect::Init,
+        ::crucible::effects::Effect::Test>;
+
 class DeadlineWatchdog {
 public:
     [[nodiscard]] explicit DeadlineWatchdog(
@@ -197,7 +212,25 @@ public:
     // Observe the current preempt count, advance the rolling window
     // if window_ns has elapsed since the last reset, and emit a
     // verdict.  Cheap; safe to call from any cold path.
-    [[nodiscard]] WatchdogVerdict observe() noexcept {
+    //
+    // FIXY-V-194 — ctx-gated on CtxFitsDeadlineWatchdog (Bg / Init /
+    // Test row).  HotFgCtx is rejected (a watchdog poll from the hot
+    // replay-bound foreground would be the wrong thread anyway).
+    //
+    // The clock read is CLOCK_BOOTTIME, NOT CLOCK_MONOTONIC: a host
+    // suspend (laptop close, VM pause, GPU dev quiesce) freezes
+    // CLOCK_MONOTONIC; the watchdog window would never close on
+    // wake and the system would stay in InsufficientData forever.
+    // CLOCK_BOOTTIME keeps ticking through suspend so the window
+    // closes and the verdict fires once the host wakes — the correct
+    // semantics for a "have N seconds elapsed since enqueue" watchdog.
+    // Return is wrapped in BootClockBytes<uint64_t> to document the
+    // source-of-truth provenance at the call site; downstream Cipher /
+    // SessionPersistence migrations (V-198, V-199) will refuse the
+    // value at compile time unless the consumer accepts Boot bytes.
+    template <::crucible::effects::IsExecCtx Ctx>
+        requires CtxFitsDeadlineWatchdog<Ctx>
+    [[nodiscard]] WatchdogVerdict observe(Ctx const&) noexcept {
         // Disabled by configuration: budget = 0 OR window = 0 both
         // mean "don't watch".  Budget 0 is the documented opt-out;
         // window 0 was a latent BUG before the audit-2 sweep — every
@@ -225,9 +258,23 @@ public:
             return WatchdogVerdict::InsufficientData;
         }
 
-        const uint64_t now_ns = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count());
+        // FIXY-V-194: CLOCK_BOOTTIME (NOT CLOCK_MONOTONIC) — the
+        // watchdog's "have N seconds elapsed since enqueue" semantics
+        // must survive host suspend.  clock_gettime returns 0 / -1;
+        // -1 on a properly-built Linux box is essentially impossible
+        // (would mean the kernel refused CLOCK_BOOTTIME, which has
+        // been baseline since 2.6.39).  We treat any failure as
+        // "InsufficientData" — the next observe() call retries.
+        ::timespec ts{};
+        if (::clock_gettime(CLOCK_BOOTTIME, &ts) != 0) [[unlikely]] {
+            return WatchdogVerdict::InsufficientData;
+        }
+        auto now_bytes = ::crucible::safety::mint_clock_source<
+            ::crucible::safety::ClockSource_v::Boot,
+            std::uint64_t>(
+            static_cast<std::uint64_t>(ts.tv_sec) * 1'000'000'000ull
+            + static_cast<std::uint64_t>(ts.tv_nsec));
+        const uint64_t now_ns = std::move(now_bytes).consume();
         const uint64_t count = sched->context_switches();
 
         // First observation — capture baseline, return InsufficientData
@@ -361,7 +408,7 @@ static_assert(sizeof(DeadlineWatchdog) <= 64,
 // Concept: CtxFitsDeadlineWatchdogMint = IsExecCtx<Ctx> ∧
 //          row_contains_v<row_type_of_t<Ctx>, Effect::Init>.
 //
-// Why Init: construction reads Senses + steady_clock + Policy fields
+// Why Init: construction reads Senses + Policy fields
 // to baseline the rolling window.  Hot foreground / Bg-drain contexts
 // must not stand up a fresh watchdog (they should observe one minted
 // at Init time by the Keeper / bench harness).

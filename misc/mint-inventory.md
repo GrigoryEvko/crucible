@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-23T17:57:59Z`.
+Snapshot generated: `2026-05-23T18:19:43Z`.
 
 ## bridges/
 
@@ -196,7 +196,7 @@ Snapshot generated: `2026-05-23T17:57:59Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h:379` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Warden.h:119` | HS14: 5 |
+| `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h:426` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Warden.h:119` | HS14: 5 |
 | `mint_hardening` | `include/crucible/warden/Hardening.h:493` | Y | - | Y | Y | ctx | `include/crucible/fixy/Warden.h:105` | HS14: 5 |
 | `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h:271` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Warden.h:131` | HS14: 5 |
 | `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h:461` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Warden.h:144` | HS14: 5 |

@@ -750,11 +750,15 @@ class Vigil {
         // SchedSwitch::context_switches() and emits a verdict; we
         // publish it via atomic counters for fg-thread / runtime observation /
         // Keeper consumers.  ~1 µs per call (single bpf_map_lookup +
-        // one steady_clock::now()), invoked at most once per region
+        // one CLOCK_BOOTTIME read), invoked at most once per region
         // transition (~10-100ms steady-state) — total overhead well
         // under 0.01 % even on a tight inference loop.
+        //
+        // FIXY-V-194: observe() is now ctx-gated — we present a
+        // BgDrainCtx because this code path runs on the Vigil's bg
+        // thread (the region-publishing thread, not the hot fg).
         if (wd_) {
-            const auto v = wd_->observe();
+            const auto v = wd_->observe(::crucible::effects::BgDrainCtx{});
             wd_last_verdict_.store(v, std::memory_order_release);
             switch (v) {
                 case ::crucible::warden::WatchdogVerdict::Healthy:

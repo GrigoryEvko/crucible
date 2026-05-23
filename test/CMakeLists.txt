@@ -1773,6 +1773,17 @@ crucible_neg_compile_fixy_test(neg_monotonic_clock_hot_ctx
 crucible_neg_compile_fixy_test(neg_monotonic_clock_non_exec_ctx
   "constraints not satisfied|IsExecCtx|no matching function|now_ns")
 
+# ─── FIXY-V-194 DeadlineWatchdog::observe neg-compiles (HS14) ──────────
+#   The Bg/Init/Test gate keeps a hot-foreground replay-bound thread
+#   from polling the warden watchdog.  Internally the watchdog now
+#   reads CLOCK_BOOTTIME (NOT CLOCK_MONOTONIC) so a host suspend
+#   doesn't freeze the window.  Two distinct-mismatch-class fixtures:
+#   HotFgCtx (row-content) and a bare `int` (ctx-type).
+crucible_neg_compile_fixy_test(neg_deadline_watchdog_hot_ctx
+  "constraints not satisfied|CtxFitsDeadlineWatchdog|no matching function|observe")
+crucible_neg_compile_fixy_test(neg_deadline_watchdog_non_exec_ctx
+  "constraints not satisfied|IsExecCtx|no matching function|observe")
+
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_regime         "FixyNotEngaged_Regime")
 
 # FIXY-AUDIT-D2 — HS14 floor for mint_fn factory.
