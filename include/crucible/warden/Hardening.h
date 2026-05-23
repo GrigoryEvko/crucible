@@ -28,6 +28,8 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/fixy/syscall/Per.h>            // FIXY-V-180: SyscallId + per<Id>
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-180: family_tier check
 
 #include <bit>
 #include <cerrno>
@@ -35,6 +37,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <tuple>           // FIXY-V-180: mint_hardening_syscall_grants
 #include <utility>
 #include <vector>
 
@@ -475,10 +478,11 @@ class Hardening {
 //
 // CtxFitsHardeningMint admits only contexts whose effect row carries the
 // Init capability.  Hardening::apply() performs Linux syscalls
-// (sched_setaffinity, sched_setattr, mlock2, madvise(MADV_HUGEPAGE/
-// MADV_COLLAPSE), prctl(PR_SET_THP_DISABLE)) which are process-wide
-// state mutations belonging to the startup-only Init row.  Hot foreground
-// and background-drain contexts must not engage this surface.
+// (sched_setaffinity, sched_setattr, mlock2, mlock, munlock,
+// madvise(MADV_HUGEPAGE/MADV_COLLAPSE), prctl(PR_SET_THP_DISABLE))
+// which are process-wide state mutations belonging to the startup-only
+// Init row.  Hot foreground and background-drain contexts must not
+// engage this surface.
 //
 // The mint is the §XXI authorization point; downstream apply() callers
 // can continue to use the bare free function during the migration period.
@@ -486,6 +490,91 @@ template <class Ctx>
 concept CtxFitsHardeningMint =
        effects::IsExecCtx<Ctx>
     && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+
+// ── FIXY-V-180 — syscall-grant declaration ────────────────────────────
+//
+// `mint_hardening_syscall_grants` enumerates every privileged Linux
+// syscall Hardening::apply() issues.  It is a type-level audit-trail:
+//
+//   * `grep "mint_hardening_syscall_grants"` finds the canonical
+//     classification of warden's syscall surface (one site, type-level).
+//   * Each grant's `family_tier_v<G>` is locked at compile time via
+//     the static_assert block below — drift between the declared trait
+//     and V-098's per-syscall classifier reds at this header's parse,
+//     before any consumer sees the mint.
+//   * Per Agent 3 Phase Σ4: "mint_hardening is THE ONLY Crucible
+//     function authorized to issue these privileged syscalls" — the
+//     declaration is the grep-discoverable seal on that contract.
+//
+// Family-tier table (V-097 SyscallFamily chain; cross-reference V-100
+// Bridge.h's row-lift map):
+//
+//   sched_setaffinity (27) → ThreadSync      → Row<Block>
+//   sched_setattr     (36) → ThreadSync      → Row<Block>          [V-180]
+//   mlock             (38) → MemoryMapping   → Row<IO>             [V-180]
+//   mlock2            (37) → MemoryMapping   → Row<IO>             [V-180]
+//   munlock           (39) → MemoryMapping   → Row<IO>             [V-180]
+//   madvise           (24) → MemoryMapping   → Row<IO>
+//   prctl             (40) → Privilege       → Row<IO, Block>      [V-180]
+//
+// Row note: ColdInitCtx is `Row<Init, Alloc, IO>` and does NOT include
+// `Block`; the runtime acceptance gate is `CtxOwnsCapability<Ctx,
+// Effect::Init>` (above) — Init is the startup-time pass-through that
+// admits all blocking work without requiring `Block` in the row.  The
+// syscall_grants declaration below is a CLASSIFICATION ANNOTATION, not
+// a row-subrow gate; future tightening lives in V-131 H003 (cross-axis
+// permission<Root> proof gate).
+//
+// The type is a tuple — distinct types per syscall, federation-cache
+// discriminable (V-098 NTTP discipline).
+using mint_hardening_syscall_grants = std::tuple<
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::sched_setaffinity>,
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::sched_setattr>,
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::mlock>,
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::mlock2>,
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::munlock>,
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::madvise>,
+    ::crucible::fixy::grant::syscall::per<
+        ::crucible::fixy::grant::syscall::SyscallId::prctl>>;
+
+// Lock the declared family_tier for every grant in the set against
+// V-098's per<Id> classifier — drift here reds at parse, before any
+// consumer reaches the mint.
+namespace detail::v180_hardening_grant_check {
+namespace fsc = ::crucible::fixy::grant::syscall;
+namespace fll = ::crucible::algebra::lattices;
+
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::sched_setaffinity>> == fll::SyscallFamily::ThreadSync);
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::sched_setattr>>    == fll::SyscallFamily::ThreadSync);
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::mlock>>            == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::mlock2>>           == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::munlock>>          == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::madvise>>          == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<
+    fsc::per<fsc::SyscallId::prctl>>            == fll::SyscallFamily::Privilege);
+
+// Tuple cardinality pin — adding a syscall to the set must update both
+// the using-decl above AND this sentinel.
+static_assert(std::tuple_size_v<mint_hardening_syscall_grants> == 7,
+    "FIXY-V-180: mint_hardening_syscall_grants drifted from 7 entries.  "
+    "If you added a syscall to Hardening::apply(), append the new "
+    "per<SyscallId::X> to the tuple AND extend SyscallId in "
+    "fixy/syscall/Per.h (append-only) AND add a family_tier_v check "
+    "below.  If you removed a syscall, the federation-cache key drifts; "
+    "audit before committing.");
+}  // namespace detail::v180_hardening_grant_check
 
 template <effects::IsExecCtx Ctx>
     requires CtxFitsHardeningMint<Ctx>

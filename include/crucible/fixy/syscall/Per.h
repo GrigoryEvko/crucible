@@ -147,6 +147,16 @@ enum class SyscallId : std::uint16_t {
     // ── Privilege (top — capset, mount, ptrace) ────────────────────
     ptrace           = 34,  // process trace (mutating)
     capset           = 35,  // capability set (drop or grant)
+
+    // ── Append-only V-180 extensions (warden/Hardening.h surface) ──
+    // Five additional syscalls the warden hardening path issues.
+    // Ordinals 36-40 frozen forever per the V-098 federation-cache
+    // stability invariant.
+    sched_setattr    = 36,  // scheduler attribute change (SCHED_FIFO etc., ThreadSync)
+    mlock2           = 37,  // page locking with flags (MemoryMapping)
+    mlock            = 38,  // page locking (MemoryMapping)
+    munlock          = 39,  // page unlocking (MemoryMapping)
+    prctl            = 40,  // process control (PR_SET_THP_DISABLE etc., Privilege)
 };
 
 // ── family_of(SyscallId) — the load-bearing classifier ─────────────
@@ -200,6 +210,7 @@ family_of(SyscallId id) noexcept {
         case SyscallId::futex:             return SF::ThreadSync;
         case SyscallId::sched_yield:       return SF::ThreadSync;
         case SyscallId::sched_setaffinity: return SF::ThreadSync;
+        case SyscallId::sched_setattr:     return SF::ThreadSync;
 
         // NetworkIo
         case SyscallId::socket:            return SF::NetworkIo;
@@ -214,6 +225,13 @@ family_of(SyscallId id) noexcept {
         // Privilege
         case SyscallId::ptrace:            return SF::Privilege;
         case SyscallId::capset:            return SF::Privilege;
+        case SyscallId::prctl:             return SF::Privilege;
+
+        // V-180 MemoryMapping additions — mem-locking is a mapping-state
+        // modifier (locks pages into RAM, attribute of an existing mapping).
+        case SyscallId::mlock2:            return SF::MemoryMapping;
+        case SyscallId::mlock:             return SF::MemoryMapping;
+        case SyscallId::munlock:           return SF::MemoryMapping;
 
         // Default — returned only if the switch is non-exhaustive,
         // which the self-test below witnesses cannot occur for any
@@ -347,6 +365,13 @@ static_assert(family_tier_v<sc::per<SI::execve>>            == SF::ProcessContro
 static_assert(family_tier_v<sc::per<SI::ptrace>>            == SF::Privilege);
 static_assert(family_tier_v<sc::per<SI::capset>>            == SF::Privilege);
 
+// V-180: warden/Hardening.h surface additions — exercise each new ordinal.
+static_assert(family_tier_v<sc::per<SI::sched_setattr>>     == SF::ThreadSync);
+static_assert(family_tier_v<sc::per<SI::mlock>>             == SF::MemoryMapping);
+static_assert(family_tier_v<sc::per<SI::mlock2>>            == SF::MemoryMapping);
+static_assert(family_tier_v<sc::per<SI::munlock>>           == SF::MemoryMapping);
+static_assert(family_tier_v<sc::per<SI::prctl>>             == SF::Privilege);
+
 // ── Layer 5: NTTP-distinctness — distinct Ids → distinct types ──────
 // Sampled across every tier boundary; sentinel TU runs the full
 // 36×35/2 = 630-cell distinctness matrix.
@@ -408,10 +433,11 @@ static_assert(!std::is_same_v<sc::per<SI::clock_gettime>,   sc::family_vdso_only
     if (sc::family_of(SI::munmap)            != SF::MemoryMapping)  return false;
     if (sc::family_of(SI::mprotect)          != SF::MemoryMapping)  return false;
     if (sc::family_of(SI::madvise)           != SF::MemoryMapping)  return false;
-    // ThreadSync tier — 3 enumerators
+    // ThreadSync tier — 4 enumerators (V-180 added sched_setattr)
     if (sc::family_of(SI::futex)             != SF::ThreadSync)     return false;
     if (sc::family_of(SI::sched_yield)       != SF::ThreadSync)     return false;
     if (sc::family_of(SI::sched_setaffinity) != SF::ThreadSync)     return false;
+    if (sc::family_of(SI::sched_setattr)     != SF::ThreadSync)     return false;
     // NetworkIo tier — 4 enumerators
     if (sc::family_of(SI::socket)            != SF::NetworkIo)      return false;
     if (sc::family_of(SI::connect)           != SF::NetworkIo)      return false;
@@ -420,9 +446,14 @@ static_assert(!std::is_same_v<sc::per<SI::clock_gettime>,   sc::family_vdso_only
     // ProcessControl tier — 2 enumerators
     if (sc::family_of(SI::clone)             != SF::ProcessControl) return false;
     if (sc::family_of(SI::execve)            != SF::ProcessControl) return false;
-    // Privilege tier — 2 enumerators
+    // Privilege tier — 3 enumerators (V-180 added prctl)
     if (sc::family_of(SI::ptrace)            != SF::Privilege)      return false;
     if (sc::family_of(SI::capset)            != SF::Privilege)      return false;
+    if (sc::family_of(SI::prctl)             != SF::Privilege)      return false;
+    // V-180 MemoryMapping additions — mem-locking syscalls
+    if (sc::family_of(SI::mlock2)            != SF::MemoryMapping)  return false;
+    if (sc::family_of(SI::mlock)             != SF::MemoryMapping)  return false;
+    if (sc::family_of(SI::munlock)           != SF::MemoryMapping)  return false;
     return true;
 }
 static_assert(every_syscall_id_classified_correctly(),
@@ -433,17 +464,22 @@ static_assert(every_syscall_id_classified_correctly(),
     "under-restrictive).");
 
 // ── Cardinality pin — SyscallId catalog size ────────────────────────
-// V-098 ships 36 enumerators (4 + 8 + 9 + 4 + 3 + 4 + 2 + 2).  Growing
-// the catalog is fine (append-only); shrinking or reordering is a
-// federation-cache silent invalidation.
+// V-098 shipped 36 enumerators (4 + 8 + 9 + 4 + 3 + 4 + 2 + 2).  V-180
+// appended 5 more (sched_setattr / mlock2 / mlock / munlock / prctl) at
+// ordinals 36..40 to cover the warden/Hardening.h surface; new total 41
+// = 4 + 8 + 9 + (4+3) + (3+1) + 4 + 2 + (2+1).  Growing the catalog
+// is fine (append-only); shrinking or reordering is a federation-cache
+// silent invalidation.
 static constexpr std::size_t syscall_id_count =
     std::meta::enumerators_of(^^SI).size();
-static_assert(syscall_id_count == 36,
-    "FIXY-V-098: SyscallId catalog drifted from the 36-enumerator "
-    "shipped surface.  If you're adding a new syscall, append it at "
-    "the next free ordinal AND extend the family_of() switch arm.  "
-    "Reordering / shrinking the enum silently invalidates every "
-    "stored row_hash (federation cache key).");
+static_assert(syscall_id_count == 41,
+    "FIXY-V-180: SyscallId catalog drifted from the 41-enumerator "
+    "shipped surface (V-098's 36 + V-180's 5 warden additions).  If "
+    "you're adding a new syscall, append it at the next free ordinal "
+    "AND extend the family_of() switch arm AND add an arm to "
+    "every_syscall_id_classified_correctly().  Reordering / shrinking "
+    "the enum silently invalidates every stored row_hash (federation "
+    "cache key).");
 
 // Cross-check against V-097's lattice cardinality (9 tiers — Family.h's
 // 9 tags + Per.h's 36 SyscallIds collectively cover the same axis).
