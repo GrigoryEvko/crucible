@@ -301,6 +301,7 @@ crucible_test(test_fixy_v_252_barrier_strength)         # FIXY-V-252 BarrierStre
 crucible_test(test_fixy_v_181_suspend_behavior)         # FIXY-V-181 SuspendBehaviorLattice — 3-element clock-pause-on-suspend chain (Agent 6 clock-axis foundation)
 crucible_test(test_fixy_v_182_pinning_requirement)      # FIXY-V-182 PinningRequirementLattice — 4-element CPU-coherence-domain chain (rdtsc-affinity, Agent 6 clock-axis foundation)
 crucible_test(test_fixy_v_183_scheduler_policy)         # FIXY-V-183 SchedulerPolicyLattice — 6-element Linux scheduler-class preemption chain (Agent 6 sched-axis foundation)
+crucible_test(test_fixy_v_184_clock_source)             # FIXY-V-184 ClockSourceLattice — DetSafe×Suspend×Pinning product composite + 9-source projection (Agent 6 §3.1)
 crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScopeLattice — non-distributive accel×ARM visibility-scope partial order (WMEM keystone)
 crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/ScopedFence.h — partial-order provider Graded carrier for MemoryScope axis + IsScopedFence + row_hash
 crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
@@ -8437,6 +8438,14 @@ crucible_neg_compile_test(neg_scheduler_policy_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 crucible_neg_compile_test(neg_scheduler_policy_at_element_disjoint
   "no match for|cannot convert|conversion from|no viable")
+
+# ─── FIXY-V-184 ClockSourceLattice negative-compile fixtures ────────
+#   - neg_clock_source_cross_vocabulary_mixing  ClockSource enum ≠ projected product element at leq op
+#   - neg_clock_source_slot_axis_disjoint       per-slot axis disjointness (SuspendBehavior into a DetSafeTier slot)
+crucible_neg_compile_test(neg_clock_source_cross_vocabulary_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_clock_source_slot_axis_disjoint
+  "no match for|cannot convert|conversion from|no viable|invalid conversion")
 
 # ─── FOUND-G61 Crash negative-compile fixtures ──────────────────────
 #

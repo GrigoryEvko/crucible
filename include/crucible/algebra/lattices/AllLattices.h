@@ -70,6 +70,7 @@
 #include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5  (#450) — shipped
 #include <crucible/algebra/lattices/CallShapeLattice.h>  // FIXY-V-240 — shipped (5-tier dispatch-shape chain)
 #include <crucible/algebra/lattices/CipherTierLattice.h> // FOUND-G43  — shipped
+#include <crucible/algebra/lattices/ClockSourceLattice.h> // FIXY-V-184 — shipped (DetSafe×Suspend×Pinning product composite + 9-source projection)
 #include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6  (#451) — shipped
 #include <crucible/algebra/lattices/ConsistencyLattice.h>// ALGEBRA-14 (#459) — shipped (2/3)
 #include <crucible/algebra/lattices/ControlFlowLattice.h> // FIXY-V-239 — shipped (5-tier control-flow-escape chain)
@@ -202,6 +203,7 @@ static_assert(every_lattice_has_name<
     BoolLattice<LatticeNameProbeTruePred>,
     CallShapeLattice,
     CipherTierLattice,
+    ClockSourceLattice,
     ConfLattice,
     ConsistencyLattice,
     ControlFlowLattice,
