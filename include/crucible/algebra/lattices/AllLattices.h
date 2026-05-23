@@ -99,6 +99,7 @@
 #include <crucible/algebra/lattices/StackUseLattice.h>   // FIXY-V-241 — shipped (4-tier stack-bound chain)
 #include <crucible/algebra/lattices/StalenessSemiring.h> // ALGEBRA-11 (#456) — shipped
 #include <crucible/algebra/lattices/StdioLattice.h>      // FIXY-V-241 — shipped (4-tier stdio-surface chain)
+#include <crucible/algebra/lattices/SuspendBehaviorLattice.h> // FIXY-V-181 — shipped (3-element clock-pause-on-suspend chain)
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h> // FIXY-V-097 — shipped (9-tier syscall-family chain)
 #include <crucible/algebra/lattices/ToleranceLattice.h>  // ALGEBRA-14 (#459) — shipped (3/3)
 #include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7  (#452) — shipped
@@ -247,6 +248,7 @@ static_assert(every_lattice_has_name<
     StackUseLattice,
     StalenessSemiring,
     StdioLattice,
+    SuspendBehaviorLattice,
     SyscallFamilyLattice,
     ToleranceLattice,
     TrustLattice<LatticeNameProbeSource>,
