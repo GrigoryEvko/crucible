@@ -71,11 +71,14 @@ int main() {
                 bench::do_not_optimize(sink);
             });
         }(),
-        // (3) Thread-local atomic relaxed load. One MOV on x86 (TSO makes
+        // (3) Process-wide atomic relaxed load. One MOV on x86 (TSO makes
         //     loads sequentially consistent for free); exercises the
-        //     atomic-path shape the harness itself uses internally.
+        //     atomic-path shape the harness itself uses internally. NOT
+        //     thread_local: an atomic op on a per-thread object has no
+        //     synchronization meaning (one instance per thread → no peer to
+        //     order against), so the storage is process-wide `static`.
         [&]{
-            static thread_local std::atomic<uint64_t> counter{kAtomicInitialValue};
+            static std::atomic<uint64_t> counter{kAtomicInitialValue};
             return run("atomic<u64>.load(relaxed)", [&]{
                 const uint64_t v = counter.load(std::memory_order_relaxed);
                 bench::do_not_optimize(v);

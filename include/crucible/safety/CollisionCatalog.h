@@ -258,6 +258,13 @@ enum class RuleCode : std::uint8_t {
     //         walk over registered Meyers-singleton tags detects a cycle
     //         at consteval and flags the participating Fn.  The reusable
     //         cycle detector ships here as pack::singleton_init_acyclic<>.
+    //   G002: marks_thread_local_atomic.  A grant::global::thread_local_<Tag>
+    //         (V-246) PAIRED with an atomic memory-order wrapper
+    //         (safety::MemOrder<*, std::atomic<T>>) is nonsensical: an atomic
+    //         op on a per-thread object orders against no peer (one instance
+    //         per thread).  Either the atomic is redundant (misleading) or
+    //         the thread_local was a typo for process-wide `static`.  Closes
+    //         Scenario E (bench_smoke.cpp:78 thread_local std::atomic counter).
     C001 = 28,  // marks_aborts × ControlFlow tier < AbortOnly (escape unwitnessed)
     D001 = 29,  // indirect_call grant with non-noexcept callable
     D002 = 30,  // recurses grant without a bounded MaxDepth
@@ -266,6 +273,7 @@ enum class RuleCode : std::uint8_t {
     P003 = 33,  // fork-worker × ControlFlow tier ≥ ThrowOnly (throw terminates jthread)
     S001 = 34,  // HotPath × Stdio tier ≥ BufferedWrite (stdio on hot path)
     S004 = 35,  // Meyers-singleton init-dependency cycle
+    G002 = 36,  // thread_local_ grant × atomic MemOrder (per-thread atomic nonsensical)
     None = 255,
 };
 
@@ -390,6 +398,9 @@ struct S001_StdioForbiddenOnHotPath : diag::tag_base {
 struct S004_MeyersSingletonInitCycle : diag::tag_base {
     static constexpr std::string_view name = "S004_MeyersSingletonInitCycle";
 };
+struct G002_ThreadLocalAtomicNonsensical : diag::tag_base {
+    static constexpr std::string_view name = "G002_ThreadLocalAtomicNonsensical";
+};
 
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
@@ -427,11 +438,12 @@ using Catalog = std::tuple<
     L006_NoLongjmpAcrossLinear,
     P003_ForkBodyNoThrows,
     S001_StdioForbiddenOnHotPath,
-    S004_MeyersSingletonInitCycle
+    S004_MeyersSingletonInitCycle,
+    G002_ThreadLocalAtomicNonsensical
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 36);
+static_assert(catalog_size == 37);
 
 template <RuleCode R>
 struct rule_tag;
@@ -472,6 +484,7 @@ template <> struct rule_tag<RuleCode::L006> { using type = L006_NoLongjmpAcrossL
 template <> struct rule_tag<RuleCode::P003> { using type = P003_ForkBodyNoThrows; };
 template <> struct rule_tag<RuleCode::S001> { using type = S001_StdioForbiddenOnHotPath; };
 template <> struct rule_tag<RuleCode::S004> { using type = S004_MeyersSingletonInitCycle; };
+template <> struct rule_tag<RuleCode::G002> { using type = G002_ThreadLocalAtomicNonsensical; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -586,6 +599,9 @@ template <> struct rule_code_of<S001_StdioForbiddenOnHotPath> {
 };
 template <> struct rule_code_of<S004_MeyersSingletonInitCycle> {
     static constexpr RuleCode value = RuleCode::S004;
+};
+template <> struct rule_code_of<G002_ThreadLocalAtomicNonsensical> {
+    static constexpr RuleCode value = RuleCode::G002;
 };
 
 template <typename Tag>
@@ -852,6 +868,17 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(S004, "S004",
     "break the init-dependency cycle (inject the dependency, or merge the singletons "
     "into one initialization unit); see pack::singleton_init_acyclic for the detector",
     "fixy.md §24.2 S004 (V-243)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(G002, "G002",
+    "thread_local storage is never combined with atomic synchronization",
+    "marks_thread_local_atomic is true — a grant::global::thread_local_<Tag> is "
+    "paired with an atomic memory-order wrapper. An atomic op on a per-thread "
+    "object orders against no peer (one instance per thread), so the atomic is "
+    "either redundant (and misleading) or the thread_local was a typo for a "
+    "process-wide static (a silent correctness gap, e.g. bench_smoke.cpp:78)",
+    "decide intent: drop thread_local for a process-wide `static std::atomic<T>` "
+    "if cross-thread, or drop the atomic for a plain thread_local (keeping the "
+    "grant::global::thread_local_<Tag>) if genuinely per-thread",
+    "fixy.md §24.2 G002 (V-249)");
 
 #undef CRUCIBLE_COLLISION_DIAGNOSTIC
 
@@ -908,6 +935,8 @@ template <typename F> struct marks_federation_peer             : std::false_type
 //   marks_fork_worker                  — permission_fork worker body (V-087 / V-245)
 //   marks_throws                       — grant::ctrl::throws<Family> (V-244)
 //   marks_singleton_init_cycle         — V-248 tag-graph closure walk verdict
+//   marks_thread_local_atomic          — grant::global::thread_local_<Tag> ×
+//                                        atomic MemOrder wrapper (V-249)
 template <typename F> struct marks_aborts                     : std::false_type {};
 template <typename F> struct marks_indirect_call_not_noexcept : std::false_type {};
 template <typename F> struct marks_recurses_unbounded         : std::false_type {};
@@ -916,6 +945,7 @@ template <typename F> struct marks_longjmp_unsafe             : std::false_type 
 template <typename F> struct marks_fork_worker                : std::false_type {};
 template <typename F> struct marks_throws                     : std::false_type {};
 template <typename F> struct marks_singleton_init_cycle       : std::false_type {};
+template <typename F> struct marks_thread_local_atomic        : std::false_type {};
 
 template <typename T> struct is_exact_decimal             : std::false_type {};
 
@@ -1348,6 +1378,12 @@ concept S001_OK = !(marks_hot_path<F>::value &&
 template <typename F>
 concept S004_OK = !marks_singleton_init_cycle<F>::value;
 
+// G002: thread_local storage paired with an atomic memory-order wrapper —
+// a per-thread atomic orders against no peer, so the combination is a
+// category error (V-249 / Scenario E).
+template <typename F>
+concept G002_OK = !marks_thread_local_atomic<F>::value;
+
 template <typename F>
 concept AllRulesOK =
     I002_OK<F> && L002_OK<F> && E044_OK<F> && I003_OK<F> &&
@@ -1358,7 +1394,8 @@ concept AllRulesOK =
     W001_OK<F> && W002_OK<F> &&
     F101_OK<F> && F102_OK<F> && F103_OK<F> && F104_OK<F> && F105_OK<F> &&
     C001_OK<F> && D001_OK<F> && D002_OK<F> && G001_OK<F> &&
-    L006_OK<F> && P003_OK<F> && S001_OK<F> && S004_OK<F>;
+    L006_OK<F> && P003_OK<F> && S001_OK<F> && S004_OK<F> &&
+    G002_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -1432,6 +1469,8 @@ template <typename F>
         return RuleCode::S001;
     } else if constexpr (!S004_OK<F>) {
         return RuleCode::S004;
+    } else if constexpr (!G002_OK<F>) {
+        return RuleCode::G002;
     } else {
         return RuleCode::None;
     }
@@ -1768,6 +1807,8 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             ::crucible::algebra::lattices::Stdio::BufferedWrite, Type>;
     static constexpr bool singleton_init_cycle =
         collision::marks_singleton_init_cycle<F>::value;
+    static constexpr bool thread_local_atomic =
+        collision::marks_thread_local_atomic<F>::value;
 
     [[nodiscard]] static consteval bool validate() noexcept {
         static_assert(!(classified && fail && !fail_secret),
@@ -1929,6 +1970,12 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "tag-graph closure walk — the lazy-init form of the static-init-order "
             "fiasco. Break the cycle (inject the dependency or merge the "
             "singletons); see pack::singleton_init_acyclic for the detector.");
+        static_assert(!thread_local_atomic,
+            "G002: thread_local storage paired with an atomic memory-order "
+            "wrapper. An atomic op on a per-thread object orders against no peer "
+            "(one instance per thread) — either drop thread_local for a "
+            "process-wide static std::atomic<T>, or drop the atomic for a plain "
+            "thread_local (Scenario E: bench_smoke.cpp:78).");
         // L005 and F001 are pack-level rules (no single-Fn enforcement
         // shape); fixy/Fn.h checks them across the Grants pack via
         // pack::no_linear_region_alias_v and pack::frame_axis_consistent_v.
@@ -1971,7 +2018,8 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(Usage == UsageMode::Linear && longjmp_unsafe) &&
                !(fork_worker && fork_body_throws) &&
                !(hot_path && hot_path_stdio) &&
-               !singleton_init_cycle;
+               !singleton_init_cycle &&
+               !thread_local_atomic;
     }
 
     static constexpr bool valid = validate();

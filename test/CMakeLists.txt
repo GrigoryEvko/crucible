@@ -293,6 +293,7 @@ crucible_test(test_fixy_v_240_call_shape)      # FIXY-V-240 DimensionAxis::CallS
 crucible_test(test_fixy_v_241_stack_global_stdio) # FIXY-V-241 StackUse/GlobalState/Stdio — 3 hazard-axis 4-tier chains
 crucible_test(test_fixy_v_242_hazard_wrappers)    # FIXY-V-242 5 safety/* Graded carriers (ControlFlow/CallShape/StackUse/GlobalState/Stdio)
 crucible_test(test_fixy_v_243_control_flow_collisions)  # FIXY-V-243 CollisionCatalog C001/D001/D002/G001/L006/P003/S001/S004 hazard-axis cross-axis rules
+crucible_test(test_fixy_v_249_thread_local_atomic)      # FIXY-V-249 CollisionCatalog G002 thread_local × atomic (Scenario E)
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
@@ -6480,6 +6481,19 @@ crucible_neg_compile_test(neg_collision_S001_hotpath_stdio
   "S001|hot-path|stdio|BufferedWrite")
 crucible_neg_compile_test(neg_collision_S004_singleton_cycle
   "S004|singleton|cycle")
+
+# ─── FIXY-V-249 G002 thread_local × atomic neg-compiles (2 = HS14 floor) ─
+#
+# G002 rejects a grant::global::thread_local_<Tag> paired with an atomic
+# memory-order wrapper (Scenario E: bench_smoke.cpp:78). HS14: two fixtures,
+# distinct mismatch classes:
+#   1. PRODUCTION path — marker fires through Fn<>'s ValidComposition gate.
+#   2. CONCEPT-ISOLATION path — standalone G002_OK<F> rejects (proves the
+#      rule is load-bearing even if an earlier rule would mask it).
+crucible_neg_compile_test(neg_collision_G002_thread_local_atomic
+  "G002|thread_local|atomic")
+crucible_neg_compile_test(neg_collision_G002_concept_direct
+  "G002")
 
 # ─── FIXY-V-057 Affine wrapper neg-compiles (2 fixtures = HS14 floor) ─
 #
