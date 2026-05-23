@@ -304,6 +304,7 @@ crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/Simd
 crucible_test(test_fixy_v_257_hw_grants)                # FIXY-V-257 fixy/Hw.h — 10 grant::hw::* families (cache/barrier/tsc/rng/cpuid/msr/port_io/asm_/simd_width/vendor_intrinsic) + 5 §XXI mints
 crucible_test(test_fixy_v_258_vendor_intrinsic)         # FIXY-V-258 fixy/Vendor.h — IsaTag enum (22 ISA families) + strong-typed grant::vendor::intrinsic<V,I> + 7 canonical aliases
 crucible_test(test_fixy_v_259_simd_width)               # FIXY-V-259 fixy/Simd.h — WidthBits enum (6 width classes) + strong-typed grant::simd::width<W> + 4 canonical aliases
+crucible_test(test_fixy_v_261_arch_pinned)              # FIXY-V-261 safety/source/Arch.h — source::ArchPinned<Arch> tag + ArchComposable cross-arch gate + Portable→concrete retag admittance
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
@@ -4640,6 +4641,19 @@ crucible_neg_compile_test(neg_collision_V002_vendor_cross_arch
   "V002")
 crucible_neg_compile_test(neg_collision_V102_simd_width_exceeds_isa
   "V102")
+
+# ─── FIXY-V-261 source::ArchPinned<Arch> cross-arch gate ─────────────
+# Three distinct mismatch classes: (1) the ArchComposable composition
+# gate rejecting x86 × ARM (static_assert path, V-261 message);
+# (2) cross-trunk RETAG on the production Tagged::retag<>() path
+# (RetagAllowed constraint family); (3) false WIDENING retag concrete →
+# Portable ⊤ (same constraint family, structurally distinct direction).
+crucible_neg_compile_test(neg_arch_cross_compose
+  "V-261")
+crucible_neg_compile_test(neg_arch_cross_retag
+  "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
+crucible_neg_compile_test(neg_arch_false_widen_retag
+  "constraints not satisfied|the required expression|associated constraints are not satisfied|RetagAllowed")
 
 # ─── SwmrSession role and token discipline (GAPS-021) ────────────────
 crucible_neg_compile_test(neg_swmr_writer_cannot_recv
