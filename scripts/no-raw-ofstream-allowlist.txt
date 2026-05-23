@@ -1,0 +1,17 @@
+# no-raw-ofstream-allowlist.txt — grandfathered raw C++ file-stream sites
+# in band-3 dirs (FIXY-V-237).
+#
+# Each entry: `path:line` (repo-relative).  Comment lines start with `#`;
+# blank lines ignored.  Every entry is a TODO referencing the migration
+# to fixy::mint_file / safety::OwnedFile / safety::FileHandle.
+#
+# EMPTY by design: at ship time (FIXY-V-237) the eight band-3 subsystems
+# (cntp, canopy, cog, topology, forge, mimic, observe, warden) had ZERO
+# raw std::[basic_][oi]?fstream usage and no `#include <fstream>`.  This
+# guard is a regression-prevention surface — it ships green and stays
+# green unless a new raw file stream lands in band-3 production code.
+#
+# Stale-entry detection (parity with check-no-reserve.sh): any entry
+# whose path:line no longer holds a raw file stream is flagged (exit 2)
+# so the allowlist drains as migrations land and cannot silently
+# re-grandfather a future use re-introduced at the same line.

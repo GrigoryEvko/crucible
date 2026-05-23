@@ -546,6 +546,22 @@ add_test(NAME no_reserve
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-reserve.sh)
 set_tests_properties(no_reserve no_reserve_self_test PROPERTIES
     LABELS "ci_guard;fixy-U-097")
+# FIXY-V-237 raw C++ file-stream ban in band-3 dirs (Agent 9 Phase F6).
+# scripts/check-no-raw-ofstream.sh flags any std::[basic_][oi]?fstream
+# use or `#include <fstream>` in the eight fixy-only band-3 subsystems
+# (cntp, canopy, cog, topology, forge, mimic, observe, warden); all
+# filesystem touches there route through fixy::mint_file /
+# safety::OwnedFile / safety::FileHandle.  Ships green with an empty
+# allowlist (band-3 had zero raw file streams at FIXY-V-237).  Self-test
+# plants a violation, allowlist entry, inline-suppressed use, commented
+# use, and a stale allowlist entry to verify every axis works.
+add_test(NAME no_raw_ofstream_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-ofstream.sh
+          --self-test)
+add_test(NAME no_raw_ofstream
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-ofstream.sh)
+set_tests_properties(no_raw_ofstream no_raw_ofstream_self_test PROPERTIES
+    LABELS "ci_guard;fixy-V-237")
 # FIXY-U-105 reinterpret_cast ban enforcement (CLAUDE.md §III opt-out
 # matrix).  scripts/check-no-reinterpret-cast.sh flags every NEW
 # `reinterpret_cast<` call site outside the allowlist; 20 grandfathered
