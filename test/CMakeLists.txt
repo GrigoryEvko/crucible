@@ -296,6 +296,7 @@ crucible_test(test_fixy_v_243_control_flow_collisions)  # FIXY-V-243 CollisionCa
 crucible_test(test_fixy_v_249_thread_local_atomic)      # FIXY-V-249 CollisionCatalog G002 thread_local × atomic (Scenario E)
 crucible_test(test_fixy_v_250_simd_isa)                 # FIXY-V-250 SimdIsaLattice — non-distributive x86×ARM ISA partial order
 crucible_test(test_fixy_v_251_hw_instruction)           # FIXY-V-251 HwInstructionLattice — 5-tier hw-instruction capability chain
+crucible_test(test_fixy_v_252_barrier_strength)         # FIXY-V-252 BarrierStrengthLattice — 7-tier memory-fence strength chain
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
@@ -8191,6 +8192,14 @@ crucible_neg_compile_test(neg_vendor_lattice_cross_lattice_mixing
 crucible_neg_compile_test(neg_hw_instruction_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 crucible_neg_compile_test(neg_hw_instruction_at_element_disjoint
+  "no match for|cannot convert|conversion from|no viable")
+
+# ─── FIXY-V-252 BarrierStrengthLattice negative-compile fixtures ────
+#   - neg_barrier_strength_cross_lattice_mixing  BarrierStrength ≠ HwInstruction at leq op
+#   - neg_barrier_strength_at_element_disjoint   At<> singleton grade disjointness
+crucible_neg_compile_test(neg_barrier_strength_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_barrier_strength_at_element_disjoint
   "no match for|cannot convert|conversion from|no viable")
 
 # ─── FOUND-G61 Crash negative-compile fixtures ──────────────────────

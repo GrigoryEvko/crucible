@@ -65,6 +65,7 @@
 // ── Shipped lattices ────────────────────────────────────────────────
 #include <crucible/algebra/lattices/AffinityLattice.h>  // FOUND-G71  — shipped (2/2 NumaPlacement axes)
 #include <crucible/algebra/lattices/AllocClassLattice.h> // FOUND-G38  — shipped
+#include <crucible/algebra/lattices/BarrierStrengthLattice.h> // FIXY-V-252 — shipped (7-tier memory-fence strength chain)
 #include <crucible/algebra/lattices/BitsBudgetLattice.h> // FOUND-G63  — shipped (1/2 Budgeted axes)
 #include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5  (#450) — shipped
 #include <crucible/algebra/lattices/CallShapeLattice.h>  // FIXY-V-240 — shipped (5-tier dispatch-shape chain)
@@ -193,6 +194,7 @@ template <typename... Ls>
 static_assert(every_lattice_has_name<
     AffinityLattice,
     AllocClassLattice,
+    BarrierStrengthLattice,
     BitsBudgetLattice,
     BoolLattice<LatticeNameProbeTruePred>,
     CallShapeLattice,
