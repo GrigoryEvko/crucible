@@ -311,6 +311,7 @@ crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScope
 crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/ScopedFence.h — partial-order provider Graded carrier for MemoryScope axis + IsScopedFence + row_hash
 crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
 crucible_test(test_fixy_v_270_async)                    # FIXY-V-270 fixy/Async.h — grant::async::{copy,mbarrier_arrive,mbarrier_wait} → Synchronization + 3 §XXI mints (accel-scope gated)
+crucible_test(test_fixy_v_190_time)                     # FIXY-V-190 fixy/Time.h — grant::time::{clock_read,tsc_read,sleep} + mint_clock_reader / mint_tsc_reader (single-core pin) / mint_bounded_sleep (Agent 6 §3.4)
 crucible_test(test_fixy_v_272_fence)                    # FIXY-V-272 mimic/Fence.h — lower_fence<Strength,Scope,Arch>() consteval lowering table (V401/V402 gated) + fence_mnemonic
 crucible_test(test_fixy_v_273_async_pipeline_session)   # FIXY-V-273 sessions/AsyncPipelineSession.h — binary producer/consumer mbarrier protocol + Linear<SmemSlot> + 2 ctx-bound mints
 crucible_test(test_fixy_v_274_async_pipeline)           # FIXY-V-274 fixy/AsyncPipeline.h — mint_async_pipeline derives Stages from live-set width + Bytes=Refined<equals_slot_size> from the MemoryPlan
@@ -1713,6 +1714,23 @@ crucible_neg_compile_fixy_test(neg_fixy_unengaged_reentrancy     "FixyNotEngaged
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_size           "FixyNotEngaged_Size")
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_version        "FixyNotEngaged_Version")
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_synchronization "FixyNotEngaged_Synchronization")
+
+# ─── FIXY-V-190 fixy/Time.h neg-compiles (HS14, two per mint) ──────────
+#   mint_clock_reader  : non-clock-backed source (TscRaw) · non-ExecCtx
+#   mint_tsc_reader    : missing pin proof · non-singleton (multi-core) pin
+#   mint_bounded_sleep : ctx without Block (Init) · MaxNanos == 0
+crucible_neg_compile_fixy_test(neg_time_clock_reader_tsc_source
+  "constraints not satisfied|ClockBacked|no matching function|mint_clock_reader")
+crucible_neg_compile_fixy_test(neg_time_clock_reader_non_exec_ctx
+  "constraints not satisfied|IsExecCtx|no matching function|mint_clock_reader")
+crucible_neg_compile_fixy_test(neg_time_tsc_reader_no_pin
+  "constraints not satisfied|IsSingletonCpuPin|no matching function|mint_tsc_reader")
+crucible_neg_compile_fixy_test(neg_time_tsc_reader_multi_core
+  "constraints not satisfied|IsSingletonCpuPin|no matching function|mint_tsc_reader")
+crucible_neg_compile_fixy_test(neg_time_bounded_sleep_no_block
+  "constraints not satisfied|CtxCanMint|Block|no matching function|mint_bounded_sleep")
+crucible_neg_compile_fixy_test(neg_time_bounded_sleep_zero
+  "constraints not satisfied|MaxNanos|no matching function|mint_bounded_sleep")
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_regime         "FixyNotEngaged_Regime")
 
 # FIXY-AUDIT-D2 — HS14 floor for mint_fn factory.

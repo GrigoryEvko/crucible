@@ -156,6 +156,13 @@ while IFS=: read -r file line text; do
             # or introduce new structural-validation concepts.
             continue
             ;;
+        include/crucible/fixy/Time.h)
+            # V-190 SyscallSurface / HwInstruction axis-specialized catalog
+            # (3 grant::time::* families: clock_read<Source>/sleep<MaxNanos>
+            # → SyscallSurface, tsc_read<Mode> → HwInstruction).  Specializes
+            # which_dim<> only; does NOT extend grant_base hierarchy.
+            continue
+            ;;
         include/crucible/fixy/Vendor.h)
             # V-258 HwInstruction axis-specialized catalog (grant::vendor::
             # intrinsic<V, I> over the IsaTag per-vendor ISA-family enum,
