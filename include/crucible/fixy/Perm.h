@@ -62,6 +62,7 @@
 #include <crucible/permissions/PermissionInherit.h>
 #include <crucible/permissions/ReadView.h>             // FIXY-U-014: ReadView + mint_read_view
 #include <crucible/safety/PermissionGridGenerator.h>   // FIXY-U-014: grid M×N permissions
+#include <crucible/safety/PermissionTreeGenerator.h>   // FIXY-V-177: tree N-ary slice generator
 
 #include <type_traits>   // FIXY-U-020 sentinel uses std::is_same_v
 
@@ -165,6 +166,33 @@ using ::crucible::safety::FairSharedPermissionPool;
 using ::crucible::safety::GridPermissions;
 using ::crucible::safety::mint_grid_permissions;
 using ::crucible::safety::can_split_grid_v;
+
+// ── FIXY-V-177: complete grid vocabulary + tree generator surface ──
+//
+// The grid ENTRY points (GridPermissions / mint_grid_permissions /
+// can_split_grid_v) shipped in FIXY-U-014.  This completes the grid
+// generator's compositional vocabulary — the producer/consumer side
+// tags, the per-side slot aliases, and the descriptor — AND surfaces
+// the PermissionTreeGenerator N-ary slice family, so band-3 code that
+// composes or inspects permission grids/trees never reaches past the
+// fixy:: umbrella for the building blocks.  See
+// safety/PermissionGridGenerator.h + safety/PermissionTreeGenerator.h.
+
+// Grid building blocks (side tags + per-side slot aliases + descriptor).
+using ::crucible::safety::ProducerSide;
+using ::crucible::safety::ConsumerSide;
+using ::crucible::safety::Producer;
+using ::crucible::safety::Consumer;
+using ::crucible::safety::auto_split_grid;
+
+// Tree N-ary slice generator surface (Slice<Parent, I> + auto_split_n
+// tuple aliases + the can_split_n_v capability gate).  Slice is the
+// shared 1D building block both generators sit on.
+using ::crucible::safety::Slice;
+using ::crucible::safety::auto_split_n;
+using ::crucible::safety::auto_split_n_t;
+using ::crucible::safety::auto_split_n_permissions_t;
+using ::crucible::safety::can_split_n_v;
 
 // ── fixy-A4-011 dual-export: federation admission policy ───────────
 //
@@ -399,5 +427,67 @@ constexpr int kU014SurfaceCardinality = 8;
 static_assert(kU014SurfaceCardinality == 8,
     "FIXY-U-014 surface (Pool/Guard/ReadView/mint_read_view/Fair/"
     "Grid/mint_grid_permissions/can_split_grid_v) drifted from 8.");
+
+// ── FIXY-V-177: tree + grid-vocabulary surface identity ────────────
+//
+// Type-identity witnesses — each new using-decl resolves to the
+// substrate symbol, not a shadowed local of the same name.  Pure
+// type-level: the slice machinery is universal over Parent, so no
+// permission minting is needed (parallel to the grid sentinels above).
+
+// Tree: Slice / auto_split_n_t / auto_split_n_permissions_t identity.
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::Slice<U014_PoolGuardProbeTag, 0>,
+    ::crucible::safety::Slice<U014_PoolGuardProbeTag, 0>>,
+    "fixy::perm::Slice must alias safety::Slice");
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::auto_split_n_t<U014_PoolGuardProbeTag, 3>,
+    ::crucible::safety::auto_split_n_t<U014_PoolGuardProbeTag, 3>>,
+    "fixy::perm::auto_split_n_t must alias safety::auto_split_n_t");
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::auto_split_n_permissions_t<U014_PoolGuardProbeTag, 2>,
+    ::crucible::safety::auto_split_n_permissions_t<U014_PoolGuardProbeTag, 2>>,
+    "fixy::perm::auto_split_n_permissions_t must alias the substrate alias");
+
+// can_split_n_v: value agreement + N=0 boundary rejection through fixy::.
+static_assert(
+    ::crucible::fixy::perm::can_split_n_v<U014_PoolGuardProbeTag, 4>
+    == ::crucible::safety::can_split_n_v<U014_PoolGuardProbeTag, 4>,
+    "fixy::perm::can_split_n_v must mirror safety::can_split_n_v");
+static_assert(::crucible::fixy::perm::can_split_n_v<U014_PoolGuardProbeTag, 4>,
+    "Tree N-ary split must succeed for N>0 through the fixy:: path.");
+static_assert(!::crucible::fixy::perm::can_split_n_v<U014_PoolGuardProbeTag, 0>,
+    "Tree N-ary split MUST reject N=0 through the fixy:: path.");
+
+// Grid vocabulary: side-tag + per-side slot alias + descriptor identity.
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::ProducerSide<U014_PoolGuardProbeTag>,
+    ::crucible::safety::ProducerSide<U014_PoolGuardProbeTag>>,
+    "fixy::perm::ProducerSide must alias safety::ProducerSide");
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::ConsumerSide<U014_PoolGuardProbeTag>,
+    ::crucible::safety::ConsumerSide<U014_PoolGuardProbeTag>>,
+    "fixy::perm::ConsumerSide must alias safety::ConsumerSide");
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::Producer<U014_PoolGuardProbeTag, 0>,
+    ::crucible::safety::Producer<U014_PoolGuardProbeTag, 0>>,
+    "fixy::perm::Producer must alias safety::Producer");
+static_assert(std::is_same_v<
+    ::crucible::fixy::perm::Consumer<U014_PoolGuardProbeTag, 1>,
+    ::crucible::safety::Consumer<U014_PoolGuardProbeTag, 1>>,
+    "fixy::perm::Consumer must alias safety::Consumer");
+static_assert(std::is_same_v<
+    typename ::crucible::fixy::perm::auto_split_grid<U014_PoolGuardProbeTag, 2, 3>::whole_type,
+    typename ::crucible::safety::auto_split_grid<U014_PoolGuardProbeTag, 2, 3>::whole_type>,
+    "fixy::perm::auto_split_grid must alias safety::auto_split_grid");
+
+// ── V-177 surface cardinality ──────────────────────────────────────
+// Ten new public symbols (5 grid-vocabulary + 5 tree).  A substrate
+// ADD/REMOVE fans out as a constant-mismatch here, not silent drift.
+constexpr int kV177SurfaceCardinality = 10;
+static_assert(kV177SurfaceCardinality == 10,
+    "FIXY-V-177 surface (ProducerSide/ConsumerSide/Producer/Consumer/"
+    "auto_split_grid + Slice/auto_split_n/auto_split_n_t/"
+    "auto_split_n_permissions_t/can_split_n_v) drifted from 10.");
 
 }  // namespace crucible::fixy::perm::self_test
