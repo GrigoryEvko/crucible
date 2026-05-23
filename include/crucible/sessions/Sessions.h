@@ -98,6 +98,7 @@
 #include <crucible/sessions/MetaLogSession.h>
 #include <crucible/sessions/MpmcChannelSession.h>
 #include <crucible/sessions/ChainEdgeSession.h>
+#include <crucible/sessions/AsyncPipelineSession.h>
 #include <crucible/sessions/SwmrSession.h>
 #include <crucible/sessions/SnapshotSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>

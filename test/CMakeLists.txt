@@ -303,6 +303,7 @@ crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/Scop
 crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
 crucible_test(test_fixy_v_270_async)                    # FIXY-V-270 fixy/Async.h — grant::async::{copy,mbarrier_arrive,mbarrier_wait} → Synchronization + 3 §XXI mints (accel-scope gated)
 crucible_test(test_fixy_v_272_fence)                    # FIXY-V-272 mimic/Fence.h — lower_fence<Strength,Scope,Arch>() consteval lowering table (V401/V402 gated) + fence_mnemonic
+crucible_test(test_fixy_v_273_async_pipeline_session)   # FIXY-V-273 sessions/AsyncPipelineSession.h — binary producer/consumer mbarrier protocol + Linear<SmemSlot> + 2 ctx-bound mints
 crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
@@ -1774,6 +1775,16 @@ crucible_neg_compile_fixy_test(neg_fixy_v_272_gpu_arm_scope
     "static assertion failed|cross-trunk|V402")
 crucible_neg_compile_fixy_test(neg_fixy_v_272_gpu_weak_strength
     "static assertion failed|AcqRel|V401")
+crucible_neg_compile_fixy_test(neg_fixy_v_273_double_fill
+    "no member named|has no member|send")
+crucible_neg_compile_fixy_test(neg_fixy_v_273_wait_unarrived_phase
+    "no member named|has no member|recv")
+crucible_neg_compile_fixy_test(neg_fixy_v_273_expect_tx_mismatch
+    "CtxFitsAsyncPipeline|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_v_273_arm_scope_reject
+    "CtxFitsAsyncPipeline|constraints not satisfied|no matching function")
+crucible_neg_compile_fixy_test(neg_fixy_v_273_unclosed_slot
+    "permission_flow_closes|constraints not satisfied|static assertion failed")
 
 # FIXY-V-092 — HS14 floor for FpMode grant tags.  Two fixtures cover
 # orthogonal rejection classes that are FpMode-specific:

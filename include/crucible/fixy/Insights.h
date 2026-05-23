@@ -400,6 +400,34 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>",
     "fixy::fn<T, /* no SyscallSurface grant */, ...>");
 
+// FIXY-V-266 follow-on (surfaced by V-273): MemoryScope axis (slot 32)
+// added 2026-05-23.  The DimensionAxis enumerator + Reject.h tag wiring
+// shipped, but the insight provider was the one unwired piece of the
+// universe-tax — only surfaced when a fresh TU recompiled fixy/Insights.h.
+// Strict default is scope::Unconstrained — the binding makes no claim
+// about memory-visibility scope, deferring to the safety::ScopedFence<
+// Scope, T> value wrapper (V-267).  Missing engagement defeats the §6.8
+// V401 (scope⊒Gpu ⇒ strength⊒AcqRel) and V402 (scope×arch cross-trunk
+// reject) collision rules (V-268), both of which dispatch on the
+// MemoryScope grade.
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_MemoryScope,
+    ::crucible::safety::diag::Severity::Error,
+    "MemoryScope engages memory-visibility scope discipline "
+    "(safety::ScopedFence<Scope, T> — Thread / Warp / Cta / Cluster / Gpu "
+    "accel trunk x Inner(ISH) / Outer(OSH) ARM trunk, joined at Thread / "
+    "System; a Tier-L non-distributive lattice for scoped-fence + async-"
+    "copy publish).  Strict default is scope::Unconstrained — the binding "
+    "makes no scope-level claim; the value wrapper carries per-value "
+    "visibility.  Missing engagement defeats the §6.8 V401 (scope-supseteq-"
+    "Gpu requires strength-supseteq-AcqRel) and V402 (scope x arch cross-"
+    "trunk reject) collision rules, both of which dispatch on the "
+    "MemoryScope grade.",
+    "Grants pack omits grant::hw::scope<Scope, Arch> (or grant::async::"
+    "copy<...>) AND omits accept_default_strict_for<MemoryScope>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::MemoryScope>",
+    "fixy::fn<T, /* no MemoryScope grant */, ...>");
+
 // FIXY-V-238: ControlFlow / CallShape / StackUse / GlobalState / Stdio
 // axes added 2026-05-23.  Each strict default is the matching
 // safety::fn::<ns>::Unconstrained — bindings make no claim about that

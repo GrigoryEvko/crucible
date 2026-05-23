@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-23T13:10:18Z`.
+Snapshot generated: `2026-05-23T13:51:14Z`.
 
 ## bridges/
 
@@ -99,7 +99,7 @@ Snapshot generated: `2026-05-23T13:10:18Z`.
 | `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:533` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:35` | HS14: 2 |
 | `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/ctrl/Throws.h:14` | HS14: 10 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:287` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:108` | HS14: 6 |
-| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 167 |
+| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 170 |
 | `mint_permission_share` | `include/crucible/permissions/Permission.h:1038` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:19` | HS14: 4 |
 | `mint_permission_split` | `include/crucible/permissions/Permission.h:484` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 25 |
 | `mint_permission_split_n` | `include/crucible/permissions/Permission.h:516` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:34` | HS14: 4 |
@@ -140,6 +140,8 @@ Snapshot generated: `2026-05-23T13:10:18Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
+| `mint_async_pipeline_consumer_session` | `include/crucible/sessions/AsyncPipelineSession.h:255` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
+| `mint_async_pipeline_producer_session` | `include/crucible/sessions/AsyncPipelineSession.h:240` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
 | `mint_calendar_grid_consumer` | `include/crucible/sessions/CalendarGridSession.h:66` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:689` | HS14: 2 |
 | `mint_calendar_grid_producer` | `include/crucible/sessions/CalendarGridSession.h:56` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:688` | HS14: 2 |
 | `mint_chainedge_signaler` | `include/crucible/sessions/ChainEdgeSession.h:60` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:521` | HS14: 2 |
@@ -161,7 +163,7 @@ Snapshot generated: `2026-05-23T13:10:18Z`.
 | `mint_mpmc_producer_endpoint` | `include/crucible/sessions/MpmcChannelSession.h:239` | Y | - | Y | - | token | `include/crucible/fixy/Substr.h:580` | HS14: 2 |
 | `mint_mpmc_producer_session` | `include/crucible/sessions/MpmcChannelSession.h:271` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:582` | HS14: 4 |
 | `mint_owner_session` | `include/crucible/sessions/ChaseLevDequeSession.h:109` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:352` | HS14: 3 |
-| `mint_permissioned_session` | `include/crucible/sessions/SessionMint.h:955` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:15` | HS14: 48 |
+| `mint_permissioned_session` | `include/crucible/sessions/SessionMint.h:955` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:15` | HS14: 49 |
 | `mint_producer_session` | `include/crucible/sessions/CalendarGridSession.h:79` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:116` | HS14: 7 |
 | `mint_reader_runtime_session` | `include/crucible/sessions/SwmrSession.h:250` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:268` | HS14: 2 |
 | `mint_reader_session` | `include/crucible/sessions/SwmrSession.h:231` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:266` | HS14: 2 |
@@ -265,8 +267,8 @@ mints) are listed in the substrate section instead.
 
 ## Summary
 
-- Total substrate mints: 116
-- Missing fixy re-export: 12
+- Total substrate mints: 118
+- Missing fixy re-export: 14
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - fixy-origin mints: 30 (declared in fixy/, no substrate counterpart — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.
