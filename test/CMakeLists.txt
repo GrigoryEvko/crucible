@@ -306,6 +306,7 @@ crucible_test(test_fixy_v_185_clock_source)             # FIXY-V-185 safety/Cloc
 crucible_test(test_fixy_v_186_sched_class)              # FIXY-V-186 safety/SchedClass.h — regime-1 Graded scheduler-class carrier + pool-fit + DEADLINE CBS budget + IsSchedClass + row_hash (Agent 6 §3.3)
 crucible_test(test_fixy_v_187_cpu_pinned)               # FIXY-V-187 safety/CpuPinned.h — move-only AffinityMask×PinningPosture pin proof + singleton/posture gates + IsCpuPinned + row_hash 0x32 (Agent 6 §3.3)
 crucible_test(test_fixy_v_188_suspend_behavior)         # FIXY-V-188 safety/SuspendBehavior.h — regime-1 pause-on-suspend witness + KeepsTicking watchdog gate + IsSuspendBehavior + row_hash 0x33 (Agent 6 §3.3)
+crucible_test(test_fixy_v_189_thread_name)              # FIXY-V-189 safety/ThreadName.h — TASK_COMM_LEN-bounded literal + ThreadNamed witness + Init-row mint_thread_name (Agent 6 §3.3 item 6)
 crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScopeLattice — non-distributive accel×ARM visibility-scope partial order (WMEM keystone)
 crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/ScopedFence.h — partial-order provider Graded carrier for MemoryScope axis + IsScopedFence + row_hash
 crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
@@ -6646,6 +6647,14 @@ crucible_neg_compile_test(neg_suspend_behavior_pauses_at_watchdog
   "constraints not satisfied|no matching function|satisfies|arm_watchdog")
 crucible_neg_compile_test(neg_suspend_behavior_cross_assign
   "conversion from|cannot convert|no viable|no match for")
+
+# ─── FIXY-V-189 ThreadName neg-compiles (HS14, two distinct mismatch classes) ──
+#   - neg_thread_name_too_long   (TASK_COMM_LEN static_assert at the literal)
+#   - neg_thread_name_wrong_ctx  (CtxIsInitPhase rejects a Bg context)
+crucible_neg_compile_test(neg_thread_name_too_long
+  "TASK_COMM_LEN|static assertion|exceeds|too large")
+crucible_neg_compile_test(neg_thread_name_wrong_ctx
+  "constraints not satisfied|no matching function|CtxIsInitPhase|mint_thread_name")
 
 # ─── FIXY-V-268 CollisionCatalog V401/V402 neg-compiles (per-rule, HS14) ──
 #
