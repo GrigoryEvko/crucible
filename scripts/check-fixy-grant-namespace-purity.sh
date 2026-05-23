@@ -147,6 +147,13 @@ while IFS=: read -r file line text; do
             # hierarchy or introduce new structural-validation concepts.
             continue
             ;;
+        include/crucible/fixy/Vendor.h)
+            # V-258 HwInstruction axis-specialized catalog (grant::vendor::
+            # intrinsic<V, I> over the IsaTag per-vendor ISA-family enum,
+            # gated by vendor_isa_consistent_v<V, I>).  Specializes
+            # which_dim<> only; does NOT extend grant_base hierarchy.
+            continue
+            ;;
         include/crucible/fixy/syscall/Family.h)
             # V-098 SyscallSurface axis-specialized catalog (9 family-tier
             # grants).  Specializes which_dim<> + family_tier<> only.

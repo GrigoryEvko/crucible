@@ -301,6 +301,7 @@ crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
 crucible_test(test_fixy_v_257_hw_grants)                # FIXY-V-257 fixy/Hw.h — 10 grant::hw::* families (cache/barrier/tsc/rng/cpuid/msr/port_io/asm_/simd_width/vendor_intrinsic) + 5 §XXI mints
+crucible_test(test_fixy_v_258_vendor_intrinsic)         # FIXY-V-258 fixy/Vendor.h — IsaTag enum (22 ISA families) + strong-typed grant::vendor::intrinsic<V,I> + 7 canonical aliases
 crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_245_dispatch_grants)  # FIXY-V-245 fixy/grant/Dispatch.h — 4 grant::dispatch::* CallShape grants
 crucible_test(test_fixy_v_246_stack_global_stdio_grants)  # FIXY-V-246 fixy/grant/{Stack,Global,Stdio}.h — 3 hazard-axis grant headers
@@ -11961,6 +11962,20 @@ crucible_neg_compile_fixy_test(neg_fixy_v_257_msr_missing_permission
     "no matching function|too few arguments|Permission")
 crucible_neg_compile_fixy_test(neg_fixy_v_257_msr_wrong_permission
     "no matching function|could not convert|cannot bind|Permission")
+
+# ── FIXY-V-258 — fixy/Vendor.h cross-vendor intrinsic mismatch (HS14) ─
+# Three fixtures cover three distinct vendor↔ISA-family mismatch classes,
+# witnessing the `vendor_isa_consistent_v<V, I>` strong-typing gate fires
+# at the grant template-id:
+#   nv_x86   : intrinsic<NV, AVX2>          → GPU backend + host x86 ISA
+#   cpu_ptx  : intrinsic<CPU, CUDA_PTX_SM90> → host backend + GPU ISA
+#   amd_neon : intrinsic<AMD, NEON>         → GPU backend + host ARM ISA
+crucible_neg_compile_fixy_test(neg_fixy_v_258_intrinsic_nv_x86
+    "constraints not satisfied|vendor_isa_consistent|intrinsic|no matching")
+crucible_neg_compile_fixy_test(neg_fixy_v_258_intrinsic_cpu_ptx
+    "constraints not satisfied|vendor_isa_consistent|intrinsic|no matching")
+crucible_neg_compile_fixy_test(neg_fixy_v_258_intrinsic_amd_neon
+    "constraints not satisfied|vendor_isa_consistent|intrinsic|no matching")
 
 # ── FIXY-V-226 — fixy/Io.h HS14 neg-compile fixtures (#2104) ────────
 #
