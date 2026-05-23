@@ -293,6 +293,7 @@ crucible_test(test_fixy_v_240_call_shape)      # FIXY-V-240 DimensionAxis::CallS
 crucible_test(test_fixy_v_241_stack_global_stdio) # FIXY-V-241 StackUse/GlobalState/Stdio — 3 hazard-axis 4-tier chains
 crucible_test(test_fixy_v_242_hazard_wrappers)    # FIXY-V-242 5 safety/* Graded carriers (ControlFlow/CallShape/StackUse/GlobalState/Stdio)
 crucible_test(test_fixy_v_243_control_flow_collisions)  # FIXY-V-243 CollisionCatalog C001/D001/D002/G001/L006/P003/S001/S004 hazard-axis cross-axis rules
+crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
 crucible_test(test_fixy_v_234_release_aware_permission)  # FIXY-V-234 advise_release_aware<DontNeed, RegionTag> + SharedPermission composition — Agent 9 Bug 5 HIGH
 crucible_test(test_fixy_source)
 crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
@@ -1706,6 +1707,24 @@ crucible_neg_compile_fixy_test(neg_fixy_grant_fp_wrong_nttp_enum
     "could not convert|cannot convert|FpRounding|FpFtz|enumeration type|wrong type")
 crucible_neg_compile_fixy_test(neg_fixy_grant_fp_duplicate_engagement
     "UniqueEngagementPerAxis|FixyDuplicate_FpMode")
+
+# FIXY-V-244 — HS14 floor for the fixy/grant/Ctrl.h control-flow grants.
+# Three fixtures cover orthogonal rejection classes around the
+# LOAD-BEARING abort<Rationale> grant + the shared grant cv-purity gate:
+#   1. abort missing-rationale ARITY — abort carries no default template
+#      arg, so a bare abort<> is "wrong number of template arguments".
+#      Witnesses that every abort site MUST declare a reason.
+#   2. abort non-string CONVERSION — abort<42> can't deduce the rationale
+#      fixed-string NTTP from an int; rejected at template-id formation.
+#      Witnesses the rationale must be a string literal, not any value.
+#   3. IsGrantTag CV-PURITY — a const-qualified ctrl grant tag is rejected
+#      by IsGrantTag (fixy-A4-033 discipline), exercised from the ctrl side.
+crucible_neg_compile_fixy_test(neg_fixy_ctrl_abort_requires_rationale
+    "wrong number of template arguments|too few template arguments|template argument")
+crucible_neg_compile_fixy_test(neg_fixy_ctrl_abort_rationale_not_string
+    "could not convert|cannot convert|deduction failed|no matching function|rationale|conversion")
+crucible_neg_compile_fixy_test(neg_fixy_ctrl_cv_qualified
+    "IsGrantTag|static assertion|cv-qualified")
 
 # FIXY-V-093 — HS14 floor for fixy::fp::canonicalize.  Two fixtures
 # cover orthogonal rejection classes the static_assert wall enforces:

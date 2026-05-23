@@ -66,6 +66,15 @@ while IFS=: read -r file line text; do
         include/crucible/fixy/Grant.h)
             continue
             ;;
+        include/crucible/fixy/grant/Ctrl.h)
+            # V-244 ControlFlow axis-specialized catalog (6 grant::ctrl::*
+            # grants: throws<>/abort<Rationale>/longjmp_unsafe<Rationale>/
+            # exit<CleanupPolicy>/coroutine<SuspensionPolicy> + builtin_trap_ok
+            # / unreachable_ok markers + accept_default_strict_for_ControlFlow).
+            # Specializes which_dim<> only; does NOT extend grant_base
+            # hierarchy or introduce new structural-validation concepts.
+            continue
+            ;;
         include/crucible/fixy/Fp.h)
             # V-092 FpMode axis-specialized catalog (12 with_fp_* parametric
             # grants + fp_strict_ieee).  Specializes which_dim<> only;

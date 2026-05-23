@@ -5,13 +5,16 @@
 // FIXY-V-087 forward-pioneer of the V-244 `fixy/grant/Ctrl.h` surface
 // (Agent 10 §3c — throws/abort/longjmp/exit/coroutine grant family).
 //
-// V-244 will ship the full Ctrl grant family under `fixy::grant::ctrl::`
-// once the V-238 ControlFlow DimensionAxis lands; until then, V-087
-// ships JUST `throws` under `fixy::ctrl::` — CR-09 (only `Grant.h` may
-// open `crucible::fixy::grant::`) keeps us out of the centralized
-// grant namespace, but the tag still inherits `grant::grant_base` so it
-// participates in `IsGrantTag`.  When V-238 + V-244 materialize the
-// full ControlFlow axis, this tag re-homes via a thin `using` alias.
+// RE-HOMED (FIXY-V-244): the canonical control-flow grant family now
+// lives under `crucible::fixy::grant::ctrl` (CR-09-locked namespace,
+// `fixy/grant/Ctrl.h`).  This header retains `crucible::fixy::ctrl::
+// throws` as a thin `using` alias to the parametrized canonical form's
+// default specialization (`grant::ctrl::throws<>` — "may throw, family
+// unspecified"), exactly as the V-087 header promised.  The alias is
+// type-identical to the tag `mint_permission_fork`'s type-tree search
+// targets, so this header's machinery + every PermissionFork caller is
+// unchanged.  New code declaring a specific exception family writes
+// `grant::ctrl::throws<MyException>` directly.
 //
 // ── Why this tag is load-bearing for mint_permission_fork ─────────────
 //
@@ -73,18 +76,21 @@
 //                of `mint_permission_fork`.
 
 #include <crucible/fixy/Grant.h>
+#include <crucible/fixy/grant/Ctrl.h>     // FIXY-V-244 canonical grant::ctrl::throws<>
 
 #include <tuple>
 #include <type_traits>
 
 namespace crucible::fixy::ctrl {
 
-// ─── `throws` — control-flow grant: callable may throw ──────────────
+// ─── `throws` — re-homed alias to grant::ctrl::throws<> ─────────────
 //
-// Inherits `crucible::fixy::grant::grant_base` so it participates in
-// the `IsGrantTag` concept.  `final` per CR-09 partner rule (caller
-// cannot extend tags to fake-pass concept checks).
-struct throws final : ::crucible::fixy::grant::grant_base {};
+// The canonical tag lives in `grant::ctrl` (Ctrl.h).  `throws<>` is the
+// default-exception-family ("may throw, family unspecified") form —
+// type-identical to V-087's original un-parametrized tag, so this alias
+// preserves IsGrantTag participation and the fork-rejection type-tree
+// search below.
+using throws = ::crucible::fixy::grant::ctrl::throws<>;
 
 // ─── type_tree_contains<Needle, Haystack> — recursive type-tree search ───
 //
@@ -142,7 +148,9 @@ static_assert(std::is_final_v<throws>);
 static_assert(std::is_base_of_v<::crucible::fixy::grant::grant_base, throws>);
 static_assert(sizeof(throws) == 1);
 
-// `throws` is the only sub-tag V-087 ships; V-244 will add the rest.
+// `throws` re-homes to `grant::ctrl::throws<>` (V-244); the rest of the
+// Ctrl grant family (abort/longjmp_unsafe/exit/coroutine + markers)
+// ships in `fixy/grant/Ctrl.h`.
 
 // ─── (2) Non-grants are concept-negative ─────────────────────────────
 struct unrelated_tag {};
