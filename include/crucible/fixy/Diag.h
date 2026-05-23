@@ -107,6 +107,8 @@ using ::crucible::safety::diag::LinearAliasViolation;
 using ::crucible::safety::diag::SharedPermissionPoolSaturated;
 using ::crucible::safety::diag::HugePageAllocationFailed;
 using ::crucible::safety::diag::PublishOnceDoublePublish;
+using ::crucible::safety::diag::BitsInvariantViolation;   // WRAP-Bits-Borrowed-Diagnostic #1092
+using ::crucible::safety::diag::BorrowedBoundsViolation;  // WRAP-Bits-Borrowed-Diagnostic #1092
 
 // Catalog tuple + cardinality.
 using ::crucible::safety::diag::Catalog;
@@ -292,27 +294,43 @@ static_assert(std::is_same_v<HugePageAllocationFailed,
 static_assert(std::is_same_v<PublishOnceDoublePublish,
                              ::crucible::safety::diag::PublishOnceDoublePublish>,
     "fixy::diag::PublishOnceDoublePublish must alias substrate tag");
+static_assert(std::is_same_v<BitsInvariantViolation,
+                             ::crucible::safety::diag::BitsInvariantViolation>,
+    "fixy::diag::BitsInvariantViolation must alias substrate tag");
+static_assert(std::is_same_v<BorrowedBoundsViolation,
+                             ::crucible::safety::diag::BorrowedBoundsViolation>,
+    "fixy::diag::BorrowedBoundsViolation must alias substrate tag");
 
-// Bidirectional map round-trips for the 3 new entries.
+// Bidirectional map round-trips for the 5 new entries.
 static_assert(category_of_v<SharedPermissionPoolSaturated> ==
               Category::SharedPermissionPoolSaturated);
 static_assert(category_of_v<HugePageAllocationFailed> ==
               Category::HugePageAllocationFailed);
 static_assert(category_of_v<PublishOnceDoublePublish> ==
               Category::PublishOnceDoublePublish);
+static_assert(category_of_v<BitsInvariantViolation> ==
+              Category::BitsInvariantViolation);
+static_assert(category_of_v<BorrowedBoundsViolation> ==
+              Category::BorrowedBoundsViolation);
 static_assert(std::is_same_v<tag_of_t<Category::SharedPermissionPoolSaturated>,
                              SharedPermissionPoolSaturated>);
 static_assert(std::is_same_v<tag_of_t<Category::HugePageAllocationFailed>,
                              HugePageAllocationFailed>);
 static_assert(std::is_same_v<tag_of_t<Category::PublishOnceDoublePublish>,
                              PublishOnceDoublePublish>);
+static_assert(std::is_same_v<tag_of_t<Category::BitsInvariantViolation>,
+                             BitsInvariantViolation>);
+static_assert(std::is_same_v<tag_of_t<Category::BorrowedBoundsViolation>,
+                             BorrowedBoundsViolation>);
 
 // is_diagnostic_class_v witnesses.
 static_assert(is_diagnostic_class_v<SharedPermissionPoolSaturated>);
 static_assert(is_diagnostic_class_v<HugePageAllocationFailed>);
 static_assert(is_diagnostic_class_v<PublishOnceDoublePublish>);
+static_assert(is_diagnostic_class_v<BitsInvariantViolation>);
+static_assert(is_diagnostic_class_v<BorrowedBoundsViolation>);
 
-// insight_provider non-empty witnesses — the 3 new tags MUST carry
+// insight_provider non-empty witnesses — the 5 new tags MUST carry
 // substantive content per the U-064 "sweep" requirement.  Empty
 // defaults would indicate the substrate-side insight_provider
 // specializations regressed.
@@ -322,6 +340,10 @@ static_assert(!insight_provider<HugePageAllocationFailed>::why_this_matters.empt
     "HugePageAllocationFailed insight_provider must be specialized");
 static_assert(!insight_provider<PublishOnceDoublePublish>::why_this_matters.empty(),
     "PublishOnceDoublePublish insight_provider must be specialized");
+static_assert(!insight_provider<BitsInvariantViolation>::why_this_matters.empty(),
+    "BitsInvariantViolation insight_provider must be specialized");
+static_assert(!insight_provider<BorrowedBoundsViolation>::why_this_matters.empty(),
+    "BorrowedBoundsViolation insight_provider must be specialized");
 
 // ── FIXY-U-115: mint_diagnostic re-export reach proof ──────────────
 //

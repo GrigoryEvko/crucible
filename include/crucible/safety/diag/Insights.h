@@ -1307,6 +1307,63 @@ struct insight_provider<PublishOnceDoublePublish> {
         "if (need_publish) slot.publish(p);  // no outer serialization";
 };
 
+// ── BitsInvariantViolation (WRAP-Bits-Borrowed-Diagnostic #1092) ───
+template <>
+struct insight_provider<BitsInvariantViolation> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "safety::Bits<EnumType> wraps a uint flag-bitset over a scoped "
+        "enum.  Three runtime invariants route through this tag: (a) "
+        "from_raw(b) admitting a deserialized word with bits outside "
+        "E's declared mask (post-schema-tightening drift, e.g., an "
+        "on-disk word survives an enum-tightening upgrade and now "
+        "carries a bit no current enumerator names); (b) mutual-"
+        "exclusion violation — two flags declared MX-pair simultaneously "
+        "set (landing with WRAP-Bits-Integration-4); (c) subsumption "
+        "violation — parent flag set without its declared child (e.g., "
+        "MetaFlags::Quantized without MetaFlags::HasScale).  Silent "
+        "acceptance routes the bad value into the model state; "
+        "Bits<E>'s consumers (test() / popcount() / serialization) "
+        "depend on the invariant EXCLUDING these patterns.";
+    static constexpr std::string_view symptom_pattern =
+        "Deserialization paths reading an on-disk flag word into "
+        "Bits<E>::from_raw without first masking against E's full "
+        "enumerator OR-fold.  Mutation paths that established a flag "
+        "without unset()'ing the conflicting MX-peer — usually an "
+        "early-return that skipped the conflicting-flag clear.";
+    static constexpr std::string_view correct_example =
+        "Bits<E>::from_raw(raw & valid_mask_v<E>)  // masked";
+    static constexpr std::string_view violating_example =
+        "Bits<E>::from_raw(raw)  // unmasked deserialize";
+};
+
+// ── BorrowedBoundsViolation (WRAP-Bits-Borrowed-Diagnostic #1092) ──
+template <>
+struct insight_provider<BorrowedBoundsViolation> {
+    static constexpr Severity         severity = Severity::Fatal;
+    static constexpr std::string_view why_this_matters =
+        "safety::Borrowed<T, Source> forwards std::span's UB-forwarding "
+        "operator[] / subspan() / front() / back() to preserve hot-path "
+        "costs (Borrowed.h:250 doc-block).  The lifetime tag prevents "
+        "use-after-destruction of the source; this diagnostic covers "
+        "the bounds axis the lifetime gate is silent on.  An out-of-"
+        "bounds operator[] reads memory belonging to whatever follows "
+        "the source — typical consequences: torn read against a sibling "
+        "field, SIGBUS at the end of the Source's mapped region, or "
+        "(under ASAN) a heap-buffer-overflow report rooted at the "
+        "indexing site rather than the missing size() guard.";
+    static constexpr std::string_view symptom_pattern =
+        "Index-arithmetic call sites using operator[] / subspan that "
+        "rely on caller-side size() comparison — refactoring breaks "
+        "the comparison without breaking the indexing.  Subspan with "
+        "offset + count > size() that doesn't trigger first() / last() "
+        "filtering at the boundary.";
+    static constexpr std::string_view correct_example =
+        "if (i < b.size()) use(b[i]);  // explicit guard";
+    static constexpr std::string_view violating_example =
+        "for (size_t i = 0; i <= b.size(); ++i) use(b[i]);  // off-by-one";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Trait: does this Tag have non-trivial insights? ────────────────
 // ═════════════════════════════════════════════════════════════════════
