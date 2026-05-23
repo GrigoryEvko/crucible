@@ -26,7 +26,7 @@
 //
 // The lattice ELEMENT is the 3-tuple (DetSafeTier, SuspendBehavior,
 // PinningRequirement).  `ClockSource` is a richer human vocabulary of
-// nine concrete Linux/CPU clock sources; each PROJECTS (many-to-one)
+// ten concrete Linux/CPU/NIC clock sources; each PROJECTS (many-to-one)
 // onto a tuple point via `clock_source_project`.  The enum is the
 // value-level WITNESS that FIXES the three lattice points for a named
 // source — it is NOT itself a lattice carrier (the projection is a
@@ -41,6 +41,7 @@
 //     TscRaw         RDTSC                — raw cycle counter; per-core domain.
 //     TscSerialized  RDTSCP / LFENCE;RDTSC — serialized cycle read; per-core.
 //     PmuCounter     perf_event cycles    — per-core PMU counter.
+//     PtpHwClock     /dev/ptpN PHC        — per-NIC hardware clock (V-201).
 //
 // ── Projection table (the three task-FIXED rows are load-bearing) ───
 //
@@ -55,6 +56,7 @@
 //   TscRaw         MonotonicClockRead   KeepsTicking      PerCore       [FIXED]
 //   TscSerialized  MonotonicClockRead   KeepsTicking      PerCore
 //   PmuCounter     MonotonicClockRead   KeepsTicking      PerCore
+//   PtpHwClock     MonotonicClockRead   KeepsTicking      NotRequired   [V-201]
 //
 // Rationale for the derived (non-FIXED) rows:
 //   - Realtime reads system_clock — non-monotonic ⇒ WallClockRead; the
@@ -73,6 +75,14 @@
 //     invariant-TSC keeps ticking through suspend ⇒ KeepsTicking, but a
 //     cross-core read is meaningless without a single-core affinity proof
 //     ⇒ PerCore.  (TscRaw FIXED by task; the other two share its domain.)
+//   - PtpHwClock is the per-NIC PHC (PTP Hardware Clock) exposed by
+//     /dev/ptpN as a clockid_t through clock_gettime + PTP_CLOCK_GETCAPS
+//     ioctl machinery.  Monotonic counter ⇒ MonotonicClockRead.  The NIC
+//     has its own crystal oscillator independent of the host CPU ⇒
+//     KeepsTicking through host suspend.  The read goes through fd-based
+//     syscalls (no RDTSC/PMU) so no CPU pin is required ⇒ NotRequired.
+//     Lands on the same tuple as Boot at the lattice level; V-185 keeps
+//     the source identities distinct at the federation-cache key.
 //
 // ── Direction convention (matches every component chain) ────────────
 //
@@ -122,8 +132,9 @@
 //
 // See Agent 6 §3.1 for the design rationale; FIXY-V-185 (safety/
 // ClockSource.h) for the type-pinned wrapper + row_hash + per-source
-// aliases; FIXY-V-201 (topology/Ptp.cpp) for the future PtpHwClock
-// enumerator extension (append-only at the next free ordinal).
+// aliases; FIXY-V-201 appended PtpHwClock at ordinal 9 (append-only —
+// existing positions never renumber) and wired topology/Ptp.cpp's
+// ptp_now() to mint PtpHwClockBytes<u64> at the syscall boundary.
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
@@ -140,11 +151,11 @@
 
 namespace crucible::algebra::lattices {
 
-// ── ClockSource — value-level vocabulary of nine concrete sources ───
+// ── ClockSource — value-level vocabulary of ten concrete sources ────
 //
 // Ordinal is declaration order ONLY; it carries NO order semantics
 // (the order lives in the projected product point, not the enum).
-// uint8_t underlying.  FIXY-V-201 appends `PtpHwClock` at the next
+// uint8_t underlying.  FIXY-V-201 appended `PtpHwClock` at the next
 // free ordinal (append-only — existing positions never change).
 enum class ClockSource : std::uint8_t {
     Realtime      = 0,    // CLOCK_REALTIME — settable wall clock
@@ -156,6 +167,7 @@ enum class ClockSource : std::uint8_t {
     TscRaw        = 6,    // RDTSC — raw per-core cycle counter
     TscSerialized = 7,    // RDTSCP / LFENCE;RDTSC — serialized per-core read
     PmuCounter    = 8,    // perf_event cycles — per-core PMU counter
+    PtpHwClock    = 9,    // /dev/ptpN PHC — per-NIC hardware clock (V-201)
 };
 
 // Cardinality + diagnostic name via reflection.
@@ -173,6 +185,7 @@ inline constexpr std::size_t clock_source_count =
         case ClockSource::TscRaw:        return "TscRaw";
         case ClockSource::TscSerialized: return "TscSerialized";
         case ClockSource::PmuCounter:    return "PmuCounter";
+        case ClockSource::PtpHwClock:    return "PtpHwClock";
         default: return std::string_view{"<unknown ClockSource>"};
     }
 }
@@ -259,6 +272,7 @@ struct ClockSourceLattice
                 case ClockSource::TscRaw:        return "ClockSourceLattice::At<TscRaw>";
                 case ClockSource::TscSerialized: return "ClockSourceLattice::At<TscSerialized>";
                 case ClockSource::PmuCounter:    return "ClockSourceLattice::At<PmuCounter>";
+                case ClockSource::PtpHwClock:    return "ClockSourceLattice::At<PtpHwClock>";
                 default:                         return "ClockSourceLattice::At<?>";
             }
         }
@@ -288,6 +302,13 @@ clock_source_project(ClockSource source) noexcept {
                 DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
                 PinningRequirement::NotRequired);
         case ClockSource::Boot:
+        case ClockSource::PtpHwClock:
+            // PHC is per-NIC silicon: monotonic counter (MonotonicClockRead),
+            // independent of host suspend because the NIC oscillator keeps
+            // running (KeepsTicking), and read via /dev/ptpN ioctl/fd path
+            // — no CPU pin needed (NotRequired).  Lands on the same tuple
+            // as Boot; the V-185 wrapper keeps the source identities
+            // distinct at the federation-cache key.
             return ClockSourceLattice::make_point(
                 DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
                 PinningRequirement::NotRequired);
@@ -309,11 +330,12 @@ clock_source_project(ClockSource source) noexcept {
 namespace detail::clock_source_lattice_self_test {
 
 // Cardinality + reflection-based name coverage on the value vocabulary.
-static_assert(clock_source_count == 9,
-    "ClockSource catalog diverged from the nine documented sources; "
-    "adding one (e.g. FIXY-V-201 PtpHwClock) requires extending the "
-    "clock_source_name() switch AND the clock_source_project() switch "
-    "AND bumping this count.");
+static_assert(clock_source_count == 10,
+    "ClockSource catalog diverged from the ten documented sources; "
+    "FIXY-V-201 added PtpHwClock at ordinal 9 (append-only — never "
+    "renumber existing positions).  Adding another source requires "
+    "extending the clock_source_name() switch AND the "
+    "clock_source_project() switch AND bumping this count.");
 
 [[nodiscard]] consteval bool every_clock_source_has_name() noexcept {
     static constexpr auto enumerators =
@@ -430,6 +452,14 @@ static_assert(projects_to(ClockSource::TscSerialized,
 static_assert(projects_to(ClockSource::PmuCounter,
     DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
     PinningRequirement::PerCore));
+// Row 9 — PtpHwClock (FIXY-V-201, shares Boot's projected tuple: per-NIC
+// silicon clock, suspend-independent, fd/ioctl read needs no CPU pin).
+static_assert(projects_to(ClockSource::PtpHwClock,
+    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+    PinningRequirement::NotRequired),
+    "FIXY-V-201: PtpHwClock must project to (MonotonicClockRead, "
+    "KeepsTicking, NotRequired) — same tuple as Boot, distinct source "
+    "identity at the V-185 wrapper.");
 
 // ── Order witnesses over projected points ───────────────────────────
 //

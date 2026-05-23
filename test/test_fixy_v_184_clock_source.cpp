@@ -1,7 +1,9 @@
 // FIXY-V-184 sentinel TU: algebra/lattices/ClockSourceLattice.h —
 // COMPOSITE product lattice over DetSafe × SuspendBehavior × Pinning,
-// plus the 9-source `ClockSource` value vocabulary and its
+// plus the 10-source `ClockSource` value vocabulary and its
 // many-to-one projection onto the product's 3-tuple element.
+// (FIXY-V-201 appended PtpHwClock at ordinal 9 — append-only universe
+// extension; existing positions never renumber.)
 //
 // V-184 ships the lattice + enum + projection (the algebraic substrate
 // + value-level FIXING function).  It ships NO row_hash and NO
@@ -18,7 +20,7 @@
 // THE LOAD-BEARING PROPERTIES this TU defends:
 //   (1) Every ClockSource projects to its documented (DetSafe,
 //       Suspend, Pin) tuple — the three task-FIXED rows (Realtime,
-//       Boot, TscRaw) plus the six derived rows.
+//       Boot, TscRaw) plus the seven derived rows.
 //   (2) The order is a genuine PRODUCT (pointwise AND), not a chain:
 //       there exist INCOMPARABLE points, and Boot ⊏ TscRaw is a strict
 //       order via the pinning axis alone.
@@ -51,10 +53,11 @@ static_assert(crucible::algebra::BoundedAboveLattice<L>);
 static_assert(!crucible::algebra::UnboundedLattice<L>);
 static_assert(!crucible::algebra::Semiring<L>);
 
-// ── Cardinality — nine value-level sources ──────────────────────────
-static_assert(cal::clock_source_count == 9,
-    "FIXY-V-184: ClockSource must have exactly 9 enumerators; FIXY-V-201 "
-    "appends PtpHwClock at the next free ordinal (append-only).");
+// ── Cardinality — ten value-level sources (V-201 appended PtpHwClock) ─
+static_assert(cal::clock_source_count == 10,
+    "FIXY-V-184: ClockSource must have exactly 10 enumerators; FIXY-V-201 "
+    "appended PtpHwClock at ordinal 9 (append-only — existing positions "
+    "never renumber).");
 static_assert(std::is_same_v<std::underlying_type_t<ClockSource>, std::uint8_t>,
     "FIXY-V-184: ClockSource uses uint8_t underlying; the ordinal is "
     "declaration order, NOT an order-semantics rank.");
@@ -114,6 +117,21 @@ static_assert(projects_to(ClockSource::TscSerialized,
 static_assert(projects_to(ClockSource::PmuCounter,
     DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
     PinningRequirement::PerCore));
+// FIXY-V-201: PtpHwClock shares Boot's projected tuple — per-NIC silicon
+// clock, suspend-independent, no CPU pin required.  Source identity stays
+// distinct at the V-185 wrapper / federation-cache key.
+static_assert(projects_to(ClockSource::PtpHwClock,
+    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+    PinningRequirement::NotRequired),
+    "FIXY-V-201: PtpHwClock must project to (MonotonicClockRead, "
+    "KeepsTicking, NotRequired) — same tuple as Boot.");
+static_assert(crucible::algebra::equivalent<L>(
+    cal::clock_source_project(ClockSource::Boot),
+    cal::clock_source_project(ClockSource::PtpHwClock)),
+    "FIXY-V-201: Boot and PtpHwClock collapse to the SAME projected tuple "
+    "— both monotonic, both suspend-inclusive, both fd/syscall-read.  The "
+    "V-185 wrapper keeps the source identities distinct (Boot vs PHC) at "
+    "the federation-cache key.");
 
 // ── Order witnesses: Boot ⊏ TscRaw via the pinning axis alone ───────
 static_assert( L::leq(cal::clock_source_project(ClockSource::Boot),

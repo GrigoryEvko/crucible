@@ -2,6 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/handles/FileHandle.h>
+#include <crucible/safety/ClockSource.h>  // FIXY-V-201: PtpHwClockBytes
 
 #include <array>
 #include <cerrno>
@@ -9,6 +10,7 @@
 #include <ctime>
 #include <limits>
 #include <memory>
+#include <utility>
 
 #include <fcntl.h>
 #include <linux/net_tstamp.h>
@@ -217,6 +219,24 @@ ptp_now(PtpClockFd fd) noexcept {
         static_cast<void>(errno);
         return std::unexpected(PtpError::ClockReadFailed);
     }
+    // FIXY-V-201: mint a PtpHwClockBytes<u64> at the syscall boundary so
+    // the lattice-projected (MonotonicClockRead, KeepsTicking,
+    // NotRequired) tuple becomes the type-level provenance of this read.
+    // The public return remains PtpTimestampNs (Tagged<u64, source::Ptp>)
+    // — timestamp_from_timespec applies the (sec, nsec) → ns conversion
+    // and PtpError::TimestampOverflow gate.  PtpHwClockBytes is regime-1
+    // EBO-collapsed (sizeof = sizeof(u64)); the consume() reads it back
+    // out for the conversion call.  The provenance witness is what
+    // matters here — future federation-cache keys discriminate ptp_now
+    // results from CLOCK_BOOTTIME results even though both project to
+    // the same (DetSafe, Suspend, Pinning) tuple.
+    auto bytes = ::crucible::safety::mint_clock_source<
+        ::crucible::safety::ClockSource_v::PtpHwClock,
+        std::uint64_t>(
+        static_cast<std::uint64_t>(ts.tv_sec >= 0 ? ts.tv_sec : 0)
+            * 1'000'000'000ull
+        + static_cast<std::uint64_t>(ts.tv_nsec >= 0 ? ts.tv_nsec : 0));
+    static_cast<void>(std::move(bytes).consume());
     return timestamp_from_timespec(ts);
 }
 

@@ -212,6 +212,12 @@ template <typename T> using ProcessCpuBytes         = ClockSource<ClockSource_v:
 template <typename T> using TscBytes                = ClockSource<ClockSource_v::TscRaw,        T>;
 template <typename T> using TscSerializedBytes      = ClockSource<ClockSource_v::TscSerialized, T>;
 template <typename T> using PmuBytes                = ClockSource<ClockSource_v::PmuCounter,    T>;
+// FIXY-V-201: /dev/ptpN PHC — per-NIC silicon clock, monotonic counter
+// that keeps ticking through host suspend (the NIC oscillator runs
+// independently), read via fd/ioctl (no CPU pin required).  Lattice
+// projection matches Boot's tuple, but the source identity is distinct
+// at the V-185 federation-cache key.
+template <typename T> using PtpHwClockBytes         = ClockSource<ClockSource_v::PtpHwClock,    T>;
 
 // ── Layout invariants — regime-1 EBO collapse ───────────────────────
 namespace detail::clock_source_layout {
@@ -222,6 +228,7 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(BootClockBytes,      int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(BootClockBytes,      unsigned long long);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TscBytes,            unsigned long long);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PmuBytes,            int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(PtpHwClockBytes,     unsigned long long);  // FIXY-V-201
 
 }  // namespace detail::clock_source_layout
 
@@ -230,6 +237,9 @@ static_assert(sizeof(MonotonicClockBytes<int>)                 == sizeof(int));
 static_assert(sizeof(BootClockBytes<unsigned long long>)       == sizeof(unsigned long long));
 static_assert(sizeof(TscBytes<unsigned long long>)             == sizeof(unsigned long long));
 static_assert(sizeof(PmuBytes<int>)                            == sizeof(int));
+static_assert(sizeof(PtpHwClockBytes<unsigned long long>)      == sizeof(unsigned long long),
+    "FIXY-V-201: PtpHwClockBytes<u64> must regime-1 EBO-collapse to sizeof(u64) — "
+    "the empty At<PtpHwClock> singleton carries no per-instance grade.");
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::clock_source_self_test {
@@ -301,6 +311,32 @@ static_assert(!std::is_same_v<BootU64, MonoU64>,
     "types so V-194 can statically require one and reject the other.");
 static_assert(!std::is_same_v<TscBytes<int>, PmuBytes<int>>);
 static_assert(!std::is_convertible_v<MonoU64, BootU64>);
+
+// ── FIXY-V-201: PtpHwClock — Boot's projection twin, distinct identity ─
+//
+// PtpHwClockBytes shares the (MonotonicClockRead, KeepsTicking, NotRequired)
+// projected tuple with BootClockBytes (both are monotonic + suspend-inclusive
+// + no-pin), but the types and the V-185 federation-cache row_hash MUST be
+// distinct so PHC reads can't silently fold into Boot reads at the typeck or
+// the cache key.  This mirrors the Monotonic/MonotonicRaw same-projection-
+// distinct-identity discipline.
+using PtpHwU64 = PtpHwClockBytes<unsigned long long>;
+static_assert(PtpHwU64::source             == ClockSource_v::PtpHwClock);
+static_assert(PtpHwU64::det_safe_tier      == DetSafeTier_v::MonotonicClockRead);
+static_assert(PtpHwU64::suspend_behavior   == SuspendBehavior_v::KeepsTicking);
+static_assert(PtpHwU64::pinning_requirement == PinningRequirement_v::NotRequired);
+static_assert(PtpHwU64::det_safe_tier != DetSafeTier_v::Pure);
+static_assert( PtpHwU64::satisfies<ClockSource_v::Boot>,
+    "FIXY-V-201: PtpHwClockBytes shares Boot's tuple (MonoRead, KeepsTicking, "
+    "NotRequired) — it MUST satisfy a Boot requirement on the order-theoretic "
+    "leq, even though source identity differs.");
+static_assert( PtpHwU64::satisfies<ClockSource_v::Monotonic>);
+static_assert(!std::is_same_v<PtpHwU64, BootU64>,
+    "FIXY-V-201: PtpHwClockBytes and BootClockBytes MUST be DISTINCT types — "
+    "they project to the same tuple but encode different source identities; "
+    "the V-185 federation-cache row_hash discriminates them.");
+static_assert(!std::is_convertible_v<PtpHwU64, BootU64>);
+static_assert(!std::is_convertible_v<BootU64, PtpHwU64>);
 
 // ── Diagnostic forwarders ──────────────────────────────────────────
 static_assert(BootU64::lattice_name() == "ClockSourceLattice::At<Boot>");
