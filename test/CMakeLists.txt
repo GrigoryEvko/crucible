@@ -11627,6 +11627,31 @@ crucible_neg_compile_fixy_test(neg_fixy_cipher_open_rejects_sanitized_input
 crucible_neg_compile_fixy_test(neg_fixy_sanitize_path_rejects_wrong_source
     "no matching function|could not convert|cannot convert|conversion from")
 
+# ── FIXY-V-224 — fixy/Fs.h §XXI ctx-bound mint discipline (HS14) ────
+# Six fixtures cover six distinct mismatch classes, satisfying the
+# HS14 ≥2-fixtures-per-mint floor with rooom to spare:
+#   #1 mint_file Path<External>           → tag mismatch on path
+#   #2 mint_file<> (empty Grants)         → has_mode_v=false
+#   #3 mint_file<mode<>, mode<>>          → has_duplicate_mode_v=true
+#   #4 sync<sync_op::None>                → CtxFitsSync rejects None
+#   #5 commit_atomic Path<External> target → target tag mismatch
+#   #6 mint_file<>(ColdInitCtx, …)        → ctx row lacks Effect::Block
+# Together they witness the §XXI fit-check fires at construction
+# along EVERY load-bearing predicate (path source × Grants engagement
+# × Grants ceiling × SyncOp ≠ None × ctx row Effect::Block).
+crucible_neg_compile_fixy_test(neg_fixy_v_224_mint_file_external_path
+    "no matching function|could not convert|cannot convert|conversion from")
+crucible_neg_compile_fixy_test(neg_fixy_v_224_mint_file_empty_grants
+    "no matching function|CtxFitsFileMint|constraints not satisfied|has_mode")
+crucible_neg_compile_fixy_test(neg_fixy_v_224_mint_file_duplicate_mode
+    "no matching function|CtxFitsFileMint|constraints not satisfied|has_duplicate_mode")
+crucible_neg_compile_fixy_test(neg_fixy_v_224_sync_none
+    "no matching function|CtxFitsSync|constraints not satisfied|sync_op::None")
+crucible_neg_compile_fixy_test(neg_fixy_v_224_commit_atomic_external_target
+    "no matching function|could not convert|cannot convert|conversion from")
+crucible_neg_compile_fixy_test(neg_fixy_v_224_mint_file_ctx_lacks_block
+    "no matching function|CtxAdmitsIoBlock|CtxFitsFileMint|constraints not satisfied|row_contains")
+
 # ── FIXY-V-233 — sanitize::path_traversal runtime predicates ────────
 # Runtime smoke test exercising both V-233 predicates
 # (check_no_dotdot + check_absolute_root_locked) plus the two

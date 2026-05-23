@@ -84,6 +84,10 @@
 #include <crucible/handles/FileHandle.h>    // safety::FileHandle
 #include <crucible/safety/Linear.h>         // safety::Linear
 
+#include <crucible/effects/ExecCtx.h>       // IsExecCtx + row_type_of_t
+#include <crucible/effects/EffectRow.h>     // row_contains_v
+#include <crucible/effects/Capabilities.h>  // effects::Effect
+
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -374,29 +378,91 @@ inline constexpr bool has_duplicate_mode_v =
 
 }  // namespace detail
 
+// ── §XXI ctx-bound mint gates — single-concept requires per family ───
+//
+// Each concept bundles every load-bearing predicate into ONE name so
+// the mint's requires-clause is a single line per §XXI strict reading
+// ("The `requires` clause MUST be a single concept").
+//
+// `CtxAdmitsIoBlock<Ctx>` is the shared row-membership check: the
+// caller's ExecCtx row MUST admit both Effect::IO and Effect::Block.
+// Filesystem syscalls do both — they cross the kernel boundary (IO)
+// and can park the caller until disk responds (Block).  A hot-path
+// foreground ctx that admits neither cannot mint a file by design.
+
+template <typename Ctx>
+concept CtxAdmitsIoBlock =
+    ::crucible::effects::IsExecCtx<Ctx>
+    && ::crucible::effects::row_contains_v<
+           ::crucible::effects::row_type_of_t<Ctx>,
+           ::crucible::effects::Effect::IO>
+    && ::crucible::effects::row_contains_v<
+           ::crucible::effects::row_type_of_t<Ctx>,
+           ::crucible::effects::Effect::Block>;
+
+// `CtxFitsFileMint<Ctx, Grants...>` — single soundness gate on
+// `mint_file<Grants...>(ctx, Path<Sanitized>)`.  Bundles:
+//
+//   (1) Ctx is a valid ExecCtx admitting IO + Block effects.
+//   (2) Grants pack engages exactly one open-mode tier (`mode<X>`).
+//   (3) No duplicate mode-engagement (caller cannot pin two modes).
+//
+// Mismatch on any rule fires HS14 fixture #2 / #3 / #6.
+
+template <typename Ctx, typename... Grants>
+concept CtxFitsFileMint =
+    CtxAdmitsIoBlock<Ctx>
+    && detail::has_mode_v<Grants...>
+    && !detail::has_duplicate_mode_v<Grants...>;
+
+// `CtxFitsSync<Ctx, SyncOp>` — single soundness gate on
+// `sync<SyncOp>(ctx, h)`.  Bundles:
+//
+//   (1) Ctx admits IO + Block (fsync can block on slow disks).
+//   (2) SyncOp is NOT sync_op::None (calling sync<None> is a
+//       programmer error — fixture #4).
+
+template <typename Ctx, typename SyncOp>
+concept CtxFitsSync =
+    CtxAdmitsIoBlock<Ctx>
+    && !std::is_same_v<SyncOp, sync_op::None>;
+
+// `CtxFitsCommitAtomic<Ctx, Atomicity>` — single soundness gate on
+// `commit_atomic<Atomicity>(ctx, tmp, target)`.  Bundles ctx fit +
+// recognized Atomicity tag.
+
+template <typename Ctx, typename Atomicity>
+concept CtxFitsCommitAtomic =
+    CtxAdmitsIoBlock<Ctx>
+    && (std::is_same_v<Atomicity, atomicity::None>
+        || std::is_same_v<Atomicity, atomicity::Rename>
+        || std::is_same_v<Atomicity, atomicity::RenameAt2NoReplace>
+        || std::is_same_v<Atomicity, atomicity::LinkAtomic>);
+
 // ── mint_file<Grants...>(ctx, Path<Sanitized>) ───────────────────────
 //
-// §XXI Token mint.  Opens the path with the OR of grant-implied O_*
-// bits + the mandatory O_CLOEXEC, returns a FileHandle wrapped in
-// safety::Linear at the call boundary.
+// §XXI Ctx-bound mint.  Opens the path with the OR of grant-implied
+// O_* bits + the mandatory O_CLOEXEC, returns a FileHandle wrapped in
+// safety::Linear at the boundary so callers can't accidentally
+// double-close.
 //
-// The `requires` clause is the single load-bearing soundness gate:
+// Pack ordering: `template <typename... Grants, IsExecCtx Ctx>` — the
+// Grants pack appears explicitly at the call site; Ctx is deduced
+// from the runtime argument.  This is the canonical "explicit pack +
+// trailing deduced parameter" shape (works because all explicit args
+// fill the pack; Ctx deduces from the first runtime argument).
 //
-//   has_mode_v<Grants...>           — caller must pick exactly one
-//                                     open-mode tier (rule 2 / fixture
-//                                     #2 — empty grants reject).
-//   !has_duplicate_mode_v<Grants...> — at-most-one mode (fixture #3).
-//
-// Path<Sanitized> at the call site witnesses V-031's four-rule no-dot-
-// dot algorithm has already discharged.  Passing Path<External> /
-// Path<FromUser> / etc. fires `retag_policy` rejection at the caller.
+// Path<Sanitized> at the boundary witnesses V-031/V-233's path-
+// traversal sanitize has already discharged.  Passing Path<External>
+// / Path<FromUserPath> / etc. fires `retag_policy` rejection at the
+// caller (fixture #1).
 
-template <typename... Grants>
-    requires (detail::has_mode_v<Grants...> &&
-              !detail::has_duplicate_mode_v<Grants...>)
+template <typename... Grants, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsFileMint<Ctx, Grants...>
 [[nodiscard]] inline std::expected<::crucible::safety::Linear<::crucible::safety::FileHandle>,
                                    std::error_code>
-mint_file(Path<::crucible::safety::source::Sanitized> sanitized_path,
+mint_file(Ctx const&,
+          Path<::crucible::safety::source::Sanitized> sanitized_path,
           mode_t                                       perms = 0644) noexcept {
     constexpr int flags = detail::fold_open_flags<Grants...>();
     // O_TMPFILE requires a directory argument; for now we route every
@@ -410,18 +476,18 @@ mint_file(Path<::crucible::safety::source::Sanitized> sanitized_path,
         ::crucible::safety::FileHandle{fd}};
 }
 
-// ── sync<SyncOp>(FileHandle const&) ──────────────────────────────────
+// ── sync<SyncOp>(ctx, FileHandle const&) ─────────────────────────────
 //
 // Durability syscall.  NOT a §XXI mint — performs an effect on an
-// existing handle; no fresh authoritative resource synthesized.  The
-// `requires !std::is_same_v<SyncOp, sync_op::None>` gate enforces
-// fixture #4: calling sync<None> is a programmer error (if you don't
-// need durability, don't call sync).
+// existing handle; no fresh authoritative resource synthesized.
+// Ctx-bound nonetheless because the syscall can block on slow disks.
+// Concept rejects sync_op::None at compile time (fixture #4).
 
-template <typename SyncOp>
-    requires (!std::is_same_v<SyncOp, sync_op::None>)
+template <typename SyncOp, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsSync<Ctx, SyncOp>
 [[nodiscard]] inline std::expected<void, std::error_code>
-sync(const ::crucible::safety::FileHandle& h) noexcept {
+sync(Ctx const&,
+     const ::crucible::safety::FileHandle& h) noexcept {
     if (!h.is_open()) {
         return std::unexpected{std::error_code{EBADF, std::system_category()}};
     }
@@ -454,19 +520,21 @@ sync(const ::crucible::safety::FileHandle& h) noexcept {
     return {};
 }
 
-// ── commit_atomic<Atomicity>(tmp, target) ────────────────────────────
+// ── commit_atomic<Atomicity>(ctx, tmp, target) ───────────────────────
 //
 // Tmp → target atomic-commit syscall.  NOT a §XXI mint — performs a
 // rename/link side effect on existing paths; no fresh authoritative
-// resource synthesized.
+// resource synthesized.  Ctx-bound for the IO+Block syscall surface.
 //
 // Both tmp and target MUST be Path<Sanitized> — the source-tag
 // discipline catches "caller forgot to sanitize the target" at compile
 // time (fixture #5).
 
-template <typename Atomicity>
+template <typename Atomicity, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsCommitAtomic<Ctx, Atomicity>
 [[nodiscard]] inline std::expected<void, std::error_code>
-commit_atomic(Path<::crucible::safety::source::Sanitized> tmp,
+commit_atomic(Ctx const&,
+              Path<::crucible::safety::source::Sanitized> tmp,
               Path<::crucible::safety::source::Sanitized> target) noexcept {
     if constexpr (std::is_same_v<Atomicity, atomicity::Rename>) {
         if (::rename(tmp.value().c_str(), target.value().c_str()) < 0) {
@@ -500,6 +568,86 @@ commit_atomic(Path<::crucible::safety::source::Sanitized> tmp,
                       std::is_same_v<Atomicity, atomicity::LinkAtomic>,
                       "FIXY-V-224 commit_atomic<Atomicity>: Atomicity must be an atomicity:: tag");
     }
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Composition aliases & composite §XXI mints ───────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Two ergonomic single-grant aliases plus two §XXI composite mint
+// wrappers encoding canonical durable-write compositions.  Each
+// composite preserves §XXI grep-discoverability (`mint_` prefix) AND
+// eliminates the per-call-site boilerplate of spelling the full Grants
+// pack.  Composite bodies delegate to `mint_file<...>` so the
+// ctx-fit / mode-engagement / no-duplicate-mode gate fires in exactly
+// one place — the underlying mint_file's `CtxFitsFileMint` concept.
+
+// Single-grant alias for ergonomic read-only opens.  Spelling
+// `mint_file<read_only>(ctx, path)` is the canonical idiom.
+using read_only = ::crucible::fixy::grant::fs::mode<open_mode::ReadOnly>;
+
+// `mint_durable_truncate_file` — write+truncate, fsync the data, then
+// atomically link the result into place via O_TMPFILE+linkat (the
+// `LinkAtomic` shape).  Canonical for "create-or-replace this file
+// durably" use cases — Cipher snapshot writes, recipe registry
+// updates, KernelCache L2 spills.
+//
+// Composite grant stack:
+//   mode<WriteTruncate>      — O_WRONLY | O_CREAT | O_TRUNC
+//   durable<Fsync>           — declares intent: caller MUST sync<Fsync>
+//                              after writing, before commit_atomic
+//   atomic_write<LinkAtomic> — declares intent: caller MUST
+//                              commit_atomic<LinkAtomic>(tmp, target)
+//                              after sync
+//
+// The durable<> and atomic_write<> grants are intent declarations; the
+// mint synthesizes the open(2) but the caller is still responsible for
+// invoking sync() and commit_atomic() at the right points.  V-228's
+// CipherDurable wrapper will fold these into a single high-level
+// `mint_durable_write_session` so the caller can't forget.
+
+template <::crucible::effects::IsExecCtx Ctx>
+[[nodiscard]] inline auto
+mint_durable_truncate_file(Ctx const& ctx,
+                           Path<::crucible::safety::source::Sanitized> p,
+                           mode_t perms = 0644) noexcept
+{
+    return mint_file<
+        ::crucible::fixy::grant::fs::mode<open_mode::WriteTruncate>,
+        ::crucible::fixy::grant::fs::durable<sync_op::Fsync>,
+        ::crucible::fixy::grant::fs::atomic_write<atomicity::LinkAtomic>
+    >(ctx, std::move(p), perms);
+}
+
+// `mint_durable_append_file` — write+append with O_DSYNC at the
+// kernel-syscall level + caller-driven `sync<Fdatasync>` checkpoints.
+// Canonical for "event log / WAL / monotonic-append" use cases —
+// MetaLog spill TUs, Cipher event-sourced chain segments.
+//
+// Composite grant stack:
+//   mode<WriteAppend>       — O_WRONLY | O_CREAT | O_APPEND
+//   durable<Fdatasync>      — declares intent: caller MUST sync<Fdatasync>
+//                             between batches (NOT after every write —
+//                             O_DSYNC handles per-write durability)
+//   with_flag<DataSync>     — O_DSYNC: kernel-side write-through; each
+//                             write(2) call returns only after the data
+//                             is on stable storage (not metadata; that's
+//                             what the caller-driven Fdatasync covers)
+//
+// No atomic_write<> grant: append-only files don't have a "tmp →
+// target" rename phase — the file IS the target.
+
+template <::crucible::effects::IsExecCtx Ctx>
+[[nodiscard]] inline auto
+mint_durable_append_file(Ctx const& ctx,
+                         Path<::crucible::safety::source::Sanitized> p,
+                         mode_t perms = 0644) noexcept
+{
+    return mint_file<
+        ::crucible::fixy::grant::fs::mode<open_mode::WriteAppend>,
+        ::crucible::fixy::grant::fs::durable<sync_op::Fdatasync>,
+        ::crucible::fixy::grant::fs::with_flag<flag::DataSync>
+    >(ctx, std::move(p), perms);
 }
 
 }  // namespace crucible::fixy::fs

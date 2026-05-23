@@ -623,7 +623,49 @@ namespace consistency     = ::crucible::safety::consistency;
 namespace opaque_lifetime = ::crucible::safety::opaque_lifetime;
 namespace crash           = ::crucible::safety::crash;
 
+// ── FIXY-V-224 — fixy/Fs.h umbrella re-export ───────────────────────
+//
+// Lift the V-224 fixy/Fs.h substrate (open_mode / flag / sync_op /
+// atomicity type-tag namespaces + grant::fs:: + Dirfd + mint_file +
+// sync + commit_atomic + composite mints) up under fixy::wrap::fs::
+// so callers who include only <crucible/fixy/Wrap.h> reach the whole
+// filesystem mint surface through one entry point.
+
 }  // namespace crucible::fixy::wrap
+
+#include <crucible/fixy/Fs.h>          // FIXY-V-224 substrate
+
+namespace crucible::fixy::wrap::fs {
+
+// Type-tag namespaces — empty-final marker tags partitioning the
+// open-mode / flag / sync-op / atomicity axes.
+namespace open_mode  = ::crucible::fixy::fs::open_mode;
+namespace flag       = ::crucible::fixy::fs::flag;
+namespace sync_op    = ::crucible::fixy::fs::sync_op;
+namespace atomicity  = ::crucible::fixy::fs::atomicity;
+
+// Grant tag tree — what the user writes at every Fs call site.
+namespace grant      = ::crucible::fixy::grant::fs;
+
+// Type aliases — Path<Source>, Dirfd, ctx-fit concepts.
+template <typename Source>
+using Path = ::crucible::fixy::fs::Path<Source>;
+using ::crucible::fixy::fs::Dirfd;
+using ::crucible::fixy::fs::open_dirfd;
+using ::crucible::fixy::fs::CtxAdmitsIoBlock;
+using ::crucible::fixy::fs::CtxFitsFileMint;
+using ::crucible::fixy::fs::CtxFitsSync;
+using ::crucible::fixy::fs::CtxFitsCommitAtomic;
+
+// §XXI mint factories + composition aliases.
+using ::crucible::fixy::fs::mint_file;
+using ::crucible::fixy::fs::sync;
+using ::crucible::fixy::fs::commit_atomic;
+using ::crucible::fixy::fs::read_only;
+using ::crucible::fixy::fs::mint_durable_truncate_file;
+using ::crucible::fixy::fs::mint_durable_append_file;
+
+}  // namespace crucible::fixy::wrap::fs
 
 // ─── Dual-export sentinel — FIXY-U-020 (#1732) ─────────────────────
 //
