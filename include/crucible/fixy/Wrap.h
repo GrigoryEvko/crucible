@@ -667,6 +667,45 @@ using ::crucible::fixy::fs::mint_durable_append_file;
 
 }  // namespace crucible::fixy::wrap::fs
 
+// ── FIXY-V-225 — fixy/Mmap.h umbrella re-export ──────────────────────
+//
+// Lift the V-225 mmap surface (prot / share / advice type-tag
+// namespaces + grant::mmap:: + OwnedMmap + ctx-fit concepts +
+// mint_mmap + mint_mmap_anon + advise + advise_release_aware) under
+// fixy::wrap::mmap:: so callers reach the whole region-mapping mint
+// surface through one entry point.
+
+#include <crucible/fixy/Mmap.h>         // FIXY-V-225 substrate
+
+namespace crucible::fixy::wrap::mmap {
+
+// Type-tag namespaces — empty-final marker tags partitioning the
+// prot / share / advice axes.
+namespace prot   = ::crucible::fixy::mmap::prot;
+namespace share  = ::crucible::fixy::mmap::share;
+namespace advice = ::crucible::fixy::mmap::advice;
+
+// Grant tag tree — what the user writes at every Mmap call site.
+namespace grant  = ::crucible::fixy::grant::mmap;
+
+// Type aliases — OwnedMmap + concepts.
+template <typename Tag, typename Prot, typename Share>
+using OwnedMmap = ::crucible::fixy::mmap::OwnedMmap<Tag, Prot, Share>;
+
+using ::crucible::fixy::mmap::CtxAdmitsIoBlock;
+using ::crucible::fixy::mmap::CtxFitsMmapMint;
+using ::crucible::fixy::mmap::CtxFitsAnonMmapMint;
+using ::crucible::fixy::mmap::CtxFitsSafeAdvise;
+using ::crucible::fixy::mmap::CtxFitsReleaseAwareAdvise;
+
+// §XXI mint factories + effect operations.
+using ::crucible::fixy::mmap::mint_mmap;
+using ::crucible::fixy::mmap::mint_mmap_anon;
+using ::crucible::fixy::mmap::advise;
+using ::crucible::fixy::mmap::advise_release_aware;
+
+}  // namespace crucible::fixy::wrap::mmap
+
 // ─── Dual-export sentinel — FIXY-U-020 (#1732) ─────────────────────
 //
 // Header-internal static_asserts pin each `using ::crucible::safety::X`

@@ -11652,6 +11652,36 @@ crucible_neg_compile_fixy_test(neg_fixy_v_224_commit_atomic_external_target
 crucible_neg_compile_fixy_test(neg_fixy_v_224_mint_file_ctx_lacks_block
     "no matching function|CtxAdmitsIoBlock|CtxFitsFileMint|constraints not satisfied|row_contains")
 
+# ── FIXY-V-225 — fixy/Mmap.h HS14 neg-compile fixtures (#2103) ──────
+#
+# Seven mismatch classes for the V-225 substrate's three concept gates
+# (CtxFitsMmapMint × CtxFitsAnonMmapMint × CtxFitsSafeAdvise):
+#   #1 mint_mmap empty Grants            → no prot, no share engagement
+#   #2 mint_mmap Exec without trusted_jit → W^X gating
+#   #3 mint_mmap duplicate with_prot<>   → prot-axis uniqueness
+#   #4 mint_mmap duplicate primary share → share-axis primary uniqueness
+#   #5 mint_mmap_anon w/o Anonymous      → anon-variant adds anon clause
+#   #6 mint_mmap_anon(ColdInitCtx, …)    → ctx row lacks Effect::Block
+#   #7 advise<DontNeed> on safe surface  → dangerous-advice gate
+# Together they witness the §XXI fit-check fires at construction along
+# EVERY load-bearing predicate (prot engagement × Exec gating × prot
+# uniqueness × primary-share uniqueness × anon-variant additionality ×
+# ctx row Effect::Block × dangerous-advice channeling).
+crucible_neg_compile_fixy_test(neg_fixy_v_225_mint_mmap_empty_grants
+    "no matching function|CtxFitsMmapMint|constraints not satisfied|has_prot_grant|has_primary_share")
+crucible_neg_compile_fixy_test(neg_fixy_v_225_mint_mmap_exec_no_jit
+    "no matching function|CtxFitsMmapMint|constraints not satisfied|has_exec_prot|has_trusted_jit")
+crucible_neg_compile_fixy_test(neg_fixy_v_225_mint_mmap_duplicate_prot
+    "no matching function|CtxFitsMmapMint|constraints not satisfied|has_duplicate_prot")
+crucible_neg_compile_fixy_test(neg_fixy_v_225_mint_mmap_duplicate_share
+    "no matching function|CtxFitsMmapMint|constraints not satisfied|has_duplicate_primary_share")
+crucible_neg_compile_fixy_test(neg_fixy_v_225_mint_mmap_anon_missing_anonymous
+    "no matching function|CtxFitsAnonMmapMint|constraints not satisfied|pack_has_anonymous")
+crucible_neg_compile_fixy_test(neg_fixy_v_225_mint_mmap_ctx_lacks_block
+    "no matching function|CtxAdmitsIoBlock|CtxFitsMmapMint|constraints not satisfied|row_contains")
+crucible_neg_compile_fixy_test(neg_fixy_v_225_advise_dontneed_safe_surface
+    "no matching function|CtxFitsSafeAdvise|constraints not satisfied|is_dangerous_advice")
+
 # ── FIXY-V-233 — sanitize::path_traversal runtime predicates ────────
 # Runtime smoke test exercising both V-233 predicates
 # (check_no_dotdot + check_absolute_root_locked) plus the two

@@ -24,6 +24,10 @@
 #   * include/crucible/fixy/Fs.h                  — V-224 SyscallSurface axis-specialized
 #                                                    catalog (4 fs::* parametric grants:
 #                                                    mode<>/with_flag<>/durable<>/atomic_write<>).
+#   * include/crucible/fixy/Mmap.h                 — V-225 SyscallSurface axis-specialized
+#                                                    catalog (5 mmap::* parametric/leaf grants:
+#                                                    with_prot<>/with_share<>/with_advice<>/
+#                                                    trusted_jit/release_aware<>).
 #   * include/crucible/fixy/syscall/Family.h      — V-098 SyscallSurface axis-specialized
 #                                                    catalog (9 family-tier grants).
 #   * include/crucible/fixy/syscall/Per.h         — V-098 SyscallSurface axis-specialized
@@ -70,6 +74,16 @@ while IFS=: read -r file line text; do
             # parametric grants: mode<>/with_flag<>/durable<>/atomic_write<>
             # routing the filesystem open-flag / sync-op / atomicity tiers
             # to DimensionAxis::SyscallSurface).  Specializes which_dim<>
+            # only; does NOT extend grant_base hierarchy or introduce new
+            # structural-validation concepts.
+            continue
+            ;;
+        include/crucible/fixy/Mmap.h)
+            # V-225 SyscallSurface axis-specialized catalog (5 mmap::*
+            # grants: with_prot<>/with_share<>/with_advice<>/trusted_jit/
+            # release_aware<> routing the mmap-prot / share-mode / madvise
+            # / Exec-gating / Bug-5 release-witness tiers to
+            # DimensionAxis::SyscallSurface).  Specializes which_dim<>
             # only; does NOT extend grant_base hierarchy or introduce new
             # structural-validation concepts.
             continue
