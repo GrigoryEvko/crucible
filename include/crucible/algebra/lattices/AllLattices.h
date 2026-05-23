@@ -81,6 +81,7 @@
 #include <crucible/algebra/lattices/GlobalStateLattice.h> // FIXY-V-241 — shipped (4-tier global-state-hazard chain)
 #include <crucible/algebra/lattices/HappensBefore.h>     // ALGEBRA-13 (#458) — shipped
 #include <crucible/algebra/lattices/HotPathLattice.h>    // FOUND-G18  — shipped
+#include <crucible/algebra/lattices/HwInstructionLattice.h> // FIXY-V-251 — shipped (5-tier hw-instruction capability chain)
 #include <crucible/algebra/lattices/JoinPolicyLattice.h> // FIXY-V-078 — shipped (6-tier join-policy chain)
 #include <crucible/algebra/lattices/LifetimeLattice.h>   // ALGEBRA-14 (#459) — shipped (1/3)
 #include <crucible/algebra/lattices/MemOrderLattice.h>   // FOUND-G28  — shipped
@@ -218,6 +219,7 @@ static_assert(every_lattice_has_name<
     GlobalStateLattice,
     HappensBeforeLattice<4>,
     HotPathLattice,
+    HwInstructionLattice,
     LifetimeLattice,
     MemOrderLattice,
     MonotoneLattice<int, std::less<int>>,
