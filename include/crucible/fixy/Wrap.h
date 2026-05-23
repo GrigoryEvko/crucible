@@ -740,6 +740,50 @@ using ::crucible::fixy::io::mint_zerocopy_transfer;
 
 }  // namespace crucible::fixy::wrap::io
 
+// ── FIXY-V-227 — fixy/Cipher.h umbrella re-export ─────────────────────
+//
+// Three composite stances for the Cipher persistence layer's
+// distinct durability + atomicity postures (warm-tier writer /
+// cold-tier durable writer / HEAD-pointer advance).  Re-exposed at
+// fixy::wrap::cipher:: so callers reach the stance concepts
+// (`IsCipherWarmWriterStance` / `IsCipherColdWriterStance` /
+// `IsHeadAdvanceStance`) and the canonical stance packs through one
+// short path.  V-228's mint factories will fold the stance concepts
+// into their `requires` clauses.
+
+#include <crucible/fixy/Cipher.h>           // FIXY-V-227 substrate
+
+namespace crucible::fixy::wrap::cipher {
+
+// Stance-engagement concepts.
+using ::crucible::fixy::cipher::IsCipherWarmWriterStance;
+using ::crucible::fixy::cipher::IsCipherColdWriterStance;
+using ::crucible::fixy::cipher::IsHeadAdvanceStance;
+
+// Boolean-variable-template projection for the concepts (lets
+// callers static_assert against the predicate without needing to
+// wrap in a requires-clause).
+using ::crucible::fixy::cipher::engages_warm_writer_stance_v;
+using ::crucible::fixy::cipher::engages_cold_writer_stance_v;
+using ::crucible::fixy::cipher::engages_head_advance_stance_v;
+
+// Canonical stance packs (documentation + grep target).
+using ::crucible::fixy::cipher::CipherWarmWriterStance;
+using ::crucible::fixy::cipher::CipherColdWriterStance;
+using ::crucible::fixy::cipher::HeadAdvanceStance;
+
+// Pack-satisfaction adapters (let callers query "does this pack
+// satisfy stance X?" without re-typing the parameter-pack expansion).
+using ::crucible::fixy::cipher::stance_pack_satisfies_warm_v;
+using ::crucible::fixy::cipher::stance_pack_satisfies_cold_v;
+using ::crucible::fixy::cipher::stance_pack_satisfies_head_v;
+
+// `pack<Grants...>` carrier — used by the canonical stance aliases
+// and exposed for callers building their own stance packs.
+using ::crucible::fixy::cipher::pack;
+
+}  // namespace crucible::fixy::wrap::cipher
+
 // ─── Dual-export sentinel — FIXY-U-020 (#1732) ─────────────────────
 //
 // Header-internal static_asserts pin each `using ::crucible::safety::X`
