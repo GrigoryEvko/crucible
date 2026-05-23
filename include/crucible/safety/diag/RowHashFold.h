@@ -153,6 +153,7 @@ enum class FpComplexLayout    : std::uint8_t;
 enum class FpLibmPolicy       : std::uint8_t;
 enum class FpReassociate      : std::uint8_t;
 enum class FpConstantRounding : std::uint8_t;
+enum class HwInstruction       : std::uint8_t;  // FIXY-V-251 (wrapper V-254)
 }  // namespace crucible::algebra::lattices
 
 namespace crucible::safety {
@@ -160,6 +161,7 @@ template <algebra::lattices::AllocClassTag Tag, typename T> class AllocClass;
 template <algebra::lattices::CipherTierTag Tier, typename T> class CipherTier;
 template <algebra::lattices::DetSafeTier Tier, typename T> class DetSafe;
 template <algebra::lattices::HotPathTier Tier, typename T> class HotPath;
+template <algebra::lattices::HwInstruction Tier, typename T> class Hw;
 template <algebra::lattices::MemOrderTag Tag, typename T> class MemOrder;
 template <algebra::lattices::ProgressClass Class, typename T> class Progress;
 template <algebra::lattices::ResidencyHeatTag Tier, typename T> class ResidencyHeat;
@@ -366,6 +368,8 @@ inline constexpr std::uint64_t WRAPPER_FP_COMPLEX_LAYOUT_TAG    = 0x2800'0000'00
 inline constexpr std::uint64_t WRAPPER_FP_LIBM_POLICY_TAG       = 0x2900'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_FP_REASSOCIATE_TAG       = 0x2A00'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_FP_CONSTANT_ROUNDING_TAG = 0x2B00'0000'0000'0000ULL;
+// FIXY-V-254 — Hw<HwInstruction Tier, T> federation-cache discriminator.
+inline constexpr std::uint64_t WRAPPER_HW_INSTRUCTION_TAG       = 0x2C00'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -666,6 +670,15 @@ template <algebra::lattices::VendorBackend Backend, typename Inner>
 struct row_hash_contribution<safety::Vendor<Backend, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::WRAPPER_VENDOR_TAG | static_cast<std::uint64_t>(Backend),
+        row_hash_contribution_v<Inner>);
+};
+
+// FIXY-V-254 — Hw sits between Vendor (which backend) and ResidencyHeat
+// (where the value lives) in the §XVI canonical wrapper-nesting order.
+template <algebra::lattices::HwInstruction Tier, typename Inner>
+struct row_hash_contribution<safety::Hw<Tier, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_HW_INSTRUCTION_TAG | static_cast<std::uint64_t>(Tier),
         row_hash_contribution_v<Inner>);
 };
 

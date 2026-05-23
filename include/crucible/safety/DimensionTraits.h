@@ -101,6 +101,7 @@
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/HotPath.h>
+#include <crucible/safety/Hw.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/MemOrder.h>
 #include <crucible/safety/Mutation.h>
@@ -601,6 +602,13 @@ struct wrapper_dimension<NumericalTier<Tier, T>>
 template <VendorBackend_v Backend, typename T>
 struct wrapper_dimension<Vendor<Backend, T>>
     : std::integral_constant<DimensionAxis, DimensionAxis::Representation> {};
+
+// FIXY-V-254 — Hw<HwInstruction Tier, T> occupies the HwInstruction axis
+// (V-253, Tier-S Semiring with par=join).  §XVI neighborhood: between
+// Vendor (which backend) and ResidencyHeat (where the value lives).
+template <HwInstruction_v Tier, typename T>
+struct wrapper_dimension<Hw<Tier, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::HwInstruction> {};
 
 template <ResidencyHeatTag_v Tier, typename T>
 struct wrapper_dimension<ResidencyHeat<Tier, T>>
