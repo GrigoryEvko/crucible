@@ -6733,6 +6733,14 @@ crucible_neg_compile_test(neg_cipher_obj_path_bare_string_assign
 crucible_neg_compile_test(neg_cipher_obj_path_cross_source
   "conversion from|cannot convert|no viable|no match for")
 
+# ─── WRAP-Types-3 #1069 HS14 negative-compile fixtures ─────────────
+#   - neg_types_hash_family_unspecialized  (incomplete primary template)
+#   - neg_types_hash_family_cross_lane     (Family-A hash ≠ IsFamilyB)
+crucible_neg_compile_test(neg_types_hash_family_unspecialized
+  "incomplete type|no type named|no member named|constraints not satisfied")
+crucible_neg_compile_test(neg_types_hash_family_cross_lane
+  "static assertion failed|WRAP-Types-3|Family-B|IsFamilyB")
+
 # ─── FIXY-V-186 SchedClass HS14 negative-compile fixtures ──────────
 #   - neg_sched_class_fifo_task_on_other_pool       (pool-fit: Fifo ⋤ Other)
 #   - neg_sched_class_deadline_runtime_gt_deadline  (CBS assert: runtime > deadline)

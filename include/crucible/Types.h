@@ -283,6 +283,89 @@ struct FamilyA {};
 struct FamilyB {};
 } // namespace hash_family
 
+// ─── WRAP-Types-3 #1069: hash-family discrimination at definition site ──
+//
+// `hash_family_of<H>::family` is the family-tag metafunction.  The
+// primary template is INCOMPLETE on purpose — instantiating it for an
+// unspecialized type is a hard compile error, forcing a deliberate
+// specialization for every new hash strong-id.  Each Family-A strong
+// ID below ships a one-line specialization; future Family-B strong
+// IDs (e.g., #364 InternHash) declare their family at the same site.
+//
+// `IsFamilyA<H>` / `IsFamilyB<H>` are the concept gates downstream
+// consumers use to constrain "Cipher-bound hashes only" or "intern-
+// table probes only" without naming every member of the family
+// explicitly.  Adding a new Family-A hash automatically widens
+// `IsFamilyA` to admit it once the specialization lands.
+//
+// Cost: zero.  All resolution happens at compile time; the macro-
+// generated strong-ID struct (CRUCIBLE_STRONG_HASH) carries no extra
+// field, the family tag lives in the type system alone.
+template <class HashT> struct hash_family_of;  // primary undefined
+
+// Family-A specializations — every persistent (byte-stable) strong
+// hash declared via CRUCIBLE_STRONG_HASH above belongs here.  Order
+// matches the declaration order in Types.h:266-273 so a future
+// strong-hash addition has an obvious slot to fill.
+template <> struct hash_family_of<SchemaHash>   { using family = hash_family::FamilyA; };
+template <> struct hash_family_of<ShapeHash>    { using family = hash_family::FamilyA; };
+template <> struct hash_family_of<ScopeHash>    { using family = hash_family::FamilyA; };
+template <> struct hash_family_of<CallsiteHash> { using family = hash_family::FamilyA; };
+template <> struct hash_family_of<ContentHash>  { using family = hash_family::FamilyA; };
+template <> struct hash_family_of<MerkleHash>   { using family = hash_family::FamilyA; };
+template <> struct hash_family_of<RecipeHash>   { using family = hash_family::FamilyA; };
+template <> struct hash_family_of<RowHash>      { using family = hash_family::FamilyA; };
+
+template <class HashT>
+using hash_family_of_t = typename hash_family_of<HashT>::family;
+
+template <class HashT>
+concept IsFamilyA = std::is_same_v<hash_family_of_t<HashT>, hash_family::FamilyA>;
+
+template <class HashT>
+concept IsFamilyB = std::is_same_v<hash_family_of_t<HashT>, hash_family::FamilyB>;
+
+// ── WRAP-Types-3 #1069 sentinel: per-hash family pin ──────────────
+// Pin each Family-A strong hash through the IsFamilyA concept.  A
+// future regression that adds a new strong hash WITHOUT a family
+// specialization trips at every TU including Types.h — IsFamilyA<X>
+// for an unspecialized X fails template instantiation.  A regression
+// that re-labels an existing hash (e.g., accidentally moving
+// ContentHash to FamilyB) fails the sentinel below.
+static_assert(IsFamilyA<SchemaHash>,
+    "WRAP-Types-3 #1069: SchemaHash must be Family-A — op identity is "
+    "byte-stable across processes for KernelCache lookup.");
+static_assert(IsFamilyA<ShapeHash>,
+    "WRAP-Types-3 #1069: ShapeHash must be Family-A — tensor geometry "
+    "must compare bit-stably across replay.");
+static_assert(IsFamilyA<ScopeHash>,
+    "WRAP-Types-3 #1069: ScopeHash must be Family-A — module path "
+    "identity feeds Cipher entries.");
+static_assert(IsFamilyA<CallsiteHash>,
+    "WRAP-Types-3 #1069: CallsiteHash must be Family-A — Python source "
+    "location identity is golden-stable.");
+static_assert(IsFamilyA<ContentHash>,
+    "WRAP-Types-3 #1069: ContentHash must be Family-A — RegionNode "
+    "structural identity feeds Cipher object store + KernelCache.");
+static_assert(IsFamilyA<MerkleHash>,
+    "WRAP-Types-3 #1069: MerkleHash must be Family-A — subtree identity "
+    "feeds Cipher + cross-vendor replay.");
+static_assert(IsFamilyA<RecipeHash>,
+    "WRAP-Types-3 #1069: RecipeHash must be Family-A — NumericalRecipe "
+    "identity is federation-shareable (FORGE.md §19, §20).");
+static_assert(IsFamilyA<RowHash>,
+    "WRAP-Types-3 #1069: RowHash must be Family-A — effect-row content "
+    "identity drives KernelCache L1/L2/L3 lookups (FOUND-I02).");
+
+// Cross-family separation: no Family-A hash satisfies IsFamilyB and
+// vice versa.  Spot-check one Family-A and (when the first Family-B
+// strong hash lands per the #364 deferred doc-block above) one
+// Family-B; for now the gate just pins that IsFamilyA AND IsFamilyB
+// are not BOTH true for any Family-A hash.
+static_assert(!IsFamilyB<ContentHash>,
+    "WRAP-Types-3 #1069: IsFamilyB must reject Family-A hashes — "
+    "lane separation is the load-bearing invariant.");
+
 // ═══════════════════════════════════════════════════════════════════
 // Hash taxonomy — TWO DISJOINT FAMILIES with different persistence
 // semantics.  Hash-producing fields should use `fixy::wrap::Tagged<...,
