@@ -2790,6 +2790,11 @@ crucible_neg_compile_fixy_test(neg_fixy_perf_sched_tp_btf_bg_ctx
     "no matching function|mint_sched_tp_btf|CtxFitsSchedTpBtfMint|Init|row_contains|constraints not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_perf_sched_tp_btf_not_exec_ctx
     "no matching function|mint_sched_tp_btf|CtxFitsSchedTpBtfMint|IsExecCtx|NotAnExecCtx|constraints not satisfied")
+# FIXY-V-197 HS14 floor for fixy::sched::mint_priority (closes V-191 gap).
+crucible_neg_compile_fixy_test(neg_fixy_sched_mint_priority_not_exec_ctx
+    "no matching function|mint_priority|CtxFitsPriorityMint|IsExecCtx|is_exec_ctx_v|NotAnExecCtx|constraints not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_sched_mint_priority_nice_out_of_range
+    "no matching function|mint_priority|CtxFitsPriorityMint|Nice|-21|-20|constraints not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_perf_sense_hub_bg_ctx
     "no matching function|mint_sense_hub|CtxFitsSenseHubMint|Init|row_contains|constraints not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_perf_sense_hub_not_exec_ctx
