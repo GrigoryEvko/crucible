@@ -26,6 +26,7 @@
 #include <crucible/perf/detail/BpfLoader.h>  // GAPS-004x shared loader helpers
 
 #include <crucible/safety/Mutation.h>  // safety::WriteOnce / WriteOnceNonNull / Monotonic
+#include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
 #include <crucible/safety/Pinned.h>    // safety::NonMovable<T>
 
 #include <linux/perf_event.h>
@@ -43,6 +44,7 @@
 #include <memory>                 // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
 
 #include <inplace_vector>
+#include <optional>     // FIXY-V-236 — std::optional<OwnedMmap>
 
 extern "C" {
 extern const unsigned char pmu_sample_bpf_bytecode[];
@@ -236,10 +238,18 @@ struct PmuSample::State : crucible::safety::NonMovable<PmuSample::State> {
     // own both until State::~State runs).
     std::inplace_vector<PerfFd, 8>           perf_fds{};
 
-    // Single-set during Phase 7.  Same paired-set discipline as the
-    // siblings — both has_value() iff Phase 7 succeeded.
-    safety::WriteOnceNonNull<volatile uint8_t*> timeline_base{};
-    safety::WriteOnce<size_t>                   timeline_len{};
+    // FIXY-V-236: single RAII OwnedMmap replaces the {WriteOnceNonNull
+    // <volatile uint8_t*>, WriteOnce<size_t>} pair.  std::optional's
+    // engaged-state doubles as the "loaded yet" marker (engaged iff
+    // Phase 7 ran to completion).  Per-hub phantom Tag forbids cross-
+    // hub mapping swaps at compile time; Prot/Share are residency
+    // metadata the wrapper never interprets.
+    struct PmuSampleRingbufTag {};
+    struct ReadOnlyProt        {};
+    struct SharedShare         {};
+    using TimelineMmap =
+        ::crucible::safety::OwnedMmap<PmuSampleRingbufTag, ReadOnlyProt, SharedShare>;
+    std::optional<TimelineMmap>                 timeline_mmap{};
 
     // Monotonic — only bumps on attach failures.
     safety::Monotonic<size_t>                   attach_fail_cnt{0};
@@ -251,12 +261,7 @@ struct PmuSample::State : crucible::safety::NonMovable<PmuSample::State> {
         for (PerfFd fd : perf_fds) {
             if (fd.value() >= 0) ::close(fd.value());
         }
-        if (timeline_base.has_value()) {
-            // §III-clean: bit_cast strips volatile + drops to void* in one
-            // well-defined runtime conversion (no const_cast needed).
-            ::munmap(std::bit_cast<void*>(timeline_base.get()),
-                     timeline_len.get());
-        }
+        // FIXY-V-236: timeline_mmap dtor unmaps automatically.
         if (obj != nullptr) bpf_object__close(obj);
     }
 };
@@ -481,8 +486,8 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
     // SenseHub/SchedSwitch — under semantic=enforce a hypothetical
     // contract violation on base.set() leaves a self-consistent
     // dtor view.
-    state->timeline_len.set(mmap_len_bytes);
-    state->timeline_base.set(static_cast<volatile uint8_t*>(mmap_address));
+    // FIXY-V-236: structural RAII closure via OwnedMmap.
+    state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
 
     // Surface partial-coverage warnings once per successful load.
     if (!quiet() && state->attach_fail_cnt.get() != 0) {
@@ -499,10 +504,11 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
 
 safety::Borrowed<const PmuSampleEvent, PmuSample>
 PmuSample::timeline_view() const noexcept {
-    if (state_ == nullptr || !state_->timeline_base) {
+    if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const PmuSampleEvent, PmuSample>{};
     }
-    auto* base = state_->timeline_base.get();
+    // FIXY-V-236: OwnedMmap void* data() bit_cast to typed volatile ptr.
+    auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     // §III-clean: bit_cast strips volatile from the byte pointer (well-defined at
     // runtime; forbidden only in constant expressions), then start_lifetime_as_array
     // (P2590R2) begins implicit-lifetime PmuSampleEvent storage in-place.
@@ -517,8 +523,8 @@ PmuSample::timeline_view() const noexcept {
 }
 
 uint64_t PmuSample::timeline_write_index() const noexcept {
-    if (state_ == nullptr || !state_->timeline_base) return 0;
-    auto* base = state_->timeline_base.get();
+    if (state_ == nullptr || !state_->timeline_mmap) return 0;
+    auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     // §III-clean: implicit qualification add (volatile T* → const volatile T*)
     // is a permitted conversion; start_lifetime_as<PmuSampleHeader> begins
     // implicit-lifetime header storage at the mmap base.

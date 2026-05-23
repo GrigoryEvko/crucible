@@ -26,6 +26,7 @@
 #include <crucible/perf/detail/BpfLoader.h>  // GAPS-004x shared loader helpers
 
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/OwnedMmap.h>   // FIXY-V-236 — RAII mmap region
 #include <crucible/safety/Pinned.h>
 
 #include <sys/mman.h>
@@ -38,6 +39,7 @@
 #include <cstring>
 
 #include <inplace_vector>
+#include <optional>     // FIXY-V-236 — std::optional<OwnedMmap>
 
 extern "C" {
 extern const unsigned char sched_tp_btf_bpf_bytecode[];
@@ -67,11 +69,21 @@ using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
+// FIXY-V-236: per-hub phantom Tag + residency metadata for the mmap'd
+// ringbuf; distinct Tag forbids cross-hub mapping swaps at compile time.
+struct SchedTpBtfRingbufTag {};
+struct ReadOnlyProt        {};
+struct SharedShare         {};
+
 struct SchedTpBtf::State : crucible::safety::NonMovable<SchedTpBtf::State> {
     struct bpf_object*                       obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
-    safety::WriteOnceNonNull<volatile uint8_t*> timeline_base{};
-    safety::WriteOnce<size_t>                   timeline_len{};
+
+    // FIXY-V-236: RAII OwnedMmap replaces {WriteOnceNonNull, WriteOnce}.
+    using TimelineMmap =
+        ::crucible::safety::OwnedMmap<SchedTpBtfRingbufTag, ReadOnlyProt, SharedShare>;
+    std::optional<TimelineMmap>                 timeline_mmap{};
+
     Fd                                          cs_count_fd{-1};
     safety::Monotonic<size_t>                   attach_fail_cnt{0};
 
@@ -79,12 +91,7 @@ struct SchedTpBtf::State : crucible::safety::NonMovable<SchedTpBtf::State> {
 
     ~State() {
         for (struct bpf_link* l : links) if (l != nullptr) bpf_link__destroy(l);
-        if (timeline_base.has_value()) {
-            // §III-clean: bit_cast strips volatile + drops to void* in one
-            // well-defined runtime conversion (no const_cast needed).
-            ::munmap(std::bit_cast<void*>(timeline_base.get()),
-                     timeline_len.get());
-        }
+        // FIXY-V-236: timeline_mmap dtor unmaps automatically.
         if (obj != nullptr) bpf_object__close(obj);
     }
 };
@@ -222,8 +229,8 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
                "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)", errno);
         return std::nullopt;
     }
-    state->timeline_len.set(mmap_len_bytes);
-    state->timeline_base.set(static_cast<volatile uint8_t*>(mmap_address));
+    // FIXY-V-236: structural RAII closure via OwnedMmap.
+    state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
 
     if (struct bpf_map* cs = bpf_object__find_map_by_name(state->obj, "cs_count");
         cs != nullptr) {
@@ -260,14 +267,15 @@ uint64_t SchedTpBtf::context_switches() const noexcept {
 
 safety::Borrowed<const TimelineSchedEvent, SchedTpBtf>
 SchedTpBtf::timeline_view() const noexcept {
-    if (state_ == nullptr || !state_->timeline_base) {
+    if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineSchedEvent, SchedTpBtf>{};
     }
     // §III-clean: bit_cast handles volatile-drop, start_lifetime_as_array
     // begins typed-array lifetime in the BPF mmap'd byte storage.  See
     // SchedSwitch.cpp::timeline_view for the full rationale (span<const
     // volatile T> unimplementable for non-scalar T in libstdc++ today).
-    auto* base = state_->timeline_base.get();
+    // FIXY-V-236: OwnedMmap void* data() bit_cast to typed volatile ptr.
+    auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     // _Tp non-const: const-void* overload returns const _Tp*; passing
     // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
     // through a const-qualified array location.
@@ -279,8 +287,8 @@ SchedTpBtf::timeline_view() const noexcept {
 }
 
 uint64_t SchedTpBtf::timeline_write_index() const noexcept {
-    if (state_ == nullptr || !state_->timeline_base) return 0;
-    auto* base = state_->timeline_base.get();
+    if (state_ == nullptr || !state_->timeline_mmap) return 0;
+    auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     // §III-clean: implicit qualification adds const to the volatile pointee;
     // start_lifetime_as<H>(const volatile void*) returns const volatile H*.
     const volatile uint8_t* qbase = base;

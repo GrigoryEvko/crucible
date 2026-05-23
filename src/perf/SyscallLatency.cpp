@@ -23,6 +23,7 @@
 #include <crucible/perf/detail/BpfLoader.h>  // GAPS-004x shared loader helpers
 
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/OwnedMmap.h>   // FIXY-V-236 — RAII mmap region
 #include <crucible/safety/Pinned.h>
 
 #include <sys/mman.h>
@@ -35,6 +36,7 @@
 #include <memory>       // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
 
 #include <inplace_vector>
+#include <optional>     // FIXY-V-236 — std::optional<OwnedMmap>
 
 extern "C" {
 extern const unsigned char syscall_latency_bpf_bytecode[];
@@ -61,12 +63,24 @@ using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
+// FIXY-V-236: phantom-typed Tag + Prot + Share for the per-hub mmap'd
+// BPF ringbuf.  Distinct Tag per hub forces compile-time rejection of
+// any cross-hub mapping swap; Prot/Share are residency-tier metadata
+// the OwnedMmap wrapper never interprets.
+struct SyscallLatencyRingbufTag {};
+struct ReadOnlyProt            {};
+struct SharedShare             {};
+
 struct SyscallLatency::State : crucible::safety::NonMovable<SyscallLatency::State> {
     struct bpf_object*                       obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
 
-    safety::WriteOnceNonNull<volatile uint8_t*> timeline_base{};
-    safety::WriteOnce<size_t>                   timeline_len{};
+    // FIXY-V-236: single RAII OwnedMmap replaces the {WriteOnceNonNull
+    // <volatile uint8_t*>, WriteOnce<size_t>} pair.  ~State no longer
+    // carries an explicit ::munmap clause.
+    using TimelineMmap =
+        ::crucible::safety::OwnedMmap<SyscallLatencyRingbufTag, ReadOnlyProt, SharedShare>;
+    std::optional<TimelineMmap>                 timeline_mmap{};
 
     Fd                                          total_syscalls_fd{-1};
 
@@ -76,12 +90,7 @@ struct SyscallLatency::State : crucible::safety::NonMovable<SyscallLatency::Stat
 
     ~State() {
         for (struct bpf_link* l : links) if (l != nullptr) bpf_link__destroy(l);
-        if (timeline_base.has_value()) {
-            // §III-clean: bit_cast strips volatile + drops to void* in one
-            // well-defined runtime conversion (no const_cast needed).
-            ::munmap(std::bit_cast<void*>(timeline_base.get()),
-                     timeline_len.get());
-        }
+        // FIXY-V-236: timeline_mmap dtor unmaps automatically.
         if (obj != nullptr) bpf_object__close(obj);
     }
 };
@@ -217,8 +226,8 @@ std::optional<SyscallLatency> SyscallLatency::load(::crucible::effects::Init) no
                "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)", errno);
         return std::nullopt;
     }
-    state->timeline_len.set(mmap_len_bytes);
-    state->timeline_base.set(static_cast<volatile uint8_t*>(mmap_address));
+    // FIXY-V-236: structural RAII closure via OwnedMmap.
+    state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
 
     // Capture the total_syscalls FD for total_syscalls() lookups.
     if (struct bpf_map* ts =
@@ -257,13 +266,14 @@ uint64_t SyscallLatency::total_syscalls() const noexcept {
 
 safety::Borrowed<const TimelineSyscallEvent, SyscallLatency>
 SyscallLatency::timeline_view() const noexcept {
-    if (state_ == nullptr || !state_->timeline_base) {
+    if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineSyscallEvent, SyscallLatency>{};
     }
     // §III-clean: bit_cast handles volatile-drop, start_lifetime_as_array
     // begins typed-array lifetime in the BPF mmap'd byte storage.  See
     // SchedSwitch.cpp::timeline_view for the full rationale.
-    auto* base = state_->timeline_base.get();
+    // FIXY-V-236: OwnedMmap::data() returns void*; bit_cast to typed ptr.
+    auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     // _Tp non-const: const-void* overload returns const _Tp*; passing
     // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
     // through a const-qualified array location.
@@ -275,8 +285,8 @@ SyscallLatency::timeline_view() const noexcept {
 }
 
 uint64_t SyscallLatency::timeline_write_index() const noexcept {
-    if (state_ == nullptr || !state_->timeline_base) return 0;
-    auto* base = state_->timeline_base.get();
+    if (state_ == nullptr || !state_->timeline_mmap) return 0;
+    auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     // §III-clean: implicit qualification adds const to the volatile pointee.
     const volatile uint8_t* qbase = base;
     auto* hdr = std::start_lifetime_as<TimelineHeader>(qbase);

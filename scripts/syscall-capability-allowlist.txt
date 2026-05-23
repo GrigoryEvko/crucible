@@ -35,27 +35,22 @@ include/crucible/warden/Hardening.h:388 — effects::Init via Hardening::lock_re
 include/crucible/warden/Hardening.h:416 — effects::Init via Hardening::hint_hugepage (madvise MADV_HUGEPAGE)
 include/crucible/warden/Hardening.h:441 — effects::Init via Hardening::collapse_hugepage (madvise MADV_COLLAPSE)
 
-# ── perf/ — BPF program load + perf_event_open ────────────────────────
-# Init-row BPF loaders and perf event setup.  All sites belong to
-# load_subset() / detail::load_* helpers reachable only from
-# Senses::load_subset(effects::Init), which gates the row at the
-# function signature (fixy-A5-026, FIXY-U-088).
+# ── perf/ — BPF program load + BPF-map mmap ───────────────────────────
+# Init-row BPF loaders and the per-hub BPF-map mmap.  All sites belong
+# to load_subset() / detail::load_* / per-hub attach() helpers reachable
+# only from Senses::load_subset(effects::Init), which gates the row at
+# the function signature (fixy-A5-026, FIXY-U-088).  Each mapping is
+# owned by safety::OwnedMmap (FIXY-V-236) — munmap is now RAII inside
+# OwnedMmap::release_ (see the safety/OwnedMmap.h block below), so no
+# detach-side munmap site remains in any hub.  V-179 will migrate these
+# allowlist entries to inline mint annotations.
 include/crucible/perf/detail/BpfLoader.h:147 — effects::Init via BpfLoader (kernel BPF program upload)
-src/perf/LockContention.cpp:89  — effects::Init via LockContention::attach
-src/perf/LockContention.cpp:223 — effects::Init via LockContention::detach
-src/perf/PmuSample.cpp:137 — effects::Init via PmuSample::open
-src/perf/PmuSample.cpp:257 — effects::Init via PmuSample::poll (ioctl PERF_EVENT_IOC_ENABLE)
-src/perf/PmuSample.cpp:472 — effects::Init via PmuSample::close
-src/perf/SchedSwitch.cpp:140 — effects::Init via SchedSwitch::attach
-src/perf/SchedSwitch.cpp:284 — effects::Init via SchedSwitch::detach
-src/perf/SchedTpBtf.cpp:85  — effects::Init via SchedTpBtf::attach
-src/perf/SchedTpBtf.cpp:218 — effects::Init via SchedTpBtf::detach
-src/perf/SenseHub.cpp:134 — effects::Init via SenseHub::load_subset
-src/perf/SenseHub.cpp:293 — effects::Init via SenseHub::detach
-src/perf/SyscallLatency.cpp:82  — effects::Init via SyscallLatency::attach
-src/perf/SyscallLatency.cpp:213 — effects::Init via SyscallLatency::detach
-src/perf/SyscallTpBtf.cpp:78  — effects::Init via SyscallTpBtf::attach
-src/perf/SyscallTpBtf.cpp:204 — effects::Init via SyscallTpBtf::detach
+src/perf/LockContention.cpp:228 — effects::Init via LockContention::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
+src/perf/SchedSwitch.cpp:286 — effects::Init via SchedSwitch::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
+src/perf/SchedTpBtf.cpp:225 — effects::Init via SchedTpBtf::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
+src/perf/SenseHub.cpp:292 — effects::Init via SenseHub::load_subset (mmap counters array MAP_SHARED, OwnedMmap-owned)
+src/perf/SyscallLatency.cpp:222 — effects::Init via SyscallLatency::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
+src/perf/SyscallTpBtf.cpp:222 — effects::Init via SyscallTpBtf::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
 
 # ── cntp/ — congestion telemetry + pacing ─────────────────────────────
 # IO-row socket option / netlink syscalls.  Bg-drain context paths
@@ -104,6 +99,16 @@ include/crucible/handles/FileHandle.h:187 — effects::IO via FileHandle::open_a
 include/crucible/handles/FileHandle.h:220 — effects::IO via FileHandle::read_all (read until EOF)
 include/crucible/handles/FileHandle.h:242 — effects::IO via FileHandle::write_all (write until done)
 include/crucible/handles/FileHandle.h:262 — effects::IO via FileHandle::stat_size (fstat)
+
+# ── safety/OwnedMmap.h — RAII munmap of an owned mapping ──────────────
+# The single munmap site for every OwnedMmap region (FIXY-V-231/236).
+# release_() unmaps iff is_mapped(); it is called from ~OwnedMmap and
+# move-assign.  The capability is inherited from construction — the
+# caller held the IO/Init cap when it mmap'd the (addr, len) pair and
+# handed ownership to OwnedMmap, exactly as FileHandle inherits its
+# open-time cap for the RAII close above.  All seven perf hubs route
+# their ringbuf/counter unmaps through here (FIXY-V-236).
+include/crucible/safety/OwnedMmap.h:251 — effects::IO via OwnedMmap::release_ (munmap on RAII drop / move-assign)
 
 # ── Cipher.h — RAII fd lifecycle of warm-tier log ─────────────────────
 # IO + Init + Block row Cipher persistence.  All sites reachable only
@@ -169,10 +174,16 @@ src/cntp/RoceConfig.cpp:40 — effects::IO via RoceConfig::~RoceConfig (RAII clo
 src/cntp/RoceConfig.cpp:82 — effects::IO via RoceConfig::probe (open /sys/class/infiniband)
 src/cntp/RoceConfig.cpp:87 — effects::IO via RoceConfig::probe (read sysfs)
 
-# ── perf/PmuSample.cpp — Init-row perf_event_open fd lifecycle ────────
-src/perf/PmuSample.cpp:252 — effects::Init via PmuSample::open (close on partial-init rollback)
-src/perf/PmuSample.cpp:409 — effects::Init via PmuSample::reset (close perf fd)
-src/perf/PmuSample.cpp:424 — effects::Init via PmuSample::detach (close perf fd)
+# ── perf/PmuSample.cpp — Init-row perf_event_open + fd/mmap lifecycle ──
+# perf_event_open raw syscall, perf-fd closes (State dtor + attach-
+# failure rollbacks), and the pmu_sample_buf mmap (OwnedMmap-owned,
+# FIXY-V-236).  All reachable only from PmuSample::attach, gated on
+# Senses::load_subset(effects::Init).
+src/perf/PmuSample.cpp:139 — effects::Init via perf_event_open_syscall (raw SYS_perf_event_open)
+src/perf/PmuSample.cpp:262 — effects::Init via PmuSample::State::~State (close perf fds on RAII drop)
+src/perf/PmuSample.cpp:414 — effects::Init via PmuSample::attach (close perf fd on attach-failure rollback)
+src/perf/PmuSample.cpp:429 — effects::Init via PmuSample::attach (close perf fd on capacity-full rollback)
+src/perf/PmuSample.cpp:477 — effects::Init via PmuSample::attach (mmap pmu_sample_buf MAP_SHARED, OwnedMmap-owned)
 
 # ── perf/ProcGauges.cpp — /proc gauge sampler ─────────────────────────
 # Bg-row /proc reads (cpuload, meminfo, vmstat, schedstat).  Bg drain

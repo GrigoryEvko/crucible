@@ -49,6 +49,7 @@
 #include <crucible/perf/detail/BpfLoader.h>
 
 #include <crucible/safety/Mutation.h>  // safety::WriteOnce / WriteOnceNonNull / Monotonic
+#include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
 #include <crucible/safety/Pinned.h>    // safety::NonMovable<T>
 
 #include <sys/mman.h>
@@ -65,6 +66,7 @@
 // SenseHub for uniformity.  GCC 16 ships std::inplace_vector
 // unconditionally.
 #include <inplace_vector>
+#include <optional>     // FIXY-V-236 — std::optional<OwnedMmap>
 
 extern "C" {
 extern const unsigned char sched_switch_bpf_bytecode[];
@@ -97,6 +99,14 @@ using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
+// FIXY-V-236: per-hub phantom Tag + residency metadata for the mmap'd
+// ringbuf; distinct Tag forbids cross-hub mapping swaps at compile time.
+namespace {
+struct SchedSwitchRingbufTag {};
+struct ReadOnlyProt         {};
+struct SharedShare          {};
+}  // namespace
+
 // State CRTP-inherits NonMovable for the same reason SenseHub::State
 // does — exclusive resources (bpf_object*, bpf_link*, mmap region)
 // must not be duplicated.  Subsumes 4 explicit `= delete` lines into
@@ -105,15 +115,14 @@ struct SchedSwitch::State : crucible::safety::NonMovable<SchedSwitch::State> {
     struct bpf_object*                       obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
 
-    // Single-set during Phase 7 of load() — the mmap'd
-    // sched_timeline base.  WriteOnceNonNull's nullptr sentinel
-    // doubles as the "not loaded yet" marker; the dtor's
-    // .has_value() guard skips munmap when un-set.
-    safety::WriteOnceNonNull<volatile uint8_t*> timeline_base{};
-
-    // mmap length in bytes — the page-rounded size that munmap
-    // expects.  Paired single-set with timeline_base.
-    safety::WriteOnce<size_t>                   timeline_len{};
+    // FIXY-V-236: single RAII OwnedMmap replaces the {WriteOnceNonNull
+    // <volatile uint8_t*>, WriteOnce<size_t>} pair.  std::optional's
+    // engaged-state doubles as the "loaded yet" marker (engaged iff
+    // Phase 7 ran to completion); ~State no longer carries an explicit
+    // munmap clause — OwnedMmap's dtor handles it.
+    using TimelineMmap =
+        ::crucible::safety::OwnedMmap<SchedSwitchRingbufTag, ReadOnlyProt, SharedShare>;
+    std::optional<TimelineMmap>                 timeline_mmap{};
 
     // FD of the cs_count map, captured during load() and kept for
     // the lifetime of the SchedSwitch.  context_switches() uses it
@@ -132,14 +141,7 @@ struct SchedSwitch::State : crucible::safety::NonMovable<SchedSwitch::State> {
 
     ~State() {
         for (struct bpf_link* l : links) if (l != nullptr) bpf_link__destroy(l);
-        if (timeline_base.has_value()) {
-            // §III-clean: bit_cast strips both volatile AND drops to void*
-            // for munmap() in one well-defined runtime conversion (banned
-            // const_cast eliminated; well-defined for trivially-copyable
-            // pointer types at runtime).
-            ::munmap(std::bit_cast<void*>(timeline_base.get()),
-                     timeline_len.get());
-        }
+        // FIXY-V-236: timeline_mmap dtor unmaps automatically.
         if (obj != nullptr) bpf_object__close(obj);
     }
 };
@@ -288,14 +290,10 @@ std::optional<SchedSwitch> SchedSwitch::load(::crucible::effects::Init) noexcept
                "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)", errno);
         return std::nullopt;
     }
-    // Paired single-set: timeline_base + timeline_len commit
-    // together.  Set length first so a hypothetical contract
-    // violation on timeline_base.set() leaves the dtor's munmap
-    // self-consistent (both unset → no munmap; len set + base
-    // set → dtor munmaps; len set alone → impossible because
-    // base.set() never threw).
-    state->timeline_len.set(mmap_len_bytes);
-    state->timeline_base.set(static_cast<volatile uint8_t*>(mmap_address));
+    // FIXY-V-236: single atomic commit via OwnedMmap.emplace — the
+    // (addr, len) pair is captured together; the old paired-single-set
+    // ordering hazard is gone because there is only ONE field now.
+    state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
 
     // Capture the cs_count FD for context_switches() lookups.  The
     // map is a 1-element ARRAY map (not mmap-able as currently
@@ -342,7 +340,7 @@ uint64_t SchedSwitch::context_switches() const noexcept {
 
 safety::Borrowed<const TimelineSchedEvent, SchedSwitch>
 SchedSwitch::timeline_view() const noexcept {
-    if (state_ == nullptr || !state_->timeline_base) {
+    if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineSchedEvent, SchedSwitch>{};
     }
     // The mmap'd region starts with the 64-byte header, then
@@ -359,7 +357,8 @@ SchedSwitch::timeline_view() const noexcept {
     // __ATOMIC_ACQUIRE) idiom).  start_lifetime_as_array begins
     // the typed array's lifetime in the BPF mmap'd byte storage
     // (CLAUDE.md §III sanctioned alternative to reinterpret_cast).
-    auto* base = state_->timeline_base.get();
+    // FIXY-V-236: OwnedMmap void* data() bit_cast to typed volatile ptr.
+    auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     // _Tp non-const: const-void* overload returns const _Tp*; passing
     // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
     // through a const-qualified array location.
@@ -371,8 +370,8 @@ SchedSwitch::timeline_view() const noexcept {
 }
 
 uint64_t SchedSwitch::timeline_write_index() const noexcept {
-    if (state_ == nullptr || !state_->timeline_base) return 0;
-    auto* base = state_->timeline_base.get();
+    if (state_ == nullptr || !state_->timeline_mmap) return 0;
+    auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     // §III-clean: implicit qualification adds const to the volatile uint8_t*
     // pointee (volatile→const volatile is a permitted qualification convert);
     // start_lifetime_as<H>(const volatile void*) returns const volatile H*.

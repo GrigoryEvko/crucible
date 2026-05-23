@@ -31,6 +31,7 @@
 #include <crucible/perf/detail/BpfLoader.h>
 
 #include <crucible/safety/Mutation.h>  // safety::WriteOnce / WriteOnceNonNull / Monotonic
+#include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
 #include <crucible/safety/Pinned.h>    // safety::NonMovable<T>
 
 #include <sys/mman.h>
@@ -44,6 +45,7 @@
 // 64 slots comfortably covers the 58 tracepoints shipped today with
 // headroom.  GCC 16 ships std::inplace_vector unconditionally.
 #include <inplace_vector>
+#include <optional>     // FIXY-V-236 — std::optional<OwnedMmap>
 
 extern "C" {
 extern const unsigned char sense_hub_bpf_bytecode[];
@@ -90,18 +92,21 @@ struct SenseHub::State : crucible::safety::NonMovable<SenseHub::State> {
     struct bpf_object*                        obj   = nullptr;
     std::inplace_vector<struct bpf_link*, 64> links{};
 
-    // Single-set after Phase 7 of load() succeeds.  WriteOnceNonNull
-    // catches accidental re-publish (would double-free the prior mmap
-    // on dtor) AND replaces the bare-pointer + sentinel-comparison
-    // pattern with a typed has_value() / get() surface — sizeof is
-    // unchanged (the nullptr sentinel IS the unset marker).
-    safety::WriteOnceNonNull<volatile uint64_t*> counters{};
+    // FIXY-V-236: single RAII OwnedMmap replaces the {WriteOnceNonNull
+    // <volatile uint64_t*>, WriteOnce<size_t>} pair.  Per-hub phantom
+    // Tag forbids cross-hub mapping swaps at compile time; Prot/Share
+    // are residency metadata the wrapper never interprets.  The
+    // engaged-optional doubles as the "Phase 7 committed" marker; the
+    // dtor's explicit munmap clause is gone (OwnedMmap handles it).
+    struct SenseHubCountersTag {};
+    struct ReadOnlyProt        {};
+    struct SharedShare         {};
+    using CountersMmap =
+        ::crucible::safety::OwnedMmap<SenseHubCountersTag, ReadOnlyProt, SharedShare>;
+    std::optional<CountersMmap>                  counters_mmap{};
 
-    // Single-set during Phase 7 alongside `counters`.  WriteOnce
-    // contract-fires on re-set under semantic=enforce; under release
-    // semantic=ignore it's a plain optional<size_t> with zero
-    // observable cost relative to the bare size_t.
-    safety::WriteOnce<size_t>                    mmap_len{};
+    // FIXY-V-236: mmap_len folded into counters_mmap (OwnedMmap owns
+    // both addr and len); the separate WriteOnce<size_t> is deleted.
 
     // Monotonic counter — only ever increments via .bump() in the
     // attach loop, never decrements.  Wrapping in safety::Monotonic
@@ -124,15 +129,9 @@ struct SenseHub::State : crucible::safety::NonMovable<SenseHub::State> {
 
     ~State() {
         for (struct bpf_link* l : links) if (l != nullptr) bpf_link__destroy(l);
-        // counters + mmap_len are paired single-set slots.  Both
-        // .has_value() iff Phase 7 of load() ran to completion.
-        // Either both are set or neither is — no half-state can
-        // sneak past Phase 7's atomic ordering.
-        if (counters.has_value()) {
-            // §III-clean: bit_cast strips volatile + drops to void* in one
-            // well-defined runtime conversion (no const_cast needed).
-            ::munmap(std::bit_cast<void*>(counters.get()), mmap_len.get());
-        }
+        // FIXY-V-236: counters_mmap dtor unmaps automatically — the
+        // explicit munmap clause and its paired-slot ordering note are
+        // both gone (OwnedMmap owns the addr+len pair atomically).
         if (obj != nullptr) bpf_object__close(obj);
     }
 };
@@ -297,16 +296,10 @@ std::optional<SenseHub> SenseHub::load(::crucible::effects::Init) noexcept {
                "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)", errno);
         return std::nullopt;
     }
-    // Paired single-set: counters and mmap_len commit together.  An
-    // earlier early-return leaves both unset; the dtor's
-    // counters.has_value() guard then skips munmap correctly.  Order
-    // matters under semantic=enforce — set mmap_len FIRST so a
-    // hypothetical contract violation on counters.set() leaves a
-    // self-consistent State (set→set sequence; partial set on
-    // counters means mmap_len already committed, dtor still
-    // munmaps — no leak).
-    state->mmap_len.set(mmap_len_bytes);
-    state->counters.set(static_cast<volatile uint64_t*>(mmap_address));
+    // FIXY-V-236: single atomic commit via OwnedMmap.emplace — the
+    // (addr, len) pair is captured together, dissolving the old
+    // paired-single-set ordering hazard (there is one field now).
+    state->counters_mmap.emplace(mmap_address, mmap_len_bytes);
 
     // Surface partial-coverage warnings once per successful load.
     // Most runs attach every program; when the kernel is missing a
@@ -331,7 +324,7 @@ Snapshot SenseHub::read() const noexcept {
     // SenseHub) and even on a live SenseHub the counters slot is
     // unset until Phase 7 of load() commits.  WriteOnceNonNull's
     // operator bool collapses to a single nullptr-compare.
-    if (state_ == nullptr || !state_->counters) return snapshot;
+    if (state_ == nullptr || !state_->counters_mmap) return snapshot;
     // Acquire-ordered loads on every slot.  The BPF producer uses
     // __sync_fetch_and_add on these addresses (a full barrier), so
     // pairing with an acquire on the consumer side guarantees that
@@ -341,7 +334,10 @@ Snapshot SenseHub::read() const noexcept {
     // documented GCC extension: the volatile qualifier is allowed
     // under atomics and the load lowers to a single aligned MOV on
     // x86-64 (acquire is free on TSO).
-    const volatile uint64_t* __restrict src = state_->counters.get();
+    // FIXY-V-236: OwnedMmap void* data() bit_cast to the typed
+    // const-volatile counter pointer the acquire-load loop expects.
+    const volatile uint64_t* __restrict src =
+        std::bit_cast<const volatile uint64_t*>(state_->counters_mmap->data());
     for (uint32_t i = 0; i < NUM_COUNTERS; ++i) {
         snapshot.counters[i] = __atomic_load_n(&src[i], __ATOMIC_ACQUIRE);
     }
@@ -354,15 +350,16 @@ SenseHub::counters_view() const noexcept {
     // post-load-failure SenseHub).  span(nullptr, 0) is the
     // documented empty-borrow form per Borrowed<>'s constructor
     // contract — zero-sized span_, no UB at construction.
-    if (state_ == nullptr || !state_->counters) {
+    if (state_ == nullptr || !state_->counters_mmap) {
         return safety::Borrowed<const volatile uint64_t, SenseHub>{};
     }
     // The mmap returns NUM_COUNTERS u64 cells; the wire-compat
     // assertion in the header (`sizeof(Snapshot) == 96 * 8`) is
     // the structural witness that the BPF map allocates exactly
     // this much.  Borrowed::ctor takes (T*, count) — wrap.
+    // FIXY-V-236: OwnedMmap void* data() bit_cast to typed counter ptr.
     return safety::Borrowed<const volatile uint64_t, SenseHub>{
-        state_->counters.get(), NUM_COUNTERS};
+        std::bit_cast<volatile uint64_t*>(state_->counters_mmap->data()), NUM_COUNTERS};
 }
 
 safety::Refined<safety::bounded_above<64>, std::size_t>

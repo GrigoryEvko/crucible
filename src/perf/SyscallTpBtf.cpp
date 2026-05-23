@@ -22,6 +22,7 @@
 #include <crucible/perf/detail/BpfLoader.h>  // GAPS-004x shared loader helpers
 
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/OwnedMmap.h>   // FIXY-V-236 — RAII mmap region
 #include <crucible/safety/Pinned.h>
 
 #include <sys/mman.h>
@@ -34,6 +35,7 @@
 #include <memory>       // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
 
 #include <inplace_vector>
+#include <optional>     // FIXY-V-236 — std::optional<OwnedMmap>
 
 extern "C" {
 extern const unsigned char syscall_tp_btf_bpf_bytecode[];
@@ -60,11 +62,31 @@ using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
+// FIXY-V-236: phantom-typed Tag + Prot + Share parameters for the
+// per-hub mmap'd BPF ringbuf.  Distinct Tag per hub forces compile-time
+// rejection of any cross-hub mapping swap.  Prot/Share are empty
+// metadata structs that the safety::OwnedMmap wrapper never interprets;
+// they exist so downstream consumers (FOUND-G47 residency consumers /
+// fixy::mmap gates) can read residency tier at the type level.
+struct SyscallTpBtfRingbufTag {};
+struct ReadOnlyProt          {};
+struct SharedShare           {};
+
 struct SyscallTpBtf::State : crucible::safety::NonMovable<SyscallTpBtf::State> {
     struct bpf_object*                       obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
-    safety::WriteOnceNonNull<volatile uint8_t*> timeline_base{};
-    safety::WriteOnce<size_t>                   timeline_len{};
+
+    // FIXY-V-236: replaces the {WriteOnceNonNull<volatile uint8_t*>,
+    // WriteOnce<size_t>} pair with a single RAII OwnedMmap.  Dtor
+    // closure is now structural — no explicit ::munmap call needed,
+    // and an early-return added to load() after the .emplace() cannot
+    // silently leak the mapping (move-into-empty-optional-on-failure
+    // is impossible because emplace() only fires after the MAP_FAILED
+    // check).
+    using TimelineMmap =
+        ::crucible::safety::OwnedMmap<SyscallTpBtfRingbufTag, ReadOnlyProt, SharedShare>;
+    std::optional<TimelineMmap>                 timeline_mmap{};
+
     Fd                                          total_syscalls_fd{-1};
     safety::Monotonic<size_t>                   attach_fail_cnt{0};
 
@@ -72,12 +94,8 @@ struct SyscallTpBtf::State : crucible::safety::NonMovable<SyscallTpBtf::State> {
 
     ~State() {
         for (struct bpf_link* l : links) if (l != nullptr) bpf_link__destroy(l);
-        if (timeline_base.has_value()) {
-            // §III-clean: bit_cast strips volatile + drops to void* in one
-            // well-defined runtime conversion (no const_cast needed).
-            ::munmap(std::bit_cast<void*>(timeline_base.get()),
-                     timeline_len.get());
-        }
+        // FIXY-V-236: timeline_mmap dtor handles ::munmap automatically;
+        // explicit munmap clause deleted.
         if (obj != nullptr) bpf_object__close(obj);
     }
 };
@@ -208,8 +226,9 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::crucible::effects::Init) noexce
                "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)", errno);
         return std::nullopt;
     }
-    state->timeline_len.set(mmap_len_bytes);
-    state->timeline_base.set(static_cast<volatile uint8_t*>(mmap_address));
+    // FIXY-V-236: hand the (addr, len) pair to OwnedMmap; structural
+    // RAII closure ensures ~State runs ::munmap on every exit path.
+    state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
 
     if (struct bpf_map* ts =
             bpf_object__find_map_by_name(state->obj, "total_syscalls");
@@ -247,10 +266,12 @@ uint64_t SyscallTpBtf::total_syscalls() const noexcept {
 
 safety::Borrowed<const TimelineSyscallEvent, SyscallTpBtf>
 SyscallTpBtf::timeline_view() const noexcept {
-    if (state_ == nullptr || !state_->timeline_base) {
+    if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineSyscallEvent, SyscallTpBtf>{};
     }
-    auto* base = state_->timeline_base.get();
+    // FIXY-V-236: bit_cast OwnedMmap's void* data() back to the typed
+    // volatile byte pointer the timeline-view code expects.
+    auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     // §III-clean: bit_cast strips volatile from the byte pointer (well-defined at
     // runtime; forbidden only in constant expressions), then start_lifetime_as_array
     // (P2590R2) begins implicit-lifetime TimelineSyscallEvent storage in-place.
@@ -266,8 +287,8 @@ SyscallTpBtf::timeline_view() const noexcept {
 }
 
 uint64_t SyscallTpBtf::timeline_write_index() const noexcept {
-    if (state_ == nullptr || !state_->timeline_base) return 0;
-    auto* base = state_->timeline_base.get();
+    if (state_ == nullptr || !state_->timeline_mmap) return 0;
+    auto* base = std::bit_cast<volatile uint8_t*>(state_->timeline_mmap->data());
     // §III-clean: implicit qualification add (volatile T* → const volatile T*)
     // is a permitted conversion; start_lifetime_as<TimelineHeader> begins
     // implicit-lifetime header storage at the mmap base.
