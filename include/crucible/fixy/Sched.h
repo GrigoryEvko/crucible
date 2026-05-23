@@ -280,6 +280,38 @@ mint_priority(Ctx const&) noexcept {
 // ── mint_thread_name — re-export of V-189's Init-row mint ───────────
 using ::crucible::safety::mint_thread_name;
 
+// ── apply_affinity_to_cpu — runtime, ctx-gated single-core pin (V-192) ─
+//
+// The RUNTIME sibling of mint_affinity: the CPU index is a runtime value
+// (e.g. computed from a Topology probe), so NO compile-time CpuPinned<Mask>
+// proof can be produced — it returns std::expected<void, int> instead.
+// NOT a §XXI mint (mints synthesize a compile-time-typed proof; this does
+// not).  Gated so only a bg / init context may re-pin a thread — the Fg
+// hot path (which owns no Bg/Init effect) is rejected, so a stage worker
+// can pin itself at startup but hot-path code cannot migrate mid-flight.
+// cpu < 0 is a no-op success ("no pin requested"); a cpu beyond the kernel
+// cpu_set_t capacity is EINVAL.
+template <typename Ctx>
+concept CtxFitsRuntimeAffinity =
+    ::crucible::effects::CtxOwnsAnyOf<Ctx, ::crucible::effects::Effect::Bg,
+                                            ::crucible::effects::Effect::Init>;
+
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsRuntimeAffinity<Ctx>
+[[nodiscard]] std::expected<void, int> apply_affinity_to_cpu(Ctx const&, int cpu) noexcept {
+    if (cpu < 0) return {};  // no pin requested
+    if (static_cast<unsigned>(cpu) >= static_cast<unsigned>(CPU_SETSIZE)) [[unlikely]] {
+        return std::unexpected(EINVAL);
+    }
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(static_cast<std::size_t>(cpu), &set);
+    if (::sched_setaffinity(0, sizeof(set), &set) != 0) [[unlikely]] {
+        return std::unexpected(errno);
+    }
+    return {};
+}
+
 }  // namespace crucible::fixy::sched
 
 // ═════════════════════════════════════════════════════════════════════
@@ -321,6 +353,13 @@ static_assert(std::is_same_v<
     decltype(mint_priority<5>(std::declval<eff::BgDrainCtx const&>())),
     std::expected<SchedPriority<5>, int>>);
 
+// ── apply_affinity_to_cpu gate (V-192): bg/init pin, NOT the Fg hot path ─
+static_assert( CtxFitsRuntimeAffinity<eff::BgDrainCtx>);
+static_assert( CtxFitsRuntimeAffinity<eff::ColdInitCtx>);
+static_assert(!CtxFitsRuntimeAffinity<eff::HotFgCtx>,
+    "FIXY-V-192: the Fg hot path owns no Bg/Init effect — it must not be "
+    "able to re-pin a thread.");
+
 // ── Runtime smoke: unprivileged-safe policy + nice + best-effort pin ─
 inline bool runtime_smoke_test() {
     eff::BgDrainCtx bg{};
@@ -339,6 +378,10 @@ inline bool runtime_smoke_test() {
     // and tolerate (a restricted cpuset legitimately returns EINVAL).
     auto pin = mint_affinity<AffinityMask::single(0)>(bg);
     if (pin && !pin->is_singleton_pin) return false;
+
+    // Runtime ctx-gated pin: cpu < 0 is an unconditional no-op success.
+    if (!apply_affinity_to_cpu(bg, -1)) return false;
+    (void)apply_affinity_to_cpu(bg, 0);  // cpuset-dependent — tolerate
 
     return true;
 }

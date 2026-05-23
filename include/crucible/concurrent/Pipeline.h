@@ -188,6 +188,7 @@
 #if __has_include(<pthread.h>) && __has_include(<sched.h>)
   #include <pthread.h>
   #include <sched.h>
+  #include <crucible/fixy/Sched.h>   // FIXY-V-192: ctx-gated apply_affinity_to_cpu
   #define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 1
 #else
   #define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 0
@@ -713,13 +714,17 @@ pipeline_affinity_cpus_() noexcept {
     return cpus;
 }
 
+// FIXY-V-192: route the stage-worker thread-pin through the ctx-gated
+// fixy::sched surface rather than a raw pthread_setaffinity_np.  A pipeline
+// stage worker IS a background thread, so it presents a BgDrainCtx — and
+// fixy::sched::apply_affinity_to_cpu admits only a Bg/Init context, so a
+// Fg hot-path context could never re-pin a thread mid-flight (the Scenario-3
+// invariant).  cpu < 0 is a no-op; the pin is best-effort (a restricted
+// cpuset is tolerated, exactly as before).
 inline void pin_current_pipeline_thread_(int cpu) noexcept {
 #if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY
-    if (cpu < 0) return;
-    cpu_set_t set;
-    CPU_ZERO(&set);
-    CPU_SET(static_cast<std::size_t>(cpu), &set);
-    (void)::pthread_setaffinity_np(::pthread_self(), sizeof(set), &set);
+    (void)::crucible::fixy::sched::apply_affinity_to_cpu(
+        ::crucible::effects::BgDrainCtx{}, cpu);
 #else
     (void)cpu;
 #endif

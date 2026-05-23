@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-23T17:43:21Z`.
+Snapshot generated: `2026-05-23T17:57:59Z`.
 
 ## bridges/
 
@@ -59,8 +59,8 @@ Snapshot generated: `2026-05-23T17:43:21Z`.
 |---|---|---|---|---|---|---|---|---|
 | `mint_endpoint` | `include/crucible/concurrent/Endpoint.h:592` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:195` | HS14: 18 |
 | `mint_mpmc_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:529` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:116` | HS14: 4 |
-| `mint_pipeline` | `include/crucible/concurrent/Pipeline.h:1084` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:103` | HS14: 12 |
-| `mint_pipeline_dag` | `include/crucible/concurrent/Pipeline.h:1108` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:104` | HS14: 3 |
+| `mint_pipeline` | `include/crucible/concurrent/Pipeline.h:1089` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:103` | HS14: 12 |
+| `mint_pipeline_dag` | `include/crucible/concurrent/Pipeline.h:1113` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:104` | HS14: 3 |
 | `mint_stage` | `include/crucible/concurrent/Stage.h:670` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:161` | HS14: 26 |
 | `mint_stage_from_endpoints` | `include/crucible/concurrent/StageEndpointBridge.h:510` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:115` | HS14: 7 |
 | `mint_substrate_session` | `include/crucible/concurrent/SubstrateSessionBridge.h:746` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Pipe.h:123` | HS14: 12 |

@@ -1749,6 +1749,19 @@ crucible_neg_compile_fixy_test(neg_sched_priority_out_of_range
   "constraints not satisfied|CtxFitsPriorityMint|no matching function|mint_priority")
 crucible_neg_compile_fixy_test(neg_sched_priority_non_exec_ctx
   "constraints not satisfied|IsExecCtx|no matching function|mint_priority")
+
+# ─── FIXY-V-192 apply_affinity_to_cpu neg-compiles (HS14 spirit) ───────
+#   apply_affinity_to_cpu is the runtime ctx-gated sibling of mint_affinity:
+#   it routes concurrent/Pipeline.h's pin_current_pipeline_thread_ through
+#   a typed fixy surface.  Two distinct-mismatch-class fixtures prove the
+#   CtxFitsRuntimeAffinity gate fires on the two ways a call site would
+#   silently misfire — a HotFgCtx (row-content mismatch) and a non-ExecCtx
+#   (ctx-type mismatch).
+crucible_neg_compile_fixy_test(neg_sched_affinity_runtime_hot_ctx
+  "constraints not satisfied|CtxFitsRuntimeAffinity|no matching function|apply_affinity_to_cpu")
+crucible_neg_compile_fixy_test(neg_sched_affinity_runtime_non_exec_ctx
+  "constraints not satisfied|IsExecCtx|no matching function|apply_affinity_to_cpu")
+
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_regime         "FixyNotEngaged_Regime")
 
 # FIXY-AUDIT-D2 — HS14 floor for mint_fn factory.
