@@ -51,7 +51,7 @@ template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
 
 int main() {
-    // 24-element pack: 22 distinct non-SyscallSurface-non-FpMode axes
+    // 29-element pack: 27 distinct non-SyscallSurface-non-FpMode axes
     // engaged with strict markers + a strict FpMode engagement + BOTH
     // family_file_mutation (Family.h) AND per<SyscallId::pwrite>
     // (Per.h) covering SyscallSurface twice.  The duplicate
@@ -67,6 +67,8 @@ int main() {
         strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
         strict<D::Synchronization>, strict<D::Regime>,
         strict<D::FpMode>,
+        strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>,
+        strict<D::GlobalState>, strict<D::Stdio>,
         grs::family_file_mutation        /* SyscallSurface #1 */,
         grs::per<SI::pwrite>             /* SyscallSurface #2 — duplicate */>(42);
     (void)bad;

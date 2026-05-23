@@ -41,7 +41,7 @@ static_assert(noexcept(fixy::mint_fn<int,
     strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>,
     strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>,
     strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>, strict<D::SyscallSurface>>(42)),
+    strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>(42)),
     "mint_fn<int, ...>(int) must be noexcept (int is "
     "nothrow-move-constructible).");
 
@@ -135,7 +135,7 @@ using fn_with_audit_policy = fixy::fn<int,
     strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
     strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
     strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>, strict<D::SyscallSurface>>;
+    strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>;
 
 static_assert(std::is_same_v<
     typename fn_with_audit_policy::policy_t,
@@ -242,7 +242,7 @@ int main() {
         strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>,
         strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>,
         strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>>(7);
+        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>(7);
     if (v1.value() != 7) return 1;
 
     // Stance alias smoke — fixy-A4-018 migration: stance instances

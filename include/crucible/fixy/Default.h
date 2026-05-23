@@ -42,9 +42,11 @@
 //   safety::fn::sync::Unconstrained — Synchronization (DimensionAxis::Synchronization = 20) strict default
 //   safety::fn::regime::Unconstrained — Regime (DimensionAxis::Regime = 21) strict default
 //
-// 20 of 22 axes carry a strict default at the substrate level
-// (refreshed by FIXY-U-134 to match post-A3-008 Synchronization +
-// post-A3-009 Regime extensions).  Two axes are caller-supplied:
+// 25 of 27 axes carry a strict default at the substrate level
+// (refreshed by FIXY-U-134 + FIXY-V-088/097 + FIXY-V-238 to track the
+// Synchronization / Regime / FpMode / SyscallSurface / ControlFlow /
+// CallShape / StackUse / GlobalState / Stdio extensions).  Two axes are
+// caller-supplied:
 //
 //   DimensionAxis::Type      — there is no "default function type";
 //                              every binding names its own type.
@@ -372,6 +374,45 @@ struct strict_default_for<dim::DimensionAxis::FpMode> {
 template <>
 struct strict_default_for<dim::DimensionAxis::SyscallSurface> {
     using type = safety::fn::syscall::Unconstrained;
+};
+
+// FIXY-V-238: ControlFlow / CallShape / StackUse / GlobalState / Stdio
+// (DimensionAxis 24-28, Crucible extension 2026-05-23) are WRAPPER-ONLY
+// axes — the function-behavior taxonomy (ControlFlowLattice
+// Pure ⊏ AbortOnly ⊏ ThrowOnly ⊏ MayLongjmp ⊏ MaySignal;
+// CallShapeLattice Direct ⊏ BoundedRecurses<N> ⊏ Indirect ⊏ Virtual ⊏
+// Unbounded; plus StackUse / GlobalState / Stdio chains) is held at the
+// value site by V-239/V-240/V-241's lattices + V-242's safety::* Graded
+// wrappers, NOT as an Fn<...> aggregator slot.  No Fn<int> alias to
+// round-trip against (parallel to Observability / Synchronization /
+// Regime / FpMode / SyscallSurface).  Each strict default is the
+// matching `safety::fn::<ns>::Unconstrained` — "the binding makes no
+// claim about this behavior at this scope; if any value flowing through
+// carries a wrapper, that wrapper carries the discipline."  Tier-S
+// Semiring: composition is par=join (strictest-wins) along each chain.
+template <>
+struct strict_default_for<dim::DimensionAxis::ControlFlow> {
+    using type = safety::fn::control_flow::Unconstrained;
+};
+
+template <>
+struct strict_default_for<dim::DimensionAxis::CallShape> {
+    using type = safety::fn::call_shape::Unconstrained;
+};
+
+template <>
+struct strict_default_for<dim::DimensionAxis::StackUse> {
+    using type = safety::fn::stack_use::Unconstrained;
+};
+
+template <>
+struct strict_default_for<dim::DimensionAxis::GlobalState> {
+    using type = safety::fn::global_state::Unconstrained;
+};
+
+template <>
+struct strict_default_for<dim::DimensionAxis::Stdio> {
+    using type = safety::fn::stdio::Unconstrained;
 };
 
 // ─── has_strict_default — predicate concept ────────────────────────

@@ -41,7 +41,7 @@ int main() {
         strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
         strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
         strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>>(42);
+        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>>(42);
     (void)bad;
     return 0;
 }

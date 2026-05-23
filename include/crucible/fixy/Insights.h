@@ -400,6 +400,83 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>",
     "fixy::fn<T, /* no SyscallSurface grant */, ...>");
 
+// FIXY-V-238: ControlFlow / CallShape / StackUse / GlobalState / Stdio
+// axes added 2026-05-23.  Each strict default is the matching
+// safety::fn::<ns>::Unconstrained — bindings make no claim about that
+// behavior at this scope, deferring to V-242's value wrapper if one is
+// present.  Missing engagement disables the §6.8 C001 / D001 / D002 /
+// G001 / L006 / P003 / S001 / S004 collision family (V-243) once it
+// wires up — those rules dispatch on the respective behavior grade.
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_ControlFlow,
+    ::crucible::safety::diag::Severity::Error,
+    "ControlFlow engages the control-flow taxonomy (Pure ⊏ AbortOnly ⊏ "
+    "ThrowOnly ⊏ MayLongjmp ⊏ MaySignal — the 5-tier chain V-239 ships "
+    "in algebra/lattices/ControlFlowLattice.h).  Strict default is "
+    "control_flow::Unconstrained (the binding defers to the value "
+    "wrapper that V-242 will ship).  Missing engagement defeats the "
+    "permission_fork no-throw requirement (C001) and Forge hot-path "
+    "control-flow admission (already enforced structurally by V-087 for "
+    "grant::ctrl::throws; ControlFlow makes it a first-class axis).",
+    "Grants pack omits grant::ctrl::* AND omits "
+    "accept_default_strict_for<ControlFlow>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::ControlFlow>",
+    "fixy::fn<T, /* no ControlFlow grant */, ...>");
+
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_CallShape,
+    ::crucible::safety::diag::Severity::Error,
+    "CallShape engages the call-shape taxonomy (Direct ⊏ "
+    "BoundedRecurses<N> ⊏ Indirect ⊏ Virtual ⊏ Unbounded — the 5-tier "
+    "chain V-240 ships in algebra/lattices/CallShapeLattice.h).  Strict "
+    "default is call_shape::Unconstrained.  Missing engagement defeats "
+    "bounded-stack admission (D001) and devirtualization gating (D002) "
+    "which V-243 will ship — those rules dispatch on the CallShape grade.",
+    "Grants pack omits grant::dispatch::* AND omits "
+    "accept_default_strict_for<CallShape>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::CallShape>",
+    "fixy::fn<T, /* no CallShape grant */, ...>");
+
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_StackUse,
+    ::crucible::safety::diag::Severity::Error,
+    "StackUse engages the stack-frame depth discipline (bounded vs "
+    "unbounded stack growth — the chain V-241 ships in "
+    "algebra/lattices/StackUseLattice.h).  Strict default is "
+    "stack_use::Unconstrained.  Missing engagement defeats the §6.8 "
+    "G001 / S001 stack-bound collision rules which V-243 will ship.",
+    "Grants pack omits grant::stack::* AND omits "
+    "accept_default_strict_for<StackUse>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::StackUse>",
+    "fixy::fn<T, /* no StackUse grant */, ...>");
+
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_GlobalState,
+    ::crucible::safety::diag::Severity::Error,
+    "GlobalState engages the global-state surface (none / readonly / "
+    "thread-local / mutable-global — the chain V-241 ships in "
+    "algebra/lattices/GlobalStateLattice.h).  Strict default is "
+    "global_state::Unconstrained.  Missing engagement defeats the §6.8 "
+    "L006 / S004 Meyers-singleton init-cycle detection (V-248) which "
+    "V-243 will ship — those rules dispatch on the GlobalState grade.",
+    "Grants pack omits grant::global::* AND omits "
+    "accept_default_strict_for<GlobalState>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::GlobalState>",
+    "fixy::fn<T, /* no GlobalState grant */, ...>");
+
+CRUCIBLE_DEFINE_INSIGHTS_QV(
+    ::crucible::fixy::diag::FixyNotEngaged_Stdio,
+    ::crucible::safety::diag::Severity::Error,
+    "Stdio engages the C stdio surface (none / reads / writes — the "
+    "chain V-241 ships in algebra/lattices/StdioLattice.h).  Strict "
+    "default is stdio::Unconstrained.  Missing engagement defeats the "
+    "§6.8 P003 stdio-IO collision rule which V-243 will ship — that "
+    "rule dispatches on the Stdio grade.",
+    "Grants pack omits grant::stdio::* AND omits "
+    "accept_default_strict_for<Stdio>.",
+    "grant::accept_default_strict_for<dim::DimensionAxis::Stdio>",
+    "fixy::fn<T, /* no Stdio grant */, ...>");
+
 // ═══════════════════════════════════════════════════════════════════
 // ── 4 §30.14 corpus entry specializations ─────────────────────────
 // ═══════════════════════════════════════════════════════════════════

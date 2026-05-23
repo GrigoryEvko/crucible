@@ -354,6 +354,39 @@ namespace syscall {
     struct Unconstrained {};   // default — no syscall-surface wrapper claim at binding scope
 }
 
+// ── Dims 24-28 ControlFlow / CallShape / StackUse / GlobalState /
+//    Stdio (Tier-S, FIXY-V-238, 2026-05-23) ───────────────────────────
+//
+// Five wrapper-only axes sharing the Synchronization / Regime / FpMode /
+// SyscallSurface pattern (dims 20-23): NO Fn<...> aggregator slot — the
+// discipline lives at the VALUE site (V-239/240/241 ship the lattices,
+// V-242 the safety::* Graded wrappers, V-244/245/246 the grant tags).
+// Each namespace exists solely so fixy/Default.h can give the axis a
+// `type` alias satisfying the `every_axis_resolves` reflection-driven
+// coverage check.  `Unconstrained` IS the strict default — the binding
+// makes no claim; the wrapper, if any, lives on the value itself.
+//
+//   ControlFlow  — Pure / AbortOnly / ThrowOnly / MayLongjmp / MaySignal
+//   CallShape    — Direct / BoundedRecurses / Indirect / Virtual / Unbounded
+//   StackUse     — bounded stack-frame depth discipline
+//   GlobalState  — none / readonly / thread-local / mutable-global
+//   Stdio        — none / reads / writes on the C stdio surface
+namespace control_flow {
+    struct Unconstrained {};   // default — no control-flow wrapper claim at binding scope
+}
+namespace call_shape {
+    struct Unconstrained {};   // default — no call-shape wrapper claim at binding scope
+}
+namespace stack_use {
+    struct Unconstrained {};   // default — no stack-use wrapper claim at binding scope
+}
+namespace global_state {
+    struct Unconstrained {};   // default — no global-state wrapper claim at binding scope
+}
+namespace stdio {
+    struct Unconstrained {};   // default — no stdio wrapper claim at binding scope
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── ValidComposition concept gate (Phase 0 P0-2) ───────────────────
 // ═════════════════════════════════════════════════════════════════════

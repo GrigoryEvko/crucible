@@ -79,6 +79,13 @@ static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_Version>);
 static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_Staleness>);
 static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_Synchronization>);
 static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_Regime>);
+static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_FpMode>);
+static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_SyscallSurface>);
+static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_ControlFlow>);
+static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_CallShape>);
+static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_StackUse>);
+static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_GlobalState>);
+static_assert(fd::is_fixy_diag_v<fd::FixyNotEngaged_Stdio>);
 
 // ─── 3. is_fixy_diag_v rejects non-catalog types ──────────────────
 

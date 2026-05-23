@@ -135,7 +135,7 @@ namespace crucible::safety {
 // ═════════════════════════════════════════════════════════════════════
 
 enum class TierKind : std::uint8_t {
-    Semiring     = 0,  // Tier S — par=+, seq=*, 0 annihilator (15 dims)
+    Semiring     = 0,  // Tier S — par=+, seq=*, 0 annihilator (24 dims)
     Lattice      = 1,  // Tier L — par=join, seq=meet, valid_D check (1 dim)
     Typestate    = 2,  // Tier T — transitions on state; no par/seq (1 dim)
     Foundational = 3,  // Tier F — bidirectional elaboration (2 dims)
@@ -254,6 +254,29 @@ enum class DimensionAxis : std::uint8_t {
     // site + Forge phase E gating, parallel to Synchronization / Regime
     // / FpMode).
     SyscallSurface  = 23, // S  (Crucible extension, 2026-05-22)
+    // ControlFlow / CallShape / StackUse / GlobalState / Stdio
+    // (FIXY-V-238) — added 2026-05-23 to host the function-behavior
+    // taxonomy that V-239/V-240/V-241 will populate (ControlFlowLattice
+    // Pure ⊏ AbortOnly ⊏ ThrowOnly ⊏ MayLongjmp ⊏ MaySignal;
+    // CallShapeLattice Direct ⊏ BoundedRecurses<N> ⊏ Indirect ⊏ Virtual
+    // ⊏ Unbounded; plus StackUse / GlobalState / Stdio chains).  These
+    // were previously implicit: control-flow escapes folded into the
+    // Effect row (`Block`), call shape was invisible, stack/global/stdio
+    // surfaces had no axis at all — too coarse to drive (a) permission_
+    // fork's no-throw requirement (V-087 already rejects grant::ctrl::
+    // throws structurally; ControlFlow makes it an axis), (b) Forge
+    // hot-path admission gates on bounded call shape, (c) the §6.8
+    // C001/D001/D002/G001/L006/P003/S001/S004 collision family (V-243),
+    // and (d) Meyers-singleton init-cycle detection (V-248).  All five
+    // are Tier-S with par=join (strictest-wins) along their chains; no
+    // Fn<> aggregator slot (compose via wrapper-nesting at the value
+    // site + grant engagement, parallel to Synchronization / Regime /
+    // FpMode / SyscallSurface).
+    ControlFlow     = 24, // S  (Crucible extension, 2026-05-23)
+    CallShape       = 25, // S  (Crucible extension, 2026-05-23)
+    StackUse        = 26, // S  (Crucible extension, 2026-05-23)
+    GlobalState     = 27, // S  (Crucible extension, 2026-05-23)
+    Stdio           = 28, // S  (Crucible extension, 2026-05-23)
 };
 
 inline constexpr std::size_t DIMENSION_AXIS_COUNT =
@@ -285,6 +308,11 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::Regime:         return "Regime";
         case DimensionAxis::FpMode:         return "FpMode";
         case DimensionAxis::SyscallSurface: return "SyscallSurface";
+        case DimensionAxis::ControlFlow:    return "ControlFlow";
+        case DimensionAxis::CallShape:      return "CallShape";
+        case DimensionAxis::StackUse:       return "StackUse";
+        case DimensionAxis::GlobalState:    return "GlobalState";
+        case DimensionAxis::Stdio:          return "Stdio";
         default:                            return std::string_view{"<unknown DimensionAxis>"};
     }
 }
@@ -329,6 +357,11 @@ inline constexpr std::size_t DIMENSION_AXIS_COUNT =
         case DimensionAxis::Regime:
         case DimensionAxis::FpMode:
         case DimensionAxis::SyscallSurface:
+        case DimensionAxis::ControlFlow:
+        case DimensionAxis::CallShape:
+        case DimensionAxis::StackUse:
+        case DimensionAxis::GlobalState:
+        case DimensionAxis::Stdio:
             return TierKind::Semiring;
 
         default:
@@ -679,16 +712,18 @@ namespace detail::dimension_traits_self_test {
 static_assert(TIER_KIND_COUNT == 5,
     "TierKind catalog diverged from fixy.md §24.1 Tier S/L/T/F/V (5); "
     "if intentional, update fixy.md and this constant together.");
-static_assert(DIMENSION_AXIS_COUNT == 24,
-    "DimensionAxis catalog diverged from fixy.md §24.1 (24 dims: FX's "
+static_assert(DIMENSION_AXIS_COUNT == 29,
+    "DimensionAxis catalog diverged from fixy.md §24.1 (29 dims: FX's "
     "22 minus dim 12 Clock Domain and dim 17 FP Order, plus the Crucible "
     "Synchronization extension added 2026-05-18 for Wait + MemOrder, plus "
     "the Crucible Regime extension added 2026-05-18 for HotPath, plus "
     "the Crucible FpMode extension added 2026-05-22 for the 11-sub-axis "
     "FP-mode taxonomy per FIXY-V-088, plus the Crucible SyscallSurface "
     "extension added 2026-05-22 for the syscall-family taxonomy per "
-    "FIXY-V-097); if intentional, update fixy.md §24.1 + §24.14 + §24.15 "
-    "+ §24.16 + §24.17 and this constant.");
+    "FIXY-V-097, plus the five Crucible function-behavior extensions added "
+    "2026-05-23 (ControlFlow / CallShape / StackUse / GlobalState / Stdio) "
+    "per FIXY-V-238); if intentional, update fixy.md §24.1 + §24.14 + "
+    "§24.15 + §24.16 + §24.17 + §24.18 and this constant.");
 
 // ── Reflection-driven name coverage (TierKind) ─────────────────────
 [[nodiscard]] consteval bool every_tier_kind_has_name() noexcept {
@@ -763,11 +798,13 @@ static_assert(every_dimension_axis_has_tier(),
     return n;
 }
 
-static_assert(count_dims_in_tier(TierKind::Semiring)     == 19,
-    "fixy.md §24.1 declares 19 Tier-S dimensions (15 FX-inherited + "
+static_assert(count_dims_in_tier(TierKind::Semiring)     == 24,
+    "fixy.md §24.1 declares 24 Tier-S dimensions (15 FX-inherited + "
     "Synchronization 2026-05-18 per fixy-A3-008 + Regime 2026-05-18 per "
     "fixy-A3-009 + FpMode 2026-05-22 per FIXY-V-088 + SyscallSurface "
-    "2026-05-22 per FIXY-V-097); tier_of_axis disagrees.");
+    "2026-05-22 per FIXY-V-097 + ControlFlow / CallShape / StackUse / "
+    "GlobalState / Stdio 2026-05-23 per FIXY-V-238); tier_of_axis "
+    "disagrees.");
 static_assert(count_dims_in_tier(TierKind::Lattice)      == 1,
     "fixy.md §24.1 declares 1 Tier-L dimension (Representation); "
     "tier_of_axis disagrees.");
@@ -891,6 +928,11 @@ static_assert(dimension_axis_name(DimensionAxis::Synchronization) == "Synchroniz
 static_assert(dimension_axis_name(DimensionAxis::Regime)         == "Regime");
 static_assert(dimension_axis_name(DimensionAxis::FpMode)         == "FpMode");
 static_assert(dimension_axis_name(DimensionAxis::SyscallSurface) == "SyscallSurface");
+static_assert(dimension_axis_name(DimensionAxis::ControlFlow)    == "ControlFlow");
+static_assert(dimension_axis_name(DimensionAxis::CallShape)      == "CallShape");
+static_assert(dimension_axis_name(DimensionAxis::StackUse)       == "StackUse");
+static_assert(dimension_axis_name(DimensionAxis::GlobalState)    == "GlobalState");
+static_assert(dimension_axis_name(DimensionAxis::Stdio)          == "Stdio");
 
 // fixy.md §24.1 axis-to-Tier mapping spot checks.
 static_assert(tier_of_axis(DimensionAxis::Type)           == TierKind::Foundational);
@@ -905,6 +947,11 @@ static_assert(tier_of_axis(DimensionAxis::Synchronization) == TierKind::Semiring
 static_assert(tier_of_axis(DimensionAxis::Regime)         == TierKind::Semiring);
 static_assert(tier_of_axis(DimensionAxis::FpMode)         == TierKind::Semiring);
 static_assert(tier_of_axis(DimensionAxis::SyscallSurface) == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::ControlFlow)    == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::CallShape)      == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::StackUse)       == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::GlobalState)    == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::Stdio)          == TierKind::Semiring);
 
 // Variable-template form mirrors the function form.
 static_assert(tier_of_axis_v<DimensionAxis::Type>     == TierKind::Foundational);

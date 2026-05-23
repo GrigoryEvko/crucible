@@ -114,7 +114,7 @@ namespace diag {
             "Dimension '" #AxisName "' (" AxisDesc ") has no engagement marker "    \
             "or relaxation tag in the binding's Grants pack.  Per misc/"            \
             "16_05_2026_fixy.md §3, every fixy:: binding MUST engage with every "   \
-            "one of the 22 dimensions either via an explicit relaxation tag or "    \
+            "one of the 29 dimensions either via an explicit relaxation tag or "    \
             "via `grant::accept_default_strict_for<dim::DimensionAxis::"            \
             #AxisName ">`.";                                                        \
         static constexpr ::std::string_view remediation =                           \
@@ -160,6 +160,18 @@ CRUCIBLE_FIXY_NOT_ENGAGED_TAG(SyscallSurface,
     "syscall-family taxonomy (NoSyscall / VdsoOnly / ReadOnlyState / "
     "FileMutation / MemoryMapping / ThreadSync / NetworkIo / "
     "ProcessControl / Privilege) — Forge phase E hot-path admission");
+CRUCIBLE_FIXY_NOT_ENGAGED_TAG(ControlFlow,
+    "control-flow taxonomy (Pure / AbortOnly / ThrowOnly / MayLongjmp / "
+    "MaySignal) — permission_fork no-throw + Forge hot-path admission");
+CRUCIBLE_FIXY_NOT_ENGAGED_TAG(CallShape,
+    "call-shape taxonomy (Direct / BoundedRecurses<N> / Indirect / "
+    "Virtual / Unbounded) — bounded-stack + devirtualization gating");
+CRUCIBLE_FIXY_NOT_ENGAGED_TAG(StackUse,
+    "stack-frame depth discipline (bounded vs unbounded stack growth)");
+CRUCIBLE_FIXY_NOT_ENGAGED_TAG(GlobalState,
+    "global-state surface (none / readonly / thread-local / mutable-global)");
+CRUCIBLE_FIXY_NOT_ENGAGED_TAG(Stdio,
+    "C stdio surface (none / reads / writes) — Meyers-singleton + I/O gating");
 
 #undef CRUCIBLE_FIXY_NOT_ENGAGED_TAG
 
@@ -228,6 +240,18 @@ CRUCIBLE_FIXY_DUPLICATE_TAG(SyscallSurface,
     "syscall-family taxonomy (NoSyscall / VdsoOnly / ReadOnlyState / "
     "FileMutation / MemoryMapping / ThreadSync / NetworkIo / "
     "ProcessControl / Privilege) — Forge phase E hot-path admission");
+CRUCIBLE_FIXY_DUPLICATE_TAG(ControlFlow,
+    "control-flow taxonomy (Pure / AbortOnly / ThrowOnly / MayLongjmp / "
+    "MaySignal) — permission_fork no-throw + Forge hot-path admission");
+CRUCIBLE_FIXY_DUPLICATE_TAG(CallShape,
+    "call-shape taxonomy (Direct / BoundedRecurses<N> / Indirect / "
+    "Virtual / Unbounded) — bounded-stack + devirtualization gating");
+CRUCIBLE_FIXY_DUPLICATE_TAG(StackUse,
+    "stack-frame depth discipline (bounded vs unbounded stack growth)");
+CRUCIBLE_FIXY_DUPLICATE_TAG(GlobalState,
+    "global-state surface (none / readonly / thread-local / mutable-global)");
+CRUCIBLE_FIXY_DUPLICATE_TAG(Stdio,
+    "C stdio surface (none / reads / writes) — Meyers-singleton + I/O gating");
 
 #undef CRUCIBLE_FIXY_DUPLICATE_TAG
 
@@ -294,6 +318,11 @@ template <> struct tag_for_axis<dim::DimensionAxis::Synchronization> { using typ
 template <> struct tag_for_axis<dim::DimensionAxis::Regime>         { using type = FixyNotEngaged_Regime; };
 template <> struct tag_for_axis<dim::DimensionAxis::FpMode>         { using type = FixyNotEngaged_FpMode; };
 template <> struct tag_for_axis<dim::DimensionAxis::SyscallSurface> { using type = FixyNotEngaged_SyscallSurface; };
+template <> struct tag_for_axis<dim::DimensionAxis::ControlFlow>    { using type = FixyNotEngaged_ControlFlow; };
+template <> struct tag_for_axis<dim::DimensionAxis::CallShape>      { using type = FixyNotEngaged_CallShape; };
+template <> struct tag_for_axis<dim::DimensionAxis::StackUse>       { using type = FixyNotEngaged_StackUse; };
+template <> struct tag_for_axis<dim::DimensionAxis::GlobalState>    { using type = FixyNotEngaged_GlobalState; };
+template <> struct tag_for_axis<dim::DimensionAxis::Stdio>          { using type = FixyNotEngaged_Stdio; };
 
 template <dim::DimensionAxis D>
 using tag_for_axis_t = typename tag_for_axis<D>::type;
@@ -332,6 +361,11 @@ template <> struct dup_tag_for_axis<dim::DimensionAxis::Synchronization> { using
 template <> struct dup_tag_for_axis<dim::DimensionAxis::Regime>         { using type = FixyDuplicate_Regime; };
 template <> struct dup_tag_for_axis<dim::DimensionAxis::FpMode>         { using type = FixyDuplicate_FpMode; };
 template <> struct dup_tag_for_axis<dim::DimensionAxis::SyscallSurface> { using type = FixyDuplicate_SyscallSurface; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::ControlFlow>    { using type = FixyDuplicate_ControlFlow; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::CallShape>      { using type = FixyDuplicate_CallShape; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::StackUse>       { using type = FixyDuplicate_StackUse; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::GlobalState>    { using type = FixyDuplicate_GlobalState; };
+template <> struct dup_tag_for_axis<dim::DimensionAxis::Stdio>          { using type = FixyDuplicate_Stdio; };
 
 template <dim::DimensionAxis D>
 using dup_tag_for_axis_t = typename dup_tag_for_axis<D>::type;
@@ -396,7 +430,12 @@ using FixyCatalog = ::std::tuple<
     FixyNotEngaged_Synchronization, // 20  (fixy-A3-008, 2026-05-18)
     FixyNotEngaged_Regime,          // 21  (fixy-A3-009, 2026-05-18)
     FixyNotEngaged_FpMode,          // 22  (FIXY-V-088, 2026-05-22)
-    FixyNotEngaged_SyscallSurface   // 23  (FIXY-V-097, 2026-05-22)
+    FixyNotEngaged_SyscallSurface,  // 23  (FIXY-V-097, 2026-05-22)
+    FixyNotEngaged_ControlFlow,     // 24  (FIXY-V-238, 2026-05-23)
+    FixyNotEngaged_CallShape,       // 25  (FIXY-V-238, 2026-05-23)
+    FixyNotEngaged_StackUse,        // 26  (FIXY-V-238, 2026-05-23)
+    FixyNotEngaged_GlobalState,     // 27  (FIXY-V-238, 2026-05-23)
+    FixyNotEngaged_Stdio            // 28  (FIXY-V-238, 2026-05-23)
 >;
 
 inline constexpr ::std::size_t fixy_catalog_size =
@@ -459,6 +498,11 @@ template <> struct axis_for_tag<FixyNotEngaged_Synchronization> { static constex
 template <> struct axis_for_tag<FixyNotEngaged_Regime>         { static constexpr auto value = dim::DimensionAxis::Regime; };
 template <> struct axis_for_tag<FixyNotEngaged_FpMode>         { static constexpr auto value = dim::DimensionAxis::FpMode; };
 template <> struct axis_for_tag<FixyNotEngaged_SyscallSurface> { static constexpr auto value = dim::DimensionAxis::SyscallSurface; };
+template <> struct axis_for_tag<FixyNotEngaged_ControlFlow>    { static constexpr auto value = dim::DimensionAxis::ControlFlow; };
+template <> struct axis_for_tag<FixyNotEngaged_CallShape>      { static constexpr auto value = dim::DimensionAxis::CallShape; };
+template <> struct axis_for_tag<FixyNotEngaged_StackUse>       { static constexpr auto value = dim::DimensionAxis::StackUse; };
+template <> struct axis_for_tag<FixyNotEngaged_GlobalState>    { static constexpr auto value = dim::DimensionAxis::GlobalState; };
+template <> struct axis_for_tag<FixyNotEngaged_Stdio>          { static constexpr auto value = dim::DimensionAxis::Stdio; };
 
 template <typename Tag>
 inline constexpr dim::DimensionAxis axis_for_tag_v = axis_for_tag<Tag>::value;
@@ -1236,7 +1280,7 @@ using S = ::crucible::fixy::grant::accept_default_strict_for<A>;
 
 using D = dim::DimensionAxis;
 
-// Engage all 23 axes EXCEPT Observability.  Type axis is implicitly
+// Engage all 28 axes EXCEPT Observability.  Type axis is implicitly
 // engaged through fixy::fn<T, ...>; we still pass strict<Type> here
 // because this witness exercises engagement::first_missing_axis<>
 // directly (not through fn<>), which treats every axis uniformly.
@@ -1250,7 +1294,8 @@ inline constexpr bool observability_diagnostic_is_alive_v =
         S<D::Overflow>, S<D::Mutation>, S<D::Reentrancy>,
         S<D::Size>, S<D::Version>, S<D::Staleness>,
         S<D::Synchronization>, S<D::Regime>, S<D::FpMode>,
-        S<D::SyscallSurface>>()
+        S<D::SyscallSurface>, S<D::ControlFlow>, S<D::CallShape>,
+        S<D::StackUse>, S<D::GlobalState>, S<D::Stdio>>()
     == D::Observability;
 
 // Companion: the inverse witness — engaging every axis (including
@@ -1268,7 +1313,8 @@ inline constexpr bool every_axis_pack_engages_observability_v =
         S<D::Overflow>, S<D::Mutation>, S<D::Reentrancy>,
         S<D::Size>, S<D::Version>, S<D::Staleness>,
         S<D::Synchronization>, S<D::Regime>, S<D::FpMode>,
-        S<D::SyscallSurface>>().has_value();
+        S<D::SyscallSurface>, S<D::ControlFlow>, S<D::CallShape>,
+        S<D::StackUse>, S<D::GlobalState>, S<D::Stdio>>().has_value();
 
 }  // namespace detail::observability_witness
 
@@ -1561,7 +1607,8 @@ namespace detail::reject_self_test {
 template <dim::DimensionAxis D>
 using strict = grant::accept_default_strict_for<D>;
 
-// All 24 axes accepted-strict (post-V-097 SyscallSurface addition).
+// All 29 axes accepted-strict (post-V-238 ControlFlow / CallShape /
+// StackUse / GlobalState / Stdio addition).
 using AllStrictPack = std::tuple<
     strict<dim::DimensionAxis::Type>,
     strict<dim::DimensionAxis::Refinement>,
@@ -1586,7 +1633,12 @@ using AllStrictPack = std::tuple<
     strict<dim::DimensionAxis::Synchronization>,
     strict<dim::DimensionAxis::Regime>,
     strict<dim::DimensionAxis::FpMode>,
-    strict<dim::DimensionAxis::SyscallSurface>>;
+    strict<dim::DimensionAxis::SyscallSurface>,
+    strict<dim::DimensionAxis::ControlFlow>,
+    strict<dim::DimensionAxis::CallShape>,
+    strict<dim::DimensionAxis::StackUse>,
+    strict<dim::DimensionAxis::GlobalState>,
+    strict<dim::DimensionAxis::Stdio>>;
 
 // Apply Grants pack from a tuple to a template — helper.
 template <template <typename...> class Tmpl, typename Tuple>
@@ -1671,7 +1723,12 @@ using CopyForUsagePack = std::tuple<
     strict<dim::DimensionAxis::Synchronization>,
     strict<dim::DimensionAxis::Regime>,
     strict<dim::DimensionAxis::FpMode>,
-    strict<dim::DimensionAxis::SyscallSurface>>;
+    strict<dim::DimensionAxis::SyscallSurface>,
+    strict<dim::DimensionAxis::ControlFlow>,
+    strict<dim::DimensionAxis::CallShape>,
+    strict<dim::DimensionAxis::StackUse>,
+    strict<dim::DimensionAxis::GlobalState>,
+    strict<dim::DimensionAxis::Stdio>>;
 
 static_assert(accepts_pack_v<int, CopyForUsagePack>,
     "Replacing accept-strict<Usage> with `grant::copy` must still "
@@ -1703,7 +1760,12 @@ using MinusEffectPack = std::tuple<
     strict<dim::DimensionAxis::Synchronization>,
     strict<dim::DimensionAxis::Regime>,
     strict<dim::DimensionAxis::FpMode>,
-    strict<dim::DimensionAxis::SyscallSurface>>;
+    strict<dim::DimensionAxis::SyscallSurface>,
+    strict<dim::DimensionAxis::ControlFlow>,
+    strict<dim::DimensionAxis::CallShape>,
+    strict<dim::DimensionAxis::StackUse>,
+    strict<dim::DimensionAxis::GlobalState>,
+    strict<dim::DimensionAxis::Stdio>>;
 
 static_assert(!accepts_pack_v<int, MinusEffectPack>,
     "Removing accept-strict<Effect> without replacement must reject.");
@@ -1748,7 +1810,12 @@ using MinusRefinementPack = std::tuple<
     strict<dim::DimensionAxis::Synchronization>,
     strict<dim::DimensionAxis::Regime>,
     strict<dim::DimensionAxis::FpMode>,
-    strict<dim::DimensionAxis::SyscallSurface>>;
+    strict<dim::DimensionAxis::SyscallSurface>,
+    strict<dim::DimensionAxis::ControlFlow>,
+    strict<dim::DimensionAxis::CallShape>,
+    strict<dim::DimensionAxis::StackUse>,
+    strict<dim::DimensionAxis::GlobalState>,
+    strict<dim::DimensionAxis::Stdio>>;
 
 inline constexpr std::optional<dim::DimensionAxis>
 first_missing_for_minus_refinement = []() consteval {
@@ -1761,11 +1828,12 @@ static_assert(first_missing_for_minus_refinement == dim::DimensionAxis::Refineme
     "first_missing_axis_v points at Refinement when only that axis "
     "is omitted from an otherwise full strict pack.");
 
-// fixy-H-08 sentinel: a fully engaged 24-axis pack yields `nullopt`
+// fixy-H-08 sentinel: a fully engaged 29-axis pack yields `nullopt`
 // — proves the type-system leak (0xFF cast to DimensionAxis) is
 // eliminated.  Reuses MinusRefinementPack minus its omission by
-// re-adding the Refinement strict marker inline.  Post-V-097 the
-// pack extends to 24 entries with the SyscallSurface addition.
+// re-adding the Refinement strict marker inline.  Post-V-238 the
+// pack extends to 29 entries with the 5 hazard axes (ControlFlow,
+// CallShape, StackUse, GlobalState, Stdio).
 
 using AllAxesStrictPack = std::tuple<
     strict<dim::DimensionAxis::Type>,
@@ -1791,7 +1859,12 @@ using AllAxesStrictPack = std::tuple<
     strict<dim::DimensionAxis::Synchronization>,
     strict<dim::DimensionAxis::Regime>,
     strict<dim::DimensionAxis::FpMode>,
-    strict<dim::DimensionAxis::SyscallSurface>>;
+    strict<dim::DimensionAxis::SyscallSurface>,
+    strict<dim::DimensionAxis::ControlFlow>,
+    strict<dim::DimensionAxis::CallShape>,
+    strict<dim::DimensionAxis::StackUse>,
+    strict<dim::DimensionAxis::GlobalState>,
+    strict<dim::DimensionAxis::Stdio>>;
 
 inline constexpr std::optional<dim::DimensionAxis>
 first_missing_for_full_strict_pack = []() consteval {
