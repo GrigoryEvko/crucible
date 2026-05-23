@@ -147,6 +147,15 @@ while IFS=: read -r file line text; do
             # hierarchy or introduce new structural-validation concepts.
             continue
             ;;
+        include/crucible/fixy/Async.h)
+            # V-270 Synchronization axis-specialized catalog (3 grant::async::*
+            # families: copy<Stages,Scope,Bytes>/mbarrier_arrive<Scope>/
+            # mbarrier_wait<Scope> routing onto DimensionAxis::Synchronization,
+            # plus the accept_default_strict_for_Synchronization named alias).
+            # Specializes which_dim<> only; does NOT extend grant_base hierarchy
+            # or introduce new structural-validation concepts.
+            continue
+            ;;
         include/crucible/fixy/Vendor.h)
             # V-258 HwInstruction axis-specialized catalog (grant::vendor::
             # intrinsic<V, I> over the IsaTag per-vendor ISA-family enum,

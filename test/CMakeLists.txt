@@ -301,6 +301,7 @@ crucible_test(test_fixy_v_252_barrier_strength)         # FIXY-V-252 BarrierStre
 crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScopeLattice — non-distributive accel×ARM visibility-scope partial order (WMEM keystone)
 crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/ScopedFence.h — partial-order provider Graded carrier for MemoryScope axis + IsScopedFence + row_hash
 crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
+crucible_test(test_fixy_v_270_async)                    # FIXY-V-270 fixy/Async.h — grant::async::{copy,mbarrier_arrive,mbarrier_wait} → Synchronization + 3 §XXI mints (accel-scope gated)
 crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
@@ -1739,6 +1740,26 @@ crucible_neg_compile_fixy_test(neg_fixy_scope_bottom
     "constraints not satisfied|CtxFitsScopedFenceMint")
 crucible_neg_compile_fixy_test(neg_fixy_scope_cross_trunk
     "constraints not satisfied|CtxFitsScopedFenceMint")
+
+# FIXY-V-270 — HS14 floor for the fixy/Async.h grant mints (3 mints × 2
+# fixtures).  Each mint's distinct rejection classes:
+#   mint_async_copy      : ARM-trunk scope (accel clause) + Stages==0
+#   mint_mbarrier_arrive : ARM-trunk scope + System (⊤) sentinel scope
+#   mint_mbarrier_wait   : ARM-trunk scope + non-ExecCtx argument
+# All gate via async_scope_realizable (mem_scope_is_accel, V-265) — async
+# copy / mbarrier are GPU-only, so any non-accel scope is rejected.
+crucible_neg_compile_fixy_test(neg_fixy_v_270_async_copy_arm_scope
+    "constraints not satisfied|CtxFitsAsyncCopyMint")
+crucible_neg_compile_fixy_test(neg_fixy_v_270_async_copy_zero_stages
+    "constraints not satisfied|CtxFitsAsyncCopyMint")
+crucible_neg_compile_fixy_test(neg_fixy_v_270_mbarrier_arrive_arm_scope
+    "constraints not satisfied|CtxFitsMbarrierMint")
+crucible_neg_compile_fixy_test(neg_fixy_v_270_mbarrier_arrive_system_scope
+    "constraints not satisfied|CtxFitsMbarrierMint")
+crucible_neg_compile_fixy_test(neg_fixy_v_270_mbarrier_wait_arm_scope
+    "constraints not satisfied|CtxFitsMbarrierMint")
+crucible_neg_compile_fixy_test(neg_fixy_v_270_mbarrier_wait_non_ctx
+    "constraints not satisfied|IsExecCtx|CtxFitsMbarrierMint")
 
 # FIXY-V-092 — HS14 floor for FpMode grant tags.  Two fixtures cover
 # orthogonal rejection classes that are FpMode-specific:
