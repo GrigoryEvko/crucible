@@ -784,6 +784,46 @@ using ::crucible::fixy::cipher::pack;
 
 }  // namespace crucible::fixy::wrap::cipher
 
+// ── FIXY-V-228 — fixy/CipherDurable.h umbrella re-export ─────────────
+//
+// Three §XXI ctx-bound mint factories that synthesize phantom-typed
+// `CipherDurableHandle<Stance>` instances corresponding to the V-227
+// composite stances.  Re-exposed at fixy::wrap::cipher::durable:: so
+// callers reach the §XXI mints (`mint_warm_writer` / `mint_cold_writer`
+// / `mint_head_advancer`), the inherent handle type itself
+// (`CipherDurableHandle`), and the three concept gates
+// (`CtxFitsWarmWriterMint` / `CtxFitsColdWriterMint` /
+// `CtxFitsHeadAdvancerMint`) through one short path.
+
+#include <crucible/fixy/CipherDurable.h>    // FIXY-V-228 substrate
+
+namespace crucible::fixy::wrap::cipher::durable {
+
+// Stance tag types — pinned-enumerator phantom records.
+using ::crucible::fixy::cipher::durable::warm_writer_stance;
+using ::crucible::fixy::cipher::durable::cold_writer_stance;
+using ::crucible::fixy::cipher::durable::head_advance_stance;
+
+// CipherDurableHandle<Stance> — phantom-typed move-only RAII wrapper
+// over `safety::FileHandle`.
+using ::crucible::fixy::cipher::durable::CipherDurableHandle;
+
+// Ctx-bound mint concept gates — single-clause `requires` for the
+// §XXI factories.  Each folds CtxAdmitsIoBlock + three extras-do-not-
+// engage-stance-pinned-axis predicates.
+using ::crucible::fixy::cipher::durable::CtxFitsWarmWriterMint;
+using ::crucible::fixy::cipher::durable::CtxFitsColdWriterMint;
+using ::crucible::fixy::cipher::durable::CtxFitsHeadAdvancerMint;
+
+// §XXI mint factories — `[[nodiscard]] noexcept` (drop `constexpr`
+// per the syscall carve-out).  Each returns
+// `expected<Linear<CipherDurableHandle<Stance>>, error_code>`.
+using ::crucible::fixy::cipher::durable::mint_warm_writer;
+using ::crucible::fixy::cipher::durable::mint_cold_writer;
+using ::crucible::fixy::cipher::durable::mint_head_advancer;
+
+}  // namespace crucible::fixy::wrap::cipher::durable
+
 // ─── Dual-export sentinel — FIXY-U-020 (#1732) ─────────────────────
 //
 // Header-internal static_asserts pin each `using ::crucible::safety::X`

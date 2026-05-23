@@ -11712,6 +11712,33 @@ crucible_neg_compile_fixy_test(neg_fixy_v_226_zerocopy_none_sentinel
 crucible_neg_compile_fixy_test(neg_fixy_v_226_zerocopy_splice_not_simple
     "no matching function|CtxFitsZerocopyMint|constraints not satisfied|pack_zerocopy_is_simple_transfer")
 
+# ── FIXY-V-228 — fixy/CipherDurable.h HS14 neg-compile fixtures (#2106)
+#
+# Six mismatch classes for the V-228 substrate's three §XXI mint
+# factories — two distinct mismatch classes per mint (ctx-row gap on
+# Effect::Block × extras shadowing a stance-pinned axis):
+#   #1 mint_warm_writer   (ColdInitCtx)              → row lacks Block
+#   #2 mint_warm_writer   <grant::mode<…>>           → extras_engage_mode
+#   #3 mint_cold_writer   (ColdInitCtx)              → row lacks Block
+#   #4 mint_cold_writer   <grant::durable<…>>        → extras_engage_durable
+#   #5 mint_head_advancer (ColdInitCtx)              → row lacks Block
+#   #6 mint_head_advancer <grant::atomic_write<…>>   → extras_engage_atomic_write
+# Together they witness the §XXI fit-check fires at construction along
+# EVERY load-bearing predicate (CtxAdmitsIoBlock × three stance-axis
+# shadow predicates) for all three Cipher durability postures.
+crucible_neg_compile_fixy_test(neg_fixy_v_228_mint_warm_writer_ctx_lacks_block
+    "no matching function|CtxFitsWarmWriterMint|CtxAdmitsIoBlock|constraints not satisfied|row_contains|Block")
+crucible_neg_compile_fixy_test(neg_fixy_v_228_mint_warm_writer_extras_engage_mode
+    "no matching function|CtxFitsWarmWriterMint|constraints not satisfied|extras_engage_mode")
+crucible_neg_compile_fixy_test(neg_fixy_v_228_mint_cold_writer_ctx_lacks_block
+    "no matching function|CtxFitsColdWriterMint|CtxAdmitsIoBlock|constraints not satisfied|row_contains|Block")
+crucible_neg_compile_fixy_test(neg_fixy_v_228_mint_cold_writer_extras_engage_durable
+    "no matching function|CtxFitsColdWriterMint|constraints not satisfied|extras_engage_durable")
+crucible_neg_compile_fixy_test(neg_fixy_v_228_mint_head_advancer_ctx_lacks_block
+    "no matching function|CtxFitsHeadAdvancerMint|CtxAdmitsIoBlock|constraints not satisfied|row_contains|Block")
+crucible_neg_compile_fixy_test(neg_fixy_v_228_mint_head_advancer_extras_engage_atomic_write
+    "no matching function|CtxFitsHeadAdvancerMint|constraints not satisfied|extras_engage_atomic_write")
+
 # ── FIXY-V-233 — sanitize::path_traversal runtime predicates ────────
 # Runtime smoke test exercising both V-233 predicates
 # (check_no_dotdot + check_absolute_root_locked) plus the two
