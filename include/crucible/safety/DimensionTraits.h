@@ -784,6 +784,266 @@ template <DimensionedGradedWrapper W>
 }
 
 // ═════════════════════════════════════════════════════════════════════
+// ── WrapperKind / wrapper_for — reverse-lookup over the wrapper table
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-V-004 closes the inverse of `wrapper_dimension<W>::value`:
+//
+//   forward:  wrapper_dimension<W>::value  →  DimensionAxis      (many-to-one)
+//   reverse:  wrapper_for<D>()              →  array<WrapperKind, N>  (one-to-many)
+//
+// The reverse map answers "given DimensionAxis::X, which wrappers
+// declare themselves on X?" — useful for audit tooling, federation-
+// cache enumeration, per-axis test generation, and the `fixy::dim`
+// reverse-lookup surface that callers like row_hash diagnostic
+// pivots consume.  Each shipped wrapper_dimension<W> specialization
+// above MUST have a corresponding `WrapperKind::<W's spelling>`
+// enumerator and `wrapper_kind_to_axis` switch arm.  Drift is caught
+// by a cardinality pin (`WRAPPER_KIND_COUNT == 33` matching the 33
+// wrapper_dimension specs at lines 566..746 above) plus reflection-
+// driven name/axis coverage harnesses.
+//
+// ── Why an enum projection rather than typelist of concrete types
+//
+// The 33 wrappers have heterogeneous NTTP signatures (some take
+// `auto Pred + T`, some take an enum + T, some take `template <...>
+// class Storage`).  Assembling a typelist of concrete instantiations
+// would require sentinel NTTP probes for every parametric wrapper —
+// machinery that duplicates the `W*` probe types already in the self-
+// test namespace below and would drift independently.  The kind-enum
+// projection elides that entirely: WrapperKind enumerators name the
+// wrapper TEMPLATE (not an instantiation), `wrapper_kind_to_axis`
+// projects kind → axis, and consumers that need a concrete
+// instantiation can use the `W*` probes in `detail::dimension_traits_
+// self_test` directly.
+
+enum class WrapperKind : std::uint8_t {
+    Linear,           // → DimensionAxis::Usage
+    Refined,          // → DimensionAxis::Refinement
+    SealedRefined,    // → DimensionAxis::Refinement
+    Tagged,           // → DimensionAxis::Provenance
+    Secret,           // → DimensionAxis::Security
+    Stale,            // → DimensionAxis::Staleness
+    TimeOrdered,      // → DimensionAxis::Representation
+    Monotonic,        // → DimensionAxis::Mutation
+    AppendOnly,       // → DimensionAxis::Mutation
+    HotPath,          // → DimensionAxis::Regime
+    DetSafe,          // → DimensionAxis::Effect
+    NumericalTier,    // → DimensionAxis::Precision
+    Vendor,           // → DimensionAxis::Representation
+    Hw,               // → DimensionAxis::HwInstruction
+    BarrierGuarded,   // → DimensionAxis::BarrierStrength
+    SimdWidthPinned,  // → DimensionAxis::SimdIsa
+    ScopedFence,      // → DimensionAxis::MemoryScope
+    ResidencyHeat,    // → DimensionAxis::Space
+    CipherTier,       // → DimensionAxis::Security
+    AllocClass,       // → DimensionAxis::Space
+    Wait,             // → DimensionAxis::Synchronization
+    MemOrder,         // → DimensionAxis::Synchronization
+    Progress,         // → DimensionAxis::Complexity
+    Consistency,      // → DimensionAxis::Version
+    Witness,          // → DimensionAxis::Observability
+    JoinPolicy,       // → DimensionAxis::Synchronization
+    FpModePinned,     // → DimensionAxis::FpMode
+    OpaqueLifetime,   // → DimensionAxis::Lifetime
+    Crash,            // → DimensionAxis::Effect
+    Budgeted,         // → DimensionAxis::Space
+    EpochVersioned,   // → DimensionAxis::Version
+    NumaPlacement,    // → DimensionAxis::Representation
+    RecipeSpec,       // → DimensionAxis::Precision
+};
+
+inline constexpr std::size_t WRAPPER_KIND_COUNT =
+    std::meta::enumerators_of(^^WrapperKind).size();
+
+[[nodiscard]] constexpr DimensionAxis wrapper_kind_to_axis(WrapperKind k) noexcept {
+    switch (k) {
+        case WrapperKind::Linear:           return DimensionAxis::Usage;
+        case WrapperKind::Refined:          return DimensionAxis::Refinement;
+        case WrapperKind::SealedRefined:    return DimensionAxis::Refinement;
+        case WrapperKind::Tagged:           return DimensionAxis::Provenance;
+        case WrapperKind::Secret:           return DimensionAxis::Security;
+        case WrapperKind::Stale:            return DimensionAxis::Staleness;
+        case WrapperKind::TimeOrdered:      return DimensionAxis::Representation;
+        case WrapperKind::Monotonic:        return DimensionAxis::Mutation;
+        case WrapperKind::AppendOnly:       return DimensionAxis::Mutation;
+        case WrapperKind::HotPath:          return DimensionAxis::Regime;
+        case WrapperKind::DetSafe:          return DimensionAxis::Effect;
+        case WrapperKind::NumericalTier:    return DimensionAxis::Precision;
+        case WrapperKind::Vendor:           return DimensionAxis::Representation;
+        case WrapperKind::Hw:               return DimensionAxis::HwInstruction;
+        case WrapperKind::BarrierGuarded:   return DimensionAxis::BarrierStrength;
+        case WrapperKind::SimdWidthPinned:  return DimensionAxis::SimdIsa;
+        case WrapperKind::ScopedFence:      return DimensionAxis::MemoryScope;
+        case WrapperKind::ResidencyHeat:    return DimensionAxis::Space;
+        case WrapperKind::CipherTier:       return DimensionAxis::Security;
+        case WrapperKind::AllocClass:       return DimensionAxis::Space;
+        case WrapperKind::Wait:             return DimensionAxis::Synchronization;
+        case WrapperKind::MemOrder:         return DimensionAxis::Synchronization;
+        case WrapperKind::Progress:         return DimensionAxis::Complexity;
+        case WrapperKind::Consistency:      return DimensionAxis::Version;
+        case WrapperKind::Witness:          return DimensionAxis::Observability;
+        case WrapperKind::JoinPolicy:       return DimensionAxis::Synchronization;
+        case WrapperKind::FpModePinned:     return DimensionAxis::FpMode;
+        case WrapperKind::OpaqueLifetime:   return DimensionAxis::Lifetime;
+        case WrapperKind::Crash:            return DimensionAxis::Effect;
+        case WrapperKind::Budgeted:         return DimensionAxis::Space;
+        case WrapperKind::EpochVersioned:   return DimensionAxis::Version;
+        case WrapperKind::NumaPlacement:    return DimensionAxis::Representation;
+        case WrapperKind::RecipeSpec:       return DimensionAxis::Precision;
+        default:                            return DimensionAxis{0xFF};
+    }
+}
+
+[[nodiscard]] constexpr std::string_view wrapper_kind_name(WrapperKind k) noexcept {
+    switch (k) {
+        case WrapperKind::Linear:           return "Linear";
+        case WrapperKind::Refined:          return "Refined";
+        case WrapperKind::SealedRefined:    return "SealedRefined";
+        case WrapperKind::Tagged:           return "Tagged";
+        case WrapperKind::Secret:           return "Secret";
+        case WrapperKind::Stale:            return "Stale";
+        case WrapperKind::TimeOrdered:      return "TimeOrdered";
+        case WrapperKind::Monotonic:        return "Monotonic";
+        case WrapperKind::AppendOnly:       return "AppendOnly";
+        case WrapperKind::HotPath:          return "HotPath";
+        case WrapperKind::DetSafe:          return "DetSafe";
+        case WrapperKind::NumericalTier:    return "NumericalTier";
+        case WrapperKind::Vendor:           return "Vendor";
+        case WrapperKind::Hw:               return "Hw";
+        case WrapperKind::BarrierGuarded:   return "BarrierGuarded";
+        case WrapperKind::SimdWidthPinned:  return "SimdWidthPinned";
+        case WrapperKind::ScopedFence:      return "ScopedFence";
+        case WrapperKind::ResidencyHeat:    return "ResidencyHeat";
+        case WrapperKind::CipherTier:       return "CipherTier";
+        case WrapperKind::AllocClass:       return "AllocClass";
+        case WrapperKind::Wait:             return "Wait";
+        case WrapperKind::MemOrder:         return "MemOrder";
+        case WrapperKind::Progress:         return "Progress";
+        case WrapperKind::Consistency:      return "Consistency";
+        case WrapperKind::Witness:          return "Witness";
+        case WrapperKind::JoinPolicy:       return "JoinPolicy";
+        case WrapperKind::FpModePinned:     return "FpModePinned";
+        case WrapperKind::OpaqueLifetime:   return "OpaqueLifetime";
+        case WrapperKind::Crash:            return "Crash";
+        case WrapperKind::Budgeted:         return "Budgeted";
+        case WrapperKind::EpochVersioned:   return "EpochVersioned";
+        case WrapperKind::NumaPlacement:    return "NumaPlacement";
+        case WrapperKind::RecipeSpec:       return "RecipeSpec";
+        default:                            return std::string_view{"<unknown WrapperKind>"};
+    }
+}
+
+// Cardinality pin — drift catcher between the 33 wrapper_dimension
+// specs at lines 566..746 above and the WrapperKind enumerator count.
+// P2996 reflection cannot enumerate template specializations, so this
+// is the structural bridge: adding a new Graded-backed wrapper to
+// wrapper_dimension REQUIRES appending a matching WrapperKind
+// enumerator (append-only — ordinal positions never change) + a
+// wrapper_kind_to_axis switch arm + a wrapper_kind_name arm.  All
+// three sites are grep-discoverable; the static_assert below catches
+// the cardinality drift, the reflection-driven coverage harnesses
+// below catch missing switch arms.
+static_assert(WRAPPER_KIND_COUNT == 33,
+    "WrapperKind enumerator count drifted from the 33 wrapper_dimension "
+    "specializations declared at lines 566..746.  Adding a new wrapper "
+    "requires APPEND-ONLY WrapperKind enumerator + wrapper_kind_to_axis "
+    "arm + wrapper_kind_name arm.  Existing ordinals never change (the "
+    "federation cache key for any consumer that hashed a WrapperKind "
+    "ordinal never drifts across append-only growth).");
+
+// Reflection-driven name coverage — same shape as
+// every_dimension_axis_has_name() below.
+[[nodiscard]] consteval bool every_wrapper_kind_has_name() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        const auto n = wrapper_kind_name([:en:]);
+        if (n == std::string_view{"<unknown WrapperKind>"}) return false;
+        if (n.empty())                                       return false;
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_wrapper_kind_has_name(),
+    "wrapper_kind_name() missing arm for at least one WrapperKind — "
+    "add the arm or the new wrapper kind leaks the '<unknown "
+    "WrapperKind>' sentinel.");
+
+[[nodiscard]] consteval bool every_wrapper_kind_has_axis() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        const auto a = wrapper_kind_to_axis([:en:]);
+        // wrapper_kind_to_axis returns DimensionAxis{0xFF} on
+        // unreachable fallthrough; name resolves to "<unknown
+        // DimensionAxis>".
+        if (dimension_axis_name(a)
+            == std::string_view{"<unknown DimensionAxis>"}) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_wrapper_kind_has_axis(),
+    "wrapper_kind_to_axis() switch missing arm for at least one "
+    "WrapperKind — add the arm or new wrapper kinds silently fall "
+    "through to the unreachable DimensionAxis{0xFF} sentinel.");
+
+// Reverse map — count + filtered array of WrapperKind per axis.
+// Same reflection pattern as count_dims_in_tier above.
+
+[[nodiscard]] consteval std::size_t
+count_wrappers_on_axis(DimensionAxis d) noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
+    std::size_t n = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        if (wrapper_kind_to_axis([:en:]) == d) ++n;
+    }
+#pragma GCC diagnostic pop
+    return n;
+}
+
+// `wrapper_for<DimensionAxis::X>()` — the canonical FIXY-V-004
+// reverse-lookup metafunction.  Returns a `std::array<WrapperKind, N>`
+// containing every WrapperKind whose `wrapper_kind_to_axis` maps to
+// `D`, in enumerator declaration order.  `N` is consteval-derived via
+// `count_wrappers_on_axis(D)`, so the array length is exact (no
+// trailing sentinels).
+template <DimensionAxis D>
+[[nodiscard]] consteval auto wrapper_for() noexcept
+    -> std::array<WrapperKind, count_wrappers_on_axis(D)>
+{
+    std::array<WrapperKind, count_wrappers_on_axis(D)> out{};
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
+    std::size_t i = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        if (wrapper_kind_to_axis([:en:]) == D) {
+            out[i++] = [:en:];
+        }
+    }
+#pragma GCC diagnostic pop
+    return out;
+}
+
+// Variable-template form for compile-time array access without the
+// trailing `()` invocation.  Both forms compose with structured
+// bindings: `constexpr auto [a, b] = wrapper_for_v<Mutation>;`.
+template <DimensionAxis D>
+inline constexpr auto wrapper_for_v = wrapper_for<D>();
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Self-test (compile-time + reflection-driven coverage) ──────────
 // ═════════════════════════════════════════════════════════════════════
 

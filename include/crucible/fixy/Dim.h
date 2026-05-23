@@ -114,6 +114,27 @@ using safety::tier_kind_name;
 using safety::DIMENSION_AXIS_COUNT;
 using safety::TIER_KIND_COUNT;
 
+// ─── FIXY-V-004 — reverse-lookup metafunction (wrapper_for) ────────
+//
+// `wrapper_for<DimensionAxis::X>()` returns the set of WrapperKind
+// enumerators that declare themselves on axis `X` via
+// `wrapper_dimension<W>::value`.  Closes the inverse of the existing
+// forward map (many-to-one wrapper→axis).  Useful for audit tooling
+// pivoting by axis (federation cache enumeration, per-axis test
+// generation, the §XVI cross-composition matrix at row_hash sites).
+//
+// Re-exports follow the namespace-alias philosophy in this header
+// (logic lives in safety/DimensionTraits.h; fixy re-exports for
+// grep-discoverable `fixy::dim::` consumer surface).
+
+using safety::WrapperKind;
+using safety::WRAPPER_KIND_COUNT;
+using safety::wrapper_kind_to_axis;
+using safety::wrapper_kind_name;
+using safety::count_wrappers_on_axis;
+using safety::wrapper_for;
+using safety::wrapper_for_v;
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test — substrate-contract sanity check ───────────────────
 // ═════════════════════════════════════════════════════════════════════
