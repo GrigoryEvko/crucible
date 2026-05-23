@@ -19,6 +19,86 @@
 namespace crucible {
 
 // ═══════════════════════════════════════════════════════════════════
+// WRAP-Reflect-4 #985: explicit allow-list of types Reflect supports.
+//
+// `detail_reflect::IsReflectFieldSupported<T>` is the single source of
+// truth for what type categories Reflect's three field-helpers
+// (hash_field / pack_field / print_field) can dispatch on:
+//
+//   * enum types          — via std::to_underlying + fmix64
+//   * integral types      — direct fmix64 of the bit pattern
+//   * floating-point      — std::bit_cast → uint then fmix64
+//   * pointer types       — std::bit_cast<uintptr_t>
+//   * C array types       — element-wise hash + fmix64 fold
+//   * class types         — recursive reflect_hash (the structural
+//                           recursion that closes the universe)
+//
+// Each of the three field-helpers below carries an `if constexpr`
+// chain matching this concept's disjuncts; the trailing
+// `static_assert(false, …)` in each helper points BACK to this
+// concept name so a future contributor adding a new branch sees the
+// allow-list in one place.
+//
+// Adding a new type category requires THREE coordinated edits:
+//   1. Add a new disjunct here (the load-bearing source of truth).
+//   2. Add the matching branch to hash_field / pack_field /
+//      print_field below.
+//   3. Update test/test_reflect.cpp to exercise the new branch.
+//
+// The discipline catches half-shipped extensions: if only one helper
+// gains the branch but the concept doesn't, the static_assert(false)
+// fires with a clear name pointing at the missing concept disjunct.
+// ═══════════════════════════════════════════════════════════════════
+
+namespace detail_reflect {
+
+template <typename T>
+concept IsReflectFieldSupported =
+    std::is_enum_v<T> ||
+    std::is_integral_v<T> ||
+    std::is_floating_point_v<T> ||
+    std::is_pointer_v<T> ||
+    std::is_array_v<T> ||
+    std::is_class_v<T>;
+
+// ── WRAP-Reflect-4 #985 sentinel: canonical-type membership pins ──
+// Each disjunct above must admit at least one canonical example.
+// A future regression that accidentally narrows the concept (e.g.
+// drops `std::is_floating_point_v<T>` while extending another arm)
+// trips at every TU including Reflect.h.
+static_assert(IsReflectFieldSupported<int>,
+    "WRAP-Reflect-4 #985: integral types must satisfy "
+    "IsReflectFieldSupported (load-bearing for reflect_hash).");
+static_assert(IsReflectFieldSupported<double>,
+    "WRAP-Reflect-4 #985: floating-point types must satisfy "
+    "IsReflectFieldSupported.");
+static_assert(IsReflectFieldSupported<void*>,
+    "WRAP-Reflect-4 #985: pointer types must satisfy "
+    "IsReflectFieldSupported.");
+static_assert(IsReflectFieldSupported<int[4]>,
+    "WRAP-Reflect-4 #985: C array types must satisfy "
+    "IsReflectFieldSupported.");
+struct ReflectFieldSentinel { int x; };  // class probe
+static_assert(IsReflectFieldSupported<ReflectFieldSentinel>,
+    "WRAP-Reflect-4 #985: class types must satisfy "
+    "IsReflectFieldSupported (closes the recursion universe).");
+
+// Cross-lane separation: unsupported categories must NOT satisfy
+// the concept.  If a future contributor accidentally widens the
+// allow-list to include void or function types, the
+// static_assert(false) fall-through arms below would become
+// unreachable in a misleading way — these sentinels catch that.
+static_assert(!IsReflectFieldSupported<void>,
+    "WRAP-Reflect-4 #985: `void` is not a reflectable type "
+    "category — the allow-list must remain bounded.");
+static_assert(!IsReflectFieldSupported<int(int)>,
+    "WRAP-Reflect-4 #985: function types are not reflectable — "
+    "function POINTERS are (covered by is_pointer_v).");
+
+}  // namespace detail_reflect
+
+
+// ═══════════════════════════════════════════════════════════════════
 // reflect_hash<T>: Automatic struct hashing via reflection
 //
 // Iterates all non-static data members, hashes each field with
@@ -79,7 +159,16 @@ template <typename T>
   } else if constexpr (std::is_class_v<T>) {
     return reflect_hash(val); // recursive
   } else {
-    static_assert(false, "Unsupported type for reflect_hash");
+    // WRAP-Reflect-4 #985: the fall-through must remain unreachable
+    // for every T satisfying detail_reflect::IsReflectFieldSupported.
+    // If it fires, T is outside the explicit allow-list — extend the
+    // concept (above) AND add a matching branch to BOTH pack_field
+    // and print_field below.  Half-extensions are caught by the
+    // concept's per-branch sentinel pins.
+    static_assert(false,
+        "WRAP-Reflect-4 #985: T not in "
+        "detail_reflect::IsReflectFieldSupported allow-list "
+        "(enum / integral / floating_point / pointer / array / class).");
   }
 }
 
@@ -195,7 +284,11 @@ template <typename T>
   } else if constexpr (std::is_class_v<T>) {
     return reflect_hash(val);  // recursive
   } else {
-    static_assert(false, "Unsupported type for reflect_fmix_fold");
+    // WRAP-Reflect-4 #985: see hash_field's fall-through doc-block.
+    static_assert(false,
+        "WRAP-Reflect-4 #985: T not in "
+        "detail_reflect::IsReflectFieldSupported allow-list "
+        "(enum / integral / floating_point / pointer / array / class).");
   }
 }
 
@@ -267,7 +360,11 @@ void print_field(const T& val, FILE* out) noexcept {
   } else if constexpr (std::is_class_v<T>) {
     reflect_print(val, out); // recursive
   } else {
-    static_assert(false, "Unsupported type for reflect_print");
+    // WRAP-Reflect-4 #985: see hash_field's fall-through doc-block.
+    static_assert(false,
+        "WRAP-Reflect-4 #985: T not in "
+        "detail_reflect::IsReflectFieldSupported allow-list "
+        "(enum / integral / floating_point / pointer / array / class).");
   }
 }
 

@@ -6749,6 +6749,14 @@ crucible_neg_compile_test(neg_expr_hash_bare_u64_assign
 crucible_neg_compile_test(neg_expr_hash_cross_family
   "conversion from|cannot convert|no viable|no match for")
 
+# ─── WRAP-Reflect-4 #985 HS14 negative-compile fixtures ────────────
+#   - neg_reflect_supported_void           (void excluded from allow-list)
+#   - neg_reflect_supported_function_type  (function types excluded)
+crucible_neg_compile_test(neg_reflect_supported_void
+  "static assertion failed|WRAP-Reflect-4|IsReflectFieldSupported")
+crucible_neg_compile_test(neg_reflect_supported_function_type
+  "static assertion failed|WRAP-Reflect-4|IsReflectFieldSupported")
+
 # ─── FIXY-V-186 SchedClass HS14 negative-compile fixtures ──────────
 #   - neg_sched_class_fifo_task_on_other_pool       (pool-fit: Fifo ⋤ Other)
 #   - neg_sched_class_deadline_runtime_gt_deadline  (CBS assert: runtime > deadline)
