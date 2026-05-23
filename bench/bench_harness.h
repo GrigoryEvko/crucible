@@ -76,6 +76,7 @@
   #include <crucible/perf/Senses.h>
 #endif
 
+#include <crucible/fixy/Sched.h>          // FIXY-V-197: mint_priority<-10>
 #include <crucible/warden/Hardening.h>
 #include <crucible/warden/Policy.h>
 
@@ -1679,11 +1680,46 @@ inline void print_system_info(FILE* out = stdout) {
     std::fprintf(out, "\n");
 }
 
+// FIXY-V-197: routes the bench's nice-value bump through the V-191 typed
+// `mint_priority<-10>(init_ctx)` factory instead of raw setpriority(2).
+// Both produce the SAME kernel side effect — on Linux,
+// `setpriority(PRIO_PROCESS, 0, nice)` with who=0 sets the CALLING
+// THREAD's nice value (Linux LWP semantics; POSIX PRIO_PROCESS is
+// re-interpreted per-thread).  The mint additionally returns a typed
+// `SchedPriority<-10>` witness whose existence documents at the type
+// level that the priority bump executed in an Init-row context.  The
+// witness is discarded here because bench main doesn't propagate it
+// downstream — the side effect is what matters, not a witness chain.
+//
+// Pre-V-197 behavior preserved: EPERM / EBADRQC / EINVAL are silently
+// absorbed (matched the prior `(void)setpriority(...)` discipline).
+// Bench callers that need elevated priority but run under non-root
+// continue at default nice — measurement still runs, just with more
+// scheduler noise on the tail.
 inline void elevate_priority() noexcept {
 #ifdef __linux__
-    (void)setpriority(PRIO_PROCESS, 0, -10);
+    // ColdInitCtx is the freely-constructible ExecCtx alias whose row
+    // owns Init+Alloc+IO — it satisfies CtxFitsPriorityMint (which only
+    // requires IsExecCtx + in-range Nice).  `effects::testing::init()`
+    // returns the bare `Init` cap-struct, NOT an ExecCtx; spawning the
+    // alias directly is the canonical mint-call shape.
+    auto p = ::crucible::fixy::sched::mint_priority<-10>(
+        ::crucible::effects::ColdInitCtx{});
+    (void)p;
 #endif
 }
+
+// FIXY-V-197 sentinel: the elevate_priority() mint produces an
+// `expected<SchedPriority<-10>, int>`; if a future change moves the
+// nice value or alters the return type, this trips at every bench
+// TU that includes bench_harness.h.
+static_assert(
+    std::is_same_v<
+        decltype(::crucible::fixy::sched::mint_priority<-10>(
+            ::crucible::effects::ColdInitCtx{})),
+        std::expected<::crucible::fixy::sched::SchedPriority<-10>, int>>,
+    "FIXY-V-197: elevate_priority must mint a SchedPriority<-10> witness "
+    "via fixy::sched::mint_priority<-10>(ColdInitCtx).");
 
 // ── Per-bench boilerplate helpers ──────────────────────────────────
 //
