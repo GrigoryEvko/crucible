@@ -1726,6 +1726,20 @@ crucible_neg_compile_fixy_test(neg_fixy_grant_declassify_non_policy
 crucible_neg_compile_fixy_test(neg_fixy_grant_from_source_non_empty
     "constraints not satisfied|IsProvenanceSource|is_empty|is_class")
 
+# FIXY-V-269 — HS14 floor for the fixy/Hw.h scope<Scope,Arch> grant mint
+# (mint_scoped_fence).  Two fixtures cover orthogonal CtxFitsScopedFenceMint
+# rejection classes:
+#   1. BOTTOM-scope — mint_scoped_fence<Thread, Arch> names the lattice ⊥
+#      (the spec's "Scope == None"); the `Scope != Thread` gate rejects (no
+#      fence to emit for thread-local-only visibility).
+#   2. CROSS-TRUNK — mint_scoped_fence<Gpu, Arm> pairs an accel scope with
+#      the ARM fence dialect; scope_arch_trunk_consistent rejects (the
+#      grant-mint mirror of CollisionCatalog V402).
+crucible_neg_compile_fixy_test(neg_fixy_scope_bottom
+    "constraints not satisfied|CtxFitsScopedFenceMint")
+crucible_neg_compile_fixy_test(neg_fixy_scope_cross_trunk
+    "constraints not satisfied|CtxFitsScopedFenceMint")
+
 # FIXY-V-092 — HS14 floor for FpMode grant tags.  Two fixtures cover
 # orthogonal rejection classes that are FpMode-specific:
 #   1. NTTP-enum-type mismatch — substituting an FpFtz value for a

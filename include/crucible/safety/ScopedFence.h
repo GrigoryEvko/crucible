@@ -196,6 +196,14 @@ public:
 };
 
 // ── §XXI mint factory ───────────────────────────────────────────────
+//
+// NAME-COLLISION NOTE (V-269): this `safety::mint_scoped_fence<S, T>(args...)`
+// is a Graded-wrapper TOKEN mint (wraps a value in a MemoryScope-provider
+// carrier).  It is DISTINCT from `fixy::hw::mint_scoped_fence<Scope, Arch>(
+// ctx)` (fixy/Hw.h), which is a §XXI ctx-bound GRANT mint synthesizing a
+// `grant::hw::scope<Scope, Arch>` declaration tag (no value).  Different
+// namespace, parameter shape, and return category — never ADL-ambiguous
+// because callers qualify the namespace.
 template <MemoryScope_v S, typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
 [[nodiscard]] constexpr ScopedFence<S, T> mint_scoped_fence(Args&&... args)

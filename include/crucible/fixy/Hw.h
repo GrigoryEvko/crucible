@@ -4,13 +4,14 @@
 //
 // The fixy band-3 surface for Agent 11's three hardware axes (V-253):
 // HwInstruction (V-251 lattice), BarrierStrength (V-252 lattice), and
-// SimdIsa (V-250 lattice).  Ten grant tag families let a `fixy::fn<...>`
-// binding DECLARE which hardware-instruction class it issues, and five
-// §XXI ctx-bound mint factories synthesize the grants that require an
-// authorization step (a CPU-pin proof, a Root permission, a non-empty
-// rationale, or a sanctioned width).
+// SimdIsa (V-250 lattice), plus the V-265 MemoryScope axis.  Eleven grant
+// tag families let a `fixy::fn<...>` binding DECLARE which
+// hardware-instruction class it issues, and six §XXI ctx-bound mint
+// factories synthesize the grants that require an authorization step (a
+// CPU-pin proof, a Root permission, a non-empty rationale, a sanctioned
+// width, or a trunk-consistent scope×arch pairing).
 //
-// ── The ten grant tag families (all final : grant_base, EBO = 0) ──────
+// ── The eleven grant tag families (all final : grant_base, EBO = 0) ───
 //
 //   grant::hw::cache<CacheOp, Locality>     → HwInstruction
 //   grant::hw::barrier<BarrierArch, Kind>   → BarrierStrength
@@ -22,6 +23,13 @@
 //   grant::hw::asm_<Reason>                 → HwInstruction (rationale-bearing)
 //   grant::hw::simd_width<WidthBits>        → SimdIsa
 //   grant::hw::vendor_intrinsic<Backend, Id>→ Representation
+//   grant::hw::scope<MemoryScope, BarrierArch> → MemoryScope (V-269)
+//
+// scope<Scope, Arch> closes the V-257 OSH/SY/GPU gap: barrier_arm_dmb_ish
+// is the SINGLE ARM full-fence alias and cannot distinguish inner (ISH) /
+// outer (OSH) / system (SY) shareability domains, nor accel `.cta`/`.gpu`
+// scopes.  scope<> pins the MemoryScope visibility axis EXPLICITLY, with a
+// trunk-consistency gate (accel scope ⟺ Gpu arch, ARM scope ⟺ Arm arch).
 //
 // Why the grant tags live in `crucible::fixy::grant::hw` (NOT
 // `crucible::fixy::hw`): Grant.h's namespace-purity discipline (CR-09)
@@ -48,6 +56,15 @@
 //   mint_vendor_intrinsic<Id, Backend>(ctx)      → vendor_intrinsic<Backend, Id>
 //   mint_tsc_grant<Mode>(ctx, CpuPinProof)       → tsc<Mode>
 //   mint_msr_grant<MsrId>(ctx, Permission<root>) → msr<MsrId>
+//   mint_scoped_fence<Scope, Arch>(ctx)          → scope<Scope, Arch>
+//
+// NAME-COLLISION NOTE: this `crucible::fixy::hw::mint_scoped_fence<Scope,
+// Arch>(ctx)` is DISTINCT from `crucible::safety::mint_scoped_fence<Scope>(
+// value)` (V-267, safety/ScopedFence.h).  The safety one is a Graded-wrapper
+// TOKEN mint (wraps a value in a MemoryScope-provider carrier); this one is
+// a §XXI ctx-bound GRANT mint (synthesizes a scope<> declaration tag, no
+// value).  Different namespace, arity, and return category — never ADL-
+// ambiguous because callers qualify the namespace.
 //
 // Each is `[[nodiscard]] constexpr noexcept`, takes `Ctx const&` first,
 // and gates on ONE concept (`CtxFits*Mint`) per §XXI's single-concept
@@ -104,12 +121,14 @@
 //   mint_vendor_intrinsic: empty-id                 + non-ctx
 //   mint_tsc_grant       : Mode==NotAllowed         + missing CpuPinProof
 //   mint_msr_grant       : missing Permission<root> + wrong-tag Permission
+//   mint_scoped_fence    : Scope==Thread (⊥ no-fence) + cross-trunk scope×arch
 
 #include <crucible/fixy/Grant.h>                          // grant_base, which_dim, IsGrantTag
 #include <crucible/fixy/Dim.h>                            // dim::DimensionAxis
 #include <crucible/fixy/grant/Ctrl.h>                     // ctrl::rationale (fixed-string NTTP)
 
 #include <crucible/algebra/lattices/BarrierStrengthLattice.h>  // BarrierStrength
+#include <crucible/algebra/lattices/MemoryScopeLattice.h>      // MemoryScope (V-265)
 #include <crucible/safety/Vendor.h>                       // VendorBackend_v
 #include <crucible/permissions/Permission.h>              // safety::Permission
 
@@ -140,8 +159,10 @@ enum class CacheOp : std::uint8_t {
 // tier (V-252); the arch picks which concrete instruction realizes it.
 enum class BarrierArch : std::uint8_t {
     X86,       // lfence / sfence / mfence
-    Arm,       // dmb ish / dmb ld / dmb st
+    Arm,       // dmb ish / dmb osh / dmb sy / dmb ld / dmb st
     Compiler,  // asm volatile("":::"memory") + std::atomic ordering
+    Gpu,       // PTX fence.{cta,cluster,gpu,sys} / membar — the accel fence
+               // dialect realizing V-265 accel-trunk MemoryScope (V-269).
 };
 
 // TSC-read posture.  NotAllowed is the strict default; SerializedPinned
@@ -170,6 +191,10 @@ enum class RngSource : std::uint8_t {
 // Re-export of the V-252 BarrierStrength tier into the hw namespace so a
 // `barrier<Arch, Kind>` grant cites the canonical lattice enum.
 using BarrierStrength = ::crucible::algebra::lattices::BarrierStrength;
+
+// Re-export of the V-265 MemoryScope visibility carrier so a
+// `scope<Scope, Arch>` grant cites the canonical lattice enum (V-269).
+using MemoryScope = ::crucible::algebra::lattices::MemoryScope;
 
 // Re-export of the V-250-lineage VendorBackend enum for vendor_intrinsic.
 using VendorBackend = ::crucible::safety::VendorBackend_v;
@@ -203,6 +228,28 @@ inline constexpr bool is_sanctioned_cpuid_leaf_v =
 // character (N includes the trailing NUL, so empty `""` has size 1).
 template <::crucible::fixy::grant::ctrl::rationale Reason>
 inline constexpr bool rationale_nonempty_v = (Reason.size() > 1);
+
+// A scope×arch pairing is trunk-consistent iff the fence DIALECT (arch) can
+// realize the requested VISIBILITY scope (V-269).  Reuses the V-265
+// trunk classifiers: the shared sentinels Thread (⊥) and System (⊤) are
+// realizable on every arch; an accel-trunk scope (Warp/Cta/Cluster/Gpu)
+// needs the GPU PTX-fence dialect; an ARM-trunk scope (Inner/Outer) needs
+// the ARM DMB dialect.  An ARM scope pinned to a GPU arch — or an accel
+// scope pinned to an ARM/x86/Compiler arch — is rejected (the C++-side
+// mirror of CollisionCatalog V402, but at the GRANT-mint boundary).
+[[nodiscard]] constexpr bool scope_arch_trunk_consistent(MemoryScope scope, BarrierArch arch) noexcept {
+    namespace ml = ::crucible::algebra::lattices;
+    if (scope == MemoryScope::Thread || scope == MemoryScope::System) {
+        return true;  // shared sentinels — realizable on any fence dialect
+    }
+    if (ml::mem_scope_is_accel(scope)) {
+        return arch == BarrierArch::Gpu;  // PTX `.cta`/`.cluster`/`.gpu`
+    }
+    if (ml::mem_scope_is_arm(scope)) {
+        return arch == BarrierArch::Arm;  // DMB ISH / OSH
+    }
+    return false;  // unreachable — every MemoryScope is classified above
+}
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Privileged-tier proof tokens ──────────────────────────────────────
@@ -278,6 +325,15 @@ struct simd_width final : grant_base {};
 template <fh::VendorBackend Backend, ctrl::rationale Id>
 struct vendor_intrinsic final : grant_base {};
 
+// (11) scope<Scope, Arch> — memory-visibility-scope fence pin (MemoryScope).
+// Closes the V-257 OSH/SY/GPU gap: an explicit (visibility-scope, fence-
+// dialect) pairing instead of the single collapsed barrier_arm_dmb_ish.
+// Any (Scope, Arch) cell is instantiable as a TAG (a binding may DECLARE an
+// inconsistent pairing for diagnosis); the trunk-consistency gate lives in
+// the mint (mint_scoped_fence) so a SYNTHESIZED grant is always coherent.
+template <fh::MemoryScope Scope, fh::BarrierArch Arch>
+struct scope final : grant_base {};
+
 }  // namespace crucible::fixy::grant::hw
 
 // ── which_dim routing — CR-09 locked namespace ───────────────────────
@@ -328,6 +384,10 @@ template <fh::VendorBackend Backend, ctrl::rationale Id>
 struct which_dim<hw::vendor_intrinsic<Backend, Id>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Representation> {};
 
+template <fh::MemoryScope Scope, fh::BarrierArch Arch>
+struct which_dim<hw::scope<Scope, Arch>>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::MemoryScope> {};
+
 // ── Engagement markers for the three hw axes ──────────────────────────
 using accept_default_strict_for_HwInstruction =
     accept_default_strict_for<dim::DimensionAxis::HwInstruction>;
@@ -335,6 +395,8 @@ using accept_default_strict_for_BarrierStrength =
     accept_default_strict_for<dim::DimensionAxis::BarrierStrength>;
 using accept_default_strict_for_SimdIsa =
     accept_default_strict_for<dim::DimensionAxis::SimdIsa>;
+using accept_default_strict_for_MemoryScope =
+    accept_default_strict_for<dim::DimensionAxis::MemoryScope>;
 
 }  // namespace crucible::fixy::grant
 
@@ -362,6 +424,18 @@ using barrier_compiler_portable = ghw::barrier<BarrierArch::Compiler, BarrierStr
 using barrier_compiler_acquire  = ghw::barrier<BarrierArch::Compiler, BarrierStrength::AcquireLoad>;
 using barrier_compiler_release  = ghw::barrier<BarrierArch::Compiler, BarrierStrength::ReleaseStore>;
 using barrier_compiler_seqcst   = ghw::barrier<BarrierArch::Compiler, BarrierStrength::SeqCst>;
+
+// ── Scope aliases (V-269) — the OSH/SY/GPU cells barrier_arm_dmb_ish lost ─
+// ARM shareability trunk: DMB ISH (inner), DMB OSH (outer), DMB SY (system).
+using scope_arm_ish     = ghw::scope<MemoryScope::Inner,  BarrierArch::Arm>;       // DMB ISH
+using scope_arm_osh     = ghw::scope<MemoryScope::Outer,  BarrierArch::Arm>;       // DMB OSH
+using scope_arm_sy      = ghw::scope<MemoryScope::System, BarrierArch::Arm>;       // DMB SY
+// Accel trunk: PTX `.cta` (thread-block), `.cluster` (Hopper), `.gpu` (device).
+using scope_gpu_cta     = ghw::scope<MemoryScope::Cta,     BarrierArch::Gpu>;      // fence.{*}.cta
+using scope_gpu_cluster = ghw::scope<MemoryScope::Cluster, BarrierArch::Gpu>;      // fence.{*}.cluster
+using scope_gpu_device  = ghw::scope<MemoryScope::Gpu,     BarrierArch::Gpu>;      // fence.{*}.gpu
+// Arch-agnostic full-system (⊤) — std::atomic seq_cst / compiler-portable.
+using scope_system      = ghw::scope<MemoryScope::System, BarrierArch::Compiler>;
 
 // ── §XXI ctx-fit concepts — ONE concept per mint ─────────────────────
 
@@ -395,6 +469,19 @@ concept CtxFitsTscMint =
 // rvalue-ref parameter is the load-bearing authority gate).
 template <typename Ctx>
 concept CtxFitsMsrMint = CtxFitsHwGrant<Ctx>;
+
+// scoped-fence mint requires (1) a valid ExecCtx, (2) a non-bottom scope —
+// Thread (⊥) is the "no cross-thread visibility = no fence" sentinel; you
+// do not mint a scoped FENCE for thread-local-only (mirrors the
+// `Mode != NotAllowed` tsc gate), and (3) trunk consistency — the fence
+// dialect (Arch) must realize the visibility scope (accel ⟺ Gpu, ARM ⟺
+// Arm; the sentinels Thread/System are realizable everywhere, but Thread is
+// already excluded by gate 2).
+template <typename Ctx, MemoryScope Scope, BarrierArch Arch>
+concept CtxFitsScopedFenceMint =
+    CtxFitsHwGrant<Ctx>
+    && (Scope != MemoryScope::Thread)
+    && scope_arch_trunk_consistent(Scope, Arch);
 
 // ── mint_asm_grant<Reason>(ctx) → grant::hw::asm_<Reason> ─────────────
 template <::crucible::fixy::grant::ctrl::rationale Reason,
@@ -443,6 +530,17 @@ mint_msr_grant(Ctx const&, ::crucible::safety::Permission<root>&&) noexcept {
     return {};
 }
 
+// ── mint_scoped_fence<Scope, Arch>(ctx) → grant::hw::scope<Scope, Arch> ─
+//
+// NAME-COLLISION: distinct from safety::mint_scoped_fence<Scope>(value) —
+// see the header doc-block.  This is the §XXI GRANT mint; that is the
+// V-267 Graded-wrapper TOKEN mint.
+template <MemoryScope Scope, BarrierArch Arch, ::crucible::effects::IsExecCtx Ctx>
+    requires CtxFitsScopedFenceMint<Ctx, Scope, Arch>
+[[nodiscard]] constexpr ghw::scope<Scope, Arch> mint_scoped_fence(Ctx const&) noexcept {
+    return {};
+}
+
 }  // namespace crucible::fixy::hw
 
 // ═════════════════════════════════════════════════════════════════════
@@ -468,6 +566,7 @@ static_assert(IsGrantTag<ghw::port_io<0x80u>>);
 static_assert(IsGrantTag<ghw::asm_<"vpternlogd fast-path">>);
 static_assert(IsGrantTag<ghw::simd_width<256>>);
 static_assert(IsGrantTag<ghw::vendor_intrinsic<VendorBackend::NV, "wgmma">>);
+static_assert(IsGrantTag<ghw::scope<MemoryScope::Gpu, BarrierArch::Gpu>>);
 
 // ── Layer 2: sizeof — EBO-collapsible (1 byte standalone) ─────────────
 static_assert(sizeof(ghw::cache<CacheOp::Prefetch, 3>)                       == 1);
@@ -480,6 +579,7 @@ static_assert(sizeof(ghw::port_io<0xCF8u>)                                   == 
 static_assert(sizeof(ghw::asm_<"x">)                                         == 1);
 static_assert(sizeof(ghw::simd_width<512>)                                   == 1);
 static_assert(sizeof(ghw::vendor_intrinsic<VendorBackend::AMD, "v_mfma">)    == 1);
+static_assert(sizeof(ghw::scope<MemoryScope::Inner, BarrierArch::Arm>)       == 1);
 
 // ── Layer 3: which_dim routing — each family to its axis ──────────────
 static_assert(which_dim_v<ghw::cache<CacheOp::Flush>>                        == D::HwInstruction);
@@ -492,6 +592,8 @@ static_assert(which_dim_v<ghw::port_io<0x80u>>                               == 
 static_assert(which_dim_v<ghw::asm_<"reason">>                               == D::HwInstruction);
 static_assert(which_dim_v<ghw::simd_width<256>>                              == D::SimdIsa);
 static_assert(which_dim_v<ghw::vendor_intrinsic<VendorBackend::NV, "wgmma">> == D::Representation);
+static_assert(which_dim_v<ghw::scope<MemoryScope::Cta, BarrierArch::Gpu>>    == D::MemoryScope);
+static_assert(which_dim_v<scope_arm_osh>                                     == D::MemoryScope);
 
 // ── Layer 4: NTTP / type distinctness ─────────────────────────────────
 static_assert(!std::is_same_v<ghw::cache<CacheOp::Flush>, ghw::cache<CacheOp::Writeback>>);
@@ -507,6 +609,17 @@ static_assert(!std::is_same_v<ghw::vendor_intrinsic<VendorBackend::NV, "i">,
 // barrier aliases land on distinct (arch, strength) cells.
 static_assert(!std::is_same_v<barrier_x86_mfence, barrier_arm_dmb_ish>);
 static_assert(!std::is_same_v<barrier_compiler_acquire, barrier_compiler_release>);
+// scope cells distinct by Scope AND by Arch; scope aliases land on distinct
+// cells — the OSH/SY/GPU distinctions barrier_arm_dmb_ish could NOT express.
+static_assert(!std::is_same_v<ghw::scope<MemoryScope::Inner, BarrierArch::Arm>,
+                              ghw::scope<MemoryScope::Outer, BarrierArch::Arm>>);
+static_assert(!std::is_same_v<ghw::scope<MemoryScope::Gpu, BarrierArch::Gpu>,
+                              ghw::scope<MemoryScope::Gpu, BarrierArch::Arm>>);
+static_assert(!std::is_same_v<scope_arm_ish, scope_arm_osh>);
+static_assert(!std::is_same_v<scope_arm_osh, scope_arm_sy>);
+static_assert(!std::is_same_v<scope_gpu_cta, scope_gpu_cluster>);
+static_assert(!std::is_same_v<scope_gpu_cluster, scope_gpu_device>);
+static_assert(!std::is_same_v<scope_arm_sy, scope_system>);  // SY (Arm) ≠ system (Compiler)
 
 // ── Layer 5: validity predicates gate the parametric families ─────────
 static_assert( valid_simd_width_v<0>   && valid_simd_width_v<512>);
@@ -515,6 +628,21 @@ static_assert( is_sanctioned_cpuid_leaf_v<0x00000007u>);
 static_assert(!is_sanctioned_cpuid_leaf_v<0xDEADBEEFu>);
 static_assert( rationale_nonempty_v<"x">);
 static_assert(!rationale_nonempty_v<"">);
+// scope_arch_trunk_consistent truth table (V-269):
+//   shared sentinels (Thread/System) — realizable on any arch
+static_assert( scope_arch_trunk_consistent(MemoryScope::System, BarrierArch::Arm));
+static_assert( scope_arch_trunk_consistent(MemoryScope::System, BarrierArch::Compiler));
+static_assert( scope_arch_trunk_consistent(MemoryScope::Thread, BarrierArch::X86));
+//   accel trunk — needs the GPU fence dialect, rejects ARM/x86/Compiler
+static_assert( scope_arch_trunk_consistent(MemoryScope::Gpu, BarrierArch::Gpu));
+static_assert( scope_arch_trunk_consistent(MemoryScope::Cta, BarrierArch::Gpu));
+static_assert(!scope_arch_trunk_consistent(MemoryScope::Gpu, BarrierArch::Arm));
+static_assert(!scope_arch_trunk_consistent(MemoryScope::Cta, BarrierArch::X86));
+//   ARM trunk — needs the ARM DMB dialect, rejects GPU/x86/Compiler
+static_assert( scope_arch_trunk_consistent(MemoryScope::Inner, BarrierArch::Arm));
+static_assert( scope_arch_trunk_consistent(MemoryScope::Outer, BarrierArch::Arm));
+static_assert(!scope_arch_trunk_consistent(MemoryScope::Inner, BarrierArch::Gpu));
+static_assert(!scope_arch_trunk_consistent(MemoryScope::Outer, BarrierArch::Compiler));
 
 // ── Layer 6: the five §XXI mints synthesize the right grant types ─────
 constexpr eff::TestRunnerCtx ctx{};
@@ -535,6 +663,12 @@ static_assert(std::is_same_v<
     decltype(mint_msr_grant<0xC0000080u>(
         ctx, ::crucible::safety::mint_permission_root<root>())),
     ghw::msr<0xC0000080u>>);
+static_assert(std::is_same_v<
+    decltype(mint_scoped_fence<MemoryScope::Gpu, BarrierArch::Gpu>(ctx)),
+    ghw::scope<MemoryScope::Gpu, BarrierArch::Gpu>>);
+static_assert(std::is_same_v<
+    decltype(mint_scoped_fence<MemoryScope::Outer, BarrierArch::Arm>(ctx)),
+    ghw::scope<MemoryScope::Outer, BarrierArch::Arm>>);
 
 // ── Layer 7: mint concept gates reject the mismatch classes (positive
 //    side — the HS14 fixtures witness the negative side at compile-fail) ─
@@ -547,6 +681,12 @@ static_assert( CtxFitsTscMint<eff::TestRunnerCtx, TscMode::SerializedPinned>);
 static_assert(!CtxFitsTscMint<eff::TestRunnerCtx, TscMode::NotAllowed>);
 static_assert( CtxFitsVendorIntrinsicMint<eff::TestRunnerCtx, "wgmma">);
 static_assert(!CtxFitsVendorIntrinsicMint<eff::TestRunnerCtx, "">);
+static_assert( CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Gpu, BarrierArch::Gpu>);
+static_assert( CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Inner, BarrierArch::Arm>);
+static_assert( CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::System, BarrierArch::Compiler>);
+static_assert(!CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Thread, BarrierArch::Arm>);   // ⊥ no-fence
+static_assert(!CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Gpu, BarrierArch::Arm>);       // cross-trunk
+static_assert(!CtxFitsScopedFenceMint<int, MemoryScope::Gpu, BarrierArch::Gpu>);                      // non-ctx
 
 // ── Layer 8: engagement markers route to the three hw axes ────────────
 static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_HwInstruction>
@@ -555,6 +695,8 @@ static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_Bar
               == D::BarrierStrength);
 static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_SimdIsa>
               == D::SimdIsa);
+static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_MemoryScope>
+              == D::MemoryScope);
 
 // ── Runtime smoke test — non-constant args defeat consteval folding,
 //    catching SFINAE / inline-body bugs the static_asserts can mask. ───
@@ -569,6 +711,10 @@ inline void runtime_smoke_test() {
         mint_tsc_grant<TscMode::SerializedPinned>(live_ctx, CpuPinProof{});
     [[maybe_unused]] auto msr_grant   =
         mint_msr_grant<0x10u>(live_ctx, ::crucible::safety::mint_permission_root<root>());
+    [[maybe_unused]] auto scope_gpu   =
+        mint_scoped_fence<MemoryScope::Gpu, BarrierArch::Gpu>(live_ctx);
+    [[maybe_unused]] auto scope_osh   =
+        mint_scoped_fence<MemoryScope::Outer, BarrierArch::Arm>(live_ctx);
 
     // Direct grant construction (the non-mint families) round-trips too.
     [[maybe_unused]] ghw::cache<CacheOp::Prefetch, 2> prefetch{};
@@ -576,6 +722,8 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] ghw::rng<RngSource::PhiloxCounter> rng_tag{};
     [[maybe_unused]] ghw::cpuid<0x00000001u>            cpuid_tag{};
     [[maybe_unused]] ghw::port_io<0xCF8u>               port_tag{};
+    [[maybe_unused]] scope_arm_sy                       sy_tag{};
+    [[maybe_unused]] scope_gpu_cta                      cta_tag{};
 }
 
 }  // namespace crucible::fixy::hw::detail::v257_self_test
