@@ -164,6 +164,38 @@ struct FromEnvPath    {};
 // — the config file itself is operator-authored.
 struct FromConfigPath {};
 
+// ── source::CipherPath ─────────────────────────────────────────────
+//
+// WRAP-Cipher-3 #886.  Provenance tag for paths INTERNALLY
+// CONSTRUCTED by Cipher's storage helpers (e.g. `root_/objects/
+// <2hex>/<14hex>` for content-addressed object files, or the relpath
+// counterpart used with the dirfd-anchored openat).  Distinct from
+// the three external-input lanes (FromUserPath / FromEnvPath /
+// FromConfigPath) because the bytes never traversed an untrusted
+// boundary — they were assembled from a sanitized Cipher root plus a
+// hex-formatted content hash, so the entire string lives inside the
+// trust boundary by construction.
+//
+// Use cases:
+//   * Cipher::obj_path() and Cipher::obj_relpath_() return
+//     Tagged<std::string, source::CipherPath> so downstream syscall
+//     helpers can statically distinguish a Cipher-emitted path from
+//     a user-supplied one — preventing the "I accidentally piped a
+//     user-input path into the Cipher store" footgun.
+//   * Future Sanitized-consuming syscall API (V-233) may admit
+//     CipherPath via a dedicated retag_policy specialization; that
+//     wiring is intentionally NOT shipped here so the migration
+//     stays scoped to the obj_path return type.
+//
+// Lane separation rules (enforced by the fail-closed retag_policy
+// primary template at Tagged.h):
+//   FromUserPath/FromEnvPath/FromConfigPath/External → CipherPath:
+//     REJECTED.  Cipher's internal-path invariant cannot be
+//     manufactured from external bytes.
+//   CipherPath → FromUserPath/FromEnvPath/FromConfigPath/External:
+//     REJECTED.  Cipher-emitted bytes are not external input.
+struct CipherPath     {};
+
 }  // namespace crucible::safety::source
 
 namespace crucible::safety {
@@ -236,6 +268,30 @@ static_assert(!std::is_same_v<FromEnvPath,    External>,
     "FIXY-V-232: FromEnvPath must be a distinct type from External.");
 static_assert(!std::is_same_v<FromConfigPath, External>,
     "FIXY-V-232: FromConfigPath must be a distinct type from External.");
+
+// ── WRAP-Cipher-3 #886: CipherPath lane distinctness ───────────────
+//
+// CipherPath is the internally-constructed Cipher-storage-path lane.
+// It must be a distinct type from every other path-provenance tag,
+// and from External, so it occupies its own lane in the retag-policy
+// matrix.  Any future regression that aliases CipherPath onto
+// another lane would silently allow external bytes to be relabelled
+// as Cipher-emitted paths or vice versa — and Cipher's openat
+// helpers trust CipherPath inputs.
+static_assert(!std::is_same_v<CipherPath, FromUserPath>,
+    "WRAP-Cipher-3 #886: CipherPath must be distinct from FromUserPath "
+    "— Cipher-emitted paths are not user-typed.");
+static_assert(!std::is_same_v<CipherPath, FromEnvPath>,
+    "WRAP-Cipher-3 #886: CipherPath must be distinct from FromEnvPath.");
+static_assert(!std::is_same_v<CipherPath, FromConfigPath>,
+    "WRAP-Cipher-3 #886: CipherPath must be distinct from FromConfigPath.");
+static_assert(!std::is_same_v<CipherPath, External>,
+    "WRAP-Cipher-3 #886: CipherPath must be distinct from External — "
+    "Cipher-emitted bytes never traversed an untrusted boundary.");
+static_assert(!std::is_same_v<CipherPath, Sanitized>,
+    "WRAP-Cipher-3 #886: CipherPath must be distinct from Sanitized "
+    "— Sanitized is the post-sanitize lane, CipherPath is the "
+    "internally-constructed lane (orthogonal provenance).");
 
 // ── (2) Forward admittance reachable through policy + concept ──────
 static_assert(retag_policy<FromUserPath,   Sanitized>::allowed,

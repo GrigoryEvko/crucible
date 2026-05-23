@@ -46,6 +46,7 @@
 #include <crucible/fixy/SessEventLog.h>     // SessionEvent / StepId / SessionTagId / KeyFn / Less
 #include <crucible/fixy/Source.h>           // tags::source::Durable
 #include <crucible/fixy/Wrap.h>             // Tagged / WriteOnce / OrderedAppendOnly / Positive / Refined / Wait / CipherTier(Tag_v) / cipher_tier / Lifetime_v / mint_view / ScopedView / no_scoped_view_field_check
+#include <crucible/safety/source/Path.h>    // WRAP-Cipher-3 #886: source::CipherPath
 #include <crucible/safety/ClockSource.h>   // FIXY-V-198: MonotonicClockBytes
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Post.h>
@@ -324,7 +325,11 @@ class CRUCIBLE_OWNER Cipher {
         const ContentHash hash = region->content_hash;
         if (!hash) return ContentHash{};
 
-        const std::string path = obj_path(hash.raw());
+        // WRAP-Cipher-3 #886: obj_path returns Tagged<std::string,
+        // source::CipherPath>; .value() unwraps to a const ref for
+        // the local std::string lifetime.
+        const auto path_tagged = obj_path(hash.raw());
+        const std::string& path = path_tagged.value();
 
         // Idempotent: if the file already exists, same bytes → skip write.
         // FIXY-V-026 audit-fix: cross-process recovery — even on the
@@ -701,7 +706,11 @@ class CRUCIBLE_OWNER Cipher {
             }
         }
 
-        const std::string path = obj_path(content_hash.raw());
+        // WRAP-Cipher-3 #886: obj_path returns Tagged<std::string,
+        // source::CipherPath>; .value() unwraps to a const ref for
+        // the local std::ifstream / ::filesystem call chain.
+        const auto path_tagged = obj_path(content_hash.raw());
+        const std::string& path = path_tagged.value();
         if (!std::filesystem::exists(path)) return nullptr;
 
         std::ifstream f(path, std::ios::binary);
@@ -1707,7 +1716,21 @@ class CRUCIBLE_OWNER Cipher {
     }
 
     // Path: root_/objects/<first2hex>/<remaining14hex>
-    std::string obj_path(uint64_t hash) const {
+    //
+    // WRAP-Cipher-3 #886: returns Tagged<std::string, source::CipherPath>
+    // to carry internally-constructed-path provenance.  The bytes are
+    // assembled from a sanitized Cipher root plus a hex-formatted
+    // content hash — they never traversed an untrusted boundary — so
+    // they live in CipherPath's own lane, distinct from FromUserPath
+    // / FromEnvPath / FromConfigPath / External.  Callers that need
+    // the raw string for ::ifstream / ::filesystem::exists() etc.
+    // unwrap with `.peek()`; future downstream tightening (V-233
+    // companion ship) may admit CipherPath at Sanitized-consuming
+    // syscall helpers via a dedicated retag_policy specialization.
+    [[nodiscard]] auto obj_path(uint64_t hash) const
+        -> ::crucible::safety::Tagged<
+              std::string, ::crucible::safety::source::CipherPath>
+    {
         char hex[16];
         hex16_(hash, hex);
         const std::string& root = root_str();
@@ -1720,7 +1743,9 @@ class CRUCIBLE_OWNER Cipher {
         path.append(hex, 2);
         path.push_back('/');
         path.append(hex + 2, 14);
-        return path;
+        return ::crucible::safety::Tagged<
+            std::string, ::crucible::safety::source::CipherPath>{
+                std::move(path)};
     }
 
     // FIXY-V-030: relative-path counterpart of obj_path, used by

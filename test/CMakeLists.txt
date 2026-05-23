@@ -6725,6 +6725,14 @@ crucible_neg_compile_test(neg_transaction_ts_ns_bare_u64_assign
 crucible_neg_compile_test(neg_transaction_ts_ns_cross_source
   "conversion from|cannot convert|no viable|no match for")
 
+# ─── WRAP-Cipher-3 #886 HS14 negative-compile fixtures ─────────────
+#   - neg_cipher_obj_path_bare_string_assign  (no implicit string→Tagged)
+#   - neg_cipher_obj_path_cross_source        (FromUserPath ≠ CipherPath)
+crucible_neg_compile_test(neg_cipher_obj_path_bare_string_assign
+  "conversion from|cannot convert|no viable|no match for")
+crucible_neg_compile_test(neg_cipher_obj_path_cross_source
+  "conversion from|cannot convert|no viable|no match for")
+
 # ─── FIXY-V-186 SchedClass HS14 negative-compile fixtures ──────────
 #   - neg_sched_class_fifo_task_on_other_pool       (pool-fit: Fifo ⋤ Other)
 #   - neg_sched_class_deadline_runtime_gt_deadline  (CBS assert: runtime > deadline)
