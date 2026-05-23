@@ -44,6 +44,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_library(crucible STATIC
   src/ContractHandler.cpp
   src/DiagRuntime.cpp
+  src/fixy/Fs.cpp
   src/canopy/HyParView.cpp
   src/canopy/Lifeguard.cpp
   src/canopy/Plumtree.cpp

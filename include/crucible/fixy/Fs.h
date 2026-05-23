@@ -316,14 +316,71 @@ public:
     [[nodiscard]] const ::crucible::safety::FileHandle& handle() const noexcept { return fd_; }
 };
 
+// ── Non-template syscall impls — FIXY-V-229 src/fixy/Fs.cpp ─────────
+//
+// The actual ::open() / ::fdatasync() / ::fsync() / ::rename() /
+// ::renameat2() / ::linkat() calls are NOT template-parameter-
+// dependent — they take an int (fd) and a small enum (SyncOpTag /
+// AtomicityTag) and emit one canonical syscall sequence.  Hoisting
+// these bodies out of the header into `src/fixy/Fs.cpp` deduplicates
+// the syscall wrapper across every TU that calls `mint_file<...>` /
+// `sync<...>` / `commit_atomic<...>`: each call site emits ONE call
+// instruction to the impl helper instead of an inline `::open()` body
+// per instantiation.
+//
+// The templates above (`mint_file<Grants...>`, `sync<SyncOp>`,
+// `commit_atomic<Atomicity>`) MUST stay inline because their bodies
+// dispatch via `if constexpr` on the explicit template parameter.
+// They become THIN — they compile-time map the template parameter to
+// an enum tag and forward to the impl.
+
+namespace detail::impl {
+
+enum class SyncOpTag : ::std::uint8_t {
+    Fdatasync,
+    Fsync,
+    FsyncParentDir,
+    Msync,
+};
+
+enum class AtomicityTag : ::std::uint8_t {
+    Rename,
+    RenameAt2NoReplace,
+    LinkAtomic,
+    None,
+};
+
+// ::open() wrapper.  Path NUL-terminated; flags = OR-folded by caller.
+// Returns the bare FileHandle (move-only RAII).  Errno wrapped in
+// std::system_category().
+[[nodiscard]] ::std::expected<::crucible::safety::FileHandle, ::std::error_code>
+do_open_impl(const char* path, int flags, ::mode_t perms) noexcept;
+
+// O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC|O_RDONLY ::open() — for Dirfd.
+[[nodiscard]] ::std::expected<::crucible::safety::FileHandle, ::std::error_code>
+do_open_dirfd_impl(const char* dir_path) noexcept;
+
+// Durability syscall dispatch.  fd >= 0 expected; caller pre-checks.
+// SyncOpTag::Msync returns EINVAL (route through mmap surface).
+[[nodiscard]] ::std::expected<void, ::std::error_code>
+do_sync_impl(int fd, SyncOpTag op) noexcept;
+
+// Commit-atomic syscall dispatch.  None returns success (no-op);
+// LinkAtomic returns ENOSYS until V-228's CipherDurable wires the
+// O_TMPFILE + linkat fd channel.
+[[nodiscard]] ::std::expected<void, ::std::error_code>
+do_commit_atomic_impl(const char* tmp, const char* target,
+                      AtomicityTag atomicity) noexcept;
+
+}  // namespace detail::impl
+
 [[nodiscard]] inline std::expected<Dirfd, std::error_code>
 open_dirfd(const ::std::filesystem::path& dir) noexcept {
-    const int fd = ::open(dir.c_str(),
-                          O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);
-    if (fd < 0) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
+    auto fh = detail::impl::do_open_dirfd_impl(dir.c_str());
+    if (!fh) {
+        return std::unexpected{fh.error()};
     }
-    return Dirfd{::crucible::safety::FileHandle{fd}};
+    return Dirfd{std::move(*fh)};
 }
 
 // ── flag composition over a Grants pack ──────────────────────────────
@@ -465,15 +522,19 @@ mint_file(Ctx const&,
           Path<::crucible::safety::source::Sanitized> sanitized_path,
           mode_t                                       perms = 0644) noexcept {
     constexpr int flags = detail::fold_open_flags<Grants...>();
+    // V-229: syscall body lives in src/fixy/Fs.cpp.  This template
+    // remains inline because the Grants-pack-dependent `flags` compile
+    // constant is folded at instantiation time and threaded through.
     // O_TMPFILE requires a directory argument; for now we route every
     // mint_file through ::open() on the full path.  V-225/V-229 may
     // grow an openat(dirfd, basename) variant for sandboxed callers.
-    const int fd = ::open(sanitized_path.value().c_str(), flags, perms);
-    if (fd < 0) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
+    auto fh = detail::impl::do_open_impl(sanitized_path.value().c_str(),
+                                         flags, perms);
+    if (!fh) {
+        return std::unexpected{fh.error()};
     }
     return ::crucible::safety::Linear<::crucible::safety::FileHandle>{
-        ::crucible::safety::FileHandle{fd}};
+        std::move(*fh)};
 }
 
 // ── sync<SyncOp>(ctx, FileHandle const&) ─────────────────────────────
@@ -491,33 +552,29 @@ sync(Ctx const&,
     if (!h.is_open()) {
         return std::unexpected{std::error_code{EBADF, std::system_category()}};
     }
-    int rc = 0;
-    if constexpr (std::is_same_v<SyncOp, sync_op::Fdatasync>) {
-        rc = ::fdatasync(h.get());
-    } else if constexpr (std::is_same_v<SyncOp, sync_op::Fsync>) {
-        rc = ::fsync(h.get());
-    } else if constexpr (std::is_same_v<SyncOp, sync_op::FsyncParentDir>) {
-        // For FsyncParentDir, the caller's handle MUST be a dirfd.
-        // We trust the caller (Dirfd type-discipline upstream); the
-        // fsync syscall on a non-dir fd will EINVAL naturally.
-        rc = ::fsync(h.get());
-    } else if constexpr (std::is_same_v<SyncOp, sync_op::Msync>) {
-        // Msync requires a mapped address + length, not an fd — the
-        // V-225 Mmap.h surface owns the call.  For Fs.h, Msync at this
-        // signature is an error: route through the mmap surface
-        // instead.
-        return std::unexpected{std::error_code{EINVAL, std::system_category()}};
-    } else {
-        static_assert(std::is_same_v<SyncOp, sync_op::Fdatasync> ||
-                      std::is_same_v<SyncOp, sync_op::Fsync> ||
-                      std::is_same_v<SyncOp, sync_op::Msync> ||
-                      std::is_same_v<SyncOp, sync_op::FsyncParentDir>,
-                      "FIXY-V-224 sync<SyncOp>: SyncOp must be a sync_op:: tag");
-    }
-    if (rc < 0) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
-    }
-    return {};
+    // V-229: compile-time map SyncOp -> SyncOpTag; syscall body lives
+    // in src/fixy/Fs.cpp.  The static_assert exhaustiveness check stays
+    // at the template-instantiation site so a malformed SyncOp fires
+    // the diagnostic here, before the impl call.
+    constexpr auto op = []() consteval {
+        if constexpr (std::is_same_v<SyncOp, sync_op::Fdatasync>) {
+            return detail::impl::SyncOpTag::Fdatasync;
+        } else if constexpr (std::is_same_v<SyncOp, sync_op::Fsync>) {
+            return detail::impl::SyncOpTag::Fsync;
+        } else if constexpr (std::is_same_v<SyncOp, sync_op::FsyncParentDir>) {
+            return detail::impl::SyncOpTag::FsyncParentDir;
+        } else if constexpr (std::is_same_v<SyncOp, sync_op::Msync>) {
+            return detail::impl::SyncOpTag::Msync;
+        } else {
+            static_assert(std::is_same_v<SyncOp, sync_op::Fdatasync> ||
+                          std::is_same_v<SyncOp, sync_op::Fsync> ||
+                          std::is_same_v<SyncOp, sync_op::Msync> ||
+                          std::is_same_v<SyncOp, sync_op::FsyncParentDir>,
+                          "FIXY-V-224 sync<SyncOp>: SyncOp must be a sync_op:: tag");
+            return detail::impl::SyncOpTag::Fdatasync;  // unreachable
+        }
+    }();
+    return detail::impl::do_sync_impl(h.get(), op);
 }
 
 // ── commit_atomic<Atomicity>(ctx, tmp, target) ───────────────────────
@@ -536,38 +593,31 @@ template <typename Atomicity, ::crucible::effects::IsExecCtx Ctx>
 commit_atomic(Ctx const&,
               Path<::crucible::safety::source::Sanitized> tmp,
               Path<::crucible::safety::source::Sanitized> target) noexcept {
-    if constexpr (std::is_same_v<Atomicity, atomicity::Rename>) {
-        if (::rename(tmp.value().c_str(), target.value().c_str()) < 0) {
-            return std::unexpected{std::error_code{errno, std::system_category()}};
+    // V-229: compile-time map Atomicity -> AtomicityTag; syscall body
+    // lives in src/fixy/Fs.cpp.  LinkAtomic still returns ENOSYS until
+    // V-228's CipherDurable wires the O_TMPFILE + linkat fd channel.
+    // Atomicity::None remains a no-op (caller-asserted).
+    constexpr auto at = []() consteval {
+        if constexpr (std::is_same_v<Atomicity, atomicity::Rename>) {
+            return detail::impl::AtomicityTag::Rename;
+        } else if constexpr (std::is_same_v<Atomicity, atomicity::RenameAt2NoReplace>) {
+            return detail::impl::AtomicityTag::RenameAt2NoReplace;
+        } else if constexpr (std::is_same_v<Atomicity, atomicity::LinkAtomic>) {
+            return detail::impl::AtomicityTag::LinkAtomic;
+        } else if constexpr (std::is_same_v<Atomicity, atomicity::None>) {
+            return detail::impl::AtomicityTag::None;
+        } else {
+            static_assert(std::is_same_v<Atomicity, atomicity::None> ||
+                          std::is_same_v<Atomicity, atomicity::Rename> ||
+                          std::is_same_v<Atomicity, atomicity::RenameAt2NoReplace> ||
+                          std::is_same_v<Atomicity, atomicity::LinkAtomic>,
+                          "FIXY-V-224 commit_atomic<Atomicity>: Atomicity must be an atomicity:: tag");
+            return detail::impl::AtomicityTag::None;  // unreachable
         }
-        return {};
-    } else if constexpr (std::is_same_v<Atomicity, atomicity::RenameAt2NoReplace>) {
-        if (::renameat2(AT_FDCWD, tmp.value().c_str(),
-                        AT_FDCWD, target.value().c_str(),
-                        RENAME_NOREPLACE) < 0) {
-            return std::unexpected{std::error_code{errno, std::system_category()}};
-        }
-        return {};
-    } else if constexpr (std::is_same_v<Atomicity, atomicity::LinkAtomic>) {
-        // LinkAtomic is the O_TMPFILE + linkat(AT_EMPTY_PATH) shape.
-        // The caller already holds the tmp fd; this path is reserved
-        // for the V-229 implementation TU where the fd channel is
-        // wired through.  For the V-224 substrate slice, we expose
-        // the shape but return ENOSYS — the V-229 sweep replaces.
-        return std::unexpected{std::error_code{ENOSYS, std::system_category()}};
-    } else if constexpr (std::is_same_v<Atomicity, atomicity::None>) {
-        // Atomicity::None is a programmer-acknowledged "do nothing"
-        // — semantically a no-op.  Returning success is correct (the
-        // caller asserted no atomicity guarantee was needed).
-        (void)tmp; (void)target;
-        return {};
-    } else {
-        static_assert(std::is_same_v<Atomicity, atomicity::None> ||
-                      std::is_same_v<Atomicity, atomicity::Rename> ||
-                      std::is_same_v<Atomicity, atomicity::RenameAt2NoReplace> ||
-                      std::is_same_v<Atomicity, atomicity::LinkAtomic>,
-                      "FIXY-V-224 commit_atomic<Atomicity>: Atomicity must be an atomicity:: tag");
-    }
+    }();
+    return detail::impl::do_commit_atomic_impl(tmp.value().c_str(),
+                                               target.value().c_str(),
+                                               at);
 }
 
 // ═════════════════════════════════════════════════════════════════════
