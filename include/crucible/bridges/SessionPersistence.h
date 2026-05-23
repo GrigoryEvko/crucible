@@ -26,9 +26,11 @@
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/fixy/Time.h>                                 // FIXY-V-199: mint_clock_reader, ClockReader
 #include <crucible/safety/IsSessionHandle.h>
 
 #include <chrono>
+#include <cstdint>                                              // FIXY-V-199: last_flush_ns_ storage
 #include <cstdlib>
 #include <expected>
 #include <functional>
@@ -48,6 +50,16 @@ struct SessionPersistencePolicy {
 
 template <typename CallerRow>
 class SessionPersistenceState {
+public:
+    // FIXY-V-199: persistence-layer clock source is pinned to MONOTONIC.
+    // steady_clock-on-Linux IS CLOCK_MONOTONIC; an explicit ClockReader
+    // ctor parameter documents the choice at the construction boundary
+    // and lets future call sites inject a calibrated reader (e.g. one
+    // tied to a CpuPinned proof) without touching the persistence body.
+    using ClockReaderType = ::crucible::fixy::time::ClockReader<
+        ::crucible::fixy::time::ClockSource_v::Monotonic>;
+
+private:
     Cipher& cipher_;
     // fixy-A2-007: store the caller's OpenView so flush_all uses the
     // mint-time witness, not a fresh view minted at flush time.  Before
@@ -63,7 +75,14 @@ class SessionPersistenceState {
     SessionEventLog log_;
     std::size_t flushed_count_ = 0;
     SessionPersistencePolicy policy_{};
-    std::chrono::steady_clock::time_point last_flush_{};
+    // FIXY-V-199: store the consumed u64 nanos instead of a chrono
+    // time_point — the ClockReader's read() returns MonotonicClockBytes,
+    // we consume it once per read to a raw nanosecond count, and compare
+    // against a duration_cast<nanoseconds>(policy.time_threshold).count()
+    // threshold (also a u64 in nanoseconds).  Same arithmetic, explicit
+    // unit, no implicit clock-type coupling.
+    std::uint64_t last_flush_ns_ = 0;
+    [[no_unique_address]] ClockReaderType clock_reader_{};
 
 public:
     using caller_row = CallerRow;
@@ -73,15 +92,32 @@ public:
         "SessionPersistenceState<CallerRow>: CallerRow must contain "
         "IO + Block because persistence writes Cipher files.");
 
+    // FIXY-V-199 sentinel: ClockReader is stateless, regime-1 zero-cost.
+    // sizeof(ClockReaderType) is implementation-defined at 1 byte for an
+    // empty struct, but [[no_unique_address]] collapses it into the
+    // class layout's padding — the surrounding state size stays unchanged
+    // versus the pre-V-199 layout.
+    static_assert(::std::is_empty_v<ClockReaderType>,
+        "FIXY-V-199: ClockReader must be empty (stateless witness); "
+        "[[no_unique_address]] would otherwise consume a real byte.");
+    static_assert(ClockReaderType::source
+        == ::crucible::fixy::time::ClockSource_v::Monotonic,
+        "FIXY-V-199: SessionPersistenceState clock provenance is MONOTONIC.");
+
     SessionPersistenceState(Cipher& cipher,
                             CipherOpenView const& view,
                             SessionTagId session,
-                            SessionPersistencePolicy policy) noexcept
+                            SessionPersistencePolicy policy,
+                            ClockReaderType clock_reader = {}) noexcept
         : cipher_{cipher},
           view_{view},
           log_{session},
           policy_{policy},
-          last_flush_{std::chrono::steady_clock::now()} {}
+          last_flush_ns_{0},
+          clock_reader_{clock_reader}
+    {
+        last_flush_ns_ = clock_reader_.read().consume();
+    }
 
     SessionPersistenceState(const SessionPersistenceState&) = delete;
     SessionPersistenceState& operator=(const SessionPersistenceState&) = delete;
@@ -133,10 +169,15 @@ public:
             std::chrono::duration_cast<std::chrono::nanoseconds>(
                 policy_.time_threshold).count();
         if (time_threshold_ns > 0) {
-            const auto elapsed_ns =
-                std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    std::chrono::steady_clock::now() - last_flush_).count();
-            if (elapsed_ns < time_threshold_ns) return true;
+            // FIXY-V-199: typed clock read via the ctor-injected
+            // ClockReader<Monotonic>.  Consume the bytes once for the
+            // arithmetic; subtract from the stored last_flush_ns_.
+            const std::uint64_t now_ns =
+                clock_reader_.read().consume();
+            const std::uint64_t elapsed_ns =
+                now_ns - last_flush_ns_;
+            if (static_cast<long long>(elapsed_ns) < time_threshold_ns)
+                return true;
             return flush_all();
         }
         return true;
@@ -155,7 +196,8 @@ public:
             cipher_.template persist_session_events<CallerRow>(view_, events);
         if (hash) {
             flushed_count_ = log_.size();
-            last_flush_ = std::chrono::steady_clock::now();
+            // FIXY-V-199: typed clock read; store the consumed u64 nanos.
+            last_flush_ns_ = clock_reader_.read().consume();
             return true;
         }
         return false;
@@ -689,13 +731,20 @@ template <typename Proto, ::crucible::effects::IsExecCtx Ctx, typename Resource>
 // MetaLog drain machinery.  CLAUDE.md §XXI: compile-time evaluation
 // would lie about the runtime cost.
 [[nodiscard]] auto mint_persisted_session(
-    Ctx const&, Cipher& cipher, CipherOpenView const& view,
+    Ctx const& ctx, Cipher& cipher, CipherOpenView const& view,
     Resource&& resource, SessionTagId session, RoleTagId self,
     RoleTagId peer, SessionPersistencePolicy policy = {}) noexcept
 {
     using CallerRow = typename Ctx::row_type;
+    // FIXY-V-199: mint the persistence-layer ClockReader from ctx; this
+    // ties the clock-source choice (MONOTONIC) to a §XXI mint at the
+    // factory boundary, making the provenance grep-discoverable.  The
+    // ClockReader is stateless; it carries the type-level source tag
+    // through to the state's read sites.
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
-        cipher, view, session, policy);
+        cipher, view, session, policy,
+        ::crucible::fixy::time::mint_clock_reader<
+            ::crucible::fixy::time::ClockSource_v::Monotonic>(ctx));
     auto bare = mint_session_handle<Proto>(std::forward<Resource>(resource));
     auto recording = mint_recording_session(
         std::move(bare), state->log(), self, peer);
@@ -738,7 +787,7 @@ template <::crucible::effects::IsExecCtx Ctx,
     requires ::crucible::effects::CtxAdmits<
         Ctx, CipherSessionEventPersistenceRow>
 [[nodiscard]] auto mint_persisted_session(
-    Ctx const&,
+    Ctx const& ctx,
     SessionHandle<Proto, Resource, LoopCtx> inner,
     Cipher& cipher,
     CipherOpenView const& view,
@@ -748,8 +797,15 @@ template <::crucible::effects::IsExecCtx Ctx,
     SessionPersistencePolicy policy = {}) noexcept
 {
     using CallerRow = typename Ctx::row_type;
+    // FIXY-V-199: mint the persistence-layer ClockReader from ctx; this
+    // ties the clock-source choice (MONOTONIC) to a §XXI mint at the
+    // factory boundary, making the provenance grep-discoverable.  The
+    // ClockReader is stateless; it carries the type-level source tag
+    // through to the state's read sites.
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
-        cipher, view, session, policy);
+        cipher, view, session, policy,
+        ::crucible::fixy::time::mint_clock_reader<
+            ::crucible::fixy::time::ClockSource_v::Monotonic>(ctx));
     auto recording = mint_recording_session(
         std::move(inner), state->log(), self, peer);
     return PersistedSessionHandle<decltype(recording), CallerRow>{
@@ -795,7 +851,7 @@ template <::crucible::effects::IsExecCtx Ctx,
     requires ::crucible::effects::CtxAdmits<
         Ctx, CipherSessionEventPersistenceRow>
 [[nodiscard]] auto mint_persisted_session(
-    Ctx const&,
+    Ctx const& ctx,
     PermissionedSessionHandle<Proto, PS, Resource, LoopCtx> inner,
     Cipher& cipher,
     CipherOpenView const& view,
@@ -805,8 +861,15 @@ template <::crucible::effects::IsExecCtx Ctx,
     SessionPersistencePolicy policy = {}) noexcept
 {
     using CallerRow = typename Ctx::row_type;
+    // FIXY-V-199: mint the persistence-layer ClockReader from ctx; this
+    // ties the clock-source choice (MONOTONIC) to a §XXI mint at the
+    // factory boundary, making the provenance grep-discoverable.  The
+    // ClockReader is stateless; it carries the type-level source tag
+    // through to the state's read sites.
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
-        cipher, view, session, policy);
+        cipher, view, session, policy,
+        ::crucible::fixy::time::mint_clock_reader<
+            ::crucible::fixy::time::ClockSource_v::Monotonic>(ctx));
     auto recording = mint_recording_session(
         std::move(inner), state->log(), self, peer);
     return PersistedSessionHandle<decltype(recording), CallerRow>{

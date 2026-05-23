@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-23T18:56:05Z`.
+Snapshot generated: `2026-05-23T19:03:02Z`.
 
 ## bridges/
 
@@ -40,7 +40,7 @@ Snapshot generated: `2026-05-23T18:56:05Z`.
 | `mint_crash_watched_endpoint` | `include/crucible/bridges/EndpointMint.h:127` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:227` | HS14: 4 |
 | `mint_crash_watched_session` | `include/crucible/bridges/CrashTransport.h:1265` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:134` | HS14: 5 |
 | `mint_event` | `include/crucible/bridges/CrashTransport.h:286` | Y | Y | Y | - | token | [✗ NO-FIXY] | HS14: 2 |
-| `mint_persisted_session` | `include/crucible/bridges/SessionPersistence.h:691` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Bridge.h:100` | HS14: 14 |
+| `mint_persisted_session` | `include/crucible/bridges/SessionPersistence.h:733` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Bridge.h:100` | HS14: 14 |
 | `mint_recording_endpoint` | `include/crucible/bridges/EndpointMint.h:99` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:226` | HS14: 4 |
 | `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:1223` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:123` | HS14: 14 |
 | `mint_vigil_mode_bridge` | `include/crucible/bridges/VigilModeHandle.h:218` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:233` | HS14: 4 |
