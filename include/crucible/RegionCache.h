@@ -25,14 +25,44 @@
 // Thread safety: NOT thread-safe.  All access is on the foreground
 // thread — insert() from try_align_(), find_alternate() from the
 // dispatch_op divergence path.
+//
+// WRAP-RegionCache-6 #991: every public method below carries the
+// CRUCIBLE_NO_THREAD_SAFETY attribute so Clang's -Wthread-safety
+// (P1179R1, enabled per Platform.h) accepts the unguarded mutable
+// state without false positives.  The attribute is the load-bearing
+// machine-readable form of the "NOT thread-safe" comment above:
+//   * GCC builds: the macro is empty (Platform.h:192) — zero cost,
+//     zero behavior change.
+//   * Clang builds: the attribute tells -Wthread-safety to skip
+//     the check on these methods, which would otherwise demand a
+//     mutex annotation we deliberately don't carry.
+//
+// Adding a new public method to RegionCache requires marking it
+// with CRUCIBLE_NO_THREAD_SAFETY — the discipline that converts
+// "single-threaded by convention" from comment text into a
+// machine-verified contract once Clang joins the build matrix.
 
 #include <crucible/MerkleDag.h>
+#include <crucible/Platform.h>           // WRAP-RegionCache-6 #991: CRUCIBLE_NO_THREAD_SAFETY
 #include <crucible/safety/Cyclic.h>      // safety::Cyclic — ring write cursor (head_)
 #include <crucible/safety/Mutation.h>    // safety::BoundedMonotonic — saturating fill counter (count_)
 #include <crucible/safety/WeakRef.h>     // safety::WeakRef — nullable non-owning cache slot
 
 #include <cassert>
 #include <cstdint>
+
+// WRAP-RegionCache-6 #991 sentinel: the marker MUST be available so
+// every public method below carries the analyzer-skip attribute.
+// If Platform.h ever drops the definition (unlikely but a real
+// regression class), this fires at every TU that includes
+// RegionCache.h — long before -Wthread-safety can scream at the
+// unguarded mutable state without an opt-out.
+#ifndef CRUCIBLE_NO_THREAD_SAFETY
+#error "WRAP-RegionCache-6 #991: CRUCIBLE_NO_THREAD_SAFETY must be \
+defined by Platform.h before this header — the 4 public RegionCache \
+methods depend on the analyzer-skip attribute to compile cleanly \
+under Clang's -Wthread-safety (P1179R1)."
+#endif
 
 namespace crucible {
 
@@ -54,7 +84,8 @@ struct RegionCache {
     // Regions without a MemoryPlan are stored with num_ops_=0, making
     // them invisible to find_alternate() (any pos >= 0 fails the bounds
     // check).  Call notify_plan_ready() when the plan arrives.
-    void insert(const RegionNode* region) {
+    // WRAP-RegionCache-6 #991: machine-readable "fg-only" contract.
+    void insert(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY {
         assert(region && "inserting null region");
 
         const ContentHash hash = region->content_hash;
@@ -85,7 +116,8 @@ struct RegionCache {
     // Notify the cache that a region's plan has been set.
     // Updates num_ops_ from 0 (invisible) to the real count, making
     // the region eligible for find_alternate().
-    void notify_plan_ready(const RegionNode* region) {
+    // WRAP-RegionCache-6 #991: machine-readable "fg-only" contract.
+    void notify_plan_ready(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY {
         assert(region && "null region");
         for (uint32_t i = 0; i < count_.get(); i++) {
             const uint32_t idx = head_.index_back(i);
@@ -105,10 +137,12 @@ struct RegionCache {
     // is folded into num_ops_ (plan-less regions have num_ops_=0).
     //
     // Returns nullptr if no match found.
+    // WRAP-RegionCache-6 #991: machine-readable "fg-only" contract.
     [[nodiscard]] const RegionNode* find_alternate(
         uint32_t pos,
         SchemaHash schema, ShapeHash shape,
-        const RegionNode* exclude = nullptr) const CRUCIBLE_LIFETIMEBOUND
+        const RegionNode* exclude = nullptr) const
+        CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY
     {
         for (uint32_t i = 0; i < count_.get(); i++) {
             const uint32_t idx = head_.index_back(i);
@@ -127,7 +161,10 @@ struct RegionCache {
 
     // Find by exact content hash.  Scans inline content_hashes_ —
     // zero pointer chasing into RegionNode.
-    [[nodiscard]] const RegionNode* find(ContentHash hash) const CRUCIBLE_LIFETIMEBOUND {
+    // WRAP-RegionCache-6 #991: machine-readable "fg-only" contract.
+    [[nodiscard]] const RegionNode* find(ContentHash hash) const
+        CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY
+    {
         for (uint32_t i = 0; i < count_.get(); i++) {
             const uint32_t idx = head_.index_back(i);
             if (content_hashes_[idx] == hash) return regions_[idx].try_get();
