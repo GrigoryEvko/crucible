@@ -300,6 +300,7 @@ crucible_test(test_fixy_v_251_hw_instruction)           # FIXY-V-251 HwInstructi
 crucible_test(test_fixy_v_252_barrier_strength)         # FIXY-V-252 BarrierStrengthLattice — 7-tier memory-fence strength chain
 crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScopeLattice — non-distributive accel×ARM visibility-scope partial order (WMEM keystone)
 crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/ScopedFence.h — partial-order provider Graded carrier for MemoryScope axis + IsScopedFence + row_hash
+crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
 crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
@@ -6505,6 +6506,18 @@ crucible_neg_compile_test(neg_scoped_fence_provider_too_narrow
   "constraints not satisfied|no matching function|satisfies|require_gpu_fence")
 crucible_neg_compile_test(neg_scoped_fence_relax_up_or_cross_trunk
   "constraints not satisfied|no matching function|relax|ScopedFence")
+
+# ─── FIXY-V-268 CollisionCatalog V401/V402 neg-compiles (per-rule, HS14) ──
+#
+# Each instantiates a REAL fn::Fn<...> so Fn's own
+# static_assert(ValidComposition) runs the validate() leg — a concept-layer
+# neg ALONE does not gate Fn<> (feedback_collision_catalog_dual_wiring).
+# Distinct mismatch classes: V401 = scope×strength on one type_t; V402 =
+# scope-trunk × host-arch (type_t + source_t).
+crucible_neg_compile_test(neg_collision_V401_scope_strength
+  "V401")
+crucible_neg_compile_test(neg_collision_V402_scope_arch
+  "V402")
 
 # ─── FIXY-V-091 CollisionCatalog F101..F105 neg-compiles (per-rule) ──
 #

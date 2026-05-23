@@ -22,12 +22,14 @@
 #include <crucible/algebra/lattices/ControlFlowLattice.h>  // FIXY-V-243 C001/L006/P003 ControlFlow tier
 #include <crucible/algebra/lattices/HwInstructionLattice.h>    // FIXY-V-260 V201..V203 HwInstruction tier
 #include <crucible/algebra/lattices/SimdIsaLattice.h>          // FIXY-V-260 V101 SimdIsa tier
+#include <crucible/algebra/lattices/MemoryScopeLattice.h>      // FIXY-V-268 V401/V402 MemoryScope tier + trunk classifiers
 #include <crucible/algebra/lattices/StdioLattice.h>        // FIXY-V-243 S001 Stdio tier
 #include <crucible/algebra/lattices/WaitLattice.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/FpMode.h>          // FIXY-V-091 F-family detectors
+#include <crucible/safety/source/Arch.h>     // FIXY-V-268 V402 arch_pin_v<F::source_t> host-arch reader
 
 #include <array>
 #include <cstdint>
@@ -107,6 +109,15 @@ namespace crucible::safety {
     class BarrierGuarded;
     template <::crucible::algebra::lattices::SimdIsa W, typename T>
     class SimdWidthPinned;
+    // FIXY-V-268: the V-267 ScopedFence carrier — V401 reads its MemoryScope
+    // tier off F::type_t (composed with a BarrierGuarded tier) for the
+    // scope×strength sufficiency rule, V402 for the scope×arch cross-trunk
+    // rule.  Forward-declared (not #include ScopedFence.h) for the same
+    // header-cycle reason the Hw/BarrierGuarded/SimdWidthPinned block above
+    // forward-decls; the MemoryScope enum + lattice arrive complete via the
+    // MemoryScopeLattice.h include above.
+    template <::crucible::algebra::lattices::MemoryScope S, typename T>
+    class ScopedFence;
 }
 
 namespace crucible::safety::fn::collision {
@@ -378,6 +389,45 @@ enum class RuleCode : std::uint8_t {
     V202 = 42,  // Hw tier == PrivilegedMsr without an Init-context row
     V203 = 43,  // replay-required × Hw tier ≥ NonDeterministicTsc (rdtsc nondeterminism)
     V301 = 44,  // HotPath × BarrierStrength tier ≥ SeqCst (full fence on hot path)
+    // ── FIXY-V-268 V4xx-family — memory-scope cross-axis rules (Agent WMEM) ──
+    //
+    // V-265 ships the MemoryScopeLattice (the two-trunk partial order:
+    // accel Warp⊑Cta⊑Cluster⊑Gpu × ARM Inner⊑Outer, joined at Thread/⊥ and
+    // System/⊤); V-267 ships the ScopedFence<Scope, T> carrier that pins a
+    // publish scope at the type level.  These two rules guard cross-axis
+    // compositions where a memory-scope declaration is unsound against the
+    // BarrierStrength axis (V-252 / V-255 BarrierGuarded) or the host-arch
+    // pin (V-261 source::ArchPinned).  The V4xx band is FREE; both rules are
+    // TYPE-READABLE off F::type_t + F::source_t today (no grant needed), like
+    // V101/V201/V301 — the V402 marker is the second, grant-driven path for
+    // the cross-grant case a single type read cannot express.
+    //
+    //   V401: marks scope ⊒ Gpu × BarrierStrength ⊏ AcqRel.  A value
+    //         published at device-or-wider visibility (Gpu / System) needs at
+    //         least acquire-release ordering to make the cross-CTA / cross-
+    //         device writes actually visible; a Gpu-scope publication guarded
+    //         only by None / CompilerBarrier / AcquireLoad / ReleaseStore is a
+    //         silent weak-memory race (the fence widens visibility but the
+    //         barrier never establishes the two-sided ordering device readers
+    //         require).  scope_at_or_above_v<Gpu, type_t> reads the ScopedFence
+    //         tier; barrier_at_or_above_v<AcqRel, type_t> reads the
+    //         BarrierGuarded tier from the SAME composed type_t (the two
+    //         detectors pierce each other).  Type-readable.
+    //   V402: marks scope-trunk × host-arch CROSS-TRUNK incoherence.  An
+    //         accel-trunk (GPU device) scope pinned to a CPU-host arch
+    //         (source::ArchPinned<Arm> or <X86> — the fence dialect is
+    //         mfence / DMB, which cannot realize a PTX `.cta`/`.gpu` scope),
+    //         OR an ARM-shareability scope (Inner/Outer = DMB ISH/OSH) pinned
+    //         to a non-ARM host (X86 has no ISH/OSH domain).  The mirror of
+    //         V002 marks_vendor_cross_arch on the memory-scope axis.  Reads
+    //         the ScopedFence trunk (V-265 mem_scope_is_accel / mem_scope_is_arm
+    //         classifiers) against arch_pin_v<F::source_t> (V-261).  Type +
+    //         source-readable; the marks_scope_arch_cross_trunk marker is the
+    //         grant-driven path for the nested-cross-trunk-scope case a single
+    //         type read cannot express (two ScopedFence layers from different
+    //         trunks composed in one binding).
+    V401 = 45,  // scope ⊒ Gpu × BarrierStrength ⊏ AcqRel (device publish under-fenced)
+    V402 = 46,  // scope-trunk × host-arch cross-trunk (GPU scope on CPU host / ARM scope on x86)
     None = 255,
 };
 
@@ -532,6 +582,14 @@ struct V301_HotPathFullFence : diag::tag_base {
     static constexpr std::string_view name = "V301_HotPathFullFence";
 };
 
+// ── FIXY-V-268 memory-scope cross-axis rule tags (Agent WMEM §3.6) ──
+struct V401_ScopeStrengthInsufficient : diag::tag_base {
+    static constexpr std::string_view name = "V401_ScopeStrengthInsufficient";
+};
+struct V402_ScopeArchCrossTrunk : diag::tag_base {
+    static constexpr std::string_view name = "V402_ScopeArchCrossTrunk";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -577,11 +635,13 @@ using Catalog = std::tuple<
     V201_HotPathNondetTscOrPrivileged,
     V202_PrivilegedMsrNeedsInit,
     V203_ReplayNondetTsc,
-    V301_HotPathFullFence
+    V301_HotPathFullFence,
+    V401_ScopeStrengthInsufficient,
+    V402_ScopeArchCrossTrunk
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 45);
+static_assert(catalog_size == 47);
 
 template <RuleCode R>
 struct rule_tag;
@@ -631,6 +691,8 @@ template <> struct rule_tag<RuleCode::V201> { using type = V201_HotPathNondetTsc
 template <> struct rule_tag<RuleCode::V202> { using type = V202_PrivilegedMsrNeedsInit; };
 template <> struct rule_tag<RuleCode::V203> { using type = V203_ReplayNondetTsc; };
 template <> struct rule_tag<RuleCode::V301> { using type = V301_HotPathFullFence; };
+template <> struct rule_tag<RuleCode::V401> { using type = V401_ScopeStrengthInsufficient; };
+template <> struct rule_tag<RuleCode::V402> { using type = V402_ScopeArchCrossTrunk; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -772,6 +834,12 @@ template <> struct rule_code_of<V203_ReplayNondetTsc> {
 };
 template <> struct rule_code_of<V301_HotPathFullFence> {
     static constexpr RuleCode value = RuleCode::V301;
+};
+template <> struct rule_code_of<V401_ScopeStrengthInsufficient> {
+    static constexpr RuleCode value = RuleCode::V401;
+};
+template <> struct rule_code_of<V402_ScopeArchCrossTrunk> {
+    static constexpr RuleCode value = RuleCode::V402;
 };
 
 template <typename Tag>
@@ -1125,6 +1193,32 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(V301, "V301",
     "use BarrierGuarded<AcquireLoad> / <ReleaseStore> / <AcqRel> on the hot path; "
     "reserve SeqCst / FullFence for Init or Bg sequencing",
     "fixy.md §24.2 V301 (V-260)");
+// FIXY-V-268 V4xx-family diagnostics (2 memory-scope cross-axis rules).
+CRUCIBLE_COLLISION_DIAGNOSTIC(V401, "V401",
+    "device-or-wider memory-scope publications carry at least acquire-release ordering",
+    "F::type_t composes a ScopedFence tier ⊒ Gpu (device / system visibility) with a "
+    "BarrierGuarded tier ⊏ AcqRel (None / CompilerBarrier / AcquireLoad / ReleaseStore). "
+    "A `.gpu`/`.sys`-scope publication widens VISIBILITY but a sub-AcqRel barrier never "
+    "establishes the two-sided ordering cross-CTA / cross-device readers require — a "
+    "silent weak-memory race (the MemoryScope axis widens reach; the BarrierStrength axis "
+    "must independently establish ordering)",
+    "raise the barrier to BarrierGuarded<AcqRel> (or SeqCst / FullFence) on the device-scope "
+    "publication, or narrow the ScopedFence scope to Cta / Warp where the weaker barrier "
+    "suffices",
+    "fixy.md §24.2 V401 (V-268)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(V402, "V402",
+    "a memory-scope trunk is coherent with the binding's pinned host architecture",
+    "marks_scope_arch_cross_trunk OR F::type_t pins a ScopedFence whose trunk contradicts "
+    "arch_pin_v<F::source_t>: an accel (GPU device — Warp..Gpu) scope on a CPU-host arch pin "
+    "(ArchPinned<Arm> or <X86>, whose fence dialect is DMB / mfence and cannot realize a PTX "
+    "`.cta`/`.gpu` scope), OR an ARM-shareability scope (Inner/Outer = DMB ISH/OSH) on a "
+    "non-ARM host (X86 has no ISH/OSH domain). The MemoryScope-axis mirror of V002's "
+    "cross-arch intrinsic mixing (MemoryScopeLattice cross-trunk leq = false)",
+    "select the architecture at the dispatch boundary and keep each arch's scoped fences in "
+    "its own single-target binary (CLAUDE.md §VIII); pin a host arch whose trunk matches the "
+    "scope (ArchPinned<Arm> for Inner/Outer; leave the host pin Portable for a GPU-device "
+    "scope), or drop the contradicting ScopedFence scope",
+    "fixy.md §24.2 V402 (V-268)");
 
 #undef CRUCIBLE_COLLISION_DIAGNOSTIC
 
@@ -1215,6 +1309,24 @@ template <typename F> struct marks_thread_local_atomic        : std::false_type 
 template <typename F> struct marks_vendor_isa_inconsistent    : std::false_type {};
 template <typename F> struct marks_vendor_cross_arch          : std::false_type {};
 template <typename F> struct marks_simd_width_exceeds_isa     : std::false_type {};
+
+// ── FIXY-V-268 memory-scope-axis marker trait (Agent WMEM §3.6) ─────
+//
+// Default-SAFE opt-in for V402's grant-driven path.  The V402 rule ALSO
+// reads a SHIPPED V-267 ScopedFence trunk off F::type_t against
+// arch_pin_v<F::source_t> (the type-readable path, triggerable today —
+// see the scope detectors below), so this marker is the SECOND trigger:
+// the grant-pack analysis specializes it for the nested-cross-trunk-scope
+// case a single type_t read cannot express (two ScopedFence layers from
+// DIFFERENT MemoryScope trunks composed in one binding — an accel scope
+// AND an ARM-shareability scope on the same value, which has no coherent
+// realization on any single architecture).
+//
+//   marks_scope_arch_cross_trunk — accel-trunk scope AND ARM-trunk scope
+//                                   composed in one binding, OR a scope
+//                                   whose trunk the grant pack proves
+//                                   contradicts the target arch.
+template <typename F> struct marks_scope_arch_cross_trunk     : std::false_type {};
 
 template <typename T> struct is_exact_decimal             : std::false_type {};
 
@@ -1685,6 +1797,13 @@ struct barrier_tier_of<::crucible::safety::BarrierGuarded<Tier, U>> {
     static constexpr bool has_barrier = true;
     static constexpr ::crucible::algebra::lattices::BarrierStrength value = Tier;
 };
+// FIXY-V-268: pierce a ScopedFence sibling wrapper so the V401 scope×strength
+// rule finds a nested BarrierGuarded tier regardless of nesting order
+// (`ScopedFence<Gpu, BarrierGuarded<AcqRel, T>>` reads AcqRel, not has_barrier
+// = false).  Safe for the existing V301 rule: a bare `BarrierGuarded<SeqCst,T>`
+// still matches the BarrierGuarded partial spec above, not this one.
+template <::crucible::algebra::lattices::MemoryScope S, typename U>
+struct barrier_tier_of<::crucible::safety::ScopedFence<S, U>> : barrier_tier_of<U> {};
 template <typename T> struct barrier_tier_of<T&>       : barrier_tier_of<T> {};
 template <typename T> struct barrier_tier_of<T const>  : barrier_tier_of<T> {};
 template <typename T> struct barrier_tier_of<T const&> : barrier_tier_of<T> {};
@@ -1728,6 +1847,85 @@ inline constexpr bool simd_isa_pins_specific_vector_v =
     simd_isa_of<T>::has_simd &&
     simd_isa_of<T>::value != ::crucible::algebra::lattices::SimdIsa::Scalar &&
     simd_isa_of<T>::value != ::crucible::algebra::lattices::SimdIsa::Portable;
+
+// ── FIXY-V-268 memory-scope-axis detectors (ScopedFence tier extraction
+//    off F::type_t + host-arch contradiction) ───────────────────────
+//
+// scope_tier_of mirrors barrier_tier_of: a sentinel on the primary
+// template + CV / reference piercing + a partial spec reading the pinned
+// MemoryScope from the V-267 ScopedFence carrier.  It ALSO pierces the
+// sibling hardware-band wrappers (BarrierGuarded / Hw / SimdWidthPinned)
+// so V401 finds the scope even when a barrier (or other hw-band wrapper)
+// nests outside the ScopedFence — the dual of barrier_tier_of's
+// ScopedFence-piercing above.  For a non-ScopedFence T, has_scope is false
+// and scope_at_or_above_v short-circuits to false (rule trivially passes).
+template <typename T> struct scope_tier_of {
+    static constexpr bool has_scope = false;
+    static constexpr ::crucible::algebra::lattices::MemoryScope value =
+        ::crucible::algebra::lattices::MemoryScope::Thread;
+};
+template <::crucible::algebra::lattices::MemoryScope S, typename U>
+struct scope_tier_of<::crucible::safety::ScopedFence<S, U>> {
+    static constexpr bool has_scope = true;
+    static constexpr ::crucible::algebra::lattices::MemoryScope value = S;
+};
+template <::crucible::algebra::lattices::BarrierStrength Tier, typename U>
+struct scope_tier_of<::crucible::safety::BarrierGuarded<Tier, U>> : scope_tier_of<U> {};
+template <::crucible::algebra::lattices::HwInstruction Tier, typename U>
+struct scope_tier_of<::crucible::safety::Hw<Tier, U>> : scope_tier_of<U> {};
+template <::crucible::algebra::lattices::SimdIsa W, typename U>
+struct scope_tier_of<::crucible::safety::SimdWidthPinned<W, U>> : scope_tier_of<U> {};
+template <typename T> struct scope_tier_of<T&>       : scope_tier_of<T> {};
+template <typename T> struct scope_tier_of<T const>  : scope_tier_of<T> {};
+template <typename T> struct scope_tier_of<T const&> : scope_tier_of<T> {};
+
+// scope_at_or_above_v<Floor, T>: a ScopedFence is present AND its pinned
+// scope SUBSUMES Floor on the MemoryScopeLattice partial order
+// (leq(Floor, value) — "the publish scope is at-or-above the floor").  With
+// Floor = Gpu, only Gpu and System satisfy (device-or-wider visibility);
+// Cta / Cluster / Warp and every ARM-trunk scope do NOT (cross-trunk leq is
+// false), so the V401 rule fires ONLY for genuinely device-or-wider scopes.
+template <::crucible::algebra::lattices::MemoryScope Floor, typename T>
+inline constexpr bool scope_at_or_above_v =
+    scope_tier_of<T>::has_scope &&
+    ::crucible::algebra::lattices::MemoryScopeLattice::leq(
+        Floor, scope_tier_of<T>::value);
+
+// scope_contradicts_host_arch(scope, arch): the V402 trunk-vs-host-arch
+// incoherence predicate, reusing the V-265 trunk classifiers.  A Portable
+// host pin (or a non-arch-pinned source, which arch_pin_v maps to Portable)
+// never contradicts; the shared sentinels Thread (no fence) and System
+// (full-system / `.sys` / DMB SY) are realizable on any host.  An ARM-
+// shareability scope (Inner/Outer = DMB ISH/OSH) contradicts a non-ARM host
+// (x86 has no ISH/OSH domain); an accel-trunk scope (Warp..Gpu = a PTX
+// device scope) contradicts ANY concrete CPU-host pin (the host fence
+// dialect — mfence / DMB — cannot realize a `.cta`/`.gpu` scope; ArchTag
+// carries no GPU trunk, so a GPU-device scope is only coherent with a
+// Portable host pin).
+[[nodiscard]] constexpr bool scope_contradicts_host_arch(
+        ::crucible::algebra::lattices::MemoryScope scope,
+        ::crucible::safety::source::ArchTag arch) noexcept {
+    using MS = ::crucible::algebra::lattices::MemoryScope;
+    using AT = ::crucible::safety::source::ArchTag;
+    if (arch == AT::Portable) return false;
+    if (scope == MS::Thread || scope == MS::System) return false;
+    if (::crucible::algebra::lattices::mem_scope_is_arm(scope)) {
+        return arch != AT::Arm;
+    }
+    if (::crucible::algebra::lattices::mem_scope_is_accel(scope)) {
+        return true;
+    }
+    return false;
+}
+
+// scope_arch_cross_trunk_v<F>: the type-readable V402 trigger — F::type_t
+// pins a ScopedFence whose trunk contradicts arch_pin_v<F::source_t>.
+template <typename F>
+inline constexpr bool scope_arch_cross_trunk_v =
+    scope_tier_of<typename F::type_t>::has_scope &&
+    scope_contradicts_host_arch(
+        scope_tier_of<typename F::type_t>::value,
+        ::crucible::safety::arch_pin_v<typename F::source_t>);
 
 // ── FIXY-V-260 hardware-axis rule concepts (8 of 8) ─────────────────
 
@@ -1774,6 +1972,26 @@ concept V301_OK = !(marks_hot_path<F>::value &&
                         ::crucible::algebra::lattices::BarrierStrength::SeqCst,
                         typename F::type_t>);
 
+// ── FIXY-V-268 memory-scope-axis rule concepts (2 of 2) ─────────────
+
+// V401: scope ⊒ Gpu × BarrierStrength ⊏ AcqRel.  A device-or-wider publish
+// scope composed with a barrier weaker than acquire-release is an
+// under-fenced publication (visibility widened, ordering never established).
+template <typename F>
+concept V401_OK = !(scope_at_or_above_v<
+                        ::crucible::algebra::lattices::MemoryScope::Gpu,
+                        typename F::type_t> &&
+                    !barrier_at_or_above_v<
+                        ::crucible::algebra::lattices::BarrierStrength::AcqRel,
+                        typename F::type_t>);
+
+// V402: scope-trunk × host-arch cross-trunk.  Type-readable (ScopedFence
+// trunk vs arch_pin_v<F::source_t>) OR the grant-driven marker for the
+// nested-cross-trunk-scope case.
+template <typename F>
+concept V402_OK = !(marks_scope_arch_cross_trunk<F>::value ||
+                    scope_arch_cross_trunk_v<F>);
+
 template <typename F>
 concept AllRulesOK =
     I002_OK<F> && L002_OK<F> && E044_OK<F> && I003_OK<F> &&
@@ -1787,7 +2005,8 @@ concept AllRulesOK =
     L006_OK<F> && P003_OK<F> && S001_OK<F> && S004_OK<F> &&
     G002_OK<F> &&
     V001_OK<F> && V002_OK<F> && V101_OK<F> && V102_OK<F> &&
-    V201_OK<F> && V202_OK<F> && V203_OK<F> && V301_OK<F>;
+    V201_OK<F> && V202_OK<F> && V203_OK<F> && V301_OK<F> &&
+    V401_OK<F> && V402_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -1879,6 +2098,10 @@ template <typename F>
         return RuleCode::V203;
     } else if constexpr (!V301_OK<F>) {
         return RuleCode::V301;
+    } else if constexpr (!V401_OK<F>) {
+        return RuleCode::V401;
+    } else if constexpr (!V402_OK<F>) {
+        return RuleCode::V402;
     } else {
         return RuleCode::None;
     }
@@ -2239,6 +2462,27 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
         collision::barrier_at_or_above_v<
             ::crucible::algebra::lattices::BarrierStrength::SeqCst, Type>;
 
+    // ── FIXY-V-268 memory-scope-axis predicates (2 cross-axis rules) ─
+    static constexpr bool scope_at_or_above_gpu =
+        collision::scope_at_or_above_v<
+            ::crucible::algebra::lattices::MemoryScope::Gpu, Type>;
+    static constexpr bool barrier_at_least_acqrel =
+        collision::barrier_at_or_above_v<
+            ::crucible::algebra::lattices::BarrierStrength::AcqRel, Type>;
+    static constexpr bool scope_strength_insufficient =
+        scope_at_or_above_gpu && !barrier_at_least_acqrel;
+    // Read the destructured Type / Source template params directly (NOT
+    // scope_arch_cross_trunk_v<F>, which would touch F::type_t / F::source_t
+    // and force Fn<> to complete — re-entering its own
+    // static_assert(ValidComposition<Fn>) and recursing).  The V402_OK
+    // concept reads F::type_t in the safe AllRulesOK / first_failure path.
+    static constexpr bool scope_arch_cross_trunk =
+        collision::marks_scope_arch_cross_trunk<F>::value ||
+        (collision::scope_tier_of<Type>::has_scope &&
+         collision::scope_contradicts_host_arch(
+             collision::scope_tier_of<Type>::value,
+             ::crucible::safety::arch_pin_v<Source>));
+
     [[nodiscard]] static consteval bool validate() noexcept {
         static_assert(!(classified && fail && !fail_secret),
             "I002: classified value cannot flow through Fail(E) with "
@@ -2453,6 +2697,24 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "(~20-40+ cycles) — CLAUDE.md §IX mandates acquire/release only on the "
             "hot path (free on x86 TSO). Use BarrierGuarded<AcquireLoad>/"
             "<ReleaseStore>/<AcqRel>; reserve SeqCst/FullFence for Init or Bg.");
+        // ── FIXY-V-268 memory-scope-axis static asserts ──────────────
+        static_assert(!scope_strength_insufficient,
+            "V401: a ScopedFence scope ⊒ Gpu (device / system visibility) is composed "
+            "with a BarrierStrength ⊏ AcqRel (None / CompilerBarrier / AcquireLoad / "
+            "ReleaseStore). A `.gpu`/`.sys`-scope publication widens visibility but a "
+            "sub-AcqRel barrier never establishes the two-sided ordering cross-CTA / "
+            "cross-device readers require — a silent weak-memory race. Raise the barrier "
+            "to BarrierGuarded<AcqRel> (or SeqCst / FullFence) on the device-scope value, "
+            "or narrow the ScopedFence scope to Cta / Warp where the weaker barrier suffices.");
+        static_assert(!scope_arch_cross_trunk,
+            "V402: a ScopedFence scope trunk contradicts the binding's pinned host "
+            "architecture (arch_pin_v<F::source_t>) — an accel (GPU device) scope on a "
+            "CPU-host arch pin (ArchPinned<Arm>/<X86>, whose DMB/mfence fence dialect "
+            "cannot realize a PTX `.cta`/`.gpu` scope), OR an ARM-shareability scope "
+            "(Inner/Outer = DMB ISH/OSH) on a non-ARM host (x86 has no ISH/OSH domain). "
+            "The MemoryScope-axis mirror of V002 cross-arch mixing. Pin a host arch whose "
+            "trunk matches the scope (ArchPinned<Arm> for Inner/Outer; leave the pin "
+            "Portable for a GPU-device scope), or drop the contradicting scope.");
         // L005 and F001 are pack-level rules (no single-Fn enforcement
         // shape); fixy/Fn.h checks them across the Grants pack via
         // pack::no_linear_region_alias_v and pack::frame_axis_consistent_v.
@@ -2504,7 +2766,9 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(hot_path && hot_path_nondet_tsc) &&
                !privileged_msr_no_init &&
                !(replay_required && hot_path_nondet_tsc) &&
-               !(hot_path && hot_path_full_fence);
+               !(hot_path && hot_path_full_fence) &&
+               !scope_strength_insufficient &&
+               !scope_arch_cross_trunk;
     }
 
     static constexpr bool valid = validate();
@@ -2576,6 +2840,8 @@ static_assert(collision::rule_bijection_v<collision::RuleCode::L006>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::P003>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::S001>);
 static_assert(collision::rule_bijection_v<collision::RuleCode::S004>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::V401>);
+static_assert(collision::rule_bijection_v<collision::RuleCode::V402>);
 static_assert(collision::CollisionDiagnosticByRule<DefaultFn, collision::RuleCode::I002>::rule_code()
               == std::string_view{"I002"});
 static_assert(collision::CollisionDiagnostic<DefaultFn>::category()
