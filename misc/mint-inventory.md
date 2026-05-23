@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-23T02:29:53Z`.
+Snapshot generated: `2026-05-23T08:37:10Z`.
 
 ## bridges/
 
@@ -97,9 +97,9 @@ Snapshot generated: `2026-05-23T02:29:53Z`.
 | `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h:697` | - | Y | Y | - | token | `include/crucible/fixy/Perm.h:173` | HS14: 24 |
 | `mint_permission_combine` | `include/crucible/permissions/Permission.h:504` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:33` | HS14: 2 |
 | `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:533` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:35` | HS14: 2 |
-| `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/ctrl/Throws.h:16` | HS14: 10 |
+| `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/ctrl/Throws.h:14` | HS14: 10 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:287` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:108` | HS14: 6 |
-| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 166 |
+| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 167 |
 | `mint_permission_share` | `include/crucible/permissions/Permission.h:1038` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:19` | HS14: 4 |
 | `mint_permission_split` | `include/crucible/permissions/Permission.h:484` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 25 |
 | `mint_permission_split_n` | `include/crucible/permissions/Permission.h:516` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:34` | HS14: 4 |
@@ -111,10 +111,15 @@ Snapshot generated: `2026-05-23T02:29:53Z`.
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_affine` | `include/crucible/safety/Affine.h:307` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1156` | HS14: 1 ⚠ |
+| `mint_barrier_guarded` | `include/crucible/safety/BarrierGuarded.h:194` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_call_shape` | `include/crucible/safety/CallShape.h:124` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_control_flow` | `include/crucible/safety/ControlFlow.h:157` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_diagnostic` | `include/crucible/safety/Diagnostic.h:1476` | Y | Y | - | Y | token | `include/crucible/fixy/Diag.h:211` | HS14: 2 |
-| `mint_fn` | `include/crucible/safety/Fn.h:547` | Y | Y | Y | Y | token | `include/crucible/fixy/Fn.h:1037` | HS14: 41 |
+| `mint_fn` | `include/crucible/safety/Fn.h:606` | Y | Y | Y | Y | token | `include/crucible/fixy/Fn.h:1037` | HS14: 41 |
 | `mint_fp_mode_composite` | `include/crucible/safety/FpMode.h:393` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_global_state` | `include/crucible/safety/GlobalState.h:124` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_grid_permissions` | `include/crucible/safety/PermissionGridGenerator.h:219` | Y | Y | Y | Y | token | `include/crucible/fixy/Perm.h:159` | HS14: 12 |
+| `mint_hw` | `include/crucible/safety/Hw.h:190` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_join_policy` | `include/crucible/safety/JoinPolicy.h:390` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_linear` | `include/crucible/safety/Linear.h:275` | Y | Y | Y | Y | token | `include/crucible/fixy/Safety.h:12` | HS14: 4 |
 | `mint_linear_view` | `include/crucible/safety/ScopedView.h:200` | Y | Y | Y | - | token | `include/crucible/fixy/Safety.h:43` | HS14: 3 |
@@ -122,6 +127,9 @@ Snapshot generated: `2026-05-23T02:29:53Z`.
 | `mint_refined` | `include/crucible/safety/Refined.h:363` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1197` | HS14: 4 |
 | `mint_sealed_refined` | `include/crucible/safety/SealedRefined.h:239` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1141` | HS14: 4 |
 | `mint_secret` | `include/crucible/safety/Secret.h:359` | Y | Y | Y | Y | token | `include/crucible/fixy/Safety.h:12` | HS14: 4 |
+| `mint_simd_width_pinned` | `include/crucible/safety/SimdWidthPinned.h:190` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
+| `mint_stack_use` | `include/crucible/safety/StackUse.h:122` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_stdio` | `include/crucible/safety/Stdio.h:122` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_tagged` | `include/crucible/safety/Tagged.h:777` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1141` | HS14: 6 |
 | `mint_thread_local_ref` | `include/crucible/safety/ThreadLocalRef.h:224` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_view` | `include/crucible/safety/ScopedView.h:100` | - | Y | Y | - | token | `include/crucible/fixy/Safety.h:41` | HS14: 10 |
@@ -211,7 +219,7 @@ to distinguish this third authorization shape.
 
 ## Summary
 
-- Total substrate mints: 107
-- Missing fixy re-export: 4
+- Total substrate mints: 115
+- Missing fixy re-export: 12
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.
