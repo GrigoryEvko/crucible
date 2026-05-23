@@ -166,11 +166,12 @@ namespace {
             ++seen;
         }
     });
-    EXPECT(seen == 31,
-           "every one of 31 foundation Categories must route through sink "
+    EXPECT(seen == 33,
+           "every one of 33 foundation Categories must route through sink "
            "(22 wrapper-axis + 3 F* alias + 1 witness FIXY-G9 + 2 modality "
            "FIXY-G10 + 1 SharedPermissionPool fixy-A1-015 + 1 HugePage "
-           "fixy-A1-022 + 1 PublishOnce fixy-A1-031)");
+           "fixy-A1-022 + 1 PublishOnce fixy-A1-031 + 2 WRAP-Bits-Borrowed-"
+           "Diagnostic #1092)");
 
     diag::set_violation_sink(previous);
 }

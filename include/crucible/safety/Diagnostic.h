@@ -896,6 +896,83 @@ struct PublishOnceDoublePublish : tag_base {
         "or a duplicate compile entry in flight.";
 };
 
+// WRAP-Bits-Borrowed-Diagnostic (task #1092) — runtime violations from
+// safety/Bits.h's invariant gates (out-of-range mask via from_raw,
+// future mutual-exclusion / subsumption checks landing with
+// WRAP-Bits-Integration-4) and safety/Borrowed.h's bounds-aware accessors
+// (operator[] / subspan offset+count beyond size()).  Both wrappers
+// currently document these as "not contract-checked" in their headers;
+// publishing a Catalog Category lets a future tightening route via
+// CRUCIBLE_PRE → safety::diag::report<Category::X> instead of falling
+// through to UB on out-of-range read / re-decoded enum.
+struct BitsInvariantViolation : tag_base {
+    static constexpr std::string_view name = "BitsInvariantViolation";
+    static constexpr std::string_view description =
+        "safety::Bits<EnumType> observed a runtime value outside the "
+        "declared invariant for the wrapped flag enum.  Three concrete "
+        "failure modes route through this tag: (a) Bits<E>::from_raw(b) "
+        "loaded a deserialized bit-pattern containing flags outside "
+        "E's declared mask (e.g., the on-disk word survived an enum-"
+        "tightening upgrade and now carries a bit no current E "
+        "enumerator names); (b) the future mutual-exclusion invariants "
+        "landing with WRAP-Bits-Integration-4 observed two mutually-"
+        "exclusive flags set simultaneously (e.g., NodeFlags::Dirty + "
+        "NodeFlags::Sealed); (c) a subsumption invariant observed a "
+        "parent flag set without its declared child flag (e.g., "
+        "MetaFlags::Quantized set without MetaFlags::HasScale).  In "
+        "every case the bits_ field carries content the wrapper's "
+        "consumers (test() / set() / popcount() / serialization) "
+        "depend on EXCLUDING — silent acceptance routes the bad value "
+        "into the model state.";
+    static constexpr std::string_view remediation =
+        "Audit the producer of the failing bit-pattern.  For "
+        "from_raw() deserialization paths: validate the on-disk word "
+        "against the current E's full mask BEFORE constructing the "
+        "Bits<E> (compare against the OR of all enumerators), and "
+        "reject loads from older schema versions through a separate "
+        "migration path.  For mutual-exclusion / subsumption "
+        "violations: trace the set() / unset() / toggle() call site "
+        "that established the invalid combination; the bug is usually "
+        "an early-return that skipped the unset() of the conflicting "
+        "flag.  Permanent fix: make the invariant a declared "
+        "constraint on the Bits<E, Invariants...> instantiation (per "
+        "WRAP-Bits-Integration-4) and route mutation through guarded "
+        "transitions that fail-loud at the source.";
+};
+
+struct BorrowedBoundsViolation : tag_base {
+    static constexpr std::string_view name = "BorrowedBoundsViolation";
+    static constexpr std::string_view description =
+        "safety::Borrowed<T, Source> observed a bounds-violating "
+        "accessor call.  Concrete failure modes: (a) operator[](i) "
+        "where i >= size() (per the wrapper's doc-block at "
+        "Borrowed.h:250 — `std::span::operator[]` is UB on OOB, the "
+        "wrapper forwards without bounds enforcement to preserve hot-"
+        "path costs); (b) subspan(offset, count) where "
+        "offset + count > size() (per Borrowed.h:276 — same UB "
+        "forwarding); (c) front() / back() on an empty Borrowed.  In "
+        "every case the consumer reads memory belonging to whatever "
+        "follows the source object — common consequences are torn "
+        "reads against a sibling field or a SIGBUS at the end of the "
+        "Source's mapped region.  The lifetime tag prevents use-after-"
+        "destruction of the source; this diagnostic covers the bounds "
+        "axis the lifetime gate is silent on.";
+    static constexpr std::string_view remediation =
+        "Audit the indexing site for missing size()-comparisons.  The "
+        "canonical Borrowed iteration idiom uses the range-based for "
+        "or std::ranges algorithms which derive bounds from "
+        "begin() / end() — operator[] and subspan() are escape hatches "
+        "for index-arithmetic call sites that already proved the "
+        "in-range invariant by other means.  Permanent fix: rewrite "
+        "the indexing site through size()-aware iteration, or add a "
+        "CRUCIBLE_PRE(i < size()) ahead of the operator[] call (the "
+        "pre catches at consteval AND under enforce semantic at "
+        "runtime — see safety/Pre.h).  For subspan: prefer "
+        "subspan(offset).first(count) which reports the misuse at "
+        "first() rather than after the offset slice has already "
+        "advanced past size().";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_diagnostic_class_v<T> ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -1083,7 +1160,9 @@ using Catalog = std::tuple<
     LinearAliasViolation,     // 27
     SharedPermissionPoolSaturated, // 28
     HugePageAllocationFailed, // 29
-    PublishOnceDoublePublish  // 30
+    PublishOnceDoublePublish, // 30
+    BitsInvariantViolation,   // 31  WRAP-Bits-Borrowed-Diagnostic #1092
+    BorrowedBoundsViolation   // 32  WRAP-Bits-Borrowed-Diagnostic #1092
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
@@ -1143,6 +1222,8 @@ enum class Category : std::uint8_t {
     SharedPermissionPoolSaturated = 28,
     HugePageAllocationFailed = 29,
     PublishOnceDoublePublish = 30,
+    BitsInvariantViolation   = 31,
+    BorrowedBoundsViolation  = 32,
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1296,6 +1377,10 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
             return HugePageAllocationFailed::name;
         case Category::PublishOnceDoublePublish:
             return PublishOnceDoublePublish::name;
+        case Category::BitsInvariantViolation:
+            return BitsInvariantViolation::name;
+        case Category::BorrowedBoundsViolation:
+            return BorrowedBoundsViolation::name;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1336,6 +1421,10 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
             return HugePageAllocationFailed::description;
         case Category::PublishOnceDoublePublish:
             return PublishOnceDoublePublish::description;
+        case Category::BitsInvariantViolation:
+            return BitsInvariantViolation::description;
+        case Category::BorrowedBoundsViolation:
+            return BorrowedBoundsViolation::description;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1376,6 +1465,10 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
             return HugePageAllocationFailed::remediation;
         case Category::PublishOnceDoublePublish:
             return PublishOnceDoublePublish::remediation;
+        case Category::BitsInvariantViolation:
+            return BitsInvariantViolation::remediation;
+        case Category::BorrowedBoundsViolation:
+            return BorrowedBoundsViolation::remediation;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1550,21 +1643,23 @@ static_assert(diagnostic_name_v<user_defined_tag> == "UserDefinedTag");
 
 // ─── Catalog cardinality matches Category enum cardinality ────────
 //
-// 31 tags shipped in this version (22 wrapper-axis tags from FOUND-E01
+// 33 tags shipped in this version (22 wrapper-axis tags from FOUND-E01
 // + 3 F*-style alias tags from FOUND-E18 + 1 witness FIXY-G9 + 2
 // modality FIXY-G10 + 1 SharedPermissionPool saturation fixy-A1-015 +
 // 1 HugePageBuffer allocation failure fixy-A1-022 + 1 PublishOnce
-// double-publish fixy-A1-031).
+// double-publish fixy-A1-031 + 2 WRAP-Bits-Borrowed-Diagnostic #1092
+// for Bits invariant + Borrowed bounds).
 // Adding a tag bumps both the Catalog tuple size AND requires a
 // Category enumerator at the same integer value.  The bijection
 // self-test below asserts both in lock step.
 
-static_assert(catalog_size == 31,
-    "Catalog cardinality drifted from the 31-tag inventory "
+static_assert(catalog_size == 33,
+    "Catalog cardinality drifted from the 33-tag inventory "
     "(22 wrapper-axis + 3 F* alias + 1 witness FIXY-G9 + 2 modality "
     "FIXY-G10 + 1 SharedPermissionPool fixy-A1-015 + 1 HugePage "
-    "fixy-A1-022 + 1 PublishOnce fixy-A1-031) — confirm the new tag "
-    "was added to Catalog AND to Category at the same integer index.");
+    "fixy-A1-022 + 1 PublishOnce fixy-A1-031 + 2 Bits/Borrowed "
+    "WRAP-Bits-Borrowed-Diagnostic #1092) — confirm the new tag was "
+    "added to Catalog AND to Category at the same integer index.");
 
 // ─── Catalog ↔ Category bijection ─────────────────────────────────
 //
@@ -1754,7 +1849,7 @@ static_assert(categories_v.size() == catalog_size,
     "categories_v cardinality drifted from catalog_size — both must "
     "track the same source of truth.");
 static_assert(categories_v[0] == Category::EffectRowMismatch);
-static_assert(categories_v[catalog_size - 1] == Category::PublishOnceDoublePublish);
+static_assert(categories_v[catalog_size - 1] == Category::BorrowedBoundsViolation);
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool categories_array_matches_enum_impl(
