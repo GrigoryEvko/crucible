@@ -61,6 +61,7 @@
 // discoverability is the catalog's organising principle).
 
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/DecideOracle.h>   // FIXY-V-178: oracle:: reference impls
 
 namespace crucible::fixy::decide {
 
@@ -374,3 +375,190 @@ inline void runtime_smoke_test() {
 }
 
 }  // namespace crucible::fixy::decide::self_test
+
+// ── crucible::fixy::decide::oracle — slow reference oracles ─────────
+//
+// FIXY-V-178: re-export of `crucible::decide::oracle::*` (safety/
+// DecideOracle.h, the "DecideOracle" surface).  These are the
+// deliberately-SLOW, transparently-correct reference implementations
+// the CONTRACT-090 fuzz harness compares the clever production
+// `decide::*` procedures against (widen-and-bound vs
+// __builtin_mul_overflow; trial-division / Euclidean vs binary GCD;
+// O(n^2) all-pairs vs sort+sweep).  Surfaced under the fixy umbrella
+// so a band-3 fuzz / property harness reaches the oracle without
+// descending into safety/.
+//
+// Oracles are NOT predicates and NOT mints — they are spec functions
+// used only by the verification harness.  The distinct `oracle::`
+// sub-namespace keeps them OUT of the predicate-catalog cardinality
+// (kFixyDecidePredicateCount) above; they carry their own count
+// witness below.  All are `[[nodiscard]] constexpr` total functions
+// of their inputs — zero hidden state, zero re-export cost.
+//
+//   widen<T> / widen_t<T>            wider integer type for overflow oracles
+//   no_overflow_mul_oracle<T>        widen-and-bound product range check
+//   no_overflow_sum_oracle<T>        widen-and-bound sum range check
+//   all_in_range_oracle<T>           manual-loop range membership
+//   strictly_increasing_oracle<T>    O(n^2) all-pairs strict order
+//   weakly_increasing_oracle<T>      O(n^2) all-pairs non-strict order
+//   is_power_of_two_le_oracle<T>     popcount==1 AND bound
+//   factorization_eq_oracle<T>       widen-product equality
+//   coprime_oracle<T>                Euclidean GCD == 1
+//   conjunction_oracle               count-false == 0
+//   disjunction_oracle               count-true != 0
+//   aligned_in_range_oracle          four-clause aligned range check
+
+namespace crucible::fixy::decide::oracle {
+
+using ::crucible::decide::oracle::widen;
+using ::crucible::decide::oracle::widen_t;
+using ::crucible::decide::oracle::no_overflow_mul_oracle;
+using ::crucible::decide::oracle::no_overflow_sum_oracle;
+using ::crucible::decide::oracle::all_in_range_oracle;
+using ::crucible::decide::oracle::strictly_increasing_oracle;
+using ::crucible::decide::oracle::weakly_increasing_oracle;
+using ::crucible::decide::oracle::is_power_of_two_le_oracle;
+using ::crucible::decide::oracle::factorization_eq_oracle;
+using ::crucible::decide::oracle::coprime_oracle;
+using ::crucible::decide::oracle::conjunction_oracle;
+using ::crucible::decide::oracle::disjunction_oracle;
+using ::crucible::decide::oracle::aligned_in_range_oracle;
+
+}  // namespace crucible::fixy::decide::oracle
+
+// ── Oracle self-test ────────────────────────────────────────────────
+//
+// Same dual-export discipline as the predicate surface: each witness
+// asserts the fixy:: oracle path and the substrate path name the same
+// symbol (type-level same-symbol via decltype, side-stepping
+// -Werror=tautological-compare).  Templated oracles instantiate at
+// T=int; the three non-templated oracles compare the bare function.
+
+namespace crucible::fixy::decide::oracle::self_test {
+
+// widen<T> / widen_t<T> carrier identity.
+static_assert(std::is_same_v<
+    ::crucible::fixy::decide::oracle::widen_t<int>,
+    ::crucible::decide::oracle::widen_t<int>>,
+    "fixy::decide::oracle::widen_t must alias the substrate.");
+
+// ── Templated oracles (8) ─────────────────────────────────────────
+inline constexpr bool same_no_overflow_mul_oracle_v = std::is_same_v<
+    decltype(&::crucible::fixy::decide::oracle::no_overflow_mul_oracle<int>),
+    decltype(&::crucible::decide::oracle::no_overflow_mul_oracle<int>)>;
+static_assert(same_no_overflow_mul_oracle_v,
+    "fixy::decide::oracle::no_overflow_mul_oracle must alias the substrate.");
+
+inline constexpr bool same_no_overflow_sum_oracle_v = std::is_same_v<
+    decltype(&::crucible::fixy::decide::oracle::no_overflow_sum_oracle<int>),
+    decltype(&::crucible::decide::oracle::no_overflow_sum_oracle<int>)>;
+static_assert(same_no_overflow_sum_oracle_v,
+    "fixy::decide::oracle::no_overflow_sum_oracle must alias the substrate.");
+
+inline constexpr bool same_all_in_range_oracle_v = std::is_same_v<
+    decltype(&::crucible::fixy::decide::oracle::all_in_range_oracle<int>),
+    decltype(&::crucible::decide::oracle::all_in_range_oracle<int>)>;
+static_assert(same_all_in_range_oracle_v,
+    "fixy::decide::oracle::all_in_range_oracle must alias the substrate.");
+
+inline constexpr bool same_strictly_increasing_oracle_v = std::is_same_v<
+    decltype(&::crucible::fixy::decide::oracle::strictly_increasing_oracle<int>),
+    decltype(&::crucible::decide::oracle::strictly_increasing_oracle<int>)>;
+static_assert(same_strictly_increasing_oracle_v,
+    "fixy::decide::oracle::strictly_increasing_oracle must alias the substrate.");
+
+inline constexpr bool same_weakly_increasing_oracle_v = std::is_same_v<
+    decltype(&::crucible::fixy::decide::oracle::weakly_increasing_oracle<int>),
+    decltype(&::crucible::decide::oracle::weakly_increasing_oracle<int>)>;
+static_assert(same_weakly_increasing_oracle_v,
+    "fixy::decide::oracle::weakly_increasing_oracle must alias the substrate.");
+
+inline constexpr bool same_is_power_of_two_le_oracle_v = std::is_same_v<
+    decltype(&::crucible::fixy::decide::oracle::is_power_of_two_le_oracle<int>),
+    decltype(&::crucible::decide::oracle::is_power_of_two_le_oracle<int>)>;
+static_assert(same_is_power_of_two_le_oracle_v,
+    "fixy::decide::oracle::is_power_of_two_le_oracle must alias the substrate.");
+
+inline constexpr bool same_factorization_eq_oracle_v = std::is_same_v<
+    decltype(&::crucible::fixy::decide::oracle::factorization_eq_oracle<int>),
+    decltype(&::crucible::decide::oracle::factorization_eq_oracle<int>)>;
+static_assert(same_factorization_eq_oracle_v,
+    "fixy::decide::oracle::factorization_eq_oracle must alias the substrate.");
+
+inline constexpr bool same_coprime_oracle_v = std::is_same_v<
+    decltype(&::crucible::fixy::decide::oracle::coprime_oracle<int>),
+    decltype(&::crucible::decide::oracle::coprime_oracle<int>)>;
+static_assert(same_coprime_oracle_v,
+    "fixy::decide::oracle::coprime_oracle must alias the substrate.");
+
+// ── Non-templated oracles (3) ─────────────────────────────────────
+inline constexpr bool same_conjunction_oracle_v = std::is_same_v<
+    decltype(&::crucible::fixy::decide::oracle::conjunction_oracle),
+    decltype(&::crucible::decide::oracle::conjunction_oracle)>;
+static_assert(same_conjunction_oracle_v,
+    "fixy::decide::oracle::conjunction_oracle must alias the substrate.");
+
+inline constexpr bool same_disjunction_oracle_v = std::is_same_v<
+    decltype(&::crucible::fixy::decide::oracle::disjunction_oracle),
+    decltype(&::crucible::decide::oracle::disjunction_oracle)>;
+static_assert(same_disjunction_oracle_v,
+    "fixy::decide::oracle::disjunction_oracle must alias the substrate.");
+
+inline constexpr bool same_aligned_in_range_oracle_v = std::is_same_v<
+    decltype(&::crucible::fixy::decide::oracle::aligned_in_range_oracle),
+    decltype(&::crucible::decide::oracle::aligned_in_range_oracle)>;
+static_assert(same_aligned_in_range_oracle_v,
+    "fixy::decide::oracle::aligned_in_range_oracle must alias the substrate.");
+
+// ── Oracle cardinality witness ────────────────────────────────────
+//
+// Pins the oracle count visible through fixy::decide::oracle:: at
+// authoring time, separate from the predicate-catalog count.  When an
+// oracle joins (a new fuzzable decide:: procedure) OR retires, bump
+// the constant AND add/remove the using-decl AND the same_*_v witness
+// in the same edit (feedback_catalog_cardinality_test_drift).  Floor
+// guards accidental removal; exact pin forces reviewer ack on growth.
+inline constexpr int kFixyDecideOracleCount = 11;  // 8 templated + 3 not
+static_assert(kFixyDecideOracleCount >= 11,
+    "fixy::decide::oracle floor — an oracle re-export went missing.");
+static_assert(kFixyDecideOracleCount == 11,
+    "ceiling: fixy::decide::oracle:: re-exports exactly 11 oracles.  If "
+    "you add/remove an oracle, update the constant AND the using-decl "
+    "AND the same_*_v witness in the same edit.");
+
+}  // namespace crucible::fixy::decide::oracle::self_test
+
+// ── Oracle runtime smoke test ──────────────────────────────────────
+//
+// Oracles ARE runtime functions (unlike the pure type-level extract
+// metafunctions), so exercise a cross-section with NON-CONSTANT args
+// so consteval folding cannot mask an inline-body bug.
+
+namespace crucible::fixy::decide::oracle::self_test {
+
+inline void runtime_smoke_test() {
+    volatile int a = 6;
+    volatile int b = 4;
+    volatile bool sink = false;
+    sink = ::crucible::fixy::decide::oracle::no_overflow_mul_oracle<int>(a, b);
+    sink = ::crucible::fixy::decide::oracle::no_overflow_sum_oracle<int>(a, b);
+    sink = ::crucible::fixy::decide::oracle::coprime_oracle<int>(a, b);
+    sink = ::crucible::fixy::decide::oracle::is_power_of_two_le_oracle<int>(a, 64);
+    int xs[] = {1, 2, 3, 4, 5};
+    sink = ::crucible::fixy::decide::oracle::strictly_increasing_oracle<int>(
+        std::span<const int>{xs});
+    sink = ::crucible::fixy::decide::oracle::weakly_increasing_oracle<int>(
+        std::span<const int>{xs});
+    sink = ::crucible::fixy::decide::oracle::all_in_range_oracle<int>(
+        std::span<const int>{xs}, 0, 10);
+    bool bs[] = {true, true, false};
+    sink = ::crucible::fixy::decide::oracle::conjunction_oracle(
+        std::span<const bool>{bs});
+    sink = ::crucible::fixy::decide::oracle::disjunction_oracle(
+        std::span<const bool>{bs});
+    volatile std::uint64_t v = 64;
+    sink = ::crucible::fixy::decide::oracle::aligned_in_range_oracle(v, 0, 128, 16);
+    (void)sink;
+}
+
+}  // namespace crucible::fixy::decide::oracle::self_test

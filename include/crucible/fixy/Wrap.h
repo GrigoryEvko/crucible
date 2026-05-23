@@ -144,6 +144,8 @@
 #include <crucible/safety/SwissTableBuffer.h>  // structural (open-addressing slot buffer)
 #include <crucible/safety/SwmrReader.h>        // FIXY-V-035: SwmrReader<auto FnPtr> (function-ptr shape)
 #include <crucible/safety/SwmrWriter.h>        // FIXY-V-036: SwmrWriter<auto FnPtr> (function-ptr shape)
+#include <crucible/safety/SignatureTraits.h>   // FIXY-V-178: signature_traits<auto FnPtr> family
+#include <crucible/safety/GradedExtract.h>     // FIXY-V-178: universal GradedWrapper extractors
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Path.h>             // FIXY-V-031: Path<Source> + sanitize_path
 #include <crucible/safety/TimeOrdered.h>
@@ -515,6 +517,54 @@ using ::crucible::safety::extract::swmr_writer_value_consistent_v;
 using ::crucible::safety::extract::IsSwmrWriter;
 using ::crucible::safety::extract::is_swmr_writer_v;
 using ::crucible::safety::extract::swmr_writer_value_t;
+
+// FIXY-V-178 — function-signature reflection helpers.  The substrate's
+// `signature_traits<auto FnPtr>` (safety/SignatureTraits.h, the
+// "SignatureTraits" surface) is consumed by InferredRow + Inferred-
+// PermissionTags to read a pipeline-stage function's parameter/return
+// shapes via P2996 reflection.  Routed through fixy::wrap:: so band-3
+// pipeline-stage authors reach the introspection surface without
+// descending into safety/.  All are NTTP-templated metafunctions over
+// a `auto FnPtr` constant — pure type-level, zero runtime cost.
+//
+//   signature_traits<auto FnPtr>     full traits struct (arity / params
+//                                    / return / function-type / noexcept)
+//   param_type_t<auto FnPtr, I>      I-th parameter type
+//   return_type_t<auto FnPtr>        return type (void supported)
+//   function_type_t<auto FnPtr>      bare function type (not the pointer)
+//   arity_v<auto FnPtr>              parameter count
+//   is_noexcept_v<auto FnPtr>        noexcept-ness of the function
+using ::crucible::safety::extract::signature_traits;
+using ::crucible::safety::extract::param_type_t;
+using ::crucible::safety::extract::return_type_t;
+using ::crucible::safety::extract::function_type_t;
+using ::crucible::safety::extract::arity_v;
+using ::crucible::safety::extract::is_noexcept_v;
+
+// FIXY-V-178 — universal GradedWrapper extractors (the "GradedExtract"
+// surface, safety/GradedExtract.h).  The IsGradedWrapper *concept* is
+// already reachable via fixy/Is.h (concepts cannot be re-exported by a
+// using-decl — Is.h redefines it); what was MISSING at fixy level were
+// the extract METAFUNCTIONS that row_hash_contribution and the grade-
+// aware shape recognizers use to drill into a wrapper's substrate.
+// Surfacing them here closes the FIXY-U-061 fixy::algebra::dim::
+// surface-completeness gap.  All are alias / variable templates
+// constrained on IsGradedWrapper — pure type-level, zero runtime cost.
+//
+//   value_type_of_t<W>              wrapper's user-facing value type
+//   lattice_of_t<W>                 wrapper's Lattice / Semiring instance
+//   grade_of_t<W>                   lattice's grade element type
+//   graded_type_of_t<W>             substrate Graded<M, L, T> instance
+//   modality_of_v<W>                wrapper's ModalityKind value
+//   is_graded_wrapper_v<W>          variable-template form of the concept
+//   is_graded_specialization_v<T>   T is a bare Graded<M, L, T> (not a wrap)
+using ::crucible::safety::extract::value_type_of_t;
+using ::crucible::safety::extract::lattice_of_t;
+using ::crucible::safety::extract::grade_of_t;
+using ::crucible::safety::extract::graded_type_of_t;
+using ::crucible::safety::extract::modality_of_v;
+using ::crucible::safety::extract::is_graded_wrapper_v;
+using ::crucible::safety::extract::is_graded_specialization_v;
 
 // OwnedRegion<T, Tag> — arena-backed exclusive region.
 using ::crucible::safety::OwnedRegion;
@@ -1396,6 +1446,97 @@ static_assert(std::is_same_v<
     ::crucible::fixy::wrap::FinalBy<WrapFinalT>,
     ::crucible::safety::FinalBy<WrapFinalT>>,
     "fixy::wrap::FinalBy must alias safety::FinalBy.");
+
+// ── FIXY-V-178 — signature_traits family dual-export sentinels ─────
+//
+// Inline sample whose signature is known at authoring time: arity 2,
+// (int, double) -> int, noexcept.  An inline namespace-scope function
+// has external linkage so `&v178_sig_sample` is a valid NTTP and the
+// same entity across every TU that includes Wrap.h (no ODR drift).
+inline int v178_sig_sample(int, double) noexcept { return 0; }
+
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::signature_traits<&v178_sig_sample>,
+    ::crucible::safety::extract::signature_traits<&v178_sig_sample>>,
+    "fixy::wrap::signature_traits must alias safety::extract::signature_traits.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::param_type_t<&v178_sig_sample, 0>,
+    ::crucible::safety::extract::param_type_t<&v178_sig_sample, 0>>,
+    "fixy::wrap::param_type_t must alias the substrate.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::return_type_t<&v178_sig_sample>,
+    ::crucible::safety::extract::return_type_t<&v178_sig_sample>>,
+    "fixy::wrap::return_type_t must alias the substrate.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::function_type_t<&v178_sig_sample>,
+    ::crucible::safety::extract::function_type_t<&v178_sig_sample>>,
+    "fixy::wrap::function_type_t must alias the substrate.");
+static_assert(
+    ::crucible::fixy::wrap::arity_v<&v178_sig_sample> ==
+    ::crucible::safety::extract::arity_v<&v178_sig_sample>,
+    "fixy::wrap::arity_v must alias the substrate.");
+static_assert(
+    ::crucible::fixy::wrap::is_noexcept_v<&v178_sig_sample> ==
+    ::crucible::safety::extract::is_noexcept_v<&v178_sig_sample>,
+    "fixy::wrap::is_noexcept_v must alias the substrate.");
+// Value anchors — pin the sample's known shape so a drifted re-export
+// to a DIFFERENT FnPtr's traits is caught, not just a name typo.
+static_assert(::crucible::fixy::wrap::arity_v<&v178_sig_sample> == 2,
+    "Sentinel: v178_sig_sample has arity 2.");
+static_assert(::crucible::fixy::wrap::is_noexcept_v<&v178_sig_sample>,
+    "Sentinel: v178_sig_sample is noexcept.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::return_type_t<&v178_sig_sample>, int>,
+    "Sentinel: v178_sig_sample returns int.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::param_type_t<&v178_sig_sample, 0>, int>,
+    "Sentinel: v178_sig_sample param 0 is int.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::param_type_t<&v178_sig_sample, 1>, double>,
+    "Sentinel: v178_sig_sample param 1 is double.");
+
+// ── FIXY-V-178 — GradedExtract family dual-export sentinels ────────
+//
+// Instantiated against a REAL production GradedWrapper (Linear<int>,
+// regime-1) per the GradedExtract.h self-test note: synthetic
+// witnesses fail the concept's CHEAT-3 forwarder-fidelity clause, so
+// the dual-export check uses an already-conformant wrapper.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::value_type_of_t<::crucible::safety::Linear<int>>,
+    ::crucible::safety::extract::value_type_of_t<::crucible::safety::Linear<int>>>,
+    "fixy::wrap::value_type_of_t must alias the substrate.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::lattice_of_t<::crucible::safety::Linear<int>>,
+    ::crucible::safety::extract::lattice_of_t<::crucible::safety::Linear<int>>>,
+    "fixy::wrap::lattice_of_t must alias the substrate.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::grade_of_t<::crucible::safety::Linear<int>>,
+    ::crucible::safety::extract::grade_of_t<::crucible::safety::Linear<int>>>,
+    "fixy::wrap::grade_of_t must alias the substrate.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::graded_type_of_t<::crucible::safety::Linear<int>>,
+    ::crucible::safety::extract::graded_type_of_t<::crucible::safety::Linear<int>>>,
+    "fixy::wrap::graded_type_of_t must alias the substrate.");
+static_assert(
+    ::crucible::fixy::wrap::modality_of_v<::crucible::safety::Linear<int>> ==
+    ::crucible::safety::extract::modality_of_v<::crucible::safety::Linear<int>>,
+    "fixy::wrap::modality_of_v must alias the substrate.");
+static_assert(
+    ::crucible::fixy::wrap::is_graded_wrapper_v<::crucible::safety::Linear<int>> ==
+    ::crucible::safety::extract::is_graded_wrapper_v<::crucible::safety::Linear<int>>,
+    "fixy::wrap::is_graded_wrapper_v must alias the substrate.");
+static_assert(
+    ::crucible::fixy::wrap::is_graded_specialization_v<int> ==
+    ::crucible::safety::extract::is_graded_specialization_v<int>,
+    "fixy::wrap::is_graded_specialization_v must alias the substrate.");
+// Value anchors — Linear<int> IS a GradedWrapper; a bare int is not.
+static_assert(::crucible::fixy::wrap::is_graded_wrapper_v<::crucible::safety::Linear<int>>,
+    "Sentinel: Linear<int> is a GradedWrapper.");
+static_assert(!::crucible::fixy::wrap::is_graded_wrapper_v<int>,
+    "Sentinel: int is not a GradedWrapper.");
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::value_type_of_t<::crucible::safety::Linear<int>>, int>,
+    "Sentinel: Linear<int> user-facing value_type is int.");
 
 // ct:: free-function decltype identity (function templates, so the
 // drift is detectable on the qualified-id type).

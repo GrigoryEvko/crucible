@@ -67,6 +67,19 @@ static_assert(::crucible::fixy::decide::self_test::kFixyDecideTypeCount >= 1,
     "Interval<T> was removed without updating both Decide.h's "
     "colocated ceiling pin AND this floor witness.");
 
+// FIXY-V-178 — oracle surface reach + floor.  The EXACT ceiling pin
+// (`== 11`) lives in fixy/Decide.h colocated with the source-of-truth
+// constant; this floor catches accidental REMOVAL of an oracle
+// re-export, and the same_*_v reach asserts the oracle sub-namespace
+// is visible through the <crucible/Fixy.h> umbrella.
+static_assert(::crucible::fixy::decide::oracle::self_test::same_no_overflow_mul_oracle_v,
+    "umbrella reach: fixy::decide::oracle::self_test::same_no_overflow_mul_oracle_v "
+    "must be reachable through <crucible/Fixy.h>.");
+static_assert(::crucible::fixy::decide::oracle::self_test::kFixyDecideOracleCount >= 11,
+    "floor: fixy::decide::oracle:: cardinality regressed below 11 — an "
+    "oracle re-export was removed without updating both Decide.h's "
+    "colocated ceiling pin AND this floor witness.");
+
 // ═════════════════════════════════════════════════════════════════════
 // Runtime smoke — every predicate evaluated with NON-CONSTANT args
 // to defeat consteval folding.  Volatile sinks force evaluation at
@@ -253,6 +266,9 @@ int main() {
     // additions to that block get TU-level execution coverage even
     // without expanding this main().
     ::crucible::fixy::decide::self_test::runtime_smoke_test();
+
+    // FIXY-V-178 — exercise the oracle surface's runtime smoke too.
+    ::crucible::fixy::decide::oracle::self_test::runtime_smoke_test();
 
     return 0;
 }

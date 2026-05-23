@@ -1799,6 +1799,22 @@ crucible_neg_compile_fixy_test(neg_fixy_v_274_nonctx
 crucible_neg_compile_fixy_test(neg_fixy_v_274_consteval_slot_mismatch
     "non-constant|constant expression|__builtin_trap")
 
+# FIXY-V-178 — HS14 floor for the signature_traits / GradedExtract /
+# DecideOracle surfaces.  Three fixtures cover orthogonal rejection
+# classes, one per re-exported family:
+#   1. signature_traits over a non-function NTTP — reflection of ^^int
+#      has no parameters_of (the SignatureTraits surface).
+#   2. GradedExtract metafunction over a non-GradedWrapper — the
+#      IsGradedWrapper-constrained alias has no definition.
+#   3. DecideOracle invoked with a non-integral argument — the
+#      std::integral constraint rejects the double candidate.
+crucible_neg_compile_fixy_test(neg_fixy_v_178_signature_traits_nonfn
+    "parameters_of|not a function|constant expression|reflection")
+crucible_neg_compile_fixy_test(neg_fixy_v_178_graded_extract_nongraded
+    "constraints not satisfied|IsGradedWrapper|no type|template constraint")
+crucible_neg_compile_fixy_test(neg_fixy_v_178_decide_oracle_nonintegral
+    "no matching function|constraints not satisfied|integral")
+
 # FIXY-V-092 — HS14 floor for FpMode grant tags.  Two fixtures cover
 # orthogonal rejection classes that are FpMode-specific:
 #   1. NTTP-enum-type mismatch — substituting an FpFtz value for a
