@@ -299,6 +299,7 @@ crucible_test(test_fixy_v_250_simd_isa)                 # FIXY-V-250 SimdIsaLatt
 crucible_test(test_fixy_v_251_hw_instruction)           # FIXY-V-251 HwInstructionLattice — 5-tier hw-instruction capability chain
 crucible_test(test_fixy_v_252_barrier_strength)         # FIXY-V-252 BarrierStrengthLattice — 7-tier memory-fence strength chain
 crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScopeLattice — non-distributive accel×ARM visibility-scope partial order (WMEM keystone)
+crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/ScopedFence.h — partial-order provider Graded carrier for MemoryScope axis + IsScopedFence + row_hash
 crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
 crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
 crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
@@ -6496,6 +6497,14 @@ crucible_neg_compile_test(neg_simd_provider_too_weak
   "constraints not satisfied|no matching function|satisfies|require_avx512_provider")
 crucible_neg_compile_test(neg_simd_relax_up_or_cross_trunk
   "constraints not satisfied|no matching function|relax|SimdWidthPinned")
+
+# ─── FIXY-V-267 ScopedFence HS14 negative-compile fixtures ──────────
+#   - neg_scoped_fence_provider_too_narrow      (within-trunk admission: Cta ⋣ Gpu)
+#   - neg_scoped_fence_relax_up_or_cross_trunk  (partial-order direction: Cta → Inner cross-trunk)
+crucible_neg_compile_test(neg_scoped_fence_provider_too_narrow
+  "constraints not satisfied|no matching function|satisfies|require_gpu_fence")
+crucible_neg_compile_test(neg_scoped_fence_relax_up_or_cross_trunk
+  "constraints not satisfied|no matching function|relax|ScopedFence")
 
 # ─── FIXY-V-091 CollisionCatalog F101..F105 neg-compiles (per-rule) ──
 #

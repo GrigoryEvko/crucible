@@ -113,6 +113,7 @@
 #include <crucible/safety/RecipeSpec.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/ScopedFence.h>
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/SimdWidthPinned.h>
@@ -642,6 +643,14 @@ struct wrapper_dimension<BarrierGuarded<Tier, T>>
 template <SimdIsa_v W, typename T>
 struct wrapper_dimension<SimdWidthPinned<W, T>>
     : std::integral_constant<DimensionAxis, DimensionAxis::SimdIsa> {};
+
+// FIXY-V-267 — ScopedFence<MemoryScope S, T> occupies the MemoryScope axis
+// (V-266, Tier-L Lattice — a Crucible extension peer to SimdIsa).
+// Partial-order provider wrapper, sibling to SimdWidthPinned; pins the
+// memory-visibility scope a publication was released under.
+template <MemoryScope_v S, typename T>
+struct wrapper_dimension<ScopedFence<S, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::MemoryScope> {};
 
 template <ResidencyHeatTag_v Tier, typename T>
 struct wrapper_dimension<ResidencyHeat<Tier, T>>

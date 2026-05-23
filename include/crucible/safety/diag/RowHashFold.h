@@ -156,6 +156,7 @@ enum class FpConstantRounding : std::uint8_t;
 enum class HwInstruction       : std::uint8_t;  // FIXY-V-251 (wrapper V-254)
 enum class BarrierStrength     : std::uint8_t;  // FIXY-V-252 (wrapper V-255)
 enum class SimdIsa             : std::uint8_t;  // FIXY-V-250 (wrapper V-256)
+enum class MemoryScope         : std::uint8_t;  // FIXY-V-265 (wrapper V-267)
 }  // namespace crucible::algebra::lattices
 
 namespace crucible::safety {
@@ -166,6 +167,7 @@ template <algebra::lattices::HotPathTier Tier, typename T> class HotPath;
 template <algebra::lattices::HwInstruction Tier, typename T> class Hw;
 template <algebra::lattices::BarrierStrength Tier, typename T> class BarrierGuarded;
 template <algebra::lattices::SimdIsa W, typename T> class SimdWidthPinned;
+template <algebra::lattices::MemoryScope S, typename T> class ScopedFence;
 template <algebra::lattices::MemOrderTag Tag, typename T> class MemOrder;
 template <algebra::lattices::ProgressClass Class, typename T> class Progress;
 template <algebra::lattices::ResidencyHeatTag Tier, typename T> class ResidencyHeat;
@@ -380,6 +382,8 @@ inline constexpr std::uint64_t WRAPPER_HW_INSTRUCTION_TAG       = 0x2C00'0000'00
 inline constexpr std::uint64_t WRAPPER_BARRIER_STRENGTH_TAG     = 0x2D00'0000'0000'0000ULL;
 // FIXY-V-256 — SimdWidthPinned<SimdIsa W, T> discriminator.
 inline constexpr std::uint64_t WRAPPER_SIMD_ISA_TAG            = 0x2E00'0000'0000'0000ULL;
+// FIXY-V-267 — ScopedFence<MemoryScope S, T> discriminator.
+inline constexpr std::uint64_t WRAPPER_MEMORY_SCOPE_TAG       = 0x2F00'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -707,6 +711,19 @@ template <algebra::lattices::SimdIsa W, typename Inner>
 struct row_hash_contribution<safety::SimdWidthPinned<W, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::WRAPPER_SIMD_ISA_TAG | static_cast<std::uint64_t>(W),
+        row_hash_contribution_v<Inner>);
+};
+
+// FIXY-V-267 — ScopedFence is a Repr-neighborhood wrapper (Tier-L Lattice)
+// peer to SimdWidthPinned; the pinned memory-visibility scope discriminates
+// the slot.  MemoryScope's underlying value packs the trunk into the high
+// nibble, so distinct-trunk scopes (e.g. Cta=0x11 vs Inner=0x20) and the
+// shared sentinels (Thread=0x00, System=0xFF) all land in disjoint salt
+// low-bytes.
+template <algebra::lattices::MemoryScope S, typename Inner>
+struct row_hash_contribution<safety::ScopedFence<S, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_MEMORY_SCOPE_TAG | static_cast<std::uint64_t>(S),
         row_hash_contribution_v<Inner>);
 };
 
