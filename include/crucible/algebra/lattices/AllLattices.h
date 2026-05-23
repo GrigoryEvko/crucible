@@ -70,6 +70,7 @@
 #include <crucible/algebra/lattices/CipherTierLattice.h> // FOUND-G43  — shipped
 #include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6  (#451) — shipped
 #include <crucible/algebra/lattices/ConsistencyLattice.h>// ALGEBRA-14 (#459) — shipped (2/3)
+#include <crucible/algebra/lattices/ControlFlowLattice.h> // FIXY-V-239 — shipped (5-tier control-flow-escape chain)
 #include <crucible/algebra/lattices/CrashLattice.h>      // FOUND-G58  — shipped
 #include <crucible/algebra/lattices/DetSafeLattice.h>    // FOUND-G13  — shipped
 #include <crucible/algebra/lattices/EpochLattice.h>      // FOUND-G67  — shipped (1/2 EpochVersioned axes)
@@ -191,6 +192,7 @@ static_assert(every_lattice_has_name<
     CipherTierLattice,
     ConfLattice,
     ConsistencyLattice,
+    ControlFlowLattice,
     CrashLattice,
     DetSafeLattice,
     EpochLattice,
