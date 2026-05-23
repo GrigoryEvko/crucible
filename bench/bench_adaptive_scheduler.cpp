@@ -1,12 +1,12 @@
 // AdaptiveScheduler Pool<Policy> bench — per-policy dispatch tail and throughput.
 
 #include <crucible/concurrent/AdaptiveScheduler.h>
+#include <crucible/fixy/Time.h>                            // FIXY-V-202
 
 #include "bench_harness.h"
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <vector>
@@ -15,6 +15,14 @@ namespace cc = crucible::concurrent;
 namespace cs = crucible::concurrent::scheduler;
 
 namespace {
+
+// FIXY-V-202: bench-local monotonic-ns reader through the V-185 typed
+// provenance (mirrors bench_scheduler_policies bench_now_mono_ns).
+[[nodiscard]] inline std::uint64_t bench_now_mono_ns() noexcept {
+    constexpr ::crucible::fixy::time::ClockReader<
+        ::crucible::fixy::time::ClockSource_v::Monotonic> reader{};
+    return reader.read().consume();
+}
 
 constexpr std::size_t kJobsPerPolicy = 4096;
 constexpr std::size_t kWorkers       = 2;
@@ -52,7 +60,7 @@ template <typename Policy>
     dispatch_samples.reserve(kJobsPerPolicy);
 
     const double nspc = bench::Timer::ns_per_cycle();
-    const auto wall_start = std::chrono::steady_clock::now();
+    const std::uint64_t wall_start_ns = bench_now_mono_ns();
 
     for (std::size_t i = 0; i < kJobsPerPolicy; ++i) {
         const std::uint64_t t0 = bench::rdtsc_start();
@@ -69,9 +77,8 @@ template <typename Policy>
     }
 
     pool.wait_idle();
-    const auto wall_end = std::chrono::steady_clock::now();
-    const auto wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        wall_end - wall_start).count();
+    const std::uint64_t wall_end_ns = bench_now_mono_ns();
+    const std::uint64_t wall_ns = wall_end_ns - wall_start_ns;
 
     const double wall_ms = static_cast<double>(wall_ns) / 1'000'000.0;
     const double jobs_per_sec = wall_ns > 0

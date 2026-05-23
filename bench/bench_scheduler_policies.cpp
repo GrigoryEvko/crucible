@@ -48,6 +48,7 @@
 #include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/Topology.h>
+#include <crucible/fixy/Time.h>                            // FIXY-V-202
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 
@@ -59,7 +60,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -73,6 +73,20 @@ using namespace crucible::concurrent;
 using namespace crucible::safety;
 
 namespace {
+
+// FIXY-V-202: bench-local monotonic-ns reader through the V-185 typed
+// provenance.  Subtraction of two reads yields a u64 ns delta the same
+// way chrono::steady_clock did; the wrapper is regime-1 EBO-collapsed,
+// so at -O3 this compiles to the same clock_gettime(CLOCK_MONOTONIC)
+// call the chrono version did — zero overhead, but the source identity
+// is now type-level (V-185 / V-184 lattice) instead of fmly::time::
+// implementation-defined.  Constexpr-static reader: one instance per
+// TU, zero per-call construction cost.
+[[nodiscard]] inline std::uint64_t bench_now_mono_ns() noexcept {
+    constexpr ::crucible::fixy::time::ClockReader<
+        ::crucible::fixy::time::ClockSource_v::Monotonic> reader{};
+    return reader.read().consume();
+}
 
 // ── must_lend_ helper ─────────────────────────────────────────────
 //
@@ -475,13 +489,13 @@ template <typename Channel>
             });
         }
 
-        const auto t_start = std::chrono::steady_clock::now();
+        const auto t_start_ns = bench_now_mono_ns();
         start.store(true, std::memory_order_release);
         for (auto& p : producers) p.join();
         for (auto& c : consumers) c.join();
-        const auto t_end = std::chrono::steady_clock::now();
-        total_wall_ms += std::chrono::duration<double, std::milli>(
-            t_end - t_start).count();
+        const auto t_end_ns = bench_now_mono_ns();
+        total_wall_ms += static_cast<double>(t_end_ns - t_start_ns)
+                       / 1'000'000.0;  // ns → ms
         total_items   += TOTAL_PER_ITER;
     }
 
@@ -620,13 +634,13 @@ template <typename Channel>
             }
         });
 
-        const auto t_start = std::chrono::steady_clock::now();
+        const auto t_start_ns = bench_now_mono_ns();
         start.store(true, std::memory_order_release);
         for (auto& p : producers) p.join();
         cons_t.join();
-        const auto t_end = std::chrono::steady_clock::now();
-        total_wall_ms += std::chrono::duration<double, std::milli>(
-            t_end - t_start).count();
+        const auto t_end_ns = bench_now_mono_ns();
+        total_wall_ms += static_cast<double>(t_end_ns - t_start_ns)
+                       / 1'000'000.0;  // ns → ms
         total_items   += TOTAL_PER_ITER;
     }
 
@@ -750,7 +764,7 @@ template <typename Channel>
             });
         }
 
-        const auto t_start = std::chrono::steady_clock::now();
+        const auto t_start_ns = bench_now_mono_ns();
         start_thieves.store(true, std::memory_order_release);
 
         for (std::size_t s = 0; s < ITEMS_LIFO; s += BATCH_PER_PROD) {
@@ -775,9 +789,9 @@ template <typename Channel>
 
         stop_thieves.store(true, std::memory_order_release);
         for (auto& t : thieves) t.join();
-        const auto t_end = std::chrono::steady_clock::now();
-        total_wall_ms += std::chrono::duration<double, std::milli>(
-            t_end - t_start).count();
+        const auto t_end_ns = bench_now_mono_ns();
+        total_wall_ms += static_cast<double>(t_end_ns - t_start_ns)
+                       / 1'000'000.0;  // ns → ms
         total_items   += ITEMS_LIFO;
     }
 
@@ -934,13 +948,13 @@ template <typename Channel>
         std::jthread t_c2(run_consumer(c2, layout.consumer_cpu[2]));
         std::jthread t_c3(run_consumer(c3, layout.consumer_cpu[3]));
 
-        const auto t_start = std::chrono::steady_clock::now();
+        const auto t_start_ns = bench_now_mono_ns();
         start.store(true, std::memory_order_release);
         t_p0.join(); t_p1.join(); t_p2.join(); t_p3.join();
         t_c0.join(); t_c1.join(); t_c2.join(); t_c3.join();
-        const auto t_end = std::chrono::steady_clock::now();
-        total_wall_ms += std::chrono::duration<double, std::milli>(
-            t_end - t_start).count();
+        const auto t_end_ns = bench_now_mono_ns();
+        total_wall_ms += static_cast<double>(t_end_ns - t_start_ns)
+                       / 1'000'000.0;  // ns → ms
         total_items   += TOTAL_PER_ITER;
     }
 
@@ -1109,13 +1123,13 @@ template <typename Channel>
             }
         });
 
-        const auto t_start = std::chrono::steady_clock::now();
+        const auto t_start_ns = bench_now_mono_ns();
         start.store(true, std::memory_order_release);
         t_p0.join(); t_p1.join(); t_p2.join(); t_p3.join();
         cons_t.join();
-        const auto t_end = std::chrono::steady_clock::now();
-        total_wall_ms += std::chrono::duration<double, std::milli>(
-            t_end - t_start).count();
+        const auto t_end_ns = bench_now_mono_ns();
+        total_wall_ms += static_cast<double>(t_end_ns - t_start_ns)
+                       / 1'000'000.0;  // ns → ms
         total_items   += TOTAL_PER_ITER;
     }
 
@@ -1293,13 +1307,13 @@ template <typename Channel>
         std::jthread t_c2(run_consumer(c2, 2, layout.consumer_cpu[2]));
         std::jthread t_c3(run_consumer(c3, 3, layout.consumer_cpu[3]));
 
-        const auto t_start = std::chrono::steady_clock::now();
+        const auto t_start_ns = bench_now_mono_ns();
         start.store(true, std::memory_order_release);
         t_p0.join(); t_p1.join(); t_p2.join(); t_p3.join();
         t_c0.join(); t_c1.join(); t_c2.join(); t_c3.join();
-        const auto t_end = std::chrono::steady_clock::now();
-        total_wall_ms += std::chrono::duration<double, std::milli>(
-            t_end - t_start).count();
+        const auto t_end_ns = bench_now_mono_ns();
+        total_wall_ms += static_cast<double>(t_end_ns - t_start_ns)
+                       / 1'000'000.0;  // ns → ms
         total_items   += TOTAL_PER_ITER;
     }
 
