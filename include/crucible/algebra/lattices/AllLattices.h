@@ -93,6 +93,7 @@
 #include <crucible/algebra/lattices/RecipeFamilyLattice.h> // FOUND-G75  — shipped (1/2 RecipeSpec axes)
 #include <crucible/algebra/lattices/ResidencyHeatLattice.h> // FOUND-G48  — shipped
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>  // ALGEBRA-10 (#455) — shipped
+#include <crucible/algebra/lattices/SimdIsaLattice.h>    // FIXY-V-250 — shipped (non-distributive x86×ARM ISA partial order)
 #include <crucible/algebra/lattices/StackUseLattice.h>   // FIXY-V-241 — shipped (4-tier stack-bound chain)
 #include <crucible/algebra/lattices/StalenessSemiring.h> // ALGEBRA-11 (#456) — shipped
 #include <crucible/algebra/lattices/StdioLattice.h>      // FIXY-V-241 — shipped (4-tier stdio-surface chain)
@@ -238,6 +239,7 @@ static_assert(every_lattice_has_name<
     RecipeFamilyLattice,
     ResidencyHeatLattice,
     SeqPrefixLattice<LatticeNameProbeElement>,
+    SimdIsaLattice,
     StackUseLattice,
     StalenessSemiring,
     StdioLattice,
