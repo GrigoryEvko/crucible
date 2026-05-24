@@ -10507,6 +10507,17 @@ crucible_neg_compile_test(neg_computation_extract_launder_engaged_payload
 crucible_neg_compile_test(neg_computation_extract_launder_deep_engaged
     "extract_admits_payload")
 
+# ── FIXY-FOUND-108 — then-callback engagement-laundering gate ────
+# Symmetric defense to FIXY-FOUND-107: the same
+# `extract_admits_payload_v<U>` trait is consulted on the then-
+# callback's invoke_result_t::value_type to reject callbacks
+# returning Computation<R2, Computation<R3_engaged, V>> shapes that
+# would otherwise launder R3 past the result's row_union<R, R2>.
+crucible_neg_compile_test(neg_computation_then_callback_engaged_payload
+    "extract_admits_payload")
+crucible_neg_compile_test(neg_computation_then_callback_deep_engaged
+    "extract_admits_payload")
+
 # ── METX-1 #473 — Computation::weaken substitution principle ─────
 # weaken<R2>() requires `Subrow<R, R2>` — capability propagation
 # flows from narrower-effect rows to wider-effect rows, NEVER the

@@ -362,6 +362,27 @@ public:
     // pure-value k as a degenerate bind.  A user wanting fmap behavior
     // should call .map(f) directly.
     //
+    // FIXY-FOUND-108: callback honesty.  The TYPE system trusts the
+    // callback's DECLARED return row R2 — it cannot statically prove
+    // the callback body's effects fit inside R2.  FIXY-FOUND-014 lets
+    // a callback forge a smaller R2 via Computation::lift<Cap>; that
+    // forging surface is closed separately.  Here we close the SECOND
+    // laundering shape, symmetric with FIXY-FOUND-107's extract gate:
+    //
+    //   k : T -> Computation<R2, Computation<R3, V>>
+    //
+    // The callback declares row R2, but the returned VALUE is itself
+    // an engaged Computation carrying R3.  After then accumulates R
+    // ∪ R2, the inner R3 is invisible in the resulting type — every
+    // downstream operation sees Computation<R∪R2, Computation<R3, V>>
+    // and the inner row's audit trail is laundered.
+    //
+    // The `extract_admits_payload_v<U>` constraint (shared with
+    // extract's gate) recursively rejects callbacks whose value_type
+    // is an engaged Computation.  Legitimate monadic chaining is
+    // unaffected: nest Computations via successive .then() calls, not
+    // by returning a nested Computation value from a single callback.
+    //
     // Two overloads for lvalue/rvalue source; both forward the inner
     // result's value into a fresh Result.  The cross-specialization
     // friend template grants then access to `intermediate.impl_` —
@@ -370,6 +391,8 @@ public:
     template <typename F>
         requires std::is_invocable_v<F, const T&>
               && IsComputation<std::invoke_result_t<F, const T&>>
+              && detail::extract_admits_payload_v<
+                     typename std::invoke_result_t<F, const T&>::value_type>
     [[nodiscard]] constexpr auto then(F&& k) const &
         -> Computation<
             row_union_t<R, typename std::invoke_result_t<F, const T&>::row_type>,
@@ -386,6 +409,8 @@ public:
     template <typename F>
         requires std::is_invocable_v<F, T>
               && IsComputation<std::invoke_result_t<F, T>>
+              && detail::extract_admits_payload_v<
+                     typename std::invoke_result_t<F, T>::value_type>
     [[nodiscard]] constexpr auto then(F&& k) &&
         -> Computation<
             row_union_t<R, typename std::invoke_result_t<F, T>::row_type>,
@@ -676,6 +701,51 @@ static_assert(requires(Computation<Row<>, int> const& c) { c.extract(); },
     "FIXY-FOUND-107 regression: plain int payload must still admit extract.");
 
 }  // namespace fixy_found_107
+
+// ── FIXY-FOUND-108: then-callback nested-engaged payload gate ──────
+//
+// then(k) reuses the FIXY-FOUND-107 extract_admits_payload_v<U>
+// trait on the callback's invoke_result_t::value_type.  Symmetric
+// defense: 107 closed the laundering on extract's payload, 108
+// closes it on then's callback-return value_type.  Together they
+// prevent the Row-laundering shape Computation<Row<>, Computation
+// <Row<engaged>, V>> from appearing in the chain at all.
+
+namespace fixy_found_108 {
+
+// Plain payload — legitimate, admits.
+constexpr auto legit_callback = [](int x) {
+    return Computation<Row<>, int>::mk(x + 1);
+};
+static_assert(requires(Computation<Row<>, int> const& c) {
+    c.then(legit_callback);
+}, "FIXY-FOUND-108 regression: plain-payload then-callback must admit.");
+
+// Nested-pure payload — legitimate (R3 is empty), admits.
+constexpr auto nested_pure_callback = [](int) {
+    using Inner = Computation<Row<>, int>;
+    return Computation<Row<>, Inner>::mk(Inner::mk(42));
+};
+static_assert(requires(Computation<Row<>, int> const& c) {
+    c.then(nested_pure_callback);
+}, "FIXY-FOUND-108 regression: nested-pure-payload then must admit "
+   "(the inner row is empty — no laundering).");
+
+// Engaged-nested payload — the laundering shape — REJECTED.
+// Asserted at trait level (the !requires-around-call form hits the
+// GCC 16 hard-error trap documented in fixy_found_107).
+using LaunderingInner = Computation<Row<Effect::Bg>, int>;
+using LaunderingCallback = decltype([](int) {
+    return Computation<Row<>, LaunderingInner>::mk(
+        Computation<Row<>, int>::lift<Effect::Bg>(42));
+});
+static_assert(
+    !detail::extract_admits_payload_v<LaunderingInner>,
+    "FIXY-FOUND-108: callback returning Computation<R2, Computation<"
+    "Row<Bg>, U>> must NOT admit through then — inner Bg row would "
+    "be laundered past the outer row_union.");
+
+}  // namespace fixy_found_108
 
 // extract() rvalue overload moves; correctness checked by replicating
 // the value with a move-only-equivalent payload (int suffices for
