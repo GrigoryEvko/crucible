@@ -6215,6 +6215,24 @@ crucible_neg_compile_test(neg_active_region_ptr_raw_assignment
 crucible_neg_compile_test(neg_active_region_ptr_cross_source_assignment
   "no match|cannot convert|no viable|could not convert|Tagged|source")
 
+# ─── WRAP-BgThread-4 #875 (Tagged half) neg-compile tests ───────────
+#
+# BackgroundThread::device_capability migrates from raw `uint64_t` to
+# `safety::Tagged<uint64_t, source::Meridian>`.  Meridian source tag
+# (Tagged.h, near source::Vigil) encodes "this value was measured from
+# real silicon at startup via the Meridian calibration pass" — distinct
+# from source::Calibrated (general-purpose runtime calibration result).
+# Two fixtures per HS14, demonstrating distinct mismatch classes
+# (mirror of WRAP-CCtx-2 #904 active_region_ pair):
+#   * neg_device_capability_raw_assignment — provenance BYPASS.
+#   * neg_device_capability_cross_source_assignment — provenance LAUNDERING.
+# The "+ Refined" half of WRAP-BgThread-4 is deferred — vendor-specific
+# encoded-value ranges are opaque at the BgThread layer.
+crucible_neg_compile_test(neg_device_capability_raw_assignment
+  "no match|cannot convert|no viable|could not convert|explicit|constructor")
+crucible_neg_compile_test(neg_device_capability_cross_source_assignment
+  "no match|cannot convert|no viable|could not convert|Tagged|source")
+
 # ─── #897 WRAP-CostModel-3 neg-compile tests ────────────────────────
 #
 # Per #897, ValidRegsPerThread is

@@ -184,6 +184,27 @@ namespace source {
     // can rely on the bg-published ordering invariants (active_region
     // store(release) happens-before any data-pointer dereference).
     struct Vigil        {};
+    // Meridian: hardware-capability value measured by the Meridian
+    // startup calibration pass (WRAP-BgThread-4 #875).  device_capability
+    // is an opaque vendor-encoded value (NVIDIA SM version sm_50..sm_120,
+    // AMD gfx target, Intel XMX tier, etc.) populated by the Vessel
+    // adapter at Vigil init from `cudaGetDeviceProperties` / equivalent
+    // probe; a downstream consumer that holds a Meridian-tagged value
+    // can rely on "this was measured from real silicon at startup, not
+    // synthesized from a config file or defaulted to 0".  Distinct
+    // from source::Calibrated (general-purpose calibration result from
+    // any measurement source) and source::WorkloadProfiler (per-call
+    // parallelism recommendation from runtime profiler state): Meridian
+    // specifically marks STARTUP-MEASURED hardware-identity values.
+    // Phantom-only — zero storage, EBO-collapses in
+    // Tagged<uint64_t, source::Meridian>.  The "+ Refined" half of
+    // WRAP-BgThread-4 (a value-range predicate) is deferred — the
+    // canonical predicate would require knowing the vendor-specific
+    // encoded-value range, which is opaque at this layer (the Vessel
+    // adapter knows the encoding but the BgThread layer does not).
+    // A future task can tighten with vendor-specific Refined predicates
+    // routed through the source::Calibrated/source::VendorSpec axis.
+    struct Meridian     {};
     // IncastConfig: CNT-P fan-in mitigation configuration admitted through
     // cntp/IncastControl.h. Raw booleans / byte counts cannot directly
     // tune socket RTO or receiver-issued credit pacing.

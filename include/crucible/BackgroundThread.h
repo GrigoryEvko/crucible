@@ -76,7 +76,22 @@ struct BackgroundThread {
   // Distributed context (set by Vessel adapter at start).
   int32_t rank = -1;
   int32_t world_size = 0;
-  uint64_t device_capability = 0;
+  // WRAP-BgThread-4 #875 (Tagged half, 2026-05-24): device_capability is
+  // a vendor-encoded hardware identity (NVIDIA SM version sm_50..sm_120,
+  // AMD gfx target, Intel XMX tier, etc.) measured by the Meridian
+  // startup calibration pass and propagated through the Vessel adapter
+  // at init().  source::Meridian provenance encodes "this was measured
+  // from real silicon, not synthesized or defaulted".  The default
+  // value 0 marks the pre-init transient state (set() at init() time
+  // overwrites with the calibrated value).  The "+ Refined" half of
+  // WRAP-BgThread-4 (a value-range predicate) is deferred because the
+  // canonical predicate would require knowing the vendor-specific
+  // encoded-value range, which is opaque at this layer (the Vessel
+  // adapter knows the encoding; BgThread does not).  A future task
+  // tightens with vendor-routed source::VendorSpec × Refined pairs.
+  using DeviceCapability = ::crucible::fixy::wrap::Tagged<
+      uint64_t, ::crucible::safety::source::Meridian>;
+  DeviceCapability device_capability{0};
 
   // Active region pointer (written by background, read by foreground).
   // NOT relaxed: store(release) publishes region data (ops, plan, merkle
@@ -704,7 +719,10 @@ struct BackgroundThread {
     meta_log.set(MetaLogPtr{meta_log_ptr});
     rank = rank_;
     world_size = world_size_;
-    device_capability = device_cap;
+    // WRAP-BgThread-4 #875: typed construction at the Vessel-adapter
+    // boundary; raw `device_capability = device_cap;` is rejected by
+    // the explicit ctor (see neg fixture neg_device_capability_raw_assignment.cpp).
+    device_capability = DeviceCapability{device_cap};
     reserve_iteration_buffers_();
     stop_requested.reset_in_quiescent_context(
         ::crucible::fixy::handle::OneShotFlag::QuiescenceProof{});
@@ -1641,7 +1659,9 @@ struct BackgroundThread {
 
     plan->rank = rank;
     plan->world_size = world_size;
-    plan->device_capability = device_capability;
+    // WRAP-BgThread-4 #875: extract via .value() — plan->device_capability
+    // in MerkleDag.h is still raw uint64_t (separate WRAP-* task scope).
+    plan->device_capability = device_capability.value();
     plan->device_type = DeviceType::CPU;
     plan->device_idx = -1;
     std::memset(plan->pad0, 0, sizeof(plan->pad0));
