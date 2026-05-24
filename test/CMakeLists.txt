@@ -2541,7 +2541,7 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_route_intent_to_scheduling_intent_i
 crucible_neg_compile_fixy_test(neg_fixy_pipe_partition_to_schedule_mode_implicit
     "cannot convert.*AutoSplitPartitionStrategy.*to.*AutoSplitScheduleMode|invalid conversion from .*AutoSplitPartitionStrategy|no known conversion|enum-conversion|conversion")
 
-# ── FIXY-V-215 HS14 — fixy::pipe::mint_pool_submit Pool-submission
+# ── FIXY-V-215 HS14 — fixy::pipe::pool_submit Pool-submission
 # gate.  AdaptiveScheduler::Pool::submit accepts ANY closure satisfying
 # is_invocable_r_v<void, Job&>; a closure that captures a move-only
 # Permission<Tag> by value silently transfers ownership to a worker
@@ -2556,9 +2556,9 @@ crucible_neg_compile_fixy_test(neg_fixy_pipe_partition_to_schedule_mode_implicit
 #   (2) ctx_no_bg          — Ctx does NOT admit Bg (HotFgCtx::row =
 #       Row<>) and the JOB is copy-constructible.  Rejects on the
 #       CtxOwnsCapability<Effect::Bg> conjunct.
-crucible_neg_compile_fixy_test(neg_fixy_pipe_mint_pool_submit_permission_capture
+crucible_neg_compile_fixy_test(neg_fixy_pipe_pool_submit_permission_capture
     "CtxFitsPoolSubmit|PermissionFreeJob|is_copy_constructible|constraints not satisfied|associated constraints are not satisfied")
-crucible_neg_compile_fixy_test(neg_fixy_pipe_mint_pool_submit_ctx_no_bg
+crucible_neg_compile_fixy_test(neg_fixy_pipe_pool_submit_ctx_no_bg
     "CtxFitsPoolSubmit|CtxOwnsCapability|row_contains|Effect::Bg|constraints not satisfied|associated constraints are not satisfied")
 
 # ── FIXY-V-216 — fixy::handle::EpochVersioned + fixy::bridge::EpochVersioned

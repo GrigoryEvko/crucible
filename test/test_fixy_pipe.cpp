@@ -264,8 +264,8 @@ static_assert(fpipe::workload_traits<int>::hint().directive ==
 // ─── V-215 — Pool surface + permission-bypass gate witnesses ──────
 //
 // Compile-time witnesses for the new §XXI mints:
-//   * mint_pool_submit — gates job submission through PermissionFreeJob.
-//   * mint_pool_dispatch_with_workload — gates workload-shaped jobs
+//   * pool_submit — gates job submission through PermissionFreeJob.
+//   * pool_dispatch_with_workload — gates workload-shaped jobs
 //     through PermissionFreeJobWithShard.
 //
 // Bg-row ctx (eff::BgDrainCtx) is the production-facing positive
@@ -276,7 +276,7 @@ static_assert(fpipe::PermissionFreeJob<decltype([](){})>,
     "PermissionFreeJob must accept a copyable no-capture closure.");
 
 // Shard-taking variant — accepted by the PermissionFreeJobWithShard
-// concept used by mint_pool_dispatch_with_workload.
+// concept used by pool_dispatch_with_workload.
 static_assert(fpipe::PermissionFreeJobWithShard<
     decltype([](fpipe::WorkShard){})>,
     "PermissionFreeJobWithShard must accept a shard-taking closure.");
@@ -318,10 +318,10 @@ int main() {
     auto pl = fpipe::mint_pipeline(ctx, std::move(stage_a), std::move(stage_b));
     (void)pl;
 
-    // ─── V-215: Pool runtime — mint_pool_submit + dispatch ────────
+    // ─── V-215: Pool runtime — pool_submit + dispatch ────────
     //
     // Mint a single-worker Pool, route a counter-bumping job through
-    // mint_pool_submit (the §XXI ctx-bound submission mint), then
+    // pool_submit (the §XXI ctx-bound submission mint), then
     // wait_idle and verify the counter advanced.  The job is
     // capture-free + copy-constructible — the canonical safe shape.
     //
@@ -331,11 +331,11 @@ int main() {
     fpipe::Pool<> pool{fpipe::CoreCount{1}};
 
     std::atomic<std::size_t> hits{0};
-    fpipe::mint_pool_submit(bg, pool, [&hits]() noexcept {
+    fpipe::pool_submit(bg, pool, [&hits]() noexcept {
         hits.fetch_add(1, std::memory_order_release);
     });
 
-    auto result = fpipe::mint_pool_dispatch_with_workload(
+    auto result = fpipe::pool_dispatch_with_workload(
         bg,
         pool,
         fpipe::WorkloadProfile::from_budget(
@@ -354,7 +354,7 @@ int main() {
 
     if (hits.load(std::memory_order_acquire) < 1u) {
         std::fprintf(stderr,
-            "V-215: mint_pool_submit + dispatch must increment hits "
+            "V-215: pool_submit + dispatch must increment hits "
             "(observed %zu)\n",
             hits.load(std::memory_order_acquire));
         std::abort();

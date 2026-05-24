@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-24T19:19:48Z`.
+Snapshot generated: `2026-05-24T19:23:31Z`.
 
 ## bridges/
 
@@ -263,8 +263,6 @@ mints) are listed in the substrate section instead.
 | `mint_mpsc_producer_session` | `include/crucible/fixy/Substr.h:1045` | Y | Y | Y | - | ctx | HS14: 1 ⚠ |
 | `mint_msr_grant` | `include/crucible/fixy/Hw.h:529` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_parallel_for` | `include/crucible/fixy/spawn/Spawn.h:229` | Y | - | Y | Y | ctx | HS14: 2 |
-| `mint_pool_dispatch_with_workload` | `include/crucible/fixy/Pipe.h:553` | Y | - | Y | Y | ctx | HS14: 0 ⚠ |
-| `mint_pool_submit` | `include/crucible/fixy/Pipe.h:534` | - | - | Y | Y | ctx | HS14: 2 |
 | `mint_priority` | `include/crucible/fixy/Sched.h:272` | Y | - (alloc) | Y | Y | ctx | HS14: 4 |
 | `mint_scheduler_policy` | `include/crucible/fixy/Sched.h:256` | Y | - (alloc) | Y | Y | ctx | HS14: 2 |
 | `mint_simd_width` | `include/crucible/fixy/Hw.h:497` | Y | Y | Y | Y | ctx | HS14: 2 |
@@ -282,5 +280,5 @@ mints) are listed in the substrate section instead.
 - Total substrate mints: 123
 - Missing fixy re-export: 15
 - Member-function mints: 8 (separate §XXI grep-target — see above)
-- fixy-origin mints: 37 (declared in fixy/, no substrate counterpart — see above)
+- fixy-origin mints: 35 (declared in fixy/, no substrate counterpart — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

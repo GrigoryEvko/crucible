@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-V-215 HS14 fixture #1 of 2 for fixy::pipe::mint_pool_submit:
+// FIXY-V-215 HS14 fixture #1 of 2 for fixy::pipe::pool_submit:
 // PermissionFreeJob rejects when the supplied closure captures a
 // move-only Permission<Tag> token by value.
 //
@@ -37,17 +37,17 @@
 
 #include <utility>
 
-namespace neg_fixy_pipe_mint_pool_submit_permission_capture {
+namespace neg_fixy_pipe_pool_submit_permission_capture {
 
 // Phantom tag for the permission token captured by the bypass
 // closure.  The exact tag does not matter — the rejection rides
 // only on Permission<Tag>'s deleted copy ctor.
 struct PermTag {};
 
-}  // namespace neg_fixy_pipe_mint_pool_submit_permission_capture
+}  // namespace neg_fixy_pipe_pool_submit_permission_capture
 
 int main() {
-    namespace tags  = neg_fixy_pipe_mint_pool_submit_permission_capture;
+    namespace tags  = neg_fixy_pipe_pool_submit_permission_capture;
     namespace eff   = ::crucible::effects;
     namespace fpipe = ::crucible::fixy::pipe;
     namespace safe  = ::crucible::safety;
@@ -64,7 +64,7 @@ int main() {
     // std::is_copy_constructible_v<decltype(bypass)> == false →
     // PermissionFreeJob<decltype(bypass)> == false →
     // CtxFitsPoolSubmit<BgDrainCtx, decltype(bypass)> == false →
-    // mint_pool_submit's requires-clause rejects.
+    // pool_submit's requires-clause rejects.
     auto bypass = [captured = std::move(perm)]() mutable noexcept {
         (void)captured;
     };
@@ -73,7 +73,7 @@ int main() {
     // permission-bypass closure has slipped through the fixy:: gate
     // and a worker jthread will silently inherit `perm` without the
     // CSL parallel-rule's static splits_into_pack check.
-    fpipe::mint_pool_submit(bg, pool, std::move(bypass));
+    fpipe::pool_submit(bg, pool, std::move(bypass));
 
     pool.wait_idle();
     return 0;

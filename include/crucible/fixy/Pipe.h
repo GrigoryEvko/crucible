@@ -411,8 +411,8 @@ using ::crucible::concurrent::auto_split_runtime_profile_from_topology;
 // `Pool::submit` stays unchanged (existing call sites in
 // AutoSplit / Pipeline coordination depend on the relaxed shape);
 // production code that wants the fixy-disciplined surface routes
-// every submission through `fixy::pipe::mint_pool_submit(ctx, pool, job)`
-// or `mint_pool_dispatch_with_workload(ctx, pool, profile, job)`.
+// every submission through `fixy::pipe::pool_submit(ctx, pool, job)`
+// or `pool_dispatch_with_workload(ctx, pool, profile, job)`.
 //
 // ── The PermissionFreeJob gate ─────────────────────────────────────
 //
@@ -459,11 +459,11 @@ using ::crucible::concurrent::auto_split_runtime_profile_from_topology;
 // authority.
 //
 // HS14 fixtures (test/fixy_neg/):
-//   1. neg_fixy_pipe_mint_pool_submit_permission_capture.cpp
+//   1. neg_fixy_pipe_pool_submit_permission_capture.cpp
 //        — closure captures Permission<Tag>; closure's copy ctor is
 //          deleted; PermissionFreeJob<Job> fails → CtxFitsPoolSubmit
 //          rejects.  This IS the canonical bypass shape.
-//   2. neg_fixy_pipe_mint_pool_submit_ctx_no_bg.cpp
+//   2. neg_fixy_pipe_pool_submit_ctx_no_bg.cpp
 //        — HotFgCtx::row = Row<> admits no Bg; CtxOwnsCapability
 //          fails → CtxFitsPoolSubmit rejects.  Distinct from #1
 //          (this fixture's job IS copy-constructible).
@@ -505,8 +505,8 @@ concept PermissionFreeJobWithShard =
 
 // ── CtxFitsPoolSubmit / CtxFitsPoolDispatch ─────────────────────────
 //
-// Single-concept gates for `mint_pool_submit` and
-// `mint_pool_dispatch_with_workload`.  Per §XXI, multi-clause
+// Single-concept gates for `pool_submit` and
+// `pool_dispatch_with_workload`.  Per §XXI, multi-clause
 // requirements live INSIDE the concept definition (not at the call
 // site).
 
@@ -524,14 +524,14 @@ concept CtxFitsPoolDispatchWithWorkload =
            Ctx, ::crucible::effects::Effect::Bg>
     && PermissionFreeJobWithShard<Job>;
 
-// ── mint_pool_submit<Ctx, Policy, Job>(ctx, pool, job) ──────────────
+// ── pool_submit<Ctx, Policy, Job>(ctx, pool, job) ──────────────
 //
 // §XXI ctx-bound mint.  Forwards to `Pool<Policy>::submit(job)` after
 // the single CtxFitsPoolSubmit gate fires.
 
 template <typename Ctx, typename Policy, typename Job>
     requires CtxFitsPoolSubmit<Ctx, Job>
-void mint_pool_submit(
+void pool_submit(
     Ctx const&,
     Pool<Policy>& pool,
     Job&& job) noexcept
@@ -539,7 +539,7 @@ void mint_pool_submit(
     pool.submit(std::forward<Job>(job));
 }
 
-// ── mint_pool_dispatch_with_workload<Ctx, Policy, Job>(...) ─────────
+// ── pool_dispatch_with_workload<Ctx, Policy, Job>(...) ─────────
 //
 // §XXI ctx-bound mint.  Forwards to
 // `Pool<Policy>::dispatch_with_workload(profile, job)` after the
@@ -550,7 +550,7 @@ void mint_pool_submit(
 template <typename Ctx, typename Policy, typename Job>
     requires CtxFitsPoolDispatchWithWorkload<Ctx, Job>
 [[nodiscard]] DispatchWithWorkloadResult
-mint_pool_dispatch_with_workload(
+pool_dispatch_with_workload(
     Ctx const&,
     Pool<Policy>& pool,
     WorkloadProfile profile,
@@ -961,7 +961,7 @@ static_assert(
 //  NumaNodeMask, WorkloadProfile, WorkShard, DispatchWithWorkloadResult;
 //  2 PermissionFree* concepts: PermissionFreeJob, PermissionFreeJobWithShard;
 //  2 ctx-fit gates: CtxFitsPoolSubmit, CtxFitsPoolDispatchWithWorkload;
-//  2 §XXI mints: mint_pool_submit, mint_pool_dispatch_with_workload).
+//  2 §XXI mints: pool_submit, pool_dispatch_with_workload).
 // V-218 extension: +1 stance::HotPathInline concept.
 constexpr int pipe_surface_cardinality = 88;
 static_assert(pipe_surface_cardinality == 88,
