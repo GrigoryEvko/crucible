@@ -76,6 +76,7 @@
 #include <crucible/safety/Pre.h>          // CRUCIBLE_PRE — fires at consteval + runtime
 
 #include <bit>
+#include <cassert>                        // FIXY-FOUND-105: assert() — no [[assume]] in release
 #include <cstdint>
 #include <cstdlib>
 #include <type_traits>
@@ -126,40 +127,64 @@ public:
     // mask.  Any bit at position ≥ effect_count corresponds to no
     // Effect atom and is poison injected by a malicious or buggy peer.
     //
-    // FIXY-FOUND-105: prior code did only `CRUCIBLE_PRE((b & ~valid)
-    // == 0)`.  In NDEBUG release, CRUCIBLE_PRE lowers to `[[assume]]`
-    // — a pure optimizer hint, NOT a runtime check.  Wire-format input
-    // from a malicious peer could carry high bits past Effect::Test;
-    // the `[[assume]]` would then encode a FALSE premise, and downstream
-    // code that depends on `bits_ & ~valid_mask == 0` would compute
-    // wrong answers under UB semantics.
+    // ── Why no CRUCIBLE_PRE here ─────────────────────────────────────
     //
-    // The fix layers defense-in-depth:
-    //   1. `sanitized = b & valid_mask` — UNCONDITIONAL bit-mask,
-    //      preserved even in release.  Stored EffectMask is always
-    //      well-formed regardless of the input's high bits.  The mask
-    //      costs ONE AND instruction per call; the optimizer cannot
-    //      prove `sanitized == b` unless a CRUCIBLE_PRE further down
-    //      claims it, so the AND survives in the emitted code.
-    //   2. `CRUCIBLE_PRE(sanitized == b)` — debug-runtime catches the
-    //      moment a caller passes a corrupt wire-format value (so the
-    //      bug fires at the deserializer's call site, not in the
-    //      consumer of bits_).  At consteval, fires `__builtin_trap`
-    //      (hard error in static_assert).  At release, lowers to
-    //      `[[assume(sanitized == b)]]` — optimizer treats the stored
-    //      bits as equal to the input, enabling downstream constant
-    //      propagation (e.g., `bits_ & ~valid_mask == 0` folds to true).
+    // The naive form
+    //     auto sanitized = b & valid_mask;
+    //     CRUCIBLE_PRE(sanitized == b);
+    //     return EffectMask{tag, sanitized};
+    // SEEMS to provide defense-in-depth.  It does not.  In NDEBUG,
+    // CRUCIBLE_PRE lowers to `[[assume(sanitized == b)]]` (Pre.h:275),
+    // which is functionally `if (sanitized != b) __builtin_unreachable
+    // ();`.  The optimizer treats `sanitized == b` as a hard fact:
     //
-    // Net effect: malicious-peer wire-format integrity is preserved at
-    // 1 instruction/call in release; debug builds still abort on the
-    // corrupted-input site for fast fault localisation.
+    //   1. After the [[assume]], value-numbering sees `sanitized` and
+    //      `b` are equivalent.
+    //   2. Substitutes `b` for `sanitized` in the return.
+    //   3. The AND `sanitized = b & valid_mask` is now dead (written,
+    //      never read after substitution).
+    //   4. Dead-code elimination removes the AND.
+    //
+    // Net release codegen: `return EffectMask{tag, b};` — high bits
+    // flow through.  The sanitization is GONE.  An earlier draft of
+    // this function shipped this naive form with a confident comment
+    // claiming "1 AND/call cost; wire-format integrity preserved" —
+    // both halves false.  FIXY-FOUND-105-AUDIT corrected the analysis.
+    //
+    // ── The actual fix ───────────────────────────────────────────────
+    //
+    // Drop the [[assume]] so the AND survives every build mode:
+    //
+    //   1. UNCONDITIONAL `b & valid_mask` — the actual sanitization.
+    //      No companion [[assume]] anywhere; the optimizer must keep
+    //      the AND because nothing tells it the high bits are zero.
+    //   2. Hand-rolled `if consteval` + `__builtin_trap` — preserves
+    //      the consteval-poison behaviour CRUCIBLE_PRE used to provide
+    //      (static_assert with invalid input fires a hard error).
+    //   3. Plain `assert(sanitized == b)` — debug-runtime fault
+    //      localisation at the deserializer's call site.  No [[assume]]
+    //      side-effect (assert() lowers to (void)0 under NDEBUG).
+    //
+    // Net release codegen: ONE AND per call (genuinely 1 instruction,
+    // not "claimed 1 instruction but optimized out").  Wire-format
+    // integrity holds against a malicious peer.
     [[nodiscard]] static constexpr EffectMask from_raw(underlying_type b) noexcept {
         constexpr underlying_type valid_mask =
             static_cast<underlying_type>(
                 (underlying_type{1} << effect_count) - underlying_type{1});
         underlying_type const sanitized =
             static_cast<underlying_type>(b & valid_mask);
-        CRUCIBLE_PRE(sanitized == b);
+        // Consteval-poison: a static_assert that calls from_raw with
+        // invalid input fires a hard compile-time error (since
+        // __builtin_trap is not a constant expression).
+        if consteval {
+            if (sanitized != b) {
+                __builtin_trap();
+            }
+        }
+        // Debug-runtime fault localisation.  Plain assert (not
+        // CRUCIBLE_PRE) — see "Why no CRUCIBLE_PRE" doc-block above.
+        assert(sanitized == b);
         return EffectMask{from_raw_tag_t{}, sanitized};
     }
 
