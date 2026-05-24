@@ -164,8 +164,30 @@ public:
 
     static_assert(std::has_single_bit(Capacity),
                   "Capacity must be a power of two");
-    static_assert(Capacity > 0,
-                  "Capacity must be greater than zero");
+    // FIXY-FOUND-117: Capacity ≥ 2 — the Chase-Lev / Lê 2013 ABA-safety
+    // proof relies on top and bottom being SEPARATELY-indexed cells when
+    // the deque holds at least one element.  At Capacity = 1, MASK = 0
+    // and ALL accesses collapse to cell[0]: owner push, owner pop, AND
+    // thief steal write/read the same physical slot regardless of
+    // bottom/top values.  The published proof of CAS-failure on
+    // bottom-top conflict assumes the loser's read happens against a
+    // distinct backing storage than the winner's write — at Cap=1
+    // that assumption is structurally false, opening a small but real
+    // ABA-via-cell-aliasing hole for back-to-back push/pop/steal triples.
+    // (Lê 2013 §3.3 doesn't explicitly call out Cap≥2; the proof's
+    // separability assumption makes it implicit.)
+    //
+    // Cap=1 isn't a useful queue anyway — it holds 0 or 1 elements,
+    // contention pattern degenerates, and the test fuzzers (test_
+    // chase_lev_deque, test_concurrency_collision_fuzzer §10) require
+    // Cap ≥ 4 to exercise meaningful steal-vs-pop interleavings.  The
+    // tighter pin makes the implicit proof-precondition explicit.
+    static_assert(Capacity >= 2,
+                  "Capacity must be >= 2 — Lê 2013 ABA-safety proof "
+                  "assumes top and bottom index DISTINCT cells; at Cap=1, "
+                  "MASK=0 collapses all accesses to cell[0] and the proof's "
+                  "separability assumption breaks.  Cap=1 also isn't a "
+                  "useful work-stealing deque (0 or 1 elements only).");
     static_assert(Capacity <= (std::size_t{1} << 30),
                   "Capacity must fit in 31-bit signed range "
                   "(top/bottom are int64; Capacity ≤ 2^30 keeps the "
