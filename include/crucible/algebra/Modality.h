@@ -8,6 +8,16 @@
 // wrapper that decorates a value has a graded-modality reading; the
 // table below maps each existing wrapper to its modality form.
 //
+// FIXY-FOUND-092 #2247 audit (2026-05-24): table updated to reflect
+// production reality.  Pre-audit prose claimed Relative was RESERVED
+// (it IS used by Computation<Row, T>) and that Quotient covers
+// Version/Vendor/ForgePhase + Coeffect covers dim::Cost (none of
+// those wrappers actually use those modalities — Vendor + Consistency
+// + EpochVersioned use Absolute, Tagged uses RelativeMonad, no dim::
+// Cost wrapper exists yet).  Four modalities are wired in production;
+// Quotient + Coeffect are spec'd via FIXY-G10 / FIXY-G11 but no
+// production wrapper has migrated to them yet.
+//
 //   ModalityKind        | Existing wrapper(s)                 | Operation
 //   --------------------+-------------------------------------+----------
 //   Comonad             | Secret<T>                           | counit out
@@ -17,13 +27,24 @@
 //   Absolute            | Linear<T>, Refined<P, T>,           | grade fixed at
 //                       | Monotonic<T, Cmp>, AppendOnly<T>,   | construction
 //                       | SharedPermission<Tag>, Stale<T>,    |
-//                       | Budgeted<budget, T>                 |
-//   Relative            | RESERVED                            | cross-region
-//                       |                                     | flow
-//   Quotient            | Version<N>, Vendor<V>,              | equivalence-
-//                       | ForgePhase<P>                       | class name
-//   Coeffect            | dim::Cost grants                    | resource
-//                       |                                     | consumption
+//                       | Budgeted<T>, Vendor<V, T>,          |
+//                       | EpochVersioned<T>,                  |
+//                       | Consistency<L, T>, JoinPolicy,      |
+//                       | HotPath, DetSafe, NumericalTier,    |
+//                       | ResidencyHeat, CipherTier,          |
+//                       | AllocClass, Wait, MemOrder,         |
+//                       | Progress, ... (Tier-1 majority)     |
+//   Relative            | Computation<Row, T>                 | row-typed
+//                       | (Met(X) effect-row carrier)         | effect track
+//   Quotient            | RESERVED (FIXY-G10 — equivalence-   | equivalence-
+//                       | class membership; spec'd for        | class name
+//                       | Version/Vendor/ForgePhase, but      |
+//                       | those production wrappers           |
+//                       | currently use Absolute)             |
+//   Coeffect            | RESERVED (FIXY-G11 — resource       | resource
+//                       | consumption; spec'd for dim::Cost,  | consumption
+//                       | but no production wrapper exists    |
+//                       | yet)                                |
 //
 // Cardinality is pinned to six by the load-bearing static_assert in
 // `detail::modality_self_test` (search `modality_kind_count == 6`).  A
@@ -56,9 +77,21 @@ namespace crucible::algebra {
 
 // ── ModalityKind ────────────────────────────────────────────────────
 enum class ModalityKind : std::uint8_t {
+    // Status: production-wired (Secret<T> — counit-out / declassify).
     Comonad       = 0,
+    // Status: production-wired (Tagged<T, Source> — unit-in / retag).
     RelativeMonad = 1,
+    // Status: production-wired (Tier-1 majority — Linear, Refined,
+    // Monotonic, AppendOnly, SharedPermission, Stale, Budgeted,
+    // Vendor, EpochVersioned, Consistency, JoinPolicy, HotPath,
+    // DetSafe, NumericalTier, ResidencyHeat, CipherTier, AllocClass,
+    // Wait, MemOrder, Progress, ...).  Grade is fixed at
+    // construction; immutable across the value's lifetime.
     Absolute      = 2,
+    // Status: production-wired (Computation<Row, T> — Met(X)
+    // effect-row carrier per Tang-Lindley POPL 2026 / 25_04_2026
+    // §3.2).  Row composition under sequencing is union; under
+    // parallel composition is also union.
     Relative      = 3,
     // FIXY-G10: Quotient — equivalence-class membership.  Used for
     // grant categories that name a representative of an equivalence
@@ -66,6 +99,22 @@ enum class ModalityKind : std::uint8_t {
     // a transformation of the value or an obligation on the caller.
     // Two grants of Quotient modality on the same axis are
     // incompatible iff their equivalence-class representatives differ.
+    //
+    // Status: RESERVED — spec'd but no production wrapper migrated.
+    //                    Vendor<V, T> + EpochVersioned<T> + Consistency<L, T>
+    //                    were candidates per the original design table
+    //                    but ship with ModalityKind::Absolute (the
+    //                    Quotient nuance — that two distinct
+    //                    representatives are compatible iff they are
+    //                    structurally equal — is currently subsumed
+    //                    by Absolute's grade-fixed-at-construction
+    //                    semantics, since the representatives ARE
+    //                    structurally equal across the lattices in
+    //                    play).  Adopt Quotient only when an axis
+    //                    arises whose equivalence-class semantics
+    //                    differ from structural equality (a future
+    //                    KernelCache content-addressing-quotient
+    //                    axis is the leading candidate per FIXY-G15).
     Quotient      = 4,
     // FIXY-G11: Coeffect — RESOURCE-CONSUMPTION duality of effects.
     // Effects track WHAT IS PRODUCED (IO, Bg, Alloc...); coeffects
@@ -75,6 +124,15 @@ enum class ModalityKind : std::uint8_t {
     // sequential composition is `+`, parallel composition is `max`,
     // repetition is `·`.  Used by dim::Cost grants whose grade is a
     // polynomial in input-size encoding nanos-per-op.
+    //
+    // Status: RESERVED — spec'd but no production wrapper exists yet.
+    //                    `dim::Cost` is forward-looking; the cost
+    //                    model in `concurrent/CostModel.h` is a
+    //                    runtime CostBudget struct, not a Coeffect-
+    //                    graded wrapper.  Adopt Coeffect when budget-
+    //                    annotated production code paths land
+    //                    (FIXY-G66 precision-budget calibrator is the
+    //                    leading candidate).
     Coeffect      = 5,
 };
 
