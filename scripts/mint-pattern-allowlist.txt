@@ -145,8 +145,8 @@ include/crucible/safety/Diagnostic.h:1476:noexcept-ok
 include/crucible/safety/Fn.h:600:constexpr-ok
 include/crucible/safety/Fn.h:600:nodiscard-ok
 include/crucible/safety/Fn.h:600:noexcept-ok
-include/crucible/safety/ScopedView.h:161:requires-ok
-include/crucible/safety/ScopedView.h:200:requires-ok
+include/crucible/safety/ScopedView.h:168:requires-ok
+include/crucible/safety/ScopedView.h:212:requires-ok
 include/crucible/sessions/CalendarGridSession.h:56:requires-ok
 include/crucible/sessions/CalendarGridSession.h:66:requires-ok
 include/crucible/sessions/CalendarGridSession.h:79:requires-ok
