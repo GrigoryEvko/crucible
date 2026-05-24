@@ -308,8 +308,27 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // publication unchanged.
   uint64_t consumer_tail_ = 0;
 
-  // Producer-local shadow of tail. Never read by the consumer. Own cache
-  // line to avoid sharing with head (each line owned by exactly one thread).
+  // Producer-local shadow of tail. Never read by the consumer.  Own
+  // cache line via alignas(64).
+  //
+  // FIXY-FOUND-118 layout-honesty: this field's alignas(64) is NOT
+  // waste — it prevents real false sharing.  Without it, cached_tail_
+  // would pack onto tail's cache line (tail + consumer_tail_ sit
+  // 8B+8B on the consumer-write line just above).  cached_tail_ is
+  // producer-write; co-locating it with consumer-write tail/
+  // consumer_tail_ would cause every producer cached_tail_ update to
+  // invalidate the consumer's hot tail line — a real cross-thread
+  // false-sharing regression, NOT an optimization.
+  //
+  // The 56 bytes of padding between cached_tail_ (8B) and entries[]
+  // (next alignas(64)) LOOKS wasteful but is structurally REQUIRED
+  // by entries[]' own alignas(64).  Removing cached_tail_'s alignas
+  // wouldn't reclaim that padding — entries[] would still start at
+  // the next 64-byte boundary; we'd just shift the padding earlier.
+  // Net cache-line count is unchanged either way; the alignas earns
+  // the line by preventing the false-sharing the alternative would
+  // introduce.
+  //
   // Invariant: cached_tail_ <= tail.load(). Stale is conservative — it
   // under-reports free space, forcing a real tail reload; never
   // over-reports.  Wrapped in Monotonic to enforce "only advances"
