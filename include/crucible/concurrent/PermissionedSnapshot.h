@@ -221,26 +221,36 @@ public:
         return ReaderHandle{*this, std::move(*guard)};
     }
 
-    // ── Mode transition: scoped exclusive access ──────────────────
+    // ── Mode transition: scoped reader-drained access ─────────────
     //
-    // For special operations that need ALL readers out — atomic
-    // reinitialization, schema reset, snapshot replacement.  Body
-    // runs while readers are blocked from acquiring new shares.
+    // FIXY-FOUND-113 honest framing: this primitive drains READERS
+    // only.  The writer permission is LINEAR (single-token, held by
+    // ONE thread) and is NOT touched by this call.  Caller contract:
+    //
+    //   * The writer thread (the unique owner of Permission<
+    //     writer_tag>) is the only thread allowed to call
+    //     with_drained_access.  Single-threaded sequencing means the
+    //     writer cannot be mid-publish concurrently with body, since
+    //     publish() and with_drained_access() execute on the same
+    //     thread.
+    //   * A NON-writer thread calling with_drained_access while the
+    //     writer is concurrently in publish() observes the writer's
+    //     in-flight memcpy as if it were a normal AtomicSnapshot
+    //     reader — the seqlock retry semantics apply, but body runs
+    //     WITHOUT exclusive access to the writer side.
+    //
+    // For TRUE full exclusion (writer-side drained as well as readers),
+    // use `with_recombined_access` below — it consumes the writer
+    // permission as type-level proof of writer-side exclusivity,
+    // mirroring PermissionedSpscChannel's pattern for primitives with
+    // linear-permission sides.
+    //
     // Returns true iff body ran (false iff readers were active).
-    //
     // Body signature: void() noexcept.
     //
     // Cost: one CAS to acquire (succeeds iff outstanding == 0),
     // one release-store to deposit back.  Body's runtime is the
     // rest.  Subsequent reader() calls succeed once body returns.
-    // Unified mode-transition primitive (pool-based).  Snapshot's
-    // pooled side is the reader pool; the Writer permission is linear
-    // and untouched by this call.  Body runs while readers are
-    // blocked from acquiring new shares; subsequent reader() calls
-    // succeed once body returns.
-    //
-    // Cost: one CAS to acquire (succeeds iff outstanding == 0),
-    // one release-store to deposit back.
     template <typename Body>
         requires std::is_invocable_v<Body>
     bool with_drained_access(Body&& body)
@@ -251,6 +261,52 @@ public:
         std::forward<Body>(body)();
         reader_pool_.deposit_exclusive(std::move(*upgrade));
         return true;
+    }
+
+    // ── Mode transition: scoped full exclusion (FIXY-FOUND-113) ───
+    //
+    // For callers that need BOTH writer-side AND reader-side
+    // exclusion (atomic reinit while writer is also quiesced).
+    // Consumes the writer Permission as type-level proof of
+    // writer-side quiescence — at the moment the caller hands the
+    // permission to this method, NO other call can hold it, so no
+    // publish() can be in progress.  Combined with the reader-pool
+    // upgrade, body runs with TRUE exclusive access to the snapshot.
+    //
+    // Mirrors PermissionedSpscChannel::with_recombined_access for
+    // primitives with at least one linear-permission side.  The
+    // writer Permission is ALWAYS returned (both on body-ran and
+    // on busy-reader-pool paths) so linearity holds: one Permission
+    // in, exactly one Permission out, never duplicated nor lost.
+    //
+    // Body signature: void() noexcept.  Returns a struct carrying
+    // both the recovered Permission and a `body_ran` flag.
+    //
+    // Cost: zero atomic ops on the writer side (linearity proof is
+    // type-level); one CAS on the reader pool to acquire-exclusive,
+    // one release-store to deposit back.
+    struct WithRecombinedResult {
+        safety::Permission<writer_tag> writer_perm;
+        bool                           body_ran;
+    };
+
+    template <typename Body>
+        requires std::is_invocable_v<Body>
+    [[nodiscard]] WithRecombinedResult
+    with_recombined_access(safety::Permission<writer_tag>&& writer_perm,
+                           Body&& body)
+        noexcept(std::is_nothrow_invocable_v<Body>)
+    {
+        auto upgrade = reader_pool_.try_upgrade();
+        if (!upgrade) {
+            // Reader-pool busy; return writer permission unchanged
+            // and body_ran=false so caller can retry.  Linearity
+            // preserved: in = 1 permission, out = 1 permission.
+            return WithRecombinedResult{std::move(writer_perm), false};
+        }
+        std::forward<Body>(body)();
+        reader_pool_.deposit_exclusive(std::move(*upgrade));
+        return WithRecombinedResult{std::move(writer_perm), true};
     }
 
     // ── Diagnostics ───────────────────────────────────────────────
