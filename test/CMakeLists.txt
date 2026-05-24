@@ -12440,6 +12440,22 @@ crucible_neg_compile_fixy_test(neg_fixy_v_224_commit_atomic_external_target
 crucible_neg_compile_fixy_test(neg_fixy_v_224_mint_file_ctx_lacks_block
     "no matching function|CtxAdmitsIoBlock|CtxFitsFileMint|constraints not satisfied|row_contains")
 
+# ── FIXY-FOUND-091 — durable-mint HS14 neg-compile fixtures (#2246) ──
+#
+# mint_durable_truncate_file and mint_durable_append_file delegate to
+# the underlying mint_file<...> with pinned grant stacks.  Per HS14,
+# every mint factory ships ≥2 neg fixtures.  Four classes (2 per mint):
+#   #1/3 Path<External>     — path-source-tag mismatch at outer signature
+#   #2/4 ColdInitCtx no Block — ctx-row gap propagates through delegation
+crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_durable_truncate_file_external_path
+    "no matching function|could not convert|cannot convert|conversion from")
+crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_durable_truncate_file_ctx_lacks_block
+    "no matching function|CtxAdmitsIoBlock|CtxFitsFileMint|constraints not satisfied|row_contains")
+crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_durable_append_file_external_path
+    "no matching function|could not convert|cannot convert|conversion from")
+crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_durable_append_file_ctx_lacks_block
+    "no matching function|CtxAdmitsIoBlock|CtxFitsFileMint|constraints not satisfied|row_contains")
+
 # ── FIXY-V-225 — fixy/Mmap.h HS14 neg-compile fixtures (#2103) ──────
 #
 # Seven mismatch classes for the V-225 substrate's three concept gates

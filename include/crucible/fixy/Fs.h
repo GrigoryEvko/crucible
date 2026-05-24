@@ -656,6 +656,13 @@ using read_only = ::crucible::fixy::grant::fs::mode<open_mode::ReadOnly>;
 // CipherDurable wrapper will fold these into a single high-level
 // `mint_durable_write_session` so the caller can't forget.
 
+// §XXI carve-out: cx=alloc — file open invokes the kernel (open, fstat,
+// linkat, fsync) and the underlying FileHandle wrapper holds an OS file
+// descriptor.  constexpr would lie about the runtime cost.  The
+// `IsExecCtx Ctx` template-parameter constraint IS the concept gate
+// (rq=Y in spirit, though gen-mint-inventory.sh's `\brequires\b` regex
+// does not detect template-param-constraint form; rq column shows '-'
+// pending a scanner extension follow-up).
 template <::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] inline auto
 mint_durable_truncate_file(Ctx const& ctx,
@@ -687,6 +694,9 @@ mint_durable_truncate_file(Ctx const& ctx,
 // No atomic_write<> grant: append-only files don't have a "tmp →
 // target" rename phase — the file IS the target.
 
+// §XXI carve-out: cx=alloc — same rationale as mint_durable_truncate_file
+// above: file open syscalls + FileHandle owns an fd.  Append form differs
+// only in grant stack (Fdatasync + DataSync rather than Fsync + LinkAtomic).
 template <::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] inline auto
 mint_durable_append_file(Ctx const& ctx,

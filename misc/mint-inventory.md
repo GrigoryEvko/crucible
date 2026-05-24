@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-24T15:36:23Z`.
+Snapshot generated: `2026-05-24T19:09:37Z`.
 
 ## bridges/
 
@@ -247,10 +247,10 @@ mints) are listed in the substrate section instead.
 | `mint_bounded_sleep` | `include/crucible/fixy/Time.h:306` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_clock_reader` | `include/crucible/fixy/Time.h:293` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_cold_writer` | `include/crucible/fixy/CipherDurable.h:243` | - | - | Y | - | ctx | HS14: 2 |
-| `mint_durable_append_file` | `include/crucible/fixy/Fs.h:692` | Y | - | Y | - | ctx | HS14: 0 ⚠ |
-| `mint_durable_truncate_file` | `include/crucible/fixy/Fs.h:661` | Y | - | Y | - | ctx | HS14: 0 ⚠ |
+| `mint_durable_append_file` | `include/crucible/fixy/Fs.h:702` | Y | - (alloc) | Y | - | ctx | HS14: 2 |
+| `mint_durable_truncate_file` | `include/crucible/fixy/Fs.h:668` | Y | - (alloc) | Y | - | ctx | HS14: 3 |
 | `mint_federation_channel` | `include/crucible/fixy/SessFederation.h:209` | Y | Y | Y | Y | ctx | HS14: 5 |
-| `mint_file` | `include/crucible/fixy/Fs.h:521` | Y | Y | Y | Y | ctx | HS14: 9 |
+| `mint_file` | `include/crucible/fixy/Fs.h:521` | Y | Y | Y | Y | ctx | HS14: 13 |
 | `mint_fn_for` | `include/crucible/fixy/Fn.h:1045` | Y | Y | Y | Y | token | HS14: 9 |
 | `mint_head_advancer` | `include/crucible/fixy/CipherDurable.h:251` | - | - | Y | - | ctx | HS14: 2 |
 | `mint_io_uring_ring` | `include/crucible/fixy/Io.h:669` | Y | Y | Y | Y | ctx | HS14: 5 |
