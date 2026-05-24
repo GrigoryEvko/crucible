@@ -753,12 +753,53 @@ template <TierKind Tier, typename Lattice>
     } else if constexpr (Tier == TierKind::Foundational) {
         return true;
     } else {
-        // Tier-S / Tier-L / Tier-V wrappers in the current safety tree
-        // are all lattice-backed at minimum.  Tier-S semiring laws are
-        // enforced by the specific wrapper semantics where the carrier is
-        // a type-level singleton or product lattice rather than by
-        // requiring every grade carrier to publish add/mul.
+        // FIXY-FOUND-099 (#2254): Tier-S / Tier-L / Tier-V all gate on
+        // LatticeGrade here — deliberately lenient for Tier-S.
+        //
+        // Why not require SemiringGrade for Tier-S?  Tier-S wrappers
+        // come in TWO carrier shapes:
+        //
+        //   (a) Per-instance singleton carrier — HotPath, DetSafe,
+        //       NumericalTier, Vendor, ResidencyHeat, CipherTier,
+        //       AllocClass, Wait, MemOrder, Progress, etc.  Each
+        //       wrapper's `lattice_type` is `<Lattice>::At<Tier>` whose
+        //       element_type is empty — only one value exists per
+        //       instantiation.  The FULL underlying lattice (e.g.
+        //       HotPathTierLattice) satisfies Lattice + the singleton
+        //       satisfies Lattice trivially, but neither publishes an
+        //       add/mul carrying tropical semiring laws on the
+        //       singleton — `0` and `1` are degenerate at a one-element
+        //       set.  Semiring-ness is a property of the OUTER chain,
+        //       not of the per-instance singleton the wrapper pins.
+        //
+        //   (b) Full semiring carrier — Stale (StalenessSemiring).
+        //       Here `lattice_type` IS the full ℕ∪{∞} carrier; both
+        //       SemiringGrade AND LatticeGrade hold.
+        //
+        // Requiring SemiringGrade uniformly would lock out shape (a),
+        // which is the majority of Tier-S wrappers in the tree.  See
+        // `tier_admits_semiring` below for the opt-in strict check
+        // applicable only to shape (b).
+        //
+        // Tier-S semiring laws (add/mul/distributivity) ARE verified —
+        // not here, but at the underlying lattice's self-test (e.g.
+        // StalenessSemiring's `exhaustive_saturation_axioms()`,
+        // FIXY-FOUND-098).
         return LatticeGrade<Lattice>;
+    }
+}
+
+// FIXY-FOUND-099 (#2254) opt-in strict variant: gate on SemiringGrade
+// for Tier-S wrappers whose `lattice_type` IS the full semiring (shape
+// (b) above — Stale, future Cost / Budget wrappers).  Used at the
+// audit-extension sweep below (not in verify_quadruple<W>(), which
+// must stay tolerant of shape (a)).
+template <TierKind Tier, typename Lattice>
+[[nodiscard]] consteval bool tier_admits_semiring() noexcept {
+    if constexpr (Tier == TierKind::Semiring) {
+        return SemiringGrade<Lattice>;
+    } else {
+        return tier_admits_lattice<Tier, Lattice>();
     }
 }
 
@@ -1396,6 +1437,27 @@ static_assert(verify_quadruple<WSimdWidthPinned>());
 static_assert(verify_quadruple<WScopedFence>());
 static_assert(verify_quadruple<WJoinPolicy>());
 static_assert(verify_quadruple<WFpModePinned>());
+
+// FIXY-FOUND-099 #2254 — tier_admits_semiring strict-variant witnesses.
+//
+// Demonstrates the carrier-shape distinction (shape (a) singleton vs
+// shape (b) full-semiring) within the Tier-S population.  The strict
+// check is opt-in; verify_quadruple<W>() above stays tolerant so the
+// 33-wrapper sweep doesn't break shape (a) wrappers.
+//
+// Shape (b) — Stale has a full StalenessSemiring carrier with
+// add/mul/zero/one published.  SemiringGrade<L> AND LatticeGrade<L>
+// both hold; tier_admits_semiring permits.
+static_assert(tier_admits_semiring<
+    wrapper_tier_v<WStale>, wrapper_lattice_t<WStale>>());
+
+// Shape (a) — HotPath's lattice_type is HotPathTierLattice::At<Hot>,
+// a singleton with empty element_type.  LatticeGrade<L> holds but
+// SemiringGrade<L> does NOT (no add/mul/zero/one on the singleton).
+// tier_admits_semiring REJECTS — proves the strict variant is
+// distinguishing shape (a) from shape (b), per the doc-block above.
+static_assert(!tier_admits_semiring<
+    wrapper_tier_v<WHotPath>, wrapper_lattice_t<WHotPath>>());
 
 // FIXY-V-054 — Witness pins Observability + Tier-S (Semiring).
 static_assert(wrapper_dimension_v<WWitness> == DimensionAxis::Observability);
