@@ -7047,6 +7047,32 @@ crucible_neg_compile_test(neg_affine_construct_unbuildable
 crucible_neg_compile_test(neg_affine_wrap_permission
   "unsound|static assertion failed|is_already_consume_disciplined")
 
+# ─── FIXY-FOUND-089 — 4 safety-mint HS14 floors (#2244) ─────────────
+#
+# Eight neg-compile fixtures (2 per mint × 4 mints) — clears HS14:0
+# from misc/mint-inventory.md for the four safety/* mints whose gate
+# is `requires std::is_constructible_v<T, Args...>`:
+#   barrier_guarded / hw / simd_width_pinned / fp_mode_composite
+# Two distinct mismatch classes per mint:
+#   *_unbuildable        — type mismatch on argument conversion
+#   *_no_default_ctor    — cardinality mismatch (T has no default)
+crucible_neg_compile_test(neg_mint_barrier_guarded_unbuildable
+  "constraints not satisfied|is_constructible|no matching function|cannot convert")
+crucible_neg_compile_test(neg_mint_barrier_guarded_no_default_ctor
+  "constraints not satisfied|is_constructible|no matching function|no default constructor|deleted")
+crucible_neg_compile_test(neg_mint_hw_unbuildable
+  "constraints not satisfied|is_constructible|no matching function|cannot convert")
+crucible_neg_compile_test(neg_mint_hw_no_default_ctor
+  "constraints not satisfied|is_constructible|no matching function|no default constructor|deleted")
+crucible_neg_compile_test(neg_mint_simd_width_pinned_unbuildable
+  "constraints not satisfied|is_constructible|no matching function|cannot convert")
+crucible_neg_compile_test(neg_mint_simd_width_pinned_no_default_ctor
+  "constraints not satisfied|is_constructible|no matching function|no default constructor|deleted")
+crucible_neg_compile_test(neg_mint_fp_mode_composite_unbuildable
+  "constraints not satisfied|is_constructible|no matching function|cannot convert")
+crucible_neg_compile_test(neg_mint_fp_mode_composite_no_default_ctor
+  "constraints not satisfied|is_constructible|no matching function|no default constructor|deleted")
+
 # ─── FIXY-V-058 source-tag enrichment neg-compiles (2 fixtures) ─────
 #
 # 2-fixture HS14 floor for the non-type-parameter source-tag families
@@ -12455,6 +12481,26 @@ crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_durable_append_file_external_
     "no matching function|could not convert|cannot convert|conversion from")
 crucible_neg_compile_fixy_test(neg_fixy_v_226_mint_durable_append_file_ctx_lacks_block
     "no matching function|CtxAdmitsIoBlock|CtxFitsFileMint|constraints not satisfied|row_contains")
+
+# ─── FIXY-FOUND-089 — mpsc endpoint mint HS14 floors (#2244) ────────
+#
+# Four neg-compile fixtures (2 per mint × 2 mints) — clears HS14:0
+# from misc/mint-inventory.md for fixy/Substr.h's MPSC endpoint
+# helpers.  Two distinct mismatch classes per mint:
+#   producer_endpoint:
+#     #1 non_channel    — concept fails on missing nested typedefs
+#     #2 almost_channel — concept passes typedefs, fails on ch.producer()
+#   consumer_endpoint:
+#     #1 non_channel    — concept fails on missing nested typedefs
+#     #2 wrong_perm_tag — concept passes; Permission<wrong> binding fails
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_producer_endpoint_non_channel
+    "constraints not satisfied|MpscChannelSessionSurface|no matching function|no type named|value_type|mint_mpsc_producer_endpoint")
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_producer_endpoint_almost_channel
+    "constraints not satisfied|MpscChannelSessionSurface|no matching function|producer|no member named|mint_mpsc_producer_endpoint")
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_consumer_endpoint_non_channel
+    "constraints not satisfied|MpscChannelSessionSurface|no matching function|no type named|consumer_tag|mint_mpsc_consumer_endpoint")
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_consumer_endpoint_wrong_perm_tag
+    "could not convert|cannot bind|no matching function|Permission|consumer_tag|mint_mpsc_consumer_endpoint")
 
 # ── FIXY-V-225 — fixy/Mmap.h HS14 neg-compile fixtures (#2103) ──────
 #
