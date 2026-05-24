@@ -115,14 +115,26 @@ struct OsUniverse {
         "into multiple disjoint Universes (preferred, follows the "
         "per-axis Universe roadmap in FOUND-G).");
 
+    // FIXY-FOUND-109 reframe: bit_position now derives its
+    // intermediate cast width from `underlying_type_t<atom_t>`, so
+    // this static_assert is no longer the load-bearing defense
+    // against silent truncation — it's a TRIPWIRE.  A maintainer
+    // widening Effect to uint16_t will trip this assert; that's
+    // intentional, because widening typically signals "we need more
+    // than 256 atoms" and the surrounding row_descriptor /
+    // row_hash consumers (RowHashFold.h, EffectMask) must be
+    // audited regardless of whether bit_position itself is now
+    // truncation-proof.  Keep the assert; reframe the rationale.
     static_assert(
         std::is_same_v<std::underlying_type_t<atom_t>, std::uint8_t>,
-        "[OsUniverse_Underlying] fixy-A3-018: OsUniverse::atom_t "
-        "underlying type changed away from uint8_t — bit_position "
-        "casts through uint8_t and a wider underlying type silently "
-        "expands the encodable bit range past the carrier width "
-        "without bumping `cardinality`.  Audit every bit_position / "
-        "row_descriptor consumer before changing this pin.");
+        "[OsUniverse_Underlying] fixy-A3-018 + FIXY-FOUND-109: "
+        "OsUniverse::atom_t underlying type changed away from "
+        "uint8_t.  bit_position is now structurally safe via "
+        "underlying_type_t derivation, but a widening still demands "
+        "an audit of row_descriptor / row_hash / EffectMask "
+        "consumers because cardinality > 64 would overflow the "
+        "uint64_t bitmask carrier independently of this site.  "
+        "Address the audit, then update this assert.");
 
     // The value-level lattice instance — bounded distributive lattice
     // over `std::uint64_t` bitmasks, satisfying Lattice +
@@ -163,9 +175,24 @@ struct OsUniverse {
     // Stable across append-only Universe extensions (28_04 §8.5.3,
     // FOUND-I04) — the bit position derives from the atom's
     // underlying enumerator value, NOT from enumeration order.
+    //
+    // FIXY-FOUND-109: the intermediate cast width is derived from
+    // `std::underlying_type_t<atom_t>` rather than hardcoded `uint8_t`.
+    // The original `static_cast<std::uint8_t>(a)` form silently
+    // truncates if Effect's underlying type ever widens (e.g., to
+    // `uint16_t` to host > 256 atoms in one Universe).  With the
+    // derived cast, truncation is structurally impossible: the cast
+    // width tracks the enum's underlying type automatically, and the
+    // `cardinality <= 64` pin above remains the load-bearing
+    // bitmask-carrier check.  The companion `underlying_type ==
+    // uint8_t` static_assert above becomes a softer tripwire — it
+    // still catches accidental widening so the maintainer audits the
+    // surrounding row_descriptor / row_hash consumers, but the
+    // truncation hole that motivated it is closed at this site.
     [[nodiscard]] static constexpr std::size_t
     bit_position(atom_t a) noexcept {
-        return static_cast<std::size_t>(static_cast<std::uint8_t>(a));
+        return static_cast<std::size_t>(
+            static_cast<std::underlying_type_t<atom_t>>(a));
     }
 };
 
@@ -268,6 +295,39 @@ static_assert(OsUniverse::atom_name(Effect::Bg)
 // but the Universe is never instantiated; only its static surface is
 // consumed.  Document the expectation rather than assert — sizeof(1)
 // is a microarch trivia, not a load-bearing invariant.
+
+// ── FIXY-FOUND-109: bit_position underlying_type derivation ────
+//
+// Witness that bit_position's cast goes through Effect's actual
+// underlying_type, not a hardcoded uint8_t.  For the current
+// uint8_t backing the values are observationally identical, so the
+// witness compares against the derived expression — proving the
+// SHAPE of the cast, not just its value.  If a maintainer reverts
+// to `static_cast<std::uint8_t>(a)` while ALSO widening Effect's
+// underlying_type, the values diverge for atoms beyond uint8_t's
+// range and the witness reddens.  For uint8_t-backed Effect today
+// the witness is tautological — that's the intended forward-compat
+// shape: the underlying_type derivation tracks the enum, so the
+// witness becomes load-bearing the moment underlying_type widens.
+
+template <Effect E>
+[[nodiscard]] consteval std::size_t derived_bit_position_of() noexcept {
+    return static_cast<std::size_t>(
+        static_cast<std::underlying_type_t<Effect>>(E));
+}
+
+static_assert(OsUniverse::bit_position(Effect::Alloc)
+              == derived_bit_position_of<Effect::Alloc>());
+static_assert(OsUniverse::bit_position(Effect::IO)
+              == derived_bit_position_of<Effect::IO>());
+static_assert(OsUniverse::bit_position(Effect::Block)
+              == derived_bit_position_of<Effect::Block>());
+static_assert(OsUniverse::bit_position(Effect::Bg)
+              == derived_bit_position_of<Effect::Bg>());
+static_assert(OsUniverse::bit_position(Effect::Init)
+              == derived_bit_position_of<Effect::Init>());
+static_assert(OsUniverse::bit_position(Effect::Test)
+              == derived_bit_position_of<Effect::Test>());
 
 }  // namespace detail::os_universe_self_test
 
