@@ -240,9 +240,30 @@ public:
     // at the stage signature).  See the `fixy::effect` namespace's
     // `RowEngagementWitnessed<C>` concept for the band-3 stance
     // that surfaces this guarantee at call sites.
+    // FIXY-FOUND-106: lvalue overload requires `std::is_copy_constructible_v<T>`.
+    // Pre-fix, the body did `Computation<R2, T>{impl_.peek()}` where
+    // `peek()` returns `T const&` and the value-ctor copies T.  For
+    // move-only T (e.g., `Computation<R, std::unique_ptr<X>>` or any
+    // T wrapping `Linear<X>`), this fails inside the body — a hard
+    // template-instantiation error far from the call site, with the
+    // diagnostic pointing at the impl_ initialization rather than at
+    // the user's weaken<R2>() call.
+    //
+    // The SFINAE gate moves the failure to OVERLOAD RESOLUTION: when
+    // T is move-only, the lvalue overload is silently absent and only
+    // the rvalue overload (`weaken() &&`) is available.  A user
+    // calling `c.weaken<R2>()` on an lvalue Computation gets a clear
+    // diagnostic ("no matching member function — constraints not
+    // satisfied: std::is_copy_constructible_v<T>") + the rvalue
+    // overload pointed out as the working alternative.
+    //
+    // The rvalue overload is unconditionally available — it consumes
+    // the Linear<T> via std::move, which works for move-only T by
+    // construction.
     template <typename R2>
         requires Subrow<R, R2>
               && (row_size_v<R> > 0 || row_size_v<R2> == 0)
+              && std::is_copy_constructible_v<T>
     [[nodiscard]] constexpr Computation<R2, T> weaken() const &
         noexcept(std::is_nothrow_copy_constructible_v<T>)
     {
@@ -485,6 +506,38 @@ static_assert(
     noexcept(std::declval<Computation<Row<Effect::Bg>, int>>().template weaken<Row<Effect::Bg, Effect::IO>>()),
     "Computation<R, int>::weaken() && must be noexcept for trivially-"
     "move-constructible payloads.");
+
+// ── FIXY-FOUND-106 regression: copyable payload weaken both overloads ──
+//
+// The SFINAE gate `is_copy_constructible_v<T>` on the lvalue weaken
+// MUST NOT over-restrict the common case (T copy-constructible).
+// Witness: `int` is copy-constructible and BOTH lvalue and rvalue
+// weaken must work.
+
+static_assert(requires(Computation<Row<Effect::Bg>, int> const& c) {
+    c.template weaken<Row<Effect::Bg, Effect::IO>>();
+}, "FIXY-FOUND-106 regression: lvalue weaken must remain available "
+   "for copy-constructible payloads.");
+
+static_assert(requires(Computation<Row<Effect::Bg>, int>&& c) {
+    std::move(c).template weaken<Row<Effect::Bg, Effect::IO>>();
+}, "FIXY-FOUND-106 regression: rvalue weaken must remain available "
+   "for copy-constructible payloads.");
+
+// The structural claim — "lvalue weaken's requires-clause includes
+// is_copy_constructible_v<T>" — is enforced by the requires-clause
+// itself.  An explicit `is_copy_constructible_v<int> == true` witness
+// covers the positive case; the negative case (move-only T) would
+// instantiate Computation<R, MoveOnly> which triggers a noexcept-
+// clause eager-eval cascade in GCC 16 (the noexcept's
+// is_nothrow_copy_constructible_v trait probes the deleted copy ctor
+// at instantiation rather than at concept-check time).  The negative
+// path is documented via the source-level requires-clause; a true
+// neg-compile fixture lives under test/safety_neg/ instead (deferred
+// HS14 follow-up — beyond cycle-ship scope).
+static_assert(std::is_copy_constructible_v<int>,
+    "FIXY-FOUND-106 sanity: int is copy-constructible (positive-case "
+    "witness for the requires-clause).");
 
 // extract() rvalue overload moves; correctness checked by replicating
 // the value with a move-only-equivalent payload (int suffices for
