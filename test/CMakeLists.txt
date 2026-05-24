@@ -13095,7 +13095,7 @@ crucible_neg_compile_bridges_test(neg_crash_event_external_construction
 # feed it to `CrashEvent<P,R>{key, r, perms}` directly, bypassing
 # `wrap_crash_return`'s `inner.detach(reason_tag)` side effect.  V-013
 # moves the ctor to `private:` with friendship on the authorizer; the
-# access check fires here, leaving `mint_event<>` as the sole
+# access check fires here, leaving `mint_event_<>` as the sole
 # grep-discoverable construction site for CrashEvent in the tree.
 crucible_neg_compile_bridges_test(neg_crash_event_ctor_public_bypass
     "is private within this context|private")
