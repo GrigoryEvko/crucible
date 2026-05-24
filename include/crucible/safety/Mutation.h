@@ -949,7 +949,40 @@ public:
     // head" idiom is structurally different from "consumer reads
     // producer's head."  Naming makes the choice visible at the call
     // site; the bare std::atomic API leaves it to convention.
+    //
+    // FIXY-FOUND-115: for the race-CAS expected-value-read pattern
+    // (MPSC/MPMC producers racing to CAS-advance a SHARED counter),
+    // use load_relaxed() instead — the sole-writer claim is false in
+    // that case and peek_relaxed mislabels the access discipline.
     [[nodiscard]] T peek_relaxed() const noexcept {
+        return value_.load(std::memory_order_relaxed);
+    }
+
+    // FIXY-FOUND-115: race-CAS expected-value read.  For the MPSC/
+    // MPMC pattern where multiple writers race-CAS to advance a
+    // SHARED counter:
+    //
+    //   for (;;) {
+    //       T expected = counter.load_relaxed();
+    //       if (counter.compare_exchange_advance_weak(expected, ...))
+    //           break;
+    //       // CAS failed; another producer won — retry with refreshed
+    //       // expected (already updated by the CAS).
+    //   }
+    //
+    // Identical IMPLEMENTATION to peek_relaxed (single relaxed load),
+    // but the NAME asserts a different discipline: caller is NOT the
+    // sole writer; the value is read to seed a CAS-validate cycle.
+    // The relaxed order is sound because the immediately-following
+    // CAS provides the synchronization: if expected matches, the CAS
+    // succeeds and establishes the happens-before edge; if it
+    // doesn't, the retry loop reads a fresh value.
+    //
+    // Cost: identical to peek_relaxed — one relaxed load, ~1 ns.
+    // The two methods exist purely as discipline markers; switching
+    // call sites between them changes ZERO machine code but makes
+    // the access pattern grep-discoverable.
+    [[nodiscard]] T load_relaxed() const noexcept {
         return value_.load(std::memory_order_relaxed);
     }
 

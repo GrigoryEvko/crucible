@@ -151,7 +151,11 @@ public:
 
     [[nodiscard, gnu::hot]] bool try_push(T item) noexcept {
         for (;;) {
-            const std::uint64_t pos = head_.peek_relaxed();
+            // FIXY-FOUND-115: load_relaxed (not peek_relaxed) — MPSC
+            // producers race-CAS a SHARED head_; the sole-writer
+            // claim peek_relaxed asserts is false here.  Identical
+            // codegen; the name surfaces the race-CAS discipline.
+            const std::uint64_t pos = head_.load_relaxed();
             const std::uint64_t tail_val = tail_.get();
             // Capacity check: pos + 1 - tail_val <= Capacity.
             // Equivalent (avoid overflow): pos - tail_val < Capacity.
@@ -195,7 +199,9 @@ public:
         if (N > Capacity) [[unlikely]] return 0;
 
         for (;;) {
-            const std::uint64_t pos = head_.peek_relaxed();
+            // FIXY-FOUND-115: load_relaxed for race-CAS expected-
+            // value read (same as try_push above).
+            const std::uint64_t pos = head_.load_relaxed();
             const std::uint64_t tail_val = tail_.get();
             // Capacity check: pos + N - tail_val <= Capacity.
             if (pos + N - tail_val > Capacity) [[unlikely]] {
