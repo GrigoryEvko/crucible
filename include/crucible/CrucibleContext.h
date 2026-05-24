@@ -18,6 +18,7 @@
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/ScopedView.h>
+#include <crucible/safety/Tagged.h>             // WRAP-CCtx-2 #904: source::Vigil
 
 #include <cassert>
 #include <cstdint>
@@ -140,7 +141,11 @@ struct CrucibleContext {
 
     pool_.init(region->plan);
     engine_.init(region, ReplayEngine::PoolBorrow{pool_});
-    active_region_ = region;
+    // WRAP-CCtx-2 #904: active_region_ is Tagged<const RegionNode*,
+    // source::Vigil>; assignment threads through the explicit ctor at
+    // the publish site.  All deref / null-check / return paths route
+    // through .value() — see field doc-block at the bottom of the class.
+    active_region_ = ActiveRegionPtr{region};
     mode_ = ContextMode::COMPILED;
 
     // CONTRACT-CrucibleContext-Activate-POST: the (mode_, active_region_)
@@ -155,7 +160,7 @@ struct CrucibleContext {
     // state-mutation class, same "mutation-and-publication step took
     // effect" framing.
     CRUCIBLE_POST(0, mode_ == ContextMode::COMPILED);
-    CRUCIBLE_POST(0, active_region_ == region);
+    CRUCIBLE_POST(0, active_region_.value() == region);
     return true;
   }
 
@@ -163,7 +168,7 @@ struct CrucibleContext {
   void deactivate() {
     mode_ = ContextMode::RECORD;
     pool_.destroy();
-    active_region_ = nullptr;
+    active_region_ = ActiveRegionPtr{nullptr};
 
     // CONTRACT-CrucibleContext-Deactivate-POST: lifecycle-reset post
     // (CRUCIBLE_POST taxonomy class 3, sibling of IterDet::reset 6-post
@@ -175,7 +180,7 @@ struct CrucibleContext {
     // active_region_ dangling, or vice-versa) that would silently
     // re-enter COMPILED on the next switch_region() prefix-replay.
     CRUCIBLE_POST(0, mode_ == ContextMode::RECORD);
-    CRUCIBLE_POST(0, active_region_ == nullptr);
+    CRUCIBLE_POST(0, active_region_.value() == nullptr);
   }
 
   // ── Per-op advance (COMPILED mode hot path) ──
@@ -250,7 +255,9 @@ struct CrucibleContext {
     if (div_pos == 0)
       return activate(alt);
 
-    const auto* old_region = active_region_;
+    // WRAP-CCtx-2 #904: extract via .value() — active_region_ is
+    // Tagged<const RegionNode*, source::Vigil>.
+    const auto* old_region = active_region_.value();
     assert(old_region && old_region->plan && "no active region to switch from");
 
     // Pool is currently initialized (we're in COMPILED mode and the
@@ -264,7 +271,7 @@ struct CrucibleContext {
     migrate_prefix_slots_(old_region, alt, old_pool.base, div_pos);
 
     engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
-    active_region_ = alt;
+    active_region_ = ActiveRegionPtr{alt};
 
     // Engine just init'd → mint an ActiveView and use the typed advance
     // overload so the prefix-replay matches the rest of the codebase
@@ -292,7 +299,7 @@ struct CrucibleContext {
     // The div_pos == 0 short-circuit at the top of the function delegates
     // to activate() and thus already discharges this post via activate's
     // own (mode_ == COMPILED, active_region_ == region) post-pair.
-    CRUCIBLE_POST(0, active_region_ == alt);
+    CRUCIBLE_POST(0, active_region_.value() == alt);
     CRUCIBLE_POST(0, mode_ == ContextMode::COMPILED);
     return true;
   }
@@ -378,7 +385,10 @@ struct CrucibleContext {
 
   [[nodiscard]] uint32_t compiled_iterations() const { return compiled_iterations_.get(); }
   [[nodiscard]] uint32_t diverged_count() const { return diverged_count_.get(); }
-  [[nodiscard]] const RegionNode* active_region() const CRUCIBLE_LIFETIMEBOUND { return active_region_; }
+  // WRAP-CCtx-2 #904: extracts the raw const RegionNode* from the
+  // Tagged<...,source::Vigil> field — callers continue to see the
+  // unwrapped pointer for compatibility with the dispatch path.
+  [[nodiscard]] const RegionNode* active_region() const CRUCIBLE_LIFETIMEBOUND { return active_region_.value(); }
 
   [[nodiscard]] const ReplayEngine& engine() const CRUCIBLE_LIFETIMEBOUND { return engine_; }
   [[nodiscard]] const PoolAllocator& pool() const CRUCIBLE_LIFETIMEBOUND { return pool_; }
@@ -485,9 +495,52 @@ struct CrucibleContext {
   crucible::fixy::wrap::Monotonic<uint32_t> compiled_iterations_ {0}; // 4B  — offset 68
   crucible::fixy::wrap::Monotonic<uint32_t> diverged_count_      {0}; // 4B  — offset 72
   [[maybe_unused]] uint8_t pad2_[4]{};        // 4B  — offset 76
-  const RegionNode* active_region_ = nullptr; // 8B  — offset 80
+  // WRAP-CCtx-2 #904 (Tagged half): provenance-tagged as
+  // safety::Tagged<const RegionNode*, source::Vigil>.  The Vigil source
+  // tag encodes "this pointer was published by THIS Vigil's bg worker
+  // through its active_region atomic store(release)"; cross-source
+  // assignment (from arena / heap / other Vigil) and raw-pointer
+  // implicit conversion are rejected by Tagged's explicit ctor.
+  // Regime-1 EBO collapses the wrapper to sizeof(const RegionNode*) =
+  // 8 B — the [80..87] cache-line-1 offset above is preserved exactly,
+  // so the static_assert(sizeof(CrucibleContext) == 120) sentinel still
+  // holds.
+  //
+  // FOLLOW-UP (deferred): the second half of WRAP-CCtx-2 #904 wraps
+  // this field's typed-access path in `ScopedView<ctx_state::Active>`,
+  // formalizing the (mode_ == COMPILED ↔ active_region_ != nullptr)
+  // state-machine invariant at the type level.  That layer is additive
+  // — it ships as a new typed accessor alongside `active_region()` —
+  // and is split as a separate follow-up because the ctx_state::Active
+  // typestate, transition table, and ScopedView<> wiring need their
+  // own design pass.  Tagged provenance is the load-bearing half:
+  // without it, any Vigil's bg-published pointer could be mixed with
+  // an arena-allocated RegionNode (different lifetime regime) and the
+  // type system would not catch the swap.
+  using ActiveRegionPtr = ::crucible::safety::Tagged<
+      const RegionNode*, ::crucible::safety::source::Vigil>;
+  ActiveRegionPtr active_region_{nullptr};    // 8B  — offset 80
   PoolAllocator pool_;                        // 32B — offset 88
 };
+
+// WRAP-CCtx-2 #904 zero-cost field migration sentinel: Tagged<const
+// RegionNode*, source::Vigil> MUST collapse via regime-1 EBO to
+// sizeof(const RegionNode*).  Otherwise the CrucibleContext layout
+// shifts off its 64-byte engine_-cache-line / 8-byte active_region_
+// offset, breaking the [80..87] layout doc-block above AND the
+// sizeof(CrucibleContext) == 120 sentinel below.
+static_assert(
+    sizeof(::crucible::safety::Tagged<const RegionNode*,
+                                      ::crucible::safety::source::Vigil>)
+        == sizeof(const RegionNode*),
+    "WRAP-CCtx-2 #904: Tagged<const RegionNode*, source::Vigil> must "
+    "preserve pointer size via regime-1 EBO collapse.");
+static_assert(
+    alignof(::crucible::safety::Tagged<const RegionNode*,
+                                       ::crucible::safety::source::Vigil>)
+        == alignof(const RegionNode*),
+    "WRAP-CCtx-2 #904: Tagged<const RegionNode*, source::Vigil> must "
+    "preserve pointer alignment via regime-1 EBO collapse.");
 
 static_assert(sizeof(CrucibleContext) == 120,
               "CrucibleContext: 64 engine + 24 cold + 32 pool = 120");

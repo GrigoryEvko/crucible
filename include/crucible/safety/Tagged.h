@@ -170,6 +170,20 @@ namespace source {
     // and audit ("this Transaction* came from THIS log's slot pool,
     // not some other log instance or fresh heap allocation").
     struct Ring         {};
+    // Vigil: pointer borrowed from Vigil's BackgroundThread region-
+    // publishing pipeline (WRAP-CCtx-2 #904, Tagged half).  The
+    // CrucibleContext::active_region_ field receives a RegionNode*
+    // published by the bg worker's atomic active_region store(release);
+    // the pointer is valid for the BackgroundThread's lifetime (Vigil
+    // holds the bg thread, so as long as Vigil lives, the pointee
+    // lives).  Distinct from Arena (arena-owned region pointer) and
+    // Ring (fixed-capacity-ring-slot pointer): Vigil encodes "this
+    // RegionNode* came from THIS Vigil's bg publish path, not from
+    // a freshly-built local region or a borrowed alternate-region
+    // pointer".  Production sites that hold a Vigil-tagged pointer
+    // can rely on the bg-published ordering invariants (active_region
+    // store(release) happens-before any data-pointer dereference).
+    struct Vigil        {};
     // IncastConfig: CNT-P fan-in mitigation configuration admitted through
     // cntp/IncastControl.h. Raw booleans / byte counts cannot directly
     // tune socket RTO or receiver-issued credit pacing.

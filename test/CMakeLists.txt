@@ -6188,6 +6188,33 @@ crucible_neg_compile_test(neg_active_tx_ptr_raw_assignment
 crucible_neg_compile_test(neg_active_tx_ptr_cross_source_assignment
   "no match|cannot convert|no viable|could not convert|Tagged|source")
 
+# ─── WRAP-CCtx-2 #904 (Tagged half) neg-compile tests ───────────────
+#
+# CrucibleContext::active_region_ field migrates from raw `const
+# RegionNode*` to `safety::Tagged<const RegionNode*, source::Vigil>`.
+# The Vigil source tag (Tagged.h, near source::Ring) encodes "this
+# pointer was published by Vigil's BackgroundThread via active_region
+# store(release)" — distinct from Arena (arena-owned RegionNode) and
+# from Ring (ring-slot pointer).  Two fixtures per HS14 mandate,
+# demonstrating distinct mismatch classes (mirror of the
+# WRAP-Transaction-6 #1065 active_tx_ pair):
+#   * neg_active_region_ptr_raw_assignment — provenance BYPASS.
+#     Catches `active_region_ = some_region` (implicit raw-pointer
+#     admission) without the explicit `ActiveRegionPtr{...}` ctor.
+#   * neg_active_region_ptr_cross_source_assignment — provenance
+#     LAUNDERING.  Catches `Tagged<T, source::Arena> → Tagged<T,
+#     source::Vigil>` swap; both wrap `const RegionNode*` but the
+#     Tag distinguishes them as nominally distinct types.
+#
+# The ScopedView<ctx_state::Active> half of WRAP-CCtx-2 #904 is split
+# as a deferred follow-up (typestate design pass needed).  The Tagged
+# half is the load-bearing half — without it, cross-Vigil and
+# cross-lifetime-regime mixing would type-check.
+crucible_neg_compile_test(neg_active_region_ptr_raw_assignment
+  "no match|cannot convert|no viable|could not convert|explicit|constructor")
+crucible_neg_compile_test(neg_active_region_ptr_cross_source_assignment
+  "no match|cannot convert|no viable|could not convert|Tagged|source")
+
 # ─── #897 WRAP-CostModel-3 neg-compile tests ────────────────────────
 #
 # Per #897, ValidRegsPerThread is
