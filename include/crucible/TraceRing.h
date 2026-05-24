@@ -725,10 +725,12 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     head.reset_under_quiescence();
     tail.reset_under_quiescence();
     consumer_tail_ = 0;
-    // cached_tail_ goes "backward" to 0, which would fire Monotonic's
-    // pre() if we advanced.  Valid here because both threads are
-    // quiescent — reconstruct the Monotonic in place to reset cleanly.
-    cached_tail_ = crucible::fixy::wrap::Monotonic<uint64_t>{0};
+    // FIXY-FOUND-114: use the named reset_under_quiescence on
+    // non-atomic Monotonic for symmetry with the atomic variants
+    // above.  cached_tail_ goes "backward" to 0, which advance()
+    // would reject; reset_under_quiescence bypasses the contract
+    // explicitly, making the bypass site grep-discoverable.
+    cached_tail_.reset_under_quiescence();
   }
 };
 

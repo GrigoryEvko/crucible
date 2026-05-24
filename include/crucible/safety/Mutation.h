@@ -468,6 +468,31 @@ public:
         CRUCIBLE_POST(0, impl_.peek() == static_cast<T>(prior + T{1}));
     }
 
+    // Reset to `value` (default T{}), bypassing the monotonicity
+    // contract.  FIXY-FOUND-114: mirrors AtomicMonotonic::reset_under_
+    // quiescence so SPSC rings (TraceRing, MetaLog) can rewind their
+    // producer-local cached_tail_ via a named, grep-discoverable
+    // bypass instead of the ad-hoc move-assign workaround
+    // (`x = Monotonic<T>{0}`).  Both forms are equally bypass-shaped
+    // at the type level (each defeats advance()'s monotonicity
+    // contract), but the named method:
+    //   * makes the bypass site obvious to readers (no need to
+    //     recognize the in-place-reconstruction idiom),
+    //   * matches AtomicMonotonic's API surface (uniform discipline
+    //     across the atomic and non-atomic variants),
+    //   * makes the "valid only under quiescence" contract explicit
+    //     at the call site via the method name (the move-assign form
+    //     reads as ordinary reassignment).
+    //
+    // Caller is responsible for ensuring no concurrent reader or
+    // writer races with this call; the type system cannot prove
+    // quiescence.  Same precondition as the atomic variant.
+    constexpr void reset_under_quiescence(T value = T{})
+        noexcept(std::is_nothrow_move_constructible_v<T>)
+    {
+        impl_ = graded_type{std::move(value)};
+    }
+
     // ── Diagnostic names (forwarded from Graded substrate) ─────────
     //
     // value_type_name(): T's display string via reflection (P2996R13).

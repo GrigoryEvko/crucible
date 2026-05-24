@@ -440,9 +440,12 @@ struct CRUCIBLE_OWNER MetaLog {
   {
     head.reset_under_quiescence();
     tail.reset_under_quiescence();
-    // Rewind to 0 would violate Monotonic's pre() if done via advance().
-    // Safe here because both threads are quiescent; reconstruct in place.
-    cached_tail_ = crucible::fixy::wrap::Monotonic<uint32_t>{0};
+    // FIXY-FOUND-114: use the named reset_under_quiescence on
+    // non-atomic Monotonic for symmetry with the atomic variants
+    // above.  Rewind to 0 would violate advance()'s monotonicity
+    // contract; reset_under_quiescence bypasses it explicitly,
+    // making the bypass site grep-discoverable.
+    cached_tail_.reset_under_quiescence();
   }
 };
 
