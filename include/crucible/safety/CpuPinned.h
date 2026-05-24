@@ -271,11 +271,11 @@ static_assert(consume_moves_out());
 static_assert(peek_mut_works());
 
 // ── mint_cpu_pinned factory ─────────────────────────────────────────
-[[nodiscard]] consteval bool mint_works() noexcept {
+[[nodiscard]] consteval bool cpu_pinned_mint_works() noexcept {
     auto p = mint_cpu_pinned<kCore0, PinningPosture::PinnedExplicit, int>(123);
     return p.peek() == 123 && p.is_singleton_pin;
 }
-static_assert(mint_works());
+static_assert(cpu_pinned_mint_works());
 
 // ── TSC-reader gate simulation (the V-190 mint_tsc_reader shape) ────
 template <typename Proof>

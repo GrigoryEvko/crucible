@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-24T19:23:31Z`.
+Snapshot generated: `2026-05-24T19:26:29Z`.
 
 ## bridges/
 
@@ -140,7 +140,6 @@ Snapshot generated: `2026-05-24T19:23:31Z`.
 | `mint_thread_name` | `include/crucible/safety/ThreadName.h:137` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Sched.h:20` | HS14: 2 |
 | `mint_view` | `include/crucible/safety/ScopedView.h:168` | Y | Y | Y | - (pre) | token | `include/crucible/fixy/Safety.h:41` | HS14: 10 |
 | `mint_witness` | `include/crucible/safety/Witness.h:411` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1190` | HS14: 1 ⚠ |
-| `mint_works` | `include/crucible/safety/CpuPinned.h:274` | Y | Y | Y | - | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
 
 ## sessions/
 
@@ -277,8 +276,8 @@ mints) are listed in the substrate section instead.
 
 ## Summary
 
-- Total substrate mints: 123
-- Missing fixy re-export: 15
+- Total substrate mints: 122
+- Missing fixy re-export: 14
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - fixy-origin mints: 35 (declared in fixy/, no substrate counterpart — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.
