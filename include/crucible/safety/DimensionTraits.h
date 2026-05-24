@@ -1343,6 +1343,17 @@ using WEpochVersioned  = EpochVersioned<int>;
 using WNumaPlacement   = NumaPlacement<int>;
 using WRecipeSpec      = RecipeSpec<int>;
 using WWitness         = Witness<Witness_v::FORMALLY_VERIFIED, int>;
+// FIXY-FOUND-095 (#2250): six wrappers had wrapper_dimension<>
+// specializations but no W-alias / verify_quadruple sweep entry —
+// the GAPS-091 quadruple-pinning discipline was incomplete.  Adding
+// the missing aliases extends the sweep to all 33 specialized
+// wrappers.
+using WHw              = Hw<HwInstruction_v::Scalar, int>;
+using WBarrierGuarded  = BarrierGuarded<BarrierStrength_v::AcqRel, int>;
+using WSimdWidthPinned = SimdWidthPinned<SimdIsa_v::Scalar, int>;
+using WScopedFence     = ScopedFence<MemoryScope_v::Thread, int>;
+using WJoinPolicy      = JoinPolicy<JoinPolicy_v::DETACH, int>;
+using WFpModePinned    = FpModePinned<FpRounding::RoundToNearestEven, int>;
 
 static_assert(wrapper_tier_v<WLinear>         == TierKind::Semiring);
 static_assert(wrapper_tier_v<WRefined>        == TierKind::Foundational);
@@ -1378,6 +1389,13 @@ static_assert(verify_quadruple<WEpochVersioned>());
 static_assert(verify_quadruple<WNumaPlacement>());
 static_assert(verify_quadruple<WRecipeSpec>());
 static_assert(verify_quadruple<WWitness>());
+// FIXY-FOUND-095 #2250 — extend sweep to all 33 specialized wrappers.
+static_assert(verify_quadruple<WHw>());
+static_assert(verify_quadruple<WBarrierGuarded>());
+static_assert(verify_quadruple<WSimdWidthPinned>());
+static_assert(verify_quadruple<WScopedFence>());
+static_assert(verify_quadruple<WJoinPolicy>());
+static_assert(verify_quadruple<WFpModePinned>());
 
 // FIXY-V-054 — Witness pins Observability + Tier-S (Semiring).
 static_assert(wrapper_dimension_v<WWitness> == DimensionAxis::Observability);
