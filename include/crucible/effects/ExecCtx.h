@@ -563,7 +563,31 @@ template <class Cap      = ctx_cap::Fg,
           class Row      = ::crucible::effects::Row<>,
           class Workload = ctx_workload::Unspecified,
           class Progress = ctx_progress::Terminating>
-struct [[nodiscard]] ExecCtx {
+class [[nodiscard]] ExecCtx {
+public:
+    // FIXY-FOUND-103: ExecCtx was a `struct` and exposed every axis
+    // member — including `cap_` — as a PUBLIC field.  External code
+    // could write
+    //
+    //     ExecCtx<Bg, ...> ctx{};   // NSDMI fires Bg{} via ExecCtx's
+    //                               // friendship grant on Bg's private
+    //                               // default ctor (see Capabilities.h)
+    //     Bg snapshot = ctx.cap_;   // extract bare Bg via public field
+    //     some_func_taking_bg(snapshot);  // bypassed the passkey
+    //
+    // Even though Bg's default ctor is private and the mint factory
+    // (`mint_bg_context(bg_key)`) is the only authorized production
+    // entry point, the public `cap_` field defeated the discipline at
+    // the boundary "ExecCtx wraps Cap; the wrapper is the unit of
+    // passkey-protected authority".
+    //
+    // Fix: ExecCtx is now a `class` with axis members PRIVATE.  The one
+    // legitimate reader, `mint_from_ctx<E>(ctx)`, is friended to read
+    // `cap_` (its docstring at Capability.h:320 explicitly notes that
+    // the ctx's Cap was passkey-minted and is the proof of authority —
+    // that reader stays; everyone else is locked out).  Builder methods
+    // and type aliases remain public.
+
     // fixy-A3-020 / fixy-A3-027: single concept gate, evaluated FIRST
     // so the diagnostic short-circuits at the first failing axis
     // (e.g.  `IsCapType<int>` for `ExecCtx<int>`).  Replaces the
@@ -616,6 +640,21 @@ struct [[nodiscard]] ExecCtx {
         "{Terminating, Productive, Bounded}.  See "
         "heat_progress_coherent.");
 
+private:
+    // FIXY-FOUND-103: axis members are PRIVATE — see top-of-class
+    // doc-block for the bypass this closes.  `cap_` in particular
+    // wraps a passkey-minted Cap (Bg / Init / Test) whose private
+    // default ctor is friended only to ExecCtx for NSDMI default-
+    // initialisation; making cap_ a public field re-exposes the bare
+    // Cap to any TU and lets external code extract a Bg / Init /
+    // Test instance without going through `mint_*_context()`.
+    //
+    // The implicit default ctor remains public (class-vs-struct only
+    // changes default member access, not ctor access), so the
+    // canonical aliases (BgDrainCtx{}, InitCtx{}, ...) and builder
+    // methods (`with_cap<NewCap>() { return {}; }`) continue to
+    // function unchanged.
+
     [[no_unique_address]] Cap      cap_{};
     [[no_unique_address]] Numa     numa_{};
     [[no_unique_address]] Alloc    alloc_{};
@@ -625,6 +664,23 @@ struct [[nodiscard]] ExecCtx {
     [[no_unique_address]] Workload wl_{};
     [[no_unique_address]] Progress progress_{};
 
+public:
+    // Public const-ref accessor for cap_.  Replaces direct `.cap_`
+    // field access that used to be available when ExecCtx was a struct.
+    //
+    // The accessor is intentionally minimal: it returns `Cap const&`
+    // (no copy at this layer), and it's the ONLY public path to the
+    // cap value.  External code that wants to extract / copy the cap
+    // must explicitly write `auto x = ctx.cap();` which triggers Cap's
+    // copy ctor — a separate audit surface (Bg/Init/Test copy-ctor
+    // privacy is the FIXY-FOUND-104 follow-up scope).
+    //
+    // mint_from_ctx<E>(ctx) in effects/Capability.h is the canonical
+    // production consumer; it passes the const-ref through to mint_cap.
+    // The const-ref accessor (not the bare field) is what survives
+    // FIXY-FOUND-103 — grep for `.cap()` to find every legitimate
+    // extraction point.
+    [[nodiscard]] constexpr Cap const& cap() const noexcept { return cap_; }
     // ── Type-level accessors ───────────────────────────────────────
     //
     // Per-axis aliases exposed to consumers.  A function that wants

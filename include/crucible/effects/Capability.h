@@ -324,7 +324,7 @@ mint_from_ctx(Ctx const& ctx) noexcept {
     // default ctor (Bg/Init/Test are passkey-minted).  The ctx IS
     // the proof of authority; mint_cap consumes the existing Cap
     // by const-ref.
-    return mint_cap<E>(ctx.cap_);
+    return mint_cap<E>(ctx.cap());  // FIXY-FOUND-103: .cap_ is private; .cap() is the accessor
 }
 
 // ── Cap-Ctx alignment concept ──────────────────────────────────────

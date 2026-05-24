@@ -333,7 +333,7 @@ namespace testing { struct TestWitness; }
 // without leaking the default ctor to user TUs).
 template <class Cap, class Numa, class Alloc, class Heat,
           class Resid, class Row, class Workload, class Progress>
-struct ExecCtx;
+class ExecCtx;  // FIXY-FOUND-103: class-not-struct hides cap_ etc. as private.
 
 namespace detail::ctx_mint {
 
@@ -421,7 +421,7 @@ private:
     // keeping it private from every other TU.
     template <class Cap, class Numa, class Alloc, class Heat,
               class Resid, class Row, class Workload>
-    friend struct ::crucible::effects::ExecCtx;
+    friend class ::crucible::effects::ExecCtx;
 
 public:
     [[no_unique_address]] cap::Alloc alloc{};
@@ -439,7 +439,7 @@ private:
 
     template <class Cap, class Numa, class Alloc, class Heat,
               class Resid, class Row, class Workload>
-    friend struct ::crucible::effects::ExecCtx;
+    friend class ::crucible::effects::ExecCtx;
 
 public:
     [[no_unique_address]] cap::Alloc alloc{};
@@ -456,7 +456,7 @@ private:
 
     template <class Cap, class Numa, class Alloc, class Heat,
               class Resid, class Row, class Workload>
-    friend struct ::crucible::effects::ExecCtx;
+    friend class ::crucible::effects::ExecCtx;
 
 public:
     [[no_unique_address]] cap::Alloc alloc{};
