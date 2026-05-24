@@ -517,6 +517,21 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
+    // Default ctor — value-initialises the wrapped T (`nullptr` for
+    // pointers, 0 for arithmetic types) and the empty Tag grade.
+    // Required for SoA-style array fields like
+    // `Tagged<const T*, Src> ops_[CAP]{}` (RegionCache::ops_ per
+    // WRAP-RegionCache-2 #987), where each slot must start empty
+    // before `set()` records the first cached pointer.  Forwards to
+    // `Graded`'s defaulted ctor; the empty TrustLattice grade
+    // collapses via EBO, so the cost is exactly value-init of T.
+    // The `explicit Tagged(T)` overload remains the only way to
+    // materialise a non-default value, so provenance-bearing
+    // construction sites still require a deliberate call.
+    constexpr Tagged() noexcept(std::is_nothrow_default_constructible_v<T>)
+        requires std::default_initializable<T>
+                                     = default;
+
     Tagged(const Tagged&)            = default;
     Tagged(Tagged&&)                 = default;
     Tagged& operator=(const Tagged&) = default;
