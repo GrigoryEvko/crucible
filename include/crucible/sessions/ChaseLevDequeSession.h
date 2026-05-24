@@ -90,11 +90,24 @@ template <ChaseLevSessionSurface Deque>
     return deque.owner(std::move(perm));
 }
 
+// §XXI carve-out: cx=alloc — Chase-Lev thief steal performs runtime CAS
+// on the deque's top index (the canonical Chase-Lev stealer arbitration
+// loop) plus a fractional-permission refcount bump via Pool's atomic_ref.
+// Neither is constexpr-eligible: CAS uses runtime atomic primitives,
+// and the SharedPermissionPool refcount is a `std::atomic<uint32_t>`
+// that constexpr cannot evaluate.  Adding `constexpr` would lie about
+// the runtime cost.  The inventory's `cx: - (alloc)` cell reflects
+// this carve-out; reviewers must NOT "fix" the absence by adding
+// constexpr (the body would reject at compile time).
 template <ChaseLevSessionSurface Deque>
 [[nodiscard]] auto mint_chaselev_thief(Deque& deque) noexcept {
     return deque.thief();
 }
 
+// §XXI carve-out: cx=alloc — same Chase-Lev CAS + refcount rationale
+// as the no-proof overload above.  The FractionalProof parameter is a
+// runtime token threaded through; consuming it via `deque.thief()`
+// is the constexpr-incompatible step.
 template <ChaseLevSessionSurface Deque>
 [[nodiscard]] auto mint_chaselev_thief(
     Deque& deque,

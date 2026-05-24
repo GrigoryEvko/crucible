@@ -110,6 +110,29 @@ extract_qualifiers() {
     local end=$(( line + 5 ))
     (( start < 1 )) && start=1
 
+    # FIXY-FOUND-088: tighten the backward window so a sibling overload's
+    # qualifiers (constexpr / noexcept / requires) don't leak forward into
+    # the current mint's qualifier set.  Canonical defect: mint_chaselev_owner
+    # (line 87, constexpr) sits 7 lines above mint_chaselev_thief (line 94,
+    # NOT constexpr) — the original 10-line window swept up `constexpr`
+    # from the sibling, falsely flagging mint_chaselev_thief as cx=Y.
+    #
+    # Walk back from `line-1` to `start`; if we find a line whose stripped
+    # form starts with `}` (closing brace of the previous function's body),
+    # advance `start` to just after that line.  The window then contains
+    # ONLY the current mint's signature region + any doc / carve-out marker
+    # comments placed above its template line.
+    local probe=$(( line - 1 ))
+    while (( probe >= start )); do
+        local probe_text
+        probe_text="$(sed -n "${probe}p" "$file" 2>/dev/null)"
+        local probe_stripped="${probe_text#"${probe_text%%[![:space:]]*}"}"
+        case "$probe_stripped" in
+            '}'*) start=$(( probe + 1 )); break ;;
+        esac
+        probe=$(( probe - 1 ))
+    done
+
     local window
     window="$(sed -n "${start},${end}p" "$file" 2>/dev/null || true)"
 
@@ -119,7 +142,18 @@ extract_qualifiers() {
     if grep -qE '\bnoexcept\b' <<<"$window"; then ne=1; fi
     if grep -qE '\brequires\b' <<<"$window"; then rq=1; fi
     if grep -qE '(Ctx[[:space:]]+const[[:space:]]*&|effects::IsExecCtx|eff::IsExecCtx)' <<<"$window"; then cb=1; fi
-    if grep -qF '§XXI carve-out: cx=alloc' <<<"$window"; then cv=1; fi
+    # FIXY-V-021 / FIXY-FOUND-088: cx=alloc carve-out marker.  Mirrors
+    # cv_rq below — the marker is AUTHORITATIVE.  Force cx=0 when cv=1
+    # because the carve-out comment legitimately contains the word
+    # "constexpr" in its rationale text (e.g. "constexpr would lie"),
+    # and `\b(constexpr|consteval)\b` would otherwise false-positive on
+    # that prose.  A site that has BOTH the marker AND a real constexpr
+    # qualifier is an internal contradiction; the marker wins (reviewers
+    # grep the marker and see the intent).
+    if grep -qF '§XXI carve-out: cx=alloc' <<<"$window"; then
+        cv=1
+        cx=0
+    fi
     # FIXY-FOUND-082: §XXI carve-out for value-dependent gates that
     # cannot lift into a `requires`-clause (the predicate inspects
     # carrier runtime state, not just template arguments).  Canonical
