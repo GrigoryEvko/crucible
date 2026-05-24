@@ -1236,4 +1236,111 @@ static_assert( cheat67_admits,
     "[CHEAT 67 STATUS CHANGED] trait-spec injection on is_owned_region_impl "
     "is now REJECTED — flip assertion to !cheat67_admits.");
 
+// ── Round-8 expansion (FIXY-FOUND-096 #2251) — 7 wrappers × 1 cheat ──
+//
+// Closes the Tier-S concurrency-axis / SIMD / clock / proof-strength
+// gap in the cheat-probe.  Each of the seven wrappers below ships an
+// `IsX` concept (in `crucible::safety::extract::`) that partial-
+// specializes `is_x_v` on the exact wrapper template; derived classes
+// don't match the partial spec and must be REJECTED by IsX.  Pre-audit
+// the cheat-probe had zero coverage on these — IsHw / IsBarrierGuarded
+// / IsSimdWidthPinned / IsScopedFence / IsJoinPolicy / IsClockSource /
+// IsWitness.  This Round-8 block plants one derived-from cheat per
+// wrapper and a verdict locking the rejection in.
+
+#include <crucible/safety/IsHw.h>
+#include <crucible/safety/IsBarrierGuarded.h>
+#include <crucible/safety/IsSimdWidthPinned.h>
+#include <crucible/safety/IsScopedFence.h>
+#include <crucible/safety/IsJoinPolicy.h>
+#include <crucible/safety/IsClockSource.h>
+#include <crucible/safety/witness/IsWitness.h>
+
+// ── Hw (HwInstruction-axis pinning) ─────────────────────────────────
+struct Cheat68_DerivedFromHw
+    : crucible::safety::Hw<
+          crucible::safety::HwInstruction_v::Scalar, int> {};
+static constexpr bool cheat68_admits =
+    crucible::safety::extract::IsHw<Cheat68_DerivedFromHw>;
+
+// ── BarrierGuarded (BarrierStrength-axis pinning) ───────────────────
+struct Cheat69_DerivedFromBarrierGuarded
+    : crucible::safety::BarrierGuarded<
+          crucible::safety::BarrierStrength_v::AcqRel, int> {};
+static constexpr bool cheat69_admits =
+    crucible::safety::extract::IsBarrierGuarded<
+        Cheat69_DerivedFromBarrierGuarded>;
+
+// ── SimdWidthPinned (SimdIsa-axis pinning) ──────────────────────────
+struct Cheat70_DerivedFromSimdWidthPinned
+    : crucible::safety::SimdWidthPinned<
+          crucible::safety::SimdIsa_v::Scalar, int> {};
+static constexpr bool cheat70_admits =
+    crucible::safety::extract::IsSimdWidthPinned<
+        Cheat70_DerivedFromSimdWidthPinned>;
+
+// ── ScopedFence (MemoryScope-axis pinning) ──────────────────────────
+struct Cheat71_DerivedFromScopedFence
+    : crucible::safety::ScopedFence<
+          crucible::safety::MemoryScope_v::Thread, int> {};
+static constexpr bool cheat71_admits =
+    crucible::safety::extract::IsScopedFence<
+        Cheat71_DerivedFromScopedFence>;
+
+// ── JoinPolicy (Tier-S concurrency policy) ──────────────────────────
+struct Cheat72_DerivedFromJoinPolicy
+    : crucible::safety::JoinPolicy<
+          crucible::safety::JoinPolicy_v::DETACH, int> {};
+static constexpr bool cheat72_admits =
+    crucible::safety::extract::IsJoinPolicy<
+        Cheat72_DerivedFromJoinPolicy>;
+
+// ── ClockSource (ClockSource-axis pinning) ──────────────────────────
+struct Cheat73_DerivedFromClockSource
+    : crucible::safety::ClockSource<
+          crucible::safety::ClockSource_v::Monotonic,
+          std::uint64_t> {};
+static constexpr bool cheat73_admits =
+    crucible::safety::extract::IsClockSource<
+        Cheat73_DerivedFromClockSource>;
+
+// ── Witness (proof-strength witness family — Asserted/Tested/...) ──
+//
+// The four canonical witness types in `crucible::safety::witness::`
+// (`Asserted` / `Tested` / `CrossValidated` / `FormallyVerified`) are
+// declared `final`, so the derived-from cheat pattern is blocked at
+// the language level — a Round-8 derive-from-Asserted attempt won't
+// compile.  The IsWitness gap that remains is structural lookalike:
+// a separate type that mimics Asserted's nested `rationale_type`
+// typedef but isn't the `Asserted<R>` template specialization the
+// `is_canonical_witness_v` partial spec matches.  Pre-audit the
+// probe had no fixture verifying that a structural lookalike is
+// REJECTED — this entry plants one.
+struct Cheat74RationaleProbe {};
+struct Cheat74_LookalikeWitness {
+    using rationale_type = Cheat74RationaleProbe;
+};
+static constexpr bool cheat74_admits =
+    crucible::safety::witness::IsWitness<Cheat74_LookalikeWitness>;
+
+// ── Round-8 verdicts ────────────────────────────────────────────────
+//
+// Locked-in REJECTIONS — same wrapper-identity rationale as Rounds 6-7.
+
+static_assert(!cheat68_admits,
+    "[CHEAT 68 ADMITTED] derived-from-Hw passed IsHw.");
+static_assert(!cheat69_admits,
+    "[CHEAT 69 ADMITTED] derived-from-BarrierGuarded passed IsBarrierGuarded.");
+static_assert(!cheat70_admits,
+    "[CHEAT 70 ADMITTED] derived-from-SimdWidthPinned passed IsSimdWidthPinned.");
+static_assert(!cheat71_admits,
+    "[CHEAT 71 ADMITTED] derived-from-ScopedFence passed IsScopedFence.");
+static_assert(!cheat72_admits,
+    "[CHEAT 72 ADMITTED] derived-from-JoinPolicy passed IsJoinPolicy.");
+static_assert(!cheat73_admits,
+    "[CHEAT 73 ADMITTED] derived-from-ClockSource passed IsClockSource.");
+static_assert(!cheat74_admits,
+    "[CHEAT 74 ADMITTED] structural-lookalike passed witness::IsWitness "
+    "(rationale_type alone is not the Asserted<R> specialization).");
+
 int main() { return 0; }
