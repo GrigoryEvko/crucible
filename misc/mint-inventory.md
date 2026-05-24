@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-24T19:26:29Z`.
+Snapshot generated: `2026-05-24T19:31:14Z`.
 
 ## bridges/
 
@@ -39,7 +39,6 @@ Snapshot generated: `2026-05-24T19:26:29Z`.
 | `mint_atomic_session` | `include/crucible/bridges/MachineSessionBridge.h:281` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:105` | HS14: 4 |
 | `mint_crash_watched_endpoint` | `include/crucible/bridges/EndpointMint.h:127` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:227` | HS14: 4 |
 | `mint_crash_watched_session` | `include/crucible/bridges/CrashTransport.h:1265` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:134` | HS14: 5 |
-| `mint_event` | `include/crucible/bridges/CrashTransport.h:286` | Y | Y | Y | - | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_persisted_session` | `include/crucible/bridges/SessionPersistence.h:733` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Bridge.h:100` | HS14: 14 |
 | `mint_recording_endpoint` | `include/crucible/bridges/EndpointMint.h:99` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:226` | HS14: 4 |
 | `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:1223` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:123` | HS14: 14 |
@@ -276,8 +275,8 @@ mints) are listed in the substrate section instead.
 
 ## Summary
 
-- Total substrate mints: 122
-- Missing fixy re-export: 14
+- Total substrate mints: 121
+- Missing fixy re-export: 13
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - fixy-origin mints: 35 (declared in fixy/, no substrate counterpart — see above)
 - See `test/test_fixy_umbrella_reach.cpp` for the CI-enforced reach matrix.

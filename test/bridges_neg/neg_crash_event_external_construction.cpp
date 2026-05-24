@@ -20,7 +20,7 @@
 // FIXY-V-013 evolution: this fixture exercises the A2-021 barrier
 // (the passkey's private default ctor).  V-013 added an INDEPENDENT
 // second barrier — CrashEvent's ctor itself moved to `private:` with
-// friendship on `detail::WrapCrashReturnAuthorizer` (the `mint_event`
+// friendship on `detail::WrapCrashReturnAuthorizer` (the `mint_event_`
 // templated member function is the sole grep-discoverable
 // construction site for CrashEvent in the entire tree).  The
 // `neg_crash_event_ctor_public_bypass.cpp` companion exercises that

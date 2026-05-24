@@ -31,7 +31,7 @@
 // V-013 fix: CrashEvent's ctor moved to `private:` with
 // `friend struct detail::WrapCrashReturnAuthorizer;`.  The sole
 // grep-discoverable construction site is
-// `detail::WrapCrashReturnAuthorizer::mint_event<Event>(r, perms)`,
+// `detail::WrapCrashReturnAuthorizer::mint_event_<Event>(r, perms)`,
 // invoked by `wrap_crash_return`.  Direct construction with a hand-
 // minted key is now ill-formed at the access-control check, with
 // diagnostic mentioning "is private within this context".

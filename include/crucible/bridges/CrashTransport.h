@@ -266,7 +266,7 @@ namespace detail {
 // Non-template by design so the friend declaration above matches by
 // class identity rather than parameter-pack signature.
 //
-// FIXY-V-013: extended with `mint_event<>` — the sole authorized
+// FIXY-V-013: extended with `mint_event_<>` — the sole authorized
 // constructor of CrashEvent.  Routing through this non-template
 // authorizer keeps the friend match by class identity (immune to
 // parameter-pack drift per fixy-A2-021) and pins the §XXI ctor
@@ -283,7 +283,7 @@ struct WrapCrashReturnAuthorizer {
     // CrashEvent type is supplied by the caller (`wrap_crash_return`)
     // via the `crash_event_for_t<PeerTag, Resource>` alias.
     template <typename Event, typename Resource, typename Perms>
-    [[nodiscard]] static constexpr Event mint_event(
+    [[nodiscard]] static constexpr Event mint_event_(
         Resource&& r, Perms&& perms) noexcept
     {
         return Event{
@@ -322,7 +322,7 @@ public:
         "move would call std::terminate during recovery.");
 
 private:
-    // ── Construction (used by detail::WrapCrashReturnAuthorizer::mint_event;
+    // ── Construction (used by detail::WrapCrashReturnAuthorizer::mint_event_;
     //     not user-facing) ────────────────────────────────────────────
     //
     // FIXY-V-013: §XXI Universal Mint Pattern compliance.  The ctor
@@ -330,7 +330,7 @@ private:
     // WrapCrashReturnKey, direct `CrashEvent<...>{key, r, perms}`
     // construction is now ill-formed at the access-control check.
     // The sole authorized constructor is
-    // `detail::WrapCrashReturnAuthorizer::mint_event<Event>(r, perms)`,
+    // `detail::WrapCrashReturnAuthorizer::mint_event_<Event>(r, perms)`,
     // which `wrap_crash_return` invokes; the authorizer is
     // non-template so friendship matches by class identity (per
     // fixy-A2-021), immune to parameter-pack drift.
@@ -574,12 +574,12 @@ template <typename PeerTag,
     // executed `inner.detach(reason_tag)` above, which is the dynamic
     // death witness the key represents (a `detach_reason::*` tag from
     // the bridge layer).
-    // V-013: route construction through the authorizer's mint_event
+    // V-013: route construction through the authorizer's mint_event_
     // helper.  CrashEvent's ctor is now private (per §XXI); the
     // authorizer is friended and provides the sole grep-discoverable
     // construction site for CrashEvent in the entire tree.
     return std::unexpected{
-        detail::WrapCrashReturnAuthorizer::mint_event<
+        detail::WrapCrashReturnAuthorizer::mint_event_<
             detail::crash_event_for_t<PeerTag, Resource>>(
             std::move(recovered),
             ::crucible::permissions::mint_permission_inherit<PeerTag>(

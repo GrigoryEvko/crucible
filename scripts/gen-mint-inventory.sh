@@ -322,6 +322,23 @@ scan_substrate() {
                          print s; exit }' <<<"$text")"
         [[ -z "$name" ]] && continue
 
+        # FIXY-FOUND-084: trailing-underscore mints (e.g. `mint_event_`) are
+        # the §XXI-prescribed convention for INTERNAL detail-namespace
+        # authorizers.  CLAUDE.md §XXI: "Internal helpers do NOT use the
+        # `mint_` prefix … internal detail-namespace helpers carry the
+        # trailing-underscore convention (e.g., `permission_fork_spawn_`,
+        # `permission_fork_rebuild_`) so `grep "mint_"` returns only the
+        # public surface."  Codify that here: a `mint_X_` name is the
+        # privileged-construction authorizer (held by friend, used by the
+        # corresponding public mint_X) and MUST be hidden from the
+        # user-facing inventory.  Canonical example:
+        # `detail::WrapCrashReturnAuthorizer::mint_event_` — the sole
+        # authorized constructor of CrashEvent, called only by the public
+        # `wrap_crash_return`.
+        case "$name" in
+            *_) continue ;;
+        esac
+
         # Get qualifiers.
         local quals
         quals="$(extract_qualifiers "$file" "$line")"
