@@ -220,31 +220,34 @@ resource_kind_name(ResourceKind k) noexcept {
 //
 // IsResourceKind<K> rejects template-parameter typos at substitution
 // time, not at use site.  Mirrors IsEffect<E> in Capabilities.h.
+//
+// FIXY-FOUND-101: the prior hand-rolled `||`-disjunction silently
+// rejected any future ResourceKind atom because the chain didn't
+// auto-extend — a forward-compat trap mirroring the same defect in
+// IsEffect.  The reflection-driven body below iterates
+// `enumerators_of(^^ResourceKind)` so every catalog atom satisfies
+// the concept by construction; adding a new atom to the enum auto-
+// extends the gate without touching this file.  Mirrors the
+// eval_concurrently_schedulable_ pattern in effects/Concurrent.h.
+namespace detail {
+
 template <ResourceKind K>
-concept IsResourceKind =
-    K == ResourceKind::Sm                ||
-    K == ResourceKind::WarpScheduler     ||
-    K == ResourceKind::RegistersPerWarp  ||
-    K == ResourceKind::Smem              ||
-    K == ResourceKind::L2                ||
-    K == ResourceKind::HbmBytes          ||
-    K == ResourceKind::HbmBw             ||
-    K == ResourceKind::NvlinkBw          ||
-    K == ResourceKind::PcieBw            ||
-    K == ResourceKind::NicQ              ||
-    K == ResourceKind::NicRing           ||
-    K == ResourceKind::NicQp             ||
-    K == ResourceKind::NicCq             ||
-    K == ResourceKind::NicMr             ||
-    K == ResourceKind::SwitchEgressBw    ||
-    K == ResourceKind::SwitchBuffer      ||
-    K == ResourceKind::Tcam              ||
-    K == ResourceKind::CpuCore           ||
-    K == ResourceKind::Llc               ||
-    K == ResourceKind::PowerWatts        ||
-    K == ResourceKind::ThermalCelsius    ||
-    K == ResourceKind::RackPowerKw       ||
-    K == ResourceKind::CarbonGramsPerKwh;
+[[nodiscard]] consteval bool is_resource_kind_atom_() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        if (K == [:en:]) return true;
+    }
+#pragma GCC diagnostic pop
+    return false;
+}
+
+}  // namespace detail
+
+template <ResourceKind K>
+concept IsResourceKind = detail::is_resource_kind_atom_<K>();
 
 // ── Resource tag types (resource::*) ────────────────────────────────
 //
@@ -524,6 +527,45 @@ static_assert(IsResourceKind<ResourceKind::PowerWatts>);
 static_assert(IsResourceKind<ResourceKind::ThermalCelsius>);
 static_assert(IsResourceKind<ResourceKind::RackPowerKw>);
 static_assert(IsResourceKind<ResourceKind::CarbonGramsPerKwh>);
+
+// ── FIXY-FOUND-101: reflection-derived count witness ───────────────
+//
+// Iterates `enumerators_of(^^ResourceKind)` and counts how many
+// satisfy IsResourceKind.  Post-fix this equals resource_kind_count
+// by construction (the concept body IS that iteration).  Pre-fix,
+// the hand-rolled `||` disjunction could silently drop an atom —
+// adding a new ResourceKind enumerator without extending the
+// disjunction would have produced count_accepted_kinds_() == 23 while
+// resource_kind_count == 24, failing this assertion at the source of
+// truth.  Post-fix the assertion is structural and tautological by
+// design.
+[[nodiscard]] consteval std::size_t count_accepted_kinds_() noexcept {
+    static constexpr auto enums =
+        std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+    std::size_t n = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enums) {
+        constexpr ResourceKind k = [:en:];
+        if (IsResourceKind<k>) ++n;
+    }
+#pragma GCC diagnostic pop
+    return n;
+}
+static_assert(count_accepted_kinds_() == resource_kind_count,
+    "IsResourceKind rejects a ResourceKind-catalog atom — reflection drift.");
+
+// ── Out-of-range rejection ─────────────────────────────────────────
+//
+// `static_cast<ResourceKind>(99)` is a well-formed ResourceKind value
+// (uint8_t underlying admits 0..255) but is NOT a named enumerator.
+// IsResourceKind must reject it — both before and after the
+// reflection migration.  Pre-fix the hand-rolled `||` did so
+// accidentally (only 23 cases); post-fix the reflection loop does so
+// structurally (atom not in enumerators_of result).
+static_assert(!IsResourceKind<static_cast<ResourceKind>(99)>);
+static_assert(!IsResourceKind<static_cast<ResourceKind>(255)>);  // boundary
+static_assert(!IsResourceKind<static_cast<ResourceKind>(23)>);   // immediately past last (CarbonGramsPerKwh=22)
 
 // Diagnostic names are non-empty AND none falls through to the
 // "<unknown ResourceKind>" sentinel.  Pairwise distinctness over 23

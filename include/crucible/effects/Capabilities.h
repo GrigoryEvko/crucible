@@ -170,10 +170,34 @@ inline constexpr std::size_t effect_count =
 //
 // IsEffect<E> rejects template-parameter typos at substitution time,
 // not at use site.
+//
+// FIXY-FOUND-101: the prior hand-rolled `||`-disjunction silently
+// rejected any future Effect atom (e.g., Effect::Crash, Effect::Network)
+// because the chain didn't auto-extend — a forward-compat trap.  The
+// reflection-driven body below iterates `enumerators_of(^^Effect)` so
+// every catalog atom satisfies the concept by construction, and adding
+// a new atom to the enum auto-extends the gate without touching this
+// file.  Mirrors the eval_concurrently_schedulable_ pattern in
+// effects/Concurrent.h.
+namespace detail {
+
 template <Effect E>
-concept IsEffect =
-    E == Effect::Alloc || E == Effect::IO   || E == Effect::Block ||
-    E == Effect::Bg    || E == Effect::Init || E == Effect::Test;
+[[nodiscard]] consteval bool is_effect_atom_() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^Effect));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        if (E == [:en:]) return true;
+    }
+#pragma GCC diagnostic pop
+    return false;
+}
+
+}  // namespace detail
+
+template <Effect E>
+concept IsEffect = detail::is_effect_atom_<E>();
 
 // ── Capability tag types (cap::*) ───────────────────────────────────
 //
@@ -610,6 +634,44 @@ static_assert(IsEffect<Effect::Block>);
 static_assert(IsEffect<Effect::Bg>);
 static_assert(IsEffect<Effect::Init>);
 static_assert(IsEffect<Effect::Test>);
+
+// ── FIXY-FOUND-101: reflection-derived count witness ───────────────
+//
+// Iterates `enumerators_of(^^Effect)` and counts how many satisfy
+// IsEffect.  Post-fix this equals effect_count by construction (the
+// concept body IS that iteration).  Pre-fix, the hand-rolled `||`
+// disjunction could silently drop an atom — a future contributor
+// adding `Effect::Crash = 6` without extending the disjunction would
+// have produced count_accepted_effects() == 6 while effect_count == 7,
+// failing this assertion at the source of truth.  Post-fix the
+// assertion is structural and tautological by design.
+[[nodiscard]] consteval std::size_t count_accepted_effects_() noexcept {
+    static constexpr auto enums =
+        std::define_static_array(std::meta::enumerators_of(^^Effect));
+    std::size_t n = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enums) {
+        constexpr Effect e = [:en:];
+        if (IsEffect<e>) ++n;
+    }
+#pragma GCC diagnostic pop
+    return n;
+}
+static_assert(count_accepted_effects_() == effect_count,
+    "IsEffect rejects an Effect-catalog atom — reflection drift.");
+
+// ── Out-of-range rejection ─────────────────────────────────────────
+//
+// `static_cast<Effect>(99)` is a well-formed Effect value (uint8_t
+// underlying admits 0..255) but is NOT a named enumerator.  IsEffect
+// must reject it — both before and after the reflection migration.
+// Pre-existing hand-rolled `||` did so accidentally (only 6 cases);
+// post-fix the reflection loop does so structurally (atom not in
+// enumerators_of result).
+static_assert(!IsEffect<static_cast<Effect>(99)>);
+static_assert(!IsEffect<static_cast<Effect>(255)>);  // boundary
+static_assert(!IsEffect<static_cast<Effect>(6)>);    // immediately past last named (Test=5)
 
 // Diagnostic names are non-empty AND distinct AND none falls through
 // to the "<unknown Effect>" sentinel.
