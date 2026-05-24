@@ -326,20 +326,72 @@ static_assert(staleness::fresh    == StalenessSemiring::bottom());
 static_assert(staleness::infinite == StalenessSemiring::top());
 static_assert(staleness::at(42)   == StalenessSemiring::element_type{42});
 
-// ── AUDIT-FOUNDATION-2026-04-26: exhaustive saturation-boundary check ─
+// ── AUDIT-FOUNDATION-2026-04-26 + FIXY-FOUND-098 saturation axioms ──
 //
 // User-flagged concern: does saturating overflow into the ∞ sentinel
 // preserve the tropical-semiring axioms?  Distributivity in
 // particular is delicate: a·(b+c) == (a·b) + (a·c) under (·=sat_add,
-// +=min) requires that saturation commute with min.  An exhaustive
-// triple search over a curated set of finite values + saturation-
-// boundary values + ∞ confirms ALL three semiring laws hold at every
-// triple.  Below: 11 representative witnesses chosen to exercise the
-// boundary explicitly — fresh (0), small finites (1, 5, 100, 1000),
-// near-saturation (UINT64_MAX - 100, -10, -5, -2, -1), and ∞.  11³ =
-// 1331 triples × ~7 axioms (additive ID, multiplicative ID/zero,
-// commutativity, associativities, distributivity) = ~9,300 sub-checks
-// at compile time.  Runs in milliseconds; no per-TU cost at runtime.
+// +=min) requires that saturation commute with min.  Below ships BOTH
+// the algebraic proof sketch (FIXY-FOUND-098 #2253) AND the
+// exhaustive empirical witness over a curated set (AUDIT-2026-04-26).
+//
+// ── Algebraic proof sketch (distributivity at saturation boundary) ──
+//
+// Claim:  for all a, b, c ∈ ℕ ∪ {∞}, with · = sat_add and + = min:
+//
+//             a · min(b, c)  ==  min(a · b, a · c)
+//
+// Case 1 — a, b, c all finite, no saturation:
+//   a + min(b, c) = a + (b if b≤c else c) = (a+b) if b≤c else (a+c)
+//   min(a+b, a+c) = (a+b) if (a+b)≤(a+c) else (a+c)
+//                 = (a+b) if b≤c else (a+c)              [+ monotone]
+//   ⟹ equal.
+//
+// Case 2 — a = ∞ (UINT64_MAX), b, c arbitrary:
+//   a · min(b, c) = ∞ + min(b, c) = ∞                    [∞ absorbs]
+//   min(a · b, a · c) = min(∞, ∞) = ∞                    [∞ absorbs]
+//   ⟹ equal.
+//
+// Case 3 — exactly one of {b, c} is ∞.  WLOG b = ∞, c finite:
+//   min(b, c) = min(∞, c) = c
+//   a · min(b, c) = a + c                                [finite add or sat]
+//   a · b = a · ∞ = ∞
+//   min(a · b, a · c) = min(∞, a + c) = a + c            [∞ absorbs in min]
+//   ⟹ equal.
+//
+// Case 4 — a, b, c all finite, but sat_add(a, ·) saturates:
+//   Sub-case 4a — WLOG b ≤ c, so min(b, c) = b.
+//     a · min(b, c) = sat_add(a, b)
+//     a · b = sat_add(a, b);  a · c = sat_add(a, c)
+//     Since b ≤ c and sat_add is monotone, sat_add(a, b) ≤ sat_add(a, c).
+//     min(a · b, a · c) = sat_add(a, b).
+//     ⟹ equal.
+//   Sub-case 4b — sat_add(a, b) saturates to MAX; sat_add(a, c) may or
+//     may not.  If b ≤ c, then sat_add(a, c) ≥ sat_add(a, b) = MAX,
+//     so it also saturates to MAX.  min(MAX, MAX) = MAX = sat_add(a, b)
+//     = a · min(b, c).  ⟹ equal.
+//
+// The structural reason: saturation `sat_add` is MONOTONE in both
+// arguments, and `min` is the meet of a TOTAL order on ℕ ∪ {∞} with
+// MAX as ∞.  Any monotone operation commutes with min on its inputs:
+// `f(min(x,y)) = min(f(x), f(y))` whenever f preserves order.  Tropical
+// distributivity is exactly this monotonicity-commutes-with-min
+// identity instantiated at f(x) := sat_add(a, x).
+//
+// ── Empirical witness (curated triple set) ──────────────────────────
+//
+// The algebraic proof above is corroborated by an exhaustive triple
+// search over a curated set of finite values + saturation-boundary
+// values + ∞.  Below: 11 representative witnesses chosen to exercise
+// the boundary explicitly — fresh (0), small finites (1, 5, 100,
+// 1000), near-saturation (UINT64_MAX - 100, -10, -5, -2, -1), and ∞.
+// 11³ = 1331 triples × ~7 axioms (additive ID, multiplicative
+// ID/zero, commutativity, associativities, distributivity) = ~9,300
+// sub-checks at compile time.  Runs in milliseconds; no per-TU cost
+// at runtime.  If saturation ever stopped commuting with min (e.g. a
+// future sat_add implementation that wrapped around instead of
+// clamping), THIS check would red — closing the empirical loop on the
+// theoretical claim above.
 [[nodiscard]] consteval bool exhaustive_saturation_axioms() noexcept {
     constexpr StalenessSemiring::element_type witnesses[] = {
         StalenessSemiring::element_type{0},
