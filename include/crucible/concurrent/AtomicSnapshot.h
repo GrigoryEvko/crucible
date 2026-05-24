@@ -61,34 +61,73 @@
 //                                 new round during the data reads.
 //                                 Discard buf and retry.
 //
-// ─── UB-adjacency (and why we get away with it) ────────────────────
+// ─── Two distinct UB concerns; two distinct mitigations ────────────
+//
+// FIXY-FOUND-110/112 honest framing: the seqlock construction has
+// TWO separate undefined-behavior concerns.  Conflating them
+// (claiming a single mechanism handles both) is incorrect; each
+// has its own mitigation and its own honest limitation.
+//
+// ── UB concern #1: the data-race during memcpy ─────────────────────
 //
 // The non-atomic byte read in the reader's memcpy is, by C++
-// standard, a data race when the writer is concurrently writing —
-// hence undefined behavior.  Crucible accepts this trade-off (the
-// Linux kernel's seqcount_t and Folly's seqlock implementations
-// make the same trade-off) because:
+// standard, a data race when the writer is concurrently writing.
+// `std::start_lifetime_as<T>` (P2590R2) **does NOT launder this** —
+// the paper handles the type-system aspect only (byte→T lifetime
+// transition; see UB concern #2 below).  It cannot fix a data race;
+// the race is in the bytes' READS, prior to any type interpretation.
+//
+// Mitigations for concern #1 (matched to Linux kernel seqcount_t
+// and Folly's seqlock, both of which accept the same trade-off):
 //
 //   1. T is constrained to trivially-copyable + trivially-
 //      destructible.  No constructor, destructor, or vtable to
 //      corrupt — at worst the byte buffer holds a torn mix of two
-//      epochs' bits.
+//      epochs' bits.  No silent invariant-violation can be
+//      synthesized from a torn byte read of a trivial T.
 //   2. The seq retry protocol GUARANTEES that any torn read is
 //      discarded before being returned to the caller.  The caller
-//      never observes the torn state.
-//   3. We use std::start_lifetime_as<T> (P2590R2, C++23) on the
-//      retry-success path to formally end the byte buffer's "byte
-//      lifetime" and start a T lifetime — making the final read a
-//      well-defined T access.
+//      never observes the torn bytes.
+//   3. Compilers do not currently exploit this data-race window for
+//      trivially-copyable T (verified via godbolt and the Linux
+//      kernel community's analysis).  The technically-UB window is
+//      between when the racy bytes are touched and when the retry
+//      check rejects them; compilers treat the memcpy as opaque
+//      bytes and do not speculate through it.
+//   4. The prop_atomic_snapshot fuzzer (QUEUE-10) treats this as the
+//      load-bearing safety witness — if a future compiler starts
+//      exploiting the window, the fuzzer catches the missed retry
+//      under stress (the failure mode is a missed retry, not
+//      silent corruption).
 //
-// The technically-UB window is the data-race read inside the
-// memcpy itself, between when the bytes are touched and when the
-// retry check rejects them.  Compilers do not currently exploit
-// this window for trivially-copyable T (verified via godbolt and
-// the Linux kernel community's own analysis); if a future compiler
-// does, the failure mode is a missed retry, not silent corruption,
-// and would be caught immediately by the prop_atomic_snapshot
-// fuzzer (QUEUE-10).
+// ── UB concern #2: the byte-buffer-to-T lifetime transition ────────
+//
+// After the seqlock retry confirms the bytes are coherent, the
+// caller needs to ACCESS those bytes as a T.  Without an explicit
+// lifetime-start, reading a T-shaped value from a `std::byte` buffer
+// is UB per [basic.life] — the bytes have byte lifetime, not T
+// lifetime.  This is a TYPE-SYSTEM concern, ORTHOGONAL to the
+// data-race above.
+//
+// Mitigation for concern #2:
+//
+//   * std::start_lifetime_as<T> (P2590R2, C++23) on the retry-
+//     success path formally ends the byte buffer's byte lifetime
+//     and starts a T lifetime in-place.  The subsequent `*` deref
+//     is a well-defined T access.  This is THE feature P2590R2
+//     was designed to provide; it does exactly what the standard
+//     advertises and nothing more.
+//
+// ── Why the distinction matters ────────────────────────────────────
+//
+// A previous version of this doc claimed start_lifetime_as "made
+// the final read a well-defined T access" in a way that implied
+// it handled the data race.  Two reviewers in sequence read this
+// as "P2590R2 launders seqlock races" — it does not.  Honest
+// separation: data-race mitigation is the four items above (T
+// constraint + retry + compiler-trust + fuzzer); type-system
+// lifetime is the single P2590R2 call at retry-success.  Both
+// are necessary; neither subsumes the other.
 //
 // ─── Pinned, not movable ───────────────────────────────────────────
 //
@@ -304,9 +343,14 @@ public:
 
             if (pre == post) {
                 // Coherent: the bytes in `buf` are exactly what the
-                // writer published at seq round pre/2.  Begin a T
-                // lifetime in the buffer (P2590R2) and return by
-                // value (NRVO).
+                // writer published at seq round pre/2 (the data-
+                // race-mitigation chain in the header doc-block
+                // applies: trivial-T + retry + compiler-trust +
+                // fuzzer).  Begin a T lifetime in the buffer via
+                // P2590R2 — this is the type-system step ONLY; it
+                // does NOT relate to the data-race mitigation.
+                // See FIXY-FOUND-112 in the header doc-block for
+                // the explicit separation of the two concerns.
                 return *std::start_lifetime_as<T>(buf);
             }
 
@@ -338,6 +382,11 @@ public:
         if (pre != post) {
             return std::nullopt;  // torn — writer started new round
         }
+        // Coherent; same FIXY-FOUND-112 framing as load(): the
+        // P2590R2 call handles the byte→T lifetime transition only.
+        // Data-race mitigation lives in the trivial-T constraint +
+        // retry protocol + compiler-trust + fuzzer chain documented
+        // in the header.
         return *std::start_lifetime_as<T>(buf);
     }
 
