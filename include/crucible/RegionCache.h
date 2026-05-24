@@ -46,6 +46,7 @@
 #include <crucible/Platform.h>           // WRAP-RegionCache-6 #991: CRUCIBLE_NO_THREAD_SAFETY
 #include <crucible/safety/Cyclic.h>      // safety::Cyclic — ring write cursor (head_)
 #include <crucible/safety/Mutation.h>    // safety::BoundedMonotonic — saturating fill counter (count_)
+#include <crucible/safety/Tagged.h>      // WRAP-RegionCache-2 #987: source::RegionOps provenance
 #include <crucible/safety/WeakRef.h>     // safety::WeakRef — nullable non-owning cache slot
 
 #include <cassert>
@@ -102,7 +103,10 @@ struct RegionCache {
         // nullable so eviction/empty slots stay representable.
         regions_[slot]        = safety::WeakRef<const RegionNode>::from_raw(region);
         content_hashes_[slot] = hash;
-        ops_[slot]            = region->ops;
+        // WRAP-RegionCache-2 #987: explicit OpsPtr construction at the
+        // cache-insertion boundary — raw `ops_[slot] = region->ops;` is
+        // rejected by Tagged's explicit ctor (see HS14 BYPASS fixture).
+        ops_[slot]            = OpsPtr{region->ops};
         // Plan-less regions get num_ops_=0: find_alternate's bounds check
         // (pos >= 0) rejects them without a separate plan check.
         num_ops_[slot]        = region->plan ? region->num_ops : 0;
@@ -152,8 +156,13 @@ struct RegionCache {
             if (pos >= num_ops_[idx]) continue;
 
             // One pointer chase: ops_[idx] -> TraceEntry at pos.
-            if (ops_[idx][pos].schema_hash == schema &&
-                ops_[idx][pos].shape_hash  == shape)
+            // WRAP-RegionCache-2 #987: extract the raw ptr via .value()
+            // once into a local — the typed wrapper is regime-1 EBO so
+            // there's no runtime cost, and the local makes the [pos]
+            // indexing read identical to the pre-migration codegen.
+            const TraceEntry* ops_ptr = ops_[idx].value();
+            if (ops_ptr[pos].schema_hash == schema &&
+                ops_ptr[pos].shape_hash  == shape)
                 return regions_[idx].try_get();
         }
         return nullptr;
@@ -197,7 +206,15 @@ struct RegionCache {
     // an owning pointer (TypeSafe).  Zero-cost: collapses to one pointer.
     safety::WeakRef<const RegionNode> regions_[CAP]{};
     ContentHash       content_hashes_[CAP]{}; // dedup + exact lookup (zero ptr chase)
-    const TraceEntry* ops_[CAP]{};            // cached ops pointer (one fewer ptr chase)
+    // WRAP-RegionCache-2 #987: each ops_[i] is provenance-tagged as
+    // Tagged<const TraceEntry*, source::RegionOps>.  source::RegionOps
+    // encodes "this pointer was extracted from RegionNode.ops at cache-
+    // insertion time".  Regime-1 EBO collapse preserves the 8B pointer
+    // width — the CAP*8 = 64B array footprint is unchanged (the layout
+    // sentinel at the bottom of the class pins sizeof(OpsPtr) == 8).
+    using OpsPtr = ::crucible::safety::Tagged<
+        const TraceEntry*, ::crucible::safety::source::RegionOps>;
+    OpsPtr            ops_[CAP]{};            // cached ops pointer (one fewer ptr chase)
     uint32_t          num_ops_[CAP]{};        // cached op count (bounds check inline)
 
     // Ring write cursor (WRAP-RegionCache-4, #989): a free-running counter read
@@ -215,6 +232,25 @@ struct RegionCache {
 // collapses to exactly one pointer, so the regions_[CAP] slot array keeps its
 // 64B (one cache-line) footprint and the SoA byte-accounting above stays
 // exact.  A regression in WeakRef's zero-cost guarantee reddens here.
+//
+// WRAP-RegionCache-2 #987 layout sentinel: Tagged<const TraceEntry*,
+// source::RegionOps> MUST collapse via regime-1 EBO to a single
+// pointer.  Otherwise the ops_[CAP] array footprint shifts off
+// 64B (the SoA accounting above assumes CAP*sizeof(ptr) per element
+// array) and the cache-line plan in the doc-block at the top of
+// the class becomes incorrect.
+static_assert(
+    sizeof(::crucible::safety::Tagged<const TraceEntry*,
+                                      ::crucible::safety::source::RegionOps>)
+        == sizeof(const TraceEntry*),
+    "WRAP-RegionCache-2 #987: Tagged<const TraceEntry*, source::RegionOps> "
+    "must preserve pointer size via regime-1 EBO collapse.");
+static_assert(
+    alignof(::crucible::safety::Tagged<const TraceEntry*,
+                                       ::crucible::safety::source::RegionOps>)
+        == alignof(const TraceEntry*),
+    "WRAP-RegionCache-2 #987: Tagged<const TraceEntry*, source::RegionOps> "
+    "must preserve pointer alignment via regime-1 EBO collapse.");
 static_assert(sizeof(safety::WeakRef<const RegionNode>[RegionCache::CAP])
               == RegionCache::CAP * sizeof(const RegionNode*),
               "WeakRef cache-slot array must stay layout-identical to raw pointers");

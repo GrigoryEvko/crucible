@@ -205,6 +205,23 @@ namespace source {
     // A future task can tighten with vendor-specific Refined predicates
     // routed through the source::Calibrated/source::VendorSpec axis.
     struct Meridian     {};
+    // RegionOps: pointer to a RegionNode's TraceEntry array (region->ops),
+    // cached in RegionCache for fast divergence-time alternate-region
+    // matching (WRAP-RegionCache-2 #987).  The ops pointer is valid as
+    // long as the cached RegionNode itself is alive — RegionCache holds
+    // a WeakRef<const RegionNode> alongside the cached ops pointer; the
+    // WeakRef's try_get() controls the slot's lifetime envelope.
+    // source::RegionOps encodes "this TraceEntry* was extracted from
+    // RegionNode.ops at cache-insertion time" — distinct from Vigil
+    // (bg-published active region pointer) and Arena (arena-allocated
+    // throwaway region for tests/speculative branches).  A future
+    // RegionNode lifecycle bug that retires the RegionNode without
+    // evicting the cache entry would leave a dangling RegionOps
+    // pointer; the Tag itself doesn't prevent that — the WeakRef does
+    // — but the Tag makes the provenance grep-discoverable so audit
+    // can reason "every RegionOps pointer in this struct is paired
+    // with a WeakRef slot at the same index".  Phantom-only.
+    struct RegionOps    {};
     // IncastConfig: CNT-P fan-in mitigation configuration admitted through
     // cntp/IncastControl.h. Raw booleans / byte counts cannot directly
     // tune socket RTO or receiver-issued credit pacing.

@@ -6233,6 +6233,17 @@ crucible_neg_compile_test(neg_device_capability_raw_assignment
 crucible_neg_compile_test(neg_device_capability_cross_source_assignment
   "no match|cannot convert|no viable|could not convert|Tagged|source")
 
+# ─── WRAP-RegionCache-2 #987 neg-compile tests ──────────────────────
+#
+# RegionCache::ops_[CAP] migrates from raw `const TraceEntry*` array to
+# `safety::Tagged<const TraceEntry*, source::RegionOps>[CAP]`.  Two
+# fixtures per HS14 (BYPASS + LAUNDERING), mirroring the WRAP-CCtx-2
+# / WRAP-BgThread-4 Tagged-half discipline.
+crucible_neg_compile_test(neg_region_ops_ptr_raw_assignment
+  "no match|cannot convert|no viable|could not convert|explicit|constructor")
+crucible_neg_compile_test(neg_region_ops_ptr_cross_source_assignment
+  "no match|cannot convert|no viable|could not convert|Tagged|source")
+
 # ─── #897 WRAP-CostModel-3 neg-compile tests ────────────────────────
 #
 # Per #897, ValidRegsPerThread is
