@@ -778,8 +778,17 @@ using ColdInitCtx = ExecCtx<
     Row<Effect::Init, Effect::Alloc, Effect::IO>
 >;
 
-// Test runner context: unrestricted (test fixtures may exercise any
-// effect).  Used inside test/test_*.cpp drivers.
+// Test runner context: Effect::Test thread tag + Alloc + IO + Block
+// effect surface.  Test fixtures may exercise any Test-row effect, but
+// the cap_permitted_row<Test> = Row<Effect::Test, Effect::Alloc,
+// Effect::IO, Effect::Block> isolation explicitly excludes
+// Effect::Bg and Effect::Init — a test fixture CANNOT mint a Bg- or
+// Init-tagged capability via this context (FIXY-FOUND-102; pinned by
+// the `!CanMintCap<Effect::Bg, Test>` / `!CanMintCap<Effect::Init,
+// Test>` static_asserts in effects/Capability.h).  Test code that
+// needs to drive a Bg / Init code path must construct the matching
+// context explicitly via its own mint factory.  Used inside
+// test/test_*.cpp drivers.
 using TestRunnerCtx = ExecCtx<
     Test,
     ctx_numa::Any,

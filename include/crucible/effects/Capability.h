@@ -517,6 +517,18 @@ static_assert(!CanMintCap<Effect::Bg,    Init>);
 static_assert(!CanMintCap<Effect::Test,  Init>);
 
 // Test permits Alloc, IO, Block, and its own thread tag.
+//
+// FIXY-FOUND-102: the `!CanMintCap<Effect::Bg, Test>` and
+// `!CanMintCap<Effect::Init, Test>` assertions are LOAD-BEARING — they
+// are the structural enforcement that backs the doc claim in
+// Capabilities.h §"Context types" that Test "cannot mint Effect::Bg or
+// Effect::Init".  A test fixture that needs to drive a Bg- or Init-
+// tagged code path MUST construct the matching context type explicitly
+// via its own mint factory; the type system refuses to let Test
+// masquerade as either.  This is a security boundary: prior doc
+// claimed "unrestricted" which falsely implied Bg/Init mintability —
+// fixed in commit "FIXY-FOUND-102: docs aligned with structural
+// isolation".
 static_assert( CanMintCap<Effect::Alloc, Test>);
 static_assert( CanMintCap<Effect::IO,    Test>);
 static_assert( CanMintCap<Effect::Block, Test>);

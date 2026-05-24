@@ -14,7 +14,7 @@
 //   Block     | 2                | mutex, sleep, futex, spin-wait
 //   Bg        | 3                | background thread context (Alloc + IO + Block)
 //   Init      | 4                | initialization context (Alloc + IO)
-//   Test      | 5                | test context (unrestricted: Alloc + IO + Block)
+//   Test      | 5                | test context (Alloc + IO + Block — NOT Bg / Init thread tags)
 //
 //   Axiom coverage: TypeSafe — strong enum with explicit underlying
 //                   type; reflection traversal sees all atoms.
@@ -270,7 +270,14 @@ using Block = cap::Block;
 //   Bg    — background thread: alloc + io + block
 //   Init  — initialization scope: alloc + io (no block — init must
 //           never block on a synchronisation primitive)
-//   Test  — test driver: unrestricted (alloc + io + block)
+//   Test  — test driver: alloc + io + block (CANNOT mint Effect::Bg
+//           or Effect::Init — see FIXY-FOUND-102; Test's
+//           cap_permitted_row is Row<Effect::Test, Alloc, IO, Block>,
+//           NOT a superset of Bg's or Init's rows.  A test fixture
+//           that needs to exercise a Bg- or Init-tagged code path
+//           must construct the matching context type explicitly via
+//           its own mint factory — the type system refuses to let
+//           Test masquerade as either.)
 //
 // ── fixy-A3-005 — private default ctor + passkey-via-passkey ────────
 //
