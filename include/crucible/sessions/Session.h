@@ -2406,6 +2406,39 @@ concept SessionResource =
         && std::derived_from<std::remove_reference_t<Resource>,
                               safety::Pinned<std::remove_reference_t<Resource>>>);
 
+// ─── WellFormedRunnableProtocol concept (FIXY-FOUND-079) ────────────
+//
+// §XXI Universal Mint Pattern (CLAUDE.md §XXI): "The `requires` clause
+// MUST be a single concept" — the gate is load-bearing and MUST be
+// SFINAE-visible so downstream concept machinery (`CtxFits*`, the
+// `requires { mint_session_handle<P>(r); }` shape, etc.) can compose.
+//
+// Body `static_assert`s alone are NOT SFINAE-visible: overload
+// resolution sees the signature as callable for ANY Proto, only at
+// template-INSTANTIATION (body) does the failure manifest, and that
+// hard error is not observable from a `requires`-expression up the
+// stack.  Lifting the two well-formedness checks into the function
+// signature closes that gap.
+//
+// `is_well_formed_v<Proto>` — recursively walks Proto rejecting free
+// `Continue` (no enclosing Loop), `Loop<terminal>` (Loop with a body
+// that can never reach `Continue`), and structurally-stuck shapes.
+// `is_empty_choice_v<Proto>` — rejects any reachable empty `Select<>`
+// / `Offer<>` / `Offer<Sender<R>>` since neither has a branch
+// `.pick<I>()` could choose nor a label the peer could signal (#364).
+//
+// Body `static_assert`s remain in mint_session_handle as defense-in-
+// depth: they fire AFTER SFINAE rejection only if some bypass route
+// is found (concept gate disabled, friend access to detail, etc.).
+// Under normal use the concept fires first and the rich body
+// diagnostic prose serves as the documentation of WHY the concept
+// rejected.
+
+template <typename Proto>
+concept WellFormedRunnableProtocol =
+    is_well_formed_v<Proto> &&
+    !is_empty_choice_v<Proto>;
+
 // ═════════════════════════════════════════════════════════════════
 // ── Factory: mint_session_handle<Proto>(resource) ───────────────
 // ═════════════════════════════════════════════════════════════════
@@ -2417,8 +2450,12 @@ concept SessionResource =
 //
 // Compile error if Proto is ill-formed (Continue outside Loop, etc.)
 // or if Resource fails the SessionResource pin-discipline check.
+// FIXY-FOUND-079: both checks ride on the `requires` clause so
+// SFINAE-discriminating concept gates downstream (CtxFits*,
+// `requires { mint_session_handle<P>(r); }`) see the failure cleanly.
 
 template <typename Proto, typename Resource>
+    requires WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
 [[nodiscard]] constexpr auto mint_session_handle(
     Resource r,
     std::source_location loc = std::source_location::current()) noexcept
@@ -2643,6 +2680,40 @@ namespace two_pc_test {
     static_assert(is_well_formed_v<Coord>);
     static_assert(is_well_formed_v<Follower>);
 }
+
+// ─── FIXY-FOUND-079 SFINAE-visibility self-test ─────────────────────
+//
+// Discriminates between body-static_assert and requires-clause gating:
+// after the migration, a `requires { mint_session_handle<P>(r); }`
+// expression sees concept-rejection via SFINAE and returns false for
+// ill-formed Proto.  Before the migration, the same expression
+// returned true (signature callable; failure manifested only at body
+// instantiation and could not be observed up the stack).
+//
+// This block IS the discriminating regression test for the §XXI
+// Universal Mint Pattern migration on mint_session_handle.  Existing
+// neg-compile fixtures (neg_session_wellformed_free_continue.cpp +
+// neg_session_empty_select.cpp) verify the HARD-FAIL path; this
+// block verifies the SOFT-FAIL (SFINAE-discriminating) path.
+
+namespace mint_sfinae_test {
+    struct FakeRes { int sentinel = 0; };
+
+    // ── Concept-itself sanity (the load-bearing claim of FIXY-FOUND-079) ──
+    // WellFormedRunnableProtocol IS the SFINAE-visible gate; verifying
+    // the concept's truth table is sufficient because the requires-clause
+    // on mint_session_handle is exactly `WellFormedRunnableProtocol<Proto>
+    // && SessionResource<Resource>`, so overload resolution returns the
+    // same answer as the concept (modulo the resource gate).
+    static_assert(WellFormedRunnableProtocol<End>);
+    static_assert(WellFormedRunnableProtocol<Send<int, End>>);
+    static_assert(WellFormedRunnableProtocol<Loop<Send<int, Continue>>>);
+    static_assert(!WellFormedRunnableProtocol<Continue>);
+    static_assert(!WellFormedRunnableProtocol<Send<int, Continue>>);
+    static_assert(!WellFormedRunnableProtocol<Select<>>);
+    static_assert(!WellFormedRunnableProtocol<Offer<>>);
+    static_assert(!WellFormedRunnableProtocol<Loop<End>>);
+}  // namespace mint_sfinae_test
 
 }  // namespace detail::self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS

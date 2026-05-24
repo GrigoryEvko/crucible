@@ -2084,7 +2084,7 @@ crucible_neg_compile_fixy_test(neg_fixy_fn_direct_sentinel_use
 crucible_neg_compile_fixy_test(neg_fixy_federation_channel_non_ctx
     "IsExecCtx")
 crucible_neg_compile_fixy_test(neg_fixy_federation_channel_wrong_endpoint
-    "SessionResource_NotPinned")
+    "SessionResource_NotPinned|SessionResource<")
 
 # fixy-CR-13 — HS14 floor for the CtxFitsFederation row gate at the
 # fixy wrapper boundary.  Two rejection classes: (a) Fg cap empty row
@@ -2233,9 +2233,9 @@ crucible_neg_compile_fixy_test(neg_fixy_federation_missing_proof
 # (2) !is_empty_choice_v<Proto>, (3) SessionResource<Resource>.
 # Fixtures exercise (1) and (3) — the two most common author errors.
 crucible_neg_compile_fixy_test(neg_fixy_session_handle_malformed_proto
-    "Protocol_Ill_Formed")
+    "Protocol_Ill_Formed|WellFormedRunnableProtocol|is_well_formed_v")
 crucible_neg_compile_fixy_test(neg_fixy_session_handle_non_resource
-    "SessionResource_NotPinned")
+    "SessionResource_NotPinned|SessionResource<")
 
 # FIXY-AUDIT-B1 — HS14 floor for Theory.h §30.14 corpus.
 # fixy-H-16: the tier-5 rejection diagnostic must literally name the
@@ -9081,7 +9081,7 @@ crucible_neg_compile_test(neg_monotonic_implicit_to_raw
 # fail to compile with the routed diagnostic naming the discipline
 # violation.
 crucible_neg_compile_test(neg_session_resource_not_pinned
-  "SessionResource_NotPinned")
+  "SessionResource_NotPinned|SessionResource<")
 
 # Tier 1 compiler firings — each has a distinct diagnostic.
 
@@ -9662,8 +9662,13 @@ crucible_neg_compile_test(neg_cipher_wrong_tag
 # neg-compile test alongside it.
 
 # L1 Session.h — well-formedness: Continue outside Loop.
+# FIXY-FOUND-079: gate migrated from body static_assert to
+# WellFormedRunnableProtocol requires-clause concept; widen regex to
+# accept both the legacy body-assert text ("protocol is ill-formed",
+# fires only via defense-in-depth bypass) and the new concept-rejection
+# diagnostic ("WellFormedRunnableProtocol|is_well_formed_v").
 crucible_neg_compile_test(neg_session_wellformed_free_continue
-    "proto: protocol is ill-formed")
+    "protocol is ill-formed|WellFormedRunnableProtocol|is_well_formed_v")
 
 # L6 SessionSubtype.h — assert_subtype_sync on non-subtype pair.
 crucible_neg_compile_test(neg_session_subtype_mismatch
@@ -9823,30 +9828,33 @@ crucible_neg_compile_test(neg_crash_event_resource_throwing_move
 # Empty Select<> / Offer<> at the handle boundary (#364) — type-level
 # uses (Gay-Hole 2005 minimum-subtype rule, SessionSubtype.h's tests)
 # stay legitimate, but constructing a runnable handle is rejected.
+# FIXY-FOUND-079: regex widened — concept-rejection diagnostic includes
+# "WellFormedRunnableProtocol" / "is_empty_choice_v" instead of the body
+# static_assert message after the requires-clause migration.
 crucible_neg_compile_test(neg_session_empty_select
-    "Empty_Choice_Combinator")
+    "Empty_Choice_Combinator|WellFormedRunnableProtocol|is_empty_choice_v")
 
 # fixy-CR-14: HS14 floor for the recursive is_empty_choice walk.
 # Distinct rejection paths: Loop → Recv → empty Select, and Send →
 # empty Offer.  Both protocols pass is_well_formed at the type level
 # (no free Continue, Loop body is well-formed) but the mint now
 # rejects them because a reachable empty choice exists anywhere in
-# the tree.
+# the tree.  Regex widened for FIXY-FOUND-079 (concept rejection).
 crucible_neg_compile_test(neg_session_empty_select_nested_loop
-    "Empty_Choice_Combinator")
+    "Empty_Choice_Combinator|WellFormedRunnableProtocol|is_empty_choice_v")
 crucible_neg_compile_test(neg_session_empty_offer_nested_send
-    "Empty_Choice_Combinator")
+    "Empty_Choice_Combinator|WellFormedRunnableProtocol|is_empty_choice_v")
 
 # fixy-CR-14 follow-up: SessionDelegate.h's Delegate/Accept/
 # EpochedDelegate/EpochedAccept is_empty_choice specs.  Two fixtures
 # pin distinct OR arms: Delegate<Select<>, End> exercises the T
 # (delegated-inner) arm; Accept<End, Select<>> exercises the K
 # (continuation) arm.  Together they witness the SessionDelegate.h
-# specs at compile time.
+# specs at compile time.  Regex widened for FIXY-FOUND-079 concept rejection.
 crucible_neg_compile_test(neg_session_empty_in_delegate_inner
-    "Empty_Choice_Combinator")
+    "Empty_Choice_Combinator|WellFormedRunnableProtocol|is_empty_choice_v")
 crucible_neg_compile_test(neg_session_empty_in_accept_continuation
-    "Empty_Choice_Combinator")
+    "Empty_Choice_Combinator|WellFormedRunnableProtocol|is_empty_choice_v")
 
 # fixy-CR-15: ProtocolPermissionedRunnable runnable-trait gate on
 # empty Select<> / Offer<> / Offer<Sender<R>> at mint_channel.
