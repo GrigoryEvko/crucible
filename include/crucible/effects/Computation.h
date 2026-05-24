@@ -527,17 +527,52 @@ static_assert(requires(Computation<Row<Effect::Bg>, int>&& c) {
 // The structural claim — "lvalue weaken's requires-clause includes
 // is_copy_constructible_v<T>" — is enforced by the requires-clause
 // itself.  An explicit `is_copy_constructible_v<int> == true` witness
-// covers the positive case; the negative case (move-only T) would
-// instantiate Computation<R, MoveOnly> which triggers a noexcept-
-// clause eager-eval cascade in GCC 16 (the noexcept's
-// is_nothrow_copy_constructible_v trait probes the deleted copy ctor
-// at instantiation rather than at concept-check time).  The negative
-// path is documented via the source-level requires-clause; a true
-// neg-compile fixture lives under test/safety_neg/ instead (deferred
-// HS14 follow-up — beyond cycle-ship scope).
+// covers the positive case; the full negative case (move-only T)
+// would instantiate Computation<R, MoveOnly> which surfaces a
+// Linear<MoveOnly>-related copy-required code path in some non-
+// template member.  The full neg-compile fixture lives under
+// test/safety_neg/ instead (deferred HS14 follow-up — beyond cycle-
+// ship scope).
 static_assert(std::is_copy_constructible_v<int>,
     "FIXY-FOUND-106 sanity: int is copy-constructible (positive-case "
     "witness for the requires-clause).");
+
+// ── FIXY-FOUND-106-AUDIT: trait-level pin for the negative case ────
+//
+// The full negative-compile fixture (move-only T → lvalue weaken
+// rejected by concept-failure with clean diag) is deferred to
+// test/safety_neg/ due to a Linear<MoveOnly>-instantiation issue
+// orthogonal to the SFINAE gate.  This trait-level pin verifies the
+// LOAD-BEARING claim: `std::is_copy_constructible_v` correctly
+// returns false for a type with a deleted copy ctor.  Without that
+// trait behaviour, the lvalue weaken's requires-clause is structurally
+// meaningless — the SFINAE gate would not actually gate anything.
+//
+// This pin doesn't instantiate Computation<R, MoveOnlyProbe>; it
+// just exercises the trait the requires-clause depends on.
+namespace fixy_found_106_trait_pin {
+
+struct MoveOnlyProbe {
+    constexpr MoveOnlyProbe() noexcept = default;
+    constexpr MoveOnlyProbe(MoveOnlyProbe&&) noexcept = default;
+    MoveOnlyProbe(MoveOnlyProbe const&) = delete;
+    MoveOnlyProbe& operator=(MoveOnlyProbe&&) noexcept = default;
+    MoveOnlyProbe& operator=(MoveOnlyProbe const&) = delete;
+    ~MoveOnlyProbe() = default;
+};
+
+static_assert(!std::is_copy_constructible_v<MoveOnlyProbe>,
+    "FIXY-FOUND-106-AUDIT: the SFINAE gate depends on "
+    "std::is_copy_constructible_v returning false for deleted-copy "
+    "types.  If this assertion ever fires, the lvalue weaken overload "
+    "stops gating move-only payloads and silently re-admits the bug.");
+
+static_assert(std::is_move_constructible_v<MoveOnlyProbe>,
+    "FIXY-FOUND-106-AUDIT: rvalue weaken on move-only T relies on T "
+    "being move-constructible.  If this assertion fires, the rvalue "
+    "overload's `std::move(impl_).consume()` path itself stops working.");
+
+}  // namespace fixy_found_106_trait_pin
 
 // extract() rvalue overload moves; correctness checked by replicating
 // the value with a move-only-equivalent payload (int suffices for
