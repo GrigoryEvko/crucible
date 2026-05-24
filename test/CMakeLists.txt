@@ -10494,6 +10494,19 @@ crucible_neg_compile_test(neg_perm_pool_lend_row_mismatch
 crucible_neg_compile_test(neg_computation_extract_on_nonempty_row
     "extract")
 
+# ── FIXY-FOUND-107 — extract engagement-laundering gate ──────────
+# `extract_admits_payload_v<T>` augments METX-1's pure-row gate so
+# that Computation<Row<>, Computation<Row<engaged>, U>> is also
+# rejected: an empty outer row whose payload is itself an engaged
+# Computation would otherwise launder the inner row's audit trail
+# through callers that see the outer's empty row.  Two fixtures —
+# single-level laundering and deep (3-level) recursion — pin the
+# trait's recursive specialization.
+crucible_neg_compile_test(neg_computation_extract_launder_engaged_payload
+    "extract_admits_payload")
+crucible_neg_compile_test(neg_computation_extract_launder_deep_engaged
+    "extract_admits_payload")
+
 # ── METX-1 #473 — Computation::weaken substitution principle ─────
 # weaken<R2>() requires `Subrow<R, R2>` — capability propagation
 # flows from narrower-effect rows to wider-effect rows, NEVER the

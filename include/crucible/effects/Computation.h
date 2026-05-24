@@ -96,6 +96,23 @@ class Computation;
 // then()'s instantiation, by which time the specialization is visible.
 namespace detail {
 template <typename> struct is_computation : std::false_type {};
+
+// FIXY-FOUND-107: extract_admits_payload — gate to reject extract on
+// engagement-laundered nested Computations.  Specialized for
+// Computation<R, T> AFTER the class definition; see the post-class
+// specialization block paired with `is_computation<Computation<R, T>>`.
+//
+// For non-Computation T (e.g., int, string, struct): always true —
+// extract just unwraps the value, nothing to launder.
+//
+// For T = Computation<R', U>: requires R' to be empty AND U to also
+// admit extract.  This recursively forbids
+//     Computation<Row<>, Computation<Row<Bg>, U>>::extract()
+// where the outer Row<> launders the inner Row<Bg>'s engagement.
+template <typename> struct extract_admits_payload : std::true_type {};
+template <typename T>
+inline constexpr bool extract_admits_payload_v =
+    extract_admits_payload<T>::value;
 }
 
 template <typename T>
@@ -181,8 +198,24 @@ public:
     // `extract` — unwrap a pure value out of an empty-row Computation.
     // Two overloads: lvalue returns const-ref (no copy on inspection),
     // rvalue returns by value (move out of impl_).
+    //
+    // FIXY-FOUND-107: the `extract_admits_payload_v<T>` constraint
+    // forbids engagement laundering through nested-Computation
+    // payloads.  Concretely, the construction
+    //     Computation<Row<>, Computation<Row<Bg>, int>>
+    // wraps a Bg-engaged inner Computation inside a pure-looking
+    // outer.  Without the gate, extract() on the outer would return
+    // the engaged inner — operations between the wrap site and the
+    // extract site would have seen `Computation<Row<>, T>` and
+    // believed they were operating on pure data, when in fact T is
+    // itself effectful.  The Bg effect's audit trail through those
+    // operations would be lost.
+    //
+    // The constraint recursively rejects: T = Computation<R', U>
+    // requires R' to be empty AND U to also admit extract.
     [[nodiscard]] constexpr const T& extract() const & noexcept
         requires (row_size_v<R> == 0)
+              && detail::extract_admits_payload_v<T>
     {
         return impl_.peek();
     }
@@ -190,6 +223,7 @@ public:
     [[nodiscard]] constexpr T extract() &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
         requires (row_size_v<R> == 0)
+              && detail::extract_admits_payload_v<T>
     {
         return std::move(impl_).consume();
     }
@@ -393,6 +427,14 @@ public:
 namespace detail {
 template <typename R, typename T>
 struct is_computation<Computation<R, T>> : std::true_type {};
+
+// FIXY-FOUND-107: recursive payload-admission specialization.
+// Nested Computation<R, U> as payload is rejected by extract iff R
+// is non-empty (engaged) OR U itself recursively fails the check.
+template <typename R, typename U>
+struct extract_admits_payload<Computation<R, U>>
+    : std::bool_constant<(row_size_v<R> == 0)
+                       && extract_admits_payload<U>::value> {};
 }  // namespace detail
 
 // ── Layout invariant macro (used by METX-4 compat aliases) ─────────
@@ -573,6 +615,67 @@ static_assert(std::is_move_constructible_v<MoveOnlyProbe>,
     "overload's `std::move(impl_).consume()` path itself stops working.");
 
 }  // namespace fixy_found_106_trait_pin
+
+// ── FIXY-FOUND-107: extract engagement-laundering gate ─────────────
+//
+// Trait-level pins for the recursive `extract_admits_payload_v<T>`
+// gate.  Non-Computation T always admits; Computation<R, U> admits
+// iff R is empty AND U recursively admits.
+
+namespace fixy_found_107 {
+
+// Plain payloads admit.
+static_assert(detail::extract_admits_payload_v<int>);
+static_assert(detail::extract_admits_payload_v<double>);
+
+// Pure Computation payload admits (Row<>-wrapped Row<>-wrapped T).
+static_assert(detail::extract_admits_payload_v<
+    Computation<Row<>, int>>);
+
+// Engaged Computation payload REJECTED — this is the laundering case.
+static_assert(!detail::extract_admits_payload_v<
+    Computation<Row<Effect::Bg>, int>>);
+static_assert(!detail::extract_admits_payload_v<
+    Computation<Row<Effect::Alloc, Effect::IO>, int>>);
+
+// Recursive case: Computation<Row<>, Computation<Row<Bg>, T>> —
+// outer row is pure but the wrapped value is itself engaged.
+// The recursion rejects.
+static_assert(!detail::extract_admits_payload_v<
+    Computation<Row<>, Computation<Row<Effect::Bg>, int>>>);
+
+// Deeper nesting: pure → pure → engaged.  Recursion sees through.
+static_assert(!detail::extract_admits_payload_v<
+    Computation<Row<>, Computation<Row<>, Computation<Row<Effect::Bg>, int>>>>);
+
+// Deeper nesting: pure → pure → pure.  Admits all the way down.
+static_assert(detail::extract_admits_payload_v<
+    Computation<Row<>, Computation<Row<>, Computation<Row<>, int>>>>);
+
+// ── Behavioral witnesses via requires-expression ───────────────────
+//
+// The TYPE-LEVEL trait above is the load-bearing pin.  The POSITIVE
+// requires-expression witnesses below verify that the extract
+// overloads' constraints DO admit when the trait holds.
+//
+// The NEGATIVE direction is asserted at trait level only.  GCC 16
+// treats a failed constraint inside a `!requires(...)` body as a
+// hard compile error rather than substitution-failure-returns-false,
+// so the `!requires(c.extract())` form does not compile (same trap
+// documented for CtxOwnsAllOf in test/test_effects.cpp).  The
+// trait-level `static_assert(!extract_admits_payload_v<...>)` pins
+// above are the sufficient evidence the gate rejects.
+
+// Pure outer + pure inner: extract admits.
+static_assert(requires(Computation<Row<>, Computation<Row<>, int>> const& c) {
+    c.extract();
+}, "FIXY-FOUND-107: pure-outer + pure-inner Computation must admit extract.");
+
+// Plain payloads still admit (regression — gate must not over-restrict).
+static_assert(requires(Computation<Row<>, int> const& c) { c.extract(); },
+    "FIXY-FOUND-107 regression: plain int payload must still admit extract.");
+
+}  // namespace fixy_found_107
 
 // extract() rvalue overload moves; correctness checked by replicating
 // the value with a move-only-equivalent payload (int suffices for
