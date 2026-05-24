@@ -119,6 +119,27 @@ struct ConcurrentRow {
 
 using EmptyConcurrentRow = ConcurrentRow<>;
 
+// IsConcurrentRow concept — recognizes the carrier shape.  Co-located
+// with the carrier so downstream gates (IntraRowOverflowSafe,
+// IsCanonicalConcurrentRow, FitsCog) can require it without forward-
+// reference reshuffles.
+namespace detail {
+
+template <typename T>
+struct is_concurrent_row : std::false_type {};
+
+template <ResourceTag... Ts>
+struct is_concurrent_row<ConcurrentRow<Ts...>> : std::true_type {};
+
+}  // namespace detail
+
+template <typename T>
+inline constexpr bool is_concurrent_row_v =
+    detail::is_concurrent_row<T>::value;
+
+template <typename T>
+concept IsConcurrentRow = is_concurrent_row_v<T>;
+
 // ── Per-kind value lookup ───────────────────────────────────────────
 //
 // `concurrent_row_value_v<K, R>` is the sum of values for tags of
@@ -383,15 +404,173 @@ struct concurrent_row_n<R1, R2, Rest...> {
 template <typename... Rs>
 using concurrent_row_n_t = typename detail::concurrent_row_n<Rs...>::type;
 
+// ── Intra-row overflow detection (FIXY-FOUND-100) ───────────────────
+//
+// The PAIRWISE overflow guard above (sum_does_not_overflow on
+// concurrent_row_value_v<K, R1> + concurrent_row_value_v<K, R2>) is
+// necessary but NOT sufficient — it trusts the per-row kind-sum
+// lookup.  But `concurrent_row_value_v<K, R>` itself is a left-fold
+// `((Ts::kind == K ? Ts::value : 0) + ...)` over R's tag pack, and
+// uint64_t arithmetic wraps silently.  So a non-canonical input
+// `ConcurrentRow<SmBudget<UINT64_MAX>, SmBudget<1>>` reports kind-sum
+// = 0 (wrapped), and the pairwise guard then proves `0 + X` doesn't
+// overflow → schedulable → FitsCog passes with demand=0 against
+// any ceiling.  Total bypass.
+//
+// FIXY-FOUND-012 documents this as the underlying bug; FIXY-FOUND-100
+// is the detection-side fix: every consumer of ConcurrentlySchedulable
+// (and FitsCog by extension) now structurally proves the per-row sums
+// it's about to read are themselves overflow-safe.
+//
+// `intra_row_kind_safe<K, R>::value` is true iff the left-to-right
+// fold of K-kind values within R never wraps at any partial sum.
+
+namespace detail {
+
+template <ResourceKind K, typename R>
+struct intra_row_kind_safe;
+
+template <ResourceKind K>
+struct intra_row_kind_safe<K, ConcurrentRow<>> {
+    static constexpr bool value = true;
+};
+
+template <ResourceKind K, ResourceTag... Ts>
+struct intra_row_kind_safe<K, ConcurrentRow<Ts...>> {
+    static constexpr bool value = []() consteval -> bool {
+        constexpr std::size_t N = sizeof...(Ts);
+        constexpr std::array<ResourceKind, N> kinds{Ts::kind...};
+        constexpr std::array<std::uint64_t, N> values{Ts::value...};
+        std::uint64_t acc = 0;
+        for (std::size_t i = 0; i < N; ++i) {
+            if (kinds[i] == K) {
+                if (!sum_does_not_overflow(acc, values[i])) {
+                    return false;
+                }
+                acc += values[i];
+            }
+        }
+        return true;
+    }();
+};
+
+// All-kinds intra-row safety guard.  Reflection-driven `template for`
+// over the ResourceKind enumerator set (P2996R13 + P3491R3) — same
+// pattern as eval_concurrently_schedulable_ below, so a new
+// ResourceKind atom automatically extends both guards.
+template <typename R>
+[[nodiscard]] consteval bool eval_intra_row_overflow_safe_() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto ea : enumerators) {
+        constexpr ResourceKind kind = [:ea:];
+        if (!intra_row_kind_safe<kind, R>::value) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+template <typename R>
+inline constexpr bool intra_row_overflow_safe_v =
+    eval_intra_row_overflow_safe_<R>();
+
+}  // namespace detail
+
+// Public: per-row intra-row-overflow safety witness.
+template <typename R>
+inline constexpr bool intra_row_overflow_safe_v =
+    detail::intra_row_overflow_safe_v<R>;
+
+template <typename R>
+concept IntraRowOverflowSafe =
+    IsConcurrentRow<R> && intra_row_overflow_safe_v<R>;
+
+// ── Canonical-form gate (FIXY-FOUND-100) ────────────────────────────
+//
+// A ConcurrentRow is canonical iff each ResourceKind appears at most
+// once in the tag pack.  Non-canonical rows compile fine (per the
+// existing public contract) and `concurrent_row_sum_t` canonicalises
+// them, but consumers that want the strong guarantee — "this row's
+// per-kind sums match its template-arg pack values 1:1" — can gate
+// on IsCanonicalConcurrentRow.
+//
+// Canonical form is the typed counterpart to intra-row overflow
+// safety: every canonical row is trivially intra-safe (no fold to
+// wrap), and a canonical row's `concurrent_row_value_v<K, R>` is
+// exactly the value of the (zero or one) K-kind tag in R.
+//
+// FitsCog and ConcurrentlySchedulable do NOT require canonical input
+// (that would break valid uses like the static_assert at line ~583
+// where summing pre-non-canonical inputs is the test).  Callers that
+// want the stronger invariant opt in via the concept.
+
+namespace detail {
+
+template <ResourceKind K, typename R>
+struct kind_occurrence_count;
+
+template <ResourceKind K>
+struct kind_occurrence_count<K, ConcurrentRow<>> {
+    static constexpr std::size_t value = 0;
+};
+
+template <ResourceKind K, ResourceTag... Ts>
+struct kind_occurrence_count<K, ConcurrentRow<Ts...>> {
+    static constexpr std::size_t value =
+        ((Ts::kind == K ? std::size_t{1} : std::size_t{0}) + ... + std::size_t{0});
+};
+
+template <typename R>
+[[nodiscard]] consteval bool eval_is_canonical_concurrent_row_() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto ea : enumerators) {
+        constexpr ResourceKind kind = [:ea:];
+        if (kind_occurrence_count<kind, R>::value > 1) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+template <typename R>
+inline constexpr bool is_canonical_concurrent_row_v =
+    eval_is_canonical_concurrent_row_<R>();
+
+}  // namespace detail
+
+template <typename R>
+inline constexpr bool is_canonical_concurrent_row_v =
+    detail::is_canonical_concurrent_row_v<R>;
+
+template <typename R>
+concept IsCanonicalConcurrentRow =
+    IsConcurrentRow<R> && is_canonical_concurrent_row_v<R>;
+
 // ── ConcurrentlySchedulable concept ─────────────────────────────────
 //
-// R1 and R2 are concurrently schedulable iff the pairwise sum on
-// every kind does NOT overflow uint64_t.  Without this gate, an
-// oversubscribed schedule (e.g., two ops each declaring HbmBytes
-// near UINT64_MAX) would silently wrap and pass the FitsCog check.
+// R1 and R2 are concurrently schedulable iff:
+//   1. each row is intra-row-overflow-safe (per-kind sum within the
+//      row doesn't wrap — closes the FIXY-FOUND-012 bypass), AND
+//   2. the pairwise inter-row sum on every kind does NOT overflow
+//      uint64_t.
 //
-// The check evaluates one no-overflow predicate per ResourceKind
-// — bounded compile-time cost, no runtime trace.
+// Without (1), an oversubscribed schedule whose per-row sum already
+// wraps would have its kind-sum lookup return 0, making the inter-
+// row check trivially pass — total bypass.  With (1), the per-row
+// lookups are themselves trustworthy before the inter-row guard
+// reads them.
+//
+// The check evaluates one no-overflow predicate per ResourceKind per
+// row, plus one per pair — bounded compile-time cost, no runtime
+// trace.
 //
 // Note: this is a NECESSARY condition for valid concurrent
 // scheduling but not sufficient.  GAPS-191 cog/FitsCog.h adds the
@@ -446,6 +625,8 @@ inline constexpr bool concurrently_schedulable_v =
 
 template <typename R1, typename R2>
 concept ConcurrentlySchedulable =
+    detail::intra_row_overflow_safe_v<R1> &&
+    detail::intra_row_overflow_safe_v<R2> &&
     detail::concurrently_schedulable_v<R1, R2>;
 
 // ── Row-level type-erased descriptors (fixy-A3-029) ─────────────────
@@ -476,25 +657,8 @@ template <typename R>
 inline constexpr auto concurrent_row_descriptors_v =
     concurrent_row_descriptors<R>::value;
 
-// IsConcurrentRow concept — recognizes the carrier shape.  Useful
-// for downstream generic algorithms (FitsCog) that need to dispatch
-// on "is this a ConcurrentRow?".
-namespace detail {
-
-template <typename T>
-struct is_concurrent_row : std::false_type {};
-
-template <ResourceTag... Ts>
-struct is_concurrent_row<ConcurrentRow<Ts...>> : std::true_type {};
-
-}  // namespace detail
-
-template <typename T>
-inline constexpr bool is_concurrent_row_v =
-    detail::is_concurrent_row<T>::value;
-
-template <typename T>
-concept IsConcurrentRow = is_concurrent_row_v<T>;
+// IsConcurrentRow — defined at top of file, just after ConcurrentRow
+// carrier (see "Co-located with the carrier" rationale there).
 
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::concurrent_row_self_test {
@@ -642,6 +806,168 @@ static_assert(ConcurrentlySchedulable<
 static_assert(!ConcurrentlySchedulable<
     ConcurrentRow<resource::CarbonGramsPerKwh<UINT64_MAX>>,
     ConcurrentRow<resource::CarbonGramsPerKwh<1>>>);
+
+// ── FIXY-FOUND-100: intra-row overflow detection ───────────────────
+//
+// Per-row safety: each row's intra-row left-fold doesn't wrap.
+
+// Empty row: trivially intra-safe (no fold).
+static_assert(intra_row_overflow_safe_v<ConcurrentRow<>>);
+
+// Singleton row: any single tag is intra-safe (acc=0, +V doesn't
+// wrap because V ≤ UINT64_MAX and acc starts at 0).
+static_assert(intra_row_overflow_safe_v<
+    ConcurrentRow<resource::SmBudget<UINT64_MAX>>>);
+
+// Non-canonical row with safe sum: SmBudget<10> + SmBudget<20> = 30,
+// no wrap.  Pre-existing public contract (canonicalisable input) is
+// preserved.
+static_assert(intra_row_overflow_safe_v<
+    ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
+
+// Three-way same-kind safe sum.
+static_assert(intra_row_overflow_safe_v<
+    ConcurrentRow<resource::SmBudget<10>,
+                  resource::SmBudget<20>,
+                  resource::SmBudget<30>>>);
+
+// THE BUG WITNESS — FIXY-FOUND-012 scenario.  SmBudget<UINT64_MAX> +
+// SmBudget<1> wraps to 0.  Pre-fix, `concurrent_row_value_v<Sm, R>`
+// returns 0 silently and `ConcurrentlySchedulable<R, EmptyRow>`
+// returns TRUE — total bypass.  Post-fix, intra_row_overflow_safe_v
+// returns FALSE and ConcurrentlySchedulable rejects.
+static_assert(!intra_row_overflow_safe_v<
+    ConcurrentRow<resource::SmBudget<UINT64_MAX>,
+                  resource::SmBudget<1>>>);
+
+// Cross-kind: one wrapping kind taints the entire row.
+static_assert(!intra_row_overflow_safe_v<
+    ConcurrentRow<resource::SmBudget<32>,
+                  resource::HbmBytes<UINT64_MAX>,
+                  resource::HbmBytes<1>>>);
+
+// Last-catalog-atom overflow — proves the reflection loop visits the
+// final enumerator (mirrors the inter-row variant at line ~642).
+static_assert(!intra_row_overflow_safe_v<
+    ConcurrentRow<resource::CarbonGramsPerKwh<UINT64_MAX>,
+                  resource::CarbonGramsPerKwh<1>>>);
+
+// Three-tag intra-row with partial-sum overflow at step 2 (not the
+// final value).  Proves the LEFT-FOLD detection — pre-fix a "final
+// sum != 0" check would miss this.  Sequence:
+//   acc=0, +UINT64_MAX-10 → acc=UINT64_MAX-10 (safe)
+//   acc=UINT64_MAX-10, +20 → wraps (UINT64_MAX-10 + 20 = 9, not safe)
+//   acc=??, +1 → terminates after first failure
+static_assert(!intra_row_overflow_safe_v<
+    ConcurrentRow<resource::SmBudget<UINT64_MAX - 10>,
+                  resource::SmBudget<20>,
+                  resource::SmBudget<1>>>);
+
+// IntraRowOverflowSafe concept — combines IsConcurrentRow gate with
+// the predicate.
+static_assert(IntraRowOverflowSafe<ConcurrentRow<>>);
+static_assert(IntraRowOverflowSafe<
+    ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
+static_assert(!IntraRowOverflowSafe<
+    ConcurrentRow<resource::SmBudget<UINT64_MAX>,
+                  resource::SmBudget<1>>>);
+static_assert(!IntraRowOverflowSafe<int>);
+
+// ── FIXY-FOUND-100 regression — ConcurrentlySchedulable now rejects
+//                                intra-row-unsafe inputs ────────────
+//
+// THIS IS THE FIXY-FOUND-012 BYPASS WITNESS.  Pre-fix, the line below
+// would have asserted `true` (inter-row guard sees 0 + 0).  Post-fix,
+// the intra-row guard on R1 fires before the inter-row check runs,
+// and the concept rejects.
+static_assert(!ConcurrentlySchedulable<
+    ConcurrentRow<resource::SmBudget<UINT64_MAX>,
+                  resource::SmBudget<1>>,
+    ConcurrentRow<>>);
+
+// Symmetric: R2 is intra-row-unsafe.
+static_assert(!ConcurrentlySchedulable<
+    ConcurrentRow<>,
+    ConcurrentRow<resource::SmBudget<UINT64_MAX>,
+                  resource::SmBudget<1>>>);
+
+// Both unsafe.
+static_assert(!ConcurrentlySchedulable<
+    ConcurrentRow<resource::SmBudget<UINT64_MAX>,
+                  resource::SmBudget<1>>,
+    ConcurrentRow<resource::HbmBytes<UINT64_MAX>,
+                  resource::HbmBytes<1>>>);
+
+// ── FIXY-FOUND-100: canonical-form gate ─────────────────────────────
+
+// Empty row is canonical (zero tags, zero duplicates).
+static_assert(is_canonical_concurrent_row_v<ConcurrentRow<>>);
+
+// Singleton row is canonical.
+static_assert(is_canonical_concurrent_row_v<
+    ConcurrentRow<resource::SmBudget<32>>>);
+
+// Two distinct kinds: canonical.
+static_assert(is_canonical_concurrent_row_v<
+    ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
+
+// Three distinct kinds in arbitrary order: canonical.
+static_assert(is_canonical_concurrent_row_v<
+    ConcurrentRow<resource::NicQp<4>,
+                  resource::SmBudget<32>,
+                  resource::HbmBytes<1024>>>);
+
+// Same kind twice: NOT canonical.
+static_assert(!is_canonical_concurrent_row_v<
+    ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
+
+// Same kind three times: NOT canonical.
+static_assert(!is_canonical_concurrent_row_v<
+    ConcurrentRow<resource::SmBudget<10>,
+                  resource::SmBudget<20>,
+                  resource::SmBudget<30>>>);
+
+// Mixed: distinct kinds + duplicate kind → NOT canonical.
+static_assert(!is_canonical_concurrent_row_v<
+    ConcurrentRow<resource::SmBudget<32>,
+                  resource::NicQp<4>,
+                  resource::SmBudget<64>>>);
+
+// Last-catalog-atom duplication — proves the reflection loop visits
+// the final enumerator.
+static_assert(!is_canonical_concurrent_row_v<
+    ConcurrentRow<resource::CarbonGramsPerKwh<10>,
+                  resource::CarbonGramsPerKwh<20>>>);
+
+// `concurrent_row_sum_t` always produces canonical output (the
+// documented contract at line ~342).  Pin it.
+static_assert(IsCanonicalConcurrentRow<
+    concurrent_row_sum_t<
+        ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>,
+        ConcurrentRow<resource::SmBudget<30>>>>);
+
+static_assert(IsCanonicalConcurrentRow<
+    concurrent_row_sum_t<
+        ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>,
+        ConcurrentRow<resource::SmBudget<64>, resource::NicQp<2>>>>);
+
+// IsCanonicalConcurrentRow concept guards: empty, singleton, and
+// distinct-kind packs satisfy; non-ConcurrentRow types reject; dup-
+// kind packs reject.
+static_assert(IsCanonicalConcurrentRow<ConcurrentRow<>>);
+static_assert(IsCanonicalConcurrentRow<
+    ConcurrentRow<resource::SmBudget<32>>>);
+static_assert(!IsCanonicalConcurrentRow<int>);
+static_assert(!IsCanonicalConcurrentRow<
+    ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
+
+// Canonical implies intra-safe (every canonical row trivially has at
+// most one tag per kind, so the intra-row fold is degenerate).  This
+// is a structural relationship pinned by the witness pairs above —
+// every IsCanonicalConcurrentRow witness here also satisfies
+// IntraRowOverflowSafe.
+static_assert(IntraRowOverflowSafe<
+    ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
 
 // ── IsConcurrentRow concept ────────────────────────────────────────
 static_assert(IsConcurrentRow<ConcurrentRow<>>);
