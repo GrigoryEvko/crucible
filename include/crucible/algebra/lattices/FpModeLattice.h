@@ -540,6 +540,28 @@ struct FpInfPolicyLattice : ChainLatticeOps<FpInfPolicy> {
     }
 }
 
+// FIXY-FOUND-094 (#2249): SEMANTIC NOTE.  FpComplexLayout enumerators
+// are MUTUALLY EXCLUSIVE memory-layout alternatives (Interleaved /
+// SplitRealImag / SplitImagReal), not strictness tiers.  Picking
+// SplitImagReal is NOT "stronger" than picking Interleaved — they are
+// orthogonal file-format choices analogous to big-endian vs
+// little-endian.  This struct extends ChainLatticeOps because the
+// substrate `algebra/Graded.h` expects a Lattice satisfying leq, but
+// the leq ordering here is VALUE-BASED (ordinal comparison on the
+// underlying uint8_t), NOT SEMANTIC.  In production, the wrapper
+// `FpComplexLayoutPinned<Mode, T>` (safety/FpMode.h) admits NO cross-
+// mode conversion (no relax / no widen / no satisfies surface — see
+// safety/FpMode.h §"Why NO relax<>/satisfies<> conversion API") —
+// the chain ordering is invisible to user code by construction.
+//
+// The static_asserts below (`leq(Interleaved, SplitImagReal) == true`)
+// pin the INDEX-only ordering for substrate composition (Graded /
+// FpModeProductLattice) but carry no semantic weight — readers must
+// not interpret them as "Interleaved is admissible-where-SplitImagReal
+// is-required".  Two distinct FpComplexLayoutPinned<...> values are
+// strictly incompatible at the wrapper level.
+//
+// Same pattern applies to FpLibmPolicyLattice below.
 struct FpComplexLayoutLattice : ChainLatticeOps<FpComplexLayout> {
     [[nodiscard]] static constexpr FpComplexLayout bottom() noexcept { return FpComplexLayout::Interleaved; }
     [[nodiscard]] static constexpr FpComplexLayout top()    noexcept { return FpComplexLayout::SplitImagReal; }
@@ -583,6 +605,26 @@ struct FpComplexLayoutLattice : ChainLatticeOps<FpComplexLayout> {
     }
 }
 
+// FIXY-FOUND-094 (#2249): SEMANTIC NOTE.  FpLibmPolicy enumerators are
+// MUTUALLY EXCLUSIVE vendor/implementation alternatives (ScalarLibm /
+// VectorLibmSleef / VectorLibmSvml / VectorLibmLibmvec / FastApproxNv /
+// FastApproxAm / Polynomial), not strictness tiers.  SVML is NOT
+// "stronger" than Libmvec; they are orthogonal SIMD-libm choices that
+// dispatch by vendor.  Polynomial is axis-orthogonal bit-stable per
+// the Polynomial enum-line docblock — its ordinal placement here is
+// INDEX-only.
+//
+// Same INDEX-only / VALUE-BASED chain ordering caveat as
+// FpComplexLayoutLattice (see comment-block above) applies: the
+// wrapper `FpLibmPolicyPinned<Mode, T>` admits NO cross-mode
+// conversion (no relax / no widen / no satisfies), and production
+// discipline never uses leq()/join()/meet() to reason about libm
+// policies — recipe-tier eligibility lives at the call site via
+// grant tag `fixy::with_fp_libm_policy<Polynomial>` and the recipe
+// registry, NOT in this lattice's chain order.  The static_assert
+// `leq(ScalarLibm, FastApproxAm) == true` pins the value-based order
+// for substrate composition only; readers must not interpret it as
+// "ScalarLibm satisfies a FastApproxAm requirement".
 struct FpLibmPolicyLattice : ChainLatticeOps<FpLibmPolicy> {
     [[nodiscard]] static constexpr FpLibmPolicy bottom() noexcept { return FpLibmPolicy::ScalarLibm; }
     // FIXY-V-095: top() bumped to Polynomial after append-only universe
