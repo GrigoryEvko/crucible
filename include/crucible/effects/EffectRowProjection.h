@@ -118,24 +118,49 @@ public:
 
     // Explicit raw escape — for deserialization paths or interop.
     //
-    // Wire-format hardening (fixy-A3-022): rejects unknown bits that
-    // would otherwise leak silently through `from_raw` and round-trip
-    // back out via `raw()`.  The Effect enum has exactly `effect_count`
-    // atoms (currently 6: Alloc=0 .. Test=5), and `(1u << effect_count)
-    // - 1` is therefore the FULL valid-bit mask.  Any bit at position
-    // ≥ effect_count corresponds to no Effect atom and is poison
-    // injected by a malicious or buggy peer.  CRUCIBLE_PRE fires at
-    // both consteval (poisons the surrounding constant evaluation via
-    // __builtin_trap) and at runtime in debug builds (routed through
-    // crucible::detail::contract_failed).  NDEBUG release builds emit
-    // an `[[assume]]` hint to the optimizer with zero per-call cost.
+    // Wire-format hardening (fixy-A3-022; FIXY-FOUND-105).  Rejects
+    // unknown bits that would otherwise leak silently through
+    // `from_raw` and round-trip back out via `raw()`.  The Effect enum
+    // has exactly `effect_count` atoms (currently 6: Alloc=0 .. Test=5),
+    // and `(1u << effect_count) - 1` is therefore the FULL valid-bit
+    // mask.  Any bit at position ≥ effect_count corresponds to no
+    // Effect atom and is poison injected by a malicious or buggy peer.
+    //
+    // FIXY-FOUND-105: prior code did only `CRUCIBLE_PRE((b & ~valid)
+    // == 0)`.  In NDEBUG release, CRUCIBLE_PRE lowers to `[[assume]]`
+    // — a pure optimizer hint, NOT a runtime check.  Wire-format input
+    // from a malicious peer could carry high bits past Effect::Test;
+    // the `[[assume]]` would then encode a FALSE premise, and downstream
+    // code that depends on `bits_ & ~valid_mask == 0` would compute
+    // wrong answers under UB semantics.
+    //
+    // The fix layers defense-in-depth:
+    //   1. `sanitized = b & valid_mask` — UNCONDITIONAL bit-mask,
+    //      preserved even in release.  Stored EffectMask is always
+    //      well-formed regardless of the input's high bits.  The mask
+    //      costs ONE AND instruction per call; the optimizer cannot
+    //      prove `sanitized == b` unless a CRUCIBLE_PRE further down
+    //      claims it, so the AND survives in the emitted code.
+    //   2. `CRUCIBLE_PRE(sanitized == b)` — debug-runtime catches the
+    //      moment a caller passes a corrupt wire-format value (so the
+    //      bug fires at the deserializer's call site, not in the
+    //      consumer of bits_).  At consteval, fires `__builtin_trap`
+    //      (hard error in static_assert).  At release, lowers to
+    //      `[[assume(sanitized == b)]]` — optimizer treats the stored
+    //      bits as equal to the input, enabling downstream constant
+    //      propagation (e.g., `bits_ & ~valid_mask == 0` folds to true).
+    //
+    // Net effect: malicious-peer wire-format integrity is preserved at
+    // 1 instruction/call in release; debug builds still abort on the
+    // corrupted-input site for fast fault localisation.
     [[nodiscard]] static constexpr EffectMask from_raw(underlying_type b) noexcept {
         constexpr underlying_type valid_mask =
             static_cast<underlying_type>(
                 (underlying_type{1} << effect_count) - underlying_type{1});
-        CRUCIBLE_PRE((b & static_cast<underlying_type>(~valid_mask))
-                     == underlying_type{0});
-        return EffectMask{from_raw_tag_t{}, b};
+        underlying_type const sanitized =
+            static_cast<underlying_type>(b & valid_mask);
+        CRUCIBLE_PRE(sanitized == b);
+        return EffectMask{from_raw_tag_t{}, sanitized};
     }
 
     constexpr void set(Effect e) noexcept {
