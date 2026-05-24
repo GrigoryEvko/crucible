@@ -105,21 +105,40 @@ namespace crucible::fixy::effect {
 // **Semantic — the concept does NOT inspect HOW the Computation was
 // constructed.**  It cannot — once a `Computation<Row<Alloc>, T>` exists,
 // its type is the same regardless of construction path.  The
-// LIGHT-WEIGHT V-219 closure is:
+// V-219 closure has TWO substrate-layer gaps; this concept closes
+// ONE of them at the type level:
 //
-//   * Substrate (Computation.h) — rejects the discipline-unfriendly
-//     path (weaken-from-empty-to-non-empty) at the EXPRESSION level
-//     via the tightened requires-clause on `weaken<R2>`.
+//   * Substrate gap #1 — weaken-from-empty (CLOSED).  Computation.h's
+//     tightened `weaken<R2>` rejects empty→engaged at the expression
+//     level.  The reviewer who sees `weaken<Row<Alloc>>()` on a pure
+//     Computation gets a constraint-violation diagnostic.
+//   * Substrate gap #2 — lift<Cap>(arbitrary_value) (OPEN — FIXY-FOUND-014).
+//     `lift<Cap>(x)` accepts ANY value `x` and tags the result with
+//     `Row<Cap>`, with no proof the production of `x` exercised Cap.
+//     `Computation<Row<>, T>::lift<Bg>(some_pure_computation)`
+//     succeeds, creating an engaged-claim Computation from a
+//     discipline-free source.
 //   * Band-3 (this concept) — surfaces the "row is engaged" claim at
 //     the TYPE level so band-3 stances can require their callable's
 //     return type to claim engagement.
 //
-// The two layers compose: the substrate forbids the unsound
-// construction path, this concept surfaces the engagement claim for
-// downstream stances.  A `Computation<Row<Effect::Alloc>, T>` that
-// reaches a `requires RowEngagementWitnessed<C>` gate is GUARANTEED
-// (by substrate construction) to have come from a `lift` / stage
-// mint / chained `then` path — i.e. the body really did engage Alloc.
+// **FIXY-FOUND-110 honest framing: the concept is structurally-honest
+// but discipline-blind.**  It correctly reports the type-level row
+// claim, and that's what a band-3 gate consumes.  But because
+// substrate gap #2 (FIXY-FOUND-014) is still open, the engagement
+// claim a satisfying type carries is NOT a guarantee that the body
+// actually engaged the named effect — it's a guarantee that the
+// developer who CONSTRUCTED the value claimed the effect at the call
+// site.  The substrate forbids one forging path (weaken-from-empty);
+// the other forging path (lift-from-arbitrary) is reviewer
+// discipline + the OPEN FIXY-FOUND-014 substrate-gap closure.
+//
+// When FIXY-FOUND-014 closes (substrate gap #2), a sibling concept
+// `RowEngagementProvenancePinned<C>` can layer on top, requiring a
+// provenance witness type on Computation.  Existing call sites
+// continue to use `RowEngagementWitnessed<C>` for the type-level
+// surface; the discipline-pinning variant is opt-in for sites that
+// need the stronger guarantee.  Decoupling per the V-219 doc above.
 //
 // ── Why not just `effect_count_in_row(C) > 0`? ─────────────────────
 //
@@ -216,7 +235,43 @@ static_assert([] consteval {
     "FIXY-V-219 self-test: then-chained Computation carries the row-union; "
     "RowEngagementWitnessed must accept the engaged result.");
 
-// (4) CARDINALITY witness — fixy::effect:: surface holds exactly the
+// (4) DISCIPLINE-BLINDNESS witness (FIXY-FOUND-110) — positive
+// surface for the open FIXY-FOUND-014 substrate gap.  The concept
+// reports the TYPE-LEVEL row claim, NOT the construction-path
+// discipline.  A `lift<Cap>(arbitrary_value)` produces a
+// Computation<Row<Cap>, T> whose claim of Cap engagement is
+// type-level only — the value `x` itself need not have exercised
+// Cap.  This pin demonstrates the concept ACCEPTS such a Computation
+// because that's the honest answer it can give at the type layer.
+//
+// The pin is load-bearing: if a future maintainer adds a substrate-
+// level discipline gate that rejects this construction, the
+// behavior of RowEngagementWitnessed against lift<Cap>(pure) would
+// shift, and this pin would red — forcing the doc-block above to
+// be updated to reflect the new discipline.
+//
+// Companion to FIXY-FOUND-014's open closure surface.  When 014
+// closes, a `RowEngagementProvenancePinned<C>` sibling layers
+// discipline-checking on top; this concept stays type-level-honest.
+static_assert([] consteval {
+    // Pure source value — int{42} has no effect-row history.
+    int pure_source = 42;
+    // Cast the pure value into an "engaged" Computation via lift.
+    // FIXY-FOUND-014's open hole: lift does not gate on whether
+    // `pure_source` was produced under a Bg-capable context.
+    auto forged_engaged =
+        eff::Computation<eff::Row<>, int>::template lift<eff::Effect::Bg>(pure_source);
+    return RowEngagementWitnessed<decltype(forged_engaged)>;
+}(),
+    "FIXY-FOUND-110: RowEngagementWitnessed is structurally-honest "
+    "but discipline-blind — it accepts lift<Bg>(pure_value) because "
+    "the result's TYPE claims Row<Bg>, regardless of whether the "
+    "value's production discipline matched.  This pin documents the "
+    "open FIXY-FOUND-014 substrate gap (lift bypass) AT the concept's "
+    "self-test surface.  If the substrate gains a discipline gate, "
+    "this pin will red and the doc-block above must be refreshed.");
+
+// (5) CARDINALITY witness — fixy::effect:: surface holds exactly the
 // V-219 concept today.  This sentinel reds when V-219 grows new
 // concepts in the same namespace, forcing the doc-block at top to
 // be updated in parallel.  Cardinality witness pattern from
@@ -224,8 +279,10 @@ static_assert([] consteval {
 inline constexpr std::size_t effect_surface_cardinality = 1;
 static_assert(effect_surface_cardinality == 1,
     "FIXY-V-219 cardinality sentinel: fixy::effect:: ships exactly one "
-    "concept today (RowEngagementWitnessed).  If a sibling concept lands, "
-    "bump this constant AND refresh the umbrella doc-block at the top "
-    "of fixy/Effect.h to enumerate the new entry.");
+    "concept today (RowEngagementWitnessed).  If a sibling concept lands "
+    "(e.g. RowEngagementProvenancePinned per FIXY-FOUND-110 forward "
+    "shape, once FIXY-FOUND-014 closes), bump this constant AND refresh "
+    "the umbrella doc-block at the top of fixy/Effect.h to enumerate "
+    "the new entry.");
 
 }  // namespace crucible::fixy::effect::self_test
