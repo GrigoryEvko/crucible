@@ -159,6 +159,26 @@ public:
         [[nodiscard]] std::uint64_t version() const noexcept {
             return snap_->snap_.version();
         }
+
+        // FIXY-FOUND-113-AUDIT: release the writer Permission so the
+        // caller can pass it to PermissionedSnapshot::with_recombined_
+        // access for TRUE full-exclusion mode transitions.  Linear
+        // discipline preserved: this method is rvalue-qualified, so
+        // the WriterHandle is consumed at the call site.  After
+        // release, the handle is moved-from; do not call publish() on
+        // it (the moved-from Permission's state is unspecified).
+        //
+        // Usage:
+        //   auto handle = snap.writer(std::move(perm));
+        //   handle.publish(x);
+        //   auto perm_back = std::move(handle).release_permission();
+        //   auto r = snap.with_recombined_access(std::move(perm_back),
+        //                                       [&]() noexcept { ... });
+        //   handle = snap.writer(std::move(r.writer_perm));
+        [[nodiscard]] safety::Permission<writer_tag>
+        release_permission() && noexcept {
+            return std::move(perm_);
+        }
     };
 
     // ── ReaderHandle ──────────────────────────────────────────────
