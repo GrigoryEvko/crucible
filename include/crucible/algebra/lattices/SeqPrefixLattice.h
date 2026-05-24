@@ -28,10 +28,43 @@
 //
 // Under prefix order:
 //   - bottom = ε (empty sequence) — every sequence has ε as prefix.
-//   - top    = no greatest element in the general unbounded case.
+//   - top    = no greatest element in the general unbounded case
+//              (see FIXY-FOUND-097 reconciliation below — the
+//              IMPLEMENTATION pins a synthesized practical ceiling).
 //   - meet   = longest common prefix (always exists).
 //   - join   = NOT GENERAL — two sequences with no common extension
 //              have no join (the prefix order is only a SEMI-lattice).
+//
+// ── Mathematical-vs-implementation top() reconciliation ─────────────
+//
+// FIXY-FOUND-097 (#2252):  the mathematical model above says the
+// unbounded prefix order has NO greatest element.  The implementation
+// nonetheless ships `top() = element_type{SIZE_MAX}` — a SYNTHESIZED
+// ceiling, NOT a faithful encoding of the mathematical model.  The
+// reconciliation is deliberate:
+//
+//   (1) The Lattice / BoundedAboveLattice concepts in algebra/Lattice.h
+//       require a `top()` returning a representable element_type — a
+//       NULL-OBJECT-style ceiling is necessary for at_top queries,
+//       widen/relax range checks, and the verify_bounded_lattice_axioms
+//       rollup that every Tier-Lattice wrapper must satisfy.
+//
+//   (2) SIZE_MAX is UNREACHABLE in practice — any sequence with
+//       SIZE_MAX-1 elements would already have exhausted addressable
+//       memory (8 bytes × ~1.8e19 entries ≫ 2^48 user virtual address
+//       bits).  The ceiling is operationally infinite while remaining
+//       a representable size_t value.
+//
+//   (3) Under the length-encoding (see below), the prefix order becomes
+//       a TOTAL order on length, the join always exists, and SIZE_MAX
+//       is a sound algebraic top (every length is ≤ SIZE_MAX; SIZE_MAX
+//       join anything = SIZE_MAX; SIZE_MAX is the unique fixed point
+//       of join).
+//
+// Net: the wrapper IS a true BoundedLattice algebraically, the bound
+// is OPERATIONALLY unbounded.  The mathematical claim above (about
+// the general unbounded prefix order) holds; the synthesized ceiling
+// is an implementation choice the Graded substrate REQUIRES.
 //
 // ── Why the encoding uses LENGTH, not the sequence ─────────────────
 //
@@ -149,11 +182,12 @@ struct SeqPrefixLattice {
         return element_type{0};
     }
     [[nodiscard]] static constexpr element_type top() noexcept {
-        // No mathematical top in the unbounded prefix order, but the
-        // type system needs a representative ceiling for at_top
-        // queries and for spec-test bounds witnesses.  SIZE_MAX is
-        // the practical ceiling — any longer sequence would already
-        // have overflowed the size representation.
+        // Synthesized ceiling.  See FIXY-FOUND-097 file-header
+        // reconciliation block for the full design rationale —
+        // mathematical prefix-order has no greatest element, but
+        // the length-encoding collapses to a total order and
+        // SIZE_MAX is the operationally-unreachable representable
+        // ceiling that satisfies BoundedAboveLattice's contract.
         return element_type{std::numeric_limits<std::size_t>::max()};
     }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
