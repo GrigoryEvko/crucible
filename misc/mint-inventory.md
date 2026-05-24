@@ -18,7 +18,7 @@ factory is named `mint_<noun>`.  Each row records:
 |---|---|
 | `mint_name` | The factory's identifier. |
 | `file:line` | Substrate declaration site (canonical). |
-| `nd cx ne rq` | §XXI compliance flags: `[[nodiscard]]` / `constexpr` (or `consteval`) / `noexcept` / `requires`-clause.  `Y` = present, `-` = absent.  `- (alloc)` in the `cx` column = documented carve-out (FIXY-V-021): the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI `constexpr` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the `// §XXI carve-out: cx=alloc` marker placed immediately above the `[[nodiscard]]` line at the mint signature. |
+| `nd cx ne rq` | §XXI compliance flags: `[[nodiscard]]` / `constexpr` (or `consteval`) / `noexcept` / `requires`-clause.  `Y` = present, `-` = absent.  `- (alloc)` in the `cx` column = documented carve-out (FIXY-V-021): the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI `constexpr` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the `// §XXI carve-out: cx=alloc` marker placed immediately above the `[[nodiscard]]` line at the mint signature.  `- (pre)` in the `rq` column = documented carve-out (FIXY-FOUND-082): the gate is a P2900 `pre(...)` clause instead of a `requires`-clause because the predicate is value-dependent (inspects carrier runtime state, not just template arguments) and cannot lift into a concept.  Canonical example: `mint_view`'s `pre(view_ok(c, type_identity<Tag>{}))`.  Marker: `// §XXI carve-out: rq=pre` above the mint signature. |
 | `cb` | Authorization shape: `ctx` (ctx-bound mint, `Ctx const&` first parameter), `token` (token mint, derives authority from a parent token), or `member` (class-method mint — see "Member-function mints" section below). |
 | `fixy` | fixy:: re-export site (`include/crucible/fixy/...`) or `[✗ NO-FIXY]` gap.  Inapplicable for the `member` row (class-method mints cannot be `using`-re-exported at namespace scope). |
 | `HS14` | Count of neg-compile fixtures across all `test/*_neg/` trees (fixy_neg, warden_neg, perf_neg, effects_neg, safety_neg, …) mentioning this mint (HS14 floor is 2). |
@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-24T14:51:21Z`.
+Snapshot generated: `2026-05-24T15:01:55Z`.
 
 ## bridges/
 
@@ -95,14 +95,14 @@ Snapshot generated: `2026-05-24T14:51:21Z`.
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h:697` | - | Y | Y | - | token | `include/crucible/fixy/Perm.h:201` | HS14: 24 |
-| `mint_permission_combine` | `include/crucible/permissions/Permission.h:504` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:33` | HS14: 2 |
-| `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:533` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:35` | HS14: 2 |
+| `mint_permission_combine` | `include/crucible/permissions/Permission.h:744` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:33` | HS14: 2 |
+| `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:839` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:35` | HS14: 2 |
 | `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/ctrl/Throws.h:14` | HS14: 10 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:287` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:109` | HS14: 6 |
 | `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 172 |
-| `mint_permission_share` | `include/crucible/permissions/Permission.h:1038` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:19` | HS14: 4 |
-| `mint_permission_split` | `include/crucible/permissions/Permission.h:484` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 25 |
-| `mint_permission_split_n` | `include/crucible/permissions/Permission.h:516` | - | Y | Y | Y | ctx | `include/crucible/fixy/Perm.h:34` | HS14: 4 |
+| `mint_permission_share` | `include/crucible/permissions/Permission.h:1339` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:19` | HS14: 4 |
+| `mint_permission_split` | `include/crucible/permissions/Permission.h:673` | Y | Y | Y | - | ctx | `include/crucible/fixy/Perm.h:32` | HS14: 25 |
+| `mint_permission_split_n` | `include/crucible/permissions/Permission.h:787` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:34` | HS14: 4 |
 | `mint_read_view` | `include/crucible/permissions/ReadView.h:156` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:139` | HS14: 4 |
 | `mint_self_signed_handshake` | `include/crucible/permissions/FederationPermission.h:634` | Y | Y | Y | Y | token | `include/crucible/fixy/Source.h:281` | HS14: 4 |
 
@@ -124,7 +124,7 @@ Snapshot generated: `2026-05-24T14:51:21Z`.
 | `mint_hw` | `include/crucible/safety/Hw.h:190` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_join_policy` | `include/crucible/safety/JoinPolicy.h:390` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_linear` | `include/crucible/safety/Linear.h:275` | Y | Y | Y | Y | token | `include/crucible/fixy/Safety.h:12` | HS14: 4 |
-| `mint_linear_view` | `include/crucible/safety/ScopedView.h:200` | Y | Y | Y | - | token | `include/crucible/fixy/Safety.h:43` | HS14: 3 |
+| `mint_linear_view` | `include/crucible/safety/ScopedView.h:212` | Y | Y | Y | - (pre) | token | `include/crucible/fixy/Safety.h:43` | HS14: 3 |
 | `mint_machine` | `include/crucible/safety/Machine.h:139` | Y | Y | Y | Y | token | `include/crucible/fixy/Mach.h:154` | HS14: 6 |
 | `mint_refined` | `include/crucible/safety/Refined.h:383` | Y | Y | Y | Y | token | `include/crucible/fixy/AsyncPipeline.h:179` | HS14: 4 |
 | `mint_sched_class` | `include/crucible/safety/SchedClass.h:196` | Y | Y | Y | Y | token | `include/crucible/fixy/Sched.h:261` | HS14: 3 |
@@ -138,7 +138,7 @@ Snapshot generated: `2026-05-24T14:51:21Z`.
 | `mint_tagged` | `include/crucible/safety/Tagged.h:854` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1191` | HS14: 6 |
 | `mint_thread_local_ref` | `include/crucible/safety/ThreadLocalRef.h:224` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_thread_name` | `include/crucible/safety/ThreadName.h:137` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Sched.h:20` | HS14: 2 |
-| `mint_view` | `include/crucible/safety/ScopedView.h:100` | - | Y | Y | - | token | `include/crucible/fixy/Safety.h:41` | HS14: 10 |
+| `mint_view` | `include/crucible/safety/ScopedView.h:168` | Y | Y | Y | - (pre) | token | `include/crucible/fixy/Safety.h:41` | HS14: 10 |
 | `mint_witness` | `include/crucible/safety/Witness.h:411` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1190` | HS14: 1 ⚠ |
 | `mint_works` | `include/crucible/safety/CpuPinned.h:274` | Y | Y | Y | - | token | [✗ NO-FIXY] | HS14: 0 ⚠ |
 

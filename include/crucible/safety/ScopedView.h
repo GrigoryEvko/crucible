@@ -155,7 +155,14 @@ public:
 // (found via ADL on Carrier) as a contract precondition.  Returns a
 // freshly-constructed view.  Anyone may call it — but every call is
 // discoverable via grep `mint_view<`, and every call pays one runtime
-// state check.
+// state check.  Per §XXI: `view_ok` is value-dependent (inspects the
+// Carrier's runtime state, not just template arguments), so the gate
+// is a P2900 `pre(...)` clause instead of a `requires`-clause concept.
+// SFINAE / concept machinery cannot inspect this gate — mint_view
+// appears always-callable until the call fires the pre at runtime or
+// consteval.  HS14 floor satisfied by 10 existing fixtures; per-check
+// exemption at scripts/mint-pattern-allowlist.txt:161:requires-ok.
+// §XXI carve-out: rq=pre — FIXY-FOUND-082, inventory grep-target.
 template <typename Tag, typename Carrier>
 [[nodiscard]] constexpr ScopedView<Carrier, Tag>
 mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept
@@ -195,6 +202,11 @@ using LinearScopedView = Linear<ScopedView<Carrier, Tag>>;
 // Factory: mint a LinearScopedView.  Fires the same view_ok precondition
 // as mint_view but wraps the result in Linear<> so the caller has a
 // move-only lifecycle token.
+//
+// §XXI carve-out: rq=pre — same value-dependent rationale as mint_view
+// above (view_ok inspects Carrier's runtime state, no template-only
+// lifting possible).  Per-check exemption at scripts/mint-pattern-
+// allowlist.txt:200:requires-ok.  (FIXY-FOUND-082.)
 template <typename Tag, typename Carrier>
 [[nodiscard]] constexpr LinearScopedView<Carrier, Tag>
 mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept

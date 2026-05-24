@@ -67,8 +67,11 @@ trees=(safety effects algebra concurrent sessions permissions bridges handles ci
 # Inputs: file path (absolute), line number.
 # Reads lines [N-10 .. N+5] and inspects them for [[nodiscard]],
 # constexpr/consteval, noexcept, requires, a ctx-bound first
-# parameter (Ctx const& / eff::IsExecCtx), and the §XXI alloc
-# carve-out marker (`// §XXI carve-out: cx=alloc`).
+# parameter (Ctx const& / eff::IsExecCtx), and TWO §XXI carve-out
+# markers — `cv` for `// §XXI carve-out: cx=alloc` and `cv_rq` for
+# `// §XXI carve-out: rq=pre` (FIXY-FOUND-082, value-dependent
+# predicate that cannot lift into a `requires`-clause concept; the
+# gate is a P2900 `pre(...)` clause instead).
 #
 # FIXY-V-021: the window was widened from `line - 2` to `line - 10`
 # to accept a multi-line carve-out marker between the `requires`
@@ -92,12 +95,14 @@ trees=(safety effects algebra concurrent sessions permissions bridges handles ci
 #
 # When `cv=1` AND `cx=0`, the inventory renders the cx column as
 # `- (alloc)` instead of bare `-` — surfacing that the absence is
-# documented, not a §XXI compliance gap.  A site that carries the
-# marker AND `constexpr` is a contradiction; the inventory still
-# emits `Y` in that case (constexpr wins) but the auditor surface
-# still grep-finds the marker.
+# documented, not a §XXI compliance gap.  When `cv_rq=1` AND `rq=0`,
+# the inventory analogously renders the rq column as `- (pre)`.
+# A site that carries either marker AND the language qualifier the
+# carve-out is excusing is a contradiction; the inventory still
+# emits `Y` in that case (qualifier detection wins) but the auditor
+# surface still grep-finds the marker.
 #
-# Outputs TAB-separated: nd<TAB>cx<TAB>ne<TAB>rq<TAB>cb<TAB>cv
+# Outputs TAB-separated: nd<TAB>cx<TAB>ne<TAB>rq<TAB>cb<TAB>cv<TAB>cv_rq
 # (each 0 or 1).
 extract_qualifiers() {
     local file="$1" line="$2"
@@ -108,19 +113,33 @@ extract_qualifiers() {
     local window
     window="$(sed -n "${start},${end}p" "$file" 2>/dev/null || true)"
 
-    local nd=0 cx=0 ne=0 rq=0 cb=0 cv=0
+    local nd=0 cx=0 ne=0 rq=0 cb=0 cv=0 cv_rq=0
     if grep -qE '\[\[nodiscard\]\]' <<<"$window"; then nd=1; fi
     if grep -qE '\b(constexpr|consteval)\b' <<<"$window"; then cx=1; fi
     if grep -qE '\bnoexcept\b' <<<"$window"; then ne=1; fi
     if grep -qE '\brequires\b' <<<"$window"; then rq=1; fi
     if grep -qE '(Ctx[[:space:]]+const[[:space:]]*&|effects::IsExecCtx|eff::IsExecCtx)' <<<"$window"; then cb=1; fi
     if grep -qF '§XXI carve-out: cx=alloc' <<<"$window"; then cv=1; fi
+    # FIXY-FOUND-082: §XXI carve-out for value-dependent gates that
+    # cannot lift into a `requires`-clause (the predicate inspects
+    # carrier runtime state, not just template arguments).  Canonical
+    # example: mint_view's `pre(view_ok(c, type_identity<Tag>{}))`.
+    # When cv_rq=1 AND rq=0, the inventory renders the rq column as
+    # `- (pre)` — surfacing that the absence is documented, not a §XXI
+    # compliance gap.  The marker is AUTHORITATIVE: we force rq=0 when
+    # cv_rq=1 because the carve-out comment legitimately contains the
+    # word "requires" (rationale text), and the `\brequires\b` regex
+    # would otherwise false-positive on that prose.
+    if grep -qF '§XXI carve-out: rq=pre' <<<"$window"; then
+        cv_rq=1
+        rq=0
+    fi
 
-    printf '%d\t%d\t%d\t%d\t%d\t%d\n' "$nd" "$cx" "$ne" "$rq" "$cb" "$cv"
+    printf '%d\t%d\t%d\t%d\t%d\t%d\t%d\n' "$nd" "$cx" "$ne" "$rq" "$cb" "$cv" "$cv_rq"
 }
 
 # ── Scan one substrate tree for mint_* declarations ──────────────────
-# Emits TAB-separated rows: tree<TAB>name<TAB>file:line<TAB>nd<TAB>cx<TAB>ne<TAB>rq<TAB>cb<TAB>cv
+# Emits TAB-separated rows: tree<TAB>name<TAB>file:line<TAB>nd<TAB>cx<TAB>ne<TAB>rq<TAB>cb<TAB>cv<TAB>cv_rq
 #
 # Filter: skips comment lines (//, ///, *, /*) and pure-call lines
 # (lines whose first non-whitespace token is `return` or `auto X =`).
@@ -185,6 +204,39 @@ scan_substrate() {
         case "$stripped" in
             'friend '*|'friend('*) continue ;;
         esac
+
+        # FIXY-FOUND-082: multi-line `friend` declarations also need to
+        # skip.  The `friend` keyword appears on the line ABOVE the mint
+        # name when the return type and signature span two lines, e.g.:
+        #     template <typename Tag_, typename Carrier_>
+        #     friend constexpr ScopedView<Carrier_, Tag_>
+        #     mint_view(Carrier_ const& c) noexcept;
+        # The single-line skip above misses this because line N (the
+        # mint_NAME line) does NOT start with `friend`; the keyword is on
+        # line N-1.  Walk back through blank-trimmed previous lines until
+        # we hit a `friend` (skip), an opening brace / semicolon (NOT a
+        # friend — fall through), or 5 lines (also NOT a friend).
+        local prev_idx=$((line - 1))
+        local saw_friend=0
+        local walked=0
+        while (( prev_idx >= 1 && walked < 5 )); do
+            local prev_text
+            prev_text="$(sed -n "${prev_idx}p" "$file" 2>/dev/null)"
+            local prev_stripped="${prev_text#"${prev_text%%[![:space:]]*}"}"
+            # Empty / comment-only line: keep walking.
+            case "$prev_stripped" in
+                ''|'//'*|'///'*|'*'*|'/*'*) prev_idx=$((prev_idx - 1)); walked=$((walked + 1)); continue ;;
+            esac
+            # Friend keyword as start of the previous declaration line —
+            # we're inside a multi-line friend.
+            case "$prev_stripped" in
+                'friend '*|'friend('*) saw_friend=1; break ;;
+            esac
+            # Any other declaration-shape token closes the look-back —
+            # the mint is NOT part of a friend declaration.
+            break
+        done
+        (( saw_friend == 1 )) && continue
 
         # Extract mint name from the matched line.  awk avoids head -1 +
         # pipefail traps; rg's pattern guarantees at least one match.
@@ -678,7 +730,7 @@ factory is named \`mint_<noun>\`.  Each row records:
 |---|---|
 | \`mint_name\` | The factory's identifier. |
 | \`file:line\` | Substrate declaration site (canonical). |
-| \`nd cx ne rq\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause.  \`Y\` = present, \`-\` = absent.  \`- (alloc)\` in the \`cx\` column = documented carve-out (FIXY-V-021): the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI \`constexpr\` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the \`// §XXI carve-out: cx=alloc\` marker placed immediately above the \`[[nodiscard]]\` line at the mint signature. |
+| \`nd cx ne rq\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause.  \`Y\` = present, \`-\` = absent.  \`- (alloc)\` in the \`cx\` column = documented carve-out (FIXY-V-021): the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI \`constexpr\` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the \`// §XXI carve-out: cx=alloc\` marker placed immediately above the \`[[nodiscard]]\` line at the mint signature.  \`- (pre)\` in the \`rq\` column = documented carve-out (FIXY-FOUND-082): the gate is a P2900 \`pre(...)\` clause instead of a \`requires\`-clause because the predicate is value-dependent (inspects carrier runtime state, not just template arguments) and cannot lift into a concept.  Canonical example: \`mint_view\`'s \`pre(view_ok(c, type_identity<Tag>{}))\`.  Marker: \`// §XXI carve-out: rq=pre\` above the mint signature. |
 | \`cb\` | Authorization shape: \`ctx\` (ctx-bound mint, \`Ctx const&\` first parameter), \`token\` (token mint, derives authority from a parent token), or \`member\` (class-method mint — see "Member-function mints" section below). |
 | \`fixy\` | fixy:: re-export site (\`include/crucible/fixy/...\`) or \`[✗ NO-FIXY]\` gap.  Inapplicable for the \`member\` row (class-method mints cannot be \`using\`-re-exported at namespace scope). |
 | \`HS14\` | Count of neg-compile fixtures across all \`test/*_neg/\` trees (fixy_neg, warden_neg, perf_neg, effects_neg, safety_neg, …) mentioning this mint (HS14 floor is 2). |
@@ -696,7 +748,7 @@ HEADER
 
     local current_tree=""
     local violation_count=0
-    while IFS=$'\t' read -r tree name fileline nd cx ne rq cb cv; do
+    while IFS=$'\t' read -r tree name fileline nd cx ne rq cb cv cv_rq; do
         if [[ "$tree" != "$current_tree" ]]; then
             [[ -n "$current_tree" ]] && printf '\n'
             printf '## %s/\n\n' "$tree"
@@ -735,6 +787,20 @@ HEADER
             cx_cell="- (alloc)"
         fi
 
+        # FIXY-FOUND-082: `rq=- (pre)` is the documented carve-out for
+        # mints whose gate is a P2900 `pre(...)` clause instead of a
+        # `requires`-clause concept.  Used when the predicate is value-
+        # dependent (inspects carrier runtime state, not just template
+        # arguments) and cannot lift into a concept.  Canonical example:
+        # `mint_view<Tag>(carrier)`'s `pre(view_ok(c, type_identity<Tag>))`.
+        # SFINAE/concept machinery cannot inspect this gate; mint_view
+        # appears always-callable until the call site fires the pre at
+        # runtime/consteval.  The marker `// §XXI carve-out: rq=pre` placed
+        # above the mint signature surfaces the rationale.
+        if [[ "$cv_rq" == "1" && "$rq" == "0" ]]; then
+            rq_cell="- (pre)"
+        fi
+
         local hs14_cell="HS14: $hs14"
         if (( hs14 < 2 )); then
             hs14_cell="HS14: $hs14 ⚠"
@@ -771,7 +837,7 @@ HEADER
         printf 'to distinguish this third authorization shape.\n\n'
         printf '| class::mint_name | file:line | nd | cx | ne | rq | cb | HS14 |\n'
         printf '|---|---|---|---|---|---|---|---|\n'
-        while IFS=$'\t' read -r class_name name fileline nd cx ne rq cb cv; do
+        while IFS=$'\t' read -r class_name name fileline nd cx ne rq cb cv cv_rq; do
             [[ -z "$class_name" ]] && continue
             local mf_nd_cell="-" mf_cx_cell="-" mf_ne_cell="-" mf_rq_cell="-"
             [[ "$nd" == "1" ]] && mf_nd_cell="Y"
@@ -783,6 +849,10 @@ HEADER
             # See substrate loop for full rationale.
             if [[ "$cv" == "1" && "$cx" == "0" ]]; then
                 mf_cx_cell="- (alloc)"
+            fi
+            # FIXY-FOUND-082: §XXI rq=pre carve-out for member-function mints.
+            if [[ "$cv_rq" == "1" && "$rq" == "0" ]]; then
+                mf_rq_cell="- (pre)"
             fi
 
             local mf_hs14 mf_hs14_cell
@@ -823,7 +893,7 @@ HEADER
         printf 'mints) are listed in the substrate section instead.\n\n'
         printf '| mint_name | file:line | nd | cx | ne | rq | cb | HS14 |\n'
         printf '|---|---|---|---|---|---|---|---|\n'
-        while IFS=$'\t' read -r name fileline nd cx ne rq cb cv; do
+        while IFS=$'\t' read -r name fileline nd cx ne rq cb cv cv_rq; do
             [[ -z "$name" ]] && continue
             local fo_nd_cell="-" fo_cx_cell="-" fo_ne_cell="-" fo_rq_cell="-" fo_cb_cell="token"
             [[ "$nd" == "1" ]] && fo_nd_cell="Y"
@@ -835,6 +905,10 @@ HEADER
             # FIXY-V-021: §XXI alloc carve-out — see substrate loop.
             if [[ "$cv" == "1" && "$cx" == "0" ]]; then
                 fo_cx_cell="- (alloc)"
+            fi
+            # FIXY-FOUND-082: §XXI rq=pre carve-out — see substrate loop.
+            if [[ "$cv_rq" == "1" && "$rq" == "0" ]]; then
+                fo_rq_cell="- (pre)"
             fi
 
             local fo_hs14 fo_hs14_cell
