@@ -118,6 +118,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <thread>
 #include <type_traits>
 
 namespace crucible::concurrent {
@@ -404,14 +405,41 @@ public:
                     // bit.  Spin-wait for DataPublished before reading
                     // cell.data — without this, the consumer reads
                     // garbage from the gap between phase 1 and phase
-                    // 3 of the producer's enqueue.  Worst-case wait
-                    // is microseconds (the producer is mid-write,
-                    // possibly descheduled).  Ticket uniqueness
+                    // 3 of the producer's enqueue.  Ticket uniqueness
                     // guarantees only one consumer claims this head
                     // ticket so the spin is on a single producer's
                     // publish, not arbitrarily-many writers.
+                    //
+                    // FIXY-FOUND-111: adaptive backoff.  The previous
+                    // pause-only spin claimed "worst-case microseconds"
+                    // but that was wrong: if the producer is
+                    // descheduled between phase 1 (CAS-reserve) and
+                    // phase 3 (publish), the consumer burns its core
+                    // for an entire OS scheduling quantum (10ms+) per
+                    // the kernel's scheduler.  pause-only is correct
+                    // for intra-core MESI propagation (10-40ns floor)
+                    // but inappropriate when the wait is plausibly
+                    // gated on the producer being rescheduled.
+                    //
+                    // Fix: spin with pause for kPauseBeforeYield
+                    // iterations (intra-core fast path: ~1-2 μs of
+                    // pauses), then escalate to yield() which
+                    // surrenders the timeslice so the scheduler can
+                    // run the descheduled producer.  CLAUDE.md §IX
+                    // hot-path yield ban targets TraceRing (the
+                    // foreground recording ring); MpmcRing is the
+                    // kernel-compile / gossip / canopy queue surface
+                    // where producers may legitimately be descheduled
+                    // and yielding is the correct OS-aware response.
+                    constexpr std::size_t kPauseBeforeYield = 64;
+                    std::size_t spin_iters = 0;
                     while (!is_data_published(ent)) [[unlikely]] {
-                        CRUCIBLE_SPIN_PAUSE;
+                        if (spin_iters < kPauseBeforeYield) {
+                            CRUCIBLE_SPIN_PAUSE;
+                            ++spin_iters;
+                        } else {
+                            std::this_thread::yield();
+                        }
                         ent = cell.state.load(std::memory_order_acquire);
                     }
 
