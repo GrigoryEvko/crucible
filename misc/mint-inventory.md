@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-24T19:09:37Z`.
+Snapshot generated: `2026-05-24T19:19:48Z`.
 
 ## bridges/
 
@@ -99,7 +99,7 @@ Snapshot generated: `2026-05-24T19:09:37Z`.
 | `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:839` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:35` | HS14: 2 |
 | `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/ctrl/Throws.h:14` | HS14: 10 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:287` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:109` | HS14: 6 |
-| `mint_permission_root` | `include/crucible/permissions/FederationPermission.h:742` | Y | Y | Y | Y | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 172 |
+| `mint_permission_root` | `include/crucible/permissions/Permission.h:640` | Y | Y | Y | - | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 172 |
 | `mint_permission_share` | `include/crucible/permissions/Permission.h:1339` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:19` | HS14: 4 |
 | `mint_permission_split` | `include/crucible/permissions/Permission.h:673` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:32` | HS14: 25 |
 | `mint_permission_split_n` | `include/crucible/permissions/Permission.h:787` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:34` | HS14: 4 |
@@ -175,7 +175,6 @@ Snapshot generated: `2026-05-24T19:09:37Z`.
 | `mint_reader_session` | `include/crucible/sessions/SwmrSession.h:231` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:266` | HS14: 2 |
 | `mint_receiver` | `include/crucible/sessions/FederationProtocol.h:245` | Y | Y | Y | Y | ctx | `include/crucible/fixy/SessFederation.h:118` | HS14: 6 |
 | `mint_sender` | `include/crucible/sessions/FederationProtocol.h:221` | Y | Y | Y | Y | ctx | `include/crucible/fixy/SessFederation.h:118` | HS14: 14 |
-| `mint_session` | `include/crucible/sessions/SessionMint.h:977` | - | - | Y | - | ctx | `include/crucible/fixy/Sess.h:469` | HS14: 4 |
 | `mint_session_handle` | `include/crucible/sessions/Session.h:2459` | Y | Y | Y | Y | token | `include/crucible/fixy/Sess.h:17` | HS14: 27 |
 | `mint_session_view` | `include/crucible/sessions/SessionView.h:279` | Y | Y | Y | Y | token | `include/crucible/fixy/Sess.h:569` | HS14: 7 |
 | `mint_sharded_calendar_grid_consumer` | `include/crucible/sessions/ShardedCalendarGridSession.h:63` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:797` | HS14: 2 |
@@ -280,7 +279,7 @@ mints) are listed in the substrate section instead.
 
 ## Summary
 
-- Total substrate mints: 124
+- Total substrate mints: 123
 - Missing fixy re-export: 15
 - Member-function mints: 8 (separate §XXI grep-target — see above)
 - fixy-origin mints: 37 (declared in fixy/, no substrate counterpart — see above)

@@ -272,6 +272,40 @@ scan_substrate() {
         done
         (( saw_friend == 1 )) && continue
 
+        # FIXY-FOUND-086: multi-line `= delete` declarations also need to
+        # skip.  The `= delete(...)` suffix appears on a SUBSEQUENT line
+        # when the declaration is wrapped across lines, e.g.:
+        #     template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource>
+        #     void mint_session(
+        #         Ctx const&, Resource&&, std::source_location = ...) noexcept
+        #         = delete("mint_session<Proto>(ctx, resource) is removed");
+        # The single-line skip above (line 201) misses this because line N
+        # (the mint_NAME line) does NOT contain `= delete`; the suffix is
+        # on lines N+2..N+5.  Walk forward from `line+1` until we hit `;`
+        # (declaration terminator) or 5 lines forward.  If `= delete`
+        # appears in that range, skip.  Mirror of the FIXY-FOUND-082
+        # multi-line friend backward-scan above.
+        local next_idx=$(( line + 1 ))
+        local saw_delete=0
+        local fwd_walked=0
+        while (( fwd_walked < 5 )); do
+            local next_text
+            next_text="$(sed -n "${next_idx}p" "$file" 2>/dev/null)"
+            [[ -z "$next_text" ]] && break
+            case "$next_text" in
+                *'= delete'*|*'=delete'*) saw_delete=1; break ;;
+            esac
+            # Declaration terminator (semicolon NOT inside parens — we
+            # use a loose check: if the line ends with `;` after any
+            # non-space, it's the end).
+            case "$next_text" in
+                *';') break ;;
+            esac
+            next_idx=$(( next_idx + 1 ))
+            fwd_walked=$(( fwd_walked + 1 ))
+        done
+        (( saw_delete == 1 )) && continue
+
         # Extract mint name from the matched line.  awk avoids head -1 +
         # pipefail traps; rg's pattern guarantees at least one match.
         # The `(^|[^A-Za-z0-9_])` prefix is a word-boundary guard: without
