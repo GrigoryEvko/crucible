@@ -117,6 +117,7 @@
 // the existing safety::Monotonic for the runtime bump() machinery
 // that consumes the join semantics.
 
+#include <crucible/Platform.h>  // CRUCIBLE_INVARIANT (NaN guard)
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
 
@@ -185,12 +186,30 @@ struct MonotoneLattice {
     // ── NaN guard (FP only) ──────────────────────────────────────────
     //
     // For floating-point T, NaN inputs violate every lattice law (see
-    // file-header CAVEAT).  The user contract is "do not pass NaN", but
-    // the AUDIT-FOUNDATION-2026-04-26 hardening adds a defensive
-    // contract_assert that fires under enforce semantic if NaN ever
-    // reaches a lattice op — turning a silent law violation into a
-    // loud, greppable failure at the call site.  Compiles to nothing
-    // under ignore semantic, so the hot path pays no cost.
+    // file-header CAVEAT).  The user contract is "do not pass NaN".
+    //
+    // FIXY-FOUND-093 (#2248) hardening:  pre-audit this used vanilla
+    // `contract_assert(...)` whose firing is governed by the TU's
+    // contract-evaluation-semantic.  Hot-path TUs opt to `ignore` for
+    // zero cost — under `ignore` the assert is COMPILED OUT, so a NaN
+    // bug propagating into a lattice op in production is silent.  The
+    // pre-audit doc-comment claimed "loud, greppable failure at the
+    // call site" — true under `enforce` semantic only, false under
+    // `ignore`.
+    //
+    // Post-audit:  CRUCIBLE_INVARIANT(cond) (Platform.h §XII) decouples
+    // the guard's firing from the TU's contract semantic:
+    //   - debug build (NDEBUG undefined):  abort with file:line +
+    //     predicate text on the first NaN — always fires, regardless
+    //     of contract semantic.  Loud + greppable as promised.
+    //   - release build (NDEBUG defined):  lowers to [[assume(cond)]]
+    //     — zero runtime code, optimizer treats inputs as known
+    //     finite (range analysis, vectorization win).  If user
+    //     violates the contract by passing NaN in release, behavior
+    //     is UB (per documented contract) — same outcome as before
+    //     (silent law violation) but the optimizer KNOWS the
+    //     precondition, which it didn't with the old contract_assert
+    //     under `ignore`.
     //
     // Gated on `std::is_floating_point_v<T>` so integer / strong-id
     // instantiations get exactly the original code (no extra branch,
@@ -209,15 +228,15 @@ struct MonotoneLattice {
     // of the strict inverse.  join/meet are the standard chain max/min
     // expressed via Cmp.
     [[nodiscard]] static constexpr bool leq(T const& a, T const& b) noexcept {
-        contract_assert(is_nan_safe(a) && is_nan_safe(b));
+        CRUCIBLE_INVARIANT(is_nan_safe(a) && is_nan_safe(b));
         return !Cmp{}(b, a);
     }
     [[nodiscard]] static constexpr T join(T const& a, T const& b) noexcept {
-        contract_assert(is_nan_safe(a) && is_nan_safe(b));
+        CRUCIBLE_INVARIANT(is_nan_safe(a) && is_nan_safe(b));
         return Cmp{}(a, b) ? b : a;  // max under Cmp
     }
     [[nodiscard]] static constexpr T meet(T const& a, T const& b) noexcept {
-        contract_assert(is_nan_safe(a) && is_nan_safe(b));
+        CRUCIBLE_INVARIANT(is_nan_safe(a) && is_nan_safe(b));
         return Cmp{}(a, b) ? a : b;  // min under Cmp
     }
 
@@ -362,13 +381,17 @@ static_assert(MonU64Less::leq(0u, 1000u));   // transitivity
 static_assert(MonU64Less::join(100u, 1000u) == 1000u);
 static_assert(MonU64Less::join(0u, MonU64Less::top()) == MonU64Less::top());
 
-// ── AUDIT-FOUNDATION-2026-04-26: NaN guard structural witnesses ─────
+// ── AUDIT-FOUNDATION-2026-04-26 + FIXY-FOUND-093 NaN guard witnesses ─
 //
 // `is_nan_safe(x)` returns true for finite values, false for NaN, and
-// vacuously true for non-FP T.  Every lattice op contract-asserts
-// `is_nan_safe(a) && is_nan_safe(b)` so passing NaN to leq/join/meet
-// is a contract violation rather than a silent law-violation.  The
-// runtime smoke test exercises the path with non-NaN FP values.
+// vacuously true for non-FP T.  Every lattice op CRUCIBLE_INVARIANT's
+// `is_nan_safe(a) && is_nan_safe(b)`:  debug builds abort at the call
+// site with file:line, release builds emit [[assume(cond)]] so the
+// optimizer treats inputs as finite (range analysis, vectorization).
+// Pre-audit version used `contract_assert` which silently compiled
+// out under TUs opting to `semantic=ignore`; the new macro fires
+// regardless of TU semantic.  The runtime smoke test exercises the
+// path with non-NaN FP values.
 static_assert(MonU64Less::is_nan_safe(0u));
 static_assert(MonU64Less::is_nan_safe(std::numeric_limits<std::uint64_t>::max()));
 static_assert(MonF64Less::is_nan_safe(0.0));
