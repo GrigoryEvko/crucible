@@ -1566,7 +1566,7 @@ constexpr void enumerate_categories(F&& f) noexcept {
 
 template <typename Tag, typename... Args>
     requires is_diagnostic_class_v<Tag>
-[[nodiscard]] consteval auto mint_diagnostic(Args&&...)
+[[nodiscard]] consteval auto mint_diagnostic(Args&&...) noexcept
     -> Diagnostic<Tag, std::remove_cvref_t<Args>...>
 {
     return Diagnostic<Tag, std::remove_cvref_t<Args>...>{};
