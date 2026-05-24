@@ -15,7 +15,10 @@
 
 int main() {
     using namespace crucible::safety;
-    GlobalStatePinned<GlobalState::InitOrderHazard, int> hi{0};
+    // FIXY-FOUND-090 #2245: construct via mint_global_state so the §XXI
+    // inventory scanner counts this fixture toward HS14 — same lattice
+    // failure, broader §XXI coverage.
+    auto hi = mint_global_state<GlobalState::InitOrderHazard, int>(0);
     auto lo = hi.widen<GlobalState::Stateless>();  // FAIL: leq(InitOrderHazard, Stateless) == false
     (void)lo;
     return 0;

@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-24T19:56:54Z`.
+Snapshot generated: `2026-05-24T20:04:12Z`.
 
 ## bridges/
 
@@ -109,19 +109,19 @@ Snapshot generated: `2026-05-24T19:56:54Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_affine` | `include/crucible/safety/Affine.h:307` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1206` | HS14: 1 ⚠ |
+| `mint_affine` | `include/crucible/safety/Affine.h:307` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1206` | HS14: 2 |
 | `mint_barrier_guarded` | `include/crucible/safety/BarrierGuarded.h:194` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
-| `mint_call_shape` | `include/crucible/safety/CallShape.h:124` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_call_shape` | `include/crucible/safety/CallShape.h:124` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_clock_source` | `include/crucible/safety/ClockSource.h:199` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 3 |
-| `mint_control_flow` | `include/crucible/safety/ControlFlow.h:157` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_control_flow` | `include/crucible/safety/ControlFlow.h:157` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_cpu_pinned` | `include/crucible/safety/CpuPinned.h:156` | Y | Y | Y | Y | token | `include/crucible/fixy/Sched.h:242` | HS14: 3 |
 | `mint_diagnostic` | `include/crucible/safety/Diagnostic.h:1569` | Y | Y | Y | Y | token | `include/crucible/fixy/Diag.h:213` | HS14: 2 |
 | `mint_fn` | `include/crucible/safety/Fn.h:623` | Y | Y | Y | Y | token | `include/crucible/fixy/Fn.h:1037` | HS14: 41 |
 | `mint_fp_mode_composite` | `include/crucible/safety/FpMode.h:393` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
-| `mint_global_state` | `include/crucible/safety/GlobalState.h:124` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_global_state` | `include/crucible/safety/GlobalState.h:124` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_grid_permissions` | `include/crucible/safety/PermissionGridGenerator.h:219` | Y | Y | Y | Y | token | `include/crucible/fixy/Perm.h:160` | HS14: 12 |
 | `mint_hw` | `include/crucible/safety/Hw.h:190` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
-| `mint_join_policy` | `include/crucible/safety/JoinPolicy.h:390` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_join_policy` | `include/crucible/safety/JoinPolicy.h:390` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_linear` | `include/crucible/safety/Linear.h:275` | Y | Y | Y | Y | token | `include/crucible/fixy/Safety.h:12` | HS14: 4 |
 | `mint_linear_view` | `include/crucible/safety/ScopedView.h:212` | Y | Y | Y | - (pre) | token | `include/crucible/fixy/Safety.h:43` | HS14: 3 |
 | `mint_machine` | `include/crucible/safety/Machine.h:139` | Y | Y | Y | Y | token | `include/crucible/fixy/Mach.h:154` | HS14: 6 |
@@ -131,14 +131,14 @@ Snapshot generated: `2026-05-24T19:56:54Z`.
 | `mint_sealed_refined` | `include/crucible/safety/SealedRefined.h:239` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1191` | HS14: 4 |
 | `mint_secret` | `include/crucible/safety/Secret.h:359` | Y | Y | Y | Y | token | `include/crucible/fixy/Safety.h:12` | HS14: 4 |
 | `mint_simd_width_pinned` | `include/crucible/safety/SimdWidthPinned.h:190` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
-| `mint_stack_use` | `include/crucible/safety/StackUse.h:122` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_stdio` | `include/crucible/safety/Stdio.h:122` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_stack_use` | `include/crucible/safety/StackUse.h:122` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
+| `mint_stdio` | `include/crucible/safety/Stdio.h:122` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_suspend_behavior` | `include/crucible/safety/SuspendBehavior.h:165` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_tagged` | `include/crucible/safety/Tagged.h:854` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1191` | HS14: 6 |
-| `mint_thread_local_ref` | `include/crucible/safety/ThreadLocalRef.h:224` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_thread_local_ref` | `include/crucible/safety/ThreadLocalRef.h:224` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_thread_name` | `include/crucible/safety/ThreadName.h:137` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Sched.h:20` | HS14: 2 |
 | `mint_view` | `include/crucible/safety/ScopedView.h:168` | Y | Y | Y | - (pre) | token | `include/crucible/fixy/Safety.h:41` | HS14: 10 |
-| `mint_witness` | `include/crucible/safety/Witness.h:411` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1190` | HS14: 1 ⚠ |
+| `mint_witness` | `include/crucible/safety/Witness.h:411` | Y | Y | Y | Y | token | `include/crucible/fixy/Wrap.h:1190` | HS14: 2 |
 
 ## sessions/
 
@@ -256,9 +256,9 @@ mints) are listed in the substrate section instead.
 | `mint_mmap` | `include/crucible/fixy/Mmap.h:668` | Y | Y | Y | Y | ctx | HS14: 7 |
 | `mint_mmap_anon` | `include/crucible/fixy/Mmap.h:698` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_mpsc_consumer_endpoint` | `include/crucible/fixy/Substr.h:1027` | Y | Y | Y | - | token | HS14: 2 |
-| `mint_mpsc_consumer_session` | `include/crucible/fixy/Substr.h:1056` | Y | Y | Y | - | ctx | HS14: 1 ⚠ |
+| `mint_mpsc_consumer_session` | `include/crucible/fixy/Substr.h:1056` | Y | Y | Y | - | ctx | HS14: 2 |
 | `mint_mpsc_producer_endpoint` | `include/crucible/fixy/Substr.h:1020` | Y | Y | Y | - | token | HS14: 2 |
-| `mint_mpsc_producer_session` | `include/crucible/fixy/Substr.h:1045` | Y | Y | Y | - | ctx | HS14: 1 ⚠ |
+| `mint_mpsc_producer_session` | `include/crucible/fixy/Substr.h:1045` | Y | Y | Y | - | ctx | HS14: 2 |
 | `mint_msr_grant` | `include/crucible/fixy/Hw.h:529` | Y | Y | Y | Y | ctx | HS14: 2 |
 | `mint_parallel_for` | `include/crucible/fixy/spawn/Spawn.h:229` | Y | - | Y | Y | ctx | HS14: 2 |
 | `mint_priority` | `include/crucible/fixy/Sched.h:272` | Y | - (alloc) | Y | Y | ctx | HS14: 4 |

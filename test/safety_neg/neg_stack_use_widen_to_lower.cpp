@@ -14,7 +14,10 @@
 
 int main() {
     using namespace crucible::safety;
-    StackUsePinned<StackUse::Unbounded, int> hi{0};
+    // FIXY-FOUND-090 #2245: construct via mint_stack_use so the §XXI
+    // inventory scanner counts this fixture toward HS14 — same lattice
+    // failure, broader §XXI coverage.
+    auto hi = mint_stack_use<StackUse::Unbounded, int>(0);
     auto lo = hi.widen<StackUse::ConstantFrame>();  // FAIL: leq(Unbounded, ConstantFrame) == false
     (void)lo;
     return 0;

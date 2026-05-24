@@ -14,7 +14,10 @@
 
 int main() {
     using namespace crucible::safety;
-    StdioPinned<Stdio::InteractiveRead, int> hi{0};
+    // FIXY-FOUND-090 #2245: construct via mint_stdio so the §XXI
+    // inventory scanner counts this fixture toward HS14 — same lattice
+    // failure, broader §XXI coverage.
+    auto hi = mint_stdio<Stdio::InteractiveRead, int>(0);
     auto lo = hi.widen<Stdio::NoStdio>();  // FAIL: leq(InteractiveRead, NoStdio) == false
     (void)lo;
     return 0;

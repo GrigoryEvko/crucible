@@ -42,7 +42,10 @@ struct PlainCounter {
 };
 
 int main() {
-    ThreadLocalRef<CounterTag, PlainCounter> ref{};
+    // FIXY-FOUND-090 #2245: construct via mint_thread_local_ref so the
+    // §XXI inventory scanner counts this fixture toward HS14 — same
+    // store-side assignability gate, broader §XXI coverage.
+    auto ref = mint_thread_local_ref<CounterTag, PlainCounter>();
 
     // Should FAIL: store<std::string>(...) on a PlainCounter cell.
     // The requires-clause `std::is_assignable_v<PlainCounter&,

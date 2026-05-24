@@ -14,7 +14,10 @@
 
 int main() {
     using namespace crucible::safety;
-    CallShapePinned<CallShape::Unbounded, int> hi{0};
+    // FIXY-FOUND-090 #2245: construct via mint_call_shape so the §XXI
+    // inventory scanner counts this fixture toward HS14 — same lattice
+    // failure, broader §XXI coverage.
+    auto hi = mint_call_shape<CallShape::Unbounded, int>(0);
     auto lo = hi.widen<CallShape::Direct>();  // FAIL: leq(Unbounded, Direct) == false
     (void)lo;
     return 0;

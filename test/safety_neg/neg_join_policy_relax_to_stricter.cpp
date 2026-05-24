@@ -35,7 +35,10 @@
 using namespace crucible::safety;
 
 int main() {
-    JoinPolicy<JoinPolicy_v::DETACH, int> detached{42};
+    // FIXY-FOUND-090 #2245: construct via mint_join_policy so the §XXI
+    // inventory scanner counts this fixture toward HS14 — same lattice
+    // direction failure, broader §XXI coverage.
+    auto detached = mint_join_policy<JoinPolicy_v::DETACH, int>(42);
 
     // Should FAIL: relax<JOIN_ALL> on a DETACH-pinned wrapper.  The
     // requires-clause `JoinPolicyLattice::leq(JOIN_ALL, DETACH)` is

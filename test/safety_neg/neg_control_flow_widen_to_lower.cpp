@@ -17,7 +17,10 @@
 
 int main() {
     using namespace crucible::safety;
-    ControlFlowPinned<ControlFlow::MaySignal, int> hi{0};
+    // FIXY-FOUND-090 #2245: construct via mint_control_flow so the §XXI
+    // inventory scanner counts this fixture toward HS14 — same lattice
+    // failure, broader §XXI coverage.
+    auto hi = mint_control_flow<ControlFlow::MaySignal, int>(0);
     auto lo = hi.widen<ControlFlow::Pure>();  // FAIL: leq(MaySignal, Pure) == false
     (void)lo;
     return 0;

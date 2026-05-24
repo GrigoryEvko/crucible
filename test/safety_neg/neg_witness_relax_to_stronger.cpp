@@ -28,7 +28,10 @@
 using namespace crucible::safety;
 
 int main() {
-    Witness<Witness_v::TYPE_CHECKED, int> type_checked{42};
+    // FIXY-FOUND-090 #2245: construct via mint_witness so the §XXI
+    // inventory scanner counts this fixture toward HS14 — same proof-
+    // strength direction failure, broader §XXI coverage.
+    auto type_checked = mint_witness<Witness_v::TYPE_CHECKED, int>(42);
 
     // Should FAIL: relax<FORMALLY_VERIFIED> on a TYPE_CHECKED-pinned
     // wrapper.  The requires-clause

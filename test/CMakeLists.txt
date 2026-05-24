@@ -12502,6 +12502,20 @@ crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_consumer_endpoint_non_channe
 crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_consumer_endpoint_wrong_perm_tag
     "could not convert|cannot bind|no matching function|Permission|consumer_tag|mint_mpsc_consumer_endpoint")
 
+# ─── FIXY-FOUND-090 — mpsc session mint HS14 floors (#2245) ─────────
+#
+# Two cross-symmetric neg fixtures bump mint_mpsc_consumer_session +
+# mint_mpsc_producer_session from HS14:1 → HS14:2:
+#   consumer_session_non_ctx   — slot 1 IsExecCtx concept gate
+#                                (peer fixture covers slot 2 handle-binding)
+#   producer_session_wrong_handle — slot 2 ConsumerHandle binding to
+#                                ProducerHandle& fails (peer covers slot 1)
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_consumer_session_non_ctx
+    "constraints not satisfied|IsExecCtx|no matching function|mint_mpsc_consumer_session")
+crucible_neg_compile_fixy_test(neg_fixy_substr_mpsc_producer_session_wrong_handle
+    "could not convert|cannot bind|no matching function|ProducerHandle|mint_mpsc_producer_session")
+
+
 # ── FIXY-V-225 — fixy/Mmap.h HS14 neg-compile fixtures (#2103) ──────
 #
 # Seven mismatch classes for the V-225 substrate's three concept gates
