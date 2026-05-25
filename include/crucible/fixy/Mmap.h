@@ -671,7 +671,7 @@ mint_mmap(Ctx const&,
           ::off_t      offset = 0) noexcept {
     constexpr int prot_bits   = detail::fold_prot_bits<Grants...>();
     constexpr int share_flags = detail::fold_share_flags<Grants...>();
-    void* const addr = ::mmap(nullptr, length, prot_bits, share_flags, fd, offset);
+    void* const addr = ::mmap(nullptr, length, prot_bits, share_flags, fd, offset);  // SYSCALL-CAP-OK: mint_mmap ctx-gate (CtxFitsMmapMint: CtxAdmitsIoBlock, effects::IO+Block)
     if (addr == MAP_FAILED) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
@@ -699,7 +699,7 @@ mint_mmap_anon(Ctx const&,
                std::size_t length) noexcept {
     constexpr int prot_bits   = detail::fold_prot_bits<Grants...>();
     constexpr int share_flags = detail::fold_share_flags<Grants...>();
-    void* const addr = ::mmap(nullptr, length, prot_bits, share_flags, -1, 0);
+    void* const addr = ::mmap(nullptr, length, prot_bits, share_flags, -1, 0);  // SYSCALL-CAP-OK: mint_mmap_anon ctx-gate (CtxFitsAnonMmapMint: CtxAdmitsIoBlock, effects::IO+Block)
     if (addr == MAP_FAILED) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
@@ -725,7 +725,7 @@ advise(Ctx const&,
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }
-    if (::madvise(region.data(), region.size(), advice_value_v<Advice>) < 0) {
+    if (::madvise(region.data(), region.size(), advice_value_v<Advice>) < 0) {  // SYSCALL-CAP-OK: advise ctx-gate (CtxFitsSafeAdvise: CtxAdmitsIoBlock, effects::IO+Block)
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
     return {};
@@ -776,7 +776,7 @@ advise_release_aware(Ctx const&,
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }
-    if (::madvise(region.data(), region.size(), advice_value_v<Advice>) < 0) {
+    if (::madvise(region.data(), region.size(), advice_value_v<Advice>) < 0) {  // SYSCALL-CAP-OK: advise_release_aware ctx-gate (CtxFitsReleaseAwareAdvise: IO+Block + Permission<RegionTag>)
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
     return {};
