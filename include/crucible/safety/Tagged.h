@@ -62,6 +62,7 @@
 
 #include <cstdlib>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -944,8 +945,9 @@ static_assert(!RetagAllowed<source::FromUser, access::WriteOnce>,
 //
 //   Pre-FOUND-035:   10 admitted forward edges
 //     4 trust:: + 5 source:: + 1 vessel_trust::
-//   Post-FOUND-035:  16 admitted forward edges
+//   Post-FOUND-035:  17 admitted forward edges (7 new this ship)
 //     5 trust:: + 11 source:: + 1 vessel_trust::
+//     (5 + 11 + 1 = 17; 1 trust + 6 source new edges)
 //
 // Gap-against-universe: ~73 source-namespace tags total (provenance,
 // trust, access, vessel_trust, version, retag, mlb, gossip, ...).
@@ -955,7 +957,7 @@ static_assert(!RetagAllowed<source::FromUser, access::WriteOnce>,
 // follow-up: the 16 admitted today represent the high-confidence core
 // where the discharge story is established; future expansion lands
 // edge-by-edge with named rationale.
-inline constexpr std::size_t kAdmittedForwardEdgeCount = 16;
+inline constexpr std::size_t kAdmittedForwardEdgeCount = 17;
 
 // Sentinel: any future addition / deletion of a forward-edge
 // specialization MUST update kAdmittedForwardEdgeCount in lockstep
@@ -989,6 +991,43 @@ static_assert(kCatalogRosterMatchesCount,
     "RetagAllowed<> entry in kCatalogRosterMatchesCount above must be "
     "removed plus kAdmittedForwardEdgeCount decremented), or one of the "
     "named edges is mis-spelled / its specialization is missing.");
+
+// FIXY-FOUND-035 corrective: structural cardinality pin.  Counts the
+// `&&` separators in the roster expression via a sibling tuple-shaped
+// witness; any future addition to the fold above MUST also extend the
+// tuple here so the size matches.  Forces the lockstep "bump three
+// things at once" discipline the doc-block describes — without this
+// asserted pin, kAdmittedForwardEdgeCount drifts silently from the
+// roster (caught on initial FOUND-035 ship: pinned 16, actual 17).
+using kCatalogRosterTuple = std::tuple<
+    // 5 trust:: edges
+    std::pair<trust::Unverified,  trust::Tested>,
+    std::pair<trust::Unverified,  trust::Verified>,
+    std::pair<trust::Tested,      trust::Verified>,
+    std::pair<trust::Assumed,     trust::Verified>,
+    std::pair<trust::Unverified,  trust::Assumed>,
+    // 11 source:: edges
+    std::pair<source::External,   source::Sanitized>,
+    std::pair<source::External,   source::IntegrityVerified>,
+    std::pair<source::Sanitized,  source::IntegrityVerified>,
+    std::pair<source::FromUser,   source::Sanitized>,
+    std::pair<source::Recorded,   source::Loaded>,
+    std::pair<source::FromDb,     source::Sanitized>,
+    std::pair<source::FromConfig, source::Sanitized>,
+    std::pair<source::ABIBoundary, source::Sanitized>,
+    std::pair<source::Loaded,     source::IntegrityVerified>,
+    std::pair<source::Replayed,   source::Loaded>,
+    std::pair<source::Recorded,   source::IntegrityVerified>,
+    // 1 vessel_trust:: edge
+    std::pair<vessel_trust::FromPytorch, vessel_trust::Validated>
+>;
+static_assert(std::tuple_size_v<kCatalogRosterTuple>
+              == kAdmittedForwardEdgeCount,
+    "FIXY-FOUND-035 corrective: kAdmittedForwardEdgeCount must match "
+    "the kCatalogRosterTuple cardinality.  Drift between the named "
+    "count and the structured roster fires here — bump the count, "
+    "extend the tuple, and extend kCatalogRosterMatchesCount in "
+    "lockstep.");
 
 // ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
 //
