@@ -809,7 +809,8 @@ add_test(NAME mint_inventory_check
 # loop between the legend's documented floor and actual enforcement —
 # previously a production mint shipping with HS14:0 or HS14:1 reddened
 # nothing.  Single source of truth for the floor value lives in
-# scripts/gen-mint-inventory.sh (HS14_FLOOR=2).
+# scripts/gen-mint-inventory.sh (HS14_FLOOR constant — bumping that
+# bumps both the legend prose AND the CI gate atomically).
 add_test(NAME mint_inventory_check_floor
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.sh
           --check-floor
