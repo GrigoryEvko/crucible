@@ -464,6 +464,26 @@ enum class RuleCode : std::uint8_t {
     // the gap left by H001/H003 (which depend on cost / Alloc/IO carriers
     // and miss HotPath × Bg × cost::Constant × no-Alloc/IO).
     H010 = 47,  // HotPath × Row<Bg> (mutually exclusive context markers)
+    // ── FIXY-FOUND-064 P-family extension — Ghost erasure contract ─────
+    //
+    // P010 closes a gap left by P002.  P002 catches `UsageMode::Ghost ×
+    // marks_runtime_ghost_use<F>::value` — a marker-driven detection
+    // that fires only when downstream code SPECIALIZES the trait on
+    // the offending Fn (FIXY-FOUND-067 dormant-marker family).  But a
+    // Ghost binding declared with a runtime-observable effect atom in
+    // its effect row (Alloc / IO / Block) is structurally a contradiction
+    // independent of any marker: Ghost values are erased at codegen
+    // (no emitted instructions, no register pressure, no stack
+    // footprint) — yet Alloc emits heap-touching code, IO emits
+    // syscall / kernel-mediated traffic, and Block emits blocking
+    // primitives.  ALL THREE require emitted instructions; Ghost
+    // contractually forbids them.  P010 catches the type-readable
+    // case (the effect-row direct read) where P002 catches the
+    // grant-driven `marks_runtime_ghost_use` case.  Structurally
+    // parallel to H010 (HotPath × Bg) but on the Usage axis instead
+    // of the HotPath marker — the two rules pin the same shape on
+    // orthogonal axes.
+    P010 = 48,  // Ghost × Row<Alloc|IO|Block> (erasure contract violation)
     None = 255,
 };
 
@@ -631,6 +651,11 @@ struct H010_HotPathBgContradiction : diag::tag_base {
     static constexpr std::string_view name = "H010_HotPathBgContradiction";
 };
 
+// ── FIXY-FOUND-064 P010 — Ghost × runtime-effect erasure violation ──
+struct P010_GhostNonErasable : diag::tag_base {
+    static constexpr std::string_view name = "P010_GhostNonErasable";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -679,11 +704,12 @@ using Catalog = std::tuple<
     V301_HotPathFullFence,
     V401_ScopeStrengthInsufficient,
     V402_ScopeArchCrossTrunk,
-    H010_HotPathBgContradiction
+    H010_HotPathBgContradiction,
+    P010_GhostNonErasable
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 48);
+static_assert(catalog_size == 49);
 
 // FIXY-FOUND-139: reflection-derived RuleCode enum ceiling.
 //
@@ -711,7 +737,7 @@ static_assert(rule_code_count == catalog_size + 1,
     "added without appending the rule struct to Catalog, OR a rule "
     "was appended to Catalog without minting a RuleCode enumerator. "
     " This reflection-derived pin is independent of catalog_size's "
-    "hand-pinned 48 — both must agree.");
+    "hand-pinned 49 — both must agree.");
 
 template <RuleCode R>
 struct rule_tag;
@@ -764,6 +790,7 @@ template <> struct rule_tag<RuleCode::V301> { using type = V301_HotPathFullFence
 template <> struct rule_tag<RuleCode::V401> { using type = V401_ScopeStrengthInsufficient; };
 template <> struct rule_tag<RuleCode::V402> { using type = V402_ScopeArchCrossTrunk; };
 template <> struct rule_tag<RuleCode::H010> { using type = H010_HotPathBgContradiction; };
+template <> struct rule_tag<RuleCode::P010> { using type = P010_GhostNonErasable; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -914,6 +941,9 @@ template <> struct rule_code_of<V402_ScopeArchCrossTrunk> {
 };
 template <> struct rule_code_of<H010_HotPathBgContradiction> {
     static constexpr RuleCode value = RuleCode::H010;
+};
+template <> struct rule_code_of<P010_GhostNonErasable> {
+    static constexpr RuleCode value = RuleCode::P010;
 };
 
 template <typename Tag>
@@ -1304,6 +1334,26 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(H010, "H010",
     "if it really does need an Alloc/IO/Block effect, use the appropriate atom "
     "alongside a bounded cost and route it through H001/H003 instead)",
     "fixy.md §24.2 H010 (V-FOUND-063)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(P010, "P010",
+    "Ghost-usage functions carry no runtime-observable effects in their effect row",
+    "F::usage_v == UsageMode::Ghost AND F::effect_row_t contains any of "
+    "{effects::Effect::Alloc, effects::Effect::IO, effects::Effect::Block} — a "
+    "Ghost binding is erased at codegen (no emitted instructions, no register "
+    "pressure, no stack footprint), but Alloc emits heap-touching code, IO emits "
+    "syscall / kernel-mediated traffic, and Block emits blocking primitives. All "
+    "three observable effects REQUIRE emitted instructions; a Ghost binding "
+    "contractually forbids them. P002 catches the grant-driven variant "
+    "(marks_runtime_ghost_use trait specialization); P010 catches the structural "
+    "effect-row variant. Structurally parallel to H010 (HotPath × Bg) but on the "
+    "Usage axis instead of the HotPath marker — the two rules pin the same "
+    "erased-vs-emitted contradiction shape on orthogonal axes",
+    "drop UsageMode::Ghost (the function genuinely runs and produces the declared "
+    "effects — pick Linear / Borrow / Capability as the actual usage), OR drop the "
+    "observable effect atom from the effect row (the function is genuinely ghost; "
+    "if a downstream caller needs the Alloc/IO/Block surface, wrap the runtime "
+    "implementation in a sibling non-Ghost binding and let the Ghost binding "
+    "stay pure)",
+    "fixy.md §24.2 P010 (V-FOUND-064)");
 CRUCIBLE_COLLISION_DIAGNOSTIC(V402, "V402",
     "a memory-scope trunk is coherent with the binding's pinned host architecture",
     "marks_scope_arch_cross_trunk OR F::type_t pins a ScopedFence whose trunk contradicts "
@@ -1667,6 +1717,29 @@ template <typename F>
 concept H010_OK = !(marks_hot_path<F>::value &&
                     row_has_effect_v<typename F::effect_row_t,
                                      effects::Effect::Bg>);
+
+// P010: Ghost × Row<Alloc|IO|Block> erasure-contract violation (FIXY-FOUND-064).
+// Ghost values are erased at codegen — no emitted instructions.  A Ghost
+// binding declared with any of the three observable runtime-effect atoms
+// (Alloc / IO / Block) contradicts the erasure contract: Alloc emits
+// heap-touching code, IO emits syscalls / external observers, Block emits
+// blocking primitives.  P002 catches the marker-driven variant
+// (marks_runtime_ghost_use specialization); P010 catches the structural
+// effect-row read where no marker is engaged.  Structurally parallel to
+// H010 (HotPath × Bg) but on the Usage axis instead of the HotPath
+// marker — the two rules pin the same erased-vs-emitted shape on
+// orthogonal axes.  Bg is deliberately EXCLUDED from P010's catch set —
+// Bg classification interacts with HotPath (caught by H010) on a
+// different contradiction shape; Ghost × Bg is a separable concern
+// reserved for a future P011 if a real production case emerges.
+template <typename F>
+concept P010_OK = !(F::usage_v == UsageMode::Ghost &&
+                    (row_has_effect_v<typename F::effect_row_t,
+                                      effects::Effect::Alloc> ||
+                     row_has_effect_v<typename F::effect_row_t,
+                                      effects::Effect::IO> ||
+                     row_has_effect_v<typename F::effect_row_t,
+                                      effects::Effect::Block>));
 
 template <typename F>
 concept F002_OK = !(marks_federation_peer<F>::value &&
@@ -2150,7 +2223,7 @@ concept AllRulesOK =
     V001_OK<F> && V002_OK<F> && V101_OK<F> && V102_OK<F> &&
     V201_OK<F> && V202_OK<F> && V203_OK<F> && V301_OK<F> &&
     V401_OK<F> && V402_OK<F> &&
-    H010_OK<F>;
+    H010_OK<F> && P010_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -2248,6 +2321,8 @@ template <typename F>
         return RuleCode::V402;
     } else if constexpr (!H010_OK<F>) {
         return RuleCode::H010;
+    } else if constexpr (!P010_OK<F>) {
+        return RuleCode::P010;
     } else {
         return RuleCode::None;
     }
@@ -2714,6 +2789,22 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "both — yet is still a context contradiction. Drop the HotPath "
             "marker (genuinely Bg) OR drop the Bg atom (genuinely hot-path). "
             "FIXY-FOUND-063.");
+        static_assert(!(Usage == UsageMode::Ghost &&
+                        (row_has_alloc_or_io ||
+                         collision::row_has_effect_v<EffectRow,
+                                                     effects::Effect::Block>)),
+            "P010: Ghost x Row<Alloc|IO|Block>. A Ghost-usage binding is "
+            "erased at codegen (no emitted instructions, no register "
+            "pressure, no stack footprint), but Alloc emits heap-touching "
+            "code, IO emits syscalls / external observers, and Block "
+            "emits blocking primitives. ALL THREE require emitted code; "
+            "Ghost contractually forbids it. Structurally parallel to "
+            "H010 (HotPath x Bg) on the Usage axis. P002 catches the "
+            "grant-driven marks_runtime_ghost_use variant; P010 catches "
+            "the structural effect-row read. Drop UsageMode::Ghost OR "
+            "drop the observable effect atom (wrap the runtime "
+            "implementation in a sibling non-Ghost binding if a downstream "
+            "caller needs the Alloc/IO/Block surface). FIXY-FOUND-064.");
         static_assert(!(federation_peer && unbounded_cost),
             "F002: federation peer x unbounded cost. Attach a wall-clock "
             "budget (cost::Linear<N>) and a terminating bound; federation "
@@ -2940,7 +3031,11 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(hot_path && hot_path_full_fence) &&
                !scope_strength_insufficient &&
                !scope_arch_cross_trunk &&
-               !(hot_path && row_has_bg);
+               !(hot_path && row_has_bg) &&
+               !(Usage == UsageMode::Ghost &&
+                 (row_has_alloc_or_io ||
+                  collision::row_has_effect_v<EffectRow,
+                                              effects::Effect::Block>));
     }
 
     static constexpr bool valid = validate();

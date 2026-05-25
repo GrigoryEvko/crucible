@@ -7042,6 +7042,22 @@ crucible_neg_compile_test(neg_collision_V402_scope_arch
 crucible_neg_compile_test(neg_collision_H010_hotpath_bg
   "H010")
 
+# ─── FIXY-FOUND-064 CollisionCatalog P010 neg-compile (per-rule) ────
+#
+# P010 — Ghost × Row<Alloc|IO|Block> erasure-contract violation.
+# A Ghost binding is erased at codegen — no emitted instructions.
+# Alloc emits heap-touching code; IO emits syscalls; Block emits
+# blocking primitives.  ALL THREE require emitted code; Ghost
+# contractually forbids them.  P002 catches the marker-driven variant
+# `Ghost × marks_runtime_ghost_use<F>::value`; P010 catches the
+# STRUCTURAL effect-row read (no marker required).  HS14 fixture
+# instantiates a real fn::Fn<...> with UsageMode::Ghost AND
+# Row<Effect::Alloc> AND cost::Constant; P010 alone catches this case
+# (P002 requires marker specialization to fire).  Structurally
+# parallel to H010 (HotPath × Bg) on the Usage axis.
+crucible_neg_compile_test(neg_collision_P010_ghost_runtime
+  "P010")
+
 # ─── FIXY-V-091 CollisionCatalog F101..F105 neg-compiles (per-rule) ──
 #
 # V-091 ships 5 new CollisionCatalog rules (F101..F105) gating
