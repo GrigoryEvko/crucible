@@ -5609,6 +5609,21 @@ crucible_neg_compile_test(neg_tensor_meta_device_type_gap_value
 crucible_neg_compile_test(neg_tensor_meta_device_type_above_max
   "contract|Refined|valid_device_type|not a constant|non-constant|constexpr")
 
+# read_meta layout gate (last enum reconstruction in read_meta) — Layout is
+# a DENSE signed int8_t enum (Strided=0 .. SparseBsc=5); it feeds the node
+# content hash (Merkle identity), so a corrupt/version-skewed Cipher byte
+# silently corrupts that identity.  ValidLayout = Refined<valid_layout,
+# int8_t> fail-closes.  NOT a UB fix (Layout has no std::unreachable
+# consumer).  Two fixtures per HS14, distinct classes:
+#   * neg_tensor_meta_layout_below_min — BELOW-MIN (-1) catches the
+#     signed-lower-bound bug where bounded_above<5> would accept negatives.
+#   * neg_tensor_meta_layout_above_max — ABOVE-MAX wide miss (99 > 5)
+#     catches "drop the predicate entirely" regression.
+crucible_neg_compile_test(neg_tensor_meta_layout_below_min
+  "contract|Refined|valid_layout|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_tensor_meta_layout_above_max
+  "contract|Refined|valid_layout|not a constant|non-constant|constexpr")
+
 # WRAP-Serialize-5 #1014 — write_meta() zero_ptr / zero_grad_fn_hash
 # wire-format invariants now ride through safety::Refined<is_zero,
 # uint64_t>.  The wrapper pins "must-be-zero on disk" at the type

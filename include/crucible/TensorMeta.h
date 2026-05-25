@@ -359,4 +359,42 @@ DeviceType make_device_type(ValidDeviceType raw) noexcept {
     return static_cast<DeviceType>(raw.value());
 }
 
+// ── read_meta layout gate (last enum reconstruction in read_meta) ─────
+//
+// read_meta() reconstructs `m.layout = r.r<Layout>()` from a single
+// untrusted byte.  Layout is a DENSE int8_t enum (Strided=0 .. SparseBsc=5)
+// but the byte is signed, so a corrupt or version-skewed Cipher byte can
+// be negative or above 5.  Like the device_type gate, this is NOT a UB
+// fix (Layout has no std::unreachable consumer) — it is BOUNDARY
+// validation: layout feeds the node content hash (Merkle identity), so an
+// invalid byte silently corrupts it.  The gate fail-closes, completing the
+// read_meta enum-validation family (ndim / kernel_id / dtype / device_type
+// / layout all validated; the numeric fields are not — every byte value
+// is a semantically valid offset/version, so they need no gate).
+//
+// A named-case switch (not bounded_above<5>) is used deliberately: a plain
+// `bounded_above<5>` over a SIGNED int8_t would wrongly accept negatives
+// (-1 <= 5), and the named cases stay correct if Layout gains ordinals.
+//
+// Cost: regime-1 EBO collapse — sizeof(ValidLayout) == sizeof(int8_t).
+inline constexpr auto valid_layout =
+    [](auto raw) constexpr noexcept -> bool {
+        switch (static_cast<Layout>(static_cast<std::int8_t>(raw))) {
+            case Layout::Strided:   case Layout::Sparse:
+            case Layout::SparseCsr: case Layout::SparseCsc:
+            case Layout::SparseBsr: case Layout::SparseBsc:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+using ValidLayout = ::crucible::fixy::wrap::Refined<
+    valid_layout, std::int8_t>;
+
+[[nodiscard, gnu::const]] inline constexpr
+Layout make_layout(ValidLayout raw) noexcept {
+    return static_cast<Layout>(raw.value());
+}
+
 }  // namespace crucible

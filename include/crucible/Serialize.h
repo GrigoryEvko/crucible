@@ -190,7 +190,11 @@ inline TensorMeta read_meta(Reader& r) {
     // has no std::unreachable consumer, unlike ScalarType.)
     m.device_type = make_device_type(ValidDeviceType{r.r<int8_t>()});
     m.device_idx  = r.r<int8_t>();
-    m.layout          = r.r<Layout>();
+    // layout gate (last read_meta enum): boundary-validate the untrusted
+    // byte — layout feeds the content hash (node identity), so a corrupt
+    // value silently corrupts it.  Fail-closed.  (Not a UB fix — Layout
+    // has no std::unreachable consumer.)
+    m.layout          = make_layout(ValidLayout{r.r<int8_t>()});
     m.requires_grad   = r.r<bool>();
     m.flags           = r.r<uint8_t>();
     m.output_nr       = r.r<uint8_t>();
