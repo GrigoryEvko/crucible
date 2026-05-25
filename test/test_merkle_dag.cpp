@@ -594,6 +594,54 @@ namespace {
     assert(rcache.lookup(r_none->content_hash, RowHash{0}) == nullptr);
   }
 
+  // FIXY-FOUND-057 — scalar-args truncation closed.
+  //
+  // Pre-fix bug: compute_content_hash clamped iteration at 5 AND did
+  // not fold num_scalar_args, so an op with [1,2,3,4,5] and another
+  // with [1,2,3,4,5,99] produced the same ContentHash → KernelCache
+  // collision + silent wrong-kernel dispatch.  Post-fix: count is
+  // folded BEFORE the value loop and all entries are iterated.
+  {
+    crucible::TraceEntry e_five{};
+    crucible::TraceEntry e_six{};
+    crucible::TraceEntry e_six_diff{};
+    crucible::TraceEntry e_ten{};
+
+    e_five.schema_hash    = SchemaHash{0xAA};
+    e_six.schema_hash     = SchemaHash{0xAA};
+    e_six_diff.schema_hash= SchemaHash{0xAA};
+    e_ten.schema_hash     = SchemaHash{0xAA};
+
+    int64_t s_five[5]      = {1, 2, 3, 4, 5};
+    int64_t s_six[6]       = {1, 2, 3, 4, 5, 99};
+    int64_t s_six_diff[6]  = {1, 2, 3, 4, 5, 7};
+    int64_t s_ten[10]      = {1, 2, 3, 4, 5, 99, 100, 101, 102, 103};
+
+    e_five.scalar_args = s_five;       e_five.num_scalar_args = 5;
+    e_six.scalar_args  = s_six;        e_six.num_scalar_args  = 6;
+    e_six_diff.scalar_args = s_six_diff; e_six_diff.num_scalar_args = 6;
+    e_ten.scalar_args  = s_ten;        e_ten.num_scalar_args  = 10;
+
+    auto h_five     = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_five, 1});
+    auto h_six      = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_six, 1});
+    auto h_six_diff = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_six_diff, 1});
+    auto h_ten      = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_ten, 1});
+
+    // Count axis: 5 args vs 6 vs 10 → all distinct.
+    assert(h_five != h_six);
+    assert(h_five != h_ten);
+    assert(h_six != h_ten);
+
+    // Value axis past index 5: same count, differ at index 5 → distinct.
+    assert(h_six != h_six_diff);
+
+    // Determinism: same input → same hash.
+    auto h_six_again = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_six, 1});
+    assert(h_six == h_six_again);
+
+    std::printf("  FOUND-057: scalar-args truncation closed (count + past-index-5 axes)\n");
+  }
+
   std::printf("test_merkle_dag: all tests passed\n");
   return 0;
 }

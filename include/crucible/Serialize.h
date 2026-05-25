@@ -34,7 +34,7 @@ using ExternalCdagVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::Ext
 using LoadedRegionNode = fixy::wrap::Tagged<RegionNode*, fixy::tags::source::Loaded>;
 static_assert(sizeof(LoadedRegionNode) == sizeof(RegionNode*));
 static_assert(std::is_trivially_copy_constructible_v<LoadedRegionNode>);
-static constexpr CdagFormatVersion CDAG_VERSION{8u};   // v8: Guard::hash reflection-based (full-field fold incl. pad); v7 hashes invalid
+static constexpr CdagFormatVersion CDAG_VERSION{9u};   // v9 (FOUND-057): ContentHash folds num_scalar_args + iterates all scalars (no 5-clamp); v8 hashes invalid
 
 [[nodiscard]] constexpr bool cdag_version_matches(
     ExternalCdagVersion disk_version) noexcept

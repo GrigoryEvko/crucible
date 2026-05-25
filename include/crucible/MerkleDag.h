@@ -1133,9 +1133,32 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
       content_hash_state = detail::wymix(content_hash_state ^ per_dim_hash_xor, meta_packed);
     }
 
+    // FIXY-FOUND-057: fold the count BEFORE the value loop so that
+    // an op with N args is distinct from one with M args even when
+    // the first min(N, M) scalars agree.  Pre-FOUND-057 the count
+    // was invisible to the hash AND the loop truncated at index 5,
+    // so [1,2,3,4,5,99] and [1,2,3,4,5] (and [1,2,3,4,5,42]) all
+    // produced the same ContentHash.  Folding num_scalar_args as a
+    // distinct mixer input fixes the COUNT axis; iterating the full
+    // num_scalar_args (no 5-clamp) fixes the VALUE-PAST-INDEX-5 axis.
+    //
+    // Use FNV-1a-style XOR+multiply (NOT wymix): wymix(X, 0) = 0
+    // because the underlying 128-bit multiply collapses with a zero
+    // operand (documented at line 968).  num_scalar_args legitimately
+    // takes the value 0 for scalar-free ops, and a wymix-fold there
+    // would zero the accumulator and propagate through fmix64 to
+    // ContentHash{0} — which collides with the EMPTY-slot sentinel.
+    //
+    // Storage invariant: te.scalar_args allocation always matches
+    // te.num_scalar_args — checked in BackgroundThread.h:1421-1424
+    // (n_scalars = num_scalar_args after clamp, used to size the
+    // arena array) and Serialize.h:472-475 (arena alloc_array sized
+    // exactly to te.num_scalar_args).  Iterating to num_scalar_args
+    // is therefore in-bounds in every production path.
+    content_hash_state ^= static_cast<uint64_t>(op_record.num_scalar_args);
+    content_hash_state *= 0x100000001b3ULL;
     if (op_record.scalar_args) {
-      uint16_t num_scalars_clamped = std::min(op_record.num_scalar_args, uint16_t{5});
-      for (uint16_t s = 0; s < num_scalars_clamped; s++) {
+      for (uint16_t s = 0; s < op_record.num_scalar_args; s++) {
         content_hash_state ^= static_cast<uint64_t>(op_record.scalar_args[s]);
         content_hash_state *= 0x100000001b3ULL;
       }
