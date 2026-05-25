@@ -711,7 +711,7 @@ static_assert(rule_code_count == catalog_size + 1,
     "added without appending the rule struct to Catalog, OR a rule "
     "was appended to Catalog without minting a RuleCode enumerator. "
     " This reflection-derived pin is independent of catalog_size's "
-    "hand-pinned 47 — both must agree.");
+    "hand-pinned 48 — both must agree.");
 
 template <RuleCode R>
 struct rule_tag;
