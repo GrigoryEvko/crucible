@@ -3852,6 +3852,22 @@ crucible_neg_compile_effects_test(neg_capability_default_construct
 # thread-effect atoms (no value-level cap::* analogue).
 crucible_neg_compile_effects_test(neg_capability_mint_from_fg_ctx
     "associated constraints are not satisfied|CtxCanMint")
+
+# ─── FIXY-FOUND-077: §XXI Universal Mint Pattern → Computation ─────
+#
+# Two fixtures lock the §XXI-aligned mint aliases on Computation:
+#   1. mint_computation(T) — pure-row lift; requires row_size_v<R> == 0.
+#      Calling on a Row<Bg> Computation fires the gate.
+#   2. mint_computation_in_ctx<Cap, Ctx>(ctx, x) — Ctx-bound lift;
+#      requires Ctx::row_type to contain Cap.  HotFgCtx (row = Row<>)
+#      calling with Effect::Bg fires the third predicate.
+# The aliases delegate to the existing `mk` / `lift_in` factories; the
+# requires-clauses are identical and inherited.  These fixtures prove
+# the §XXI surface inherits the gate at substitution.
+crucible_neg_compile_effects_test(neg_mint_computation_non_pure_row
+    "associated constraints are not satisfied|row_size_v|mint_computation")
+crucible_neg_compile_effects_test(neg_mint_computation_in_ctx_unfit_row
+    "associated constraints are not satisfied|row_contains_v|mint_computation_in_ctx")
 crucible_neg_compile_effects_test(neg_capability_cap_matches_ctx
     "associated constraints are not satisfied|CapMatchesCtx")
 crucible_neg_compile_effects_test(neg_capability_extract_bare_thread_atom

@@ -196,6 +196,27 @@ public:
         return Computation{std::move(x)};
     }
 
+    // `mint_computation` — §XXI Universal Mint Pattern alias of `mk`
+    // (FIXY-FOUND-077).  Same body, same `requires (row_size_v<R> == 0)`
+    // cross-tier admission gate; exists so `grep -r "mint_"` finds every
+    // authorization point in the codebase.  Production call sites SHOULD
+    // prefer this spelling; the historical `mk` survives for backward
+    // compatibility (27+ established call sites) and for visual symmetry
+    // with the Haskell-style `pure`/`return` lift it models.  Both names
+    // route through the same explicit value-ctor; binary-identical
+    // codegen at -O3 (zero-overhead alias).
+    //
+    // §XXI shape audit: this is a token-mint (no Ctx param) because the
+    // pure-row lift derives authority from the empty-row R constraint
+    // itself — there's nothing left to gate at the ctx level.  Compare
+    // with `mint_computation_in_ctx<Cap, Ctx>` (below) which IS Ctx-bound.
+    [[nodiscard]] static constexpr Computation mint_computation(T x)
+        noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires (row_size_v<R> == 0)
+    {
+        return Computation{std::move(x)};
+    }
+
     // `extract` — unwrap a pure value out of an empty-row Computation.
     // Two overloads: lvalue returns const-ref (no copy on inspection),
     // rvalue returns by value (move out of impl_).
@@ -323,6 +344,31 @@ public:
               && ::crucible::effects::IsExecCtx<Ctx>
               && row_contains_v<typename std::remove_cvref_t<Ctx>::row_type, Cap>
     [[nodiscard]] static constexpr auto lift_in(Ctx const&, T x)
+        noexcept(std::is_nothrow_move_constructible_v<T>)
+        -> Computation<Row<Cap>, T>
+    {
+        return Computation<Row<Cap>, T>{std::move(x)};
+    }
+
+    // `mint_computation_in_ctx<Cap, Ctx>` — §XXI Universal Mint Pattern
+    // alias of `lift_in` (FIXY-FOUND-077).  Canonical §XXI Ctx-bound
+    // shape: `requires CtxFitsX<X, Ctx>` (here: `row_contains_v<Ctx::
+    // row_type, Cap>`).  Exposes the ctx-bound forging surface to
+    // `grep "mint_"`; production call sites SHOULD prefer this spelling.
+    // The historical `lift_in` survives for backward compatibility and
+    // for paired use with the unwitnessed `lift<Cap>` form (which lives
+    // outside the mint surface because no ctx fit-check exists).
+    //
+    // §XXI shape: Ctx-bound mint (first parameter is `Ctx const&`),
+    // returns concrete `Computation<Row<Cap>, T>`, single requires-clause
+    // is the ctx-fit check, [[nodiscard]] + constexpr + noexcept.  All
+    // boxes ticked from the canonical mints table.  Binary-identical
+    // codegen at -O3 with `lift_in` (zero-overhead alias).
+    template <Effect Cap, class Ctx>
+        requires IsEffect<Cap>
+              && ::crucible::effects::IsExecCtx<Ctx>
+              && row_contains_v<typename std::remove_cvref_t<Ctx>::row_type, Cap>
+    [[nodiscard]] static constexpr auto mint_computation_in_ctx(Ctx const&, T x)
         noexcept(std::is_nothrow_move_constructible_v<T>)
         -> Computation<Row<Cap>, T>
     {
