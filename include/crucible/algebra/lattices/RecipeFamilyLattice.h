@@ -104,6 +104,20 @@ enum class RecipeFamily : std::uint8_t {
 inline constexpr std::size_t recipe_family_count =
     std::meta::enumerators_of(^^RecipeFamily).size();
 
+// FIXY-FOUND-137: cardinality pin.  Appending a new enumerator to
+// RecipeFamily requires (a) extending the switch in recipe_family_name
+// below, (b) updating the RecipeFamilyLattice leq/join/meet if the
+// new family participates in the partial order, (c) auditing
+// downstream consumers for switch-coverage drift, and (d) bumping
+// this assertion to the new count.  The peer Lattice headers
+// (HotPathLattice / DetSafeLattice / CipherTierLattice / etc.)
+// follow the same pattern; this pin closes the audit gap noted in
+// FOUND-137's hygiene sweep.
+static_assert(recipe_family_count == 6,
+    "FIXY-FOUND-137: RecipeFamily grew beyond 6 enumerators.  Extend "
+    "recipe_family_name's switch arm AND the lattice's leq/join/meet "
+    "behavior for the new family, then bump this assertion.");
+
 [[nodiscard]] consteval std::string_view recipe_family_name(
     RecipeFamily f) noexcept {
     switch (f) {

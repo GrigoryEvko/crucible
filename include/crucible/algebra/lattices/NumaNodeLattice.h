@@ -85,6 +85,7 @@
 #include <meta>
 #include <string_view>
 #include <type_traits>
+#include <utility>          // FIXY-FOUND-137: std::to_underlying
 
 namespace crucible::algebra::lattices {
 
@@ -96,6 +97,40 @@ enum class NumaNodeId : std::uint8_t {
     None = 254,    // bottom: unbound
     Any  = 255,    // top: wildcard
 };
+
+// FIXY-FOUND-137: sentinel cardinality + wire-format value pins.
+//
+// Unlike the dense per-tier lattice enums (HotPathTier / DetSafeTier
+// / ...), NumaNodeId is a SPARSE enum: the named enumerators are
+// SENTINELS only (None=254, Any=255); the concrete values 0..253 are
+// numeric NUMA node IDs that flow through the type as bit-cast
+// uint8_t with no enumerator label.  Hygiene is therefore split:
+//   (a) numa_node_id_sentinel_count pins how many NAMED enumerators
+//       exist — appending a third sentinel (e.g. `Migrating = 253`)
+//       reddens loudly and forces deliberate placement.
+//   (b) wire-format pins on None / Any underlying values lock the
+//       Cipher / federation row_hash layout — changing 254/255 would
+//       silently re-key every persisted NUMA-tagged value.
+inline constexpr std::size_t numa_node_id_sentinel_count =
+    std::meta::enumerators_of(^^NumaNodeId).size();
+
+static_assert(numa_node_id_sentinel_count == 2,
+    "FIXY-FOUND-137: NumaNodeId is a sparse enum with exactly two "
+    "named sentinels (None=254, Any=255) plus 254 concrete-numeric "
+    "node-id slots.  Adding a third sentinel requires (a) picking a "
+    "value below 254 that doesn't collide with the concrete-ID range, "
+    "(b) extending NumaNodeLattice::leq/join/meet to place the new "
+    "sentinel in the partial order, and (c) bumping this assertion.");
+
+static_assert(std::to_underlying(NumaNodeId::None) == 254,
+    "FIXY-FOUND-137 wire-format pin: NumaNodeId::None must remain 254 "
+    "for Cipher persistence + row_hash cross-build determinism.  "
+    "Changing this value invalidates every persisted NUMA-tagged "
+    "value.");
+static_assert(std::to_underlying(NumaNodeId::Any) == 255,
+    "FIXY-FOUND-137 wire-format pin: NumaNodeId::Any must remain 255 "
+    "(uint8_t top) so the wildcard-top is bit-identical across builds "
+    "and serializer/deserializer halves.");
 
 // ── NumaNodeLattice — partial-order with wildcard top ──────────────
 struct NumaNodeLattice {
