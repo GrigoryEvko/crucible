@@ -4889,6 +4889,8 @@ crucible_neg_compile_test(neg_collision_P002_ghost_runtime
   "P002:")
 crucible_neg_compile_test(neg_collision_I004_classified_async_session_no_ct
   "I004:")
+crucible_neg_compile_test(neg_collision_I004_secret_async_session_no_ct
+  "I004:")
 crucible_neg_compile_test(neg_collision_N002_decimal_overflow_wrap
   "N002:")
 crucible_neg_compile_test(neg_collision_L003_unscoped_spawn_borrow_capture
