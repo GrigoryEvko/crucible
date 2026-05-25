@@ -7004,14 +7004,25 @@ crucible_neg_compile_test(neg_thread_name_too_long
 crucible_neg_compile_test(neg_thread_name_wrong_ctx
   "constraints not satisfied|no matching function|CtxIsInitPhase|mint_thread_name")
 
-# ─── FIXY-V-268 CollisionCatalog V401/V402 neg-compiles (per-rule, HS14) ──
+# ─── FIXY-V-268 + FIXY-FOUND-062 CollisionCatalog V401/V402 neg-compiles ──
 #
 # Each instantiates a REAL fn::Fn<...> so Fn's own
 # static_assert(ValidComposition) runs the validate() leg — a concept-layer
 # neg ALONE does not gate Fn<> (feedback_collision_catalog_dual_wiring).
 # Distinct mismatch classes: V401 = scope×strength on one type_t; V402 =
 # scope-trunk × host-arch (type_t + source_t).
+#
+# FIXY-FOUND-062 widened V401's scope threshold from `≥ Gpu` to
+# `≥ Cluster`, catching the Hopper thread-block-cluster cross-CTA
+# publish case alongside device-wide / system-wide publishes.  Two V401
+# fixtures probe both tiers in the rejected accel-trunk set:
+#   1. Wait<Gpu, T>     — original device-wide tier
+#   2. Wait<Cluster, T> — Hopper cross-CTA tier (FIXY-FOUND-062 widening)
+# A regression narrowing the threshold back to Gpu would silently let
+# Cluster publishes slip through — fixture #2 catches that.
 crucible_neg_compile_test(neg_collision_V401_scope_strength
+  "V401")
+crucible_neg_compile_test(neg_collision_V401_cluster_scope
   "V401")
 crucible_neg_compile_test(neg_collision_V402_scope_arch
   "V402")

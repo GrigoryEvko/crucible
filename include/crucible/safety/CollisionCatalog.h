@@ -419,17 +419,22 @@ enum class RuleCode : std::uint8_t {
     // V101/V201/V301 — the V402 marker is the second, grant-driven path for
     // the cross-grant case a single type read cannot express.
     //
-    //   V401: marks scope ⊒ Gpu × BarrierStrength ⊏ AcqRel.  A value
-    //         published at device-or-wider visibility (Gpu / System) needs at
-    //         least acquire-release ordering to make the cross-CTA / cross-
-    //         device writes actually visible; a Gpu-scope publication guarded
-    //         only by None / CompilerBarrier / AcquireLoad / ReleaseStore is a
-    //         silent weak-memory race (the fence widens visibility but the
-    //         barrier never establishes the two-sided ordering device readers
-    //         require).  scope_at_or_above_v<Gpu, type_t> reads the ScopedFence
-    //         tier; barrier_at_or_above_v<AcqRel, type_t> reads the
-    //         BarrierGuarded tier from the SAME composed type_t (the two
-    //         detectors pierce each other).  Type-readable.
+    //   V401: marks scope ⊒ Cluster × BarrierStrength ⊏ AcqRel.  A value
+    //         published at cross-CTA-or-wider visibility (Cluster / Gpu /
+    //         System) needs at least acquire-release ordering to make the
+    //         cross-CTA / cross-cluster / cross-device writes actually
+    //         visible; a Cluster/Gpu-scope publication guarded only by None /
+    //         CompilerBarrier / AcquireLoad / ReleaseStore is a silent weak-
+    //         memory race (the fence widens visibility but the barrier
+    //         never establishes the two-sided ordering cross-CTA readers
+    //         require).  FIXY-FOUND-062 widened the threshold from Gpu to
+    //         Cluster — Hopper's thread-block cluster (PTX `.cluster`,
+    //         distributed shared memory across up to 8 CTAs, cluster.sync)
+    //         crosses CTA boundaries with the same silent-race profile as
+    //         a `.gpu` publish.  scope_at_or_above_v<Cluster, type_t> reads
+    //         the ScopedFence tier; barrier_at_or_above_v<AcqRel, type_t>
+    //         reads the BarrierGuarded tier from the SAME composed type_t
+    //         (the two detectors pierce each other).  Type-readable.
     //   V402: marks scope-trunk × host-arch CROSS-TRUNK incoherence.  An
     //         accel-trunk (GPU device) scope pinned to a CPU-host arch
     //         (source::ArchPinned<Arm> or <X86> — the fence dialect is
@@ -443,7 +448,7 @@ enum class RuleCode : std::uint8_t {
     //         grant-driven path for the nested-cross-trunk-scope case a single
     //         type read cannot express (two ScopedFence layers from different
     //         trunks composed in one binding).
-    V401 = 45,  // scope ⊒ Gpu × BarrierStrength ⊏ AcqRel (device publish under-fenced)
+    V401 = 45,  // scope ⊒ Cluster × BarrierStrength ⊏ AcqRel (cross-CTA publish under-fenced)
     V402 = 46,  // scope-trunk × host-arch cross-trunk (GPU scope on CPU host / ARM scope on x86)
     None = 255,
 };
@@ -1248,17 +1253,19 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(V301, "V301",
     "fixy.md §24.2 V301 (V-260)");
 // FIXY-V-268 V4xx-family diagnostics (2 memory-scope cross-axis rules).
 CRUCIBLE_COLLISION_DIAGNOSTIC(V401, "V401",
-    "device-or-wider memory-scope publications carry at least acquire-release ordering",
-    "F::type_t composes a ScopedFence tier ⊒ Gpu (device / system visibility) with a "
-    "BarrierGuarded tier ⊏ AcqRel (None / CompilerBarrier / AcquireLoad / ReleaseStore). "
-    "A `.gpu`/`.sys`-scope publication widens VISIBILITY but a sub-AcqRel barrier never "
-    "establishes the two-sided ordering cross-CTA / cross-device readers require — a "
-    "silent weak-memory race (the MemoryScope axis widens reach; the BarrierStrength axis "
-    "must independently establish ordering)",
-    "raise the barrier to BarrierGuarded<AcqRel> (or SeqCst / FullFence) on the device-scope "
-    "publication, or narrow the ScopedFence scope to Cta / Warp where the weaker barrier "
-    "suffices",
-    "fixy.md §24.2 V401 (V-268)");
+    "cross-CTA-or-wider memory-scope publications carry at least acquire-release ordering",
+    "F::type_t composes a ScopedFence tier ⊒ Cluster (cross-CTA / device / system "
+    "visibility) with a BarrierGuarded tier ⊏ AcqRel (None / CompilerBarrier / AcquireLoad "
+    "/ ReleaseStore). A `.cluster`/`.gpu`/`.sys`-scope publication widens VISIBILITY but "
+    "a sub-AcqRel barrier never establishes the two-sided ordering cross-CTA / cross-"
+    "cluster / cross-device readers require — a silent weak-memory race (the MemoryScope "
+    "axis widens reach; the BarrierStrength axis must independently establish ordering). "
+    "FIXY-FOUND-062 widened the catch set from {Gpu, System} to {Cluster, Gpu, System} "
+    "— Hopper thread-block clusters cross CTA boundaries via distributed shared memory",
+    "raise the barrier to BarrierGuarded<AcqRel> (or SeqCst / FullFence) on the cross-CTA-"
+    "scope publication, or narrow the ScopedFence scope to Cta / Warp where the weaker "
+    "barrier suffices",
+    "fixy.md §24.2 V401 (V-268, V-FOUND-062)");
 CRUCIBLE_COLLISION_DIAGNOSTIC(V402, "V402",
     "a memory-scope trunk is coherent with the binding's pinned host architecture",
     "marks_scope_arch_cross_trunk OR F::type_t pins a ScopedFence whose trunk contradicts "
@@ -1960,9 +1967,11 @@ template <typename T> struct scope_tier_of<T const&> : scope_tier_of<T> {};
 // scope_at_or_above_v<Floor, T>: a ScopedFence is present AND its pinned
 // scope SUBSUMES Floor on the MemoryScopeLattice partial order
 // (leq(Floor, value) — "the publish scope is at-or-above the floor").  With
-// Floor = Gpu, only Gpu and System satisfy (device-or-wider visibility);
-// Cta / Cluster / Warp and every ARM-trunk scope do NOT (cross-trunk leq is
-// false), so the V401 rule fires ONLY for genuinely device-or-wider scopes.
+// Floor = Cluster (FIXY-FOUND-062 widening), {Cluster, Gpu, System} satisfy
+// (cross-CTA-or-wider visibility — the silent-weak-memory-race set on
+// Hopper thread-block-cluster and beyond); Cta / Warp and every ARM-trunk
+// scope do NOT (cross-trunk leq is false), so the V401 rule fires ONLY for
+// genuinely cross-CTA-or-wider accel-trunk scopes.
 template <::crucible::algebra::lattices::MemoryScope Floor, typename T>
 inline constexpr bool scope_at_or_above_v =
     scope_tier_of<T>::has_scope &&
@@ -2052,12 +2061,17 @@ concept V301_OK = !(marks_hot_path<F>::value &&
 
 // ── FIXY-V-268 memory-scope-axis rule concepts (2 of 2) ─────────────
 
-// V401: scope ⊒ Gpu × BarrierStrength ⊏ AcqRel.  A device-or-wider publish
-// scope composed with a barrier weaker than acquire-release is an
+// V401: scope ⊒ Cluster × BarrierStrength ⊏ AcqRel.  A cross-CTA-or-wider
+// publish scope composed with a barrier weaker than acquire-release is an
 // under-fenced publication (visibility widened, ordering never established).
+// FIXY-FOUND-062 widened the threshold from Gpu to Cluster — Hopper
+// thread-block-cluster publishes are cross-CTA and exhibit the same
+// silent-weak-memory race as Gpu publishes when guarded by a sub-AcqRel
+// barrier.  The widening catches {Cluster, Gpu, System} in the accel trunk
+// (cross-trunk leq false leaves the ARM trunk untouched).
 template <typename F>
 concept V401_OK = !(scope_at_or_above_v<
-                        ::crucible::algebra::lattices::MemoryScope::Gpu,
+                        ::crucible::algebra::lattices::MemoryScope::Cluster,
                         typename F::type_t> &&
                     !barrier_at_or_above_v<
                         ::crucible::algebra::lattices::BarrierStrength::AcqRel,
@@ -2543,14 +2557,17 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             ::crucible::algebra::lattices::BarrierStrength::SeqCst, Type>;
 
     // ── FIXY-V-268 memory-scope-axis predicates (2 cross-axis rules) ─
-    static constexpr bool scope_at_or_above_gpu =
+    // FIXY-FOUND-062: V401 threshold widened Gpu → Cluster, catching the
+    // Hopper thread-block-cluster cross-CTA publish case alongside
+    // device-wide / system-wide publishes.  See V401_OK concept above.
+    static constexpr bool scope_at_or_above_cluster =
         collision::scope_at_or_above_v<
-            ::crucible::algebra::lattices::MemoryScope::Gpu, Type>;
+            ::crucible::algebra::lattices::MemoryScope::Cluster, Type>;
     static constexpr bool barrier_at_least_acqrel =
         collision::barrier_at_or_above_v<
             ::crucible::algebra::lattices::BarrierStrength::AcqRel, Type>;
     static constexpr bool scope_strength_insufficient =
-        scope_at_or_above_gpu && !barrier_at_least_acqrel;
+        scope_at_or_above_cluster && !barrier_at_least_acqrel;
     // Read the destructured Type / Source template params directly (NOT
     // scope_arch_cross_trunk_v<F>, which would touch F::type_t / F::source_t
     // and force Fn<> to complete — re-entering its own
@@ -2786,13 +2803,16 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "<ReleaseStore>/<AcqRel>; reserve SeqCst/FullFence for Init or Bg.");
         // ── FIXY-V-268 memory-scope-axis static asserts ──────────────
         static_assert(!scope_strength_insufficient,
-            "V401: a ScopedFence scope ⊒ Gpu (device / system visibility) is composed "
-            "with a BarrierStrength ⊏ AcqRel (None / CompilerBarrier / AcquireLoad / "
-            "ReleaseStore). A `.gpu`/`.sys`-scope publication widens visibility but a "
-            "sub-AcqRel barrier never establishes the two-sided ordering cross-CTA / "
-            "cross-device readers require — a silent weak-memory race. Raise the barrier "
-            "to BarrierGuarded<AcqRel> (or SeqCst / FullFence) on the device-scope value, "
-            "or narrow the ScopedFence scope to Cta / Warp where the weaker barrier suffices.");
+            "V401: a ScopedFence scope ⊒ Cluster (cross-CTA / device / system visibility) "
+            "is composed with a BarrierStrength ⊏ AcqRel (None / CompilerBarrier / "
+            "AcquireLoad / ReleaseStore). A `.cluster`/`.gpu`/`.sys`-scope publication "
+            "widens visibility but a sub-AcqRel barrier never establishes the two-sided "
+            "ordering cross-CTA / cross-cluster / cross-device readers require — a silent "
+            "weak-memory race. Raise the barrier to BarrierGuarded<AcqRel> (or SeqCst / "
+            "FullFence) on the cross-CTA-scope value, or narrow the ScopedFence scope to "
+            "Cta / Warp where the weaker barrier suffices. FIXY-FOUND-062 widened the "
+            "catch set from {Gpu, System} to {Cluster, Gpu, System} — Hopper thread-block "
+            "clusters cross CTA boundaries via distributed shared memory.");
         static_assert(!scope_arch_cross_trunk,
             "V402: a ScopedFence scope trunk contradicts the binding's pinned host "
             "architecture (arch_pin_v<F::source_t>) — an accel (GPU device) scope on a "
