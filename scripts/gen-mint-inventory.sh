@@ -38,7 +38,8 @@ gen-mint-inventory.sh — substrate mint inventory generator.
 Usage:
   gen-mint-inventory.sh                 # write misc/mint-inventory.md
   gen-mint-inventory.sh --stdout        # print to stdout
-  gen-mint-inventory.sh --check         # diff against HEAD copy
+  gen-mint-inventory.sh --check         # diff against HEAD copy (drift gate)
+  gen-mint-inventory.sh --check-floor   # FAIL if any production row HS14 < FLOOR
   gen-mint-inventory.sh --self-test     # plant a mint, verify capture
   gen-mint-inventory.sh -h | --help     # usage
 USAGE
@@ -49,11 +50,24 @@ case "${1:-}" in
     -h|--help) usage; exit 0 ;;
     --stdout)   mode="stdout" ;;
     --check)    mode="check" ;;
+    --check-floor) mode="check-floor" ;;
     --self-test) mode="self-test" ;;
     "") ;;
     *) printf 'gen-mint-inventory: unknown argument: %s\n' "$1" >&2
        usage; exit 2 ;;
 esac
+
+# FIXY-FOUND-140 — single source of truth for the HS14 floor.
+#
+# Pre-140 the value `2` was hard-coded at THREE numerical sites
+# (the (( hs14 < 2 )) markers across substrate / member-function /
+# fixy-origin emitters) PLUS the legend prose ("HS14 floor is 2").
+# Drift between sites is silent — bumping the floor would have
+# required FOUR coordinated edits.  This constant collapses them to
+# one SoT.  The new `--check-floor` mode (below) uses the same value
+# to enforce the threshold at CI time, closing the loop between
+# documentation (visual ⚠ marker) and enforcement (build red).
+HS14_FLOOR=2
 
 if ! command -v rg >/dev/null 2>&1; then
     printf 'gen-mint-inventory: ripgrep (rg) is required\n' >&2
@@ -818,7 +832,7 @@ factory is named \`mint_<noun>\`.  Each row records:
 | \`nd cx ne rq\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause.  \`Y\` = present, \`-\` = absent.  \`- (alloc)\` in the \`cx\` column = documented carve-out (FIXY-V-021): the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI \`constexpr\` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the \`// §XXI carve-out: cx=alloc\` marker placed immediately above the \`[[nodiscard]]\` line at the mint signature.  \`- (pre)\` in the \`rq\` column = documented carve-out (FIXY-FOUND-082): the gate is a P2900 \`pre(...)\` clause instead of a \`requires\`-clause because the predicate is value-dependent (inspects carrier runtime state, not just template arguments) and cannot lift into a concept.  Canonical example: \`mint_view\`'s \`pre(view_ok(c, type_identity<Tag>{}))\`.  Marker: \`// §XXI carve-out: rq=pre\` above the mint signature. |
 | \`cb\` | Authorization shape: \`ctx\` (ctx-bound mint, \`Ctx const&\` first parameter), \`token\` (token mint, derives authority from a parent token), or \`member\` (class-method mint — see "Member-function mints" section below). |
 | \`fixy\` | fixy:: re-export site (\`include/crucible/fixy/...\`) or \`[✗ NO-FIXY]\` gap.  Inapplicable for the \`member\` row (class-method mints cannot be \`using\`-re-exported at namespace scope). |
-| \`HS14\` | Count of neg-compile fixtures across all \`test/*_neg/\` trees (fixy_neg, warden_neg, perf_neg, effects_neg, safety_neg, …) mentioning this mint (HS14 floor is 2). |
+| \`HS14\` | Count of neg-compile fixtures across all \`test/*_neg/\` trees (fixy_neg, warden_neg, perf_neg, effects_neg, safety_neg, …) mentioning this mint (HS14 floor is ${HS14_FLOOR}). |
 
 Gap markers: \`[✗ NO-FIXY]\` (substrate mint not re-exported through fixy::),
 \`[⚠ <2 HS14]\` (HS14 fixture floor not met).  §XXI compliance shortfalls
@@ -887,7 +901,7 @@ HEADER
         fi
 
         local hs14_cell="HS14: $hs14"
-        if (( hs14 < 2 )); then
+        if (( hs14 < HS14_FLOOR )); then
             hs14_cell="HS14: $hs14 ⚠"
         fi
 
@@ -943,7 +957,7 @@ HEADER
             local mf_hs14 mf_hs14_cell
             mf_hs14="$(hs14_count_for "$name")"
             mf_hs14_cell="HS14: $mf_hs14"
-            (( mf_hs14 < 2 )) && mf_hs14_cell="HS14: $mf_hs14 ⚠"
+            (( mf_hs14 < HS14_FLOOR )) && mf_hs14_cell="HS14: $mf_hs14 ⚠"
 
             printf '| `%s::%s` | `%s` | %s | %s | %s | %s | %s | %s |\n' \
                 "$class_name" "$name" "$fileline" "$mf_nd_cell" "$mf_cx_cell" \
@@ -999,7 +1013,7 @@ HEADER
             local fo_hs14 fo_hs14_cell
             fo_hs14="$(hs14_count_for "$name")"
             fo_hs14_cell="HS14: $fo_hs14"
-            (( fo_hs14 < 2 )) && fo_hs14_cell="HS14: $fo_hs14 ⚠"
+            (( fo_hs14 < HS14_FLOOR )) && fo_hs14_cell="HS14: $fo_hs14 ⚠"
 
             printf '| `%s` | `%s` | %s | %s | %s | %s | %s | %s |\n' \
                 "$name" "$fileline" "$fo_nd_cell" "$fo_cx_cell" "$fo_ne_cell" \
@@ -1048,6 +1062,35 @@ case "$mode" in
             <(grep -v '^Snapshot generated:' "$head_copy") \
             <(emit_inventory | grep -v '^Snapshot generated:') | \
             head -40 >&2 || true
+        exit 1
+        ;;
+    check-floor)
+        # FIXY-FOUND-140 — HS14-floor CI gate.
+        #
+        # The ⚠ marker placed by the emitter on under-witnessed rows
+        # (HS14 < HS14_FLOOR) is documentation-only.  This mode promotes
+        # the marker to a build-red enforcement: any production row
+        # carrying the ⚠ glyph counts as a violation and the script
+        # exits non-zero with the violator list.
+        #
+        # The "Legend" section also contains the literal "HS14: $hs14 ⚠"
+        # template prose (rendered with $HS14_FLOOR substituted) — we
+        # filter that out before counting.  Real rows always begin with
+        # "| `mint_" (a markdown table row whose first column is the
+        # backtick-quoted mint name).
+        inventory_text="$(emit_inventory)"
+        violators="$(printf '%s\n' "$inventory_text" \
+                      | grep -E '^\| `(mint_|[A-Za-z_][A-Za-z0-9_]*::mint_)' \
+                      | grep 'HS14:.*⚠' || true)"
+        if [[ -z "$violators" ]]; then
+            printf 'gen-mint-inventory: HS14 floor (%d) honoured by all production mints.\n' \
+                "$HS14_FLOOR" >&2
+            exit 0
+        fi
+        printf 'gen-mint-inventory: HS14 FLOOR VIOLATION — the following production mints ship with HS14 < %d:\n' \
+            "$HS14_FLOOR" >&2
+        printf '%s\n' "$violators" >&2
+        printf '\nAdd neg-compile fixtures under test/*_neg/ mentioning the offending mint(s) by name (HS14 floor enforced by scripts/gen-mint-inventory.sh --check-floor).\n' >&2
         exit 1
         ;;
 esac

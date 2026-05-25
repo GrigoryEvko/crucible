@@ -804,8 +804,20 @@ add_test(NAME mint_inventory_check
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.sh
           --check
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-set_tests_properties(mint_inventory_self_test mint_inventory_check PROPERTIES
-    LABELS "ci_guard;fixy-U-106")
+# FIXY-FOUND-140 wire: --check-floor promotes the ⚠ visual marker on
+# under-witnessed mints (HS14 < FLOOR) to a hard CI gate.  Closes the
+# loop between the legend's documented floor and actual enforcement —
+# previously a production mint shipping with HS14:0 or HS14:1 reddened
+# nothing.  Single source of truth for the floor value lives in
+# scripts/gen-mint-inventory.sh (HS14_FLOOR=2).
+add_test(NAME mint_inventory_check_floor
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.sh
+          --check-floor
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+set_tests_properties(mint_inventory_self_test
+                     mint_inventory_check
+                     mint_inventory_check_floor PROPERTIES
+    LABELS "ci_guard;fixy-U-106;fixy-FOUND-140")
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
