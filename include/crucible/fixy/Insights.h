@@ -2,8 +2,10 @@
 
 // ── crucible::fixy::diag — per-tag insight specializations ─────────
 //
-// fixy-H-14: the 20 `FixyNotEngaged_<Axis>` tags + the 4 §30.14
+// fixy-H-14: the 33 `FixyNotEngaged_<Axis>` tags + the 6 §30.14
 // theory-corpus entries each ship an `insight_provider` specialization
+// (FIXY-FOUND-127: previously "20 / 4"; now corrected — see counts
+// below.  The 22-axis prose at line 23 was equally stale.)
 // here so the deep-diagnostic builder emits structured Why / Symptom /
 // Correct-example / Violating-example sections when the gate fires.
 // Without these specializations the corresponding insight_provider
@@ -20,8 +22,10 @@
 //                                                         30/20/10/10
 //                                                         minimum-
 //                                                         length bar).
-//   fixy/Reject.h::FixyNotEngaged_*  — the 22 axis-engagement tags.
-//   fixy/Theory.h::corpus::*         — the 4 §30.14 unsoundness tags.
+//   fixy/Reject.h::FixyNotEngaged_*  — the 33 axis-engagement tags
+//                                      (FIXY-FOUND-127: was 22).
+//   fixy/Theory.h::corpus::*         — the 6 §30.14 unsoundness tags
+//                                      (FIXY-FOUND-127: was 4).
 //
 // ── Authoring discipline ───────────────────────────────────────────
 //
@@ -56,13 +60,18 @@
 #include <crucible/safety/diag/Insights.h>
 
 // ═══════════════════════════════════════════════════════════════════
-// ── 22 FixyNotEngaged_<Axis> specializations (FIXY-U-110) ─────────
+// ── 33 FixyNotEngaged_<Axis> specializations (FIXY-U-110 + sweep) ──
 // ═══════════════════════════════════════════════════════════════════
 // 20 original axes + Synchronization (fixy-A3-008, 2026-05-18) +
-// Regime (fixy-A3-009, 2026-05-18).  Coverage is reflection-witnessed
-// at the bottom of this header: every DimensionAxis enumerator must
-// have a corresponding insight_provider specialization, or the
-// coverage sentinel fails to compile.
+// Regime (fixy-A3-009, 2026-05-18) + 11 added since (FpMode V-088,
+// SyscallSurface V-097, ControlFlow / CallShape / StackUse /
+// GlobalState / Stdio V-238, HwInstruction / BarrierStrength /
+// SimdIsa V-253, MemoryScope V-266) — FIXY-FOUND-127 corrects the
+// stale "22" banner that pre-dated those 11 additions.  Coverage is
+// reflection-witnessed at the bottom of this header: every
+// DimensionAxis enumerator must have a corresponding
+// insight_provider specialization, or the coverage sentinel fails
+// to compile.
 
 CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::diag::FixyNotEngaged_Type,
@@ -571,7 +580,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "fixy::fn<T, /* no SimdIsa grant */, ...>");
 
 // ═══════════════════════════════════════════════════════════════════
-// ── 4 §30.14 corpus entry specializations ─────────────────────────
+// ── 6 §30.14 corpus entry specializations (FIXY-FOUND-127: was 4) ──
 // ═══════════════════════════════════════════════════════════════════
 
 CRUCIBLE_DEFINE_INSIGHTS_QV(
