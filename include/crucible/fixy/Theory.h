@@ -1342,8 +1342,24 @@ struct classified_io_without_declassify {
             detail::has_grant_of<detail::is_secret_carrier, Grants...>();
         const bool has_io =
             detail::has_grant_of<detail::is_io_effect_grant, Grants...>();
+        // FIXY-FOUND-006: per-axis declassify discipline (Hunt-Sands).
+        // Pre-fix `has_declassify = has_grant_of<is_declassify_grant>`
+        // silenced Entry 1 on ANY declassify, including policies whose
+        // `axes_discharged_of_v` does not admit IO (e.g. AuthorizedReplay
+        // discharges Staleness only, AuditedLogging is at the Hunt-Sands
+        // safe-default DischargeAxis::None).  The wrong-axis bypass let
+        // unrelated policy tags silence Entry 1 without authorizing the
+        // IO crossing they purported to discharge.  Per fixy-A4-015 the
+        // matcher now reads `has_declassify_for_axis<IO>`, which is true
+        // ONLY when at least one declassify in the pack carries a policy
+        // with the IO bit lifted.  Today no shipped policy lifts that
+        // bit — every declassify currently fails to silence Entry 1,
+        // forcing the user to either (a) drop the as_secret/IO pair or
+        // (b) ship a new `secret_policy::AuthorizedIo`-style tag whose
+        // `axes_discharged_of_v` includes DischargeAxis::IO.
         const bool has_declassify =
-            detail::has_grant_of<detail::is_declassify_grant, Grants...>();
+            detail::has_declassify_for_axis<
+                detail::DischargeAxis::IO, Grants...>();
         return has_secret && has_io && !has_declassify;
     }
 
@@ -1429,12 +1445,22 @@ struct classified_io_without_declassify {
 struct classified_bg_without_declassify {
     template <typename Type, typename... Grants>
     [[nodiscard]] static consteval bool matches() noexcept {
+        // FIXY-FOUND-006 + FIXY-FOUND-005 sweep into Entry 2:
+        //   * has_secret reads `is_secret_carrier` (carrier-only — no
+        //     declassify self-cancellation paradox).
+        //   * has_declassify reads `has_declassify_for_axis<Bg>` — only
+        //     policies that explicitly lift the Bg bit in
+        //     `axes_discharged_of_v` silence Entry 2.  Today no shipped
+        //     policy lifts Bg; remediation reduces to dropping the
+        //     as_secret/Bg pair until a `secret_policy::AuthorizedBg`-
+        //     style tag ships.
         const bool has_secret =
-            detail::has_grant_of<detail::is_secret_grant, Grants...>();
+            detail::has_grant_of<detail::is_secret_carrier, Grants...>();
         const bool has_bg =
             detail::has_grant_of<detail::is_bg_effect_grant, Grants...>();
         const bool has_declassify =
-            detail::has_grant_of<detail::is_declassify_grant, Grants...>();
+            detail::has_declassify_for_axis<
+                detail::DischargeAxis::Bg, Grants...>();
         return has_secret && has_bg && !has_declassify;
     }
 
@@ -1759,8 +1785,30 @@ struct internal_io_without_declassify {
             detail::has_grant_of<detail::is_internal_grant, Grants...>();
         const bool has_io =
             detail::has_grant_of<detail::is_io_effect_grant, Grants...>();
+        // FIXY-FOUND-006: per-axis declassify discipline (Hunt-Sands).
+        // Parallel to the Entry 1 fix.  Pre-fix `has_declassify =
+        // has_grant_of<is_declassify_grant>` silenced Entry 5 on ANY
+        // declassify, including policies whose `axes_discharged_of_v`
+        // does not admit IO (e.g. AuthorizedReplay discharges Staleness
+        // only, AuditedLogging is at the Hunt-Sands safe-default
+        // DischargeAxis::None).  The wrong-axis bypass let unrelated
+        // policy tags silence the Internal+IO matcher without
+        // authorizing the IO crossing they purported to discharge.
+        // The matcher now reads `has_declassify_for_axis<IO>`, true
+        // ONLY when at least one declassify in the pack carries a
+        // policy with the IO bit lifted.  No FOUND-005 carrier-sweep
+        // needed here: `is_internal_grant` has no declassify
+        // specialization (unlike `is_secret_grant`'s fixy-A4-015 entry
+        // for declassify), so a declassify-only binding never satisfies
+        // `has_internal` — there is no self-cancellation paradox to
+        // close at this entry.  Today no shipped policy lifts the IO
+        // bit, so every declassify fails to silence Entry 5; the user
+        // must drop the as_internal/IO pair or ship a new
+        // `secret_policy::AuthorizedIo`-style tag whose
+        // `axes_discharged_of_v` includes DischargeAxis::IO.
         const bool has_declassify =
-            detail::has_grant_of<detail::is_declassify_grant, Grants...>();
+            detail::has_declassify_for_axis<
+                detail::DischargeAxis::IO, Grants...>();
         return has_internal && has_io && !has_declassify;
     }
 
@@ -1853,8 +1901,31 @@ struct internal_bg_without_declassify {
             detail::has_grant_of<detail::is_internal_grant, Grants...>();
         const bool has_bg =
             detail::has_grant_of<detail::is_bg_effect_grant, Grants...>();
+        // FIXY-FOUND-006: per-axis declassify discipline (Hunt-Sands).
+        // Parallel to the Entry 2 fix.  Pre-fix `has_declassify =
+        // has_grant_of<is_declassify_grant>` silenced Entry 6 on ANY
+        // declassify, including policies whose `axes_discharged_of_v`
+        // does not admit Bg (e.g. AuthorizedReplay discharges Staleness
+        // only, AuditedLogging is at the Hunt-Sands safe-default
+        // DischargeAxis::None).  The wrong-axis bypass let unrelated
+        // policy tags silence the Internal+Bg matcher without
+        // authorizing the cross-thread crossing they purported to
+        // discharge.  The matcher now reads
+        // `has_declassify_for_axis<Bg>`, true ONLY when at least one
+        // declassify in the pack carries a policy with the Bg bit
+        // lifted.  No FOUND-005 carrier-sweep needed here:
+        // `is_internal_grant` has no declassify specialization (unlike
+        // `is_secret_grant`'s fixy-A4-015 entry for declassify), so a
+        // declassify-only binding never satisfies `has_internal` —
+        // there is no self-cancellation paradox to close at this entry.
+        // Today no shipped policy lifts the Bg bit, so every declassify
+        // fails to silence Entry 6; the user must drop the
+        // as_internal/Bg pair or ship a new
+        // `secret_policy::CrossThreadAuthorizedDisclosure`-style tag
+        // whose `axes_discharged_of_v` includes DischargeAxis::Bg.
         const bool has_declassify =
-            detail::has_grant_of<detail::is_declassify_grant, Grants...>();
+            detail::has_declassify_for_axis<
+                detail::DischargeAxis::Bg, Grants...>();
         return has_internal && has_bg && !has_declassify;
     }
 
