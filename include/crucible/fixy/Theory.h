@@ -5,12 +5,13 @@
 // Per misc/16_05_2026_fixy.md §4.  This is the LOAD-BEARING
 // reject-by-default surface that closes
 // the FX §30.14 type-theory unsoundness corpus.  Currently ships
-// EIGHT entries — classified_io_without_declassify,
+// NINE entries — classified_io_without_declassify,
 // classified_bg_without_declassify, staleness_secret_without_declassify,
 // ghost_runtime_observable, internal_io_without_declassify,
 // internal_bg_without_declassify, (FOUND-019)
-// external_to_verified_without_attest, and (FOUND-020)
-// secret_unbounded_termination_channel — each pairs:
+// external_to_verified_without_attest, (FOUND-020)
+// secret_unbounded_termination_channel, and (FOUND-022)
+// secret_payload_without_security_claim — each pairs:
 //
 //   (a) a named pattern detector — a constexpr predicate over
 //       (Type, Grants...) that returns true iff the binding matches
@@ -735,6 +736,52 @@ static_assert(!is_cost_unbounded_grant<grant::cost_constant>::value,
 static_assert(!is_cost_unbounded_grant<grant::as_secret>::value,
     "FIXY-FOUND-020: Security-axis grants must NOT match the "
     "Complexity-axis cost_unbounded detector (cross-axis discipline).");
+
+// ── FIXY-FOUND-022 detector (payload-classification opacity) ──────
+//
+// Pre-022 the §30.14 corpus matchers all took `<typename Type,
+// typename... Grants>` but bodies only inspected `Grants...`.  Type
+// was structurally ignored — a function whose payload IS `safety::
+// Secret<U>` (the value type encodes secrecy at the wrapper level)
+// passed every matcher unless it ALSO engaged Security via grants.
+// This is a policy-data divergence: the WRAPPER says one thing
+// ("the value is secret"), the type-level POLICY claims another
+// (no security engagement).  Entry 9
+// (secret_payload_without_security_claim) closes that opacity by
+// detecting Secret-wrapped payloads at the Type slot directly.
+//
+// `is_secret_type<T>` — true iff T is `crucible::safety::Secret<U>`
+// for any U.  Distinct from `is_secret_grant` which inspects the
+// Grants pack: this detector inspects the BINDING's Type slot, the
+// payload position.  Future Secret-equivalent wrappers (e.g. a
+// `Classified<T>` if it ships) would extend via additional
+// specializations on the same template.
+template <typename T> struct is_secret_type
+    : std::false_type {};
+template <typename T>
+struct is_secret_type<::crucible::safety::Secret<T>>
+    : std::true_type {};
+
+// Structural witnesses — pin the canonical positive/negative cases
+// so a future refactor that changes Secret<T>'s template shape OR
+// adds a new Secret-equivalent wrapper reds these BEFORE entry 9
+// silently misfires.
+static_assert(is_secret_type<::crucible::safety::Secret<int>>::value,
+    "FIXY-FOUND-022: Secret<int> must match the payload-secret "
+    "detector — the canonical Secret<T>-wrapped payload position.  "
+    "If this reds, Secret's template shape changed (e.g., added a "
+    "second template parameter) and the specialization above needs "
+    "to follow.");
+static_assert(!is_secret_type<int>::value,
+    "FIXY-FOUND-022: bare int must NOT match the secret-payload "
+    "detector — type-level secrecy requires explicit Secret<T> "
+    "wrapping at the payload position.");
+static_assert(!is_secret_type<::crucible::safety::Secret<int>*>::value,
+    "FIXY-FOUND-022: pointer-to-Secret must NOT match — the Secret "
+    "wrapping is one indirection level removed and the pointer "
+    "payload itself is not classified.  If callers want pointer-to-"
+    "Secret to fire entry 9, that is a separate specialization "
+    "decision (covered by a future FIXY-FOUND-* task).");
 
 }  // namespace detail
 
@@ -1493,8 +1540,16 @@ struct external_to_verified_without_attest {
 struct secret_unbounded_termination_channel {
     template <typename Type, typename... Grants>
     [[nodiscard]] static consteval bool matches() noexcept {
+        // FOUND-022 strengthening: include type-level Secret<T> as
+        // a secret-engagement signal parallel to grant-level
+        // is_secret_grant.  A Secret<T>-wrapped payload IS a
+        // type-level Security claim even without an as_secret
+        // grant — the AHSS termination channel fires on Secret
+        // payload + cost_unbounded just as it does on as_secret
+        // grant + cost_unbounded.
         const bool has_secret =
-            detail::has_grant_of<detail::is_secret_grant, Grants...>();
+            detail::has_grant_of<detail::is_secret_grant, Grants...>()
+            || detail::is_secret_type<Type>::value;
         const bool has_unbounded =
             detail::has_grant_of<detail::is_cost_unbounded_grant,
                                  Grants...>();
@@ -1534,6 +1589,105 @@ struct secret_unbounded_termination_channel {
                "as_public / as_unclassified), OR (future) interpose "
                "declassify<Policy> where Policy's axes_discharged_of "
                "lifts DischargeAxis::Termination.";
+    }
+
+    // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
+    static constexpr std::string_view full_diagnostic() noexcept {
+        static constexpr std::string_view storage =
+            []() consteval -> std::string_view {
+                std::string msg;
+                msg += "fixy::fn<Type, Grants...> [tier 5: "
+                       "NotInTheoryCorpus]: binding matches §30.14 "
+                       "unsoundness corpus entry: ";
+                msg.append(name().data(), name().size());
+                msg += ".  ";
+                msg.append(cite().data(), cite().size());
+                return std::define_static_string(msg);
+            }();
+        return storage;
+    }
+};
+
+// ── Entry 9: secret_payload_without_security_claim ─────────────────
+//
+// FIXY-FOUND-022: pre-022 the §30.14 corpus matchers were all
+// signature `<typename Type, typename... Grants>` but their bodies
+// inspected only Grants — Type was structurally ignored.  A binding
+// whose payload IS `safety::Secret<U>` (the value type itself
+// encodes secrecy) passed every matcher unless ALSO engaging
+// Security via grants.  This entry closes the opacity gap.
+//
+// Pattern: `is_secret_type<Type>` (payload is Secret-wrapped) +
+// NO Security-axis engagement via grants (no as_secret, no
+// as_classified, no declassify<Policy>, no
+// accept_default_strict_for<Security>).  The binding's PAYLOAD
+// says "classified" but the binding's POLICY says nothing —
+// information flows through the Secret-wrapped value without an
+// audit trail because the type system never registers the
+// classification.
+//
+// Cite: Sabelfeld-Sands 2009 'Declassification: Dimensions and
+// Principles' (J. Computer Security) — the "what" dimension
+// (which data is classified) MUST be made explicit at the
+// policy level, not inferred from in-band metadata, because
+// classification policies that depend on payload inspection are
+// not statically checkable.  Sabelfeld-Myers 2003 reinforces:
+// information-flow policies are a TYPE-LEVEL artifact, not a
+// runtime-introspection artifact; a Secret<T> payload without a
+// Security-axis grant declares the type-level policy is silent
+// where the wrapper says otherwise.
+//
+// Remediation: EITHER (a) engage Security explicitly via
+// `as_secret` / `as_classified` (declare the classification at
+// the policy level), OR (b) unwrap the Secret<T> payload via
+// `declassify<Policy>` BEFORE the binding boundary (the payload
+// type then reflects the declassified data), OR (c) project
+// Security explicitly to `as_public` / `as_unclassified` with a
+// rationale (the payload IS in a Secret<T> wrapper but the
+// binding asserts the policy permits leakage — strange but
+// audit-traceable).  The corpus tier-5 rejection forces the
+// developer to make the type-level / wrapper-level discrepancy
+// EXPLICIT rather than silent.
+
+struct secret_payload_without_security_claim {
+    template <typename Type, typename... Grants>
+    [[nodiscard]] static consteval bool matches() noexcept {
+        const bool type_is_secret =
+            detail::is_secret_type<Type>::value;
+        const bool has_security_engagement =
+            detail::has_grant_of<detail::is_secret_grant, Grants...>();
+        return type_is_secret && !has_security_engagement;
+    }
+
+    static constexpr std::string_view name() noexcept {
+        return "secret_payload_without_security_claim";
+    }
+
+    static constexpr std::string_view cite() noexcept {
+        return "Sabelfeld-Sands 2009 'Declassification: Dimensions "
+               "and Principles' (J. Computer Security) — PRIMARY: "
+               "names the 'what' dimension of declassification and "
+               "argues classification policies MUST be statically "
+               "declared at the type level, not inferred from "
+               "runtime payload introspection.  A safety::Secret<T> "
+               "payload without a corresponding Security-axis grant "
+               "is a silent type-level / wrapper-level divergence: "
+               "the value type encodes classification ('this is "
+               "Secret') while the binding's policy pack stays "
+               "silent on Security.  Supporting: Sabelfeld-Myers "
+               "2003 'Language-based Information-flow Security' "
+               "(IEEE J. Sel. Areas) — information-flow policies "
+               "are a TYPE-LEVEL artifact; classification through "
+               "wrapper-only encoding is not statically checkable "
+               "and admits silent policy drift.  Remediation: (a) "
+               "engage Security explicitly via grant::as_secret or "
+               "grant::as_classified (declare the classification at "
+               "the policy level), (b) unwrap the Secret<T> via "
+               "grant::declassify<Policy> BEFORE the binding "
+               "boundary (the payload type reflects declassified "
+               "data), OR (c) project Security to as_public / "
+               "as_unclassified with documented rationale (audit-"
+               "traceable wrapper-policy mismatch).";
     }
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
@@ -1593,7 +1747,8 @@ using CorpusEntries = std::tuple<
     corpus::internal_io_without_declassify,
     corpus::internal_bg_without_declassify,
     corpus::external_to_verified_without_attest,        // FOUND-019 Biba/Clark-Wilson integrity dual
-    corpus::secret_unbounded_termination_channel        // FOUND-020 Askarov-Hunt termination channel
+    corpus::secret_unbounded_termination_channel,       // FOUND-020 Askarov-Hunt termination channel
+    corpus::secret_payload_without_security_claim       // FOUND-022 payload-classification opacity closure
 >;
 
 // Fold over CorpusEntries, returning Extractor(Entry) for the first
@@ -1671,7 +1826,7 @@ inline constexpr bool IsInUnsoundnessCorpus_v =
 // 5-step PR shape lives in the Discipline block at the top of this
 // header.
 
-inline constexpr std::size_t corpus_size_v = 8;
+inline constexpr std::size_t corpus_size_v = 9;
 
 namespace detail::corpus_size_sentinel {
 
@@ -1715,6 +1870,9 @@ inline constexpr std::array kRoster = {
     entry_witness{corpus::secret_unbounded_termination_channel::name(),
                   corpus::secret_unbounded_termination_channel::cite(),
                   corpus::secret_unbounded_termination_channel::full_diagnostic()},
+    entry_witness{corpus::secret_payload_without_security_claim::name(),
+                  corpus::secret_payload_without_security_claim::cite(),
+                  corpus::secret_payload_without_security_claim::full_diagnostic()},
 };
 static_assert(kRoster.size() == corpus_size_v,
     "fixy-L-09/L-10: corpus_size_v drifted from the actual entry "
