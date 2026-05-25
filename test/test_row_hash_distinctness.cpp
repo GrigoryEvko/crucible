@@ -36,12 +36,17 @@
 #include <crucible/Expr.h>                       // detail::fmix64
 #include <crucible/fixy/Fn.h>                    // fixy::fn + stance::*
 #include <crucible/safety/AllocClass.h>
+#include <crucible/safety/BarrierGuarded.h>      // FIXY-FOUND-047 (W29)
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/CipherTier.h>
+#include <crucible/safety/ClockSource.h>         // FIXY-FOUND-047 (W32)
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/Crash.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/FpMode.h>              // FIXY-FOUND-047 (W36/W37)
+#include <crucible/safety/Hw.h>                  // FIXY-FOUND-047 (W28)
+#include <crucible/safety/JoinPolicy.h>          // FIXY-FOUND-047 (W34)
 #include <crucible/safety/Fn.h>                  // safety::fn::Fn (V-002 peer)
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
@@ -54,9 +59,13 @@
 #include <crucible/safety/RecipeSpec.h>
 #include <crucible/safety/Refined.h>             // positive predicate
 #include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/SchedClass.h>          // FIXY-FOUND-047 (W35)
+#include <crucible/safety/ScopedFence.h>         // FIXY-FOUND-047 (W31)
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Secret.h>
+#include <crucible/safety/SimdWidthPinned.h>     // FIXY-FOUND-047 (W30)
 #include <crucible/safety/Stale.h>
+#include <crucible/safety/SuspendBehavior.h>     // FIXY-FOUND-047 (W33)
 #include <crucible/safety/Tagged.h>              // Tagged + source::FromUser
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Vendor.h>
@@ -117,6 +126,33 @@ using W25_NumaPlacement  = cs::NumaPlacement<int>;
 using W26_RecipeSpec     = cs::RecipeSpec<int>;
 using W27_Witness        = cs::Witness<cs::Witness_v::FORMALLY_VERIFIED, int>;
 
+// ── FIXY-FOUND-047 — 10 additional wrappers (W28..W37) ────────────
+//
+// Pre-FOUND-047 the matrix shipped only 27 of the 33+ canonical
+// row_hash_contribution<W> specializations (RowHashFold.h:699-1144).
+// The 10 wrappers below close that coverage gap:
+//
+//   * Tier-L (Representation neighborhood) — Hw, BarrierGuarded,
+//     SimdWidthPinned, ScopedFence
+//   * Tier-L (off-tree from §XVI canonical nesting) — ClockSource,
+//     SuspendBehavior, SchedClass
+//   * Synchronization neighborhood — JoinPolicy
+//   * FpMode multi-sub-axis — FpModePinned<FpRounding>, <FpFtz>
+//     (representative of the 11 per-sub-axis row_hash specializations
+//     at RowHashFold.h:1073-1148; each Mode-enum-type produces a
+//     distinct WRAPPER_FP_*_TAG salt so cross-sub-axis distinctness
+//     is the same load-bearing property as cross-wrapper)
+using W28_Hw             = cs::Hw<cs::HwInstruction_v::PrivilegedMsr, int>;
+using W29_BarrierGuarded = cs::BarrierGuarded<cs::BarrierStrength_v::SeqCst, int>;
+using W30_SimdWidthPinned = cs::SimdWidthPinned<cs::SimdIsa_v::Avx2, int>;
+using W31_ScopedFence    = cs::ScopedFence<cs::MemoryScope_v::Cta, int>;
+using W32_ClockSource    = cs::ClockSource<cs::ClockSource_v::TscRaw, int>;
+using W33_SuspendBehavior = cs::SuspendBehavior<cs::SuspendBehavior_v::KeepsTicking, int>;
+using W34_JoinPolicy     = cs::JoinPolicy<cs::JoinPolicy_v::WAIT_DEADLINE, int>;
+using W35_SchedClass     = cs::SchedClass<cs::SchedulerPolicy_v::Fifo, int>;
+using W36_FpModePinned_R = cs::FpModePinned<cs::FpRounding::RoundToNearestEven, int>;
+using W37_FpModePinned_F = cs::FpModePinned<cs::FpFtz::FlushToZero, int>;
+
 // ── 8 canonical single-parameter fixy stances ─────────────────────
 //
 // `fixy::fn<T, Grants...>` resolves to `safety::fn::Fn<T, ...>` via
@@ -137,14 +173,14 @@ using S06_AsyncEndpoint  = cf::stance::AsyncEndpoint<int>;
 using S07_CooperativeBg  = cf::stance::CooperativeBg<int>;
 using S08_RealtimeHot    = cf::stance::RealtimeHot<int>;
 
-// ── 35-entry hash matrix ──────────────────────────────────────────
+// ── 45-entry hash matrix ──────────────────────────────────────────
 //
 // Order is contractual — the fold ceremony pins acc-after-each-entry,
 // so reshuffling indices changes the anchor literal even if every
 // individual hash stays the same.  When adding an entry, append at
 // the END of the wrapper bucket (preserves all upstream fold state for
 // the stance bucket).
-inline constexpr std::array<std::uint64_t, 35> kHashes = {
+inline constexpr std::array<std::uint64_t, 45> kHashes = {
     row_hash_contribution_v<W01_Linear>,
     row_hash_contribution_v<W02_Refined>,
     row_hash_contribution_v<W03_SealedRefined>,
@@ -172,6 +208,17 @@ inline constexpr std::array<std::uint64_t, 35> kHashes = {
     row_hash_contribution_v<W25_NumaPlacement>,
     row_hash_contribution_v<W26_RecipeSpec>,
     row_hash_contribution_v<W27_Witness>,
+    // FIXY-FOUND-047 additions — Tier-L Repr neighborhood + FpMode
+    row_hash_contribution_v<W28_Hw>,
+    row_hash_contribution_v<W29_BarrierGuarded>,
+    row_hash_contribution_v<W30_SimdWidthPinned>,
+    row_hash_contribution_v<W31_ScopedFence>,
+    row_hash_contribution_v<W32_ClockSource>,
+    row_hash_contribution_v<W33_SuspendBehavior>,
+    row_hash_contribution_v<W34_JoinPolicy>,
+    row_hash_contribution_v<W35_SchedClass>,
+    row_hash_contribution_v<W36_FpModePinned_R>,
+    row_hash_contribution_v<W37_FpModePinned_F>,
     row_hash_contribution_v<S01_PureLinear>,
     row_hash_contribution_v<S02_PureCopy>,
     row_hash_contribution_v<S03_IoFunction>,
@@ -281,7 +328,22 @@ inline constexpr std::uint64_t kFoldSeed = 0xC0FFEEBADF00DBA5ULL;
 // EXPECTED wire-format break for closing the Biba upside-down-
 // lattice defect; federation cache keys for every existing kernel
 // MUST be reindexed in coordination with this ship.  See FOUND-034.
-inline constexpr std::uint64_t kFoldAnchor = 0x33366794620504E6ULL;
+//
+// FIXY-FOUND-047 (2026-05-25): rolled OLD=0x33366794620504E6 →
+// NEW=0x4D91646D23F8B6FD after appending 10 wrappers (W28..W37) at
+// the END of the wrapper bucket to close the FIXY-V-008 coverage
+// gap.  The new wrappers — Hw, BarrierGuarded, SimdWidthPinned,
+// ScopedFence, ClockSource, SuspendBehavior, JoinPolicy, SchedClass,
+// and two representative FpModePinned sub-axis variants — bring the
+// matrix from 27 wrappers to 37, exercising the full row_hash_
+// contribution surface for the §XVI canonical wrappers + Tier-L
+// off-tree extensions (ClockSource/SuspendBehavior/SchedClass) +
+// multi-sub-axis FpModePinned.  Trailing 8 stance entries re-fold but
+// their individual hashes don't change; this is fold-position drift
+// from APPENDING 10 entries past the prior wrapper-bucket terminus
+// (W27_Witness), NOT a hash drift.  Federation cache keys for every
+// existing kernel MUST be reindexed in coordination with this ship.
+inline constexpr std::uint64_t kFoldAnchor = 0x4D91646D23F8B6FDULL;
 
 static_assert(fold_anchor() == kFoldAnchor,
     "FIXY-V-008: ceremony anchor drift.  A row_hash_contribution<> "
@@ -297,13 +359,13 @@ static_assert(fold_anchor() == kFoldAnchor,
 // Cardinality pin — adding a new entry without updating kEntryCount
 // would compile silently otherwise.  This anchors the size to
 // review.
-static_assert(kEntryCount == 35,
+static_assert(kEntryCount == 45,
     "FIXY-V-008: matrix cardinality changed.  Update kEntryCount, "
     "extend kHashes at the end (NOT the middle — preserves upstream "
     "fold state), and recompute kFoldAnchor.");
 
-static_assert(kPairCount == 595,
-    "FIXY-V-008: 35 * 34 / 2 = 595.  If you see this fire, "
+static_assert(kPairCount == 990,
+    "FIXY-V-008: 45 * 44 / 2 = 990.  If you see this fire, "
     "kEntryCount changed without updating kPairCount.");
 
 // ── Cross-bucket distinctness — wrappers vs stances ───────────────
@@ -312,7 +374,7 @@ static_assert(kPairCount == 595,
 // already enforces no two entries collide, this narrower check
 // documents the load-bearing property that NO wrapper hashes to ANY
 // stance — they live in disjoint cache regions by construction.
-inline constexpr std::size_t kWrapperCount = 27;
+inline constexpr std::size_t kWrapperCount = 37;
 inline constexpr std::size_t kStanceCount  = 8;
 
 static_assert(kWrapperCount + kStanceCount == kEntryCount);
