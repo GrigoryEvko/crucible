@@ -7135,6 +7135,12 @@ crucible_neg_compile_test(neg_collision_H002_hotpath_trivial_refinement
   "H002")
 crucible_neg_compile_test(neg_collision_H003_hotpath_alloc_unbounded
   "H003")
+# FIXY-FOUND-069 sub-HS14 closure for H003: IO-arm fixture complements
+# the Alloc-arm fixture above.  H003_OK's inner OR is `(Alloc || IO)`
+# under HotPath × Unbounded; both arms now witnessed so a refactor
+# dropping either Effect-row check reds the build.
+crucible_neg_compile_test(neg_collision_H003_hotpath_io_unbounded
+  "H003")
 crucible_neg_compile_test(neg_collision_F002_federation_peer_unbounded
   "F002")
 
