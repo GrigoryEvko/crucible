@@ -64,26 +64,79 @@
 //
 // ── Currently shipped specializations (FOUND-I02 + I02-AUDIT) ──────
 //
-// As of this header revision, the row-bearing core and every wrapper
-// in the canonical wrapper-nesting order are wired:
+// As of this header revision the row-bearing core + every Graded-
+// bearing wrapper folds its bits into row_hash.  Grouped by tier
+// (counts updated by FIXY-FOUND-054 — the prior 15-wrapper enumera-
+// tion was stale at the doc-block level even while the structural
+// fold had grown well past 26):
 //
-//   row_hash_contribution<effects::Row<Es...>>
-//       — sort-fold over Effect underlying values; cardinality-
-//         seeded.  See spec block below.
+//   ROW + CARRIER (2):
+//     row_hash_contribution<effects::Row<Es...>>
+//         — sort-fold over Effect underlying values; cardinality-
+//           seeded.  See spec block below.
+//     row_hash_contribution<effects::Computation<R, T>>
+//         — combine_ids(R-hash, T-hash); payload-blind for bare T,
+//           row-discriminating, nested-non-collapsing.
 //
-//   row_hash_contribution<effects::Computation<R, T>>
-//       — combine_ids(R-hash, T-hash); payload-blind for bare T,
-//         row-discriminating, nested-non-collapsing.  See spec
-//         block below.
+//   §XVI CANONICAL WRAPPERS (15) — combine_ids(W-tag, Inner-hash):
+//     HotPath / DetSafe / NumericalTier / Vendor / ResidencyHeat /
+//     CipherTier / AllocClass / Wait / MemOrder / Progress / Stale /
+//     Tagged / Refined / Secret / Linear.
 //
-//   row_hash_contribution<W<...Inner...>>
-//       — combine_ids(wrapper-stable-tag, Inner-hash) for:
-//         HotPath / DetSafe / NumericalTier / Vendor / ResidencyHeat /
-//         CipherTier / AllocClass / Wait / MemOrder / Progress / Stale /
-//         Tagged / Refined / Secret / Linear.
+//   §XVI OFF-TREE EXTENSIONS (11, A3-003 Graded sweep) — peer to the
+//   canonical 15, classified by DimensionTraits.h tier:
+//     SealedRefined (Refinement), TimeOrdered (Representation),
+//     Monotonic (Mutation), AppendOnly (Mutation), Consistency
+//     (Version), OpaqueLifetime (Lifetime), Crash (Effect),
+//     Budgeted (Space), EpochVersioned (Version), NumaPlacement
+//     (Representation), RecipeSpec (Precision).
 //
-// CLAUDE.md §XVI / FOUND-I03 documents this scope at user-facing
-// resolution.
+//   TIER-L REPRESENTATION NEIGHBORHOOD (7):
+//     Hw, BarrierGuarded, SimdWidthPinned, ScopedFence,
+//     ClockSource, SchedClass, SuspendBehavior.
+//
+//   OBSERVABILITY + SYNCHRONIZATION (2):
+//     Witness (Observability axis, FIXY-V-053/054/055),
+//     JoinPolicy (Synchronization axis, FIXY-V-078/079).
+//
+//   MULTI-SUB-AXIS NTTP-DISPATCH (1 kind, 11 specializations):
+//     FpModePinned<auto Mode, T> with 11 partial specializations,
+//     one per FpRounding / FpFtz / FpContract / FpTrapMask /
+//     FpDenormalInput / FpNanPolicy / FpInfPolicy / FpComplexLayout
+//     / FpLibmPolicy / FpReassociate / FpConstantRounding NTTP type.
+//
+//   ADJACENT-HEADER SPECIALIZATIONS (3, declared elsewhere, salts
+//   defined here for centralized salt allocation):
+//     effects/Resources.h     — resource::*<N> family (RESOURCE_TAG)
+//     effects/Concurrent.h    — ConcurrentRow<...> (CONCURRENT_ROW)
+//     safety/CpuPinned.h      — CpuPinned<...> (CPU_PINNED)
+//
+//   AGGREGATOR SPECIALIZATIONS (2, fold N axes into one row_hash):
+//     safety::fn::Fn<...>     — substrate-side per-axis fold
+//     fixy::fn<...>           — fixy-side resolved-stance fold
+//
+// Tallies (this header):
+//   * Distinct wrapper kinds with row_hash_contribution:
+//       2 (Row + Computation) + 15 + 11 + 7 + 2 + 1 (FpModePinned
+//       as a single template) + 2 (Fn aggregators) = 40 KINDS.
+//   * Concrete partial specializations (FpModePinned's 11 sub-axis
+//       cases count separately): 48 specializations LIVE in this
+//       header today (grep -c '^struct row_hash_contribution<').
+//   * 51 WRAPPER_*_TAG salt constants allocated in this file (3 are
+//       used by adjacent-header specializations).
+//
+// CLAUDE.md §XVI / FOUND-I03 documents the canonical 16-position
+// wrapper-nesting order at user-facing resolution; the off-tree +
+// Tier-L + multi-sub-axis extensions above are "outside" §XVI in
+// the sense that they don't enter the canonical outer→inner
+// nesting chain, but they DO ship row_hash_contribution
+// specializations on the same federation-cache wire format.
+//
+// Updating this enumeration: when adding a new wrapper, append the
+// new bullet to the appropriate category above AND bump the tallies.
+// CI does NOT yet enforce the count-claim → reflection-derived
+// reality cross-check; that's a documented follow-up.  Reviewer
+// discipline is the line of defense.
 //
 // ── References ──────────────────────────────────────────────────────
 //
@@ -249,7 +302,7 @@ inline constexpr std::uint64_t WRAPPER_LINEAR_TAG         = 0x0F00'0000'0000'000
 // zero contribution, and every `ConcurrentRow<...>` carrier silently
 // folds to the federation cache slot zero — both witnessed by fixy-
 // A3-002.  Salts 0x10 and 0x11 keep the resource family disjoint from
-// the existing 15 canonical-wrapper salts above.  Specializations live
+// the existing 15 §XVI-canonical-wrapper salts above.  Specializations live
 // in effects/Resources.h and effects/Concurrent.h (per A1-018 "spec
 // next to declaration") and refer back to these constants.
 inline constexpr std::uint64_t WRAPPER_RESOURCE_TAG_TAG   = 0x1000'0000'0000'0000ULL;
@@ -258,18 +311,20 @@ inline constexpr std::uint64_t WRAPPER_CONCURRENT_ROW_TAG = 0x1100'0000'0000'000
 // ── A3-003: 11 Graded-bearing wrappers from DimensionTraits.h ──────
 //
 // Post-GAPS-028 the DimensionTraits.h `wrapper_dimension<W>` registry
-// added 11 NEW Graded-bearing wrappers beyond the canonical 15 above
-// (TimeOrdered, EpochVersioned, Budgeted, Consistency, RecipeSpec,
-// NumaPlacement, OpaqueLifetime, Crash, SealedRefined, Monotonic,
-// AppendOnly).  Without their own high-byte salts every instantiation
-// collides with the primary-template zero contribution; CLAUDE.md
-// §XVI's "16-of-16 wrappers covered" claim becomes false once
-// production code starts wrapping with these — federation cache slot
-// collision exactly as A3-002 witnessed for ResourceTag.  Salts 0x12-
-// 0x1C keep the eleven disjoint from each other AND from the existing
-// 15 canonical-wrapper salts above AND from the resource family
-// (0x10-0x11).  Specializations live in this header alongside the
-// canonical 15 (centralized convention for safety::* wrappers).
+// added 11 NEW Graded-bearing wrappers beyond the §XVI canonical 15
+// above (TimeOrdered, EpochVersioned, Budgeted, Consistency,
+// RecipeSpec, NumaPlacement, OpaqueLifetime, Crash, SealedRefined,
+// Monotonic, AppendOnly).  Without their own high-byte salts every
+// instantiation collides with the primary-template zero contribution;
+// the doc-block's "row_hash covers every Graded wrapper" claim
+// becomes false once production code starts wrapping with these —
+// federation cache slot collision exactly as A3-002 witnessed for
+// ResourceTag.  Salts 0x12-0x1C keep the eleven disjoint from each
+// other AND from the §XVI-canonical 15 above AND from the resource
+// family (0x10-0x11).  Specializations live in this header alongside
+// the §XVI-canonical 15 (centralized convention for safety::*
+// wrappers).  Tier-L Representation + FpMode sub-axis salts are
+// allocated further below (0x21-0x33).
 inline constexpr std::uint64_t WRAPPER_SEALED_REFINED_TAG   = 0x1200'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_TIME_ORDERED_TAG     = 0x1300'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_MONOTONIC_TAG        = 0x1400'0000'0000'0000ULL;
@@ -904,13 +959,15 @@ struct row_hash_contribution<safety::Linear<Inner>> {
 // ═════════════════════════════════════════════════════════════════════
 //
 // Post-GAPS-028 the DimensionTraits.h `wrapper_dimension<W>` registry
-// (safety/DimensionTraits.h:407-509) grew from the canonical 15 above
-// to 26 entries.  Without per-wrapper row_hash_contribution every new
-// instantiation collapses to the primary-template zero and federation-
-// cache-keys collide — same defect class as A3-002 closed for the
-// ResourceTag family.  The 11 specializations below restore the
-// invariant "every Graded-bearing wrapper folds its own bits into
-// row_hash" for the entire DimensionTraits.h registry.
+// (safety/DimensionTraits.h:407-509) grew from the §XVI-canonical 15
+// above to 33+ entries spanning §XVI + Tier-L + Observability +
+// Synchronization + multi-sub-axis FpMode (see the per-category
+// breakdown in the file's top doc-block).  Without per-wrapper
+// row_hash_contribution every new instantiation collapses to the
+// primary-template zero and federation-cache-keys collide — same
+// defect class as A3-002 closed for the ResourceTag family.  The 11
+// specializations below close the §XVI-off-tree subset; further blocks
+// below close Tier-L, Observability, Synchronization, and FpMode.
 
 // SealedRefined<Pred, T> — same shape as Refined<Pred, T>: the
 // predicate's type folds into the hash so two refinements over the
