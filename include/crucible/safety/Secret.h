@@ -45,6 +45,7 @@
 #include <cstring>
 #include <memory>      // std::addressof
 #include <string_view>
+#include <tuple>       // FIXY-FOUND-018: secret_policy::roster::All
 #include <type_traits>
 #include <utility>
 
@@ -113,6 +114,85 @@ struct UserDisplay      final : secret_policy_base {};   // display in UI (e.g.,
 // each pairs with a `axes_discharged_of` specialization in fixy/
 // Theory.h that lifts the corresponding `DischargeAxis::*` bit.
 struct AuthorizedReplay final : secret_policy_base {};   // discharges Hunt-Sands erasure / replay-window axis
+
+// ── FIXY-FOUND-018 cross-tree closure (2026-05-25) ────────────────
+//
+// Single-source-of-truth roster for the secret_policy:: tag set.
+// Lives at the SUBSTRATE side (this file) and is ALIASED — not
+// duplicated — by fixy via `fixy::theory::secret_policy_roster::
+// AllPolicies = ::crucible::safety::secret_policy::roster::All`.
+//
+// Pre-FOUND-018 state: fixy/Theory.h:398-404 hand-maintained its own
+// `AllPolicies` tuple listing the 6 tags above.  The cardinality pin
+// (`kPolicyRosterCardinality == 6`) on the FIXY side reds when fixy's
+// tuple grows — but it does NOT red when the SUBSTRATE adds a new
+// tag here in safety/Secret.h without touching fixy.  The "cross-tree
+// maintenance gap" the FOUND-018 ticket names: substrate-side tag
+// addition silently bypasses fixy's per-policy axis-discharge gate
+// (the new tag defaults to DischargeAxis::None per the
+// `axes_discharged_of<Policy>` primary template, which is the
+// safe-default — but the FIXY closed-set invariant + cardinality
+// pin never red, so the maintainer doesn't even SEE that the new tag
+// was silently routed to the safe-default).
+//
+// Closure: ship the roster at the substrate (here), force the
+// substrate developer to update BOTH the tag declaration AND the
+// roster entry in the SAME FILE.  The static_assert below reds at
+// substrate-build time if `kCount` doesn't match `tuple_size_v<All>`
+// (i.e., the developer added a tag to All but forgot kCount, or
+// vice-versa).  Fixy's `AllPolicies` becomes an alias for
+// `roster::All`, so its `kPolicyRosterCardinality` derives from the
+// substrate's tuple_size_v — adding a tag here automatically grows
+// the fixy-side count, fixy's `kPolicyRosterCardinality == N` pin
+// reds (because the EXPECTED is hard-coded to the old value), and
+// the maintainer is forced into fixy/Theory.h to add the per-policy
+// `axes_discharged_of<NewPolicy>` sentinel + bump the expected
+// count.
+//
+// Why a manual tuple rather than reflection-driven enumeration?
+// P2996 namespace member reflection (`std::meta::members_of(^^ns)`)
+// would auto-discover every `secret_policy_base`-derived class in
+// the namespace, eliminating manual roster maintenance entirely.
+// That is the FOUND-018 follow-up shape.  Today's ship is the
+// MANUAL-with-cross-tree-lock form because (a) it requires zero
+// reflection-API maturity assumptions, (b) it co-locates the
+// maintenance burden at the substrate where new tags are AUTHORED,
+// and (c) the manual roster is reviewable in one screen.
+//
+// Naming: `roster::All` matches the precedent set by FOUND-136's
+// fixy-side `secret_policy_roster::AllPolicies` — when fixy aliases
+// the substrate's roster, the names are aligned by ONLY-symbol
+// (the `All` vs `AllPolicies` mismatch is preserved via the alias
+// declaration to avoid a wide rename across fixy's consumers).
+namespace roster {
+
+using All = std::tuple<
+    AuditedLogging,
+    WireSerialize,
+    HashForCompare,
+    LengthOnly,
+    UserDisplay,
+    AuthorizedReplay>;
+
+inline constexpr std::size_t kCount = std::tuple_size_v<All>;
+
+static_assert(kCount == 6,
+    "FIXY-FOUND-018: secret_policy::roster::All grew beyond 6 tags. "
+    "Adding a new secret_policy:: tag in safety/Secret.h requires "
+    "(a) declaring the `struct NewTag final : secret_policy_base {}` "
+    "above this roster, (b) appending the type to roster::All, and "
+    "(c) bumping this static_assert's expected count to the new "
+    "tuple_size_v.  Then in fixy/Theory.h: (d) ship the "
+    "`axes_discharged_of<NewTag>` specialization (default None per "
+    "Hunt-Sands safe-default), (e) add the explicit per-policy "
+    "sentinel witnessing the expected discharge mask, (f) bump the "
+    "fixy-side kPolicyRosterCardinality assertion to match.  "
+    "Cardinality drift between substrate (here) and fixy alias "
+    "fires AT this assertion if the substrate count is bumped first "
+    "and AT fixy's kPolicyRosterCardinality if fixy is bumped "
+    "first — either order reds the cross-tree handshake.");
+
+}  // namespace roster
 
 }  // namespace secret_policy
 

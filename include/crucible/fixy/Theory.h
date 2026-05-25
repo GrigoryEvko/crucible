@@ -395,13 +395,19 @@ static_assert(
 
 namespace secret_policy_roster {
 
-using AllPolicies = std::tuple<
-    ::crucible::safety::secret_policy::AuditedLogging,
-    ::crucible::safety::secret_policy::WireSerialize,
-    ::crucible::safety::secret_policy::HashForCompare,
-    ::crucible::safety::secret_policy::LengthOnly,
-    ::crucible::safety::secret_policy::UserDisplay,
-    ::crucible::safety::secret_policy::AuthorizedReplay>;
+// FIXY-FOUND-018 cross-tree closure (2026-05-25): alias the
+// SUBSTRATE-side roster `safety::secret_policy::roster::All` rather
+// than maintain a parallel copy here.  Pre-FOUND-018 this tuple was
+// hand-maintained — adding a substrate-side tag without touching
+// this file silently bypassed the closed-set invariant.  Now the
+// tuple lives at the SUBSTRATE source (safety/Secret.h), and this
+// alias makes the fixy-side roster derive automatically.  The
+// kPolicyRosterCardinality assertion below now reds AT the SUBSTRATE
+// tag addition (via the substrate's own count assertion firing
+// first) AND fires here on cardinality drift if the substrate count
+// is bumped without updating fixy's expected count — full cross-
+// tree handshake.
+using AllPolicies = ::crucible::safety::secret_policy::roster::All;
 
 inline constexpr std::size_t kPolicyRosterCardinality =
     std::tuple_size_v<AllPolicies>;
