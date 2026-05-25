@@ -328,6 +328,50 @@ static_assert(BarrierStrengthLattice::meet(BarrierStrength::FullFence, BarrierSt
 static_assert(BarrierStrengthLattice::meet(BarrierStrength::None, BarrierStrength::SeqCst)
               == BarrierStrength::None);
 
+// ── FIXY-FOUND-076 audit pin: cross-tree convention alignment ────────
+//
+// FOUND-009 and FOUND-010 discovered that MemOrderLattice and
+// HwInstructionLattice's join direction is INVERTED relative to the
+// cross-tree "par=join, strictest-wins" contract documented in
+// DimensionTraits.h L275-L335 — both linearize their chains with
+// strictest=BOTTOM, so MEET (chain-min) returns strictest, JOIN returns
+// weakest.
+//
+// FOUND-076 sweeps the remaining Tier-S lattices to determine which
+// match the cross-tree contract and which carry the inverted convention
+// (and need the same explanatory pin block FOUND-009/010 added).
+//
+// AUDIT RESULT for BarrierStrengthLattice (2026-05-25): ALIGNED.
+//   * chain direction: None (bottom) → CompilerBarrier → AcquireLoad
+//     → ReleaseStore → AcqRel → SeqCst → FullFence (top)
+//   * join(weaker, stronger) returns stronger (FullFence absorbs)
+//   * meet(weaker, stronger) returns weaker (None absorbs)
+//   * cross-tree reading: "par=join, strictest-wins" ✓
+//
+// Consumers wanting strictest-wins composition can call JOIN directly
+// on this lattice — NO inverted-convention warning needed, unlike
+// MemOrder/HwInstruction.
+//
+// Polarity-witness pin: a refactor flipping the chain direction (so
+// strictest moves to bottom) would red THIS assert in lockstep with
+// the FOUND-009/010 convention.  Pinning both directions makes the
+// audit one-grep-discoverable.
+static_assert(BarrierStrengthLattice::join(BarrierStrength::None,
+                                           BarrierStrength::FullFence)
+              == BarrierStrength::FullFence,
+    "FIXY-FOUND-076: BarrierStrengthLattice's JOIN gives strictest-wins "
+    "under the natural-strength-lattice convention (top=FullFence). "
+    "join(None, FullFence) returns FullFence — the stronger of the two. "
+    "This matches the cross-tree 'par=join, strictest-wins' contract; "
+    "consumers can call JOIN directly here, UNLIKE MemOrder/HwInstruction "
+    "which require MEET for strictest-wins (FOUND-009/010).");
+static_assert(BarrierStrengthLattice::meet(BarrierStrength::None,
+                                           BarrierStrength::FullFence)
+              == BarrierStrength::None,
+    "FIXY-FOUND-076: BarrierStrengthLattice's MEET gives weakest-floor "
+    "(bottom=None).  CSL/admission gates wanting capability-minimization "
+    "MUST call MEET — None absorbs in meet by chain-minimum semantics.");
+
 // At<K> singleton — empty element_type for EBO collapse at every use
 // site.  V-255's `Graded<Absolute, At<K>, P>` relies on this.
 static_assert(std::is_empty_v<BarrierStrengthLattice::At<BarrierStrength::None>::element_type>);

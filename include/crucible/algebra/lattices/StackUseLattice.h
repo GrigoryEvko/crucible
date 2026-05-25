@@ -217,6 +217,50 @@ static_assert(StackUseLattice::join(StackUse::ConstantFrame, StackUse::BoundedBy
 static_assert(StackUseLattice::meet(StackUse::Unbounded, StackUse::BoundedByParam)
               == StackUse::BoundedByParam);
 
+// ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
+//
+// AUDIT RESULT for StackUseLattice (2026-05-25): INVERTED.
+//   * chain direction: ConstantFrame (bottom, strictest) →
+//     BoundedByParam → BoundedDynamic → Unbounded (top, loosest)
+//   * join(weaker, stricter) returns weaker (Unbounded absorbs in join)
+//   * meet(weaker, stricter) returns stricter (ConstantFrame absorbs)
+//   * cross-tree reading: "par=join, strictest-wins" ✗ — join returns
+//     LOOSER (chain-maximum), NOT stricter
+//
+// SAME family of defect as FOUND-009 (MemOrderLattice) and FOUND-010
+// (HwInstructionLattice).  A consumer treating compose() as "strictest-
+// wins admission gate" by calling JOIN would silently inherit the
+// LOOSEST bound — equivalent to the FOUND-010 PrivilegedMsr escalation
+// pattern for stack-use admission.
+//
+// Consumers wanting the strictest-stack-bound reading MUST call MEET
+// (chain-min), not JOIN.  The local "weaker bound dominates" doc comment
+// at L211 ACCURATELY describes the lattice behavior; the cross-tree
+// "par=join, strictest-wins" contract in DimensionTraits.h L275-L335
+// requires the CALLER to choose the operator that matches the semantic
+// reading they want.  See FOUND-009/010 for sibling lattice writeups.
+//
+// Polarity-witness pin: a refactor inverting the chain direction (making
+// Unbounded=bottom, ConstantFrame=top) would red these asserts in
+// lockstep with the FOUND-009/010 convention, forcing a coordinated
+// cross-tree audit.
+static_assert(StackUseLattice::join(StackUse::ConstantFrame,
+                                    StackUse::Unbounded)
+              == StackUse::Unbounded,
+    "FIXY-FOUND-076: StackUseLattice's JOIN gives WEAKEST-stack-bound "
+    "(top=Unbounded).  A consumer treating compose as 'strictest-wins "
+    "stack-bound minimization' would silently inherit Unbounded.  "
+    "Consumers wanting the tightest bound MUST call MEET — SAME defect "
+    "family as FOUND-009/010 (MemOrder/HwInstruction).");
+static_assert(StackUseLattice::meet(StackUse::ConstantFrame,
+                                    StackUse::Unbounded)
+              == StackUse::ConstantFrame,
+    "FIXY-FOUND-076: StackUseLattice's MEET gives strictest-bound "
+    "(bottom=ConstantFrame).  CSL/admission gates wanting capability-"
+    "minimization (admit only the tightest bound every participant "
+    "claims) MUST call MEET — calling JOIN silently inherits the "
+    "loosest party's stack budget.");
+
 static_assert(std::is_empty_v<StackUseLattice::At<StackUse::ConstantFrame>::element_type>);
 static_assert(std::is_empty_v<StackUseLattice::At<StackUse::BoundedByParam>::element_type>);
 static_assert(std::is_empty_v<StackUseLattice::At<StackUse::BoundedDynamic>::element_type>);
