@@ -452,8 +452,21 @@ private:
             ((packet.mask & ~fountain_detail::valid_mask<SourceSymbols>()) != 0)) {
             return std::unexpected(FountainError::PacketShapeMismatch);
         }
+        // source_bytes is a Refined<in_range<1, max_source_bytes>> field, but
+        // wire-deserialized packets construct it through the Trusted{} escape
+        // hatch (the value comes from attacker-controlled bytes), so the
+        // refinement invariant is NOT guaranteed here.  Re-check the bound at
+        // this trust boundary: extract_decoded() returns/copies
+        // source_bytes_.value() bytes out of the decoded_ array, which holds
+        // exactly max_source_bytes bytes — an out-of-range source_bytes would
+        // otherwise drive an out-of-bounds read.
+        const auto claimed_source_bytes = packet.source_bytes.value();
+        if (claimed_source_bytes == 0 ||
+            claimed_source_bytes > max_source_bytes) {
+            return std::unexpected(FountainError::PacketShapeMismatch);
+        }
         if (have_source_bytes_ &&
-            packet.source_bytes.value() != source_bytes_.value()) {
+            claimed_source_bytes != source_bytes_.value()) {
             return std::unexpected(FountainError::PacketShapeMismatch);
         }
         return {};
