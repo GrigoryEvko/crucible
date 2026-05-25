@@ -163,6 +163,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>           // std::abort (FIXY-FOUND-011 release-time check)
 #include <cstring>
 #include <memory>            // std::start_lifetime_as
 #include <optional>
@@ -251,15 +252,38 @@ public:
         // requirement of this side: acquire semantics prevent the
         // memcpy below from being hoisted ABOVE this increment.  See
         // the long doc-comment above for why a plain release is wrong.
-        [[maybe_unused]] const uint64_t old_seq = seq_.bump_by(1);
-        // Single-writer invariant — debug-checked.  If this fires,
-        // either (a) two threads called publish() concurrently
-        // (the documented contract violation) or (b) seq_ was
-        // corrupted by external bug.  CRUCIBLE_DEBUG_ASSERT strips
-        // to `((void)0)` under -DNDEBUG, so old_seq becomes the
-        // sole consumer; mark `[[maybe_unused]]` so -Werror=
-        // unused-variable does not fire under release flags.
-        CRUCIBLE_DEBUG_ASSERT((old_seq & 1u) == 0u);
+        const uint64_t old_seq = seq_.bump_by(1);
+        // ── FIXY-FOUND-011: ALWAYS-ON single-writer contract check ────
+        //
+        // Pre-FOUND-011 (2026-05-25) this was a CRUCIBLE_DEBUG_ASSERT
+        // that stripped to `((void)0)` under -DNDEBUG.  That left the
+        // production NDEBUG path unguarded against the single-writer
+        // contract violation, with two concrete failure modes:
+        //
+        //   (1) TORN READ — two concurrent publishers' memcpys race;
+        //       a reader observing the second publisher's seq=even
+        //       sees a byte-mix of both writers' data.
+        //
+        //   (2) PERMANENT ODD-SEQ PARK — a publisher T1 that bumps
+        //       once (seq even→odd) then dies/cancels before its
+        //       second bump leaves seq at an odd value.  Subsequent
+        //       publishers' even-numbered bump pairs can interleave
+        //       to land seq at odd indefinitely.  Readers spinning
+        //       on `(pre & 1u) != 0u` (line ~322) spin forever.
+        //
+        // The check is now an always-on branch (1 bit-test + 1
+        // conditional branch under [[unlikely]], ~1 ns slow-path
+        // cost; readers unchanged).  std::abort() is the correct
+        // response — a publisher contract violation is a CALLER bug
+        // and continuing executes undefined state (the next publish()
+        // could leave seq permanently odd, parking all readers).
+        // CRUCIBLE_ASSERT was considered but rejected: under
+        // contract-evaluation-semantic=ignore (hot-path TUs) it
+        // collapses to nothing, reintroducing the FOUND-011 silent-
+        // violation surface.
+        if ((old_seq & 1u) != 0u) [[unlikely]] {
+            std::abort();
+        }
 
         // Non-atomic byte write of the value.  Bounded by sizeof(T);
         // T is trivially-copyable so memcpy is the canonical write.
