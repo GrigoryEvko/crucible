@@ -114,16 +114,27 @@ inline constexpr bool is_writeoncenonnull_v =
 //     uncompiled_regions / iteration_graphs) all fit this profile.
 //
 //   * HOT paths (foreground recording, kernel dispatch, ~5ns/op):
-//     callers MUST specify a non-growing Storage.  Two options:
-//       - AppendOnly<T, std::inplace_vector<T, N>::template
-//         underlying> for compile-time bound N (zero heap, true
-//         O(1) push_back, contract-checked overflow).
-//       - Arena-backed storage adapter (bump-pointer, ~2ns alloc,
-//         zero growth latency).
-//     The default Storage=std::vector instantiated on a hot path
-//     IS a §III violation — review-reject.  Reviewers checking
-//     hot-path code should grep for `AppendOnly<*[^,]*>` (no
-//     second template argument) and require the alternative.
+//     callers MUST specify a non-growing Storage.  Storage is a
+//     `template <typename...> class` template-template parameter, so
+//     a caller wanting inplace_vector backing defines a single-
+//     argument alias template that pins the bound:
+//
+//         template <typename T>
+//         using bounded_4096 = std::inplace_vector<T, 4096>;
+//         AppendOnly<MyT, bounded_4096> my_hot_log;
+//
+//     Alternative: an arena-backed storage adapter (bump-pointer,
+//     ~2ns alloc, zero growth latency).  The default Storage=
+//     std::vector instantiated on a hot path IS a §III violation —
+//     review-reject.  Reviewers checking hot-path code should grep
+//     for `AppendOnly<*[^,]*>` (no second template argument) and
+//     require the alternative.
+//
+//     FIXY-FOUND-121-AUDIT: earlier draft of this example used the
+//     non-existent `std::inplace_vector<T, N>::template underlying`
+//     syntax — that was a doc bug; the alias-template form above is
+//     the correct way to thread a non-type-parameterized container
+//     into a `template <typename...> class` template-template slot.
 //
 // This is doc-discipline, not a structural gate, because "is this
 // the hot path?" is context-dependent and cannot be expressed via
