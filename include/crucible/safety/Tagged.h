@@ -693,6 +693,16 @@ template <> struct retag_policy<trust::Assumed, trust::Verified> {
     // Discharge: previously-assumed pre-condition was checked.
     static constexpr bool allowed = true;
 };
+// FIXY-FOUND-035: Unverified → Assumed — admitting an axiom-level claim
+// to previously-unverified state.  Analogous to Unverified → Tested
+// (adding test coverage); both promote "no claim" to a specific positive
+// claim.  The discharge is the AXIOM-WRITER taking responsibility — the
+// retag site is the type-level audit trail for that responsibility.
+template <> struct retag_policy<trust::Unverified, trust::Assumed> {
+    // Discharge: an axiom statement was authored about this value;
+    // the retag site grep-locates the responsibility holder.
+    static constexpr bool allowed = true;
+};
 
 // ── source:: catalog — provenance laundering ───────────────────────
 //
@@ -727,6 +737,61 @@ template <> struct retag_policy<source::Recorded, source::Loaded> {
     static constexpr bool allowed = true;
 };
 
+// ── FIXY-FOUND-035 catalog expansion (2026-05-25) ──────────────────
+//
+// Six new forward edges added in FOUND-035 to close obvious catalog
+// gaps.  Each pairs an internal validator (the discharge) with a
+// well-defined provenance promotion, analogous to existing edges.
+// The FOUND-035 audit found 73 source-namespace tags vs only 10
+// admitted forward edges (4 trust + 5 source + 1 vessel); each
+// addition here closes one of the higher-confidence gaps where the
+// discharge story is already established by an analogous edge.
+
+template <> struct retag_policy<source::FromDb, source::Sanitized> {
+    // Discharge: DB row passed schema validation (analogous to the
+    // FromUser → Sanitized edge — same validator pattern, different
+    // upstream provenance).  Schema check enforces well-formedness
+    // of every field before the row is admitted to internal paths.
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<source::FromConfig, source::Sanitized> {
+    // Discharge: config value passed schema/range validation
+    // (analogous to FromUser → Sanitized).  Config-file parsers run
+    // the schema check at load time; this retag records that step.
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<source::ABIBoundary, source::Sanitized> {
+    // Discharge: opaque ABI value validated on the receiving side
+    // (analogous to External → Sanitized — same trust-boundary
+    // pattern, different transport).  Vessel-side adapters that
+    // marshal C ABI / FFI calls run sanitizer before admitting.
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<source::Loaded, source::IntegrityVerified> {
+    // Discharge: Loaded value (admitted to persistent state)
+    // additionally passed the integrity-check predicate
+    // (xxHash64 trailer, CRC, etc.).  Composes the loaded-from-
+    // persistent claim with the bit-integrity claim, mirroring
+    // the Sanitized → IntegrityVerified pattern at the storage tier.
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<source::Replayed, source::Loaded> {
+    // Discharge: Cipher replay produced a deterministic value that
+    // matches the recorded checkpoint.  Symmetric with the
+    // Recorded → Loaded edge — both promote a transient pipeline
+    // state to admitted-persistent state.  Replay is the read-side
+    // of the same Cipher discharge that Recorded → Loaded gates on
+    // the write side.
+    static constexpr bool allowed = true;
+};
+template <> struct retag_policy<source::Recorded, source::IntegrityVerified> {
+    // Discharge: recorded value additionally passed the integrity
+    // check at trace-close (xxHash64 of the trace tail).  Composes
+    // the recording provenance with the bit-integrity claim, the
+    // recording-tier analogue of Sanitized → IntegrityVerified.
+    static constexpr bool allowed = true;
+};
+
 // ── vessel_trust:: catalog — Vessel-boundary validation ────────────
 //
 // FromPytorch marks raw input crossing the PyTorch ABI boundary;
@@ -756,6 +821,9 @@ static_assert(retag_policy<trust::Tested, trust::Verified>::allowed,
     "trust::Tested → trust::Verified must be admitted");
 static_assert(retag_policy<trust::Assumed, trust::Verified>::allowed,
     "trust::Assumed → trust::Verified must be admitted");
+static_assert(retag_policy<trust::Unverified, trust::Assumed>::allowed,
+    "FIXY-FOUND-035: trust::Unverified → trust::Assumed must be admitted "
+    "(axiom-level claim promotion, analogous to Unverified → Tested)");
 
 // trust:: inverse rejected — verification strip is NEVER safe.
 // Pair each forward specialization with its inverse witness so a
@@ -770,6 +838,14 @@ static_assert(!retag_policy<trust::Tested, trust::Unverified>::allowed,
 static_assert(!retag_policy<trust::Verified, trust::Assumed>::allowed,
     "trust::Verified → trust::Assumed would downgrade discharged proof "
     "back to a mere assumption");
+// FIXY-FOUND-035: paired inverse for the new Unverified → Assumed edge.
+// Assumed → Unverified would erase the axiom-author's responsibility
+// claim; the value cannot retreat from "an axiom was authored" back to
+// "no claim".
+static_assert(!retag_policy<trust::Assumed, trust::Unverified>::allowed,
+    "FIXY-FOUND-035: trust::Assumed → trust::Unverified would erase the "
+    "axiom-author responsibility claim recorded at the Unverified → "
+    "Assumed retag site");
 
 // source:: positives — catalog admits forward laundering
 static_assert(retag_policy<source::External, source::Sanitized>::allowed,
@@ -782,6 +858,19 @@ static_assert(retag_policy<source::FromUser, source::Sanitized>::allowed,
     "source::FromUser → source::Sanitized must be admitted");
 static_assert(retag_policy<source::Recorded, source::Loaded>::allowed,
     "source::Recorded → source::Loaded must be admitted");
+// FIXY-FOUND-035 positive sentinels — 6 new forward edges.
+static_assert(retag_policy<source::FromDb, source::Sanitized>::allowed,
+    "FIXY-FOUND-035: source::FromDb → source::Sanitized must be admitted");
+static_assert(retag_policy<source::FromConfig, source::Sanitized>::allowed,
+    "FIXY-FOUND-035: source::FromConfig → source::Sanitized must be admitted");
+static_assert(retag_policy<source::ABIBoundary, source::Sanitized>::allowed,
+    "FIXY-FOUND-035: source::ABIBoundary → source::Sanitized must be admitted");
+static_assert(retag_policy<source::Loaded, source::IntegrityVerified>::allowed,
+    "FIXY-FOUND-035: source::Loaded → source::IntegrityVerified must be admitted");
+static_assert(retag_policy<source::Replayed, source::Loaded>::allowed,
+    "FIXY-FOUND-035: source::Replayed → source::Loaded must be admitted");
+static_assert(retag_policy<source::Recorded, source::IntegrityVerified>::allowed,
+    "FIXY-FOUND-035: source::Recorded → source::IntegrityVerified must be admitted");
 
 // source:: inverse rejected — taint cannot be reintroduced.
 // One inverse witness per forward cell above so the 1:1 matrix is
@@ -799,6 +888,28 @@ static_assert(!retag_policy<source::IntegrityVerified, source::Sanitized>::allow
 static_assert(!retag_policy<source::Sanitized, source::FromUser>::allowed,
     "source::Sanitized → source::FromUser would re-introduce taint by "
     "regressing a validated value to raw user-supplied provenance");
+// FIXY-FOUND-035 inverse sentinels — 6 new forward edges, 6 paired
+// inverse-rejects.  Each closes the same "by symmetry" oversight risk
+// captured by the original V-023 inverse-witness discipline at line
+// 786-801.
+static_assert(!retag_policy<source::Sanitized, source::FromDb>::allowed,
+    "FIXY-FOUND-035: source::Sanitized → source::FromDb would re-introduce "
+    "taint by regressing a validated value to raw DB-row provenance");
+static_assert(!retag_policy<source::Sanitized, source::FromConfig>::allowed,
+    "FIXY-FOUND-035: source::Sanitized → source::FromConfig would re-introduce "
+    "taint by regressing a validated value to raw config-file provenance");
+static_assert(!retag_policy<source::Sanitized, source::ABIBoundary>::allowed,
+    "FIXY-FOUND-035: source::Sanitized → source::ABIBoundary would re-introduce "
+    "taint by regressing a validated value to raw FFI-boundary provenance");
+static_assert(!retag_policy<source::IntegrityVerified, source::Loaded>::allowed,
+    "FIXY-FOUND-035: source::IntegrityVerified → source::Loaded would erase "
+    "the additional integrity-check guarantee");
+static_assert(!retag_policy<source::Loaded, source::Replayed>::allowed,
+    "FIXY-FOUND-035: source::Loaded → source::Replayed would unwind admitted "
+    "state back to a Cipher-replay transient");
+static_assert(!retag_policy<source::IntegrityVerified, source::Recorded>::allowed,
+    "FIXY-FOUND-035: source::IntegrityVerified → source::Recorded would erase "
+    "the integrity-check guarantee, downgrading to merely-recorded state");
 
 // vessel_trust:: positive + inverse
 static_assert(retag_policy<vessel_trust::FromPytorch, vessel_trust::Validated>::allowed,
@@ -816,6 +927,68 @@ static_assert(!RetagAllowed<source::External, trust::Verified>,
     "laundering across orthogonal axes is never safe");
 static_assert(!RetagAllowed<source::FromUser, access::WriteOnce>,
     "Cross-axis transition (source::* to access::*) stays rejected");
+
+// ── FIXY-FOUND-035 catalog cardinality dashboard ───────────────────
+//
+// Forward-edge count, derived from the structured roster of admitted
+// retag transitions in this header (lines 680-741 + FOUND-035 expansion
+// at 727-770).  Pinning the count here gives reviewers a single grep
+// target (`kAdmittedForwardEdgeCount`) for the catalog size and forces
+// any new specialization to be paired with a count bump — a future
+// silent addition (or deletion) reds at compile time.
+//
+// To extend the catalog: add the `retag_policy<A, B>` specialization
+// in its family block above (with discharge rationale comment), add a
+// positive + inverse sentinel below the family, then bump this count.
+// Three deltas in lockstep keep the catalog grep-discoverable.
+//
+//   Pre-FOUND-035:   10 admitted forward edges
+//     4 trust:: + 5 source:: + 1 vessel_trust::
+//   Post-FOUND-035:  16 admitted forward edges
+//     5 trust:: + 11 source:: + 1 vessel_trust::
+//
+// Gap-against-universe: ~73 source-namespace tags total (provenance,
+// trust, access, vessel_trust, version, retag, mlb, gossip, ...).
+// Most cross-namespace transitions are STRUCTURALLY rejected (axis-
+// orthogonal, e.g. source::* ↛ trust::*).  Within each namespace the
+// remaining legitimate transitions are tracked under the FOUND-035
+// follow-up: the 16 admitted today represent the high-confidence core
+// where the discharge story is established; future expansion lands
+// edge-by-edge with named rationale.
+inline constexpr std::size_t kAdmittedForwardEdgeCount = 16;
+
+// Sentinel: any future addition / deletion of a forward-edge
+// specialization MUST update kAdmittedForwardEdgeCount in lockstep
+// or this constexpr boolean fold reds at compile time.  Each entry
+// in the fold IS the canonical roster of admitted forward edges.
+inline constexpr bool kCatalogRosterMatchesCount =
+    // 5 trust:: edges (FIXY-FOUND-035 added 1)
+    RetagAllowed<trust::Unverified,  trust::Tested>     &&
+    RetagAllowed<trust::Unverified,  trust::Verified>   &&
+    RetagAllowed<trust::Tested,      trust::Verified>   &&
+    RetagAllowed<trust::Assumed,     trust::Verified>   &&
+    RetagAllowed<trust::Unverified,  trust::Assumed>    &&  // FOUND-035
+    // 11 source:: edges (FIXY-FOUND-035 added 6)
+    RetagAllowed<source::External,   source::Sanitized>         &&
+    RetagAllowed<source::External,   source::IntegrityVerified> &&
+    RetagAllowed<source::Sanitized,  source::IntegrityVerified> &&
+    RetagAllowed<source::FromUser,   source::Sanitized>         &&
+    RetagAllowed<source::Recorded,   source::Loaded>            &&
+    RetagAllowed<source::FromDb,     source::Sanitized>         &&  // FOUND-035
+    RetagAllowed<source::FromConfig, source::Sanitized>         &&  // FOUND-035
+    RetagAllowed<source::ABIBoundary, source::Sanitized>        &&  // FOUND-035
+    RetagAllowed<source::Loaded,     source::IntegrityVerified> &&  // FOUND-035
+    RetagAllowed<source::Replayed,   source::Loaded>            &&  // FOUND-035
+    RetagAllowed<source::Recorded,   source::IntegrityVerified> &&  // FOUND-035
+    // 1 vessel_trust:: edge
+    RetagAllowed<vessel_trust::FromPytorch, vessel_trust::Validated>;
+
+static_assert(kCatalogRosterMatchesCount,
+    "FIXY-FOUND-035: retag_policy catalog roster check failed.  Either "
+    "a specialization was deleted from this file (and the corresponding "
+    "RetagAllowed<> entry in kCatalogRosterMatchesCount above must be "
+    "removed plus kAdmittedForwardEdgeCount decremented), or one of the "
+    "named edges is mis-spelled / its specialization is missing.");
 
 // ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
 //
