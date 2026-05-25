@@ -253,14 +253,19 @@ static void test_phase5_stub_semantics() {
     assert(std::move(l2_hit).consume() == nullptr);
     assert(std::move(l3_hit).consume() == nullptr);
 
-    // l2/l3 publishes succeed at the type level but DON'T persist —
-    // a subsequent lookup_l2/l3 still returns nullptr.
+    // FIXY-FOUND-060: l2/l3 publishes return InsertError::NotYetImplemented
+    // until Phase 5 wires real backing stores.  Pre-fix this returned a
+    // vacuous success marker, which silently hid Phase-5 wire-up gaps from
+    // every caller; the error channel now exposes the gap explicitly so
+    // downstream consumers branch on it.
     auto pub_l2 = cache.publish_l2(ContentHash{0xFFFF}, RowHash{0}, fk_ptr(&fk));
     auto pub_l3 = cache.publish_l3(ContentHash{0xFFFF}, RowHash{0}, fk_ptr(&fk));
     auto r2 = std::move(pub_l2).consume();
     auto r3 = std::move(pub_l3).consume();
-    assert(r2.has_value());
-    assert(r3.has_value());
+    assert(!r2.has_value());
+    assert(!r3.has_value());
+    assert(r2.error() == KernelCache::InsertError::NotYetImplemented);
+    assert(r3.error() == KernelCache::InsertError::NotYetImplemented);
 
     // Verify the stubs DON'T leak into the L1 path either — a
     // publish_l2 of a kernel under (FFFF, 0) is invisible to lookup_l1.
@@ -290,8 +295,12 @@ static void test_three_level_federation_publish() {
     auto r2 = std::move(p_l2).consume();
     auto r3 = std::move(p_l3).consume();
     assert(r1.has_value());
-    assert(r2.has_value());
-    assert(r3.has_value());
+    // FIXY-FOUND-060: l2/l3 publishes report NotYetImplemented until
+    // Phase 5 wires the per-vendor-family / per-chip backing stores.
+    assert(!r2.has_value());
+    assert(!r3.has_value());
+    assert(r2.error() == KernelCache::InsertError::NotYetImplemented);
+    assert(r3.error() == KernelCache::InsertError::NotYetImplemented);
 
     // L1 lookup hits the just-published kernel.
     auto l1_hit = cache.lookup_l1(ContentHash{0x1111}, RowHash{0xAAAA});
@@ -514,11 +523,18 @@ static void test_l2_row_hash_plumbing_FOUND_I06() {
         assert(std::move(pinned).consume() == nullptr);
     }
 
-    // (c) — publish_l2 with diverse row_hashes succeeds at type level.
+    // (c) — publish_l2 with diverse row_hashes preserves Warm type
+    // pinning and returns InsertError::NotYetImplemented under every
+    // row_hash.  FIXY-FOUND-060: stub no longer reports vacuous success;
+    // a Phase-5 caller sees the gap explicitly via the error channel
+    // for every (content, row) combination.  When Phase 5 wires the
+    // L2 store, this test updates to expect `r.has_value() == true`
+    // and adds an l2-publish-then-l2-lookup hit assertion.
     for (auto rh : diverse_rows) {
         auto pub = cache.publish_l2(ContentHash{0x20000}, rh, fk_ptr(&fk));
         auto r = std::move(pub).consume();
-        assert(r.has_value());
+        assert(!r.has_value());
+        assert(r.error() == KernelCache::InsertError::NotYetImplemented);
     }
 
     // (d) — populate L1 at (0x30000, 0xCAFE), then verify L2 stays
@@ -561,11 +577,14 @@ static void test_l3_row_hash_plumbing_FOUND_I07() {
         assert(std::move(pinned).consume() == nullptr);
     }
 
-    // (c) — publish_l3 with diverse row_hashes succeeds at type level.
+    // (c) — publish_l3 with diverse row_hashes preserves Cold type
+    // pinning and returns InsertError::NotYetImplemented under every
+    // row_hash (FIXY-FOUND-060, mirror of T21 L2 case above).
     for (auto rh : diverse_rows) {
         auto pub = cache.publish_l3(ContentHash{0x50000}, rh, fk_ptr(&fk));
         auto r = std::move(pub).consume();
-        assert(r.has_value());
+        assert(!r.has_value());
+        assert(r.error() == KernelCache::InsertError::NotYetImplemented);
     }
 
     // (d) — populate L1 at (0x60000, 0xBABE), then verify L3 stays
@@ -778,7 +797,9 @@ static void test_publish_row_validated_FOUND_I18() {
 
     // (f) — L2/L3 stubs accept projected row_hash without rejection
     //       and behave per Phase-5-stub semantics (lookup miss; publish
-    //       returns success-marker but does not persist).
+    //       reports InsertError::NotYetImplemented).  FIXY-FOUND-060:
+    //       pre-fix the publish returned a vacuous success marker; the
+    //       error channel now exposes the Phase-5 gap explicitly.
     {
         auto l2_miss = cache.lookup_l2(ch_a, rh_bg);
         assert(std::move(l2_miss).consume() == nullptr);
@@ -787,10 +808,14 @@ static void test_publish_row_validated_FOUND_I18() {
         assert(std::move(l3_miss).consume() == nullptr);
 
         auto p2 = cache.publish_l2(ch_a, rh_bg, fk_ptr(&fk_a));
-        assert(std::move(p2).consume().has_value());
+        auto r2 = std::move(p2).consume();
+        assert(!r2.has_value());
+        assert(r2.error() == KernelCache::InsertError::NotYetImplemented);
 
         auto p3 = cache.publish_l3(ch_a, rh_bg, fk_ptr(&fk_a));
-        assert(std::move(p3).consume().has_value());
+        auto r3 = std::move(p3).consume();
+        assert(!r3.has_value());
+        assert(r3.error() == KernelCache::InsertError::NotYetImplemented);
     }
 }
 

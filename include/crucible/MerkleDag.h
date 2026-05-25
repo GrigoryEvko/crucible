@@ -1702,11 +1702,25 @@ class CRUCIBLE_OWNER KernelCache {
   // Error channel for insert: callers that can tolerate a full table
   // can branch on it; callers that cannot must map it to crucible_abort.
   enum class InsertError : uint8_t {
-    TableFull,  // Every slot probed was occupied by a different hash.
-                // At load factor > 0.9 this is plausible on power-of-two
-                // capacities; caller either (a) grows the cache offline
-                // or (b) aborts.  Silent-discard was the pre-expected
-                // behavior and hid capacity pressure.
+    TableFull,         // Every slot probed was occupied by a different hash.
+                       // At load factor > 0.9 this is plausible on power-of-
+                       // two capacities; caller either (a) grows the cache
+                       // offline or (b) aborts.  Silent-discard was the
+                       // pre-expected behavior and hid capacity pressure.
+
+    NotYetImplemented, // FIXY-FOUND-060: publish_l2 / publish_l3 return this
+                       // until Phase 5 wires the per-vendor-family L2 store
+                       // and the per-chip L3 archive.  Callers that depend
+                       // on actual persistence (Canopy federation, Cipher
+                       // warm/cold tier writes) see the error explicitly
+                       // instead of silently no-op'ing under a success
+                       // marker.  When Phase 5 lands the real backing
+                       // stores, the publish_l2/l3 bodies replace the
+                       // unexpected-return with real persistence; this
+                       // variant remains in the enum for forward-compat
+                       // (Phase-5-still-unavailable diagnostics or temporary
+                       // store outage) but the canonical happy path is
+                       // success.
   };
 
   // Thread-safe insert via CAS.  Overwrites if key already exists
@@ -1884,12 +1898,20 @@ class CRUCIBLE_OWNER KernelCache {
   //
   // SEMANTIC NOTE on the L2/L3 stubs: lookup_l2/l3 always return
   // a nullptr-pinned wrapper (no kernel found) until Phase 5 wires
-  // separate backing stores.  publish_l2/l3 return success-marker
-  // wrappers but do NOT actually persist (Phase 5 will land the
-  // separate backing stores).  Today's behavior is therefore
-  // "L2/L3 paths are not yet active" — a downstream consumer that
-  // depends on L2/L3 hit rates measures zero today, reflecting
-  // physical reality.
+  // separate backing stores.  FIXY-FOUND-060: publish_l2/l3 return
+  // the typed wrapper around
+  //   std::unexpected(InsertError::NotYetImplemented)
+  // so callers branch explicitly on the persistence outcome — silent
+  // no-op-under-success was a latent Phase-5 ship-blocker (a code
+  // path that depended on actual L2/L3 persistence would silently
+  // miss every lookup with no compile-time or runtime warning).
+  // When Phase 5 lands the separate backing stores, the publish_l2/
+  // l3 bodies replace the unexpected-return with real persistence
+  // calls; the NotYetImplemented variant remains for forward-compat
+  // diagnostics (e.g., transient store outage in the real backend).
+  // Today's behavior is therefore "L2/L3 paths are not yet active"
+  // — a downstream consumer that depends on L2/L3 hit rates measures
+  // zero today, reflecting physical reality.
 
   // ── L1 lookup — REAL (wraps existing lookup) ─────────────────────
   CRUCIBLE_UNSAFE_BUFFER_USAGE
@@ -1978,9 +2000,18 @@ class CRUCIBLE_OWNER KernelCache {
 
   // ── L2 publish — Phase 5 STUB ────────────────────────────────────
   //
-  // Today: returns success-marker pinned at Warm but does NOT
-  // actually persist anywhere.  Phase 5: writes to the per-vendor-
-  // family L2 store.
+  // Today: returns the typed wrapper around
+  //   std::unexpected(InsertError::NotYetImplemented)
+  // because no L2 backing store is wired yet.  Phase 5: writes to
+  // the per-vendor-family L2 store.
+  //
+  // FIXY-FOUND-060 — pre-fix this returned a vacuous success marker,
+  // a silent ship-blocker: a Phase-5 caller invoking publish_l2
+  // would get `.has_value() == true` from a no-op, then a subsequent
+  // lookup_l2 would miss.  The error channel exposes the gap so
+  // every caller branches explicitly on the persistence outcome;
+  // when Phase 5 lands the real backing store the body replaces
+  // the unexpected-return with the real persistence call.
   //
   // FOUND-I06/I07-AUDIT (Finding B) — preconditions mirror
   // publish_l1's discipline.  ContentHash{0} is the empty-slot
@@ -2003,14 +2034,19 @@ class CRUCIBLE_OWNER KernelCache {
     (void)content_hash;
     (void)kernel;
     return fixy::wrap::residency_heat::Warm<std::expected<void, InsertError>>{
-        std::expected<void, InsertError>{}};
+        std::unexpected(InsertError::NotYetImplemented)};
   }
 
   // ── L3 publish — Phase 5 STUB ────────────────────────────────────
   //
-  // Today: returns success-marker pinned at Cold but does NOT
-  // actually persist anywhere.  Phase 5: writes to the per-chip
-  // compiled-bytes archive (S3-backed cold federation).
+  // Today: returns the typed wrapper around
+  //   std::unexpected(InsertError::NotYetImplemented)
+  // because no L3 backing store is wired yet.  Phase 5: writes to
+  // the per-chip compiled-bytes archive (S3-backed cold federation).
+  //
+  // FIXY-FOUND-060 — same closure as publish_l2.  The error channel
+  // exposes the Phase-5 gap to every caller so silent no-ops cannot
+  // hide a missing persistence wire-up.
   //
   // FOUND-I06/I07-AUDIT (Finding B) — preconditions mirror
   // publish_l1's discipline; same rationale as publish_l2.
@@ -2026,7 +2062,7 @@ class CRUCIBLE_OWNER KernelCache {
     (void)content_hash;
     (void)kernel;
     return fixy::wrap::residency_heat::Cold<std::expected<void, InsertError>>{
-        std::expected<void, InsertError>{}};
+        std::unexpected(InsertError::NotYetImplemented)};
   }
 
   // Relaxed: informational counter, no ordering dependency.

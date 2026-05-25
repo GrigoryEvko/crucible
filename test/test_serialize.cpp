@@ -217,9 +217,11 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     //
     // Two goldens are pinned: the byte length (catches size drift)
     // and the FNV-1a hash of all bytes (catches content drift within
-    // a byte-stable size).  Both are anchored to CDAG_VERSION=8.
+    // a byte-stable size).  Both are anchored to CDAG_VERSION=9
+    // (FIXY-FOUND-057 bump — ContentHash now folds num_scalar_args
+    // and iterates all scalars; pre-bump v8 hashes mis-key the cache).
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 8;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 9;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
             "CDAG_VERSION bump detected — update wire-byte golden below "
             "after confirming the new bytes hash to the expected value.");
@@ -234,7 +236,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         //     3. update the two constants below
         //     4. commit all three in the same change
         constexpr size_t   EXPECTED_WIRE_BYTES = 1772;
-        constexpr uint64_t EXPECTED_WIRE_HASH  = 0x88c4973fb04b16c5ULL;
+        constexpr uint64_t EXPECTED_WIRE_HASH  = 0x2943ef7ba87a2dc3ULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,
