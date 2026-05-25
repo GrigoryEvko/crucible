@@ -480,7 +480,20 @@ private:
     std::optional<consumer_tuple_type> consumers_;
     std::array<SpinLock, M> producer_locks_{};
     std::array<SpinLock, N> consumer_locks_{};
-    std::atomic<std::size_t> next_producer_{0};
+    // FIXY-FOUND-120: next_producer_ is a SHARED counter (multiple
+    // producers fetch_add).  Without alignas(64), its placement depends
+    // on the trailing layout of consumer_locks_ — currently each
+    // SpinLock is alignas(64) so consumer_locks_ ends on a 64-byte
+    // boundary and next_producer_ naturally lands at the start of a
+    // fresh line.  That positioning is INCIDENTAL, not load-bearing —
+    // a future field reorder could pack next_producer_ onto a shared
+    // line, causing every producer's fetch_add to ping-pong MESI
+    // against whatever shares the line.  Explicit alignas(64) makes
+    // the discipline structural: next_producer_ is GUARANTEED on its
+    // own cache line regardless of preceding layout.  Same defense
+    // applied to the sibling router classes (MpmcRouter, ShardedRouter)
+    // below — three structurally-identical fix sites.
+    alignas(64) std::atomic<std::size_t> next_producer_{0};
 };
 
 template <typename T,
@@ -571,7 +584,9 @@ private:
     std::optional<typename queue_type::ConsumerHandle> consumer_;
     std::array<SpinLock, M> producer_locks_{};
     SpinLock consumer_lock_;
-    std::atomic<std::size_t> next_producer_{0};
+    // FIXY-FOUND-120: see MpscRouter above — explicit cache-line
+    // isolation for the shared producer-selection counter.
+    alignas(64) std::atomic<std::size_t> next_producer_{0};
 };
 
 template <typename T,
@@ -715,7 +730,9 @@ private:
     std::optional<consumer_tuple_type> consumers_;
     std::array<SpinLock, NumShards> producer_locks_{};
     std::array<SpinLock, NumShards> consumer_locks_{};
-    std::atomic<std::size_t> next_producer_{0};
+    // FIXY-FOUND-120: see MpscRouter above — explicit cache-line
+    // isolation for the shared producer-selection counter.
+    alignas(64) std::atomic<std::size_t> next_producer_{0};
 };
 
 }  // namespace adaptive_detail
