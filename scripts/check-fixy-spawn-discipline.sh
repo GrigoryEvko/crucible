@@ -239,6 +239,13 @@ inline int planted_qualified_suppressed() {
 inline int planted_legitimate_csl_only() {
     return permission_fork(0);  // NOT FLAGGED — negative-lookbehind
 }
+inline int planted_doc_trailing_comment() {
+    // Banned words below live ONLY in the trailing comment — names, not
+    // calls.  The trailing-comment strip MUST drop them (regression lock
+    // for the JoinMechanism `// fork(2)` enum-doc false-positive class).
+    int forked_marker = 0;   // doc refs: fork() posix_spawn() system() — not calls
+    return forked_marker;
+}
 PLANTED_CLEAN
         cat >"$tmp_root/scripts/no-spawn-process-allowlist.txt" <<'PLANTED_STALE'
 # Pure stale allowlist — file no longer has any banned call at this line.
@@ -342,6 +349,19 @@ scan_pattern() {
         case "$text" in
             *'SPAWN-PROCESS-OK'*) continue ;;
         esac
+
+        # Trailing-comment false positives: a banned word may appear ONLY
+        # inside a `// ...` trailing comment (a JoinMechanism enum value
+        # documented `// fork(2)` / `// posix_spawn(3)`, or a static_assert
+        # commented `// system (Compiler)`).  rg matched the whole line and
+        # the leading-comment skip above only handles lines that START with
+        # `//`.  Re-test the CODE portion (everything before the first `//`)
+        # against the same pattern: a real call keeps its `name(` before the
+        # `//` and still matches; a doc-only mention is dropped.
+        code="${text%%//*}"
+        if ! printf '%s' "$code" | grep -qP -- "$pattern"; then
+            continue
+        fi
 
         rel="${file#"$scan_root"/}"
 
