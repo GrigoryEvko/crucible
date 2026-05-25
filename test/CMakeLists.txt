@@ -7155,6 +7155,18 @@ crucible_neg_compile_test(neg_collision_R003_coroutine_bg
 # H003|F002)|pack_(L005|F001)|fixy_v_225_advise_dontneed_safe_surface)'.
 crucible_neg_compile_test(neg_collision_B001_bg_observable_unbounded
   "B001")
+# FIXY-FOUND-069 sub-HS14 closure for B001: cost::Unstated mirror
+# defends the OTHER arm of is_unbounded_cost's 2-way OR-fold.
+# is_unbounded_cost specializes on BOTH cost::Unstated AND
+# cost::Unbounded.  Shipped fixture engages Unbounded; this
+# companion engages Unstated.  Defends against a refactor that
+# drops the Unstated specialization (e.g., reclassifying Unstated
+# as "treat as 0-cost until measured"), which would silently let
+# Bg-observable Unstated-cost bindings slip past B001's back-
+# pressure gate.  All other axes match the shipped fixture for
+# direct comparability and sole-firing.
+crucible_neg_compile_test(neg_collision_B001_bg_observable_unstated
+  "B001")
 crucible_neg_compile_test(neg_collision_H001_hotpath_unbounded_cost
   "H001")
 # ─── FIXY-FOUND-067 Phase 1 structural-detection HS14 fixture ────────
