@@ -214,18 +214,44 @@ concept IsSessionProtocol =
     && std::is_class_v<Proto>;
 
 // `IsRefinementPredicate<Pred>` — gate for `refined_with<Pred>`.
-// Accepts any class type: substrate predicates like
-// `safety::fn::pred::True` and `safety::BoundedAbove<Max>` are class
-// types exposing a `check<T>(const T&)` or `operator()(const T&)`
-// member.  Stricter "predicate is invocable on T" gating already
-// fires at construction time via Refined.h's `PredicateInvocableOn`
-// concept (which is per-T, not per-Pred — so it can't be folded into
-// this single-parameter gate).  Open-world by design: any class that
-// exposes a predicate-shaped member is a valid candidate.
+// Accepts substrate-shaped predicates: empty class types like
+// `safety::fn::pred::True` (exposing `check<T>(const T&)`) and
+// `safety::AllOf<Preds...>` / `BoundedBelow<Min>` (exposing
+// `operator()(const T&) const`).  Stricter "predicate is invocable
+// on T" gating still fires at Refined<Pred, T> construction via
+// `PredicateInvocableOn<Pred, T>` (per-T, can't be folded here).
+//
+// FIXY-FOUND-037 tightening: the gate now ALSO requires the
+// substrate "empty + default-constructible" convention to defend
+// against federation-cache poisoning:
+//
+//   `refined_with<Pred>` participates in the federation cache key
+//   for every binding that engages it.  EACH UNIQUE `Pred` TYPE
+//   allocates a distinct row_hash slot.  Permitting stateful
+//   predicates (Pred with data members) or non-default-constructible
+//   predicates would let ad-hoc per-binding closures fragment the
+//   cache:
+//
+//     - A captures-by-reference lambda (`[&]() { ... }`) has a unique
+//       closure type per declaration site AND a non-empty storage
+//       footprint AND no default ctor.  Two textually-identical
+//       lambdas allocate two distinct cache slots.
+//     - A stateful predicate struct (`struct P { int threshold; ... };`)
+//       likewise has unique type identity per declaration site.
+//
+//   Restricting the gate to empty + default-constructible types
+//   excludes the closure / stateful-struct cases at compile time —
+//   bindings must use NAMED substrate predicates (which share
+//   types across call sites and thus cache slots).  Capture-less
+//   lambdas ARE empty + default-constructible in C++20+, so they
+//   still pass; the gate only rejects the genuinely-problematic
+//   stateful shapes.
 template <typename Pred>
 concept IsRefinementPredicate =
        std::is_same_v<Pred, std::remove_cvref_t<Pred>>
-    && std::is_class_v<Pred>;
+    && std::is_class_v<Pred>
+    && std::is_empty_v<Pred>                   // FIXY-FOUND-037: substrate convention
+    && std::is_default_constructible_v<Pred>;  // FIXY-FOUND-037: required for substrate use
 
 // `IsProvenanceSource<Source>` — gate for `from_source<Source>`.
 // Substrate convention: every `safety::source::*` tag is an empty
@@ -736,6 +762,55 @@ static_assert(IsGrantTag<trust_tested>);
 static_assert(IsGrantTag<trust_unverified>);
 static_assert(IsGrantTag<trust_external>);
 static_assert(IsGrantTag<refined_with<safety::fn::pred::True>>);
+
+// ── FIXY-FOUND-037 sentinels: IsRefinementPredicate gate tightening ──
+//
+// Positive: substrate predicates (empty + default-constructible)
+// continue to pass.  pred::True is the canonical example.
+static_assert(IsRefinementPredicate<safety::fn::pred::True>,
+    "FIXY-FOUND-037: safety::fn::pred::True must satisfy the "
+    "tightened IsRefinementPredicate gate (empty + default-ctorable).");
+
+// Negative: a stateful predicate-shaped struct is REJECTED by the
+// tightened gate.  Demonstrates that the federation-cache-poisoning
+// surface (per-binding stateful predicates fragmenting cache slots)
+// is closed at compile time, not deferred to Refined<Pred, T>
+// construction.  Reviewers extending the catalog with a new predicate
+// must either make it empty + default-ctorable (substrate convention)
+// or document a deliberate opt-out.
+namespace detail::found_037_witness {
+    struct StatefulPredicate {                   // NOT empty — has data
+        int threshold = 0;
+        [[nodiscard]] constexpr bool operator()(int v) const noexcept
+            { return v > threshold; }
+    };
+    static_assert(!IsRefinementPredicate<StatefulPredicate>,
+        "FIXY-FOUND-037: stateful predicates must be rejected by the "
+        "tightened IsRefinementPredicate gate — each unique stateful "
+        "Pred type would fragment the federation cache.");
+
+    struct NonDefaultConstructiblePredicate {    // empty but not default-ctorable
+        constexpr NonDefaultConstructiblePredicate(int) noexcept {}
+        [[nodiscard]] constexpr bool operator()(int v) const noexcept
+            { return v > 0; }
+    };
+    static_assert(!IsRefinementPredicate<NonDefaultConstructiblePredicate>,
+        "FIXY-FOUND-037: non-default-constructible predicates must be "
+        "rejected — the substrate Refined<Pred, T> machinery assumes "
+        "Pred is freely instantiable.");
+
+    // Conversely: a capture-less lambda IS empty + default-constructible
+    // in C++20+, so the tightening does NOT reject this common shape
+    // (the gate only rejects genuinely-problematic stateful shapes).
+    using CaptureLessLambdaType = decltype([](int v) noexcept { return v > 0; });
+    static_assert(std::is_empty_v<CaptureLessLambdaType>);
+    static_assert(std::is_default_constructible_v<CaptureLessLambdaType>);
+    static_assert(IsRefinementPredicate<CaptureLessLambdaType>,
+        "FIXY-FOUND-037: capture-less lambdas in C++20+ are empty + "
+        "default-constructible, so the tightening admits them.  This "
+        "is by design — the lambda's UNIQUE TYPE per declaration site "
+        "is the audit-discoverable cache-slot identity.");
+}  // namespace detail::found_037_witness
 static_assert(IsGrantTag<version<3>>);
 static_assert(IsGrantTag<stale_to<5>>);
 
