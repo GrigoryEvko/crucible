@@ -385,7 +385,12 @@ inline Header read_header(Reader& r) {
         plan->num_slots         = r.r<uint32_t>();
         if (plan->num_slots > CDAG_MAX_SLOTS) return LoadedRegionNode{nullptr};
         plan->num_external      = r.r<uint32_t>();
-        plan->device_type       = r.r<DeviceType>();
+        // device_type gate (reuses ValidDeviceType): same boundary-
+        // hardening as the read_meta gate — a corrupt/version-skewed
+        // byte would otherwise enter pool selection (== DeviceType::CPU)
+        // unchecked.  Completes DeviceType deserialize coverage across
+        // both boundaries (TensorMeta + MemoryPlan).
+        plan->device_type       = make_device_type(ValidDeviceType{r.r<int8_t>()});
         plan->device_idx        = r.r<int8_t>();
         r.read_bytes(plan->pad0, sizeof(plan->pad0));
         plan->device_capability = r.r<uint64_t>();
