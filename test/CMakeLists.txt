@@ -5593,6 +5593,22 @@ crucible_neg_compile_test(neg_tensor_meta_dtype_gap_value
 crucible_neg_compile_test(neg_tensor_meta_dtype_above_max
   "contract|Refined|valid_scalar_type|not a constant|non-constant|constexpr")
 
+# read_meta device_type gate (sibling of the dtype gate) — DeviceType is a
+# sparse int8_t enum (0,1,2,6,9,13,14,20); it feeds the node content hash
+# (Merkle identity), so a corrupt/version-skewed Cipher byte silently
+# corrupts that identity.  ValidDeviceType = Refined<valid_device_type,
+# int8_t> fail-closes at deserialize entry.  NOT a UB fix (DeviceType has
+# no std::unreachable consumer).  Two fixtures per HS14, distinct classes:
+#   * neg_tensor_meta_device_type_gap_value — INTERIOR gap (3, between
+#     MKLDNN=2 and HIP=6) catches "predicate relaxed to a plain [0,20]
+#     range check" drift admitting the sparse gaps.
+#   * neg_tensor_meta_device_type_above_max — ABOVE-MAX wide miss (99 > 20)
+#     catches "drop the predicate entirely" regression.
+crucible_neg_compile_test(neg_tensor_meta_device_type_gap_value
+  "contract|Refined|valid_device_type|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_tensor_meta_device_type_above_max
+  "contract|Refined|valid_device_type|not a constant|non-constant|constexpr")
+
 # WRAP-Serialize-5 #1014 — write_meta() zero_ptr / zero_grad_fn_hash
 # wire-format invariants now ride through safety::Refined<is_zero,
 # uint64_t>.  The wrapper pins "must-be-zero on disk" at the type

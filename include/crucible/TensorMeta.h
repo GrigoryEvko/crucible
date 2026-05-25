@@ -321,4 +321,42 @@ ScalarType make_scalar_type(ValidScalarType raw) noexcept {
     return static_cast<ScalarType>(raw.value());
 }
 
+// ── read_meta device_type gate (sibling of the dtype gate above) ──────
+//
+// read_meta() reconstructs `m.device_type = r.r<DeviceType>()` from a
+// single untrusted byte.  DeviceType is a SPARSE int8_t enum (0,1,2,6,9,
+// 13,14,20) so a corrupt or version-skewed Cipher byte can deliver a gap
+// value (e.g. 3) or an out-of-range byte.
+//
+// Unlike the dtype gate, this is NOT a UB fix — device_type has no
+// `std::unreachable()` consumer (it is equality-compared against
+// DeviceType::CPU and folded into the content hash).  It is a BOUNDARY
+// validation: device_type feeds the node's content hash (MerkleDag node
+// identity for KernelCache dedup / diff / merge), so an invalid byte
+// silently corrupts that identity.  Gating fail-closes on a corrupt
+// Cipher byte at deserialize entry, consistent with the ndim / kernel_id
+// / dtype gates, rather than admitting a node with a corrupted hash.
+//
+// Cost: regime-1 EBO collapse — sizeof(ValidDeviceType) == sizeof(int8_t).
+inline constexpr auto valid_device_type =
+    [](auto raw) constexpr noexcept -> bool {
+        switch (static_cast<DeviceType>(static_cast<std::int8_t>(raw))) {
+            case DeviceType::CPU:    case DeviceType::CUDA:
+            case DeviceType::MKLDNN: case DeviceType::HIP:
+            case DeviceType::XLA:    case DeviceType::MPS:
+            case DeviceType::Meta:   case DeviceType::PrivateUse1:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+using ValidDeviceType = ::crucible::fixy::wrap::Refined<
+    valid_device_type, std::int8_t>;
+
+[[nodiscard, gnu::const]] inline constexpr
+DeviceType make_device_type(ValidDeviceType raw) noexcept {
+    return static_cast<DeviceType>(raw.value());
+}
+
 }  // namespace crucible

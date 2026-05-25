@@ -183,7 +183,12 @@ inline TensorMeta read_meta(Reader& r) {
     // would otherwise reach element_size()'s `default: std::unreachable()`
     // as UB.  ValidScalarType's ctor rejects it at deserialize entry.
     m.dtype      = make_scalar_type(ValidScalarType{r.r<int8_t>()});
-    m.device_type = r.r<DeviceType>();
+    // device_type gate (sibling of the dtype gate): boundary-validate the
+    // untrusted byte — device_type feeds the content hash (node identity),
+    // so a corrupt/skewed value silently corrupts it.  Fail-closed rather
+    // than admit a node with a corrupted hash.  (Not a UB fix — DeviceType
+    // has no std::unreachable consumer, unlike ScalarType.)
+    m.device_type = make_device_type(ValidDeviceType{r.r<int8_t>()});
     m.device_idx  = r.r<int8_t>();
     m.layout          = r.r<Layout>();
     m.requires_grad   = r.r<bool>();
