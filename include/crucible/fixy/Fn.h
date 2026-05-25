@@ -738,8 +738,20 @@ class fn {
     // position (0-based): 2 of 7").  Symmetric with tier-3 / tier-4 /
     // tier-5 dynamic-routing surfaces; position alone is actionable
     // without reflection (user counts grants to locate the offender).
+    //
+    // FIXY-FOUND-130-AUDIT: tier-2 helper is called WITHOUT the
+    // implicit Type marker so that the position + cardinality reported
+    // is USER-PACK-RELATIVE (the user wrote `Grants...`, not the
+    // marker-prepended internal form).  AllGrantsWellFormed is
+    // unchanged because the marker is always well-formed
+    // (accept_default_strict_for<Type> satisfies IsGrantTag); dropping
+    // it only fixes the off-by-one in the reported cardinality.  In
+    // contrast tier 4 below KEEPS the marker because
+    // first_duplicate_axis_v needs to see the marker's Type-axis
+    // engagement to surface FixyDuplicate_Type when a user explicitly
+    // re-engages Type (FIXY-AUDIT-A7).
     static_assert(fixy_h02_tier2_grants_well_formed,
-        tier2_malformed_grant_message_v<ImplicitTypeMarker, Grants...>);
+        tier2_malformed_grant_message_v<Grants...>);
 
     // Sketch mode (CRUCIBLE_FIXY_STRICT=0) relaxes the engagement
     // axis per Profile.h's contract: "sketch mode permissivity applies
