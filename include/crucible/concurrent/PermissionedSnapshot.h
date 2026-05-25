@@ -75,6 +75,7 @@
 #include <crucible/concurrent/WorkingSet.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Pinned.h>
+#include <crucible/safety/Stale.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -330,6 +331,29 @@ public:
     }
 
     // ── Diagnostics ───────────────────────────────────────────────
+    //
+    // FIXY-FOUND-122: the bare-scalar overloads below are RACY by
+    // design — they read reader_pool_'s atomic state without any
+    // happens-before with concurrent acquire/release/upgrade ops.
+    // By the time the caller observes the returned bool/uint64_t,
+    // more readers may have entered or left, and the exclusive
+    // holder may have deposited.  The bare returns are kept for
+    // compatibility with the cross-primitive diagnostic concept
+    // (`crucible::concurrent::traits::IsLinearizable` requires
+    // `is_exclusive_active() -> std::same_as<bool>` uniformly across
+    // all six Permissioned* primitives; promoting that contract is
+    // a separate multi-cycle sweep).
+    //
+    // The `_stale` companion accessors below expose the Stale-wrapped
+    // surface that type-documents the race.  `at_infinity` because
+    // these accessors share no step-counter with the concurrent
+    // pool — the lag is genuinely unbounded.  Callers explicitly
+    // `.peek()` to acknowledge the unsynchronized snapshot.
+    //
+    // Use the _stale form on new code paths; the bare overloads are
+    // retained for the unified diagnostic concept and existing test
+    // call sites that perform single-threaded snapshot inspection
+    // (where the race is structurally absent).
 
     [[nodiscard]] std::uint64_t outstanding_readers() const noexcept {
         return reader_pool_.outstanding();
@@ -337,6 +361,25 @@ public:
 
     [[nodiscard]] bool is_exclusive_active() const noexcept {
         return reader_pool_.is_exclusive_out();
+    }
+
+    // FIXY-FOUND-122: Stale-wrapped companions.  Same semantics as
+    // the bare-scalar accessors above, but the return type carries
+    // the τ=∞ staleness grade so the race is grep-visible in source
+    // and downstream callers cannot silently consume the value as
+    // if it were synchronized with the writer/readers.  Mirrors the
+    // TraceRing::size() / MetaLog::size() precedent (WRAP-TraceRing
+    // S2b of #1736).
+    [[nodiscard]] ::crucible::safety::Stale<std::uint64_t>
+    outstanding_readers_stale() const noexcept {
+        return ::crucible::safety::Stale<std::uint64_t>::at_infinity(
+            reader_pool_.outstanding());
+    }
+
+    [[nodiscard]] ::crucible::safety::Stale<bool>
+    is_exclusive_active_stale() const noexcept {
+        return ::crucible::safety::Stale<bool>::at_infinity(
+            reader_pool_.is_exclusive_out());
     }
 
     // Snapshot's publish version (count of completed publishes).

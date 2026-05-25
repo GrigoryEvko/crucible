@@ -128,6 +128,25 @@ void test_single_thread_publish_and_load() {
     // Pool diagnostics.
     CRUCIBLE_TEST_REQUIRE(snap.outstanding_readers() == 1);
     CRUCIBLE_TEST_REQUIRE(!snap.is_exclusive_active());
+
+    // FIXY-FOUND-122: Stale-wrapped diagnostic companions return the
+    // same observed value, but type-document the τ=∞ staleness so
+    // downstream callers must explicitly .peek() the value and
+    // acknowledge the unsynchronized snapshot.
+    const auto readers_stale = snap.outstanding_readers_stale();
+    CRUCIBLE_TEST_REQUIRE(readers_stale.peek() == 1);
+    CRUCIBLE_TEST_REQUIRE(readers_stale.is_infinite());
+    const auto exclusive_stale = snap.is_exclusive_active_stale();
+    CRUCIBLE_TEST_REQUIRE(exclusive_stale.peek() == false);
+    CRUCIBLE_TEST_REQUIRE(exclusive_stale.is_infinite());
+    static_assert(
+        std::is_same_v<decltype(snap.outstanding_readers_stale()),
+                       crucible::safety::Stale<std::uint64_t>>,
+        "outstanding_readers_stale must return Stale<uint64_t>");
+    static_assert(
+        std::is_same_v<decltype(snap.is_exclusive_active_stale()),
+                       crucible::safety::Stale<bool>>,
+        "is_exclusive_active_stale must return Stale<bool>");
 }
 
 void test_multiple_readers_coexist() {
