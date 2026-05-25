@@ -7047,6 +7047,34 @@ crucible_neg_compile_test(neg_collision_V402_nested_cross_trunk
 crucible_neg_compile_test(neg_collision_T001_unverified_capability
   "T001")
 
+# ─── FIXY-FOUND-071 CollisionCatalog R001/R002/R003 neg-compile ───────
+#
+# The Reentrancy axis (ReentrancyMode::{NonReentrant, Reentrant, Coroutine})
+# was destructured by Fn but read by ZERO §6.8 collision rules before
+# FOUND-071.  R001/R002/R003 close the gap with three Coroutine-axis
+# collisions:
+#
+#   R001: Coroutine × hot_path (per-suspend state-machine spill +
+#         indirect resume incompatible with ≤40ns hot-path budget per
+#         CLAUDE.md §IX).
+#   R002: Coroutine × UsageMode::Borrow (capture dangling on resume —
+#         Borrow lifetime tied to caller's stack which may have unwound
+#         by resume time; symmetric to L002 / L007 on the Reentrancy axis).
+#   R003: Coroutine × Row<Bg> (cross-thread resume hazard — C++
+#         coroutines are not thread-safe by default; suspend-on-A /
+#         resume-on-B requires explicit executor handoff).
+#
+# All three target Coroutine (the explicit, opt-in ReentrancyMode value),
+# leaving NonReentrant (the default) and Reentrant unconstrained at the
+# Reentrancy-axis layer — so existing production bindings using defaults
+# do not regress.
+crucible_neg_compile_test(neg_collision_R001_coroutine_hot_path
+  "R001")
+crucible_neg_compile_test(neg_collision_R002_coroutine_borrow
+  "R002")
+crucible_neg_compile_test(neg_collision_R003_coroutine_bg
+  "R003")
+
 # ─── FIXY-FOUND-063 CollisionCatalog H010 neg-compile (HotPath × Bg) ──
 #
 # H010 closes a gap among H001/H002/H003: those catch HotPath ×

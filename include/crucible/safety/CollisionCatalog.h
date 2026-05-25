@@ -517,6 +517,24 @@ enum class RuleCode : std::uint8_t {
     // T001 closes the gap structurally — any Capability binding must declare
     // its provenance Verified or Tested.
     T001 = 50,  // Trust::Unverified × UsageMode::Capability (capability minted from untrusted provenance)
+    // FIXY-FOUND-071: Reentrancy axis read by §6.8 rules.  Pre-FOUND-071 the
+    // Reentrancy field (ReentrancyMode::{NonReentrant, Reentrant, Coroutine})
+    // was destructured by Fn but read by ZERO §6.8 collision rules — every
+    // binding could declare any Reentrancy regardless of execution context.
+    // R001 catches Coroutine on the hot path (per-suspend state-machine spill
+    // + indirect resume incompatible with ≤40ns hot-path budget per
+    // CLAUDE.md §IX).  R002 catches Coroutine × UsageMode::Borrow: a borrow
+    // captured in a coroutine frame faces the same dangling-on-resume hazard
+    // L002 catches on the async-marker side (the borrowed value's stack may
+    // have unwound by resume time).  R003 catches Coroutine in a Bg context
+    // (suspend/resume across thread boundaries is not thread-safe by default;
+    // C++ coroutines require explicit executor synchronization to migrate
+    // the resumption point).  All three target Coroutine — the riskiest
+    // ReentrancyMode value — leaving NonReentrant (the default) and
+    // Reentrant unconstrained at the Reentrancy-axis layer.
+    R001 = 51,  // Reentrancy::Coroutine × hot_path (state-machine spill on hot path)
+    R002 = 52,  // Reentrancy::Coroutine × UsageMode::Borrow (capture-dangling on resume)
+    R003 = 53,  // Reentrancy::Coroutine × Row<Bg> (cross-thread resume hazard)
     None = 255,
 };
 
@@ -699,6 +717,21 @@ struct T001_UnverifiedCapability : diag::tag_base {
     static constexpr std::string_view name = "T001_UnverifiedCapability";
 };
 
+// ── FIXY-FOUND-071 R001 — Reentrancy::Coroutine × hot_path ──────────
+struct R001_CoroutineHotPath : diag::tag_base {
+    static constexpr std::string_view name = "R001_CoroutineHotPath";
+};
+
+// ── FIXY-FOUND-071 R002 — Reentrancy::Coroutine × UsageMode::Borrow ─
+struct R002_CoroutineBorrow : diag::tag_base {
+    static constexpr std::string_view name = "R002_CoroutineBorrow";
+};
+
+// ── FIXY-FOUND-071 R003 — Reentrancy::Coroutine × Row<Bg> ───────────
+struct R003_CoroutineBgRow : diag::tag_base {
+    static constexpr std::string_view name = "R003_CoroutineBgRow";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -750,11 +783,14 @@ using Catalog = std::tuple<
     H010_HotPathBgContradiction,
     P010_GhostNonErasable,
     L007_BorrowBgRow,
-    T001_UnverifiedCapability
+    T001_UnverifiedCapability,
+    R001_CoroutineHotPath,
+    R002_CoroutineBorrow,
+    R003_CoroutineBgRow
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 51);
+static_assert(catalog_size == 54);
 
 // FIXY-FOUND-139: reflection-derived RuleCode enum ceiling.
 //
@@ -838,6 +874,9 @@ template <> struct rule_tag<RuleCode::H010> { using type = H010_HotPathBgContrad
 template <> struct rule_tag<RuleCode::P010> { using type = P010_GhostNonErasable; };
 template <> struct rule_tag<RuleCode::L007> { using type = L007_BorrowBgRow; };
 template <> struct rule_tag<RuleCode::T001> { using type = T001_UnverifiedCapability; };
+template <> struct rule_tag<RuleCode::R001> { using type = R001_CoroutineHotPath; };
+template <> struct rule_tag<RuleCode::R002> { using type = R002_CoroutineBorrow; };
+template <> struct rule_tag<RuleCode::R003> { using type = R003_CoroutineBgRow; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -997,6 +1036,15 @@ template <> struct rule_code_of<L007_BorrowBgRow> {
 };
 template <> struct rule_code_of<T001_UnverifiedCapability> {
     static constexpr RuleCode value = RuleCode::T001;
+};
+template <> struct rule_code_of<R001_CoroutineHotPath> {
+    static constexpr RuleCode value = RuleCode::R001;
+};
+template <> struct rule_code_of<R002_CoroutineBorrow> {
+    static constexpr RuleCode value = RuleCode::R002;
+};
+template <> struct rule_code_of<R003_CoroutineBgRow> {
+    static constexpr RuleCode value = RuleCode::R003;
 };
 
 template <typename Tag>
@@ -1474,6 +1522,58 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(T001, "T001",
     "Ghost as appropriate.  Never elevate an Unverified binding to "
     "Capability without engaging Trust at the same site",
     "fixy.md §24.2 T001 (V-FOUND-070)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(R001, "R001",
+    "every hot-path binding declares ReentrancyMode::NonReentrant or ::Reentrant; "
+    "Coroutine is rejected",
+    "F::reentrancy_v == ReentrancyMode::Coroutine AND marks_hot_path<F>::value. "
+    "Coroutines carry a state-machine frame whose suspend/resume sequence costs "
+    "an indirect call through the coroutine handle plus a state-spill at every "
+    "suspension point. The hot-path budget per CLAUDE.md §IX is <=40 ns intra-"
+    "socket; a single coroutine suspend already breaches that floor (the resume "
+    "indirect call alone is ~15-25 ns, and the spill adds I-cache cold-line cost). "
+    "Coroutines belong in Bg / Init contexts where the per-suspend overhead is "
+    "amortized against millisecond-scale latency budgets",
+    "drop the HotPath marker (genuinely Bg/Init work — coroutines fit there), OR "
+    "drop ReentrancyMode::Coroutine and refactor the body as a straight-line "
+    "NonReentrant or Reentrant function. If the suspension semantics are "
+    "load-bearing, the binding is structurally not hot-path",
+    "fixy.md §24.2 R001 (V-FOUND-071)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(R002, "R002",
+    "every Coroutine binding declares UsageMode other than Borrow",
+    "F::reentrancy_v == ReentrancyMode::Coroutine AND "
+    "F::usage_v == UsageMode::Borrow. A Borrow-usage binding takes a borrowed "
+    "reference whose lifetime is tied to the caller's stack; a coroutine "
+    "suspends mid-execution and resumes after the caller's stack frame may have "
+    "unwound (the suspension point hands control back to the coroutine's owner, "
+    "who is free to destroy frames the borrow points into).  On resume the "
+    "borrow dangles.  Symmetric to L002 (Borrow x async marker) and L007 "
+    "(Borrow x Row<Bg>) on the Reentrancy axis — L002 catches "
+    "marker-driven async, L007 catches Bg-row exposure, R002 catches the "
+    "Coroutine ReentrancyMode form (no async marker, no Bg row required, the "
+    "Coroutine declaration alone says 'this body will suspend')",
+    "drop UsageMode::Borrow and move ownership into the coroutine frame "
+    "(Linear / Owned / Capability), OR drop ReentrancyMode::Coroutine and "
+    "refactor the body as a straight-line NonReentrant/Reentrant function, OR "
+    "narrow the borrow scope so it is consumed BEFORE the first suspension "
+    "point",
+    "fixy.md §24.2 R002 (V-FOUND-071)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(R003, "R003",
+    "every Coroutine binding declares an effect row free of Bg",
+    "F::reentrancy_v == ReentrancyMode::Coroutine AND "
+    "row_has_effect_v<F::effect_row_t, Effect::Bg>. C++ coroutines are NOT "
+    "thread-safe by default: a coroutine suspended on thread A cannot resume "
+    "on thread B without explicit executor handoff (the coroutine frame's "
+    "stack-state, TLS-tied state, and any captured borrows / atomics tied to "
+    "the suspension thread become hazardous on resumption from a different "
+    "thread). R001 catches Coroutine x hot_path; R003 catches Coroutine x Bg "
+    "where the migration-across-thread-on-resume hazard manifests. Symmetric "
+    "to R002 (NonReentrant x Bg) on the Coroutine half of the Reentrancy axis",
+    "drop the Bg atom from the effect row (run the coroutine on a single "
+    "thread), OR wrap the coroutine in an explicit executor / session protocol "
+    "that defines the migration contract (e.g., a Sender<Bg, T> with a typed "
+    "resume-on-executor step), OR refactor to NonReentrant / Reentrant if the "
+    "suspension is not load-bearing",
+    "fixy.md §24.2 R003 (V-FOUND-071)");
 
 #undef CRUCIBLE_COLLISION_DIAGNOSTIC
 
@@ -1877,6 +1977,38 @@ template <typename F>
 concept T001_OK = !(F::usage_v == UsageMode::Capability &&
                     std::is_same_v<typename F::trust_t,
                                    ::crucible::safety::trust::Unverified>);
+
+// R001: ReentrancyMode::Coroutine × hot_path rejected (FIXY-FOUND-071).
+// Coroutine state-machine spill + per-suspend indirect-call cost cliff
+// vs hot-path budget (≤40ns intra-socket per CLAUDE.md §IX).  Asymmetric:
+// only Coroutine flagged; NonReentrant and Reentrant pass.  Closes the
+// Reentrancy-axis no-op gap (the Reentrancy field was destructured by
+// Fn but read by ZERO §6.8 rules before FOUND-071).
+template <typename F>
+concept R001_OK = !(F::reentrancy_v == ReentrancyMode::Coroutine &&
+                    marks_hot_path<F>::value);
+
+// R002: ReentrancyMode::Coroutine × UsageMode::Borrow rejected (FIXY-FOUND-071).
+// A Borrow-usage binding takes a borrowed reference whose lifetime is tied
+// to the caller's stack; a coroutine suspends mid-execution and resumes
+// after the caller's stack frame may have unwound.  On resume the borrow
+// dangles.  Symmetric to L002 (Borrow x marks_async) and L007 (Borrow x
+// Row<Bg>) on the Reentrancy-axis side — R002 catches the Coroutine
+// ReentrancyMode form (no async marker, no Bg row required).  Asymmetric:
+// only Coroutine + Borrow flagged.
+template <typename F>
+concept R002_OK = !(F::reentrancy_v == ReentrancyMode::Coroutine &&
+                    F::usage_v == UsageMode::Borrow);
+
+// R003: ReentrancyMode::Coroutine × Row<Bg> rejected (FIXY-FOUND-071).
+// C++ coroutines are NOT thread-safe by default; suspend-on-A / resume-on-
+// B without explicit executor handoff is undefined behavior on TLS-tied
+// state and captured borrows.  Symmetric to R002 on the Coroutine half.
+// Asymmetric: only Coroutine flagged.
+template <typename F>
+concept R003_OK = !(F::reentrancy_v == ReentrancyMode::Coroutine &&
+                    row_has_effect_v<typename F::effect_row_t,
+                                     effects::Effect::Bg>);
 
 template <typename F>
 concept F002_OK = !(marks_federation_peer<F>::value &&
@@ -2482,7 +2614,8 @@ concept AllRulesOK =
     V001_OK<F> && V002_OK<F> && V101_OK<F> && V102_OK<F> &&
     V201_OK<F> && V202_OK<F> && V203_OK<F> && V301_OK<F> &&
     V401_OK<F> && V402_OK<F> &&
-    H010_OK<F> && P010_OK<F> && L007_OK<F> && T001_OK<F>;
+    H010_OK<F> && P010_OK<F> && L007_OK<F> && T001_OK<F> &&
+    R001_OK<F> && R002_OK<F> && R003_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -2586,6 +2719,12 @@ template <typename F>
         return RuleCode::L007;
     } else if constexpr (!T001_OK<F>) {
         return RuleCode::T001;
+    } else if constexpr (!R001_OK<F>) {
+        return RuleCode::R001;
+    } else if constexpr (!R002_OK<F>) {
+        return RuleCode::R002;
+    } else if constexpr (!R003_OK<F>) {
+        return RuleCode::R003;
     } else {
         return RuleCode::None;
     }
@@ -3115,6 +3254,39 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "behavior). If the binding should not assert any authority, "
             "drop UsageMode::Capability and pick Linear / Borrow / Ghost. "
             "FIXY-FOUND-070.");
+        static_assert(!(Reentrancy == ReentrancyMode::Coroutine && hot_path),
+            "R001: ReentrancyMode::Coroutine x hot_path. A coroutine carries a "
+            "state-machine frame whose suspend/resume sequence costs an indirect "
+            "call plus a state-spill at every suspension point.  The hot-path "
+            "budget (CLAUDE.md §IX, <=40ns intra-socket) is breached by a single "
+            "coroutine resume.  Drop the HotPath marker (genuinely Bg/Init work), "
+            "OR drop ReentrancyMode::Coroutine and refactor as a straight-line "
+            "NonReentrant/Reentrant function.  FIXY-FOUND-071.");
+        static_assert(!(Reentrancy == ReentrancyMode::Coroutine &&
+                        Usage == UsageMode::Borrow),
+            "R002: ReentrancyMode::Coroutine x UsageMode::Borrow.  A Borrow-usage "
+            "binding takes a borrowed reference whose lifetime is tied to the "
+            "caller's stack; a coroutine suspends mid-execution and resumes "
+            "after the caller's stack frame may have unwound, dangling the "
+            "borrow.  L002 catches Borrow x marks_async (coroutine markers); "
+            "L007 catches Borrow x Row<Bg> (cross-thread); R002 catches the "
+            "Coroutine ReentrancyMode form where neither async marker nor Bg "
+            "row is engaged but the coroutine declaration alone says 'this "
+            "body will suspend'.  Drop UsageMode::Borrow (move ownership into "
+            "the coroutine frame via Linear / Owned / Capability), OR drop "
+            "ReentrancyMode::Coroutine and refactor as straight-line "
+            "NonReentrant/Reentrant.  FIXY-FOUND-071.");
+        static_assert(!(Reentrancy == ReentrancyMode::Coroutine && row_has_bg),
+            "R003: ReentrancyMode::Coroutine x Row<Bg>.  C++ coroutines are NOT "
+            "thread-safe by default; suspend-on-thread-A / resume-on-thread-B "
+            "without explicit executor handoff is hazardous on TLS-tied state and "
+            "captured borrows.  R001 catches Coroutine x hot_path (cost cliff); "
+            "R003 catches Coroutine x Bg (cross-thread resume hazard) — symmetric "
+            "to R002 on the Coroutine half of the Reentrancy axis.  Drop the Bg "
+            "atom (single-thread the coroutine), OR wrap in an explicit executor "
+            "/ session protocol with a typed resume-on-executor step, OR refactor "
+            "to NonReentrant/Reentrant if suspension is not load-bearing.  "
+            "FIXY-FOUND-071.");
         static_assert(!(federation_peer && unbounded_cost),
             "F002: federation peer x unbounded cost. Attach a wall-clock "
             "budget (cost::Linear<N>) and a terminating bound; federation "
@@ -3355,7 +3527,11 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(borrow_capture && row_has_bg) &&
                !(Usage == UsageMode::Capability &&
                  std::is_same_v<Trust,
-                                ::crucible::safety::trust::Unverified>);
+                                ::crucible::safety::trust::Unverified>) &&
+               !(Reentrancy == ReentrancyMode::Coroutine && hot_path) &&
+               !(Reentrancy == ReentrancyMode::Coroutine &&
+                 Usage == UsageMode::Borrow) &&
+               !(Reentrancy == ReentrancyMode::Coroutine && row_has_bg);
     }
 
     static constexpr bool valid = validate();
