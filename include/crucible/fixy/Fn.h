@@ -224,15 +224,87 @@ struct project<grant::with<Es...>> { using type = effects::Row<Es...>; };
 
 // ── DimensionAxis::Security = 4 (enum-valued via declassify) ──────
 //
-// Convention: declassify<Policy> projects to SecLevel::Public.
-// The Policy parameter is captured for audit trails (consumed by
-// downstream declassification call sites) but the substrate's
-// security-lattice slot only needs the post-declassification level.
+// FIXY-FOUND-032: previously, `project<declassify<Policy>>::value`
+// hardcoded `SecLevel::Public` regardless of Policy.  This was a
+// LATTICE COLLAPSE — every declassification (whatever its policy)
+// landed at Public, defeating the Security lattice's stratification.
+// IFC theory wants per-policy SecLevel targets (e.g., `RedactPII`
+// might drop Secret→Classified, while `FullDeclassify` drops to
+// Public).  Folding all declassifications into Public hides the
+// difference at the type-system level, even though the Policy IS
+// captured separately via `find_declassify_policy_t<>` for audit.
+//
+// Closure: introduce `declassify_target<Policy>` as a customization
+// point.  Default value remains `SecLevel::Public` (preserves prior
+// behavior for un-specialized policies — including the empty
+// `declassify<>` case and any Policy without a per-Policy
+// specialization).  Downstream domains can specialize
+// `declassify_target<MyPolicy>::value` to land at any SecLevel
+// the IFC discipline of that domain authorizes, breaking the
+// structural collapse.
+//
+// Audit grep: `declassify_target<` finds every per-Policy override.
+
 template <typename Policy>
-struct project<grant::declassify<Policy>> {
+struct declassify_target {
     using value_type = safety::fn::SecLevel;
     static constexpr value_type value = safety::fn::SecLevel::Public;
 };
+
+template <typename Policy>
+inline constexpr safety::fn::SecLevel declassify_target_v =
+    declassify_target<Policy>::value;
+
+template <typename Policy>
+struct project<grant::declassify<Policy>> {
+    using value_type = safety::fn::SecLevel;
+    static constexpr value_type value = declassify_target_v<Policy>;
+};
+
+// FIXY-FOUND-032 customization-point witnesses.
+//
+// Two sentinels at definition site, paired:
+//   (1) default-Public path — an un-specialized Policy (e.g., `int`
+//       used purely as a placeholder type-token) hits the primary
+//       template and lands at Public.  Preserves prior behavior.
+//   (2) lattice-non-collapse proof — a detail-namespace synthetic
+//       policy specialized to land at Classified demonstrates the
+//       customization point actually fires and the lattice can land
+//       at SecLevels OTHER than Public.  Without this sentinel the
+//       customization point could silently break under a future
+//       refactor and the lattice would collapse again unnoticed.
+
+namespace found_032_witness {
+
+struct LatticeNonCollapseProofPolicy {};
+
+}  // namespace found_032_witness
+
+}  // namespace detail::resolve
+
+template <>
+struct detail::resolve::declassify_target<
+    detail::resolve::found_032_witness::LatticeNonCollapseProofPolicy> {
+    using value_type = safety::fn::SecLevel;
+    static constexpr value_type value = safety::fn::SecLevel::Classified;
+};
+
+namespace detail::resolve {
+
+static_assert(declassify_target_v<int> == safety::fn::SecLevel::Public,
+    "FOUND-032: declassify_target<>'s default-Public path is broken "
+    "— an un-specialized Policy (here a bare `int` type-token) must "
+    "fall through to SecLevel::Public to preserve prior behavior on "
+    "all currently-deployed declassify<Policy> grants.");
+
+static_assert(declassify_target_v<found_032_witness::LatticeNonCollapseProofPolicy>
+        == safety::fn::SecLevel::Classified,
+    "FOUND-032: declassify_target<> customization point is broken — "
+    "the per-Policy specialization for LatticeNonCollapseProofPolicy "
+    "fails to override the default Public target.  This sentinel "
+    "proves the Security lattice no longer collapses to Public for "
+    "every declassify<>: per-Policy specializations can land at any "
+    "SecLevel the IFC discipline of the downstream domain authorizes.");
 
 // FIXY-LAT-Security: explicit Security lattice point projections —
 // every SecLevel enumerator reachable through a named grant tag.
