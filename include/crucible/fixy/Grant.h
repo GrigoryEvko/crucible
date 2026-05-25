@@ -352,6 +352,19 @@ template <> struct which_dim<capability_usage> : std::integral_constant<dim::Dim
 // of the supplied effects.  The Es pack is `effects::Effect` enum
 // values; `fixy/Fn.h`'s `detail::resolve` namespace projects them
 // into `effects::Row<Es...>`.
+//
+// FIXY-FOUND-040 — pure-effect audit equivalence:
+//   `with<>` (EMPTY pack) is SEMANTICALLY EQUIVALENT to
+//   `accept_default_strict_for<DimensionAxis::Effect>` because
+//   `strict_default_for<Effect>::type == effects::Row<>` (Default.h
+//   §157).  An auditor searching for "every pure-effect binding"
+//   MUST recognise both forms — use the
+//   `Theory.h::is_pure_effect_grant_v<G>` predicate, which
+//   specializes on BOTH the positive `with<>` form and the deferred
+//   strict-default form (mirroring the is_secret_grant design
+//   established by fixy-CR-01).  Direct grep for `with<>` alone
+//   misses the deferred-form sites; the predicate is the canonical
+//   single-grep audit anchor.
 
 template <effects::Effect... Es>
 struct with final : grant_base {};

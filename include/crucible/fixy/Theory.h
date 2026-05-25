@@ -562,6 +562,133 @@ template <effects::Effect... Es>
 struct is_bg_effect_grant<grant::with<Es...>>
     : std::bool_constant<((Es == effects::Effect::Bg) || ...)> {};
 
+// ── FIXY-FOUND-040: `is_pure_effect_grant<G>` ──────────────────────
+//
+// True iff `G` engages the Effect axis with a NO-effect declaration.
+// Audits the bindings that the auditor cares about: "this function
+// has zero observable effects."  Two structurally-different grants
+// produce the same effective `effects::Row<>`:
+//
+//   1. `grant::with<>`                                  — POSITIVE
+//      claim ("I declare zero effects").  The signature reads as
+//      "this binding is pure"; the empty effect pack is the audit
+//      anchor for constant-time / pure-compute discipline (e.g. the
+//      `CtCrypto<T>` production stance in Fn.h:1597).
+//
+//   2. `grant::accept_default_strict_for<DimensionAxis::Effect>`
+//      — DEFERRED form ("I accept the strict default").  The strict
+//      default for Effect is `effects::Row<>` (Default.h:158); a
+//      binding that engages Effect via the deferred form resolves
+//      to the SAME effective row as a `with<>` engagement.
+//
+// Without this predicate, an auditor grepping for "every pure-
+// effect binding" must search both `grant::with<>` and
+// `accept_default_strict_for<.*Effect>` sites — and the equivalence
+// is invisible to type-system queries.  The defect mirrors the
+// `is_secret_grant` design tension closed in fixy-CR-01 (line 218)
+// where the strict-default-Security form was specialized into the
+// existing predicate to unify positive + deferred engagement
+// detection.
+//
+// Closure: a single audit-grep target `is_pure_effect_grant_v<G>`
+// that recognises BOTH forms, plus an invariant static_assert
+// pinning the premise (`strict_default_for<Effect>::type ==
+// effects::Row<>`).  If anyone weakens the strict default (e.g. by
+// inserting a non-empty effect row), the build breaks AND the
+// predicate's semantic equivalence must be re-evaluated.
+
+template <typename G> struct is_pure_effect_grant
+    : std::false_type {};
+
+// Positive form — empty effect pack.
+template <>
+struct is_pure_effect_grant<grant::with<>>
+    : std::true_type {};
+
+// Deferred form — accept_default_strict_for<Effect>.
+template <>
+struct is_pure_effect_grant<grant::accept_default_strict_for<
+        dim::DimensionAxis::Effect>>
+    : std::true_type {};
+
+template <typename G>
+inline constexpr bool is_pure_effect_grant_v = is_pure_effect_grant<G>::value;
+
+// Invariant pin — the deferred form's semantic equivalence to the
+// positive form HOLDS only while strict_default_for<Effect> resolves
+// to effects::Row<>.  A future audit that injects a non-empty default
+// row would silently re-route the deferred form to a non-pure
+// engagement; the build breaks here before that can happen.
+static_assert(
+    std::is_same_v<typename strict_default_for<dim::DimensionAxis::Effect>::type,
+                   effects::Row<>>,
+    "FIXY-FOUND-040 invariant: strict_default_for<Effect> must "
+    "resolve to effects::Row<>.  The deferred-form specialization "
+    "of is_pure_effect_grant relies on this equivalence — any "
+    "change here requires re-evaluating the predicate's semantic "
+    "correctness.");
+
+// ── FIXY-FOUND-040 — predicate coverage matrix ─────────────────────
+//
+// 8-row witness pinning the predicate's discrimination boundary.
+// Each assertion documents WHY the cell evaluates as it does — a
+// future audit reading any single row should understand the
+// semantic basis without consulting the full predicate definition.
+namespace detail::found_040_witness {
+
+// (1) Positive form — `with<>` empty effect pack: TRUE.
+static_assert(is_pure_effect_grant_v<grant::with<>>,
+    "FIXY-FOUND-040: grant::with<> (positive empty-pack form) MUST "
+    "satisfy is_pure_effect_grant — it IS the audit anchor for "
+    "pure-compute bindings.");
+
+// (2) Deferred form — accept_default_strict_for<Effect>: TRUE.
+static_assert(is_pure_effect_grant_v<grant::accept_default_strict_for<
+                  dim::DimensionAxis::Effect>>,
+    "FIXY-FOUND-040: deferred-form accept_default_strict_for<Effect> "
+    "resolves to effects::Row<> via strict_default_for<Effect>; "
+    "the predicate unifies positive + deferred under one query.");
+
+// (3) Single-effect with<IO>: FALSE.
+static_assert(!is_pure_effect_grant_v<grant::with<effects::Effect::IO>>,
+    "FIXY-FOUND-040: with<IO> declares a NON-EMPTY effect row — "
+    "the binding IS NOT pure.");
+
+// (4) Multi-effect with<Alloc, IO>: FALSE.
+static_assert(!is_pure_effect_grant_v<grant::with<effects::Effect::Alloc,
+                                                  effects::Effect::IO>>,
+    "FIXY-FOUND-040: any non-empty effect pack disqualifies "
+    "the binding from the pure-effect audit class.");
+
+// (5) Convenience alias with_io: FALSE (resolves to with<IO>).
+static_assert(!is_pure_effect_grant_v<grant::with_io>,
+    "FIXY-FOUND-040: convenience aliases inherit non-pure status "
+    "through their underlying with<E> specialization.");
+
+// (6) Convenience alias with_bg: FALSE.
+static_assert(!is_pure_effect_grant_v<grant::with_bg>,
+    "FIXY-FOUND-040: with_bg engages Effect with Bg — distinct "
+    "from pure-effect.  Audited separately by is_bg_effect_grant.");
+
+// (7) Wrong-axis deferred — accept_default_strict_for<Usage>: FALSE.
+static_assert(!is_pure_effect_grant_v<grant::accept_default_strict_for<
+                   dim::DimensionAxis::Usage>>,
+    "FIXY-FOUND-040: the deferred form is axis-keyed — only the "
+    "Effect-axis deferred grant matches.  Other axes' deferred "
+    "forms (Usage, Security, etc.) MUST NOT cross-match.");
+
+// (8) Non-grant types — FALSE (catch-all primary template).
+static_assert(!is_pure_effect_grant_v<int>,
+    "FIXY-FOUND-040: non-grant types fall through to the primary "
+    "false_type template.  The predicate is total over the type "
+    "universe.");
+static_assert(!is_pure_effect_grant_v<grant::as_secret>,
+    "FIXY-FOUND-040: Security-axis grants do not match the "
+    "Effect-axis pure-effect predicate, even when sharing the "
+    "is_*_grant naming convention.");
+
+}  // namespace detail::found_040_witness
+
 // `is_stale_grant<G>` — true iff G is a `grant::stale_to<TauMax>`
 // instantiation (Staleness ≠ Fresh).  Used by the
 // `staleness_secret_without_declassify` corpus entry to detect a
