@@ -422,11 +422,19 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
 
 // FIXY-V-097: SyscallSurface axis added 2026-05-22.  Strict default is
 // syscall::Unconstrained — bindings make no claim about syscall surface
-// at this scope, deferring to V-098+'s forge-emitted value wrapper if
-// one is present.  Missing engagement disables the §6.8 S101-S104
-// collision family (SyscallSurface × HotPath, SyscallSurface × DetSafe,
-// SyscallSurface × Vendor, SyscallSurface × Security) once V-100 wires
-// them — those rules dispatch on the SyscallFamily grade.
+// at this scope, deferring to the syscall::* grant family that V-098
+// ships in fixy/syscall/{Family,Per}.h.
+//
+// FIXY-FOUND-132: prior prose claimed "V-098+ WILL ship" the value
+// wrapper and "V-100 WILL ship" the §6.8 S101-S104 collision family.
+// Both verbs were stale: V-097 (axis + lattice), V-098 (9 family + per-
+// SyscallId grant providers) and V-100 (fixy/syscall/Bridge.h SyscallSurface
+// → Met(X) effect-row lift) ARE all shipped today (commits 3da87d7d /
+// 8dac697e / 409c652c).  However the dependent S101-S104 collision
+// rules that V-100's bridge was intended to feed have NOT landed in
+// CollisionCatalog.h — they are tracked-future, no separately-numbered
+// FIXY-V-* task yet.  This entry presents the bridge ↔ rule split
+// honestly: bridge shipped, dispatching rules dormant.
 CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::diag::FixyNotEngaged_SyscallSurface,
     ::crucible::safety::diag::Severity::Error,
@@ -435,11 +443,15 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "ThreadSync / NetworkIo / ProcessControl / Privilege — the 9-tier "
     "chain V-097 ships in algebra/lattices/SyscallFamilyLattice.h).  "
     "Strict default is syscall::Unconstrained (the binding defers to "
-    "the value wrapper that V-098+ will ship).  Missing engagement "
-    "defeats the §6.8 S101-S104 collision family (SyscallSurface × "
-    "HotPath, SyscallSurface × DetSafe, SyscallSurface × Vendor, "
-    "SyscallSurface × Security) which V-100 will ship — those rules "
-    "dispatch on the SyscallFamily grade.",
+    "the syscall::* grant family that V-098 ships in fixy/syscall/"
+    "{Family,Per}.h, lifted to Met(X) by V-100's fixy/syscall/Bridge.h).  "
+    "Engagement is currently AUDIT-TRAIL ONLY: the planned §6.8 "
+    "S101-S104 collision family (SyscallSurface × HotPath / DetSafe / "
+    "Vendor / Security) is NOT in CollisionCatalog.h today — V-097/"
+    "V-098/V-100 shipped the axis + grants + effect-row lift but the "
+    "dispatching rules remain tracked-future (FIXY-FOUND-132 audit).  "
+    "Cite explicitly so the future rule family lands on a binding that "
+    "already declares its syscall-surface position.",
     "Grants pack omits grant::with_syscall<...> AND omits "
     "accept_default_strict_for<SyscallSurface>.",
     "grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>",
