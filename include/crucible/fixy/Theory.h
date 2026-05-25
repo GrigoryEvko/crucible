@@ -5,11 +5,12 @@
 // Per misc/16_05_2026_fixy.md §4.  This is the LOAD-BEARING
 // reject-by-default surface that closes
 // the FX §30.14 type-theory unsoundness corpus.  Currently ships
-// SEVEN entries — classified_io_without_declassify,
+// EIGHT entries — classified_io_without_declassify,
 // classified_bg_without_declassify, staleness_secret_without_declassify,
 // ghost_runtime_observable, internal_io_without_declassify,
-// internal_bg_without_declassify, and (FOUND-019)
-// external_to_verified_without_attest — each pairs:
+// internal_bg_without_declassify, (FOUND-019)
+// external_to_verified_without_attest, and (FOUND-020)
+// secret_unbounded_termination_channel — each pairs:
 //
 //   (a) a named pattern detector — a constexpr predicate over
 //       (Type, Grants...) that returns true iff the binding matches
@@ -270,12 +271,21 @@ struct is_declassify_grant<grant::declassify<Policy>>
 //   - Crash      — BSYZ22 crash-stop session-protocol audit discharge.
 //   - Reentrancy — re-entrant audit-trail (re-classification) discharge.
 enum class DischargeAxis : std::uint32_t {
-    None       = 0u,
-    Staleness  = 1u << 0,
-    IO         = 1u << 1,  // reserved — see fixy-A4-015 Theory.h
-    Bg         = 1u << 2,  // reserved
-    Crash      = 1u << 3,  // reserved
-    Reentrancy = 1u << 4,  // reserved
+    None        = 0u,
+    Staleness   = 1u << 0,
+    IO          = 1u << 1,  // reserved — see fixy-A4-015 Theory.h
+    Bg          = 1u << 2,  // reserved
+    Crash       = 1u << 3,  // reserved
+    Reentrancy  = 1u << 4,  // reserved
+    // FOUND-020: Termination — reserved bit for a future
+    // secret_policy::AuthorizedDivergence (or equivalent) that admits
+    // Secret-dependent unbounded-Complexity flow.  No currently-
+    // shipped policy lifts this bit; entry 8 (secret_unbounded_
+    // termination_channel) therefore has no current discharge path
+    // and remediation reduces to "drop cost_unbounded OR drop the
+    // Secret engagement" until such a policy ships.  Held to the
+    // Hunt-Sands safe-default: silence requires axis-matched authority.
+    Termination = 1u << 5,  // reserved — FOUND-020 / Askarov-Hunt 2008
 };
 
 [[nodiscard]] constexpr DischargeAxis
@@ -678,6 +688,53 @@ static_assert(is_trust_assumed_grant<
     "FIXY-FOUND-019: trust_assumed<Rationale> with any Rationale NTTP "
     "must match the attestation detector.  If this reds, FOUND-038's "
     "mandatory-Rationale form was broken.");
+
+// ── FIXY-FOUND-020 detector (Askarov-Hunt termination channel) ────
+//
+// Askarov-Hunt-Sabelfeld-Sands 2008 ESORICS "Termination-Insensitive
+// Noninterference Leaks More Than Just a Bit" formalizes that even
+// termination-insensitive noninterference admits unbounded
+// information leak via observable termination behavior.  Pattern:
+// a binding engages Secret AND admits unbounded execution on the
+// Complexity axis (Grant.h:551 grant::cost_unbounded → DimensionAxis
+// ::Complexity) WITHOUT a declassify<Policy> whose
+// `axes_discharged_of` covers `DischargeAxis::Termination`.  An
+// observer can then encode arbitrary bits of the Secret into the
+// program's termination decisions, exfiltrating the secret over
+// repeated observations.  No currently-shipped declassify policy
+// lifts the Termination bit — remediation reduces to "drop
+// cost_unbounded (claim bounded complexity) OR drop the Secret
+// engagement (project to as_public / as_unclassified)" per
+// Hunt-Sands safe-default discipline.
+//
+// `is_cost_unbounded_grant<G>` — true iff G is `grant::cost_unbounded`,
+// the Complexity-axis claim admitting unbounded execution (loops,
+// unbounded recursion, divergent paths).  Distinct from
+// `cost_constant` which pins Complexity to O(1) and from absence-
+// of-grant which defaults to a more conservative bound per the
+// axis's strict-default policy.
+template <typename G> struct is_cost_unbounded_grant
+    : std::false_type {};
+template <>
+struct is_cost_unbounded_grant<grant::cost_unbounded>
+    : std::true_type {};
+
+// Structural witnesses — pin the canonical positive/negative cases
+// so a future refactor that changes cost_unbounded shape OR
+// introduces a divergence-discharging policy reds these BEFORE
+// the corpus entry below silently misfires.
+static_assert(is_cost_unbounded_grant<grant::cost_unbounded>::value,
+    "FIXY-FOUND-020: grant::cost_unbounded must remain detectable as "
+    "the Complexity-axis unbounded-execution claim (Askarov-Hunt-"
+    "Sabelfeld-Sands 2008 termination-channel pattern).  If this "
+    "reds, the grant tag was renamed or relocated.");
+static_assert(!is_cost_unbounded_grant<grant::cost_constant>::value,
+    "FIXY-FOUND-020: cost_constant must NOT match the unbounded "
+    "detector — cost_constant pins Complexity to O(1), the safe-"
+    "default case that does NOT admit a termination channel.");
+static_assert(!is_cost_unbounded_grant<grant::as_secret>::value,
+    "FIXY-FOUND-020: Security-axis grants must NOT match the "
+    "Complexity-axis cost_unbounded detector (cross-axis discipline).");
 
 }  // namespace detail
 
@@ -1405,6 +1462,97 @@ struct external_to_verified_without_attest {
     }
 };
 
+// ── Entry 8: secret_unbounded_termination_channel ────────────────
+//
+// FIXY-FOUND-020: pre-020, the §30.14 corpus modeled the data-flow
+// channels (entries 1/2/5/6 BLP confidentiality, entry 3 ghost flow,
+// entry 4 staleness/replay timing channel, entry 7 Biba/Clark-Wilson
+// integrity dual) but lacked the termination channel — the covert
+// channel that arises when an observer can detect whether a
+// Secret-dependent computation diverges or terminates.
+//
+// Pattern: `as_secret` (or `as_classified`) on Security + `cost_
+// unbounded` on Complexity + no `declassify<Policy>` whose
+// `axes_discharged_of` covers `DischargeAxis::Termination`.
+// Askarov-Hunt-Sabelfeld-Sands 2008 ESORICS proves that even under
+// termination-insensitive noninterference (TINI), an attacker
+// observing repeated executions can extract arbitrarily many bits
+// of a high-classified secret by encoding it in the program's
+// termination behavior — "leaks more than just a bit" defeats the
+// TINI rationale that "non-termination is unobservable."
+//
+// Remediation: drop `cost_unbounded` (claim bounded Complexity —
+// the function actually terminates on all inputs), drop the Secret
+// engagement (project Security to as_public / as_unclassified), or
+// (future) interpose a declassify policy whose `axes_discharged_of`
+// covers `DischargeAxis::Termination`.  No currently-shipped policy
+// lifts the Termination bit — its reservation in the
+// `DischargeAxis` enum holds the slot per Hunt-Sands safe-default
+// "axis-matched authority required" rule.
+
+struct secret_unbounded_termination_channel {
+    template <typename Type, typename... Grants>
+    [[nodiscard]] static consteval bool matches() noexcept {
+        const bool has_secret =
+            detail::has_grant_of<detail::is_secret_grant, Grants...>();
+        const bool has_unbounded =
+            detail::has_grant_of<detail::is_cost_unbounded_grant,
+                                 Grants...>();
+        const bool has_termination_discharge =
+            detail::has_declassify_for_axis<
+                detail::DischargeAxis::Termination, Grants...>();
+        return has_secret && has_unbounded && !has_termination_discharge;
+    }
+
+    static constexpr std::string_view name() noexcept {
+        return "secret_unbounded_termination_channel";
+    }
+
+    static constexpr std::string_view cite() noexcept {
+        return "Askarov-Hunt-Sabelfeld-Sands 2008 'Termination-"
+               "Insensitive Noninterference Leaks More Than Just a "
+               "Bit' (ESORICS) — PRIMARY: formalizes the covert "
+               "termination channel.  Under termination-insensitive "
+               "noninterference, an observer of repeated executions "
+               "can extract arbitrarily many bits of a Secret by "
+               "encoding it in the program's termination decisions; "
+               "the classical TINI rationale that 'non-termination "
+               "is unobservable' fails because real-world observers "
+               "DO see whether processes complete.  Pattern: as_"
+               "secret + cost_unbounded + no declassify policy whose "
+               "axes_discharged_of covers DischargeAxis::Termination "
+               "(no such policy currently ships — Termination is "
+               "reserved per Hunt-Sands safe-default discipline).  "
+               "Supporting: Volpano-Smith 1997 'A Type-Based "
+               "Approach to Program Security' (CSFW) — extends the "
+               "secure-flow type system to termination, motivating "
+               "the bounded-Complexity proof obligation for "
+               "Secret-dependent computations.  Remediation: drop "
+               "grant::cost_unbounded (claim bounded Complexity, "
+               "i.e. the function provably terminates on all "
+               "inputs), OR drop the Secret engagement (project to "
+               "as_public / as_unclassified), OR (future) interpose "
+               "declassify<Policy> where Policy's axes_discharged_of "
+               "lifts DischargeAxis::Termination.";
+    }
+
+    // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
+    static constexpr std::string_view full_diagnostic() noexcept {
+        static constexpr std::string_view storage =
+            []() consteval -> std::string_view {
+                std::string msg;
+                msg += "fixy::fn<Type, Grants...> [tier 5: "
+                       "NotInTheoryCorpus]: binding matches §30.14 "
+                       "unsoundness corpus entry: ";
+                msg.append(name().data(), name().size());
+                msg += ".  ";
+                msg.append(cite().data(), cite().size());
+                return std::define_static_string(msg);
+            }();
+        return storage;
+    }
+};
+
 }  // namespace corpus
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1444,7 +1592,8 @@ using CorpusEntries = std::tuple<
     corpus::ghost_runtime_observable,
     corpus::internal_io_without_declassify,
     corpus::internal_bg_without_declassify,
-    corpus::external_to_verified_without_attest  // FOUND-019 Biba/Clark-Wilson integrity dual
+    corpus::external_to_verified_without_attest,        // FOUND-019 Biba/Clark-Wilson integrity dual
+    corpus::secret_unbounded_termination_channel        // FOUND-020 Askarov-Hunt termination channel
 >;
 
 // Fold over CorpusEntries, returning Extractor(Entry) for the first
@@ -1522,7 +1671,7 @@ inline constexpr bool IsInUnsoundnessCorpus_v =
 // 5-step PR shape lives in the Discipline block at the top of this
 // header.
 
-inline constexpr std::size_t corpus_size_v = 7;
+inline constexpr std::size_t corpus_size_v = 8;
 
 namespace detail::corpus_size_sentinel {
 
@@ -1563,6 +1712,9 @@ inline constexpr std::array kRoster = {
     entry_witness{corpus::external_to_verified_without_attest::name(),
                   corpus::external_to_verified_without_attest::cite(),
                   corpus::external_to_verified_without_attest::full_diagnostic()},
+    entry_witness{corpus::secret_unbounded_termination_channel::name(),
+                  corpus::secret_unbounded_termination_channel::cite(),
+                  corpus::secret_unbounded_termination_channel::full_diagnostic()},
 };
 static_assert(kRoster.size() == corpus_size_v,
     "fixy-L-09/L-10: corpus_size_v drifted from the actual entry "
