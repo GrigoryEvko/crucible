@@ -186,6 +186,54 @@ static_assert(std::is_same_v<
     b3_policy_tags::EmitPolicy>,
     "stance::PublicEmit must surface the Policy tag via policy_t.");
 
+// ─── 7b. FIXY-FOUND-033 — SecLevel stance-coverage sentinel ───────
+//
+// FOUND-033 closure: every SecLevel enumerator MUST be synthesizable
+// through at least one stance alias.  Before FOUND-033, only Secret
+// (CtCrypto) and Public (PublicEmit, SecretConsumer, many others)
+// were stance-reachable; Internal and Unclassified were
+// algebraically valid lattice points with no stance carrier.
+// Classified is the strict-default arm under
+// accept_default_strict_for<Security>, reached implicitly by any
+// stance that doesn't engage a Security grant (PureLinear, PureCopy,
+// IoFunction, BgWorker, AsyncEndpoint, NamedSession — verified by
+// project<accept_default_strict_for<Security>> below).
+//
+// Drift defense: if a future refactor renames a SecLevel enumerator
+// or deletes one of the carrier stances, this block reds at compile
+// time before the regression can ship.
+
+static_assert(fixy::stance::InternalApi<int>::security_v
+    == crucible::safety::fn::SecLevel::Internal,
+    "FIXY-FOUND-033: stance::InternalApi must resolve Security to "
+    "Internal via grant::as_internal.");
+
+static_assert(fixy::stance::UnclassifiedScratch<int>::security_v
+    == crucible::safety::fn::SecLevel::Unclassified,
+    "FIXY-FOUND-033: stance::UnclassifiedScratch must resolve "
+    "Security to Unclassified via grant::as_unclassified.");
+
+// All five SecLevel enumerators are stance-reachable.  Pinned literals
+// because the lattice expands only at the top (FOUND-I04 append-only
+// universe extension discipline); any new enumerator must add a
+// matching carrier and extend this sentinel.
+static_assert(
+    fixy::stance::UnclassifiedScratch<int>::security_v
+        == crucible::safety::fn::SecLevel::Unclassified &&
+    fixy::stance::PublicEmit<int, b3_policy_tags::EmitPolicy>::security_v
+        == crucible::safety::fn::SecLevel::Public &&
+    fixy::stance::InternalApi<int>::security_v
+        == crucible::safety::fn::SecLevel::Internal &&
+    fixy::stance::PureLinear<int>::security_v
+        == crucible::safety::fn::SecLevel::Classified &&
+    fixy::stance::CtCrypto<int>::security_v
+        == crucible::safety::fn::SecLevel::Secret,
+    "FIXY-FOUND-033: every SecLevel enumerator must be reachable "
+    "through at least one stance — drift defense.");
+
+static_assert(sizeof(fixy::stance::InternalApi<int>)         == sizeof(int));
+static_assert(sizeof(fixy::stance::UnclassifiedScratch<int>) == sizeof(int));
+
 // ─── 8. EBO collapse across multiple types ────────────────────────
 
 static_assert(sizeof(fixy::stance::PureLinear<int>)    == sizeof(int));

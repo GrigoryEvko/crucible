@@ -74,6 +74,14 @@
 //                                NO IO, NO Alloc, NO Block, no
 //                                coroutine yield
 //
+// FIXY-FOUND-033 (Security-axis coverage):
+//   stance::InternalApi          — Security=as_internal     (Internal)
+//   stance::UnclassifiedScratch  — Security=as_unclassified (Unclassified)
+//   Together with CtCrypto (Secret), SecretConsumer/PublicEmit (Public
+//   via declassify), and the strict-default arms above (Classified
+//   under accept_default_strict_for<Security>), every SecLevel
+//   enumerator is now reachable through at least one stance.
+//
 // ── Axiom coverage ─────────────────────────────────────────────────
 //
 //   InitSafe — wrapper has one Type field initialized by NSDMI.  No
@@ -1845,6 +1853,109 @@ using RealtimeHot = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::Usage>,
     grant::with<>,
     grant::as_public,
+    detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>,
+    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>,
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>,
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-FOUND-033 stance extension — Internal + Unclassified ─────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Pre-FOUND-033 the shipped stances reached only 3 of the 5 SecLevel
+// enumerators:
+//   - Public        (IoFunction / BgWorker / SecretConsumer-default /
+//                    PublicEmit-default / AsyncEndpoint / CooperativeBg /
+//                    SyncBlocking / RealtimeHot)
+//   - Classified    (PureLinear / PureCopy / NamedSession via
+//                    strict<Security> = Classified per fixy-CR-01)
+//   - Secret        (CtCrypto via as_secret)
+//
+// `Internal` and `Unclassified` were unreachable through any stance —
+// callers wanting those SecLevels had to hand-author the full 33-axis
+// fn<> instantiation, which is high-churn and easy to drift relative
+// to the stance-canonical axis selections.
+//
+// Closure: ship two new stances mirroring the strict-elsewhere pattern
+// of NamedSession/PureLinear but customizing the Security axis.
+//
+//   InternalApi<Type>       — `as_internal` (= SecLevel::Internal).
+//                              Use for company-internal-but-not-
+//                              classified API surface (e.g., admin
+//                              dashboards, internal-only logging,
+//                              build-system orchestration).  Internal
+//                              IS observable to insiders but MUST NOT
+//                              leak through Public IO channels.
+//
+//   UnclassifiedScratch<T>  — `as_unclassified` (= SecLevel::Unclassified).
+//                              Use for scratch/intermediate data with
+//                              no confidentiality claim at all
+//                              (e.g., temporary buffers, debug
+//                              telemetry, regression-test fixtures).
+//                              Equivalent to opting OUT of the
+//                              Security lattice's stratification —
+//                              callers acknowledge the binding is
+//                              unclassified by design.
+//
+// Together these close the FOUND-033 gap: every SecLevel enumerator
+// is now reachable via at least one stance:
+//   Unclassified → UnclassifiedScratch
+//   Public       → IoFunction / BgWorker / AsyncEndpoint / ...
+//   Internal     → InternalApi
+//   Classified   → PureLinear / PureCopy / NamedSession (via strict)
+//   Secret       → CtCrypto
+
+// ── InternalApi<Type> — as_internal (= SecLevel::Internal), strict else ─
+
+template <typename Type>
+using InternalApi = ::crucible::fixy::fn<Type,
+    detail_stance::strict<dim::DimensionAxis::Refinement>,
+    detail_stance::strict<dim::DimensionAxis::Usage>,
+    detail_stance::strict<dim::DimensionAxis::Effect>,
+    grant::as_internal,
+    detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>,
+    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>,
+    detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>,
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+
+// ── UnclassifiedScratch<Type> — as_unclassified, strict else ──────
+
+template <typename Type>
+using UnclassifiedScratch = ::crucible::fixy::fn<Type,
+    detail_stance::strict<dim::DimensionAxis::Refinement>,
+    detail_stance::strict<dim::DimensionAxis::Usage>,
+    detail_stance::strict<dim::DimensionAxis::Effect>,
+    grant::as_unclassified,
     detail_stance::strict<dim::DimensionAxis::Protocol>,
     detail_stance::strict<dim::DimensionAxis::Lifetime>,
     detail_stance::strict<dim::DimensionAxis::Provenance>,
