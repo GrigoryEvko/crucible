@@ -101,6 +101,7 @@ inline int planted_in_comment() {
     // ::socket(0, 0, 0);      // commented — must NOT be caught
     return 0;
 }
+struct PlantedTagDoc final {};  // ::socket(2) doc-comment — must NOT be caught
 }  // namespace crucible::planted
 PLANTED
         # Allowlist entry targets line 8 (second ::socket call).
@@ -149,8 +150,17 @@ ALLOW
             rm -f "$result_file"
             exit 2
         fi
+        # The trailing-comment doc tag (line 17) must NOT be flagged — the
+        # `::socket(2)` token lives only in the trailing comment.
+        if grep -qF 'planted_syscall.cpp:17' "$result_file"; then
+            printf 'check-syscall-capability: SELF-TEST FAILED — trailing-comment doc-tag leaked through filter.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
         rm -f "$result_file"
-        printf 'check-syscall-capability: self-test passed — drift caught, allowlist + inline marker + comment-filter all honoured.\n' >&2
+        printf 'check-syscall-capability: self-test passed — drift caught, allowlist + inline marker + full-line- + trailing-comment filters all honoured.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -210,6 +220,17 @@ while IFS= read -r match; do
     case "$text" in
         *'SYSCALL-CAP-OK'*) continue ;;
     esac
+
+    # Trailing-comment strip — the regex can match a syscall token that
+    # lives only inside a `//` comment (a tag-struct or enumerator
+    # doc-comment naming the syscall, e.g. `struct Fsync {};  // ::fsync`,
+    # or an `#include <fcntl.h>  // ::open(...)` annotation).  Re-test the
+    # code part: if the token survives only in the comment, this is not a
+    # call site.  Mirrors check-fixy-spawn-discipline.sh's strip.
+    code="${text%%//*}"
+    if ! printf '%s' "$code" | rg -qP -- "$candidate_pattern"; then
+        continue
+    fi
 
     rel="${file#"$scan_root"/}"
 

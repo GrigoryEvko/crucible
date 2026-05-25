@@ -117,10 +117,7 @@ include/crucible/safety/OwnedMmap.h:251 — effects::IO via OwnedMmap::release_ 
 # through the same Ctx-bound entry surface — record_event() declares
 # effects::IO + effects::Block in the row (CONTRACT-107-POST + FOUND-
 # I09 row-typed event recording).  Cipher::open()'s root_dirfd_
-# acquisition is Init-row (one-shot at construction).  The line-56
-# #include comment is allowlisted because the script naively pattern-
-# matches "::open(" in the comment text.
-include/crucible/Cipher.h:56 — effects::IO via #include <fcntl.h> comment text (no syscall here)
+# acquisition is Init-row (one-shot at construction).
 include/crucible/Cipher.h:249 — effects::Init via Cipher::open (V-030 root_dirfd_ O_DIRECTORY|O_NOFOLLOW acquire)
 include/crucible/Cipher.h:273 — effects::IO via Cipher::open (read HEAD file content at startup)
 include/crucible/Cipher.h:1478 — effects::IO via fdatasync_at_::openat (V-026 + V-030 O_NOFOLLOW)
