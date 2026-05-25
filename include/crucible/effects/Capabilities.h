@@ -256,9 +256,15 @@ template <Effect E>
 }
 
 // Force instantiation of is_observable_effect_atom_<E> for every atom
-// reachable through reflection — if a contributor adds a new atom but
-// forgets to extend the switch above, the per-atom instantiation here
-// drags it through -Werror=switch and the build reddens.
+// reachable through reflection.  FIXY-FOUND-133-AUDIT: this witness
+// alone does NOT trigger -Werror=switch — the project's
+// -Werror=switch-default mandate forces a default arm in the
+// classifier's switch, so per-atom instantiation by itself simply
+// returns the default-arm value (false) without warning.  The real
+// forward-compat trap is the cardinality pin above; this witness
+// provides defense-in-depth by exercising every atom through the
+// classifier (catches a future contributor adding partial-coverage
+// case arms with disjoint default semantics).
 consteval bool every_effect_observability_classified_() noexcept {
     static constexpr auto enumerators =
         std::define_static_array(std::meta::enumerators_of(^^Effect));
