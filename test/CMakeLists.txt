@@ -7286,6 +7286,13 @@ crucible_neg_compile_test(neg_collision_G001_thread_local_untagged
   "G001|thread_local|TLSTag")
 crucible_neg_compile_test(neg_collision_L006_linear_longjmp
   "L006|Linear|longjmp|MayLongjmp")
+# FIXY-FOUND-069 sub-HS14 closure for L006: marker-tier trigger fixture
+# complements the existing wrapper-tier fixture above.  L006_OK OR-folds
+# `marks_longjmp_unsafe<F>::value || cf_at_or_above_v<MayLongjmp,
+# type_t>`; both fixtures together pin BOTH arms so a refactor dropping
+# either term reds the build.
+crucible_neg_compile_test(neg_collision_L006_linear_longjmp_marker
+  "L006|Linear|longjmp|MayLongjmp")
 crucible_neg_compile_test(neg_collision_P003_fork_body_throws
   "P003|fork|ThrowOnly|terminate")
 crucible_neg_compile_test(neg_collision_S001_hotpath_stdio
