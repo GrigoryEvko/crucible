@@ -4855,6 +4855,12 @@ crucible_neg_compile_test(neg_fn_rejects_array_type
 # analysis exists; these tests pin the Phase-0 annotation path.
 crucible_neg_compile_test(neg_collision_I002_classified_fail_payload
   "I002:")
+# FIXY-FOUND-069 sub-HS14 closure for I002: the SecLevel::Secret arm of the
+# classified_v OR-fold, companion to the Classified-arm fixture above.
+# Distinct mismatch class — dropping the `== Secret` term from classified_v
+# slips the Classified fixture and leaks Secret payloads through Fail(E).
+crucible_neg_compile_test(neg_collision_I002_secret_fail_payload
+  "I002:")
 crucible_neg_compile_test(neg_collision_L002_borrow_async
   "L002:")
 # FIXY-FOUND-069 sub-HS14 closure for L002: marker × marker composition
