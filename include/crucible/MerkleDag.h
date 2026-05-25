@@ -1711,14 +1711,19 @@ class CRUCIBLE_OWNER KernelCache {
   // [[nodiscard]] forces callers to handle the error explicitly:
   // the previous silent-fail behavior made cache pressure invisible.
   //
-  // pre(content_hash.raw() != 0): zero is the EMPTY sentinel.
+  // FIXY-FOUND-056: two-axis sentinel discipline mirrors publish_l1/l2/l3.
+  // `is_non_zero` rejects ContentHash{} (EMPTY-slot marker — would
+  // collide with the open-addressing probe terminator).
+  // `not_sentinel_hash` rejects ContentHash::sentinel() (UINT64_MAX —
+  // reserved by Types.h §253-261 as the RegionNode end-of-region marker).
   // No precondition on row_hash: RowHash{0} (bare-type baseline)
   // is valid and distinct from any row-bearing hash.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] std::expected<void, InsertError>
   insert(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (::crucible::decide::is_non_zero(content_hash))  // zero is the slot-empty sentinel; see KernelCacheSlot doc-block
+      pre (::crucible::decide::is_non_zero(content_hash))
+      pre (::crucible::decide::not_sentinel_hash(content_hash))
       pre (kernel != nullptr)
   {
     // Hoist .raw() once for both the probe seed and the CAS
