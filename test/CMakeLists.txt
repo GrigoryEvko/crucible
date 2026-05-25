@@ -7115,6 +7115,15 @@ crucible_neg_compile_test(neg_collision_B001_bg_observable_unbounded
   "B001")
 crucible_neg_compile_test(neg_collision_H001_hotpath_unbounded_cost
   "H001")
+# ─── FIXY-FOUND-067 Phase 1 structural-detection HS14 fixture ────────
+# H001 fires on Fn with type_t = HotPath<Hot, int> via the structural
+# `collision::is_hot_path_v<F>` OR-fold (extract::is_hot_path_v +
+# hot_path_tier_v == Hot path) — NO marks_hot_path specialization.
+# Graduates 8 rules (H001/H002/H003/H010/W001/V201/V301/S001) from
+# "dormant unless author specializes" to "fires automatically on
+# production-shape HotPath<Hot, ...> wrapped binding".
+crucible_neg_compile_test(neg_collision_H001_structural_hotpath_wrapper
+  "H001")
 crucible_neg_compile_test(neg_collision_H002_hotpath_trivial_refinement
   "H002")
 crucible_neg_compile_test(neg_collision_H003_hotpath_alloc_unbounded

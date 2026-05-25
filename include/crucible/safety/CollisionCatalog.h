@@ -29,6 +29,7 @@
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/FpMode.h>          // FIXY-V-091 F-family detectors
+#include <crucible/safety/IsHotPath.h>       // FIXY-FOUND-067 Phase 1: structural hot-path reader
 #include <crucible/safety/source/Arch.h>     // FIXY-V-268 V402 arch_pin_v<F::source_t> host-arch reader
 
 #include <array>
@@ -1699,6 +1700,69 @@ inline constexpr bool has_async_v = marks_async<F>::value;
 template <typename F>
 inline constexpr bool has_ct_v = marks_ct<F>::value;
 
+// ── FIXY-FOUND-067 Phase 1: structural hot-path reader (H-family) ───
+//
+// `is_hot_path_v<F>` is the disjunction of TWO trigger paths for the
+// H001 / H002 / H003 / H010 / W001 / V201 / V301 / S001 / I004-like
+// rule family:
+//
+//   1.  STRUCTURAL.  F::type_t's outermost wrapper is HotPath<Hot, U>.
+//       The canonical §XVI wrapper-nesting order pins HotPath at the
+//       outermost position, so a binding that wraps its payload in
+//       HotPath<Hot, ...> is asserting "this is hot-path code" through
+//       the type system — no per-Fn marker specialization required.
+//
+//   2.  LEGACY OPT-IN.  marks_hot_path<F>::value == true via explicit
+//       specialization at file scope.  Preserves backward compat with
+//       every existing safety_neg fixture and any production opt-in
+//       that pre-dates the structural reader.
+//
+// HotPath<Warm, ...> and HotPath<Cold, ...> WRAPPED type_t do NOT
+// trigger the H-family rules — those tiers explicitly declare
+// non-hot-path code, and the rules' rationale (≤40 ns p99 budget,
+// CLAUDE.md §IX) only applies to the Hot tier.  A binding that needs
+// to opt into hot-tier semantics WITHOUT wrapping type_t (e.g., a
+// fixture that uses bare `int` as type_t for orthogonal test purposes)
+// continues to use path (2).
+//
+// Rule predicates migrate from `marks_hot_path<F>::value` to
+// `is_hot_path_v<F>`.  Per FIXY-FOUND-067, this graduates the H-family
+// from "dormant unless the binding author specializes the marker" to
+// "fires automatically on any production-shape HotPath<Hot> wrapped
+// binding" — closing 8 of the 21 dormant rules in one batch.
+// Structural detector — staged through partial specialization to keep
+// every name lookup at "first phase" (template-definition time) under
+// GCC 16's -Wtemplate-body two-phase rules.  An IIFE consteval lambda
+// here trips `-Wtemplate-body 'crucible::safety::extract' has not been
+// declared` even with the include order correct, so we stage via
+// `hot_path_tier_is_hot` (a class template) which never crosses the
+// lambda-in-template boundary.  We DROP the SFINAE guard on F::type_t
+// because (a) every safety::fn::Fn<...> instantiation defines type_t as
+// its first template parameter (Fn.h:535), and (b) the SFINAE guard
+// triggers a recursive constraint-satisfaction cycle through
+// CollisionRules<F>::valid when F is a Fn that re-enters its own
+// validate() during instantiation of the static_assert(ValidComposition<F>)
+// inside Fn's body.
+namespace detail_hot_path {
+
+template <typename T,
+          bool = ::crucible::safety::extract::is_hot_path_v<T>>
+struct hot_path_tier_is_hot : std::false_type {};
+
+template <typename T>
+struct hot_path_tier_is_hot<T, true>
+    : std::bool_constant<
+        ::crucible::safety::extract::hot_path_tier_v<T>
+            == ::crucible::safety::HotPathTier_v::Hot> {};
+
+}  // namespace detail_hot_path
+
+template <typename F>
+inline constexpr bool is_hot_path_v =
+    detail_hot_path::hot_path_tier_is_hot<
+        std::remove_cvref_t<typename F::type_t>>::value
+    || marks_hot_path<F>::value;
+
 template <typename F>
 inline constexpr bool has_fail_v = marks_fail<F>::value;
 
@@ -1893,11 +1957,11 @@ concept B001_OK = !(row_has_effect_v<typename F::effect_row_t, effects::Effect::
                     is_unbounded_cost<typename F::cost_t>::value);
 
 template <typename F>
-concept H001_OK = !(marks_hot_path<F>::value &&
+concept H001_OK = !(is_hot_path_v<F> &&
                     is_unbounded_cost<typename F::cost_t>::value);
 
 template <typename F>
-concept H002_OK = !(marks_hot_path<F>::value &&
+concept H002_OK = !(is_hot_path_v<F> &&
                     is_trivial_refinement<typename F::refinement_t>::value);
 
 template <typename F>
@@ -1907,7 +1971,7 @@ template <typename F>
 concept F001_OK = true;  // pack-level; see pack::frame_axis_consistent_v
 
 template <typename F>
-concept H003_OK = !(marks_hot_path<F>::value &&
+concept H003_OK = !(is_hot_path_v<F> &&
                     (row_has_effect_v<typename F::effect_row_t, effects::Effect::Alloc> ||
                      row_has_effect_v<typename F::effect_row_t, effects::Effect::IO>) &&
                     is_unbounded_cost<typename F::cost_t>::value);
@@ -1921,7 +1985,7 @@ concept H003_OK = !(marks_hot_path<F>::value &&
 // Fn slips both — yet is still a context contradiction the type
 // system must reject.
 template <typename F>
-concept H010_OK = !(marks_hot_path<F>::value &&
+concept H010_OK = !(is_hot_path_v<F> &&
                     row_has_effect_v<typename F::effect_row_t,
                                      effects::Effect::Bg>);
 
@@ -1986,7 +2050,7 @@ concept T001_OK = !(F::usage_v == UsageMode::Capability &&
 // Fn but read by ZERO §6.8 rules before FOUND-071).
 template <typename F>
 concept R001_OK = !(F::reentrancy_v == ReentrancyMode::Coroutine &&
-                    marks_hot_path<F>::value);
+                    is_hot_path_v<F>);
 
 // R002: ReentrancyMode::Coroutine × UsageMode::Borrow rejected (FIXY-FOUND-071).
 // A Borrow-usage binding takes a borrowed reference whose lifetime is tied
@@ -2025,7 +2089,7 @@ concept F002_OK = !(marks_federation_peer<F>::value &&
 // UmwaitC01)` to match the documented contract and the diagnostic
 // remediation text.
 template <typename F>
-concept W001_OK = !(marks_hot_path<F>::value &&
+concept W001_OK = !(is_hot_path_v<F> &&
                     wait_strategy_of<typename F::type_t>::has_wait &&
                     is_kernel_wait_v<wait_strategy_of<typename F::type_t>::value>);
 
@@ -2239,7 +2303,7 @@ concept P003_OK = !(marks_fork_worker<F>::value &&
 // S001: marks_hot_path × Stdio tier ≥ BufferedWrite.  Hot-path code
 // (TraceRing / Arena / KernelCache) MUST NOT do stdio (CLAUDE.md §XII).
 template <typename F>
-concept S001_OK = !(marks_hot_path<F>::value &&
+concept S001_OK = !(is_hot_path_v<F> &&
                     stdio_at_or_above_v<
                         ::crucible::algebra::lattices::Stdio::BufferedWrite,
                         typename F::type_t>);
@@ -2540,7 +2604,7 @@ concept V101_OK = !(marks_replay_required<F>::value &&
 
 // V201: HotPath × Hw tier ≥ NonDeterministicTsc (rdtsc / privileged).
 template <typename F>
-concept V201_OK = !(marks_hot_path<F>::value &&
+concept V201_OK = !(is_hot_path_v<F> &&
                     hw_at_or_above_v<
                         ::crucible::algebra::lattices::HwInstruction::NonDeterministicTsc,
                         typename F::type_t>);
@@ -2561,7 +2625,7 @@ concept V203_OK = !(marks_replay_required<F>::value &&
 
 // V301: HotPath × BarrierStrength tier ≥ SeqCst (full fence on hot path).
 template <typename F>
-concept V301_OK = !(marks_hot_path<F>::value &&
+concept V301_OK = !(is_hot_path_v<F> &&
                     barrier_at_or_above_v<
                         ::crucible::algebra::lattices::BarrierStrength::SeqCst,
                         typename F::type_t>);
@@ -2978,7 +3042,18 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
         collision::marks_lifetime_region_unprotected<F>::value;
     static constexpr bool unbounded_cost =
         collision::is_unbounded_cost<Cost>::value;
-    static constexpr bool hot_path = collision::marks_hot_path<F>::value;
+    // FIXY-FOUND-067 Phase 1: structural OR marker, computed via the
+    // partial-spec `Type` parameter rather than `typename F::type_t`.
+    // Going through `F::type_t` would force completion of F (Fn<...>)
+    // inside CollisionRules — but completing F triggers Fn's body's
+    // `static_assert(ValidComposition<F>)`, which evaluates
+    // CollisionRules<F>::valid, which reads this very member.  Cycle.
+    // Type is directly available here (partial spec parameter) so the
+    // structural reading is cycle-safe.
+    static constexpr bool hot_path =
+        collision::marks_hot_path<F>::value
+        || collision::detail_hot_path::hot_path_tier_is_hot<
+               std::remove_cvref_t<Type>>::value;
     static constexpr bool externally_observable =
         collision::marks_externally_observable<F>::value;
     static constexpr bool federation_peer =
