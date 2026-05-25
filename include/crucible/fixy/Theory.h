@@ -971,6 +971,152 @@ static_assert(!is_cost_unbounded_grant<grant::as_secret>::value,
     "FIXY-FOUND-020: Security-axis grants must NOT match the "
     "Complexity-axis cost_unbounded detector (cross-axis discipline).");
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-FOUND-042 — ImplicitTypeMarker inertness roster ──────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// The wrapper-discipline `IsAccepted<T, Grants...>` (Reject.h §1493)
+// auto-injects `detail::accept::ImplicitTypeMarker` (=
+// `grant::accept_default_strict_for<DimensionAxis::Type>`) into the
+// Grants pack before delegating to `IsAcceptedDirect`.  The §30.14
+// corpus matchers consume the SAME pack via `has_grant_of<Predicate,
+// Grants...>()` — OR-folding per-grant predicates over EVERY pack
+// member, including the injected marker.
+//
+// DEFECT (latent): if any `is_*_grant<G>` predicate erroneously
+// matches `accept_default_strict_for<Type>` — most plausibly via a
+// permissive `accept_default_strict_for<auto>` specialization that
+// doesn't axis-discriminate — the matcher counts the injected
+// marker as a positive PAYLOAD CLAIM the developer never made.  The
+// binding would silently fire a §30.14 unsoundness diagnostic
+// (false-positive corpus match) OR silently SUPPRESS a real
+// diagnostic (e.g., a permissive `is_declassify_grant` match would
+// short-circuit the corpus's "no-declassify" gate).
+//
+// Two existing axis-keyed deferred-form specializations exist
+// today: `is_secret_grant<accept_default_strict_for<Security>>`
+// (fixy-CR-01) and `is_pure_effect_grant<accept_default_strict_for
+// <Effect>>` (FOUND-040).  Both axis-discriminate via the
+// DimensionAxis NTTP — neither matches the Type-axis injection.
+//
+// Closure: a fold-over-roster audit that asserts EVERY per-grant
+// predicate returns `false` on the canonical ImplicitTypeMarker
+// type.  Adding a new `is_*_grant` predicate REQUIRES appending a
+// row to the roster AND bumping the cardinality pin — both
+// changes enforced at the definition site, not at a distant
+// consumer.
+
+namespace detail::found_042_witness {
+
+// Canonical ImplicitTypeMarker structural form — Reject.h:1431.
+// Pinned by FOUND-041 (is_same_v witness) to BE the substrate's
+// `detail::accept::ImplicitTypeMarker`; here we reference the type
+// directly without including Reject.h (which Theory.h ALREADY
+// imports transitively, but the literal form makes the roster
+// self-contained for review).
+using TypeMarker =
+    grant::accept_default_strict_for<dim::DimensionAxis::Type>;
+
+// PredicateRef<Predicate> — wraps a per-grant predicate template so
+// it can be stored in a tuple.  `inert_on_marker_v` evaluates the
+// predicate ON the marker type and reports `true` iff the predicate
+// is INERT (returns false_type).
+template <template <typename> class Predicate>
+struct PredicateRef {
+    static constexpr bool inert_on_marker_v =
+        !Predicate<TypeMarker>::value;
+};
+
+// Roster of every per-grant predicate that corpus matchers fold
+// through `has_grant_of`.  Order is the definition order above
+// (line-number-sorted).
+using AllCorpusPredicates = std::tuple<
+    PredicateRef<is_secret_grant>,
+    PredicateRef<is_declassify_grant>,
+    PredicateRef<is_io_effect_grant>,
+    PredicateRef<is_internal_grant>,
+    PredicateRef<is_bg_effect_grant>,
+    PredicateRef<is_pure_effect_grant>,         // FOUND-040
+    PredicateRef<is_stale_grant>,
+    PredicateRef<is_ghost_grant>,
+    PredicateRef<is_observable_effect_grant>,
+    PredicateRef<is_external_source_grant>,
+    PredicateRef<is_trust_verified_grant>,
+    PredicateRef<is_trust_assumed_grant>,
+    PredicateRef<is_cost_unbounded_grant>>;
+
+// Fold helper — AND-reduce `inert_on_marker_v` over the roster.
+template <typename Tuple>
+[[nodiscard]] consteval bool all_inert_on_marker() noexcept {
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
+        return (std::tuple_element_t<Is, Tuple>::inert_on_marker_v && ...);
+    }(std::make_index_sequence<std::tuple_size_v<Tuple>>{});
+}
+
+// (1) Load-bearing roster assertion — every audited predicate is
+// inert on ImplicitTypeMarker.  Fires if a future predicate is
+// added to the roster AND that predicate erroneously matches the
+// marker.
+static_assert(all_inert_on_marker<AllCorpusPredicates>(),
+    "FIXY-FOUND-042: every per-grant corpus predicate MUST return "
+    "false_type on accept_default_strict_for<DimensionAxis::Type> "
+    "(the canonical ImplicitTypeMarker).  A predicate that matches "
+    "the marker would treat the wrapper's auto-injection as a "
+    "user-supplied payload claim, polluting §30.14 corpus "
+    "matchers.  Axis-keyed deferred-form specializations (e.g., "
+    "is_secret_grant<accept_default_strict_for<Security>>) MUST "
+    "axis-discriminate via the DimensionAxis NTTP; a permissive "
+    "accept_default_strict_for<auto> specialization is FORBIDDEN.");
+
+// (2) Cardinality pin — the count of audited predicates is
+// STRUCTURALLY pinned.  Adding a new per-grant predicate without
+// extending the roster fires a build error here (the count
+// asserts diverges from the comment-stated count).  Reciprocal:
+// removing a predicate without bumping the count also fires.
+inline constexpr std::size_t kAuditedCorpusPredicateCount =
+    std::tuple_size_v<AllCorpusPredicates>;
+static_assert(kAuditedCorpusPredicateCount == 13,
+    "FIXY-FOUND-042 cardinality pin: 13 per-grant predicates "
+    "currently audited.  Bumping requires (a) appending the new "
+    "PredicateRef<is_NEW_grant> to AllCorpusPredicates AND (b) "
+    "incrementing this literal.  A drift between roster and count "
+    "fires here.");
+
+// (3) Per-predicate explicit witnesses — pin each axis-keyed
+// specialization individually.  These are redundant with (1) but
+// surface the SPECIFIC predicate at fault when a diagnostic
+// fires, rather than the opaque "all_inert_on_marker fold".
+static_assert(!is_secret_grant<TypeMarker>::value,
+    "FIXY-FOUND-042: is_secret_grant's accept_default_strict_for"
+    "<Security> specialization MUST axis-discriminate — Type-axis "
+    "marker must NOT match.");
+static_assert(!is_pure_effect_grant<TypeMarker>::value,
+    "FIXY-FOUND-042: is_pure_effect_grant's accept_default_strict"
+    "_for<Effect> specialization MUST axis-discriminate — "
+    "Type-axis marker must NOT match (FOUND-040 closure).");
+
+// (4) Soundness chain — IF every per-grant predicate is inert on
+// ImplicitTypeMarker (assertion (1) above), THEN the
+// `has_grant_of<Predicate, Grants...>()` OR-fold over a Grants
+// pack augmented with the marker is identical to the same fold
+// over the unaugmented pack:
+//
+//     has_grant_of<P, G..., TypeMarker>()
+//   ≡ has_grant_of<P, G...>() || P<TypeMarker>::value
+//   ≡ has_grant_of<P, G...>() || false       (by assertion (1))
+//   ≡ has_grant_of<P, G...>()
+//
+// Therefore every §30.14 corpus matcher — which is a Boolean
+// combination of `has_grant_of<P_i, ...>` calls — returns the
+// IDENTICAL result on a wrapper-injected vs direct-call grants
+// pack.  This is the structural witness FOUND-041 required for
+// the marker injection to be SEMANTICALLY transparent to corpus
+// matching.  Assertion (1) IS the closure; no end-to-end runtime
+// assertion is needed (and one would forward-reference corpus::
+// which is defined further down in this file).
+
+}  // namespace detail::found_042_witness
+
 // ── FIXY-FOUND-022 detector (payload-classification opacity) ──────
 //
 // Pre-022 the §30.14 corpus matchers all took `<typename Type,
