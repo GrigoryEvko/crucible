@@ -146,6 +146,71 @@ enum class Effect : std::uint8_t {
 inline constexpr std::size_t effect_count =
     std::meta::enumerators_of(^^Effect).size();
 
+// ── Underlying-value distinctness (FIXY-FOUND-051) ─────────────────
+//
+// `effect_count` counts enumerator NAMES via reflection.  It does NOT
+// guarantee that the names map to distinct underlying values — a
+// duplicate-value attack
+//
+//     enum class Effect : std::uint8_t {
+//         Alloc = 0, ..., Test = 5,
+//         Crash = 0,                     // ← aliases Alloc silently
+//     };
+//
+// would bump effect_count to 7 while leaving only 6 distinct
+// underlying values.  Downstream consumers that treat the underlying
+// integer as a bit position — `OsUniverse::bit_position`, the row-
+// mask compute in EffectRowLattice, the federation row_hash slot
+// table — would collapse the two atoms into the SAME slot.  Concrete
+// blast radius: kernel substitution across the federation cache
+// (two distinct vendor/recipe pairs hash to one cache key); rows
+// claiming `Alloc` silently satisfy a `Crash`-required gate.
+//
+// Defense: a consteval witness that tracks each observed underlying
+// value in a uint64_t bitmask.  Setting an already-set bit aborts the
+// fold — the static_assert below fires with a structured diagnostic.
+// Also catches `u >= 64` (would shift past the bitmask carrier) as
+// defense-in-depth on OsUniverse's separate `cardinality <= 64` pin.
+namespace detail {
+
+[[nodiscard]] consteval bool every_effect_underlying_distinct_() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^Effect));
+    using U = std::underlying_type_t<Effect>;
+    std::uint64_t seen = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        constexpr auto u = static_cast<U>([:en:]);
+        if constexpr (static_cast<unsigned>(u) >= 64u) {
+            return false;  // would shift past uint64_t row-mask carrier
+        } else {
+            const std::uint64_t bit =
+                std::uint64_t{1} << static_cast<unsigned>(u);
+            if (seen & bit) {
+                return false;  // duplicate underlying value detected
+            }
+            seen |= bit;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+}  // namespace detail
+
+static_assert(detail::every_effect_underlying_distinct_(),
+    "FIXY-FOUND-051: two Effect enumerators share an underlying value "
+    "(or one is >= 64, exceeding the uint64_t row-mask carrier).  Each "
+    "atom MUST occupy a distinct bit position [0, 64) — duplicates "
+    "collapse rows in EffectRowLattice, federation row_hash slots "
+    "collide, and kernel substitution across the federation cache "
+    "becomes silent.  Defense-in-depth on top of `effect_count` "
+    "(name-cardinality pin) and `OsUniverse::cardinality <= 64` "
+    "(count-overflow pin) — this gate closes the value-aliasing gap "
+    "that neither catches.  Fix: assign the new atom the next free "
+    "underlying value (currently 6) explicitly in the enum.");
+
 // ── Diagnostic name emitter ─────────────────────────────────────────
 //
 // constexpr (not consteval) so the runtime smoke-test discipline can

@@ -139,6 +139,66 @@ void test_effect_row_projection_compile() {
         runtime_smoke_test();
 }
 
+// FIXY-FOUND-051 positive sentinel ────────────────────────────────────
+//
+// Capabilities.h ships a static_assert that the production Effect enum
+// has distinct underlying values (no duplicate-value attack).  The
+// TRUE-branch fires on every build (production assert holds).  This
+// sentinel proves the FALSE-branch machinery is sound: a hand-rolled
+// evil enum with two enumerators sharing underlying value 0 must be
+// detected by the same Pattern B reflection fold.  Without this
+// witness, a future refactor that broke the detection logic (e.g.,
+// removed the bit-mask check, swapped `seen & bit` for `seen | bit`)
+// would silently pass the production assert because Effect has no
+// duplicate to expose the bug.
+enum class FixyFound051EvilEnum : std::uint8_t {
+    Alpha   = 0,
+    Beta    = 1,
+    Gamma   = 2,
+    Aliased = 0,  // ← deliberate duplicate of Alpha
+};
+
+[[nodiscard]] consteval bool
+fixy_found_051_evil_enum_distinct_() noexcept {
+    static constexpr auto enumerators = std::define_static_array(
+        std::meta::enumerators_of(^^FixyFound051EvilEnum));
+    using U = std::underlying_type_t<FixyFound051EvilEnum>;
+    std::uint64_t seen = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        constexpr auto u = static_cast<U>([:en:]);
+        if constexpr (static_cast<unsigned>(u) >= 64u) {
+            return false;
+        } else {
+            const std::uint64_t bit =
+                std::uint64_t{1} << static_cast<unsigned>(u);
+            if (seen & bit) return false;
+            seen |= bit;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+static_assert(!fixy_found_051_evil_enum_distinct_(),
+    "FIXY-FOUND-051 sentinel: the duplicate-value detection in "
+    "every_effect_underlying_distinct_() must return false on an enum "
+    "with two enumerators sharing an underlying value.  If this "
+    "static_assert FAILS (i.e., evil enum is reported distinct), the "
+    "production assert in Capabilities.h is also broken — both share "
+    "the same Pattern B reflection-fold logic.");
+
+void test_effect_underlying_distinct_compile() {
+    // Drive the production witness through a runtime path; the
+    // static_assert above proves the FALSE-branch fires on the local
+    // evil enum.  Together they witness both polarities of the gate.
+    static_assert(::crucible::effects::detail::
+                      every_effect_underlying_distinct_(),
+                  "production Effect enum must have distinct "
+                  "underlying values (FIXY-FOUND-051 TRUE-branch).");
+}
+
 }  // namespace
 
 int main() {
@@ -158,6 +218,8 @@ int main() {
     run_test("test_ctx_wrapper_lift_compile", test_ctx_wrapper_lift_compile);
     run_test("test_effect_row_projection_compile",
              test_effect_row_projection_compile);
+    run_test("test_effect_underlying_distinct_compile",
+             test_effect_underlying_distinct_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
