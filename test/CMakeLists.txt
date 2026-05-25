@@ -7077,7 +7077,7 @@ crucible_neg_compile_test(neg_collision_R002_coroutine_borrow
 crucible_neg_compile_test(neg_collision_R003_coroutine_bg
   "R003")
 
-# ─── FIXY-FOUND-068 PART A first-fixture coverage (B001/H001/H002/H003/F002) ──
+# ─── FIXY-FOUND-068 first-fixture coverage (B001/H001/H002/H003/F002) ──
 #
 # Five §6.8 collision rules ship with ZERO HS14 fixture coverage at the
 # per-Fn (Phase B) enforcement surface.  These are standard-shape rules
@@ -7100,10 +7100,17 @@ crucible_neg_compile_test(neg_collision_R003_coroutine_bg
 #   F002: marks_federation_peer ∧ cost::Unbounded (federation peers must
 #         declare wall-clock budget for mesh admission).
 #
-# Three remaining zero-HS14 rules deferred to FIXY-FOUND-068 PART B:
-#   F001 (pack-level rule, not Phase B per-Fn).
-#   L005 (pack-level rule, not Phase B per-Fn).
-#   M001 (enforced via CtxFitsSafeAdvise per FOUND-013, not validate()).
+# Three other rules from the FOUND-068 "ZERO HS14" snapshot are already
+# closed via different enforcement surfaces:
+#   F001: pack-level (per-Fn concept tautologically true) — fixture at
+#         `neg_pack_F001_frame_axis_consistent.cpp` (FOUND-066).
+#   L005: pack-level (per-Fn concept tautologically true) — fixture at
+#         `neg_pack_L005_linear_region_alias.cpp` (FOUND-066).
+#   M001: ctx-fits surface (CONCEPT-GATED at fixy::advise() per FOUND-013,
+#         no per-Fn validate() leg) — fixture at
+#         `neg_fixy_v_225_advise_dontneed_safe_surface.cpp` (FIXY-V-225).
+# All 8 fixtures green under ctest -R 'neg_(collision_(B001|H001|H002|
+# H003|F002)|pack_(L005|F001)|fixy_v_225_advise_dontneed_safe_surface)'.
 crucible_neg_compile_test(neg_collision_B001_bg_observable_unbounded
   "B001")
 crucible_neg_compile_test(neg_collision_H001_hotpath_unbounded_cost
