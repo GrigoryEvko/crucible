@@ -820,6 +820,25 @@ set_tests_properties(mint_inventory_self_test
                      mint_inventory_check
                      mint_inventory_check_floor PROPERTIES
     LABELS "ci_guard;fixy-U-106;fixy-FOUND-140")
+# FIXY-FOUND-052 — Cross-build row_hash determinism witness.
+# Runs the dump_row_hashes executable and diffs stdout against the
+# committed golden file.  A mismatch indicates either (a) a
+# row_hash_contribution specialization changed (intentional wire-format
+# break — recapture the golden in the same PR + document the ceremony
+# in the commit message), or (b) a TU-context-fragility regression in
+# display_string_of silently moved stable_type_id<T> for some wrapper
+# (latent federation-cache bug).
+#
+# One-shot shell test: bash invokes the binary, redirects to a temp
+# file under ${CMAKE_BINARY_DIR}, then diffs vs the golden.  Linux is
+# the only supported deployment platform (CLAUDE.md §XIV), so bash
+# availability is guaranteed.
+add_test(NAME row_hash_golden_diff
+  COMMAND bash -c
+    "set -e; \"$<TARGET_FILE:dump_row_hashes>\" > \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/tools/row_hash_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\""
+  WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+set_tests_properties(row_hash_golden_diff PROPERTIES
+    LABELS "ci_guard;fixy-FOUND-052")
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)

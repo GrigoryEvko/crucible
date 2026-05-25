@@ -1,0 +1,51 @@
+# FIXY-FOUND-052 row_hash cross-build witness
+# format-version: 1
+# matrix-size:    45
+# fold-seed:      0xc0ffeebadf00dba5
+# fold-anchor:    0x4dc454cd4512e7f2
+# (a mismatch on diff means a row_hash_contribution specialization moved — document the ceremony in the commit message and re-capture this golden.)
+W01_Linear             0xba3d8586917ed8f0
+W02_Refined            0xd92fd7098ee52143
+W03_SealedRefined      0xa2b1879311acc59d
+W04_Tagged             0xc756dd547b442f28
+W05_Secret             0x35e6aad6c3434191
+W06_Stale              0xee45676666883bd0
+W07_TimeOrdered        0x34d5214fb02e8691
+W08_Monotonic          0x441e50e1502b1592
+W09_AppendOnly         0xe4996bb27e0e85ff
+W10_HotPath            0x750cbf967f3e0cbb
+W11_DetSafe            0x34745ee4ef21cba6
+W12_NumericalTier      0x1a8e53156b999d4e
+W13_Vendor             0x039548867b0365a2
+W14_ResidencyHeat      0xe4d518a78a829516
+W15_CipherTier         0x4e406cf8a72040af
+W16_AllocClass         0x21952abb5b6c6140
+W17_Wait               0x32cab367e0a6e066
+W18_MemOrder           0x2aad1bf67bb09d4e
+W19_Progress           0xb690875da30e4bf1
+W20_Consistency        0x247e5f78ba209828
+W21_OpaqueLifetime     0xd917102f2dee2d78
+W22_Crash              0xc6600bbfd28c0bb3
+W23_Budgeted           0xb19f667506abaccf
+W24_EpochVersioned     0x1a21516e6aea7cc4
+W25_NumaPlacement      0x5d1f90154ddabfa9
+W26_RecipeSpec         0x9c976e62bdafe993
+W27_Witness            0xe0176c355cee829c
+W28_Hw                 0x707bf87e922490e1
+W29_BarrierGuarded     0x3767dc76d992ae2b
+W30_SimdWidthPinned    0xfc8a0b799ef13da8
+W31_ScopedFence        0x44f9811488b73c7d
+W32_ClockSource        0xf913d20285aa0878
+W33_SuspendBehavior    0x0f25106b7e36c2fa
+W34_JoinPolicy         0x80f878813e041d0c
+W35_SchedClass         0x4a2d4c767df91dfa
+W36_FpModePinned_R     0x75b4dfd9edf70e2c
+W37_FpModePinned_F     0x7b5f7ca68d004377
+S01_PureLinear         0xa1d9d0d768fbc0ff
+S02_PureCopy           0xc283e7b59c3b4e7a
+S03_IoFunction         0x1fc29c832e45c667
+S04_BgWorker           0xab8f0411a9c9e4bf
+S05_CtCrypto           0x5402062f9f422f36
+S06_AsyncEndpoint      0x5e115fa7a5abfad0
+S07_CooperativeBg      0x87d301576707ccf7
+S08_RealtimeHot        0xc4a8a1d4bc4847ca

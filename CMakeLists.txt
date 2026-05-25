@@ -126,6 +126,19 @@ add_executable(crucible_diag_lsp
 )
 target_link_libraries(crucible_diag_lsp PRIVATE crucible)
 
+# FIXY-FOUND-052 — Cross-build row_hash determinism witness.
+# Emits every row_hash_contribution<W>::value as labeled hex lines to
+# stdout; CI diffs against tools/row_hash_golden.txt to catch silent
+# TU-context-fragility regressions in display_string_of (the upstream
+# of stable_type_id).  The dump tool's TU-internal static_assert
+# cross-links the fold anchor to test/test_row_hash_distinctness.cpp's
+# kFoldAnchor, so partial migrations (test updated but tool not, or
+# vice versa) fail to compile.
+add_executable(dump_row_hashes
+  tools/dump_row_hashes.cpp
+)
+target_link_libraries(dump_row_hashes PRIVATE crucible)
+
 # ── eBPF observability substrate (crucible::perf::SenseHub etc.) ────
 #
 # Promoted from bench/ on 2026-05-03 (GAPS-004a).  When libbpf + a
