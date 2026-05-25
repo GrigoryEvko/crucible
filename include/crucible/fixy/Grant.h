@@ -337,8 +337,32 @@ struct copy            final : grant_base {};  // Usage = Copy
 struct ghost           final : grant_base {};  // Usage = Ghost
 struct borrow          final : grant_base {};  // Usage = Borrow
 struct capability_usage final : grant_base {};  // Usage = Capability
-//   (`capability_usage` not `capability` — avoid clash with the
-//    Effect-axis capability concept.  fixy.md §24.2 precedent.)
+//   FIXY-FOUND-043 — naming-asymmetry rationale.  Four of the five
+//   Usage-axis grants (`affine`, `copy`, `ghost`, `borrow`) are bare
+//   nouns matching their `UsageMode` enumerator.  This one is NOT
+//   bare — it carries the `_usage` suffix because three live
+//   `Capability` symbols already exist in the fixy namespace
+//   hierarchy and would clash:
+//
+//     1. `effects::Capability<E, S>`           (effects/Capability.h:107) —
+//        the linear cap proof-token class template.
+//     2. `fixy::eff::Capability<E, S>`         (fixy/Eff.h:178)           —
+//        the same template, re-exported under the `eff::` umbrella.
+//     3. `fixy::cap::Capability<E, S>`         (fixy/Cap.h:63 / 316-323)  —
+//        the same template, re-exported under the `cap::` umbrella.
+//
+//   Inside a `fixy::fn<...>` body that includes both <fixy/Grant.h>
+//   and <fixy/Eff.h> (the common case — most call sites pull both),
+//   a bare `grant::capability` would shadow the Effect-axis token
+//   spelling at the source-reading level and ADL-find the wrong
+//   symbol at qualified call sites.  The suffix is therefore
+//   STRUCTURAL, not stylistic.  Renaming this grant to `capability`
+//   would NOT compile-fail today (the namespaces disambiguate), but
+//   it would defeat audit-grep across the fixy substrate and
+//   confuse maintainers.  The structural witness lives at
+//   `fixy/Fn.h::detail::fn_self_test::found_043_witness`.
+//
+//   fixy.md §24.2 + Grant.h FIXY-FOUND-043 (this comment).
 
 template <> struct which_dim<affine>           : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
 template <> struct which_dim<copy>             : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};

@@ -113,6 +113,7 @@
 //      correctly into the resolved Fn<>
 
 #include <crucible/effects/Capabilities.h>
+#include <crucible/effects/Capability.h>      // FOUND-043 witness — effects::Capability<E, S>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
@@ -2148,6 +2149,131 @@ static_assert(std::is_same_v<
     detail::resolve::project<grant::trust_external>::type,
     safety::trust::External>,
     "grant::trust_external must project to safety::trust::External.");
+
+// FIXY-LAT-Usage: every Usage lattice point resolves to the matching
+// substrate UsageMode.  Previously only grant::affine had an explicit
+// projection witness (line ~2030); extended here to cover all 5
+// non-default Usage grants (UsageMode::Linear is the strict default,
+// expressed via accept_default_strict_for<Usage> not a relaxation
+// grant).  See FIXY-FOUND-043 for the naming-asymmetry rationale
+// behind `grant::capability_usage`.
+static_assert(detail::resolve::project<grant::affine>::value
+    == safety::fn::UsageMode::Affine,
+    "grant::affine must project to UsageMode::Affine.");
+static_assert(detail::resolve::project<grant::copy>::value
+    == safety::fn::UsageMode::Copy,
+    "grant::copy must project to UsageMode::Copy.");
+static_assert(detail::resolve::project<grant::ghost>::value
+    == safety::fn::UsageMode::Ghost,
+    "grant::ghost must project to UsageMode::Ghost.");
+static_assert(detail::resolve::project<grant::borrow>::value
+    == safety::fn::UsageMode::Borrow,
+    "grant::borrow must project to UsageMode::Borrow.");
+static_assert(detail::resolve::project<grant::capability_usage>::value
+    == safety::fn::UsageMode::Capability,
+    "grant::capability_usage must project to UsageMode::Capability "
+    "(FIXY-FOUND-043 — asymmetric `_usage` suffix is mandatory to "
+    "avoid clash with effects::Capability<E, S>; see Grant.h:339).");
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-FOUND-043 — capability_usage naming-asymmetry pin ────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Four of the five Usage-axis grants spell their UsageMode enumerator
+// as a bare noun (affine / copy / ghost / borrow); the fifth carries
+// the `_usage` suffix because three live `Capability` symbols already
+// exist in the fixy namespace tree (see Grant.h:339 doc-block).  This
+// witness block makes the asymmetry STRUCTURAL:
+//
+//   (1) Cardinality pin — exactly 5 Usage-axis grants exist.  Adding
+//       a 6th without registering bumps the tuple_size assertion.
+//   (2) Per-grant which_dim — every member of the roster routes to
+//       DimensionAxis::Usage (NOT a leak into another axis).
+//   (3) Cross-namespace clash witness — effects::Capability<E, S> is
+//       a CLASS TEMPLATE, not a grant_base.  Proves the name
+//       distinction is structural (different bases), not merely
+//       lexical (different spellings).  A bare `grant::capability`
+//       would compile today (the namespaces disambiguate), but it
+//       would defeat audit-grep and confuse readers — the witness
+//       below pins the discipline that the `_usage` suffix MUST
+//       remain.
+
+namespace found_043_witness {
+
+// Roster of every non-default Usage-axis grant.  UsageMode::Linear is
+// the strict default — expressed via accept_default_strict_for<Usage>
+// at call sites, never via a relaxation grant — so it's not in the
+// roster.
+using AllUsageGrants = std::tuple<
+    grant::affine,            // UsageMode::Affine
+    grant::copy,              // UsageMode::Copy
+    grant::ghost,             // UsageMode::Ghost
+    grant::borrow,            // UsageMode::Borrow
+    grant::capability_usage>; // UsageMode::Capability — ASYMMETRIC SUFFIX
+
+// (1) Cardinality pin — adding a 6th Usage grant requires extending
+// AllUsageGrants AND bumping this literal.  Drift fires here.
+inline constexpr std::size_t kUsageGrantCount =
+    std::tuple_size_v<AllUsageGrants>;
+static_assert(kUsageGrantCount == 5,
+    "FIXY-FOUND-043 cardinality pin: 5 non-default Usage-axis grants "
+    "(UsageMode has 6 enumerators; Linear is the implicit strict "
+    "default with no relaxation grant).  Bumping requires (a) "
+    "appending the new grant to AllUsageGrants AND (b) incrementing "
+    "this literal.  Drift fires here.");
+
+// (2) Every Usage grant routes to DimensionAxis::Usage.  Folded over
+// the roster for compactness.
+template <typename Tuple>
+[[nodiscard]] consteval bool all_route_to_usage_axis() noexcept {
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
+        return ((grant::which_dim_v<std::tuple_element_t<Is, Tuple>>
+                 == dim::DimensionAxis::Usage) && ...);
+    }(std::make_index_sequence<std::tuple_size_v<Tuple>>{});
+}
+static_assert(all_route_to_usage_axis<AllUsageGrants>(),
+    "FIXY-FOUND-043: every Usage-axis grant in AllUsageGrants MUST "
+    "specialize which_dim to DimensionAxis::Usage.  An unspecialized "
+    "grant routes to Type by default (Grant.h:223 primary template), "
+    "which would silently re-classify the grant into the wrong axis.");
+
+// (3) Cross-namespace clash witness — effects::Capability<E, S> is a
+// class template, NOT a grant_base.  The structural distinction
+// (different inheritance) is what allows fixy::grant::capability_usage
+// and fixy::eff::Capability<...> to coexist.  Renaming
+// `capability_usage` to `capability` would not collide at the
+// compiler level (different namespaces), but would defeat audit-grep
+// AND reader cognition — the suffix is the structural marker.
+//
+// `effects::Capability<E, S>` here is instantiated with arbitrary
+// (E, S) that satisfies CanMintCap.  Bg is the canonical
+// fully-rowed context whose permitted_row contains Alloc, IO, Block.
+using EffectAxisCapability =
+    ::crucible::effects::Capability<::crucible::effects::Effect::Alloc,
+                                    ::crucible::effects::Bg>;
+
+static_assert(grant::IsGrantTag<grant::capability_usage>,
+    "FIXY-FOUND-043: grant::capability_usage MUST satisfy "
+    "IsGrantTag (inherits grant_base + final).");
+static_assert(!grant::IsGrantTag<EffectAxisCapability>,
+    "FIXY-FOUND-043: effects::Capability<E, S> MUST NOT satisfy "
+    "IsGrantTag — the Effect-axis Capability class template is "
+    "the linear proof-token carrier (effects/Capability.h:107), "
+    "structurally distinct from the Usage-axis "
+    "grant::capability_usage relaxation tag.  This negative "
+    "witness pins that the clash between the two `Capability` "
+    "spellings is RESOLVABLE precisely because the substrate "
+    "name (effects::Capability) is a class template and the "
+    "grant name (capability_usage) is suffixed.");
+
+// (4) The three substrate-level Capability re-exports are all the
+// SAME template — pinned by Cap.h:316-323 (fixy::cap::Capability is
+// effects::Capability) and Eff.h:178-184 (fixy::eff::Capability is
+// effects::Capability).  Not restated here because Fn.h does not
+// include Eff.h or Cap.h (avoiding circular dependency); the
+// authoritative identity asserts live at those headers.
+
+}  // namespace found_043_witness
 
 // 9. mint_fn factory returns the correct concrete type.
 constexpr auto minted = mint_fn<int,
