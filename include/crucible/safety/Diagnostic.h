@@ -130,6 +130,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <meta>             // FIXY-FOUND-139: reflection-derived Category ceiling
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -1660,6 +1661,32 @@ static_assert(catalog_size == 33,
     "fixy-A1-022 + 1 PublishOnce fixy-A1-031 + 2 Bits/Borrowed "
     "WRAP-Bits-Borrowed-Diagnostic #1092) — confirm the new tag was "
     "added to Catalog AND to Category at the same integer index.");
+
+// FIXY-FOUND-139: reflection-derived Category enum ceiling.
+//
+// `enumerate_categories_count()` below (line ~1885) visits indices
+// 0..catalog_size-1 via a make_index_sequence-based fold; it does
+// NOT directly count the Category enum's enumerators.  That means a
+// future Category enumerator added without bumping catalog_size
+// would NOT trip the existing checks — the visitor would still
+// return catalog_size, and the bijection self-test would only see
+// the first catalog_size enumerators.
+//
+// This ceiling reflects directly over the enum.  Adding a Category
+// without bumping Catalog (or vice versa) reddens here.
+inline constexpr std::size_t category_count =
+    std::meta::enumerators_of(^^Category).size();
+
+static_assert(category_count == catalog_size,
+    "FIXY-FOUND-139: Category enum cardinality and Catalog tuple "
+    "size diverged.  Every Category enumerator must have a matching "
+    "tag type at the same integer index in the Catalog tuple "
+    "(append-only discipline).  Likely cause: a new Category value "
+    "was added without appending the corresponding tag struct + tag "
+    "specialization, OR a tag was appended to Catalog without "
+    "shipping the Category enumerator.  This reflection-derived "
+    "pin is independent of catalog_size's hand-pinned 33 — both "
+    "must agree.");
 
 // ─── Catalog ↔ Category bijection ─────────────────────────────────
 //

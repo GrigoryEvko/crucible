@@ -644,6 +644,34 @@ using Catalog = std::tuple<
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
 static_assert(catalog_size == 47);
 
+// FIXY-FOUND-139: reflection-derived RuleCode enum ceiling.
+//
+// `rule_bijection_v` (declared above near rule_code_of_v) maps each
+// RuleCode enumerator to its tag, and the FOUND-134 reflection
+// fold (see end of this file, ~line 2820) asserts every non-None
+// enumerator is bijective.  But neither of those checks pins the
+// RuleCode enum CARDINALITY against the Catalog tuple — a future
+// RuleCode value added without appending the catalog entry would
+// NOT trip the existing bijection check (the new enumerator would
+// also lack a rule_tag specialization, so the fold would just
+// trigger an instantiation error at the missing-spec site, NOT a
+// clean cardinality mismatch).
+//
+// This ceiling reflects directly over the enum.  The +1 accounts
+// for the `None = 255` sentinel which has no Catalog entry.
+inline constexpr std::size_t rule_code_count =
+    std::meta::enumerators_of(^^RuleCode).size();
+
+static_assert(rule_code_count == catalog_size + 1,
+    "FIXY-FOUND-139: RuleCode enum cardinality and Catalog tuple "
+    "size diverged.  The expected relationship is rule_code_count "
+    "== catalog_size + 1 (the +1 is the `None = 255` sentinel which "
+    "has no Catalog entry).  Likely cause: a new RuleCode value was "
+    "added without appending the rule struct to Catalog, OR a rule "
+    "was appended to Catalog without minting a RuleCode enumerator. "
+    " This reflection-derived pin is independent of catalog_size's "
+    "hand-pinned 47 — both must agree.");
+
 template <RuleCode R>
 struct rule_tag;
 
