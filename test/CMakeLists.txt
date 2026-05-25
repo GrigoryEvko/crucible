@@ -2175,11 +2175,20 @@ crucible_neg_compile_fixy_test(neg_fixy_duplicate_engagement     "UniqueEngageme
 #   * neg_fixy_fn_static_assert_duplicate_axis   — tier 4 UniqueEngagementPerAxis
 #   * neg_fixy_fn_static_assert_malformed_grant  — tier 2 AllGrantsWellFormed
 crucible_neg_compile_fixy_test(neg_fixy_fn_static_assert_missing_axis
-    "first_missing_axis_v|FixyNotEngaged_")
+    "first_missing_axis_v|FixyNotEngaged_|Missing-axis diagnostic tag")
+# FIXY-FOUND-130: tier-4 now routes through P2741R3 dynamic message that
+# surfaces "Duplicate-axis diagnostic tag: FixyDuplicate_<Axis>" literally
+# in the static_assert text.  Requiring the literal pins that dynamic
+# routing remains live; a regression that drops the P2741R3 wiring would
+# fall back to a generic message and fail this fixture.
 crucible_neg_compile_fixy_test(neg_fixy_fn_static_assert_duplicate_axis
-    "first_duplicate_axis_v|FixyDuplicate_")
+    "Duplicate-axis diagnostic tag|first_duplicate_axis_v|FixyDuplicate_")
+# FIXY-FOUND-130: tier-2 now routes through P2741R3 dynamic message that
+# surfaces "Malformed-grant position (0-based): N of M" literally in the
+# static_assert text.  Requiring the literal pins that dynamic routing
+# remains live; same regression defense as the tier-4 fixture above.
 crucible_neg_compile_fixy_test(neg_fixy_fn_static_assert_malformed_grant
-    "FixyMalformedGrant|AllGrantsWellFormed")
+    "Malformed-grant position|FixyMalformedGrant|AllGrantsWellFormed")
 
 # fixy-H-05 — HS14 floor for the wrapper-discipline IsAccepted.
 #

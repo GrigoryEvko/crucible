@@ -81,6 +81,7 @@
 #include <crucible/fixy/Theory.h>
 #include <crucible/safety/Diagnostic.h>
 
+#include <charconv>
 #include <concepts>
 #include <cstddef>
 #include <meta>
@@ -1497,6 +1498,111 @@ template <typename... Grants>
     requires (!UniqueEngagementPerAxis<Grants...>)
 using first_duplicate_tag_t =
     diag::dup_tag_for_axis_t<*first_duplicate_axis_v<Grants...>>;
+
+// ─── first_duplicate_tag_name_v + tier4_duplicate_tag_message_v ─────
+//
+// FIXY-FOUND-130: bring tier-4 (UniqueEngagementPerAxis) static_assert
+// message to P2741R3 dynamic-routing parity with tier-3 / tier-5.
+// Prior tier-4 message named only the generic FixyDuplicate_* concept,
+// not the specific FixyDuplicate_<Axis> tag the failure resolved to.
+// The helpers below close the diagnostic-surface symmetry gap.  Pair
+// with tier2_malformed_grant_message_v below for the symmetric tier-2
+// fix on the malformed-grant rejection path.
+
+template <typename... Grants>
+inline constexpr std::string_view first_duplicate_tag_name_v =
+    []() consteval -> std::string_view {
+        if constexpr (UniqueEngagementPerAxis<Grants...>) {
+            return std::string_view{};
+        } else {
+            return ::crucible::safety::diag::diagnostic_name_v<
+                first_duplicate_tag_t<Grants...>>;
+        }
+    }();
+
+template <typename... Grants>
+inline constexpr std::string_view tier4_duplicate_tag_message_v =
+    []() consteval -> std::string_view {
+        if constexpr (UniqueEngagementPerAxis<Grants...>) {
+            return std::string_view{};
+        } else {
+            constexpr std::string_view tagname =
+                first_duplicate_tag_name_v<Grants...>;
+            std::string msg;
+            msg += "fixy::fn<Type, Grants...> [tier 4: IsAccepted gate / "
+                   "UniqueEngagementPerAxis]: at least one DimensionAxis "
+                   "is engaged MORE THAN ONCE by the Grants pack (FIXY-"
+                   "AUDIT-A3).  Duplicate-axis diagnostic tag: ";
+            msg.append(tagname.data(), tagname.size());
+            msg += ".  Remove the redundant grant(s).  See "
+                   "fixy::first_duplicate_axis_v<Grants...> for the axis "
+                   "enum and fixy::first_duplicate_tag_t<Grants...> for "
+                   "the resolved FixyDuplicate_<Axis> type.  Note: "
+                   "explicitly writing `grant::accept_default_strict_for"
+                   "<dim::DimensionAxis::Type>` is FORBIDDEN (FIXY-"
+                   "AUDIT-A7) — fixy::fn implicitly engages Type, so an "
+                   "explicit Type marker would trigger this duplicate.";
+            return std::string_view{std::define_static_string(msg)};
+        }
+    }();
+
+// ─── first_malformed_grant_index_v + tier2_malformed_grant_message_v ─
+//
+// FIXY-FOUND-130: tier-2 (AllGrantsWellFormed) static_assert symmetry.
+// Locates the first pack element that fails grant::IsGrantTag (0-based
+// position) and surfaces "position N of M" inside the static_assert
+// message via std::to_chars + std::define_static_string, mirroring the
+// dynamic-routing pattern tier-3 / tier-5 already use.  Position alone
+// is actionable (user counts grants); reflection-based type-name lookup
+// could augment later but is not load-bearing for the symmetry premise.
+
+template <typename... Grants>
+inline constexpr std::size_t first_malformed_grant_index_v =
+    []() consteval -> std::size_t {
+        std::size_t idx = 0;
+        bool found = false;
+        (void)((!found && (grant::IsGrantTag<Grants>
+                           ? (++idx, false)
+                           : (found = true))) || ...);
+        return found ? idx : sizeof...(Grants);
+    }();
+
+template <typename... Grants>
+inline constexpr std::string_view tier2_malformed_grant_message_v =
+    []() consteval -> std::string_view {
+        if constexpr (AllGrantsWellFormed<Grants...>) {
+            return std::string_view{};
+        } else {
+            constexpr std::size_t idx =
+                first_malformed_grant_index_v<Grants...>;
+            std::string msg;
+            msg += "fixy::fn<Type, Grants...> [tier 2: IsAccepted gate / "
+                   "AllGrantsWellFormed]: at least one Grants pack entry "
+                   "is NOT a well-formed grant tag (does not satisfy "
+                   "fixy::grant::IsGrantTag: must be final-class, must "
+                   "inherit grant_base, must not be a non-grant type "
+                   "such as `int` or a user struct).  Malformed-grant "
+                   "position (0-based): ";
+            {
+                char buf[32]{};
+                auto r = std::to_chars(buf, buf + sizeof(buf), idx);
+                msg.append(buf, static_cast<std::size_t>(r.ptr - buf));
+            }
+            msg += " of ";
+            {
+                char buf[32]{};
+                auto r = std::to_chars(buf, buf + sizeof(buf),
+                                       sizeof...(Grants));
+                msg.append(buf, static_cast<std::size_t>(r.ptr - buf));
+            }
+            msg += ".  Common causes: copy-paste typo, misspelled grant "
+                   "name, substrate type accidentally passed where a "
+                   "grant tag was expected, or extending a non-final "
+                   "grant class.  See fixy::diag::FixyMalformedGrant "
+                   "for the structured diagnostic tag.";
+            return std::string_view{std::define_static_string(msg)};
+        }
+    }();
 
 // ═════════════════════════════════════════════════════════════════════
 // ── fixy-H-03 — Surface diagnostic tags in compiler error trail ────

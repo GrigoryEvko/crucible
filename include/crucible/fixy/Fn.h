@@ -732,16 +732,14 @@ class fn {
         !fixy_a4_025_tier0_not_ctad_sentinel
         || !fixy_h02_tier1_type_ok
         || AllGrantsWellFormed<ImplicitTypeMarker, Grants...>;
+    // FIXY-FOUND-130: route through P2741R3 dynamic message so the
+    // 0-based position of the FIRST malformed grant in the pack
+    // appears literally in the diagnostic text (e.g. "Malformed-grant
+    // position (0-based): 2 of 7").  Symmetric with tier-3 / tier-4 /
+    // tier-5 dynamic-routing surfaces; position alone is actionable
+    // without reflection (user counts grants to locate the offender).
     static_assert(fixy_h02_tier2_grants_well_formed,
-        "fixy::fn<Type, Grants...> [tier 2: IsAccepted gate / "
-        "AllGrantsWellFormed]: Grants pack contains a malformed "
-        "grant (a type that does NOT satisfy fixy::grant::IsGrantTag — "
-        "the entry is not final-class, does not inherit "
-        "fixy::grant::grant_base, or is a non-grant type entirely such "
-        "as `int` or a user struct).  See fixy::diag::FixyMalformedGrant "
-        "for the structured diagnostic tag.  Common cause: copy-paste "
-        "typo, misspelled grant name, or substrate type accidentally "
-        "passed where a grant tag was expected.");
+        tier2_malformed_grant_message_v<ImplicitTypeMarker, Grants...>);
 
     // Sketch mode (CRUCIBLE_FIXY_STRICT=0) relaxes the engagement
     // axis per Profile.h's contract: "sketch mode permissivity applies
@@ -778,18 +776,16 @@ class fn {
         || !fixy_h02_tier2_grants_well_formed
         || !fixy_h02_tier3_all_dims_engaged
         || UniqueEngagementPerAxis<ImplicitTypeMarker, Grants...>;
+    // FIXY-FOUND-130: route through P2741R3 dynamic message so the
+    // FixyDuplicate_<Axis> tag name (e.g. "FixyDuplicate_Effect")
+    // appears literally in the diagnostic text — symmetric with
+    // tier-3 missing-tag routing (line 770 above) and tier-5 corpus
+    // routing (line 810+ below).  Without P2741R3 routing, callers
+    // would only see "see first_duplicate_tag_t<Grants...>" and have
+    // to manually instantiate the trait to discover WHICH axis;
+    // dynamic routing surfaces the axis directly in the error.
     static_assert(fixy_h02_tier4_unique_engagement,
-        "fixy::fn<Type, Grants...> [tier 4: IsAccepted gate / "
-        "UniqueEngagementPerAxis]: at least one DimensionAxis is "
-        "engaged MORE THAN ONCE by the Grants pack (FIXY-AUDIT-A3). "
-        "See fixy::first_duplicate_axis_v<Grants...> for the specific "
-        "axis + fixy::first_duplicate_tag_t<Grants...> for the "
-        "FixyDuplicate_<Axis> diagnostic tag.  Remove the redundant "
-        "grant(s).  Note: explicitly writing "
-        "`grant::accept_default_strict_for<dim::DimensionAxis::Type>` "
-        "is FORBIDDEN (FIXY-AUDIT-A7) — fixy::fn implicitly engages "
-        "Type, so the explicit Type marker would trigger a duplicate "
-        "on the Type axis.");
+        tier4_duplicate_tag_message_v<ImplicitTypeMarker, Grants...>);
 
     // Tier 5 is the §30.14 corpus check.  Profile.h documents the
     // sketch-mode relaxation as "engagement axis + theory-corpus
