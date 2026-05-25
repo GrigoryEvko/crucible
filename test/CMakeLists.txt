@@ -7075,6 +7075,44 @@ crucible_neg_compile_test(neg_collision_R002_coroutine_borrow
 crucible_neg_compile_test(neg_collision_R003_coroutine_bg
   "R003")
 
+# ─── FIXY-FOUND-068 PART A first-fixture coverage (B001/H001/H002/H003/F002) ──
+#
+# Five §6.8 collision rules ship with ZERO HS14 fixture coverage at the
+# per-Fn (Phase B) enforcement surface.  These are standard-shape rules
+# whose triggers compose entirely from `fn::Fn<...>` template parameters
+# + a single file-scope marker-trait specialization — the H010 shape.
+# Each fixture instantiates a real fn::Fn<...>, forcing Fn's own
+# `static_assert(ValidComposition<Fn>)` to run validate(), so the rule
+# code substring (e.g., "H001:") appears in the diagnostic chain
+# regardless of first_failure ordering.  PASS_REGULAR_EXPRESSION on the
+# rule code is strictly stronger than WILL_FAIL alone.
+#
+#   B001: Row<Bg> ∧ marks_externally_observable ∧ cost::Unbounded
+#         (back-pressure trap — observable cadence is unbounded).
+#   H001: marks_hot_path ∧ cost::Unbounded (CLAUDE.md §IX ≤40ns budget
+#         requires bounded cost on hot path).
+#   H002: marks_hot_path ∧ refinement_t == pred::True (hot path requires
+#         non-trivial Refined invariant for fast-path branches).
+#   H003: marks_hot_path ∧ (Alloc ∨ IO) ∧ cost::Unbounded (Alloc/IO-
+#         specific shape of the H001 trap).
+#   F002: marks_federation_peer ∧ cost::Unbounded (federation peers must
+#         declare wall-clock budget for mesh admission).
+#
+# Three remaining zero-HS14 rules deferred to FIXY-FOUND-068 PART B:
+#   F001 (pack-level rule, not Phase B per-Fn).
+#   L005 (pack-level rule, not Phase B per-Fn).
+#   M001 (enforced via CtxFitsSafeAdvise per FOUND-013, not validate()).
+crucible_neg_compile_test(neg_collision_B001_bg_observable_unbounded
+  "B001")
+crucible_neg_compile_test(neg_collision_H001_hotpath_unbounded_cost
+  "H001")
+crucible_neg_compile_test(neg_collision_H002_hotpath_trivial_refinement
+  "H002")
+crucible_neg_compile_test(neg_collision_H003_hotpath_alloc_unbounded
+  "H003")
+crucible_neg_compile_test(neg_collision_F002_federation_peer_unbounded
+  "F002")
+
 # ─── FIXY-FOUND-063 CollisionCatalog H010 neg-compile (HotPath × Bg) ──
 #
 # H010 closes a gap among H001/H002/H003: those catch HotPath ×
