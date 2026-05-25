@@ -369,6 +369,177 @@ template <auto TauMax> struct project<grant::stale_to<TauMax>> {
     using type = safety::fn::stale::Stale<TauMax>;
 };
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-FOUND-027: axes without non-default grant family ──────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// The 13 newer DimensionAxis values (20-32) — Crucible extensions
+// landed 2026-05-18 through 2026-05-23 (Synchronization through
+// MemoryScope) — ship ONLY the structural acceptance marker
+// `grant::accept_default_strict_for<D>` and have NO per-axis grant
+// family beyond it.  Every production binding on these axes can
+// express "I accept the strict default" but cannot express any
+// alternative stance, because there is no `grant::*` tag with a
+// `which_dim` specialization routing to the axis (the resolver
+// reaches `project<accept_default_strict_for<D>>` → delegates to
+// `strict_default_for<D>::type/::value` and that is the only
+// reachable stance).
+//
+// This is a tracked, in-flight state — each axis was introduced with
+// a planned V-* follow-up that ships the per-axis grant catalog (the
+// per-axis doc-blocks at safety/DimensionTraits.h:209-323 cite the
+// V-* tasks).  But the gap is structurally invisible: a reviewer
+// looking at fixy/Grant.h cannot tell which axes are "wait for
+// V-*-to-populate" vs "axis design says default-only".
+//
+// The audit anchor below is the SINGLE SOURCE OF TRUTH for "which
+// axes still lack a grant family".  When the first non-default
+// grant ships for any axis in this list, the maintainer MUST drop
+// that axis AND update the cardinality static_assert below —
+// otherwise the gap persists silently as new bindings can't engage
+// the new grants without bypassing the audit anchor.
+//
+// Drift detection: the cardinality static_assert pins kCount = 13.
+// When a grant family ships, the list shrinks (say to 12) and the
+// static_assert reds, forcing the maintainer to (a) drop the axis
+// from kAxesWithoutNonDefaultGrants, (b) decrement the assertion,
+// (c) confirm the assertion now passes.  The reverse direction —
+// adding a new axis without a grant family — is caught by the next
+// FIXY-V-* introducing the axis (the maintainer adds the axis to
+// this list explicitly).
+//
+// Why detail::resolve namespace and not fixy/Grant.h?  The gap is
+// structurally about `project<>` specialization coverage — every
+// grant tag has a `project<>` specialization here, and the absence
+// of `project<>` specs for axis D's per-axis grant catalog IS the
+// gap.  Co-locating the audit anchor with the project<> family
+// makes it review-discoverable in exactly the right place.
+
+namespace audit {
+
+inline constexpr std::array<dim::DimensionAxis, 13>
+    kAxesWithoutNonDefaultGrants = {
+    // Synchronization (added 2026-05-18, fixy-A3-008) — Tier S.
+    // Will gain grants when the Wait + MemOrder wrappers gain
+    // user-facing per-strategy / per-order grant tags beyond the
+    // default-strict acceptance.  Currently composed via
+    // wrapper-nesting at use-sites, not Fn-aggregated.
+    dim::DimensionAxis::Synchronization,
+    // Regime (added 2026-05-18, fixy-A3-009) — Tier S.  HotPath
+    // grants (e.g. `regime_hot` / `regime_warm` / `regime_cold`)
+    // are planned but not yet shipped; composes at use-sites via
+    // HotPath<Hot/Warm/Cold> wrapper.
+    dim::DimensionAxis::Regime,
+    // FpMode (added 2026-05-22, FIXY-V-088) — Tier S.  V-089/V-090
+    // were planned to ship the 11-sub-axis FP-mode grant catalog
+    // (rounding / Ftz / contract / trap mask / denormal / NaN /
+    // Inf / complex layout / libm policy / reassociate / FP const).
+    dim::DimensionAxis::FpMode,
+    // SyscallSurface (added 2026-05-22, FIXY-V-097) — Tier S.
+    // V-098 was planned to ship the per-family grant catalog
+    // (NoSyscall / VdsoOnly / ReadOnlyState / FileMutation /
+    // MemoryMapping / ThreadSync / NetworkIo / ProcessControl /
+    // Privilege), V-099 the per-ioctl grants, V-100 the
+    // syscall→effect-row bridge.
+    dim::DimensionAxis::SyscallSurface,
+    // ControlFlow (added 2026-05-23, FIXY-V-238) — Tier S.
+    // V-239/V-240/V-241 were planned to ship the ControlFlowLattice
+    // grant catalog (Pure / AbortOnly / ThrowOnly / MayLongjmp /
+    // MaySignal) and the V-243 §6.8 collision family that consumes
+    // it (C001 / D001 / D002 / G001 / L006 / P003 / S001 / S004).
+    dim::DimensionAxis::ControlFlow,
+    // CallShape (added 2026-05-23, FIXY-V-238) — Tier S.
+    // V-239/V-240/V-241 planned: CallShapeLattice grants
+    // (Direct / BoundedRecurses<N> / Indirect / Virtual / Unbounded)
+    // — drives Forge hot-path admission gates on bounded call shape.
+    dim::DimensionAxis::CallShape,
+    // StackUse (added 2026-05-23, FIXY-V-238) — Tier S.
+    // V-239/V-240/V-241 planned: per-stack-budget grant catalog.
+    dim::DimensionAxis::StackUse,
+    // GlobalState (added 2026-05-23, FIXY-V-238) — Tier S.
+    // V-239/V-240/V-241 planned: per-global-surface grants;
+    // V-248 Meyers-singleton init-cycle detection consumes this.
+    dim::DimensionAxis::GlobalState,
+    // Stdio (added 2026-05-23, FIXY-V-238) — Tier S.
+    // V-239/V-240/V-241 planned: per-stdio-channel grant catalog
+    // (stdin / stdout / stderr / null).
+    dim::DimensionAxis::Stdio,
+    // HwInstruction (added 2026-05-23, FIXY-V-253) — Tier S.
+    // V-251 plans HwInstructionLattice grants (NoneAllowed / Scalar
+    // / Vectorizable / NonDeterministicTsc / PrivilegedMsr); V-254
+    // wraps them at the value site.  Tier-0 Mimic blocker — Mimic
+    // must know per kernel whether SIMD / rdtsc / ring-0 MSR are
+    // emitted before lowering can complete.
+    dim::DimensionAxis::HwInstruction,
+    // BarrierStrength (added 2026-05-23, FIXY-V-253) — Tier S.
+    // V-252 plans BarrierStrengthLattice grants (None /
+    // CompilerBarrier / AcquireLoad / ReleaseStore / AcqRel /
+    // SeqCst / FullFence); V-255 wraps them.  Distinct from the
+    // Synchronization axis's MemOrder tag — the standalone HW-fence
+    // ladder for value-site boundary requirements.
+    dim::DimensionAxis::BarrierStrength,
+    // SimdIsa (added 2026-05-23, FIXY-V-253) — Tier L
+    // (NON-DISTRIBUTIVE partial order).  V-250 plans SimdIsaLattice
+    // grants; V-256 wraps them.  Second Tier-L axis (peer to
+    // Representation); x86 trunk × ARM trunk joined only at
+    // Scalar / Portable.  Specifies which ISA-extension the host
+    // must provide for a compiled SIMD kernel to issue.
+    dim::DimensionAxis::SimdIsa,
+    // MemoryScope (added 2026-05-23, FIXY-V-266 / Agent WMEM
+    // keystone) — Tier L (NON-DISTRIBUTIVE partial order).  V-265
+    // plans MemoryScopeLattice grants; safety/ScopedFence.h (V-267)
+    // wraps them.  Third Tier-L axis (peer to Representation +
+    // SimdIsa); accel trunk Thread ⊏ Warp ⊏ Cta ⊏ Cluster ⊏ Gpu ×
+    // ARM trunk Inner(ISH) ⊏ Outer(OSH), joined only at Thread(⊥)
+    // / System(⊤).
+    dim::DimensionAxis::MemoryScope,
+};
+
+static_assert(kAxesWithoutNonDefaultGrants.size() == 13,
+    "FIXY-FOUND-027: cardinality pin.  When the first non-default "
+    "grant ships for one of the 13 listed axes, (a) drop that axis "
+    "from `kAxesWithoutNonDefaultGrants` AND (b) decrement this "
+    "assertion's RHS.  If the assertion fires after a grant ships, "
+    "the gap-list and the cardinality have drifted out of sync — "
+    "fix by aligning both sides.  When a NEW axis lacking a grant "
+    "family lands (i.e., a new FIXY-V-* introduces another "
+    "extension axis), (a) append the new axis to the list AND (b) "
+    "increment this assertion's RHS.");
+
+// FIXY-FOUND-027: programmatic predicate — `axis_has_grant_family`
+// returns true iff axis D has at least one non-default grant tag
+// (i.e., D is NOT in `kAxesWithoutNonDefaultGrants`).  Audit code
+// and forge phase E.RecipeSelect can read this to skip per-axis
+// recipe gating for default-only axes, or to flag bindings that
+// engage a default-only axis "for show" without intent to pin.
+[[nodiscard]] constexpr bool axis_has_grant_family(dim::DimensionAxis D) noexcept {
+    for (auto gap_axis : kAxesWithoutNonDefaultGrants) {
+        if (gap_axis == D) return false;
+    }
+    return true;
+}
+
+// Cardinality pin for the dual predicate — exactly N - 13 axes
+// (where N = DIMENSION_AXIS_COUNT, currently 33) have non-default
+// grant families.  Observability (axis 10) is exempt by design
+// (DimensionAxis::Observability is derived from Effect — Grant.h:535
+// "DimensionAxis::Observability = 10 — derived from Effect"), so it
+// is NOT in the gap list but ALSO has no native grants.  Counting
+// it as "has grant family = false" undercounts; counting as "true"
+// overcounts.  The discipline: the gap list is the ONLY source of
+// truth for missing-grants — Observability's structural-derivation
+// semantics make it incomparable to the gap-list classification.
+//
+// The pin below holds when the gap list size is exactly the count
+// of Crucible-extension axes (20-32) lacking grants.
+static_assert(safety::DIMENSION_AXIS_COUNT - kAxesWithoutNonDefaultGrants.size() == 20,
+    "FIXY-FOUND-027: 20 axes (0-19) ship grant families OR are "
+    "structurally derived (Observability).  When this assertion "
+    "fires the maintainer has either added/removed a DimensionAxis "
+    "or updated the gap list out of sync with the axis enumeration.");
+
+}  // namespace audit
+
 // ─── find_grant_t<D, Grants...> — first Grant with which_dim_v == D ─
 //
 // Walks the pack left-to-right.  The base case (empty pack) returns
