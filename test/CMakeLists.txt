@@ -7076,6 +7076,28 @@ crucible_neg_compile_test(neg_collision_P010_ghost_runtime
 crucible_neg_compile_test(neg_collision_L007_borrow_bg_row
   "L007")
 
+# ─── FIXY-FOUND-066 CollisionCatalog L005 / F001 pack-level neg-compiles ─
+#
+# L005 and F001 are PACK-LEVEL rules — the per-Fn concepts L005_OK<F>
+# and F001_OK<F> are tautologically true because pack-rule semantics
+# require ≥2 Fns to evaluate.  The real enforcement is
+# `pack::no_linear_region_alias_v<Fs...>` and
+# `pack::frame_axis_consistent_v<Fs...>` (re-exported as
+# `fixy::rule::pack::*_v`).  test_fixy_rule_helpers asserts these
+# predicates RETURN false on violations via `static_assert(!*_v<...>)`
+# — that's a positive correctness test of the predicate body.  The HS14
+# fixtures below complement it: they witness that the rule fires as a
+# HARD compile error in production-shape code by spelling
+# `static_assert(pack-rule-v<violating-pack>, "...")` — which fails to
+# compile, satisfying WILL_FAIL=TRUE.  A regression breaking the rule's
+# production discipline would silently pass test_fixy_rule_helpers
+# (because the inverted-assertion fires on its own internal check)
+# but reds these HS14 fixtures.
+crucible_neg_compile_test(neg_pack_L005_linear_region_alias
+  "L005")
+crucible_neg_compile_test(neg_pack_F001_frame_axis_consistent
+  "F001")
+
 # ─── FIXY-V-091 CollisionCatalog F101..F105 neg-compiles (per-rule) ──
 #
 # V-091 ships 5 new CollisionCatalog rules (F101..F105) gating
