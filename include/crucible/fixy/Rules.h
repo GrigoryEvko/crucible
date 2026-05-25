@@ -2,17 +2,25 @@
 
 // ── crucible::fixy::rule — R001..R020 alias projection ─────────────
 //
-// Per misc/16_05_2026_fixy.md §4.  Re-exports the 20 §6.8
+// Per misc/16_05_2026_fixy.md §4.  Re-exports the FIRST 20 §6.8
 // collision rule tags from safety/CollisionCatalog.h under the
-// grep-discoverable `fixy::rule::R<NNN>` namespace.
+// grep-discoverable `fixy::rule::R<NNN>` namespace.  The R001..R020
+// projection is the STABLE fixy-side numbering; the substrate
+// CollisionCatalog has grown beyond these 20 entries (50 rules as
+// of FOUND-072 — see `RuleCode` enum + `catalog_size` for the live
+// total).  Future R-code aliases (R021+) ship here on demand as
+// production callers need them; the substrate-side rule continues
+// to fire via `ValidComposition` regardless of whether it has an
+// `fixy::rule::R<NNN>` alias.
 //
 // Convention: every production binding that wants to reference
 // a §6.8 rule by its compact numeric code writes `fixy::rule::R001`
 // (etc.) rather than the longer
 // `safety::fn::collision::I002_ClassifiedFailPayload`.  The R<NNN>
-// codes are stable across substrate refactors — adding a 21st rule
-// shipped under `safety::fn::collision::*` requires only one
-// additional `using R021 = ...;` line here.
+// codes are stable across substrate refactors — adding a fixy-side
+// R-code for a substrate rule shipped under
+// `safety::fn::collision::*` requires only one additional
+// `using R0NN = ...;` line here.
 //
 // Mapping table (alphabetic letter prefix preserved as the substrate
 // short-code; numeric code R<NNN> is order-of-shipping in fixy's

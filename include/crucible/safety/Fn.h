@@ -15,10 +15,13 @@
 //   Tier basis: routes through DimensionTraits.h (P0-3, #1094) —
 //               TierKind / DimensionAxis / tier_of_axis<D>
 //   ValidComposition gate: routes through safety/CollisionCatalog.h
-//               (P0-2, #1096).  The 12 §6.8 collision rules fire at
-//               Fn instantiation time, including direct
-//               `Fn<X, BadGrades...>` construction that bypasses
-//               `mint_fn`.
+//               (P0-2, #1096).  The §6.8 collision rules (50 entries
+//               as of FOUND-072 — Phase 0 shipped the original 12;
+//               §6.8-extension batches G+H+P+L grew the catalog;
+//               authoritative count is `catalog_size` in
+//               CollisionCatalog.h) fire at Fn instantiation time,
+//               including direct `Fn<X, BadGrades...>` construction
+//               that bypasses `mint_fn`.
 //   Universal mint pattern: `mint_fn(value)` per CLAUDE.md §XXI
 //               (token mint flavor — derives authority from the
 //               caller-supplied per-axis grade pack, no Ctx)
@@ -576,16 +579,20 @@ struct Fn {
     // (`Fn<X, BadGrades...>{}` bypassing the factory) is gated
     // identically to the mint path.  Without this, when
     // CollisionCatalog.h (P0-2) ships, a user could circumvent the
-    // 12 §6.8 rules by writing `Fn<X, BadCombo...>` directly.
+    // §6.8 rules by writing `Fn<X, BadCombo...>` directly.
     //
     // The gate fires with named per-rule diagnostics from
-    // CollisionCatalog.h (I002 / L002 / E044 / I003 / M012 / P002 /
-    // I004 / N002 / L003 / M011 / S010 / S011).
+    // CollisionCatalog.h.  The catalog ships 50 rules across multiple
+    // batches (Phase 0 originals I002 / L002 / E044 / I003 / M012 /
+    // P002 / I004 / N002 / L003 / M011 / S010 / S011; §6.8-extension
+    // batches B / G / H / L / P / S / V / W / F / N etc. — see
+    // `RuleCode` enum in CollisionCatalog.h for the authoritative
+    // list and `catalog_size` for the live cardinality).
     static_assert(ValidComposition<Fn>,
         "Fn<...> grade combination violates a §6.8 collision rule. "
-        "See safety/CollisionCatalog.h for the specific rejected rule "
-        "(I002 / L002 / E044 / I003 / M012 / P002 / I004 / N002 / "
-        "L003 / M011 / S010 / S011).");
+        "See safety/CollisionCatalog.h `RuleCode` enum for the full "
+        "list of rejected combinations (50 entries, batches: I/L/E/"
+        "M/P/N/S/B/H/F/V/W).");
 };
 
 }  // namespace crucible::safety::fn
