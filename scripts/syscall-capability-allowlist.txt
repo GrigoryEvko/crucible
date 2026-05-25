@@ -194,3 +194,11 @@ include/crucible/perf/detail/BpfLoader.h:242 — effects::Init via BpfLoader::re
 
 # ── warden/CpuTopology.h — /sys/devices/system/cpu/isolated probe ─────
 include/crucible/warden/CpuTopology.h:197 — effects::Init via CpuTopology::isolated_cpus (access /sys/.../isolated)
+
+# ── src/fixy/Fs.cpp — Dirfd open (the one un-ctx-gated Fs backend) ─────
+# IO-row O_DIRECTORY|O_NOFOLLOW open() for openat-sandboxing.  Reached
+# via the bare open_dirfd() helper, which (unlike mint_file / sync /
+# commit_atomic, all ctx-gated → inline SYSCALL-CAP-OK markers) takes no
+# Ctx parameter.  Grandfathered pending the fixy-A5-006 ctx-gating of
+# open_dirfd().  The other 5 Fs.cpp syscalls are inline-marked at site.
+src/fixy/Fs.cpp:86 — effects::IO via open_dirfd → do_open_dirfd_impl (O_DIRECTORY|O_NOFOLLOW dirfd open)

@@ -68,7 +68,7 @@ namespace crucible::fixy::fs::detail::impl {
 
 std::expected<::crucible::safety::FileHandle, std::error_code>
 do_open_impl(const char* path, int flags, ::mode_t perms) noexcept {
-    const int fd = ::open(path, flags, perms);
+    const int fd = ::open(path, flags, perms);  // SYSCALL-CAP-OK: do_open_impl, sole caller mint_file ctx-gate (CtxFitsFileMint)
     if (fd < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
@@ -112,16 +112,16 @@ do_sync_impl(int fd, SyncOpTag op) noexcept {
     int rc = 0;
     switch (op) {
         case SyncOpTag::Fdatasync:
-            rc = ::fdatasync(fd);
+            rc = ::fdatasync(fd);  // SYSCALL-CAP-OK: do_sync_impl, sole caller sync<SyncOp> ctx-gate (CtxFitsSync)
             break;
         case SyncOpTag::Fsync:
-            rc = ::fsync(fd);
+            rc = ::fsync(fd);  // SYSCALL-CAP-OK: do_sync_impl, sole caller sync<SyncOp> ctx-gate (CtxFitsSync)
             break;
         case SyncOpTag::FsyncParentDir:
             // The handle MUST be a dirfd (Dirfd type-discipline
             // upstream).  ::fsync() on a non-dir fd returns EINVAL
             // naturally — we let the kernel speak.
-            rc = ::fsync(fd);
+            rc = ::fsync(fd);  // SYSCALL-CAP-OK: do_sync_impl, sole caller sync<SyncOp> ctx-gate (CtxFitsSync)
             break;
         case SyncOpTag::Msync:
             // Mmap surface owns the syscall — Fs.h's signature
@@ -167,7 +167,7 @@ do_commit_atomic_impl(const char* tmp,
     int rc = 0;
     switch (atomicity) {
         case AtomicityTag::Rename:
-            rc = ::rename(tmp, target);
+            rc = ::rename(tmp, target);  // SYSCALL-CAP-OK: do_commit_atomic_impl, sole caller commit_atomic<Atomicity> ctx-gate (CtxFitsCommitAtomic)
             break;
         case AtomicityTag::RenameAt2NoReplace:
             rc = ::renameat2(AT_FDCWD, tmp,
