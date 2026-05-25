@@ -123,6 +123,52 @@ struct splits_into_pack_authoring_witness<
 
 namespace {
 
+// FIXY-FOUND-008 sentinel — pin the by-design reentrancy property of
+// mint_permission_root<Tag>().  The audit ticket framed reentrancy as
+// "defeating linearity"; the doc-comment at permissions/Permission.h
+// ~L640 records the audit conclusion (linearity is per-instance move-
+// only, NOT once-per-program cardinality).  Pin the three structural
+// witnesses here so a regression to the misframed premise reds this TU:
+//   (1) PermissionTag concept rejects non-empty / non-class shapes.
+//   (2) Reentrant root mint compiles for empty-row Tags (by design).
+//   (3) Permission<Tag> is move-only (deleted copy) — the actual
+//       linearity carrier.
+namespace fixy_found_008_pin {
+struct EmptyTag {};
+struct NonEmptyTag { int payload = 0; };
+union UnionTag { int a; };
+
+static_assert(::crucible::safety::PermissionTag<EmptyTag>,
+    "FIXY-FOUND-008: PermissionTag must accept empty class types.");
+static_assert(!::crucible::safety::PermissionTag<int>,
+    "FIXY-FOUND-008: PermissionTag must reject primitives.");
+static_assert(!::crucible::safety::PermissionTag<int*>,
+    "FIXY-FOUND-008: PermissionTag must reject pointers.");
+static_assert(!::crucible::safety::PermissionTag<NonEmptyTag>,
+    "FIXY-FOUND-008: PermissionTag must reject non-empty classes.");
+static_assert(!::crucible::safety::PermissionTag<UnionTag>,
+    "FIXY-FOUND-008: PermissionTag must reject unions.");
+
+// Reentrant mint is by-design: two roots for the same Tag coexist as
+// independent move-only tokens.  Each is independently consumable.
+[[maybe_unused]] constexpr auto reentrant_mint_witness_ = [] {
+    auto a = ::crucible::safety::mint_permission_root<EmptyTag>();
+    auto b = ::crucible::safety::mint_permission_root<EmptyTag>();
+    (void)a; (void)b;
+    return 0;
+}();
+
+static_assert(!std::is_copy_constructible_v<
+                  ::crucible::safety::Permission<EmptyTag>>,
+    "FIXY-FOUND-008: Permission<Tag> must be non-copyable; copy ctor is "
+    "the linearity carrier.  Reentrant mint produces independent move-"
+    "only tokens, not aliasable copies.");
+static_assert(std::is_move_constructible_v<
+                  ::crucible::safety::Permission<EmptyTag>>,
+    "FIXY-FOUND-008: Permission<Tag> must be move-constructible (the "
+    "only legitimate ownership-transfer mechanism).");
+}  // namespace fixy_found_008_pin
+
 void test_permission_compile()      {}
 void test_permission_fork_compile() {}
 void test_permission_row_compile() {

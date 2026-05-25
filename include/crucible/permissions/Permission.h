@@ -636,6 +636,29 @@ constexpr void permission_drop(Permission<Tag>&&) noexcept {
 // only friend access).
 //
 // Cost: returns a 1-byte empty token.  Inlined to a no-op.
+//
+// FIXY-FOUND-008 audit conclusion: the "reentrant mint_permission_root
+// defeats linearity" framing in the audit ticket is incorrect.
+// Linearity in CSL is a PER-INSTANCE move-only property (token can't
+// be copied, double-consume reds via -Werror=use-after-move), NOT a
+// once-per-program cardinality property.  Production deliberately mints
+// multiple roots per Tag:
+//
+//   - KernelCache slot publish: one fresh Permission<KernelCompileTag>
+//     per slot (slots are independent regions; aliasing them would
+//     defeat the cache's content-addressing).
+//   - Per-iteration pipeline: one fresh Permission<RegionTag> per
+//     iteration (each iteration's region is a distinct CSL frame).
+//   - Smoke tests: many independent Permission<smoke_tag> for
+//     parallel sub-region setups.
+//
+// The federation peer subset (tag::FederatedPeer<Org>) IS the once-per-
+// org exception, enforced by the FederationMintAccess passkey: BOTH
+// `mint_permission_root<FederatedPeer<Org>>()` overloads are deleted at
+// the friend-resolution layer (see PermissionRouting block below).  The
+// only legitimate path is `mint_federation_admittance`.  Five neg-
+// compile fixtures pin this reject (neg_fixy_federation_root_mint_
+// disallowed.cpp, neg_fixy_federation_cross_org_split.cpp, etc.).
 template <typename Tag>
 [[nodiscard]] constexpr Permission<Tag> mint_permission_root() noexcept {
     static_assert(permission_row_empty_v<Tag>,
