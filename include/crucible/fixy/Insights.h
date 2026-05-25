@@ -333,21 +333,37 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
 // FIXY-U-110: Regime axis added 2026-05-18 per fixy-A3-009.  Strict
 // default is regime::Unconstrained — the binding makes no claim about
 // operating regime at scope, deferring to the HotPath<Tier, T> value
-// wrapper (which itself defaults to Cold).  Missing engagement disables
-// the §6.8 H001/H002/H003 collision family (HotPath × unbounded-cost,
-// HotPath × trivial-refinement, HotPath × Alloc/IO+unbounded), all of
-// which dispatch on the Regime grade.
+// wrapper (which itself defaults to Cold).
+//
+// FIXY-FOUND-125: the prior doc-block claimed Regime engagement drove
+// H001/H002/H003 dispatch.  That is FALSE.  Today the §6.8 H001/H002/
+// H003 family (HotPath × unbounded-cost; HotPath × pred::True; HotPath
+// × Alloc-or-IO-with-unbounded) dispatches on the `marks_hot_path<F>`
+// marker trait (CollisionCatalog.h:1530-1544), which has ZERO `:
+// std::true_type` specializations in the tree.  No grant — including a
+// (still-unimplemented) `grant::with_regime<Hot>` — opts a binding into
+// `marks_hot_path = true_type`; the marker is dormant, tracked under
+// FIXY-FOUND-067 ("21 of 47 collision rules dormant — markers default
+// false, no production specialization").  The Regime axis is therefore
+// a SCOPE-level engagement audit with no current concept-gate consumer;
+// its sole engagement path is `accept_default_strict_for<Regime>`
+// (positive `grant::with_regime<Tier>` is unimplemented).
 CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::diag::FixyNotEngaged_Regime,
     ::crucible::safety::diag::Severity::Error,
-    "Regime engages operating-tier discipline (safety::HotPath<Tier, T> "
-    "= Hot / Warm / Cold).  Strict default is regime::Unconstrained — "
-    "the binding defers to the value wrapper, which itself defaults to "
-    "Cold.  Missing engagement defeats the §6.8 H001/H002/H003 family "
-    "(HotPath × unbounded-cost; HotPath × pred::True; HotPath × "
-    "Alloc-or-IO-with-unbounded), all dispatched on the Regime grade.",
-    "Grants pack omits grant::with_regime<Tier> AND omits "
-    "accept_default_strict_for<Regime>.",
+    "Regime engages operating-tier discipline at the SCOPE level "
+    "(grants-pack), parallel to the safety::HotPath<Tier, T> VALUE "
+    "wrapper.  Strict default is regime::Unconstrained — the binding "
+    "defers to the value wrapper, which itself defaults to Cold.  "
+    "Engagement is an audit-trail discipline: the §6.8 H001/H002/H003 "
+    "collision family currently dispatches on the marks_hot_path<F> "
+    "marker trait (NOT on the Regime grade — FIXY-FOUND-125 correction), "
+    "and that marker is dormant pending FIXY-FOUND-067.  When a positive "
+    "grant::with_regime<Hot> ships, it is expected to specialize "
+    "marks_hot_path<F> = true_type for the binding's F type, at which "
+    "point H001/H002/H003 will fire as documented.",
+    "Grants pack omits accept_default_strict_for<Regime> (no positive "
+    "grant::with_regime<Tier> ships today; engagement is opt-out only).",
     "grant::accept_default_strict_for<dim::DimensionAxis::Regime>",
     "fixy::fn<T, /* no Regime grant */, ...>");
 
