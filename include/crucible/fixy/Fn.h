@@ -2449,12 +2449,69 @@ static_assert(sizeof(stance::RealtimeHot<int>) == sizeof(int),
 
 namespace crucible::safety::diag {
 
+// FIXY-FOUND-004 closure — per-grant axis-canonicalized fold helper.
+//
+// Without this, fixy::fn<T, hw::msr<0x10>> and fixy::fn<T,
+// accept_default_strict_for<HwInstruction>> resolve to identical
+// `safety_fn_t` (the 13 fixy-only axes — Synchronization=20 ..
+// MemoryScope=32 — do NOT project onto the 19-axis safety::fn::Fn<>
+// surface).  The safety_fn_t row_hash therefore collapses them to the
+// same federation cache slot.  Exploit: peer downloading kernel B
+// silently executes A's privileged-MSR bytes.
+//
+// Fix: combine each grant's `stable_type_id` into the row_hash in
+// CANONICAL axis order (iterate DimensionAxis 0..32, fold any grant
+// routing to that axis).  Canonical order makes the fold permutation-
+// invariant for axis-distinct grants (UniqueEngagementPerAxis already
+// ensures at most one grant per axis at the fixy::fn level).  Each
+// grant's stable_type_id uniquely identifies its (axis, value)
+// position — `hw::msr<0x10>` and `hw::msr<0x20>` are distinct types
+// → distinct ids → distinct folded hashes.
+//
+// Isolated as a free function so the witness in the self-test block
+// can exercise it without instantiating a full fixy::fn (which would
+// trigger every IsAccepted / AllDimsEngaged / ValidComposition gate).
+namespace detail {
+
+template <typename... Grants>
+[[nodiscard]] consteval std::uint64_t
+fold_canonicalized_grants_hash(std::uint64_t seed) noexcept {
+    std::uint64_t h = seed;
+    // Iterate every DimensionAxis enumerator in numeric order.  For
+    // each axis K, any grant in `Grants...` routing to axis K updates
+    // `h` via combine_ids(h, stable_type_id<G>).  Non-grant types
+    // short-circuit via IsGrantTag_v guard.  Result depends only on
+    // (axis, grant-type) pairs in canonical-axis order, NOT on the
+    // user's source-order of the Grants pack.
+    constexpr int kAxisCount = 33;  // DimensionAxis enumerator count.
+    for (int axis = 0; axis < kAxisCount; ++axis) {
+        ((::crucible::fixy::grant::IsGrantTag_v<Grants>
+              && static_cast<int>(
+                     ::crucible::fixy::grant::which_dim_v<Grants>)
+                     == axis
+              ? (h = detail::combine_ids(
+                     h, ::crucible::safety::diag::stable_type_id<Grants>),
+                 true)
+              : false),
+         ...);
+    }
+    return h;
+}
+
+}  // namespace detail
+
 template <typename Type, typename... Grants>
 struct row_hash_contribution<::crucible::fixy::fn<Type, Grants...>> {
-    static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FIXY_FN_TAG,
-        row_hash_contribution_v<
-            typename ::crucible::fixy::fn<Type, Grants...>::safety_fn_t>);
+    static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
+        std::uint64_t h = detail::combine_ids(
+            detail::WRAPPER_FIXY_FN_TAG,
+            row_hash_contribution_v<
+                typename ::crucible::fixy::fn<Type, Grants...>::safety_fn_t>);
+        // FIXY-FOUND-004: fold per-grant identity so the 13 fixy-only
+        // axes (which never project onto safety_fn_t) discriminate at
+        // the federation cache layer.
+        return detail::fold_canonicalized_grants_hash<Grants...>(h);
+    }();
 };
 
 // ─── Self-test block — Agent 4's verified bug closes ──────────────
@@ -2534,6 +2591,68 @@ static_assert(row_hash_contribution_v<PureLinear<int>> != 0);
 // RowHash sentinel discipline — fixy::fn's hash is NOT the cache's
 // dedicated sentinel slot value.
 static_assert(!row_hash_of_v<PureLinear<int>>.is_sentinel());
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-FOUND-004 — 13 fixy-only axes contribute to row_hash ─────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Tests fold_canonicalized_grants_hash directly so the witness does
+// not depend on a full fixy::fn instantiation (which would require
+// every IsAccepted / AllDimsEngaged gate to be satisfied — too high
+// a setup cost for a row-hash distinctness test).  Each assertion
+// pins a (Grants pack) → (distinct hash) relationship that closes a
+// specific kernel-substitution attack vector.
+
+// (1) HwInstruction axis: two different MSR IDs (privileged read of
+// different model-specific registers) on the same axis must produce
+// distinct folded hashes — defeats `hw::msr<0x10>` vs `hw::msr<0x20>`
+// federation slot collision.
+static_assert(
+    detail::fold_canonicalized_grants_hash<
+        ::crucible::fixy::grant::hw::msr<0x10u>>(0ULL)
+    != detail::fold_canonicalized_grants_hash<
+        ::crucible::fixy::grant::hw::msr<0x20u>>(0ULL),
+    "FIXY-FOUND-004: distinct MSR IDs on HwInstruction axis must "
+    "produce distinct grant-fold contributions.  Kernel-substitution "
+    "exploit if equal.");
+
+// (2) HwInstruction axis: privileged `hw::msr<...>` vs the strict
+// default `accept_default_strict_for<HwInstruction>` (kernel uses
+// default safe-ISA only) must produce DISTINCT row_hashes.  This is
+// the principal Org A vs Org B exploit from the task description.
+static_assert(
+    detail::fold_canonicalized_grants_hash<
+        ::crucible::fixy::grant::hw::msr<0x10u>>(0ULL)
+    != detail::fold_canonicalized_grants_hash<
+        ::crucible::fixy::grant::accept_default_strict_for<
+            ::crucible::fixy::dim::DimensionAxis::HwInstruction>>(0ULL),
+    "FIXY-FOUND-004: privileged hw::msr<...> grant vs strict default "
+    "MUST route to distinct federation cache slots.  Without this, "
+    "peer downloading default-safe kernel could silently execute "
+    "WRMSR bytes from privileged-msr kernel publisher.");
+
+// (3) Empty Grants pack collapses to identity fold (h == seed).
+static_assert(
+    detail::fold_canonicalized_grants_hash<>(0xDEADBEEFULL) == 0xDEADBEEFULL,
+    "FIXY-FOUND-004: empty Grants pack must fold to identity (seed "
+    "unchanged).");
+
+// (4) Permutation invariance: same grants in different source order
+// must produce the same canonical fold.  Canonical-axis ordering is
+// the load-bearing property — protects against compile-time pack
+// permutation breaking federation cache lookups.
+static_assert(
+    detail::fold_canonicalized_grants_hash<
+        ::crucible::fixy::grant::hw::msr<0x10u>,
+        ::crucible::fixy::grant::accept_default_strict_for<
+            ::crucible::fixy::dim::DimensionAxis::SimdIsa>>(0ULL)
+    == detail::fold_canonicalized_grants_hash<
+        ::crucible::fixy::grant::accept_default_strict_for<
+            ::crucible::fixy::dim::DimensionAxis::SimdIsa>,
+        ::crucible::fixy::grant::hw::msr<0x10u>>(0ULL),
+    "FIXY-FOUND-004: grant fold MUST be canonical-axis-ordered so "
+    "source-order permutations of the same Grants pack collapse to "
+    "the same federation cache slot.");
 
 // ═════════════════════════════════════════════════════════════════════
 // ── FIXY-FOUND-045 — with<E1, E2> permutation invariance ──────────
