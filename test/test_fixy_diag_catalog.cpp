@@ -283,6 +283,65 @@ static_assert(found_029_drift_witness::all_descriptions_clean(
     "(`safety::DIMENSION_AXIS_COUNT` or "
     "`fixy::diag::kFixyCatalogDocstringCardinality`).");
 
+// ─── FIXY-FOUND-031: cross-axis Type-advice drift guard ────────────
+//
+// Pre-FOUND-031, the CRUCIBLE_FIXY_DUPLICATE_TAG macro hardcoded the
+// Type-axis-specific advice "explicitly writing accept_default_strict_
+// for<Type> is FORBIDDEN ...  Drop the explicit Type marker" into
+// EVERY FixyDuplicate_<X> tag's remediation field (33 tags).  For the
+// 32 non-Type axes (Refinement, Usage, Effect, ..., MemoryScope), this
+// advice is nonsensical: those axes have no implicit auto-injection,
+// so an explicit engagement marker is not redundant with anything.
+//
+// FOUND-031 closure: split the macro into a generic 2-arg form (used
+// by 32 axes, empty extra remediation) and a 3-arg _EX form (used
+// only by Type with the auto-injection note).  The fold below walks
+// every FixyDuplicate_<X> for X != Type (index 0 in the bijection)
+// and asserts the remediation contains NEITHER "Drop the explicit
+// Type marker" NOR "Type marker would trigger a duplicate".  If a
+// future macro rewrite leaks Type-specific advice back into the
+// generic form, this fires immediately.
+
+namespace found_031_drift_witness {
+
+template <std::size_t I>
+[[nodiscard]] inline consteval bool no_cross_axis_type_advice() noexcept
+{
+    if constexpr (I == 0) {
+        // Index 0 is the Type axis itself, where the Type-marker note
+        // is legitimately scoped.  Skip — the witness targets cross-
+        // axis bleed only.
+        return true;
+    } else {
+        using Tag = std::tuple_element_t<I, fd::FixyDuplicateCatalog>;
+        constexpr std::string_view rem = Tag::remediation;
+        return rem.find("Drop the explicit Type marker") == std::string_view::npos
+            && rem.find("Type marker would trigger") == std::string_view::npos
+            && rem.find("fixy::fn implicitly engages Type") == std::string_view::npos;
+    }
+}
+
+template <std::size_t... Is>
+[[nodiscard]] inline consteval bool all_non_type_remediations_clean(
+    std::index_sequence<Is...>) noexcept
+{
+    return (no_cross_axis_type_advice<Is>() && ...);
+}
+
+}  // namespace found_031_drift_witness
+
+static_assert(found_031_drift_witness::all_non_type_remediations_clean(
+    std::make_index_sequence<fd::fixy_duplicate_catalog_size>{}),
+    "FIXY-FOUND-031: a non-Type FixyDuplicate_<Axis> tag's remediation "
+    "reintroduced Type-axis-specific advice ('Drop the explicit Type "
+    "marker', 'Type marker would trigger a duplicate', or 'fixy::fn "
+    "implicitly engages Type').  This advice is only meaningful on the "
+    "Type axis (the sole axis with implicit auto-injection via "
+    "ImplicitTypeMarker, Reject.h:1468-1469).  Use the 2-arg "
+    "CRUCIBLE_FIXY_DUPLICATE_TAG macro for non-Type axes (empty extra "
+    "remediation); use CRUCIBLE_FIXY_DUPLICATE_TAG_EX only for Type "
+    "with the auto-injection note as the third argument.");
+
 int main() {
     return 0;
 }

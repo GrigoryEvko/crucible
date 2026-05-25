@@ -204,7 +204,25 @@ CRUCIBLE_FIXY_NOT_ENGAGED_TAG(MemoryScope,
 // was misleading — it always said "axis not engaged" even when the
 // real failure was UniqueEngagementPerAxis (or AllGrantsWellFormed).
 
-#define CRUCIBLE_FIXY_DUPLICATE_TAG(AxisName, AxisDesc)                            \
+// FIXY-FOUND-031: split the macro into a generic 2-arg form + an _EX
+// form that accepts axis-specific extra remediation.  Pre-FOUND-031,
+// the macro's `remediation` field embedded Type-axis-specific advice
+// ("explicitly writing accept_default_strict_for<Type> is FORBIDDEN
+// because fixy::fn implicitly engages Type") inside the prose for
+// EVERY axis — readers of FixyDuplicate_Refinement, FixyDuplicate_
+// MemoryScope, etc. saw the Type-marker auto-injection note as
+// remediation advice, which is at best confusing and at worst
+// misleading (those axes have no auto-injection, so the "drop the
+// explicit Type marker" advice doesn't apply).
+//
+// Closure shape: keep the simple 2-arg macro identical (most axes
+// need no extra remediation), introduce the 3-arg _EX form that
+// concatenates ExtraRemediation to the universal "remove all but one"
+// prose.  Type's CRUCIBLE_FIXY_DUPLICATE_TAG invocation switches to
+// _EX with the auto-injection note; the other 32 stay on the 2-arg
+// form unchanged.
+
+#define CRUCIBLE_FIXY_DUPLICATE_TAG_EX(AxisName, AxisDesc, ExtraRemediation)       \
     struct FixyDuplicate_##AxisName final : ::crucible::safety::diag::tag_base {  \
         static constexpr ::std::string_view name =                                  \
             "FixyDuplicate_" #AxisName;                                             \
@@ -216,17 +234,24 @@ CRUCIBLE_FIXY_NOT_ENGAGED_TAG(MemoryScope,
             "bypass any future tag-vs-tag disagreement check (FIXY-AUDIT-A3).";     \
         static constexpr ::std::string_view remediation =                           \
             "Remove all but one of the grants engaging '" #AxisName "' from the "   \
-            "Grants pack.  Note: explicitly writing `grant::accept_default_"        \
-            "strict_for<dim::DimensionAxis::Type>` is FORBIDDEN because "           \
-            "fixy::fn implicitly engages Type (FIXY-AUDIT-A7) — that explicit "     \
-            "Type marker would trigger a duplicate on the Type axis.  Drop the "    \
-            "explicit Type marker.";                                                \
+            "Grants pack." ExtraRemediation;                                        \
     };                                                                              \
     static_assert(::crucible::safety::diag::is_diagnostic_class_v<                  \
                       FixyDuplicate_##AxisName>,                                    \
         "FixyDuplicate_" #AxisName " must inherit safety::diag::tag_base.")
 
-CRUCIBLE_FIXY_DUPLICATE_TAG(Type,           "the function type itself");
+#define CRUCIBLE_FIXY_DUPLICATE_TAG(AxisName, AxisDesc)                            \
+    CRUCIBLE_FIXY_DUPLICATE_TAG_EX(AxisName, AxisDesc, "")
+
+// FIXY-FOUND-031: Type is the only axis with implicit auto-injection,
+// so the Type-marker-conflict advice belongs ONLY here, not in the 32
+// other FixyDuplicate_* tags' remediation.
+CRUCIBLE_FIXY_DUPLICATE_TAG_EX(Type,        "the function type itself",
+    "  Note: explicitly writing `grant::accept_default_strict_for<dim::"
+    "DimensionAxis::Type>` is FORBIDDEN because fixy::fn implicitly "
+    "engages Type (FIXY-AUDIT-A7) — that explicit Type marker would "
+    "trigger a duplicate on the Type axis.  Drop the explicit Type "
+    "marker.");
 CRUCIBLE_FIXY_DUPLICATE_TAG(Refinement,     "value-level predicate");
 CRUCIBLE_FIXY_DUPLICATE_TAG(Usage,          "linear / affine / copy / ghost");
 CRUCIBLE_FIXY_DUPLICATE_TAG(Effect,         "Bg / IO / Alloc / Block / etc.");
