@@ -1048,6 +1048,150 @@ static_assert(!FpReassociateLattice::leq(FpReassociate::UnrestrictedRewrite, FpR
 static_assert( FpConstantRoundingLattice::leq(FpConstantRounding::SameAsRuntime, FpConstantRounding::AlwaysRTZ));
 static_assert(!FpConstantRoundingLattice::leq(FpConstantRounding::AlwaysRTZ, FpConstantRounding::SameAsRuntime));
 
+// ── FIXY-FOUND-076 audit pin: FpMode sub-lattice convention sweep ────
+//
+// FpModeLattice is a PRODUCT of 11 sub-lattices, each its own
+// ChainLatticeOps<...> struct (no top-level join/meet on FpModeLattice
+// itself).  Each sub-axis carries its own chain direction; this audit
+// pins each one's relationship to the cross-tree "par=join,
+// strictest-wins" contract (DimensionTraits.h L231-235).
+//
+// "Strictest" here uses the FOUND-076 / FOUND-009 / FOUND-010 lens:
+// the most-restrictive admission policy = the IEEE-strict / BITEXACT-
+// compatible / DetSafe-safe choice.  Forge phase E.RecipeSelect uses
+// these sub-lattices to gate NumericalRecipe selection — BITEXACT
+// recipes require the strictest claim on each sub-axis.
+//
+// AUDIT SUMMARY (2026-05-25):
+//
+//   ALIGNED (strictest at chain-top — JOIN returns strictest):
+//     1. FpRounding — local doc claims RoundToNearestAwayZero is "most-
+//        IEEE-compliant" at chain-top (debatable; canonical IEEE default
+//        is RoundToNearestEven, ordinal 3 mid-chain).  Per LOCAL doc
+//        claim ALIGNED; per canonical IEEE reading the chain has no
+//        clean "strictest" anchor and the cross-tree contract is
+//        misleading.  Pinned both directions.
+//
+//   N/A (no strictness ordering — independent enumeration):
+//     8. FpComplexLayout — Interleaved / SplitRealImag / SplitImagReal
+//        are orthogonal memory-layout choices, not a strictness ladder.
+//        The chain pin (Interleaved ⊏ SplitImagReal) is ordinal-only;
+//        no semantic strictness reading applies.
+//
+//   INVERTED (strictest at chain-bottom — MEET returns strictest):
+//     2. FpFtz — PreserveSubnormals (bottom, IEEE-strict) → FlushToZero
+//        (top, lossy).  BITEXACT requires PreserveSubnormals.
+//     3. FpContract — Off (bottom, no contraction) → Fast (top, fused).
+//        BITEXACT requires Off.
+//     4. FpTrapMask — AllMasked (bottom, DetSafe-safe) → UnmaskedInexact
+//        (top, signals).  Crucible default is AllMasked (silent).
+//     5. FpDenormalInput — HonorDenormals (bottom, IEEE) → DenormalsAreZero
+//        (top, lossy).  BITEXACT requires HonorDenormals.
+//     6. FpNanPolicy — PropagateQuiet (bottom, IEEE) → FastNaN (top,
+//        non-IEEE).  BITEXACT requires PropagateQuiet.
+//     7. FpInfPolicy — PropagateInfinity (bottom, IEEE) → FlushInfToFinite
+//        (top, non-IEEE).  BITEXACT requires PropagateInfinity.
+//     9. FpLibmPolicy — ScalarLibm (bottom) → FastApproxAm (top).  Most
+//        bit-stable choice is Polynomial (off-chain ordinal 6) per
+//        V-095; among chain elements ScalarLibm is the strict choice.
+//    10. FpReassociate — Forbidden (bottom) → UnrestrictedRewrite (top).
+//        BITEXACT requires Forbidden.
+//    11. FpConstantRounding — SameAsRuntime (bottom) → AlwaysRTZ (top).
+//        BITEXACT requires SameAsRuntime (consistent with runtime).
+//
+// SAME family of defect as FOUND-009/010 + FOUND-076 PART A/B/C —
+// Forge phase E.RecipeSelect aggregating two ops' FP-mode contributions
+// via JOIN silently inherits the LOOSEST FP behavior across 9 of 11
+// sub-axes.  Strictest-floor reading requires MEET on these 9 sub-axes.
+// BITEXACT_STRICT / BITEXACT_TC recipes MUST gate via MEET on each
+// inverted sub-axis (or compose via the leq check against the strict
+// floor directly).
+//
+// Polarity-witness pins per sub-lattice — a refactor inverting any
+// chain direction reds the corresponding assert.
+
+// FpRounding — ALIGNED per local doc; pin both directions.
+static_assert(FpRoundingLattice::join(FpRounding::RoundToZero,
+                                      FpRounding::RoundToNearestAwayZero)
+              == FpRounding::RoundToNearestAwayZero,
+    "FIXY-FOUND-076: FpRoundingLattice's JOIN returns top "
+    "(RoundToNearestAwayZero) — per local doc L113-115 the 'most-IEEE-"
+    "compliant' choice.  Cross-tree 'strictest-wins via JOIN' holds "
+    "under the local interpretation, though the canonical IEEE default "
+    "(RoundToNearestEven) sits mid-chain — readers should consult the "
+    "doc-block for the rationale.");
+static_assert(FpRoundingLattice::meet(FpRounding::RoundToZero,
+                                      FpRounding::RoundToNearestAwayZero)
+              == FpRounding::RoundToZero,
+    "FIXY-FOUND-076: FpRoundingLattice's MEET returns bottom "
+    "(RoundToZero) — cheapest rounding mode, loses IEEE guarantees.");
+
+// FpFtz / FpContract / FpTrapMask / FpDenormalInput / FpNanPolicy /
+// FpInfPolicy / FpLibmPolicy / FpReassociate / FpConstantRounding —
+// all INVERTED.  Strictest = chain-bottom.  Pin polarity on each.
+static_assert(FpFtzLattice::meet(FpFtz::PreserveSubnormals, FpFtz::FlushToZero)
+              == FpFtz::PreserveSubnormals,
+    "FIXY-FOUND-076: FpFtzLattice INVERTED — MEET returns "
+    "PreserveSubnormals (bottom = IEEE-strict).  Forge phase E.RecipeSelect "
+    "MUST call MEET to enforce BITEXACT's PreserveSubnormals floor.");
+static_assert(FpContractLattice::meet(FpContract::Off, FpContract::Fast)
+              == FpContract::Off,
+    "FIXY-FOUND-076: FpContractLattice INVERTED — MEET returns Off "
+    "(bottom = no contraction).  BITEXACT recipes MUST gate via MEET.");
+static_assert(FpTrapMaskLattice::meet(FpTrapMask::AllMasked, FpTrapMask::UnmaskedInexact)
+              == FpTrapMask::AllMasked,
+    "FIXY-FOUND-076: FpTrapMaskLattice INVERTED — MEET returns AllMasked "
+    "(bottom = Crucible DetSafe-safe default).");
+static_assert(FpDenormalInputLattice::meet(FpDenormalInput::HonorDenormals,
+                                            FpDenormalInput::DenormalsAreZero)
+              == FpDenormalInput::HonorDenormals,
+    "FIXY-FOUND-076: FpDenormalInputLattice INVERTED — MEET returns "
+    "HonorDenormals (bottom = IEEE-strict).");
+static_assert(FpNanPolicyLattice::meet(FpNanPolicy::PropagateQuiet, FpNanPolicy::FastNaN)
+              == FpNanPolicy::PropagateQuiet,
+    "FIXY-FOUND-076: FpNanPolicyLattice INVERTED — MEET returns "
+    "PropagateQuiet (bottom = IEEE NaN propagation).");
+static_assert(FpInfPolicyLattice::meet(FpInfPolicy::PropagateInfinity,
+                                        FpInfPolicy::FlushInfToFinite)
+              == FpInfPolicy::PropagateInfinity,
+    "FIXY-FOUND-076: FpInfPolicyLattice INVERTED — MEET returns "
+    "PropagateInfinity (bottom = IEEE Inf propagation).");
+static_assert(FpLibmPolicyLattice::meet(FpLibmPolicy::ScalarLibm, FpLibmPolicy::FastApproxAm)
+              == FpLibmPolicy::ScalarLibm,
+    "FIXY-FOUND-076: FpLibmPolicyLattice INVERTED on the chain — MEET "
+    "returns ScalarLibm (chain-bottom).  NOTE: most bit-stable is the "
+    "OFF-CHAIN Polynomial (ordinal 6) per V-095; chain MEET captures "
+    "only chain-bound participants.");
+static_assert(FpReassociateLattice::meet(FpReassociate::Forbidden,
+                                          FpReassociate::UnrestrictedRewrite)
+              == FpReassociate::Forbidden,
+    "FIXY-FOUND-076: FpReassociateLattice INVERTED — MEET returns "
+    "Forbidden (bottom = BITEXACT requires).");
+static_assert(FpConstantRoundingLattice::meet(FpConstantRounding::SameAsRuntime,
+                                               FpConstantRounding::AlwaysRTZ)
+              == FpConstantRounding::SameAsRuntime,
+    "FIXY-FOUND-076: FpConstantRoundingLattice INVERTED — MEET returns "
+    "SameAsRuntime (bottom = consistent with runtime Rounding).");
+
+// FpComplexLayout — N/A.  The chain (Interleaved < SplitRealImag <
+// SplitImagReal) is ordinal-only; semantic readings DO NOT line up
+// with strictness.  Pin both extremes so a refactor inverting the
+// ordinal order reds atomically.
+static_assert(FpComplexLayoutLattice::join(FpComplexLayout::Interleaved,
+                                           FpComplexLayout::SplitImagReal)
+              == FpComplexLayout::SplitImagReal,
+    "FIXY-FOUND-076: FpComplexLayoutLattice is N/A for the strictness "
+    "reading — the chain (Interleaved < SplitRealImag < SplitImagReal) "
+    "is ordinal-only; Interleaved/Split layouts are independent "
+    "memory-layout choices, NOT a strictness ladder.  Cross-tree "
+    "'strictest-wins via JOIN' does not apply.  Use leq for ordinal "
+    "comparison only.");
+static_assert(FpComplexLayoutLattice::meet(FpComplexLayout::Interleaved,
+                                           FpComplexLayout::SplitImagReal)
+              == FpComplexLayout::Interleaved,
+    "FIXY-FOUND-076: FpComplexLayoutLattice MEET — ordinal-min "
+    "(Interleaved).  Polarity pin only; no strictness reading.");
+
 // ── At<T> singleton — empty element_type for EBO collapse ───────────
 //
 // V-090 will use these singletons inside `Graded<Absolute, At<T>, P>`
