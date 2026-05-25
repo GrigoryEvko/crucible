@@ -366,6 +366,85 @@ template <typename T, typename... Args>
 static_assert(sizeof(Secret<int>)               == sizeof(int));
 static_assert(sizeof(Secret<unsigned long long>) == sizeof(unsigned long long));
 
+// ── FIXY-FOUND-007 sentinel: Comonad-discipline API-surface lock ───
+//
+// The Graded substrate's `peek_mut() / swap()` gate
+// (Graded.h:354/360/626/921) is `AbsoluteModality<M> || std::is_empty_v<
+// grade_type>`.  The empty-grade fallthrough is INTENTIONAL for
+// Tagged<T, Source> (RelativeMonad with type-level Source — content
+// mutation preserves provenance; Tagged::value_mut() is the public
+// face of this).  For Secret<T> — Comonad modality — the same
+// fallthrough is admitted ONLY because Secret USES it internally
+// (write-only path in `zeroize()` overwriting bytes pre-destruction)
+// and DOES NOT expose it publicly.
+//
+// The Comonad discipline is: the only escape from classification is
+// the named counit (`extract` via `declassify<Policy>()`).  Returning
+// a mutable T& from a public method on Secret<T> would let callers
+// read the classified payload through ordinary aliasing — bypassing
+// the `declassify<secret_policy::*>` audit trail (the very thing
+// `grep declassify<secret_policy::` enumerates as the load-bearing
+// information-flow audit).
+//
+// Today Secret's public surface is locked by construction: there is
+// no peek_mut / value_mut / mutable_ref / data_mut / get_mut.  The
+// sentinels below convert that into a structural invariant: any
+// future PR that adds a mutable-access accessor reds the build with
+// the FOUND-007 tag and the exact reason.  Reactive — peek_mut isn't
+// banned from existing on the substrate, just on the wrapper face.
+namespace detail::secret_api_lock {
+
+template <typename S>
+concept ExposesPeekMut = requires(S& s) { s.peek_mut(); };
+template <typename S>
+concept ExposesValueMut = requires(S& s) { s.value_mut(); };
+template <typename S>
+concept ExposesMutableRef = requires(S& s) { s.mutable_ref(); };
+template <typename S>
+concept ExposesDataMut = requires(S& s) { s.data_mut(); };
+template <typename S>
+concept ExposesGetMut = requires(S& s) { s.get_mut(); };
+
+}  // namespace detail::secret_api_lock
+
+static_assert(
+    !detail::secret_api_lock::ExposesPeekMut<Secret<int>>,
+    "FIXY-FOUND-007: Secret<T>::peek_mut() must NOT exist publicly.  "
+    "The Graded substrate admits peek_mut on Comonad-empty via the "
+    "(AbsoluteModality || empty grade) gate (Graded.h:354), but the "
+    "Comonad discipline requires that the only escape from a "
+    "classified value is the named counit `declassify<Policy>()`.  "
+    "A public peek_mut bypasses the `grep declassify<secret_policy::` "
+    "audit trail.  If you need write-only access for a "
+    "secure-overwrite path, do it INTERNALLY (see zeroize()), not "
+    "through the wrapper's public face.");
+static_assert(
+    !detail::secret_api_lock::ExposesValueMut<Secret<int>>,
+    "FIXY-FOUND-007: Secret<T>::value_mut() must NOT exist — see "
+    "ExposesPeekMut diagnostic.  Tagged<T, Source>::value_mut() is "
+    "intentional (RelativeMonad, content mutation preserves "
+    "provenance); the analogous name on Secret violates Comonad "
+    "discipline.  Routes that need mutability either (a) call "
+    "transform() to derive a new Secret, (b) declassify and re-wrap, "
+    "or (c) use the internal zeroize() path for byte-level overwrite.");
+static_assert(
+    !detail::secret_api_lock::ExposesMutableRef<Secret<int>>,
+    "FIXY-FOUND-007: Secret<T>::mutable_ref() must NOT exist.  Any "
+    "public method returning T& or T* from a Comonad-classified "
+    "value bypasses the named-counit discipline — see ExposesPeekMut.");
+static_assert(
+    !detail::secret_api_lock::ExposesDataMut<Secret<int>>,
+    "FIXY-FOUND-007: Secret<T>::data_mut() must NOT exist — see "
+    "ExposesPeekMut.  Container-style data_mut() raw-pointer accessors "
+    "leak the classified payload through pointer-iterator idioms "
+    "without an audit-trail discharging policy tag.");
+static_assert(
+    !detail::secret_api_lock::ExposesGetMut<Secret<int>>,
+    "FIXY-FOUND-007: Secret<T>::get_mut() must NOT exist — see "
+    "ExposesPeekMut.  optional/variant-style get_mut() accessors are "
+    "ergonomic mutable extractors; on a Comonad wrapper they bypass "
+    "declassify<Policy>().");
+
 namespace detail::secret_self_test {
 
 // ── Runtime smoke test ──────────────────────────────────────────────
