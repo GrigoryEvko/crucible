@@ -110,6 +110,12 @@
 #include <crucible/algebra/lattices/WaitLattice.h>       // FOUND-G23  — shipped
 #include <crucible/algebra/lattices/WitnessLattice.h>    // FIXY-V-053 — shipped (4-tier proof-strength chain)
 
+// FIXY-FOUND-046 — per-enumerator underlying-value pin sweep for every
+// lattice enum consumed by row_hash_contribution_v.  Pins ride this
+// umbrella header so the static_asserts fire on every TU that includes
+// AllLattices.h (the umbrella all production sites pull).
+#include <crucible/algebra/lattices/EnumValuePins.h>
+
 namespace crucible::algebra::lattices {
 
 // ── Forward declarations (full definitions land per ALGEBRA-8..15) ──
