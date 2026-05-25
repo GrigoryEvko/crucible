@@ -597,11 +597,62 @@ template <> struct which_dim<mut_append>    : std::integral_constant<dim::Dimens
 template <> struct which_dim<mut_monotonic> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
 
 // ── DimensionAxis::Reentrancy = 16 relaxations ─────────────────────
+//
+// FIXY-FOUND-036: naming convention.  ControlFlow grants live under
+// `grant::ctrl::*` (FIXY-V-244) — e.g. `grant::ctrl::throws`,
+// `grant::ctrl::rationale`.  Reentrancy grants live at top-level
+// `grant::*` for historical reasons (`grant::reentrant`,
+// `grant::coroutine`).  This asymmetry was an audit-grep hazard:
+// `grant::coroutine` resolves to the REENTRANCY axis, NOT a
+// ControlFlow "may use C++ coroutines" grant — but a reader seeing
+// only the unqualified spelling cannot tell which axis it engages.
+//
+// FOUND-036 closure provides a `grant::reentrancy::*` sub-namespace
+// alias matching the ctrl:: pattern.  Production sites SHOULD prefer
+// the qualified spelling (`grant::reentrancy::coroutine`,
+// `grant::reentrancy::reentrant`); the top-level forms remain valid
+// for backwards compatibility.  A future `grant::ctrl::coroutine_*`
+// grant (when ControlFlow needs to express "callable suspends via
+// co_yield/co_await") would land WITHOUT colliding because the
+// namespace prefix disambiguates.
 struct reentrant final : grant_base {};
 struct coroutine final : grant_base {};
 
 template <> struct which_dim<reentrant> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Reentrancy> {};
 template <> struct which_dim<coroutine> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Reentrancy> {};
+
+// FIXY-FOUND-036: canonical sub-namespace, mirroring grant::ctrl::*
+// for ControlFlow.  New call sites should prefer this qualified
+// spelling; top-level `grant::coroutine` / `grant::reentrant` remain
+// valid aliases for backwards-compat with FIXY-U-* production sites.
+namespace reentrancy {
+    using reentrant = ::crucible::fixy::grant::reentrant;
+    using coroutine = ::crucible::fixy::grant::coroutine;
+}  // namespace reentrancy
+
+// Cross-axis non-collision sentinel: both spellings (top-level and
+// `reentrancy::`) MUST project to the same Reentrancy axis.  If a
+// future refactor accidentally re-homes one to a different axis,
+// or — worse — adds a `grant::ctrl::coroutine` that ALSO claims
+// Reentrancy, the dispatch ambiguity would fire here at compile
+// time before the regression can ship.
+static_assert(std::is_same_v<reentrancy::coroutine, coroutine>,
+    "FIXY-FOUND-036: grant::reentrancy::coroutine must alias the "
+    "top-level grant::coroutine — sub-namespace is a re-export, "
+    "not a separate type.");
+static_assert(std::is_same_v<reentrancy::reentrant, reentrant>,
+    "FIXY-FOUND-036: grant::reentrancy::reentrant must alias the "
+    "top-level grant::reentrant — sub-namespace is a re-export.");
+static_assert(which_dim<reentrancy::coroutine>::value
+              == dim::DimensionAxis::Reentrancy,
+    "FIXY-FOUND-036: grant::reentrancy::coroutine must resolve to "
+    "DimensionAxis::Reentrancy (forward-looking guard against a "
+    "future grant::ctrl::coroutine that might silently claim the "
+    "same name on a different axis).");
+static_assert(which_dim<reentrancy::reentrant>::value
+              == dim::DimensionAxis::Reentrancy,
+    "FIXY-FOUND-036: grant::reentrancy::reentrant must resolve to "
+    "DimensionAxis::Reentrancy.");
 
 // ── DimensionAxis::Size = 17 relaxations ───────────────────────────
 template <auto Depth> struct sized_at final : grant_base {};
