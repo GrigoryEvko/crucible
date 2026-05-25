@@ -1402,18 +1402,23 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(L007, "L007",
     "borrow_capture x Row<Bg> signature",
     "fixy.md §24.2 L007 (V-FOUND-065)");
 CRUCIBLE_COLLISION_DIAGNOSTIC(V402, "V402",
-    "a memory-scope trunk is coherent with the binding's pinned host architecture",
+    "a memory-scope trunk is coherent with the binding's pinned host architecture and "
+    "every nested ScopedFence shares the outer scope's trunk",
     "marks_scope_arch_cross_trunk OR F::type_t pins a ScopedFence whose trunk contradicts "
-    "arch_pin_v<F::source_t>: an accel (GPU device — Warp..Gpu) scope on a CPU-host arch pin "
-    "(ArchPinned<Arm> or <X86>, whose fence dialect is DMB / mfence and cannot realize a PTX "
-    "`.cta`/`.gpu` scope), OR an ARM-shareability scope (Inner/Outer = DMB ISH/OSH) on a "
-    "non-ARM host (X86 has no ISH/OSH domain). The MemoryScope-axis mirror of V002's "
-    "cross-arch intrinsic mixing (MemoryScopeLattice cross-trunk leq = false)",
+    "arch_pin_v<F::source_t> OR F::type_t pins NESTED ScopedFence layers whose trunks "
+    "contradict each other (FIXY-FOUND-073): an accel (GPU device — Warp..Gpu) scope on a "
+    "CPU-host arch pin (ArchPinned<Arm> or <X86>, whose fence dialect is DMB / mfence and "
+    "cannot realize a PTX `.cta`/`.gpu` scope), OR an ARM-shareability scope (Inner/Outer = "
+    "DMB ISH/OSH) on a non-ARM host (X86 has no ISH/OSH domain), OR a `ScopedFence<Gpu, "
+    "ScopedFence<Inner, T>>`-shaped composition that mixes accel and ARM trunks within one "
+    "binding (no host can realize both `.gpu` and `ish` simultaneously). The MemoryScope-axis "
+    "mirror of V002's cross-arch intrinsic mixing (MemoryScopeLattice cross-trunk leq = false)",
     "select the architecture at the dispatch boundary and keep each arch's scoped fences in "
     "its own single-target binary (CLAUDE.md §VIII); pin a host arch whose trunk matches the "
     "scope (ArchPinned<Arm> for Inner/Outer; leave the host pin Portable for a GPU-device "
-    "scope), or drop the contradicting ScopedFence scope",
-    "fixy.md §24.2 V402 (V-268)");
+    "scope), drop the contradicting ScopedFence scope, OR flatten the nested ScopedFence "
+    "stack to a single trunk-coherent scope",
+    "fixy.md §24.2 V402 (V-268, FOUND-073)");
 
 #undef CRUCIBLE_COLLISION_DIAGNOSTIC
 
@@ -2202,6 +2207,109 @@ inline constexpr bool scope_arch_cross_trunk_v =
         scope_tier_of<typename F::type_t>::value,
         ::crucible::safety::arch_pin_v<typename F::source_t>);
 
+// ── FIXY-FOUND-073: nested-cross-trunk ScopedFence detector ──────────
+//
+// inner_scope_tier_of<T>: peer to scope_tier_of, but extracts the FIRST
+// nested ScopedFence WITHIN the outer ScopedFence's payload — i.e. the
+// inner trunk of a `ScopedFence<S_outer, ... ScopedFence<S_inner, U> ...>`
+// stack.  Pierces the same sibling wrappers (BarrierGuarded / Hw /
+// SimdWidthPinned) AND CV / reference qualifiers as scope_tier_of.
+//
+// For NON-NESTED ScopedFence (outer scope wrapping a non-ScopedFence
+// payload — the common case), has_inner_scope is false.  For genuinely
+// nested ScopedFence stacks, the inner partial spec fires and exposes
+// the SECOND (innermost-visible) trunk for cross-trunk comparison.
+template <typename T> struct inner_scope_tier_of {
+    static constexpr bool has_inner_scope = false;
+    static constexpr ::crucible::algebra::lattices::MemoryScope value =
+        ::crucible::algebra::lattices::MemoryScope::Thread;
+};
+// OUTER-level sibling piercing — when a BarrierGuarded / Hw /
+// SimdWidthPinned wraps the entire nested-ScopedFence stack, recurse
+// past it so the nested-ScopedFence detection still fires.  Dual of
+// the scope_tier_of sibling piercing above; required because real
+// V402-triggering bindings are typically `BarrierGuarded<Tier,
+// ScopedFence<S_outer, ScopedFence<S_inner, U>>>`-shaped (the barrier
+// pins the strength, the nested ScopedFences pin the scope trunks).
+template <::crucible::algebra::lattices::BarrierStrength Tier, typename U>
+struct inner_scope_tier_of<::crucible::safety::BarrierGuarded<Tier, U>>
+    : inner_scope_tier_of<U> {};
+template <::crucible::algebra::lattices::HwInstruction Tier, typename U>
+struct inner_scope_tier_of<::crucible::safety::Hw<Tier, U>>
+    : inner_scope_tier_of<U> {};
+template <::crucible::algebra::lattices::SimdIsa W, typename U>
+struct inner_scope_tier_of<::crucible::safety::SimdWidthPinned<W, U>>
+    : inner_scope_tier_of<U> {};
+// Outer ScopedFence wrapping an INNER ScopedFence (the nested case the
+// shallow scope_tier_of missed).
+template <::crucible::algebra::lattices::MemoryScope S_outer,
+          ::crucible::algebra::lattices::MemoryScope S_inner,
+          typename U>
+struct inner_scope_tier_of<::crucible::safety::ScopedFence<S_outer,
+                              ::crucible::safety::ScopedFence<S_inner, U>>> {
+    static constexpr bool has_inner_scope = true;
+    static constexpr ::crucible::algebra::lattices::MemoryScope value = S_inner;
+};
+// Sibling-wrapper piercing INSIDE the outer ScopedFence's payload so
+// `ScopedFence<S_outer, BarrierGuarded<Tier, ScopedFence<S_inner, U>>>`
+// (and the Hw / SimdWidthPinned analogues) still surface the inner
+// trunk.  Without these, an interposed barrier/hw/width band silently
+// hides the nested trunk.
+template <::crucible::algebra::lattices::MemoryScope S_outer,
+          ::crucible::algebra::lattices::BarrierStrength Tier,
+          typename U>
+struct inner_scope_tier_of<::crucible::safety::ScopedFence<S_outer,
+                              ::crucible::safety::BarrierGuarded<Tier, U>>>
+    : inner_scope_tier_of<::crucible::safety::ScopedFence<S_outer, U>> {};
+template <::crucible::algebra::lattices::MemoryScope S_outer,
+          ::crucible::algebra::lattices::HwInstruction Tier,
+          typename U>
+struct inner_scope_tier_of<::crucible::safety::ScopedFence<S_outer,
+                              ::crucible::safety::Hw<Tier, U>>>
+    : inner_scope_tier_of<::crucible::safety::ScopedFence<S_outer, U>> {};
+template <::crucible::algebra::lattices::MemoryScope S_outer,
+          ::crucible::algebra::lattices::SimdIsa W,
+          typename U>
+struct inner_scope_tier_of<::crucible::safety::ScopedFence<S_outer,
+                              ::crucible::safety::SimdWidthPinned<W, U>>>
+    : inner_scope_tier_of<::crucible::safety::ScopedFence<S_outer, U>> {};
+template <typename T> struct inner_scope_tier_of<T&>       : inner_scope_tier_of<T> {};
+template <typename T> struct inner_scope_tier_of<T const>  : inner_scope_tier_of<T> {};
+template <typename T> struct inner_scope_tier_of<T const&> : inner_scope_tier_of<T> {};
+
+// scopes_cross_trunk(a, b): two MemoryScope values land in CONTRADICTING
+// trunks — one accel-trunk and one ARM-trunk, OR vice versa.  Shared
+// sentinels Thread and System belong to neither trunk and never
+// contradict.  Reuses the V-265 trunk classifiers; cross-trunk leq on
+// MemoryScopeLattice is false in both directions, but this predicate
+// answers the simpler "are the trunks DIFFERENT and both NON-SHARED"
+// question (no host-arch in play — the contradiction is internal to
+// the type stack).
+[[nodiscard]] constexpr bool scopes_cross_trunk(
+        ::crucible::algebra::lattices::MemoryScope a,
+        ::crucible::algebra::lattices::MemoryScope b) noexcept {
+    using MS = ::crucible::algebra::lattices::MemoryScope;
+    if (a == MS::Thread || a == MS::System) return false;
+    if (b == MS::Thread || b == MS::System) return false;
+    const bool a_accel = ::crucible::algebra::lattices::mem_scope_is_accel(a);
+    const bool b_accel = ::crucible::algebra::lattices::mem_scope_is_accel(b);
+    const bool a_arm   = ::crucible::algebra::lattices::mem_scope_is_arm(a);
+    const bool b_arm   = ::crucible::algebra::lattices::mem_scope_is_arm(b);
+    return (a_accel && b_arm) || (a_arm && b_accel);
+}
+
+// nested_scope_cross_trunk_v<T>: a nested ScopedFence stack whose outer
+// and inner trunks contradict.  This is the V402 detector the shallow
+// scope_arch_cross_trunk_v missed — the contradiction is INTERNAL to
+// the type and independent of host arch (no `.gpu` and `.ish` can
+// coexist in one binding on any host).
+template <typename T>
+inline constexpr bool nested_scope_cross_trunk_v =
+    scope_tier_of<T>::has_scope &&
+    inner_scope_tier_of<T>::has_inner_scope &&
+    scopes_cross_trunk(scope_tier_of<T>::value,
+                       inner_scope_tier_of<T>::value);
+
 // ── FIXY-V-260 hardware-axis rule concepts (8 of 8) ─────────────────
 
 // V001 / V002 / V102: grant-pack rules — default-SAFE markers the
@@ -2265,12 +2373,20 @@ concept V401_OK = !(scope_at_or_above_v<
                         ::crucible::algebra::lattices::BarrierStrength::AcqRel,
                         typename F::type_t>);
 
-// V402: scope-trunk × host-arch cross-trunk.  Type-readable (ScopedFence
-// trunk vs arch_pin_v<F::source_t>) OR the grant-driven marker for the
-// nested-cross-trunk-scope case.
+// V402: scope-trunk × host-arch cross-trunk.  Three trigger paths:
+//   (1) Type-readable HOST-vs-OUTER: ScopedFence trunk on F::type_t
+//       contradicts arch_pin_v<F::source_t>.
+//   (2) Type-readable OUTER-vs-INNER: a nested ScopedFence stack whose
+//       outer and inner trunks contradict (FIXY-FOUND-073 — the
+//       internal-to-type contradiction the host-vs-outer detector
+//       missed; e.g. `.gpu`-trunk wrapping an `ish`-trunk inner has no
+//       coherent realization on ANY host).
+//   (3) Grant-driven marker: marks_scope_arch_cross_trunk for the
+//       cross-grant-value cases a single type read cannot express.
 template <typename F>
 concept V402_OK = !(marks_scope_arch_cross_trunk<F>::value ||
-                    scope_arch_cross_trunk_v<F>);
+                    scope_arch_cross_trunk_v<F> ||
+                    nested_scope_cross_trunk_v<typename F::type_t>);
 
 template <typename F>
 concept AllRulesOK =
@@ -2768,12 +2884,18 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
     // and force Fn<> to complete — re-entering its own
     // static_assert(ValidComposition<Fn>) and recursing).  The V402_OK
     // concept reads F::type_t in the safe AllRulesOK / first_failure path.
+    //
+    // FIXY-FOUND-073: extend with the nested-cross-trunk leg.  A binding
+    // whose Type pins two ScopedFence layers from contradicting trunks
+    // (accel + ARM) has no coherent realization on any host; the
+    // contradiction is internal to the type and independent of Source.
     static constexpr bool scope_arch_cross_trunk =
         collision::marks_scope_arch_cross_trunk<F>::value ||
         (collision::scope_tier_of<Type>::has_scope &&
          collision::scope_contradicts_host_arch(
              collision::scope_tier_of<Type>::value,
-             ::crucible::safety::arch_pin_v<Source>));
+             ::crucible::safety::arch_pin_v<Source>)) ||
+        collision::nested_scope_cross_trunk_v<Type>;
 
     [[nodiscard]] static consteval bool validate() noexcept {
         static_assert(!(classified && fail && !fail_secret),
