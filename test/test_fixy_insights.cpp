@@ -10,53 +10,85 @@
 // TU witnesses that has_substantive_insights_v is true for every Tag
 // from the outside (so a future maintainer who weakens the prose
 // triggers BOTH the embedded asserts AND this sentinel).
+//
+// FIXY-FOUND-135 Batch 3 — Pattern B reflection fold replaces the
+// previously hand-listed 20 axes (Type..Staleness) with a single
+// `template for` over `enumerators_of(^^DimensionAxis)`, picking up
+// the 13 axes added after the original sentinel landed
+// (Synchronization, Regime, FpMode, SyscallSurface, ControlFlow,
+// CallShape, StackUse, GlobalState, Stdio, HwInstruction,
+// BarrierStrength, SimdIsa, MemoryScope).  The DIMENSION_AXIS_COUNT
+// cardinality pin below is the real forward-compat trap — appending
+// a new enumerator reddens loudly so future axes can't ship without
+// shipping insight prose first.
 
 #include <crucible/fixy/Insights.h>
 #include <crucible/fixy/Reject.h>
 #include <crucible/fixy/Theory.h>
+#include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/diag/Insights.h>
+
+#include <meta>
 
 namespace {
 
 using ::crucible::safety::diag::has_insights_v;
 using ::crucible::safety::diag::has_substantive_insights_v;
 
-// ── 20 FixyNotEngaged_<Axis> tags ─────────────────────────────────
+// ── 33 FixyNotEngaged_<Axis> tags via Pattern B reflection fold ──
+//
+// One `static_assert` per `(axis, predicate)` pair; the fold
+// instantiates 2*N static_asserts at consteval, replacing the
+// hand-maintained CRUCIBLE_CHECK_FIXY_INSIGHT(...) lines that
+// shipped with the original 20-axis sentinel.
+//
+// Reflection-of-using-declaration is rejected by GCC 16 (the ^^
+// operator wants an entity, not a name brought-in via using-decl),
+// so we name DimensionAxis fully-qualified at the splice site.
 
-#define CRUCIBLE_CHECK_FIXY_INSIGHT(AxisName)                                  \
-    static_assert(has_insights_v<                                              \
-        ::crucible::fixy::diag::FixyNotEngaged_##AxisName>,                    \
-        "fixy-H-14: FixyNotEngaged_" #AxisName                                 \
-        " must have an insight_provider specialization");                      \
-    static_assert(has_substantive_insights_v<                                  \
-        ::crucible::fixy::diag::FixyNotEngaged_##AxisName>,                    \
-        "fixy-H-14: FixyNotEngaged_" #AxisName                                 \
-        " insights must meet QV thresholds (30/20/10/10 chars)")
+consteval bool every_axis_has_substantive_insights_() noexcept {
+    static constexpr auto enumerators = std::define_static_array(
+        std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
+    bool result = true;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        constexpr ::crucible::safety::DimensionAxis axis = [:en:];
+        using Tag =
+            typename ::crucible::fixy::diag::tag_for_axis<axis>::type;
+        result = result && has_insights_v<Tag>;
+        result = result && has_substantive_insights_v<Tag>;
+    }
+#pragma GCC diagnostic pop
+    return result;
+}
 
-CRUCIBLE_CHECK_FIXY_INSIGHT(Type);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Refinement);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Usage);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Effect);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Security);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Protocol);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Lifetime);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Provenance);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Trust);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Representation);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Observability);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Complexity);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Precision);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Space);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Overflow);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Mutation);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Reentrancy);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Size);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Version);
-CRUCIBLE_CHECK_FIXY_INSIGHT(Staleness);
+static_assert(every_axis_has_substantive_insights_(),
+    "fixy-H-14 (FIXY-FOUND-135): every DimensionAxis enumerator must "
+    "have a FixyNotEngaged_<Axis> insight_provider specialization with "
+    "all four prose fields meeting QV thresholds (30/20/10/10 chars).  "
+    "The reflection fold above instantiates has_insights_v + "
+    "has_substantive_insights_v for every axis via tag_for_axis<axis>.");
 
-#undef CRUCIBLE_CHECK_FIXY_INSIGHT
+// Cardinality pin — the real forward-compat trap.  Appending a new
+// enumerator to DimensionAxis reddens this assertion; the fix is to
+// (a) ship a tag_for_axis<NewAxis> specialization in fixy/Reject.h,
+// (b) ship a CRUCIBLE_DEFINE_INSIGHTS_QV block for
+// FixyNotEngaged_NewAxis in fixy/Insights.h, and (c) bump the count
+// here.  Auto-extends through the reflection fold without code change
+// in this TU.
+static_assert(::crucible::safety::DIMENSION_AXIS_COUNT == 33,
+    "FIXY-FOUND-135 cardinality pin: DimensionAxis grew beyond 33 "
+    "enumerators.  Ship the FixyNotEngaged_<NewAxis> tag + insight "
+    "prose, then bump this assertion.  The reflection fold above "
+    "already covers the new axis via tag_for_axis<axis>.");
 
 // ── 6 §30.14 theory corpus entries ────────────────────────────────
+//
+// Corpus entries are NOT enum-driven (they classify by predicate
+// shape, not by DimensionAxis), so they stay hand-listed.  The fold
+// above does NOT cover them; adding a new corpus entry requires a
+// new line below.
 
 #define CRUCIBLE_CHECK_CORPUS_INSIGHT(EntryName)                               \
     static_assert(has_insights_v<                                              \
