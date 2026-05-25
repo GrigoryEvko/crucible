@@ -7226,6 +7226,12 @@ crucible_neg_compile_test(neg_collision_H003_structural_hotpath_wrapper
   "H003")
 crucible_neg_compile_test(neg_collision_F002_federation_peer_unbounded
   "F002")
+# FIXY-FOUND-069 sub-HS14 closure for F002: the cost::Unstated arm of the
+# is_unbounded_cost OR-detector (no-budget case), companion to the
+# cost::Unbounded fixture above.  Distinct mismatch class — a refactor
+# dropping the Unstated specialization slips the Unbounded fixture.
+crucible_neg_compile_test(neg_collision_F002_federation_peer_unstated
+  "F002")
 
 # ─── FIXY-FOUND-063 CollisionCatalog H010 neg-compile (HotPath × Bg) ──
 #
