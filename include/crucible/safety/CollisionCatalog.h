@@ -245,6 +245,17 @@ enum class RuleCode : std::uint8_t {
     // release-aware surface) is rejected by `CtxFitsReleaseAwareAdvise`
     // (the other half).  Together: dangerous Advice flows EXCLUSIVELY
     // through the Permission-witnessed surface.
+    //
+    // FIXY-FOUND-013 audit: M001's enforcement model is CONCEPT-GATED at
+    // the production-callsite of `fixy::wrap::mmap::advise<>` and
+    // `fixy::wrap::mmap::advise_release_aware<>` (Mmap.h ~L721 / ~L771),
+    // NOT a `CollisionRules<Fn>::validate()` pack walk like the W-family.
+    // Both polarities are pinned at fixy/Mmap.h:903-910 (substrate side)
+    // AND test/test_fixy_v_234_release_aware_permission.cpp (catalog
+    // side, 4 static_asserts) so renaming/removing either concept reds
+    // both directions.  Negative fixtures:
+    //   test/fixy_neg/neg_fixy_v_234_advise_release_aware_missing_permission.cpp
+    //   test/fixy_neg/neg_fixy_v_234_advise_release_aware_cross_tag_permission.cpp
     M001 = 27,  // mmap.advise<DontNeed> without release_aware<RegionTag>
     // ── FIXY-V-243 hazard-axis cross-axis rules (Agent 10 §4) ──────────
     //

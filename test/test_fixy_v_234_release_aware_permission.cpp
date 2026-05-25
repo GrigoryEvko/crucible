@@ -47,6 +47,39 @@ static_assert(M001::name == std::string_view{"M001_DontNeedRequiresReleaseAware"
 static_assert(::crucible::safety::fn::collision::rule_bijection_v<
                   ::crucible::safety::fn::collision::RuleCode::M001>);
 
+// ── FIXY-FOUND-013: phantom-claim refutation ───────────────────────────
+// The task premise asserts M001 has "ZERO enforcement" — that's wrong.
+// M001 is a ROUTING-CLASS collision rule (dispatched by Advice category),
+// not a per-Fn pack-iteration rule.  Its enforcement model is concept-
+// gated at the production-callsite of advise<>/advise_release_aware<>
+// in fixy/Mmap.h, NOT a CollisionRules<Fn>::validate() pack walk.  The
+// two concepts below ARE the M001 gate; deleting either silently flips
+// M001 to actually-phantom.  We pin both polarities (safe-side rejects
+// dangerous Advice, release-aware-side rejects non-dangerous Advice)
+// so a future refactor that removed/renamed/inverted them red-lines
+// THIS TU directly.
+namespace fwmm_pin = ::crucible::fixy::wrap::mmap;
+using SafeCtx   = ::crucible::effects::TestRunnerCtx;
+struct M001PinRegion {};
+// (1) safe surface accepts non-dangerous Advice
+static_assert(fwmm_pin::CtxFitsSafeAdvise<SafeCtx, fwmm_pin::advice::HugePage>,
+    "FIXY-FOUND-013: CtxFitsSafeAdvise must accept HugePage (non-dangerous).");
+// (2) safe surface rejects dangerous Advice — M001's half-A
+static_assert(!fwmm_pin::CtxFitsSafeAdvise<SafeCtx, fwmm_pin::advice::DontNeed>,
+    "FIXY-FOUND-013: CtxFitsSafeAdvise must REJECT DontNeed; this is the "
+    "production-callsite gate that routes dangerous Advice to "
+    "advise_release_aware<>.  If this asserts: M001 became phantom.");
+// (3) release-aware surface accepts dangerous Advice
+static_assert(fwmm_pin::CtxFitsReleaseAwareAdvise<SafeCtx, fwmm_pin::advice::DontNeed,
+                                                  M001PinRegion>,
+    "FIXY-FOUND-013: CtxFitsReleaseAwareAdvise must accept DontNeed.");
+// (4) release-aware surface rejects non-dangerous Advice — M001's half-B
+static_assert(!fwmm_pin::CtxFitsReleaseAwareAdvise<SafeCtx, fwmm_pin::advice::HugePage,
+                                                   M001PinRegion>,
+    "FIXY-FOUND-013: CtxFitsReleaseAwareAdvise must REJECT HugePage; the "
+    "release-aware surface is reserved for Advice that requires Permission-"
+    "witnessed exclusive access.  If this asserts: M001's routing collapsed.");
+
 void check(bool cond, const char* label) {
     if (!cond) [[unlikely]] {
         std::fprintf(stderr, "FIXY-V-234 positive test FAILED at: %s\n", label);
