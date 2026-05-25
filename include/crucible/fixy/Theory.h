@@ -942,6 +942,47 @@ static_assert(std::meta::enumerators_of(
     "stance tables) should be re-audited regardless.  Bump this "
     "5 to the new count after auditing.");
 
+// ── FIXY-FOUND-025: shared full-diagnostic storage ─────────────────
+//
+// Pre-025, every corpus entry's `full_diagnostic()` materialized a
+// function-local `static constexpr std::string_view storage` from a
+// consteval lambda.  Function-local statics are per-TU: every TU
+// that includes Theory.h paid the consteval evaluation cost AND
+// produced a separate storage slot (the linker may dedup the
+// content via define_static_string, but the per-TU consteval
+// re-evaluation is unavoidable for function-local statics).  For
+// 10 corpus entries × N TUs that include Theory.h, compile-time
+// cost was 10 × N consteval lambda evaluations.
+//
+// Closure: a per-entry **inline variable template** at namespace
+// detail:: scope, parametrized on the entry's name() and cite()
+// function-pointer NTTPs.  Inline variable templates are
+// inline-by-default (C++17), so each <NameFn, CiteFn> instantiation
+// has a SINGLE address across ALL TUs.  Compile-time cost drops
+// from 10 × N to 10 — one consteval evaluation per entry, dedup'd
+// across the entire build.  Per-entry full_diagnostic() reduces to
+// a one-line return statement.
+//
+// The NTTP-function-pointer parametrization (`&name, &cite` from
+// inside each entry's class body) keeps the per-entry text
+// IDENTICAL across all 10 entries (class-scoped lookup resolves
+// `name` and `cite` to the current entry's static methods), which
+// lets a single replace_all migrate the entire corpus in one edit.
+template <auto NameFn, auto CiteFn>
+inline constexpr std::string_view kCorpusFullDiagnostic =
+    []() consteval -> std::string_view {
+        std::string msg;
+        msg += "fixy::fn<Type, Grants...> [tier 5: "
+               "NotInTheoryCorpus]: binding matches §30.14 "
+               "unsoundness corpus entry: ";
+        std::string_view name_sv = NameFn();
+        std::string_view cite_sv = CiteFn();
+        msg.append(name_sv.data(), name_sv.size());
+        msg += ".  ";
+        msg.append(cite_sv.data(), cite_sv.size());
+        return std::define_static_string(msg);
+    }();
+
 }  // namespace detail
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1014,18 +1055,12 @@ struct classified_io_without_declassify {
     // local-static form (P2647R1) defers the lambda until after the
     // class is complete, sidestepping the issue.
     static constexpr std::string_view full_diagnostic() noexcept {
-        static constexpr std::string_view storage =
-            []() consteval -> std::string_view {
-                std::string msg;
-                msg += "fixy::fn<Type, Grants...> [tier 5: "
-                       "NotInTheoryCorpus]: binding matches §30.14 "
-                       "unsoundness corpus entry: ";
-                msg.append(name().data(), name().size());
-                msg += ".  ";
-                msg.append(cite().data(), cite().size());
-                return std::define_static_string(msg);
-            }();
-        return storage;
+        // FOUND-025: per-TU function-local-static eliminated; storage
+        // now lives in a single inline-variable-template instantiation
+        // keyed on this entry's (&name, &cite) NTTP function-pointer
+        // pair, dedup'd across all TUs at link time.
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
+            &name, &cite>;
     }
 };
 
@@ -1097,18 +1132,12 @@ struct classified_bg_without_declassify {
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
     static constexpr std::string_view full_diagnostic() noexcept {
-        static constexpr std::string_view storage =
-            []() consteval -> std::string_view {
-                std::string msg;
-                msg += "fixy::fn<Type, Grants...> [tier 5: "
-                       "NotInTheoryCorpus]: binding matches §30.14 "
-                       "unsoundness corpus entry: ";
-                msg.append(name().data(), name().size());
-                msg += ".  ";
-                msg.append(cite().data(), cite().size());
-                return std::define_static_string(msg);
-            }();
-        return storage;
+        // FOUND-025: per-TU function-local-static eliminated; storage
+        // now lives in a single inline-variable-template instantiation
+        // keyed on this entry's (&name, &cite) NTTP function-pointer
+        // pair, dedup'd across all TUs at link time.
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
+            &name, &cite>;
     }
 };
 
@@ -1252,18 +1281,12 @@ struct staleness_secret_without_declassify {
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
     static constexpr std::string_view full_diagnostic() noexcept {
-        static constexpr std::string_view storage =
-            []() consteval -> std::string_view {
-                std::string msg;
-                msg += "fixy::fn<Type, Grants...> [tier 5: "
-                       "NotInTheoryCorpus]: binding matches §30.14 "
-                       "unsoundness corpus entry: ";
-                msg.append(name().data(), name().size());
-                msg += ".  ";
-                msg.append(cite().data(), cite().size());
-                return std::define_static_string(msg);
-            }();
-        return storage;
+        // FOUND-025: per-TU function-local-static eliminated; storage
+        // now lives in a single inline-variable-template instantiation
+        // keyed on this entry's (&name, &cite) NTTP function-pointer
+        // pair, dedup'd across all TUs at link time.
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
+            &name, &cite>;
     }
 };
 
@@ -1345,18 +1368,12 @@ struct ghost_runtime_observable {
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
     static constexpr std::string_view full_diagnostic() noexcept {
-        static constexpr std::string_view storage =
-            []() consteval -> std::string_view {
-                std::string msg;
-                msg += "fixy::fn<Type, Grants...> [tier 5: "
-                       "NotInTheoryCorpus]: binding matches §30.14 "
-                       "unsoundness corpus entry: ";
-                msg.append(name().data(), name().size());
-                msg += ".  ";
-                msg.append(cite().data(), cite().size());
-                return std::define_static_string(msg);
-            }();
-        return storage;
+        // FOUND-025: per-TU function-local-static eliminated; storage
+        // now lives in a single inline-variable-template instantiation
+        // keyed on this entry's (&name, &cite) NTTP function-pointer
+        // pair, dedup'd across all TUs at link time.
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
+            &name, &cite>;
     }
 };
 
@@ -1444,18 +1461,12 @@ struct internal_io_without_declassify {
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
     static constexpr std::string_view full_diagnostic() noexcept {
-        static constexpr std::string_view storage =
-            []() consteval -> std::string_view {
-                std::string msg;
-                msg += "fixy::fn<Type, Grants...> [tier 5: "
-                       "NotInTheoryCorpus]: binding matches §30.14 "
-                       "unsoundness corpus entry: ";
-                msg.append(name().data(), name().size());
-                msg += ".  ";
-                msg.append(cite().data(), cite().size());
-                return std::define_static_string(msg);
-            }();
-        return storage;
+        // FOUND-025: per-TU function-local-static eliminated; storage
+        // now lives in a single inline-variable-template instantiation
+        // keyed on this entry's (&name, &cite) NTTP function-pointer
+        // pair, dedup'd across all TUs at link time.
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
+            &name, &cite>;
     }
 };
 
@@ -1550,18 +1561,12 @@ struct internal_bg_without_declassify {
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
     static constexpr std::string_view full_diagnostic() noexcept {
-        static constexpr std::string_view storage =
-            []() consteval -> std::string_view {
-                std::string msg;
-                msg += "fixy::fn<Type, Grants...> [tier 5: "
-                       "NotInTheoryCorpus]: binding matches §30.14 "
-                       "unsoundness corpus entry: ";
-                msg.append(name().data(), name().size());
-                msg += ".  ";
-                msg.append(cite().data(), cite().size());
-                return std::define_static_string(msg);
-            }();
-        return storage;
+        // FOUND-025: per-TU function-local-static eliminated; storage
+        // now lives in a single inline-variable-template instantiation
+        // keyed on this entry's (&name, &cite) NTTP function-pointer
+        // pair, dedup'd across all TUs at link time.
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
+            &name, &cite>;
     }
 };
 
@@ -1653,18 +1658,12 @@ struct external_to_verified_without_attest {
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
     static constexpr std::string_view full_diagnostic() noexcept {
-        static constexpr std::string_view storage =
-            []() consteval -> std::string_view {
-                std::string msg;
-                msg += "fixy::fn<Type, Grants...> [tier 5: "
-                       "NotInTheoryCorpus]: binding matches §30.14 "
-                       "unsoundness corpus entry: ";
-                msg.append(name().data(), name().size());
-                msg += ".  ";
-                msg.append(cite().data(), cite().size());
-                return std::define_static_string(msg);
-            }();
-        return storage;
+        // FOUND-025: per-TU function-local-static eliminated; storage
+        // now lives in a single inline-variable-template instantiation
+        // keyed on this entry's (&name, &cite) NTTP function-pointer
+        // pair, dedup'd across all TUs at link time.
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
+            &name, &cite>;
     }
 };
 
@@ -1752,18 +1751,12 @@ struct secret_unbounded_termination_channel {
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
     static constexpr std::string_view full_diagnostic() noexcept {
-        static constexpr std::string_view storage =
-            []() consteval -> std::string_view {
-                std::string msg;
-                msg += "fixy::fn<Type, Grants...> [tier 5: "
-                       "NotInTheoryCorpus]: binding matches §30.14 "
-                       "unsoundness corpus entry: ";
-                msg.append(name().data(), name().size());
-                msg += ".  ";
-                msg.append(cite().data(), cite().size());
-                return std::define_static_string(msg);
-            }();
-        return storage;
+        // FOUND-025: per-TU function-local-static eliminated; storage
+        // now lives in a single inline-variable-template instantiation
+        // keyed on this entry's (&name, &cite) NTTP function-pointer
+        // pair, dedup'd across all TUs at link time.
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
+            &name, &cite>;
     }
 };
 
@@ -1912,18 +1905,12 @@ struct secret_catastrophic_staleness {
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
     static constexpr std::string_view full_diagnostic() noexcept {
-        static constexpr std::string_view storage =
-            []() consteval -> std::string_view {
-                std::string msg;
-                msg += "fixy::fn<Type, Grants...> [tier 5: "
-                       "NotInTheoryCorpus]: binding matches §30.14 "
-                       "unsoundness corpus entry: ";
-                msg.append(name().data(), name().size());
-                msg += ".  ";
-                msg.append(cite().data(), cite().size());
-                return std::define_static_string(msg);
-            }();
-        return storage;
+        // FOUND-025: per-TU function-local-static eliminated; storage
+        // now lives in a single inline-variable-template instantiation
+        // keyed on this entry's (&name, &cite) NTTP function-pointer
+        // pair, dedup'd across all TUs at link time.
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
+            &name, &cite>;
     }
 };
 
@@ -1976,18 +1963,12 @@ struct secret_payload_without_security_claim {
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
     static constexpr std::string_view full_diagnostic() noexcept {
-        static constexpr std::string_view storage =
-            []() consteval -> std::string_view {
-                std::string msg;
-                msg += "fixy::fn<Type, Grants...> [tier 5: "
-                       "NotInTheoryCorpus]: binding matches §30.14 "
-                       "unsoundness corpus entry: ";
-                msg.append(name().data(), name().size());
-                msg += ".  ";
-                msg.append(cite().data(), cite().size());
-                return std::define_static_string(msg);
-            }();
-        return storage;
+        // FOUND-025: per-TU function-local-static eliminated; storage
+        // now lives in a single inline-variable-template instantiation
+        // keyed on this entry's (&name, &cite) NTTP function-pointer
+        // pair, dedup'd across all TUs at link time.
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
+            &name, &cite>;
     }
 };
 
