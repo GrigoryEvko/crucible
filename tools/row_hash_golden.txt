@@ -1,8 +1,8 @@
 # FIXY-FOUND-052 row_hash cross-build witness
 # format-version: 1
-# matrix-size:    45
+# matrix-size:    44
 # fold-seed:      0xc0ffeebadf00dba5
-# fold-anchor:    0x4dc454cd4512e7f2
+# fold-anchor:    0x5eb752331374fb74
 # (a mismatch on diff means a row_hash_contribution specialization moved — document the ceremony in the commit message and re-capture this golden.)
 W01_Linear             0xba3d8586917ed8f0
 W02_Refined            0xd92fd7098ee52143
@@ -41,11 +41,10 @@ W34_JoinPolicy         0x80f878813e041d0c
 W35_SchedClass         0x4a2d4c767df91dfa
 W36_FpModePinned_R     0x75b4dfd9edf70e2c
 W37_FpModePinned_F     0x7b5f7ca68d004377
-S01_PureLinear         0xa1d9d0d768fbc0ff
-S02_PureCopy           0xc283e7b59c3b4e7a
-S03_IoFunction         0x1fc29c832e45c667
-S04_BgWorker           0xab8f0411a9c9e4bf
-S05_CtCrypto           0x5402062f9f422f36
-S06_AsyncEndpoint      0x5e115fa7a5abfad0
-S07_CooperativeBg      0x87d301576707ccf7
-S08_RealtimeHot        0xc4a8a1d4bc4847ca
+S01_PureLinear         0xfc74373403ae7162
+S02_PureCopy           0x744e28cefaae39bf
+S03_IoFunction         0x2cee0e0282a77134
+S04_BgWorker           0x5ea44441895d95ba
+S05_CtCrypto           0xaabaeaf1931e1717
+S06_AsyncEndpoint      0x91eaa6b61be36eab
+S07_RealtimeHot        0x98ba48c5d307cfac

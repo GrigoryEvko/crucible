@@ -2201,8 +2201,6 @@ crucible_neg_compile_fixy_test(neg_fixy_stance_publicemit_ref          "IsAccept
 # array vs reference).
 crucible_neg_compile_fixy_test(neg_fixy_stance_named_session_void      "IsAccepted")
 crucible_neg_compile_fixy_test(neg_fixy_stance_named_session_array     "IsAccepted")
-crucible_neg_compile_fixy_test(neg_fixy_stance_cooperative_bg_void     "IsAccepted")
-crucible_neg_compile_fixy_test(neg_fixy_stance_cooperative_bg_ref      "IsAccepted")
 crucible_neg_compile_fixy_test(neg_fixy_stance_sync_blocking_void      "IsAccepted")
 crucible_neg_compile_fixy_test(neg_fixy_stance_sync_blocking_array     "IsAccepted")
 crucible_neg_compile_fixy_test(neg_fixy_stance_realtime_hot_void       "IsAccepted")

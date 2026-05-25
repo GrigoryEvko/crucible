@@ -64,9 +64,6 @@
 //   stance::NamedSession      — Protocol=<Proto>, otherwise strict
 //                                (binds a session protocol type to
 //                                 the Protocol axis)
-//   stance::CooperativeBg     — Effect={Bg,Alloc} + Reentrancy=Coroutine
-//                                + as_public — cooperative bg worker
-//                                yielding via coroutine
 //   stance::SyncBlocking      — Effect={IO,Block} + as_public —
 //                                synchronous blocking-syscall path
 //   stance::RealtimeHot       — Effect=<empty> + as_public + strict
@@ -118,6 +115,7 @@
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Grant.h>
+#include <crucible/fixy/Hw.h>
 #include <crucible/fixy/Profile.h>
 #include <crucible/fixy/Reject.h>
 #include <crucible/safety/Fn.h>
@@ -956,9 +954,9 @@ class fn {
         "  fixy::mint_fn<Type, Grants...>(value)         — explicit grants\n"
         "  fixy::mint_fn_for<UnaryStance>(value)         — unary stance\n"
         "  fixy::mint_fn_for<BinaryStance, Policy>(value) — binary stance\n"
-        "See fixy::stance:: for the canonical 12-stance catalog "
+        "See fixy::stance:: for the canonical 11-stance catalog "
         "(PureLinear/PureCopy/IoFunction/BgWorker/CtCrypto/SecretConsumer/"
-        "NamedSession/CooperativeBg/SyncBlocking/RealtimeHot/InternalRead/"
+        "NamedSession/SyncBlocking/RealtimeHot/InternalRead/"
         "TestOnly) and CLAUDE.md §XXI for the mint pattern rationale.");
 
     // fixy-H-03: surface the per-axis FixyNotEngaged_<Axis>,
@@ -1735,11 +1733,6 @@ using AsyncEndpoint = ::crucible::fixy::fn<Type,
 //
 //   NamedSession<T, Proto>  — session-typed function: pins Protocol
 //                              to <Proto>.  All other axes strict.
-//   CooperativeBg<T>        — Effect={Bg,Alloc} + Reentrancy=Coroutine
-//                              + as_public.  Cooperative-scheduling
-//                              variant of BgWorker that yields via
-//                              coroutine instead of running to
-//                              completion.
 //   SyncBlocking<T>         — Effect={IO,Block} + as_public.  Pins
 //                              the synchronous-blocking discipline
 //                              for syscall-heavy paths (read/write
@@ -1785,38 +1778,20 @@ using NamedSession = ::crucible::fixy::fn<Type,
     detail_stance::strict<dim::DimensionAxis::FpMode>,
     detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
-// ── CooperativeBg<Type> — Bg + coroutine + as_public ──────────────
+// ── (CooperativeBg removed — FIXY-FOUND-071 R003) ─────────────────
 //
-// Mirror of BgWorker (Effect={Bg, Alloc} + as_public) plus a
-// coroutine-yielding Reentrancy axis.  Use for cooperative-
-// scheduling bg pipelines that yield to the scheduler at well-
-// defined points instead of running to completion.
-
-template <typename Type>
-using CooperativeBg = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    grant::with<effects::Effect::Bg, effects::Effect::Alloc>,
-    grant::as_public,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    grant::coroutine,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+// CooperativeBg<Type> formerly meant "cooperative (coroutine-yielding)
+// background worker" = Effect={Bg,Alloc} + Reentrancy=Coroutine.  R003
+// (FIXY-FOUND-071) proves that combination structurally unsafe: a C++
+// coroutine declared in a Bg context can suspend on one bg thread and
+// resume on another (cross-thread resume hazard), so the stance's
+// defining semantic is illegal.  Stripping the coroutine grant to make
+// it compile left it byte-identical to BgWorker — a duplicate alias
+// that collapsed the federation-cache row_hash distinctness invariant
+// (two stance names → one fixy::fn<> type).  Rather than re-mean the
+// name onto an unrelated axis, the stance is removed.  Cooperative
+// background scheduling is expressed via an explicit executor / session
+// protocol (NamedSession<T, ExecutorProto>), not a Reentrancy grant.
 
 // ── SyncBlocking<Type> — IO + Block + as_public ────────────────────
 //
@@ -1900,7 +1875,7 @@ using RealtimeHot = ::crucible::fixy::fn<Type,
 // Pre-FOUND-033 the shipped stances reached only 3 of the 5 SecLevel
 // enumerators:
 //   - Public        (IoFunction / BgWorker / SecretConsumer-default /
-//                    PublicEmit-default / AsyncEndpoint / CooperativeBg /
+//                    PublicEmit-default / AsyncEndpoint /
 //                    SyncBlocking / RealtimeHot)
 //   - Classified    (PureLinear / PureCopy / NamedSession via
 //                    strict<Security> = Classified per fixy-CR-01)
@@ -2329,20 +2304,11 @@ static_assert(sizeof(stance::NamedSession<int, fixy_u_041::FakeProto>)
     "stance::NamedSession<int, Proto> must EBO-collapse to sizeof(int) "
     "— grant::protocol<Proto> is an empty type-level tag.");
 
-// 10b. CooperativeBg engages Effect={Bg, Alloc} AND
-//      Reentrancy=Coroutine simultaneously.
-static_assert(std::is_same_v<
-    typename stance::CooperativeBg<int>::effect_row_t,
-    effects::Row<effects::Effect::Bg, effects::Effect::Alloc>>,
-    "stance::CooperativeBg's Effect row must contain Bg and Alloc.");
-
-static_assert(stance::CooperativeBg<int>::reentrancy_v
-    == safety::fn::ReentrancyMode::Coroutine,
-    "stance::CooperativeBg must resolve Reentrancy to Coroutine — "
-    "cooperative bg yields to the scheduler, unlike plain BgWorker.");
-
-static_assert(sizeof(stance::CooperativeBg<int>) == sizeof(int),
-    "stance::CooperativeBg<int> must EBO-collapse to sizeof(int).");
+// 10b. (CooperativeBg removed — FIXY-FOUND-071 R003 proves Coroutine×Bg
+//      structurally unsafe; the de-coroutined remnant was a verbatim
+//      BgWorker duplicate.  Cooperative background scheduling now goes
+//      through NamedSession<T, ExecutorProto>.  See the removed-stance
+//      note at the CooperativeBg deletion site.)
 
 // 10c. SyncBlocking pins Effect={IO, Block} + Security=Public.
 static_assert(std::is_same_v<
@@ -2477,14 +2443,33 @@ template <typename... Grants>
 [[nodiscard]] consteval std::uint64_t
 fold_canonicalized_grants_hash(std::uint64_t seed) noexcept {
     std::uint64_t h = seed;
-    // Iterate every DimensionAxis enumerator in numeric order.  For
-    // each axis K, any grant in `Grants...` routing to axis K updates
-    // `h` via combine_ids(h, stable_type_id<G>).  Non-grant types
-    // short-circuit via IsGrantTag_v guard.  Result depends only on
-    // (axis, grant-type) pairs in canonical-axis order, NOT on the
-    // user's source-order of the Grants pack.
-    constexpr int kAxisCount = 33;  // DimensionAxis enumerator count.
-    for (int axis = 0; axis < kAxisCount; ++axis) {
+    // Iterate the FIXY-ONLY DimensionAxis enumerators (Synchronization
+    // .. MemoryScope) in numeric order.  For each such axis K, any
+    // grant in `Grants...` routing to axis K updates `h` via
+    // combine_ids(h, stable_type_id<G>).  Non-grant types short-circuit
+    // via IsGrantTag_v guard.  Result depends only on (axis, grant-type)
+    // pairs in canonical-axis order, NOT on the user's source-order of
+    // the Grants pack.
+    //
+    // FIXY-FOUND-045 structural fix: the loop starts at Synchronization
+    // (the first Crucible-extension axis), NOT 0.  Axes 0..19 (Type ..
+    // Staleness) PROJECT onto the 19-axis safety::fn::Fn surface and are
+    // ALREADY canonically hashed by row_hash_contribution_v<safety_fn_t>
+    // (the `h` seed).  Re-folding them here is redundant — and for the
+    // Effect axis's variadic `with<Es...>` grant it is HARMFUL: `with<
+    // Bg, Alloc>` and `with<Alloc, Bg>` are DISTINCT types with distinct
+    // stable_type_id, so folding them broke the permutation invariance
+    // that the canonicalized Row already guarantees.  The 13 fixy-only
+    // axes (Synchronization=20 .. MemoryScope=32) are the ones that do
+    // NOT project, so they are the ONLY axes this fold must cover — the
+    // function's documented contract.  Every fixy-only grant is fixed-
+    // arity (e.g. hw::cache<Op,Loc>, hw::msr<Id>) with positionally-
+    // distinct args, so no set-semantics permutation issue arises for
+    // them; only the Effect `with<>` pack had it, and it is now excluded.
+    constexpr int kAxisCount   = 33;  // DimensionAxis enumerator count.
+    constexpr int kFirstFixyOnly =
+        static_cast<int>(::crucible::fixy::dim::DimensionAxis::Synchronization);
+    for (int axis = kFirstFixyOnly; axis < kAxisCount; ++axis) {
         ((::crucible::fixy::grant::IsGrantTag_v<Grants>
               && static_cast<int>(
                      ::crucible::fixy::grant::which_dim_v<Grants>)

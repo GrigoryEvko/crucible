@@ -15,13 +15,13 @@
 // whole matrix.  Drift in ANY entry's hash flips the anchor; the
 // CI build reddens; review notices the wire-format-break.
 //
-// Entries: 26 canonical wrappers (the CLAUDE.md §XVI canonical 16
+// Entries: 37 canonical wrappers (the CLAUDE.md §XVI canonical 16
 // outer-nesting plus the 10 off-tree extensions documented in
-// DimensionTraits.h §822-§847) × 8 single-parameter fixy stances
-// (`fixy::stance::*`) = 34 distinct hashes.  Pair count is
-// 34 * 33 / 2 = 561 ≥ 240 (the original task description's lower bound
-// gross-counted the "rough" matrix size; the actual exercised
-// surface is ~2.3× larger by construction).
+// DimensionTraits.h §822-§847, expanded to 37 by FIXY-FOUND-047) × 7
+// single-parameter fixy stances (`fixy::stance::*`) = 44 distinct
+// hashes.  Pair count is 44 * 43 / 2 = 946 ≥ 240 (the original task
+// description's lower bound gross-counted the "rough" matrix size;
+// the actual exercised surface is ~3.9× larger by construction).
 //
 // Discipline aligned with `test_row_hash_fold.cpp` (FOUND-I02 peer):
 //   * static_assert distinctness via consteval O(n²) sweep
@@ -153,34 +153,37 @@ using W35_SchedClass     = cs::SchedClass<cs::SchedulerPolicy_v::Fifo, int>;
 using W36_FpModePinned_R = cs::FpModePinned<cs::FpRounding::RoundToNearestEven, int>;
 using W37_FpModePinned_F = cs::FpModePinned<cs::FpFtz::FlushToZero, int>;
 
-// ── 8 canonical single-parameter fixy stances ─────────────────────
+// ── 7 canonical single-parameter fixy stances ─────────────────────
 //
 // `fixy::fn<T, Grants...>` resolves to `safety::fn::Fn<T, ...>` via
 // 19-axis per-axis grant resolution; FIXY-V-002 specialized
 // `row_hash_contribution<safety::fn::Fn<...>>` to fold all 19 axes.
-// These 8 stances exercise the axis-engagement combinatorics:
+// These 7 stances exercise the axis-engagement combinatorics:
 //   * PureLinear/PureCopy differ on Usage axis
 //   * IoFunction/BgWorker differ on Effect axis
 //   * CtCrypto differs on Representation axis (constant-time)
 //   * AsyncEndpoint differs on Reentrancy axis
-//   * CooperativeBg/RealtimeHot differ on Synchronization + HotPath
+//   * RealtimeHot differs on Effect (empty row) + Regime/HotPath
+//
+// (CooperativeBg removed — FIXY-FOUND-071 R003 proves Coroutine×Bg
+// structurally unsafe; the de-coroutined remnant was a verbatim
+// BgWorker duplicate that collapsed this very distinctness matrix.)
 using S01_PureLinear     = cf::stance::PureLinear<int>;
 using S02_PureCopy       = cf::stance::PureCopy<int>;
 using S03_IoFunction     = cf::stance::IoFunction<int>;
 using S04_BgWorker       = cf::stance::BgWorker<int>;
 using S05_CtCrypto       = cf::stance::CtCrypto<int>;
 using S06_AsyncEndpoint  = cf::stance::AsyncEndpoint<int>;
-using S07_CooperativeBg  = cf::stance::CooperativeBg<int>;
-using S08_RealtimeHot    = cf::stance::RealtimeHot<int>;
+using S07_RealtimeHot    = cf::stance::RealtimeHot<int>;
 
-// ── 45-entry hash matrix ──────────────────────────────────────────
+// ── 44-entry hash matrix ──────────────────────────────────────────
 //
 // Order is contractual — the fold ceremony pins acc-after-each-entry,
 // so reshuffling indices changes the anchor literal even if every
 // individual hash stays the same.  When adding an entry, append at
 // the END of the wrapper bucket (preserves all upstream fold state for
 // the stance bucket).
-inline constexpr std::array<std::uint64_t, 45> kHashes = {
+inline constexpr std::array<std::uint64_t, 44> kHashes = {
     row_hash_contribution_v<W01_Linear>,
     row_hash_contribution_v<W02_Refined>,
     row_hash_contribution_v<W03_SealedRefined>,
@@ -225,8 +228,7 @@ inline constexpr std::array<std::uint64_t, 45> kHashes = {
     row_hash_contribution_v<S04_BgWorker>,
     row_hash_contribution_v<S05_CtCrypto>,
     row_hash_contribution_v<S06_AsyncEndpoint>,
-    row_hash_contribution_v<S07_CooperativeBg>,
-    row_hash_contribution_v<S08_RealtimeHot>,
+    row_hash_contribution_v<S07_RealtimeHot>,
 };
 
 inline constexpr std::size_t kEntryCount = kHashes.size();
@@ -234,7 +236,7 @@ inline constexpr std::size_t kPairCount  = (kEntryCount * (kEntryCount - 1)) / 2
 
 // ── Pairwise distinctness at consteval ────────────────────────────
 //
-// O(n²) sweep; for n=34 that's 561 comparisons.  Returns the index
+// O(n²) sweep; for n=44 that's 946 comparisons.  Returns the index
 // of the first collision (or sentinel sentinel-pair on success) so
 // the diagnostic message in `static_assert` can point at the
 // colliding row.
@@ -357,7 +359,17 @@ inline constexpr std::uint64_t kFoldSeed = 0xC0FFEEBADF00DBA5ULL;
 // FOUND-049 peers and post-FOUND-049 peers will silently route to
 // different slots, which is the EXPECTED wire-format break for
 // closing the storage-discrimination cache aliasing defect.
-inline constexpr std::uint64_t kFoldAnchor = 0x4DC454CD4512E7F2ULL;
+// FIXY-FOUND-071 (2026-05-25): rolled OLD=0x4DC454CD4512E7F2 →
+// NEW=0x5EB752331374FB74 after REMOVING the S07_CooperativeBg stance
+// (down to 44 entries, 7 stances).  R003 (FIXY-FOUND-071) proves
+// Reentrancy::Coroutine × Row<Bg> structurally unsafe (cross-thread
+// resume hazard).  CooperativeBg's de-coroutined remnant had become a
+// verbatim BgWorker duplicate, collapsing this matrix's distinctness
+// invariant (S04_BgWorker == S07_CooperativeBg).  Removing the stance
+// drops one entry and re-folds the trailing position; every existing
+// kernel's federation-cache slot past the removed index moves.  This
+// is the EXPECTED wire-format break for retiring an unsound stance.
+inline constexpr std::uint64_t kFoldAnchor = 0x5EB752331374FB74ULL;
 
 static_assert(fold_anchor() == kFoldAnchor,
     "FIXY-V-008: ceremony anchor drift.  A row_hash_contribution<> "
@@ -373,13 +385,13 @@ static_assert(fold_anchor() == kFoldAnchor,
 // Cardinality pin — adding a new entry without updating kEntryCount
 // would compile silently otherwise.  This anchors the size to
 // review.
-static_assert(kEntryCount == 45,
+static_assert(kEntryCount == 44,
     "FIXY-V-008: matrix cardinality changed.  Update kEntryCount, "
     "extend kHashes at the end (NOT the middle — preserves upstream "
     "fold state), and recompute kFoldAnchor.");
 
-static_assert(kPairCount == 990,
-    "FIXY-V-008: 45 * 44 / 2 = 990.  If you see this fire, "
+static_assert(kPairCount == 946,
+    "FIXY-V-008: 44 * 43 / 2 = 946.  If you see this fire, "
     "kEntryCount changed without updating kPairCount.");
 
 // ── Cross-bucket distinctness — wrappers vs stances ───────────────
@@ -389,7 +401,7 @@ static_assert(kPairCount == 990,
 // documents the load-bearing property that NO wrapper hashes to ANY
 // stance — they live in disjoint cache regions by construction.
 inline constexpr std::size_t kWrapperCount = 37;
-inline constexpr std::size_t kStanceCount  = 8;
+inline constexpr std::size_t kStanceCount  = 7;
 
 static_assert(kWrapperCount + kStanceCount == kEntryCount);
 

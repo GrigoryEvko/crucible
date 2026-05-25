@@ -150,15 +150,14 @@ using S03_IoFunction     = cf::stance::IoFunction<int>;
 using S04_BgWorker       = cf::stance::BgWorker<int>;
 using S05_CtCrypto       = cf::stance::CtCrypto<int>;
 using S06_AsyncEndpoint  = cf::stance::AsyncEndpoint<int>;
-using S07_CooperativeBg  = cf::stance::CooperativeBg<int>;
-using S08_RealtimeHot    = cf::stance::RealtimeHot<int>;
+using S07_RealtimeHot    = cf::stance::RealtimeHot<int>;
 
 struct LabeledEntry {
     const char*   label;
     std::uint64_t value;
 };
 
-inline constexpr std::array<LabeledEntry, 45> kEntries = {{
+inline constexpr std::array<LabeledEntry, 44> kEntries = {{
     {"W01_Linear",          row_hash_contribution_v<W01_Linear>},
     {"W02_Refined",         row_hash_contribution_v<W02_Refined>},
     {"W03_SealedRefined",   row_hash_contribution_v<W03_SealedRefined>},
@@ -202,8 +201,7 @@ inline constexpr std::array<LabeledEntry, 45> kEntries = {{
     {"S04_BgWorker",        row_hash_contribution_v<S04_BgWorker>},
     {"S05_CtCrypto",        row_hash_contribution_v<S05_CtCrypto>},
     {"S06_AsyncEndpoint",   row_hash_contribution_v<S06_AsyncEndpoint>},
-    {"S07_CooperativeBg",   row_hash_contribution_v<S07_CooperativeBg>},
-    {"S08_RealtimeHot",     row_hash_contribution_v<S08_RealtimeHot>},
+    {"S07_RealtimeHot",     row_hash_contribution_v<S07_RealtimeHot>},
 }};
 
 inline constexpr std::size_t kEntryCount = kEntries.size();
@@ -214,7 +212,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // A divergence in count, ordering, or any individual hash flips this
 // value and reddens the build BEFORE the golden-file diff would notice.
 inline constexpr std::uint64_t kFoldSeed   = 0xC0FFEEBADF00DBA5ULL;
-inline constexpr std::uint64_t kFoldAnchor = 0x4DC454CD4512E7F2ULL;
+inline constexpr std::uint64_t kFoldAnchor = 0x5EB752331374FB74ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
