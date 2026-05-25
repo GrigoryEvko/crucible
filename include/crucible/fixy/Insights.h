@@ -625,7 +625,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "classified→IO transition.",
     "Binding engages as_secret/as_classified on Security AND with<...,IO,...> "
     "on Effect AND omits any grant::declassify<Policy>.",
-    "grant::declassify<secret_policy::AuthorizedExport>",
+    "grant::declassify<secret_policy::WireSerialize>  // encrypted-channel IO",
     "fixy::fn<T, as_secret, grant::with<effects::Effect::IO>>  // no declassify");
 
 CRUCIBLE_DEFINE_INSIGHTS_QV(
@@ -637,7 +637,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "Sequential IFC is UNSOUND under concurrency; declassify must fire.",
     "Binding engages as_secret/as_classified on Security AND "
     "with<...,Bg,...> on Effect AND omits any grant::declassify<Policy>.",
-    "grant::declassify<secret_policy::CrossThreadAuthorized>",
+    "grant::declassify<secret_policy::AuditedLogging>  // audit-trail discipline",
     "fixy::fn<T, as_secret, grant::with<effects::Effect::Bg>>  // no declassify");
 
 // fixy-A4-004: why_this_matters sourced directly from corpus::cite() to
@@ -678,7 +678,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "crossing requires declassify, not just Classified/Secret tiers.",
     "Binding engages grant::as_internal on Security AND with<...,IO,...> "
     "on Effect AND omits any grant::declassify<Policy>.",
-    "grant::declassify<secret_policy::AuthorizedExport>  // org-disclosure",
+    "grant::declassify<secret_policy::WireSerialize>  // encrypted org-disclosure",
     "fixy::fn<T, grant::as_internal, grant::with<effects::Effect::IO>>");
 
 // fixy-A4-008: concurrent dual of internal_io_without_declassify per
@@ -696,8 +696,54 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::theory::corpus::internal_bg_without_declassify::cite(),
     "Binding engages grant::as_internal on Security AND with<...,Bg,...> "
     "on Effect AND omits any grant::declassify<Policy>.",
-    "grant::declassify<secret_policy::CrossThreadAuthorized>  // cross-thread",
+    "grant::declassify<secret_policy::AuditedLogging>  // cross-thread audit",
     "fixy::fn<T, grant::as_internal, grant::with<effects::Effect::Bg>>");
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-FOUND-016 sentinel — correct-example policy reachability ──
+// ═════════════════════════════════════════════════════════════════════
+//
+// Pre-016 the four `correct_example` strings above cited fictional
+// policies (`secret_policy::AuthorizedExport`, `CrossThreadAuthorized`)
+// — neither existed in safety/Secret.h, so a contributor who copy-
+// pasted the example would face a "no member named X" compile error
+// and lose faith in the diagnostic surface.  The strings are inert
+// (`correct_example` is `string_view` data, never instantiated as
+// code), so the rot was invisible to every test the project ships.
+//
+// The fix substitutes real policies — `WireSerialize` for IO/disclosure
+// channels, `AuditedLogging` for cross-thread audit — both pulled from
+// the existing `secret_policy::*` roster.  This static_assert block
+// pins those two types: a future rename / removal reds Insights.h
+// directly, locally, with the FOUND-016 tag in the diagnostic so the
+// fix path is grep-discoverable.  Pinning at the consumer (not at
+// safety/Secret.h where the types live) is deliberate — the consumer
+// is the audit boundary; the substrate's existence is enforced via
+// its own `NotInherited` discipline, not from here.
+//
+// Without these pins, a future "clean up unused declassify policies"
+// PR could silently delete `WireSerialize` and reintroduce the
+// invisible-rot class FOUND-016 closed.
+static_assert(
+    std::derived_from<::crucible::safety::secret_policy::WireSerialize,
+                      ::crucible::safety::secret_policy::secret_policy_base>,
+    "FIXY-FOUND-016: secret_policy::WireSerialize must exist and inherit "
+    "secret_policy_base — it is cited verbatim in the correct_example "
+    "field of classified_io_without_declassify and "
+    "internal_io_without_declassify above.  Renaming requires either "
+    "(a) updating both correct_example strings in lock-step, or "
+    "(b) introducing a substitute policy that fits the IO-export "
+    "semantics the examples document.  See safety/Secret.h.");
+static_assert(
+    std::derived_from<::crucible::safety::secret_policy::AuditedLogging,
+                      ::crucible::safety::secret_policy::secret_policy_base>,
+    "FIXY-FOUND-016: secret_policy::AuditedLogging must exist and inherit "
+    "secret_policy_base — it is cited verbatim in the correct_example "
+    "field of classified_bg_without_declassify and "
+    "internal_bg_without_declassify above.  Renaming requires either "
+    "(a) updating both correct_example strings in lock-step, or "
+    "(b) introducing a substitute policy that fits the cross-thread "
+    "audit-trail semantics the examples document.  See safety/Secret.h.");
 
 // ═════════════════════════════════════════════════════════════════════
 // ── FIXY-U-110 coverage sentinel — reflection-driven ───────────────
