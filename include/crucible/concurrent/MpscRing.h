@@ -86,6 +86,7 @@
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <bit>
@@ -278,7 +279,19 @@ public:
 
     [[nodiscard, gnu::hot]] std::size_t try_pop_batch(
         std::span<T> out) noexcept {
-        const std::size_t cap = out.size();
+        // Clamp the request to Capacity.  The ring holds AT MOST Capacity
+        // live items (head - tail <= Capacity, enforced by every
+        // producer's capacity gate).  Without this clamp a caller passing
+        // out.size() > Capacity on a full ring makes the contiguous-prefix
+        // scan below wrap past the buffer end: cell_idx = (pos0 + R) & MASK
+        // re-aliases the start cell, the still-set bitmap words are
+        // re-counted, R grows beyond Capacity, and the drain then returns
+        // DUPLICATE items, clears every bit, and advances tail PAST head —
+        // the next try_push sees (pos - tail) wrap to a huge value, reads
+        // it as "full" forever, and the channel deadlocks.  A DetSafe +
+        // liveness bug.  Clamping (vs rejecting like try_push_batch) keeps
+        // the partial-fill contract: the caller gets up to Capacity items.
+        const std::size_t cap = std::min<std::size_t>(out.size(), Capacity);
         if (cap == 0) return 0;
 
         const std::uint64_t pos0 = tail_.peek_relaxed();
