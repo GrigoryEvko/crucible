@@ -7,9 +7,22 @@
 // width minted through `mint_simd_width(ctx)` (the ctx-authorized path),
 // V-259's `grant::simd::width<WidthBits W>` is a STRONG-ENUM-typed direct
 // pinning grant for `#if`-arm declarations and std::simd / intrinsic call
-// sites alike (the V-264 SwissTable consumer).  Both route to the
-// SimdIsa axis; they coexist — different NTTP types (raw uint16 vs the
-// WidthBits enum), different authorization paths.
+// sites alike (the V-264 SwissTable consumer).
+//
+// FIXY-FOUND-039 closure — duplicate-engagement on SimdIsa axis:
+//   Both grants ARE STRUCTURALLY DISTINCT TYPES so they may coexist
+//   side-by-side in the codebase (different headers, different mint
+//   surfaces, different NTTP shapes — raw uint16 vs WidthBits enum).
+//   BUT they BOTH route to `DimensionAxis::SimdIsa` via the per-grant
+//   `which_dim` specializations (Hw.h:380, Simd.h:134).  A `fixy::fn`
+//   Grants pack that contains BOTH a `grant::hw::simd_width<W1>` AND
+//   a `grant::simd::width<W2>` engages SimdIsa twice — the wrapper's
+//   tier-4 `UniqueEngagementPerAxis` gate REJECTS it with the
+//   `FixyDuplicate_SimdIsa` diagnostic tag (Reject.h:1284).  Exactly
+//   one SimdIsa pin per binding.  The structural witness pinning
+//   this lives in this header's `v039_simd_isa_duplicate_witness`
+//   sentinel block (below) plus the dedicated neg-compile fixture
+//   `test/fixy_neg/neg_fixy_v_039_simd_isa_duplicate.cpp`.
 //
 // ── WidthBits — SIMD vector width in BITS ─────────────────────────────
 //
@@ -71,6 +84,7 @@
 
 #include <crucible/fixy/Grant.h>            // grant_base, which_dim, IsGrantTag
 #include <crucible/fixy/Dim.h>              // dim::DimensionAxis
+#include <crucible/fixy/Hw.h>               // FOUND-039: hw::simd_width for sentinel
 
 #include <cstdint>
 #include <type_traits>
@@ -212,3 +226,67 @@ inline void runtime_smoke_test() {
 }
 
 }  // namespace crucible::fixy::simd::detail::v259_self_test
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-FOUND-039 — SimdIsa duplicate-engagement structural witness ─
+// ═════════════════════════════════════════════════════════════════════
+//
+// Pin the invariant that BOTH grant families (`hw::simd_width<W>` and
+// `simd::width<W>`) route to the SAME DimensionAxis (SimdIsa).  The
+// transitive consequence — that `fixy::fn<...>` rejects a Grants pack
+// containing one of each — falls out of the wrapper's tier-4
+// UniqueEngagementPerAxis gate (Reject.h §1284).  The dedicated
+// neg-compile fixture in test/fixy_neg/ proves the rejection actually
+// fires; this sentinel pins the structural premise (same-axis routing).
+//
+// Cardinality discipline (FIXY-FOUND-029 / FOUND-035 precedent):
+// the count "2 grant families × 1 shared axis" is structurally
+// witnessed below — adding a third SimdIsa-routing grant in the future
+// must add a row here too so this block diverges if anyone introduces
+// a SILENT third channel.
+
+namespace crucible::fixy::simd::detail::v039_simd_isa_duplicate_witness {
+
+namespace gh = ::crucible::fixy::grant::hw;
+namespace gs = ::crucible::fixy::grant::simd;
+using ::crucible::fixy::grant::which_dim_v;
+using D = ::crucible::fixy::dim::DimensionAxis;
+
+// Layer 1: each grant individually routes to SimdIsa (already tested
+// in Hw.h:593 and Simd.h:178 above; restated here to anchor FOUND-039).
+static_assert(which_dim_v<gh::simd_width<256>>               == D::SimdIsa,
+    "FIXY-FOUND-039 anchor: hw::simd_width<W> MUST route to SimdIsa.");
+static_assert(which_dim_v<gs::width<WidthBits::Bits256>>     == D::SimdIsa,
+    "FIXY-FOUND-039 anchor: simd::width<W> MUST route to SimdIsa.");
+
+// Layer 2: the load-bearing FOUND-039 invariant — both grants engage
+// the SAME axis.  A user who passes both will fail tier-4
+// UniqueEngagementPerAxis on SimdIsa.  This static_assert reds if a
+// future audit accidentally re-routes one of the two grants to a new
+// axis (which would silently re-admit the previously-rejected pack
+// shape).
+static_assert(which_dim_v<gh::simd_width<256>>
+              == which_dim_v<gs::width<WidthBits::Bits256>>,
+    "FIXY-FOUND-039: hw::simd_width AND simd::width MUST share an "
+    "axis so a Grants pack containing both fails "
+    "UniqueEngagementPerAxis (FixyDuplicate_SimdIsa).");
+
+// Layer 3: NTTP-distinct types (so the codebase can hold both
+// definitions and use them at different call sites — they are
+// type-incompatible even when comparing the same width value).
+static_assert(!std::is_same_v<gh::simd_width<256>,
+                              gs::width<WidthBits::Bits256>>,
+    "FIXY-FOUND-039: the two grants are STRUCTURALLY DISTINCT types "
+    "(different NTTP shapes); they coexist at TYPE level but cannot "
+    "coexist within a single Grants pack.");
+
+// Layer 4: width-value parity sanity — `gh::simd_width<256>` and
+// `gs::width<Bits256>` represent the SAME width concept.  Reviewer
+// reads this and understands the rejection isn't a "different widths
+// don't compose" bug — it's a "same axis, one slot" rule.
+static_assert(static_cast<std::uint16_t>(WidthBits::Bits256) == 256u,
+    "FIXY-FOUND-039 sanity: WidthBits::Bits256 underlying value is "
+    "256 — confirms the two grant families address the same width "
+    "physical concept when both name 256-bit.");
+
+}  // namespace crucible::fixy::simd::detail::v039_simd_isa_duplicate_witness

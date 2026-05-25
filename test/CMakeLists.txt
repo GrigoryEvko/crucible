@@ -12712,6 +12712,16 @@ crucible_neg_compile_fixy_test(neg_fixy_v_259_width_out_of_enum
 crucible_neg_compile_fixy_test(neg_fixy_v_259_width_unlisted_64
     "constraints not satisfied|is_known_width|width|no matching")
 
+# ── FIXY-FOUND-039 — SimdIsa duplicate-engagement rejection (HS14) ──
+# Witnesses that fixy::fn rejects a Grants pack containing BOTH
+# `hw::simd_width<W>` (V-257) AND `simd::width<W>` (V-259) — both route
+# to DimensionAxis::SimdIsa, so the wrapper's tier-4
+# UniqueEngagementPerAxis gate must fire with FixyDuplicate_SimdIsa.
+# Anchored against Reject.h §1284 (the gate concept) AND the structural
+# witness block in Simd.h's self-test (`v039_simd_isa_duplicate_witness`).
+crucible_neg_compile_fixy_test(neg_fixy_v_039_simd_isa_duplicate
+    "UniqueEngagementPerAxis|first_duplicate_axis_v|FixyDuplicate_|Duplicate-axis")
+
 # ── FIXY-V-226 — fixy/Io.h HS14 neg-compile fixtures (#2104) ────────
 #
 # Seven mismatch classes for the V-226 substrate's three concept gates
