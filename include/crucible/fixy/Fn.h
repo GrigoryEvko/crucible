@@ -783,6 +783,25 @@ using resolved_fn_t = safety::fn::Fn<
 using ImplicitTypeMarker =
     grant::accept_default_strict_for<dim::DimensionAxis::Type>;
 
+// FIXY-FOUND-041 cross-namespace identity pin: Reject.h owns the
+// canonical definition (detail::accept::ImplicitTypeMarker) so the
+// wrapper-discipline `IsAccepted` concept can reference it without
+// depending on Fn.h.  This Fn.h-local alias is documented as "an
+// alias of the canonical definition" (Reject.h:1429-1430).  Pin
+// that the two ARE structurally the same type — a refactor that
+// silently diverges the two definitions (e.g., one switched to a
+// different axis without the other) would silently break every
+// fixy::fn binding's Type-axis injection path.
+static_assert(std::is_same_v<ImplicitTypeMarker,
+                             ::crucible::fixy::detail::accept::ImplicitTypeMarker>,
+    "FIXY-FOUND-041: Fn.h's detail::resolve::ImplicitTypeMarker MUST "
+    "be structurally identical to Reject.h's detail::accept::"
+    "ImplicitTypeMarker.  The two aliases denote the same canonical "
+    "Type-axis injection marker; if they diverge, the wrapper "
+    "(which uses Reject.h's form via the IsAccepted concept) and "
+    "Fn.h's internal projection helpers (which use the resolve "
+    "alias) would inject DIFFERENT markers at different paths.");
+
 }  // namespace detail::resolve
 
 // ─── IsAcceptedFn — REMOVED, fixy-H-05 ──────────────────────────────

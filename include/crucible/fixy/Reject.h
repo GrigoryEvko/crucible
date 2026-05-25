@@ -2208,6 +2208,144 @@ using MinusEffectPack = std::tuple<
 static_assert(!accepts_pack_v<int, MinusEffectPack>,
     "Removing accept-strict<Effect> without replacement must reject.");
 
+// ── FIXY-FOUND-041 — Type-marker injection structural witness ──────
+//
+// THE ASYMMETRY: `IsAccepted<T, Grants...>` auto-injects the implicit
+// Type-axis marker (`detail::accept::ImplicitTypeMarker`) into the
+// pack before delegating to the low-level `IsAcceptedDirect`; the
+// low-level form expects ALL engagement markers — including Type —
+// to be explicit.  The fixy-H-05 rename eliminated the public-name
+// footgun but left the asymmetry STRUCTURALLY UNPINNED — a future
+// refactor that injects a different marker (or none) would silently
+// change the semantics of every fixy::fn binding because the
+// wrapper's tier sequence (Fn.h §815) consumes `IsAccepted` through
+// the auto-injecting concept.
+//
+// The L-08 witnesses above pin the `_v` ↔ concept agreement WITHIN
+// each form, but NOT the wrapper-vs-direct equivalence under
+// `+ImplicitTypeMarker`.  The static_asserts below close that gap:
+//
+//   (1) Structural identity — pin the marker IS the Type-axis
+//       deferred form.  A refactor that swaps in another axis or a
+//       non-strict-default tag fires this assert at the
+//       definition site.
+//
+//   (2) Axis identity — pin the marker engages the Type axis
+//       specifically.  Defense-in-depth against a hidden re-tag
+//       (e.g., the marker silently routed to a renamed axis).
+//
+//   (3) Functional asymmetry — the LOAD-BEARING witness.  On a pack
+//       that engages all 32 non-Type axes via strict defaults:
+//         - `IsAccepted<int, ...>` MUST accept (wrapper injects Type)
+//         - `IsAcceptedDirect<int, ...>` (no marker) MUST reject
+//         - `IsAcceptedDirect<int, accept_default_strict_for<Type>,
+//            ...>` MUST accept (explicit marker)
+//       This catches "IsAccepted refactored to inject a DIFFERENT
+//       marker" — case 1 would then accept (some marker injected)
+//       but case 3 (explicit Type marker) would reject (Type
+//       engaged twice via dup), and the asserts diverge.
+
+// MinusTypePack: all 32 non-Type axes engaged via strict default.
+using MinusTypePack = std::tuple<
+    // Type removed
+    strict<dim::DimensionAxis::Refinement>,
+    strict<dim::DimensionAxis::Usage>,
+    strict<dim::DimensionAxis::Effect>,
+    strict<dim::DimensionAxis::Security>,
+    strict<dim::DimensionAxis::Protocol>,
+    strict<dim::DimensionAxis::Lifetime>,
+    strict<dim::DimensionAxis::Provenance>,
+    strict<dim::DimensionAxis::Trust>,
+    strict<dim::DimensionAxis::Representation>,
+    strict<dim::DimensionAxis::Observability>,
+    strict<dim::DimensionAxis::Complexity>,
+    strict<dim::DimensionAxis::Precision>,
+    strict<dim::DimensionAxis::Space>,
+    strict<dim::DimensionAxis::Overflow>,
+    strict<dim::DimensionAxis::Mutation>,
+    strict<dim::DimensionAxis::Reentrancy>,
+    strict<dim::DimensionAxis::Size>,
+    strict<dim::DimensionAxis::Version>,
+    strict<dim::DimensionAxis::Staleness>,
+    strict<dim::DimensionAxis::Synchronization>,
+    strict<dim::DimensionAxis::Regime>,
+    strict<dim::DimensionAxis::FpMode>,
+    strict<dim::DimensionAxis::SyscallSurface>,
+    strict<dim::DimensionAxis::ControlFlow>,
+    strict<dim::DimensionAxis::CallShape>,
+    strict<dim::DimensionAxis::StackUse>,
+    strict<dim::DimensionAxis::GlobalState>,
+    strict<dim::DimensionAxis::Stdio>,
+    strict<dim::DimensionAxis::HwInstruction>,
+    strict<dim::DimensionAxis::BarrierStrength>,
+    strict<dim::DimensionAxis::SimdIsa>,
+    strict<dim::DimensionAxis::MemoryScope>>;
+
+// Wrapper-discipline counterpart to `accepts_pack_v` — exercises
+// `IsAccepted` (auto-injecting) instead of `IsAcceptedDirect`.
+template <typename T, typename Tuple>
+inline constexpr bool accepts_through_wrapper_v = []() {
+    return [&]<typename... Ts>(std::tuple<Ts...>*) consteval {
+        return IsAccepted<T, Ts...>;
+    }(static_cast<Tuple*>(nullptr));
+}();
+
+// Wrapper-discipline counterpart that takes an EXPLICIT extra marker
+// inserted at the head of the pack (used to witness that the
+// IsAcceptedDirect + explicit-Type-marker form matches IsAccepted).
+template <typename T, typename Marker, typename Tuple>
+inline constexpr bool accepts_pack_with_marker_v = []() {
+    return [&]<typename... Ts>(std::tuple<Ts...>*) consteval {
+        return IsAcceptedDirect<T, Marker, Ts...>;
+    }(static_cast<Tuple*>(nullptr));
+}();
+
+// (1) Structural identity — ImplicitTypeMarker IS the canonical
+// Type-axis deferred form.  A refactor that uses a different
+// relaxation tag (or routes through a different axis) fires here.
+static_assert(
+    std::is_same_v<detail::accept::ImplicitTypeMarker,
+                   grant::accept_default_strict_for<dim::DimensionAxis::Type>>,
+    "FIXY-FOUND-041: detail::accept::ImplicitTypeMarker MUST be the "
+    "canonical accept_default_strict_for<Type>.  The IsAccepted "
+    "wrapper-discipline relies on this identity — if the marker is "
+    "swapped to another type, every IsAccepted call site silently "
+    "shifts which axis the auto-injection engages.");
+
+// (2) Axis identity — defense-in-depth.  Even if (1) holds, pin
+// that `which_dim_v` projects the marker to the Type axis (catches
+// a hypothetical refactor of `which_dim` specializations).
+static_assert(
+    grant::which_dim_v<detail::accept::ImplicitTypeMarker>
+        == dim::DimensionAxis::Type,
+    "FIXY-FOUND-041: ImplicitTypeMarker MUST project to DimensionAxis"
+    "::Type via which_dim.  A change to either the marker's "
+    "underlying type OR the which_dim specialization for "
+    "accept_default_strict_for<Type> fires this assert.");
+
+// (3) Functional asymmetry — the load-bearing witness.
+static_assert(accepts_through_wrapper_v<int, MinusTypePack>,
+    "FIXY-FOUND-041: IsAccepted MUST accept a 32-non-Type-axis pack "
+    "because the wrapper auto-injects the Type marker.  If this "
+    "fires, the wrapper's Type-marker injection is broken OR a new "
+    "axis was added without updating MinusTypePack.");
+
+static_assert(!accepts_pack_v<int, MinusTypePack>,
+    "FIXY-FOUND-041: IsAcceptedDirect MUST REJECT a 32-non-Type-axis "
+    "pack — Type is missing.  If this fires, IsAcceptedDirect "
+    "is silently injecting a marker (defeating its 'you must know "
+    "what you're doing' contract).");
+
+static_assert(
+    accepts_pack_with_marker_v<int,
+                               detail::accept::ImplicitTypeMarker,
+                               MinusTypePack>,
+    "FIXY-FOUND-041: IsAcceptedDirect WITH an explicit Type marker "
+    "MUST accept the same pack — proves IsAccepted's auto-injection "
+    "produces a result IDENTICAL to manual marker placement.  If "
+    "this fires, the marker's structural identity diverged from the "
+    "wrapper's injection path.");
+
 // Type-axis well-formedness:
 static_assert(!IsAccepted<void, grant::accept_default_strict_for<dim::DimensionAxis::Usage>>,
     "Type=void must reject (Fn requires complete object type).");
