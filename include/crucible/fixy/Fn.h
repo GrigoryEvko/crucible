@@ -2535,6 +2535,161 @@ static_assert(row_hash_contribution_v<PureLinear<int>> != 0);
 // dedicated sentinel slot value.
 static_assert(!row_hash_of_v<PureLinear<int>>.is_sentinel());
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FIXY-FOUND-045 — with<E1, E2> permutation invariance ──────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// `grant::with<Es...>` projects to `effects::Row<Es...>` (Fn.h:231).
+// The Row-level row_hash is permutation-invariant by construction —
+// `row_hash_contribution<Row<Es...>>` sort-folds over Effect
+// underlying values (RowHashFold.h §I02), and that invariance is
+// pinned at RowHashFold.h:1208-1247 for 2-way / 3-way (all 6) /
+// 6-way (reversed + shuffled) Row<...> instantiations.
+//
+// FOUND-045 is the INTEGRATION witness: at the `fixy::fn<...>` level
+// (with the WRAPPER_FIXY_FN_TAG salt mixed in), permutations of the
+// `with<Es...>` Effect pack must produce IDENTICAL safety_fn_t row
+// hashes so the federation cache (KernelCacheKey {ContentHash,
+// RowHash}) does NOT fragment slots for semantically-equivalent
+// Effect packs.  The Row-level invariance does not automatically
+// imply fixy::fn-level invariance unless the salt is applied to the
+// CANONICALIZED row representation — this witness pins that it is.
+//
+// UniqueEngagementPerAxis interaction (read this paragraph if the
+// witness ever fires): `with<Bg, Alloc>` is ONE grant, ONE Effect
+// engagement.  Tier-4 (UniqueEngagementPerAxis) counts GRANTS per
+// axis, not Effect ATOMS within a grant.  Both orderings —
+// `with<Bg, Alloc>` and `with<Alloc, Bg>` — are equally well-formed
+// (one Effect grant in the pack).  Tier-4 fires only when TWO
+// separate `with<>` grants appear: e.g.,
+// `fixy::fn<int, with<Bg>, with<Alloc>, ...>` is rejected (two
+// Effect engagements, one axis).  The permutation question is
+// orthogonal to the engagement-count question; both invariants hold
+// simultaneously.
+
+namespace found_045_witness {
+
+// (1) 2-way permutation through fixy::fn — mirror of BgWorker
+// (Fn.h:1533, which uses `with<Bg, Alloc>`) with the Effect pack
+// REVERSED.  Every other axis is identical.  Federation cache MUST
+// route both to the same slot.  Fully-qualified `detail_stance` and
+// `grant` because we are inside `crucible::safety::diag` namespace.
+template <typename Type>
+using BgWorker_AllocBg = ::crucible::fixy::fn<Type,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Refinement>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Usage>,
+    // ← Effect pack REVERSED: <Alloc, Bg> instead of BgWorker's <Bg, Alloc>
+    ::crucible::fixy::grant::with<
+        ::crucible::effects::Effect::Alloc,
+        ::crucible::effects::Effect::Bg>,
+    ::crucible::fixy::grant::as_public,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Protocol>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Lifetime>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Provenance>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Trust>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Representation>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Observability>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Complexity>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Precision>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Space>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Overflow>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Mutation>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Reentrancy>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Size>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Version>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Staleness>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Synchronization>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Regime>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::FpMode>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::SyscallSurface>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::ControlFlow>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::CallShape>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::StackUse>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::GlobalState>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::Stdio>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::HwInstruction>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::BarrierStrength>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::SimdIsa>,
+    ::crucible::fixy::stance::detail_stance::strict<
+        ::crucible::fixy::dim::DimensionAxis::MemoryScope>>;
+
+// The headline assertion — BgWorker (Effect={Bg, Alloc}) and
+// BgWorker_AllocBg (Effect={Alloc, Bg}) MUST hash identically at
+// the fixy::fn::safety_fn_t level.  Federation cache slot identity
+// for semantically-equivalent Effect packs.  Note: the existence of
+// the BgWorker_AllocBg using-alias above ALSO proves the permuted
+// form passes all five well-formedness tiers (incl. tier-4
+// UniqueEngagementPerAxis) — an ill-formed instantiation would
+// fail to materialize as a complete type, and row_hash_contribution
+// _v could not be evaluated on it.
+static_assert(row_hash_contribution_v<BgWorker<int>>
+           == row_hash_contribution_v<BgWorker_AllocBg<int>>,
+    "FIXY-FOUND-045: fixy::fn with permuted `with<Es...>` Effect "
+    "pack MUST produce identical row_hash_contribution.  Federation "
+    "cache slot identity depends on this: `with<Bg, Alloc>` and "
+    "`with<Alloc, Bg>` are semantically the same Effect row "
+    "(Row<>-level invariance pinned at RowHashFold.h:1208).  If "
+    "this assertion fires, the WRAPPER_FIXY_FN_TAG salt is being "
+    "mixed in BEFORE row canonicalization — flip the order so the "
+    "salt rides on the canonicalized Row.");
+
+// The cache slot ID must be non-zero — both forms must contribute
+// the same NON-TRIVIAL hash, not zero on both sides (which would
+// silently satisfy the equality assertion above).
+static_assert(row_hash_contribution_v<BgWorker_AllocBg<int>> != 0,
+    "FIXY-FOUND-045: BgWorker_AllocBg<int> must contribute "
+    "non-zero row_hash (permutation witness must be load-bearing).");
+
+// (2) Cross-stance pin — BgWorker_AllocBg<int> hashes the SAME as
+// the canonical BgWorker<int>, not the same as IoFunction<int>.
+// Proves the equality witness above is not vacuously satisfied by
+// some "always-the-same" bug.
+static_assert(row_hash_contribution_v<BgWorker_AllocBg<int>>
+           != row_hash_contribution_v<IoFunction<int>>,
+    "FIXY-FOUND-045: permuted BgWorker MUST still differ from "
+    "IoFunction (different Effect rows: {Bg, Alloc} vs {IO}).");
+
+// (3) UniqueEngagementPerAxis interaction — well-formedness of
+// BOTH forms is implicit in the using-alias compilation above.
+// Tier-4 counts GRANTS per axis (one with<> grant in each pack),
+// not Effect ATOMS within a grant.  Both `with<Bg, Alloc>` and
+// `with<Alloc, Bg>` are single Effect engagements.  The contrast
+// case — two separate `with<>` grants (e.g. `with<Bg>, with<Alloc>`
+// in the same pack) — would fire tier-4 (two Effect engagements,
+// one axis) and is witnessed by existing fixy_neg fixtures (see
+// test/fixy_neg/ for axis-duplication rejections).
+
+}  // namespace found_045_witness
+
 }  // namespace detail::fixy_fn_row_hash_self_test
 
 }  // namespace crucible::safety::diag
