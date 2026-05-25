@@ -1146,17 +1146,24 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(W002, "W002",
 // FIXY-V-091 F-family diagnostics (5 FP-mode cross-axis rules).
 CRUCIBLE_COLLISION_DIAGNOSTIC(F101, "F101",
     "Replay-required functions do not wrap return/parameter type in "
-    "FpReassociatePinned<UnrestrictedRewrite>",
+    "FpReassociatePinned with any non-strict mode (UnrestrictedRewrite "
+    "OR BoundedTreeDepth)",
     "marks_replay_required is true AND F::type_t is "
-    "safety::FpReassociatePinned<FpReassociate::UnrestrictedRewrite, U>. "
-    "Algebraic rewrite (-fassociative-math) reorders FP additions; "
-    "the bit pattern depends on the compiler's instruction-scheduler "
-    "micro-state and diverges across vendors, defeating bit-exact replay",
+    "safety::FpReassociatePinned<FpReassociate::UnrestrictedRewrite, U> "
+    "OR safety::FpReassociatePinned<FpReassociate::BoundedTreeDepth, U>. "
+    "UnrestrictedRewrite (-fassociative-math) reorders FP additions; the "
+    "bit pattern depends on the compiler's instruction-scheduler micro-"
+    "state and diverges across vendors.  BoundedTreeDepth pins the log-N "
+    "tree depth but lets vendors pick the per-level lane assignment "
+    "(NVIDIA warp-shuffle vs AMD wavefront vs Intel SVE differ on operand "
+    "ordering within the same tree shape), producing different FP bits "
+    "across the cross-vendor numerics CI matrix.  Both defeat bit-exact "
+    "replay",
     "drop the FpReassociatePinned wrapper on the replay-required path, "
-    "switch to FpReassociatePinned<Forbidden> (IEEE 754 default) or "
-    "FpReassociatePinned<BoundedTreeDepth> with a canonical reduction "
-    "topology, or move the rewrite-eligible work outside the replay region",
-    "fixy.md §24.2 F101 (V-091)");
+    "switch to FpReassociatePinned<Forbidden> (IEEE 754 default — the "
+    "ONLY setting compatible with bit-exact replay), or move the "
+    "rewrite-eligible work outside the replay region",
+    "fixy.md §24.2 F101 (V-091, FOUND-074)");
 CRUCIBLE_COLLISION_DIAGNOSTIC(F102, "F102",
     "Replay-required functions do not wrap return/parameter type in "
     "FpContractPinned<Fast>",

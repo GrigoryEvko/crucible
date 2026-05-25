@@ -7114,9 +7114,13 @@ crucible_neg_compile_test(neg_pack_F001_frame_axis_consistent
 # fixture, not a cascade — matching the diagnostic-substring grep
 # precisely to the rule code being verified.
 #
-#   1. F101 — Replay-required × FpReassociate<UnrestrictedRewrite>.
-#      Algebraic rewrite reorders FP additions; bit pattern diverges
-#      across NV/AMD/Intel backends → bit-exact replay broken.
+#   1. F101 — Replay-required × FpReassociate<non-strict>
+#      (UnrestrictedRewrite OR BoundedTreeDepth, FOUND-074).
+#      UnrestrictedRewrite reorders FP additions freely; BoundedTreeDepth
+#      pins log-N tree depth but vendors differ on per-level lane
+#      assignment (NV warp-shuffle / AMD wavefront / Intel SVE) producing
+#      different FP bits within the same tree shape.  Both break bit-
+#      exact replay.  Two fixtures (one per non-strict mode).
 #   2. F102 — Replay-required × FpContract<Fast>.  Cross-statement FMA
 #      folding picks different contraction boundaries per vendor → bit
 #      pattern diverges in the cross-vendor CI matrix.
@@ -7137,7 +7141,9 @@ crucible_neg_compile_test(neg_pack_F001_frame_axis_consistent
 #                     FpDenormalInput (F104), FpFtz (F105) each have a
 #                     fixture pinning their wraps_fp_axis_mode detector
 #                     specialization.
-# Five fixtures saturate the matrix.
+# Six fixtures saturate the matrix (FOUND-074: F101 split into two —
+# UnrestrictedRewrite leg + BoundedTreeDepth leg, the latter is the
+# vendor-divergent lane-assignment case).
 crucible_neg_compile_test(neg_collision_f101_replay_fp_reassoc
   "F101|replay-required|UnrestrictedRewrite|FpReassoc")
 # FOUND-074: F101 also rejects BoundedTreeDepth under replay — vendor
