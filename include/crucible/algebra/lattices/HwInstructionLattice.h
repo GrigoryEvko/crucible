@@ -308,6 +308,60 @@ static_assert(!HwInstructionLattice::leq(HwInstruction::Scalar,              HwI
 static_assert(!HwInstructionLattice::leq(HwInstruction::PrivilegedMsr,       HwInstruction::NonDeterministicTsc));
 static_assert(!HwInstructionLattice::leq(HwInstruction::NonDeterministicTsc, HwInstruction::Vectorizable));
 
+// ── FIXY-FOUND-010: convention divergence + security concern ──────────
+//
+// HwInstructionLattice uses the SAME refinement-lattice convention as
+// MemOrderLattice (FOUND-009):
+//
+//   bottom = NoneAllowed     — smallest capability set (strict default)
+//   top    = PrivilegedMsr   — largest capability set (ring-0 MSR/port)
+//   leq(a, b) ↔ "a's capability-set ⊆ b's capability-set"
+//   join(a, b)  = LEAST UPPER BOUND of capability sets = WIDER capability
+//                 (union of capability requirements — the composition
+//                 may use any instruction either part may use)
+//   meet(a, b)  = GREATEST LOWER BOUND of capability sets = TIGHTER
+//                 capability (intersection — only what BOTH allow)
+//
+// The local comments "par=join (wider-instruction-class-dominates)" /
+// "and=meet (tighter-instruction-floor)" ACCURATELY describe lattice
+// behavior.  However, the cross-tree Tier-S contract documented at
+//   safety/DimensionTraits.h:301-302
+//     "HwInstruction / BarrierStrength are Tier-S with par=join
+//      (strictest-wins along their chains, parallel to ControlFlow /
+//      CallShape)"
+//   fixy/Default.h:426
+//     "HwInstruction / BarrierStrength are Tier-S (par=join,
+//      strictest-wins)"
+// claims "strictest-wins via join".  But "strictest" for this lattice
+// = NoneAllowed (line 73 / 81: "the strict default — a pure linear
+// computation").  join returns WIDER (PrivilegedMsr at top), NOT
+// strictest.
+//
+// ── SECURITY CONCERN ───────────────────────────────────────────────
+// This convention divergence has TEETH: a consumer reading the cross-
+// tree contract as "compose returns the tightest capability set" would
+// silently grant PrivilegedMsr access whenever ANY composition member
+// declares it.  Concrete attack shape: a hot-path function F annotated
+// NoneAllowed composed with a kernel K annotated PrivilegedMsr yields
+// composed annotation PrivilegedMsr — a runtime admission gate
+// inspecting the composed annotation and granting "as documented"
+// would grant ring-0 MSR access to F's foreground caller.
+//
+// V-254's `Hw<HwInstruction Tier, T>` wrapper relies on the lattice for
+// Graded composition.  As of FOUND-010 audit (2026-05-25), grep
+// confirms NO production consumer of `Graded<Absolute, At<...>, T>::
+// compose()` exists for HwInstructionLattice outside in-file self-
+// tests — so the security teeth are LATENT, not active.  But future
+// permission-gating code MUST call MEET (tighter-floor) for the
+// "minimum capability granted" reading.  See FOUND-076 for the audit-
+// sweep that normalizes the cross-lattice convention.
+//
+// Also: per the lattice doc-block (~L51), real PrivilegedMsr grants
+// require a `Permission<Root>` CSL token at the production-callsite —
+// the lattice value alone is NOT sufficient to grant ring-0 access.
+// That CSL layer is the actual security gate; the lattice value
+// expresses INTENT, not grant.
+//
 // Join semantics — par=join (wider-instruction-class-dominates).
 // Composing a Vectorizable site with an rdtsc site yields the higher
 // tier (the region as a whole reads the TSC).
@@ -320,11 +374,38 @@ static_assert(HwInstructionLattice::join(HwInstruction::NoneAllowed,
                                          HwInstruction::Scalar)
               == HwInstruction::Scalar);
 
+// FIXY-FOUND-010 security-witness pin — join of NoneAllowed and the
+// PrivilegedMsr top yields PrivilegedMsr (= wider = LATENT escalation
+// surface if any consumer reads compose as "strictest-wins").  Pinning
+// this side directly red-flags any future refactor that changes the
+// chain direction without coordinated cross-tree fix.
+static_assert(HwInstructionLattice::join(HwInstruction::NoneAllowed,
+                                         HwInstruction::PrivilegedMsr)
+              == HwInstruction::PrivilegedMsr,
+    "FIXY-FOUND-010: join(NoneAllowed, PrivilegedMsr) returns "
+    "PrivilegedMsr (top = widest capability).  A consumer treating "
+    "compose as 'strictest-wins capability-minimization' would "
+    "silently inherit MSR access.  Consumers wanting the tightest "
+    "capability floor MUST call MEET.");
+
 // Meet semantics — and=meet (tighter-instruction-floor).  At an admission
 // gate, meeting a permissive binding with a tight policy yields the floor.
 static_assert(HwInstructionLattice::meet(HwInstruction::PrivilegedMsr,
                                          HwInstruction::Scalar)
               == HwInstruction::Scalar);
+
+// FIXY-FOUND-010 capability-minimization witness — for a CSL/admission
+// gate doing capability-minimization (grant only what both parties
+// admit), MEET is the correct operator.  meet(NoneAllowed, anything)
+// = NoneAllowed (the strict-default floor).  Pinning this side proves
+// the bottom-element absorption property the CSL gate relies on.
+static_assert(HwInstructionLattice::meet(HwInstruction::NoneAllowed,
+                                         HwInstruction::PrivilegedMsr)
+              == HwInstruction::NoneAllowed,
+    "FIXY-FOUND-010: meet(NoneAllowed, PrivilegedMsr) = NoneAllowed "
+    "(bottom).  CSL/admission gates wanting capability-minimization "
+    "(grant only what every participant admits) MUST call MEET — "
+    "calling JOIN silently grants the widest party's capabilities.");
 
 // At<T> singleton — empty element_type for EBO collapse at every use
 // site.  V-254's `Graded<Absolute, At<T>, P>` relies on this.
