@@ -100,6 +100,37 @@ inline constexpr bool is_writeoncenonnull_v =
 // Default storage is std::vector; users may substitute arena-backed
 // or inplace_vector backing by specifying the second template param.
 //
+// FIXY-FOUND-121 hot-path discipline: the default Storage=std::vector
+// has growth-on-push O(n) behavior (vector::push_back past capacity
+// reallocates + copies every existing element).  This DEFIES
+// CLAUDE.md §III's "vector::reserve banned everywhere; growth event
+// is O(n)" rule on HOT paths.  Discipline:
+//
+//   * COLD paths (init, cleanup, build phases): default Storage=
+//     std::vector is acceptable.  The O(n) growth spike happens
+//     during one-time setup; total work is amortized over the
+//     lifetime of the workload.  Current production users
+//     (Arena::blocks_, CallSiteTable::entries, BackgroundThread::
+//     uncompiled_regions / iteration_graphs) all fit this profile.
+//
+//   * HOT paths (foreground recording, kernel dispatch, ~5ns/op):
+//     callers MUST specify a non-growing Storage.  Two options:
+//       - AppendOnly<T, std::inplace_vector<T, N>::template
+//         underlying> for compile-time bound N (zero heap, true
+//         O(1) push_back, contract-checked overflow).
+//       - Arena-backed storage adapter (bump-pointer, ~2ns alloc,
+//         zero growth latency).
+//     The default Storage=std::vector instantiated on a hot path
+//     IS a §III violation — review-reject.  Reviewers checking
+//     hot-path code should grep for `AppendOnly<*[^,]*>` (no
+//     second template argument) and require the alternative.
+//
+// This is doc-discipline, not a structural gate, because "is this
+// the hot path?" is context-dependent and cannot be expressed via
+// a single concept.  Future work could add a HotPath-tagged
+// AppendOnly variant that statically rejects vector-backed
+// instantiation (similar to fixy/HotPath.h marker semantics).
+//
 // ── MIGRATED to Graded<Absolute, SeqPrefixLattice<T>, Storage<T>> (#466) ─
 //
 // As of MIGRATE-6 (2026-04-26) AppendOnly<T, Storage> delegates
