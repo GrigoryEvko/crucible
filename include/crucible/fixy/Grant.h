@@ -466,7 +466,27 @@ struct which_dim<from_source<Source>>
 //                          the upstream's claim through a separate
 //                          channel.
 
-template <auto Rationale = 0>
+// FIXY-FOUND-038 closure: the auto NTTP carries the audit rationale.
+// Pre-FOUND-038, `Rationale = 0` was the default — `trust_assumed<>` at
+// a production call site silently produced `Rationale == 0` indistinguish-
+// able from an explicit-zero choice, defeating audit grep (`grep
+// trust_assumed<` returns hits, but the auditor cannot tell "I provided
+// no rationale" from "I deliberately chose 0").
+//
+// The default is removed: every production use MUST provide an explicit
+// rationale value (typically a `std::array<char, N>` literal capturing
+// the human-readable justification, e.g.
+//   `trust_assumed<std::array{"vendor-firmware-signed-by-NVIDIA"}>`).
+// Type-trait queries that don't care about the rationale value (e.g.
+// `which_dim_v<trust_assumed<axis_query_tag>>`) provide the literal
+// sentinel value `axis_query_tag` (defined immediately below).
+//
+// The audit-grep discipline: every `trust_assumed<` site must surface
+// a meaningful rationale on review; sites bearing `axis_query_tag`
+// are by construction type-trait queries and skipped by the auditor.
+inline constexpr int axis_query_tag = 0;
+
+template <auto Rationale>
 struct trust_assumed final : grant_base {};
 
 template <auto Rationale>
@@ -707,7 +727,7 @@ static_assert(which_dim_v<space_unbounded>                                   == 
 static_assert(which_dim_v<productive>                                        == dim::DimensionAxis::Size);
 static_assert(which_dim_v<in_region<0>>                                      == dim::DimensionAxis::Lifetime);
 static_assert(which_dim_v<from_source<safety::source::FromUser>>             == dim::DimensionAxis::Provenance);
-static_assert(which_dim_v<trust_assumed<>>                                   == dim::DimensionAxis::Trust);
+static_assert(which_dim_v<trust_assumed<axis_query_tag>>                     == dim::DimensionAxis::Trust);
 static_assert(which_dim_v<protocol<safety::fn::proto::None>>                 == dim::DimensionAxis::Protocol);
 
 // ── fixy-A4-033: cv-ref rejection witnesses ────────────────────────
