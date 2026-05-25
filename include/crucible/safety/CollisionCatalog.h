@@ -1694,8 +1694,36 @@ struct is_borrowed_carrier<Borrowed<T, Source>> : std::true_type {};
 template <typename Row, effects::Effect E>
 inline constexpr bool row_has_effect_v = effects::row_contains_v<Row, E>;  // ROW-CONTAINS-OK: generic <Row, E> membership alias, not a Ctx capability check
 
+// FIXY-FOUND-067 Phase 2: structural async reader (L002/E044/I004).
+//
+// `has_async_v<F>` OR-folds THREE trigger paths for the marks_async
+// rule family:
+//
+//   1.  STRUCTURAL via reentrancy axis.  `F::reentrancy_v ==
+//       ReentrancyMode::Coroutine` declares "this binding suspends".
+//
+//   2.  STRUCTURAL via effect row.  `effects::Effect::Bg` in F's
+//       effect_row_t declares "this binding runs in background context".
+//
+//   3.  LEGACY OPT-IN.  `marks_async<F>::value` via explicit user
+//       specialization at file scope.  Preserves backward compat with
+//       every existing safety_neg fixture (e.g.,
+//       neg_collision_L002_borrow_async.cpp) that opts in via the marker
+//       without touching Fn's Reentrancy or EffectRow axes.
+//
+// This alias is consumed by `L002_OK` (borrow × async), `E044_OK`
+// (constant-time × async), `I004_OK` (classified × async × session ×
+// !CT), and `concurrent_context_v<F>` — all at namespace `fn::collision`
+// scope, evaluated LAZILY in concept-satisfaction contexts.  Eager
+// reads inside `CollisionRules<Fn<...>>::async` MUST instead use the
+// partial-spec parameters `Reentrancy` and `EffectRow` directly to
+// avoid the `F::*_t → ValidComposition` cycle (see
+// `feedback_collision_rules_partial_spec_cycle.md`).
 template <typename F>
-inline constexpr bool has_async_v = marks_async<F>::value;
+inline constexpr bool has_async_v =
+    (F::reentrancy_v == ReentrancyMode::Coroutine)
+    || row_has_effect_v<typename F::effect_row_t, effects::Effect::Bg>
+    || marks_async<F>::value;
 
 template <typename F>
 inline constexpr bool has_ct_v = marks_ct<F>::value;
@@ -3020,7 +3048,17 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
 
     static constexpr bool classified =
         Security == SecLevel::Classified || Security == SecLevel::Secret;
-    static constexpr bool async = collision::marks_async<F>::value;
+    // FIXY-FOUND-067 Phase 2: structural OR marker, computed via the
+    // partial-spec `Reentrancy` and `EffectRow` parameters rather than
+    // `F::reentrancy_v` and `typename F::effect_row_t`.  Going through
+    // `F::*` member aliases would force completion of F (= Fn<...>)
+    // inside CollisionRules, triggering ValidComposition recursion via
+    // Fn body's `static_assert(ValidComposition<F>)`.  Partial-spec
+    // parameters are cycle-safe.
+    static constexpr bool async =
+        (Reentrancy == ReentrancyMode::Coroutine)
+        || collision::row_has_effect_v<EffectRow, effects::Effect::Bg>
+        || collision::marks_async<F>::value;
     static constexpr bool ct = collision::marks_ct<F>::value;
     static constexpr bool fail = collision::marks_fail<F>::value;
     static constexpr bool fail_secret = collision::marks_fail_error_secret<F>::value;

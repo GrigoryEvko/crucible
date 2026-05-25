@@ -7124,6 +7124,13 @@ crucible_neg_compile_test(neg_collision_H001_hotpath_unbounded_cost
 # production-shape HotPath<Hot, ...> wrapped binding".
 crucible_neg_compile_test(neg_collision_H001_structural_hotpath_wrapper
   "H001")
+# FIXY-FOUND-067 Phase 2 structural-detection witness: E044 fires for
+# marks_ct + Reentrancy::Coroutine WITHOUT marks_async specialization.
+# Graduates 3 rules (L002/E044/I004) — async-family — from "dormant
+# unless author specializes" to "fires on Reentrancy::Coroutine or
+# Row<Bg> structural engagement".
+crucible_neg_compile_test(neg_collision_E044_structural_async_coroutine
+  "E044")
 crucible_neg_compile_test(neg_collision_H002_hotpath_trivial_refinement
   "H002")
 crucible_neg_compile_test(neg_collision_H003_hotpath_alloc_unbounded
