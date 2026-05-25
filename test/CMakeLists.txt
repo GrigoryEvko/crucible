@@ -7058,6 +7058,24 @@ crucible_neg_compile_test(neg_collision_H010_hotpath_bg
 crucible_neg_compile_test(neg_collision_P010_ghost_runtime
   "P010")
 
+# ─── FIXY-FOUND-065 CollisionCatalog L007 neg-compile (per-rule) ─────
+#
+# L007 — borrow_capture × Row<Bg> cross-thread lifetime hazard.
+# A borrow-capture function (UsageMode::Borrow, borrowed-carrier type,
+# or marks_borrow_capture marker) takes a reference whose lifetime is
+# tied to the caller's stack.  Bg-row execution may unwind that stack
+# before the background body runs, leaving the borrow dangling.  L002
+# catches the marker-driven async-suspension variant; L003 catches the
+# marker-driven unscoped-spawn variant.  L007 catches the structural
+# Bg-row direct-read where no marker is specialized.  HS14 fixture
+# instantiates a real fn::Fn<...> with UsageMode::Borrow AND
+# Row<Effect::Bg> AND no marker specialization; L007 alone catches the
+# case (L002/L003 require marker engagement to fire).  Structurally
+# parallel to L003 (borrow × spawn-marker) on the marker-free
+# Bg-row axis.
+crucible_neg_compile_test(neg_collision_L007_borrow_bg_row
+  "L007")
+
 # ─── FIXY-V-091 CollisionCatalog F101..F105 neg-compiles (per-rule) ──
 #
 # V-091 ships 5 new CollisionCatalog rules (F101..F105) gating

@@ -484,6 +484,22 @@ enum class RuleCode : std::uint8_t {
     // of the HotPath marker — the two rules pin the same shape on
     // orthogonal axes.
     P010 = 48,  // Ghost × Row<Alloc|IO|Block> (erasure contract violation)
+    // ── FIXY-FOUND-065 L-family extension — borrow × Bg-row lifetime ───
+    //
+    // L007 closes a gap left by L002 / L003.  L002 catches `borrow_capture
+    // × marks_async`; L003 catches `borrow_capture × marks_unscoped_spawn`.
+    // Both rely on a marker-trait specialization that downstream code must
+    // hand-roll on the offending Fn (FIXY-FOUND-067 dormant-marker
+    // family).  But a borrow_capture × Row<Bg> binding declares "this
+    // function takes a borrowed reference AND runs in background-thread
+    // context" — and the Bg-row carrier directly implies cross-thread
+    // execution where the caller's stack may have unwound by the time
+    // the background thread executes the body, leaving the borrow
+    // dangling.  Structurally the same lifetime hazard L003 targets,
+    // but readable from the EffectRow alone with no marker required.
+    // Parallel to P010 (Ghost × Row<observable-effects>) on the Usage
+    // axis but on the Borrow side of the Borrow/Ghost split.
+    L007 = 49,  // borrow_capture × Row<Bg> (cross-thread borrow lifetime hazard)
     None = 255,
 };
 
@@ -656,6 +672,11 @@ struct P010_GhostNonErasable : diag::tag_base {
     static constexpr std::string_view name = "P010_GhostNonErasable";
 };
 
+// ── FIXY-FOUND-065 L007 — borrow × Bg-row cross-thread lifetime ─────
+struct L007_BorrowBgRow : diag::tag_base {
+    static constexpr std::string_view name = "L007_BorrowBgRow";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -705,11 +726,12 @@ using Catalog = std::tuple<
     V401_ScopeStrengthInsufficient,
     V402_ScopeArchCrossTrunk,
     H010_HotPathBgContradiction,
-    P010_GhostNonErasable
+    P010_GhostNonErasable,
+    L007_BorrowBgRow
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 49);
+static_assert(catalog_size == 50);
 
 // FIXY-FOUND-139: reflection-derived RuleCode enum ceiling.
 //
@@ -737,7 +759,7 @@ static_assert(rule_code_count == catalog_size + 1,
     "added without appending the rule struct to Catalog, OR a rule "
     "was appended to Catalog without minting a RuleCode enumerator. "
     " This reflection-derived pin is independent of catalog_size's "
-    "hand-pinned 49 — both must agree.");
+    "hand-pinned 50 — both must agree.");
 
 template <RuleCode R>
 struct rule_tag;
@@ -791,6 +813,7 @@ template <> struct rule_tag<RuleCode::V401> { using type = V401_ScopeStrengthIns
 template <> struct rule_tag<RuleCode::V402> { using type = V402_ScopeArchCrossTrunk; };
 template <> struct rule_tag<RuleCode::H010> { using type = H010_HotPathBgContradiction; };
 template <> struct rule_tag<RuleCode::P010> { using type = P010_GhostNonErasable; };
+template <> struct rule_tag<RuleCode::L007> { using type = L007_BorrowBgRow; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -944,6 +967,9 @@ template <> struct rule_code_of<H010_HotPathBgContradiction> {
 };
 template <> struct rule_code_of<P010_GhostNonErasable> {
     static constexpr RuleCode value = RuleCode::P010;
+};
+template <> struct rule_code_of<L007_BorrowBgRow> {
+    static constexpr RuleCode value = RuleCode::L007;
 };
 
 template <typename Tag>
@@ -1354,6 +1380,27 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(P010, "P010",
     "implementation in a sibling non-Ghost binding and let the Ghost binding "
     "stay pure)",
     "fixy.md §24.2 P010 (V-FOUND-064)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(L007, "L007",
+    "borrow-capture functions do not also claim Bg-row context membership",
+    "has_borrow_capture_v<F> (Usage == UsageMode::Borrow, or F::type_t is a "
+    "borrowed carrier, or marks_borrow_capture is engaged) AND F::effect_row_t "
+    "contains effects::Effect::Bg. A borrow_capture function declares 'I take a "
+    "borrowed reference whose lifetime is tied to the caller'; a Bg-row function "
+    "declares 'I execute in background-thread context'. When the background "
+    "thread runs the body, the caller's stack may have unwound, leaving the "
+    "borrow dangling — the same cross-thread lifetime hazard L003 targets, but "
+    "readable from the EffectRow alone (no marks_unscoped_spawn specialization "
+    "required). L002 covers borrow x async-suspension via the marks_async "
+    "marker; L003 covers borrow x unscoped-spawn via the marks_unscoped_spawn "
+    "marker; L007 covers the marker-free Bg-row direct-read case",
+    "drop UsageMode::Borrow / the borrowed carrier (move ownership into the "
+    "Bg-context closure via Linear / Capability / Owned), OR drop the Bg atom "
+    "from the effect row (the function does not actually execute in background "
+    "context — pick Foreground / Init / Test as appropriate). For genuine "
+    "fork-join patterns where the borrow IS lifetime-scoped via "
+    "permission_fork, use the explicit fork API instead of a bare "
+    "borrow_capture x Row<Bg> signature",
+    "fixy.md §24.2 L007 (V-FOUND-065)");
 CRUCIBLE_COLLISION_DIAGNOSTIC(V402, "V402",
     "a memory-scope trunk is coherent with the binding's pinned host architecture",
     "marks_scope_arch_cross_trunk OR F::type_t pins a ScopedFence whose trunk contradicts "
@@ -1740,6 +1787,23 @@ concept P010_OK = !(F::usage_v == UsageMode::Ghost &&
                                       effects::Effect::IO> ||
                      row_has_effect_v<typename F::effect_row_t,
                                       effects::Effect::Block>));
+
+// L007: borrow_capture × Row<Bg> cross-thread lifetime hazard
+// (FIXY-FOUND-065). A borrow-capture function takes a borrowed reference
+// whose lifetime is tied to the caller's stack; Bg-row implies cross-
+// thread execution where the caller's stack may unwind before the
+// background thread runs the body. The borrow then dangles.  L002 / L003
+// catch the marker-driven variants (marks_async / marks_unscoped_spawn);
+// L007 catches the structural effect-row direct-read where no marker is
+// engaged. Structurally parallel to L003 on the Bg-row side.  Note that
+// the EXISTING legitimate borrow-into-Bg pattern is `permission_fork`
+// (CSL parallel rule, fork-join lifetime-scoped) — code wanting that
+// pattern uses the explicit fork API, NOT a bare borrow_capture × Bg
+// signature.
+template <typename F>
+concept L007_OK = !(has_borrow_capture_v<F> &&
+                    row_has_effect_v<typename F::effect_row_t,
+                                     effects::Effect::Bg>);
 
 template <typename F>
 concept F002_OK = !(marks_federation_peer<F>::value &&
@@ -2223,7 +2287,7 @@ concept AllRulesOK =
     V001_OK<F> && V002_OK<F> && V101_OK<F> && V102_OK<F> &&
     V201_OK<F> && V202_OK<F> && V203_OK<F> && V301_OK<F> &&
     V401_OK<F> && V402_OK<F> &&
-    H010_OK<F> && P010_OK<F>;
+    H010_OK<F> && P010_OK<F> && L007_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -2323,6 +2387,8 @@ template <typename F>
         return RuleCode::H010;
     } else if constexpr (!P010_OK<F>) {
         return RuleCode::P010;
+    } else if constexpr (!L007_OK<F>) {
+        return RuleCode::L007;
     } else {
         return RuleCode::None;
     }
@@ -2805,6 +2871,21 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "drop the observable effect atom (wrap the runtime "
             "implementation in a sibling non-Ghost binding if a downstream "
             "caller needs the Alloc/IO/Block surface). FIXY-FOUND-064.");
+        static_assert(!(borrow_capture && row_has_bg),
+            "L007: borrow_capture x Row<Bg>. A borrow-capture function takes "
+            "a borrowed reference whose lifetime is tied to the caller's "
+            "stack; a Bg-row function executes in background-thread context. "
+            "When the background thread runs the body, the caller's stack "
+            "may have unwound, leaving the borrow dangling. L002 catches "
+            "borrow x marks_async (coroutine/await suspension); L003 catches "
+            "borrow x marks_unscoped_spawn (spawn-marker driven). But a "
+            "borrow_capture binding with Row<Bg> in its effect row and NO "
+            "marker specialization slips both — yet has the same cross-thread "
+            "lifetime hazard. Drop UsageMode::Borrow (move ownership into "
+            "the Bg-context closure via Linear / Capability / Owned), OR drop "
+            "the Bg atom from the effect row, OR use the explicit "
+            "permission_fork API for lifetime-scoped fork-join borrow "
+            "patterns. FIXY-FOUND-065.");
         static_assert(!(federation_peer && unbounded_cost),
             "F002: federation peer x unbounded cost. Attach a wall-clock "
             "budget (cost::Linear<N>) and a terminating bound; federation "
@@ -3035,7 +3116,8 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(Usage == UsageMode::Ghost &&
                  (row_has_alloc_or_io ||
                   collision::row_has_effect_v<EffectRow,
-                                              effects::Effect::Block>));
+                                              effects::Effect::Block>)) &&
+               !(borrow_capture && row_has_bg);
     }
 
     static constexpr bool valid = validate();
