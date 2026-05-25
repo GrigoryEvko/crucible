@@ -178,7 +178,11 @@ inline TensorMeta read_meta(Reader& r) {
     // handle_contract_violation path (logged, terminated).  TraceLoader's
     // ndim > 8 guard at line 321 is retained as defense-in-depth.
     m.ndim       = make_ndim(ValidNDim{r.r<uint8_t>()});
-    m.dtype      = r.r<ScalarType>();
+    // dtype gate (sibling of #534/#892): validated widening — a corrupt
+    // or skewed byte outside ScalarType's sparse enumerator set (e.g. 14)
+    // would otherwise reach element_size()'s `default: std::unreachable()`
+    // as UB.  ValidScalarType's ctor rejects it at deserialize entry.
+    m.dtype      = make_scalar_type(ValidScalarType{r.r<int8_t>()});
     m.device_type = r.r<DeviceType>();
     m.device_idx  = r.r<int8_t>();
     m.layout          = r.r<Layout>();

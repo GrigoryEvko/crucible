@@ -5576,6 +5576,23 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_above_max
 crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# read_meta dtype gate (sibling of #534 ndim / #892 kernel_id) — ScalarType
+# dtype byte typed gate at the read_meta()
+# deserialize boundary.  ScalarType is a SPARSE int8_t enum; a corrupt or
+# version-skewed Cipher byte outside the enumerator set reached
+# element_size()'s `default: std::unreachable()` as UB.  ValidScalarType is
+# Refined<valid_scalar_type, int8_t>; its ctor rejects an invalid byte.
+# Two fixtures per HS14, distinct mismatch classes:
+#   * neg_tensor_meta_dtype_gap_value — INTERIOR gap (14, between Bool=11
+#     and BFloat16=15) catches "predicate relaxed to a plain range check
+#     [-1,26]" drift that would admit the 12..14 / 16..22 gaps.
+#   * neg_tensor_meta_dtype_above_max — ABOVE-MAX wide miss (99 > 26)
+#     catches "drop the predicate entirely" regression.
+crucible_neg_compile_test(neg_tensor_meta_dtype_gap_value
+  "contract|Refined|valid_scalar_type|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_tensor_meta_dtype_above_max
+  "contract|Refined|valid_scalar_type|not a constant|non-constant|constexpr")
+
 # WRAP-Serialize-5 #1014 — write_meta() zero_ptr / zero_grad_fn_hash
 # wire-format invariants now ride through safety::Refined<is_zero,
 # uint64_t>.  The wrapper pins "must-be-zero on disk" at the type

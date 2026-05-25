@@ -275,4 +275,50 @@ uint8_t make_ndim(ValidNDim raw) noexcept {
     return raw.value();
 }
 
+// ── read_meta dtype gate (sibling of #534 ndim / #892 kernel_id) ──────
+//
+// read_meta() reconstructs `m.dtype = r.r<ScalarType>()` from a single
+// untrusted byte.  ScalarType is a SPARSE int8_t enum (0..11, 15,
+// 23..26, -1) — a corrupt or version-skewed Cipher file can deliver a
+// gap value (e.g. 14) or an out-of-range byte.  The unchecked cast then
+// flows into element_size(), whose `default: std::unreachable()` makes
+// any non-enumerator value UNDEFINED BEHAVIOUR in the size-math path.
+//
+// `valid_scalar_type` is a named-case predicate (mirrors element_size's
+// switch, fails closed on unknown values); ValidScalarType's ctor
+// pre-clause rejects an invalid byte via P1494R5 partial-program
+// correctness, exactly as ValidNDim guards ndim.  make_scalar_type lifts
+// the witness back to a bare ScalarType for storage — the 168-byte
+// TensorMeta layout lock + wire format are unchanged (1 byte in, 1 byte
+// out; the read switches from r.r<ScalarType>() to r.r<int8_t>() which
+// consumes the identical byte).
+//
+// Cost: regime-1 EBO collapse — sizeof(ValidScalarType) == sizeof(int8_t).
+inline constexpr auto valid_scalar_type =
+    [](auto raw) constexpr noexcept -> bool {
+        switch (static_cast<ScalarType>(static_cast<std::int8_t>(raw))) {
+            case ScalarType::Byte:            case ScalarType::Char:
+            case ScalarType::Short:           case ScalarType::Int:
+            case ScalarType::Long:            case ScalarType::Half:
+            case ScalarType::Float:           case ScalarType::Double:
+            case ScalarType::ComplexHalf:     case ScalarType::ComplexFloat:
+            case ScalarType::ComplexDouble:   case ScalarType::Bool:
+            case ScalarType::BFloat16:
+            case ScalarType::Float8_e5m2:     case ScalarType::Float8_e4m3fn:
+            case ScalarType::Float8_e5m2fnuz: case ScalarType::Float8_e4m3fnuz:
+            case ScalarType::Undefined:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+using ValidScalarType = ::crucible::fixy::wrap::Refined<
+    valid_scalar_type, std::int8_t>;
+
+[[nodiscard, gnu::const]] inline constexpr
+ScalarType make_scalar_type(ValidScalarType raw) noexcept {
+    return static_cast<ScalarType>(raw.value());
+}
+
 }  // namespace crucible
