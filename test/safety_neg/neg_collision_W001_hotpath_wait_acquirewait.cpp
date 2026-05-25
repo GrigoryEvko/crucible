@@ -1,30 +1,37 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// CollisionCatalog rule W001 (Phase C, FIXY-V-081), Block variant:
+// CollisionCatalog rule W001 (Phase C, widened FIXY-FOUND-061),
+// AcquireWait variant:
 //
 //     marks_hot_path<F>::value == true
-//   ∧ F::type_t is safety::Wait<Block, U>  (chain bottom)
+//   ∧ F::type_t is safety::Wait<AcquireWait, U>
 //   ⇒ ill-formed
 //
-// This fixture probes the bottom of the WaitLattice (Block strategy).
-// Block ⊑ UmwaitC01 in the chain, so `is_kernel_wait_v<Block>` is
-// TRUE — the rule fires.  Block represents the worst case: `poll`,
-// `epoll_wait`, blocking `read()` — strategies that may block
-// indefinitely on a kernel-driven readiness event.  Putting one on
-// the hot path is structurally even worse than Park (condvar wakes
-// on signal; blocking-syscall wakes on I/O readiness — different
-// failure mode but same latency-budget violation).
+// AcquireWait represents `std::atomic<T>::wait` — futex-backed on
+// Linux (4-byte aligned `__platform_wait_t`).  Per CLAUDE.md §IX
+// latency-hierarchy table:
 //
-// HS14 #2 of 4 for W001 (FIXY-FOUND-061 widening) — pairs with:
+//     | `std::atomic::wait/notify` | 1-5 µs | … | BANNED on hot path |
+//     | `futex(FUTEX_WAIT)`        | 1-5 µs | … | BANNED on hot path |
+//
+// W001's pre-FIXY-FOUND-061 predicate `is_park_or_blockier_v` =
+// `leq(S, Park)` only caught {Block, Park}, leaving AcquireWait and
+// UmwaitC01 as silent hot-path-legal — a direct CLAUDE.md §IX
+// contradiction.  The widened predicate `is_kernel_wait_v` =
+// `leq(S, UmwaitC01)` catches all four kernel-mediated tiers.
+//
+// HS14 #3 of 4 for W001 (FIXY-FOUND-061 widening).  Pairs with:
 //   1. Wait<Park, T>         — condvar/futex tier
-//   2. Wait<Block, T>        — chain-bottom worst-case tier (this)
-//   3. Wait<AcquireWait, T>  — atomic::wait / futex tier
+//   2. Wait<Block, T>        — chain-bottom worst-case tier
+//   3. Wait<AcquireWait, T>  — atomic::wait / futex tier (this)
 //   4. Wait<UmwaitC01, T>    — WAITPKG UMWAIT tier
 //
-// All four cover structurally distinct lattice tiers in the
-// kernel-tier rejected region; a refactor that accidentally narrowed
-// `is_kernel_wait_v` to a subset would silently let the excluded
-// tier slip through — these fixtures catch that.
+// Concrete bug-class this catches: a future refactor that narrowed
+// `is_kernel_wait_v` back to `leq(S, Park)` — restoring the
+// pre-FIXY-FOUND-061 under-rejection — would silently let
+// `Wait<AcquireWait>` slip through onto hot-path Fn instantiations.
+// This fixture pins the rejection at the source-code declaration
+// boundary, where the latency-budget contract belongs.
 //
 // Expected diagnostic substring: "W001:"
 
@@ -36,10 +43,10 @@ namespace fx  = crucible::effects;
 namespace sf  = crucible::safety;
 using WS = crucible::algebra::lattices::WaitStrategy;
 
-namespace neg_collision_w001_block {
+namespace neg_collision_w001_acquirewait {
 
 using Bad = fn::Fn<
-    sf::Wait<WS::Block, int>,                  // 1  Type — chain bottom
+    sf::Wait<WS::AcquireWait, int>,            // 1  Type — triggers W001
     fn::pred::True,                            // 2  Refinement
     fn::UsageMode::Linear,                     // 3  Usage
     fx::Row<>,                                 // 4  EffectRow
@@ -60,13 +67,14 @@ using Bad = fn::Fn<
     fn::stale::Fresh                           // 19 Staleness
 >;
 
-}  // namespace neg_collision_w001_block
+}  // namespace neg_collision_w001_acquirewait
 
 namespace crucible::safety::fn::collision {
-    template <> struct marks_hot_path<::neg_collision_w001_block::Bad>
+    template <> struct marks_hot_path<
+        ::neg_collision_w001_acquirewait::Bad>
         : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
-[[maybe_unused]] neg_collision_w001_block::Bad the_fixture{};
+[[maybe_unused]] neg_collision_w001_acquirewait::Bad the_fixture{};
 
 int main() { return 0; }

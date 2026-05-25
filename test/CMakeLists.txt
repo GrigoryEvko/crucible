@@ -4864,17 +4864,28 @@ crucible_neg_compile_test(neg_collision_S010_stale_ct
 crucible_neg_compile_test(neg_collision_S011_capability_replay
   "S011:")
 
-# ─── FIXY-V-081 W001 — HotPath x Wait>=Park (2 fixtures = HS14 floor) ──
+# ─── FIXY-V-081 + FIXY-FOUND-061 W001 — HotPath x kernel-tier Wait ────
+# (4 fixtures, one per kernel-mediated tier per CLAUDE.md §IX)
 #
-# W001 is the first Phase-C wait-strategy cross-axis rule.  Two
-# fixtures probe distinct lattice positions in the rejected region:
-#   1. Wait<Park, T>  — the named "≥Park" boundary tier (condvar).
-#   2. Wait<Block, T> — the chain-bottom worst-case tier (poll/blocking).
-# A regression that narrowed `is_park_or_blockier_v` to only Park
-# would silently let Block slip through — fixture #2 catches that.
+# W001 is the first Phase-C wait-strategy cross-axis rule.  Originally
+# (FIXY-V-081) the rejected set was {Block, Park} via predicate
+# `is_park_or_blockier_v` = leq(S, Park).  FIXY-FOUND-061 widened the
+# predicate to `is_kernel_wait_v` = leq(S, UmwaitC01), covering all
+# four kernel-mediated tiers per CLAUDE.md §IX latency hierarchy:
+#   1. Wait<Park, T>         — condvar / futex (1-5 µs)
+#   2. Wait<Block, T>        — poll / epoll_wait (chain bottom)
+#   3. Wait<AcquireWait, T>  — atomic::wait / futex (1-5 µs)
+#   4. Wait<UmwaitC01, T>    — WAITPKG UMWAIT (100-500 ns + wait time)
+# A regression that narrows `is_kernel_wait_v` to a subset would
+# silently let the excluded tier slip through onto the hot path —
+# these four fixtures pin all four lattice positions.
 crucible_neg_compile_test(neg_collision_W001_hotpath_wait_park
   "W001:")
 crucible_neg_compile_test(neg_collision_W001_hotpath_wait_block
+  "W001:")
+crucible_neg_compile_test(neg_collision_W001_hotpath_wait_acquirewait
+  "W001:")
+crucible_neg_compile_test(neg_collision_W001_hotpath_wait_umwaitc01
   "W001:")
 
 # ─── FIXY-V-082 W002 — Bg-row x Wait>=BoundedSpin (2 fixtures = HS14) ─

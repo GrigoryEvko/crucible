@@ -157,7 +157,9 @@ static_assert(static_cast<std::uint8_t>(VendorBackend::Portable) == 255,
 static_assert(std::is_same_v<std::underlying_type_t<HwInstruction>,
                              std::uint8_t>,
     "FIXY-FOUND-046: HwInstruction underlying type drifted from uint8_t.");
-static_assert(hw_instruction_count == 5,
+static_assert(
+    ::crucible::algebra::lattices::detail::hw_instruction_lattice_self_test::
+        hw_instruction_count == 5,
     "FIXY-FOUND-046: HwInstruction cardinality drifted from 5.");
 static_assert(static_cast<std::uint8_t>(HwInstruction::NoneAllowed)         == 0,
     "FIXY-FOUND-046: HwInstruction::NoneAllowed drifted.");
@@ -174,7 +176,9 @@ static_assert(static_cast<std::uint8_t>(HwInstruction::PrivilegedMsr)       == 4
 static_assert(std::is_same_v<std::underlying_type_t<BarrierStrength>,
                              std::uint8_t>,
     "FIXY-FOUND-046: BarrierStrength underlying type drifted from uint8_t.");
-static_assert(barrier_strength_count == 7,
+static_assert(
+    ::crucible::algebra::lattices::detail::barrier_strength_lattice_self_test::
+        barrier_strength_count == 7,
     "FIXY-FOUND-046: BarrierStrength cardinality drifted from 7.");
 static_assert(static_cast<std::uint8_t>(BarrierStrength::None)            == 0,
     "FIXY-FOUND-046: BarrierStrength::None drifted.");

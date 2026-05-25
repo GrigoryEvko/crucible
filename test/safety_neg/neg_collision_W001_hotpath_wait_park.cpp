@@ -14,15 +14,15 @@
 // §IX.  A 1-5 µs blocking wait exceeds that budget by ~25-125×.
 //
 // This fixture uses Wait<Park, int> — the tier directly named by the
-// rule.  Pairs with neg_collision_W001_hotpath_wait_block.cpp which
-// uses Wait<Block, int> (the bottom-tier strategy, even more blocking).
-// Both fixtures probe distinct lattice positions in the rejected
-// region: Park covers the named "Wait≥Park" boundary, Block covers
-// the chain bottom.
+// rule.  Pairs with neg_collision_W001_hotpath_wait_block.cpp (chain
+// bottom), neg_collision_W001_hotpath_wait_acquirewait.cpp (futex-
+// backed), and neg_collision_W001_hotpath_wait_umwaitc01.cpp (WAITPKG).
+// Together they probe all four kernel-tier lattice positions in the
+// rejected region per CLAUDE.md §IX (FIXY-FOUND-061 widening).
 //
 // Concrete bug-class this catches: a refactor that loosened the
 // W001 gate — e.g. dropped `wait_strategy_of` detector OR changed
-// `is_park_or_blockier_v` to a permissive predicate — would silently
+// `is_kernel_wait_v` to a permissive predicate — would silently
 // let a hot-path function declare itself wrapped in Wait<Park>,
 // then silently accept the kernel-trap on every call.  This fixture
 // pins the rejection at the source-code declaration boundary, where

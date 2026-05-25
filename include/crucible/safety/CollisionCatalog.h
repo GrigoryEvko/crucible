@@ -157,12 +157,17 @@ enum class RuleCode : std::uint8_t {
     //
     // W-family rules guard the Synchronization axis (DimensionAxis::20)
     // against compositions that violate latency or scheduling discipline.
-    // W001 is the first such rule: HotPath × Wait≥Park rejects functions
-    // marked hot-path that wrap their return/parameter type in a
-    // syscall-blocking Wait<Park, T> or Wait<Block, T>.  Park (condvar)
-    // and Block (poll/epoll_wait) involve 1-5 µs latency — incompatible
-    // with the hot-path budget (≤ 40 ns intra-socket per CLAUDE.md §IX).
-    W001 = 20,  // HotPath × Wait<Park> or Wait<Block> (blocker on hot path)
+    // W001 is the first such rule: HotPath × syscall-tier Wait rejects
+    // functions marked hot-path that wrap their return/parameter type
+    // in any kernel-crossing Wait strategy — {Block, Park, AcquireWait,
+    // UmwaitC01}.  All four involve a syscall or kernel-mediated
+    // transition with latency 100 ns – 20 µs, incompatible with the
+    // hot-path budget (≤ 40 ns intra-socket per CLAUDE.md §IX latency
+    // hierarchy).  Only BoundedSpin and SpinPause are admissible.
+    // FIXY-FOUND-061 widened the rejected set from {Block, Park} to all
+    // four syscall-tier strategies; the diagnostic message and
+    // remediation text already named the wider set.
+    W001 = 20,  // HotPath × Wait<{Block,Park,AcquireWait,UmwaitC01}> (syscall-tier blocker on hot path)
     // ── FIXY-V-082 Phase C/W-family — Bg × active-spin Wait ───────────
     //
     // W002 is the dual of W001 on the Synchronization axis: a Bg-context
@@ -1487,16 +1492,32 @@ template <> struct is_trivial_refinement<pred::True> : std::true_type {};
 // a safety::Wait<Strategy, U> wrapper around T.  For non-Wait types the
 // detector reports `has_wait = false` (rule trivially passes).
 //
-// `is_park_or_blockier_v<S>` consults the WaitLattice chain: Park
-// (condvar) and Block (poll/blocking-syscall) are the two lowest tiers
-// — both involve 1-5 µs latency from kernel involvement.  The rule
-// rejects either; faster strategies (AcquireWait/UmwaitC01/BoundedSpin/
-// SpinPause) are admissible on the hot path.
+// `is_kernel_wait_v<S>` consults the WaitLattice chain: every strategy
+// AT OR BELOW UmwaitC01 involves a kernel/syscall round-trip and
+// exceeds the hot-path latency budget (CLAUDE.md §IX latency
+// hierarchy):
+//   - Block       (0): poll / epoll_wait — 5-20 µs.
+//   - Park        (1): pthread_cond_wait / condvar — 3-10 µs.
+//   - AcquireWait (2): std::atomic::wait / futex — 1-5 µs.
+//   - UmwaitC01   (3): UMWAIT (WAITPKG) — 100-500 ns + wait time;
+//                      power-aware but explicitly contraindicated for
+//                      hot path per CLAUDE.md §IX ("Not applicable on
+//                      our hot path").
+// Admissible on the hot path (≤ 40 ns intra-socket budget):
+//   - BoundedSpin (4): SpinPause + exponential backoff.
+//   - SpinPause   (5): _mm_pause / yield on acquire-load.
+//
+// FIXY-FOUND-061: pre-fix this used `leq(S, Park)` and under-rejected
+// AcquireWait + UmwaitC01 — both syscall-tier strategies that CLAUDE.md
+// §IX bans on the hot path.  The W001 diagnostic message and remediation
+// text already named all four, but the rule itself caught only two.
+// Predicate widened to `leq(S, UmwaitC01)` to match the documented
+// contract.
 template <typename T> struct wait_strategy_of {
     static constexpr bool has_wait = false;
     // Sentinel value present on the primary template too.  W001/W002
     // concept atoms reference `::value` as a non-type template argument
-    // to `is_park_or_blockier_v` / `is_active_spin_v`; even though the
+    // to `is_kernel_wait_v` / `is_active_spin_v`; even though the
     // outer conjunction short-circuits at runtime when `has_wait` is
     // false, GCC 16 concept normalization eagerly substitutes the
     // template argument list of the right-hand variable template under
@@ -1522,17 +1543,20 @@ template <typename T>
 struct wait_strategy_of<T const&> : wait_strategy_of<T> {};
 
 // WaitLattice ordinal convention (WaitLattice.h L160-162):
-//   Block = 0  (bottom — blockiest)
-//   Park  = 1
-//   ...
-//   SpinPause = 5  (top — never blocks)
-// `leq(W, Park)` is true iff W is at-or-below Park in the lattice =
-// W ∈ {Block, Park}.  Those are exactly the two tiers that involve a
-// blocking syscall and exceed the hot-path latency budget.
+//   Block       = 0  (bottom — blockiest)
+//   Park        = 1
+//   AcquireWait = 2
+//   UmwaitC01   = 3
+//   BoundedSpin = 4
+//   SpinPause   = 5  (top — never blocks)
+// `leq(W, UmwaitC01)` is true iff W is at-or-below UmwaitC01 in the
+// lattice = W ∈ {Block, Park, AcquireWait, UmwaitC01}.  Those are the
+// four tiers that cross a syscall/kernel boundary and exceed the hot-
+// path latency budget (CLAUDE.md §IX).
 template <::crucible::algebra::lattices::WaitStrategy S>
-inline constexpr bool is_park_or_blockier_v =
+inline constexpr bool is_kernel_wait_v =
     ::crucible::algebra::lattices::WaitLattice::leq(
-        S, ::crucible::algebra::lattices::WaitStrategy::Park);
+        S, ::crucible::algebra::lattices::WaitStrategy::UmwaitC01);
 
 // `is_active_spin_v<S>` is the symmetric counterpart at the TOP of the
 // chain.  `leq(BoundedSpin, S)` is true iff BoundedSpin is at-or-below
@@ -1590,14 +1614,20 @@ template <typename F>
 concept F002_OK = !(marks_federation_peer<F>::value &&
                     is_unbounded_cost<typename F::cost_t>::value);
 
-// W001: HotPath × Wait<Park> or Wait<Block> rejected.  Functions marked
-// hot-path MUST NOT wrap their type_t in a syscall-blocking Wait
-// strategy.  Park (condvar) and Block (poll/epoll_wait) involve 1-5 µs
-// latency — incompatible with the hot-path budget (≤ 40 ns intra-socket).
+// W001: HotPath × syscall-tier Wait rejected.  Functions marked
+// hot-path MUST NOT wrap their type_t in any Wait strategy that
+// crosses a kernel/syscall boundary — the rejected set is {Block,
+// Park, AcquireWait, UmwaitC01}, all of which exceed the hot-path
+// budget (≤ 40 ns intra-socket per CLAUDE.md §IX latency hierarchy).
+//
+// FIXY-FOUND-061: pre-fix the predicate used `leq(S, Park)` and
+// under-rejected AcquireWait + UmwaitC01.  Widened to `leq(S,
+// UmwaitC01)` to match the documented contract and the diagnostic
+// remediation text.
 template <typename F>
 concept W001_OK = !(marks_hot_path<F>::value &&
                     wait_strategy_of<typename F::type_t>::has_wait &&
-                    is_park_or_blockier_v<wait_strategy_of<typename F::type_t>::value>);
+                    is_kernel_wait_v<wait_strategy_of<typename F::type_t>::value>);
 
 // W002: Bg-row × Wait<SpinPause> or Wait<BoundedSpin> rejected.
 // Functions whose effect_row carries Effect::Bg MUST NOT wrap their
@@ -2416,12 +2446,14 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
         collision::row_has_effect_v<EffectRow, effects::Effect::Alloc> ||
         collision::row_has_effect_v<EffectRow, effects::Effect::IO>;
 
-    // ── W001: HotPath × Wait<Park> or Wait<Block> ────────────────────
-    static constexpr bool type_has_park_or_blockier_wait =
+    // ── W001: HotPath × Wait<{Block,Park,AcquireWait,UmwaitC01}> ─────
+    // FIXY-FOUND-061: rejected set widened to all four syscall-tier
+    // strategies (was {Block, Park} only) to match CLAUDE.md §IX.
+    static constexpr bool type_has_kernel_wait =
         collision::wait_strategy_of<Type>::has_wait &&
         []() consteval {
             if constexpr (collision::wait_strategy_of<Type>::has_wait) {
-                return collision::is_park_or_blockier_v<
+                return collision::is_kernel_wait_v<
                     collision::wait_strategy_of<Type>::value>;
             } else {
                 return false;
@@ -2605,19 +2637,21 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "F002: federation peer x unbounded cost. Attach a wall-clock "
             "budget (cost::Linear<N>) and a terminating bound; federation "
             "peers cannot run forever.");
-        static_assert(!(hot_path && type_has_park_or_blockier_wait),
-            "W001: HotPath x Wait<Park> or Wait<Block>. Hot-path functions "
-            "MUST NOT wrap return/parameter type in a syscall-blocking Wait "
-            "strategy. Park (condvar) and Block (poll/epoll_wait) involve "
-            "1-5 us latency, incompatible with the hot-path budget "
-            "(<= 40 ns intra-socket). Switch to Wait<SpinPause> (CLAUDE.md "
-            "§IX default, 10-40 ns intra-socket) or Wait<BoundedSpin> for "
-            "unknown-delay signals; or move the blocking call into an Init/"
-            "Bg context. Wait<UmwaitC01> and Wait<AcquireWait> are NOT valid "
-            "hot-path replacements per CLAUDE.md §IX latency hierarchy "
-            "(UMWAIT: 'Not applicable on our hot path'; futex/atomic::wait: "
-            "'BANNED on hot path'); see safety/Wait.h is_hot_path_waiter_"
-            "admissible for the strict gate. FIXY-FOUND-124.");
+        static_assert(!(hot_path && type_has_kernel_wait),
+            "W001: HotPath x kernel-tier Wait. Hot-path functions MUST NOT "
+            "wrap return/parameter type in a kernel-mediated Wait strategy "
+            "(rejected set: Block, Park, AcquireWait, UmwaitC01). Block "
+            "(poll/epoll_wait) and Park (condvar/futex) involve 1-5 us "
+            "latency; AcquireWait (atomic::wait) is futex-backed at 1-5 us "
+            "(BANNED on hot path per CLAUDE.md §IX); UmwaitC01 (WAITPKG) is "
+            "100-500 ns plus wait time and is 'Not applicable on our hot "
+            "path' per §IX. All four are incompatible with the hot-path "
+            "budget (<= 40 ns intra-socket). Switch to Wait<SpinPause> "
+            "(CLAUDE.md §IX default, 10-40 ns intra-socket via PAUSE + MESI) "
+            "or Wait<BoundedSpin> for unknown-delay signals; or move the "
+            "blocking call into an Init/Bg context. See safety/Wait.h "
+            "is_hot_path_waiter_admissible for the strict gate. FIXY-FOUND-"
+            "124 (Park/Block); FIXY-FOUND-061 (AcquireWait/UmwaitC01 widen).");
         static_assert(!(row_has_bg && type_has_active_spin_wait),
             "W002: Bg-row x Wait<SpinPause> or Wait<BoundedSpin>. Bg-context "
             "functions MUST NOT wrap return/parameter type in an active-spin "
@@ -2796,7 +2830,7 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(hot_path && trivial_refinement) &&
                !(hot_path && row_has_alloc_or_io && unbounded_cost) &&
                !(federation_peer && unbounded_cost) &&
-               !(hot_path && type_has_park_or_blockier_wait) &&
+               !(hot_path && type_has_kernel_wait) &&
                !(row_has_bg && type_has_active_spin_wait) &&
                !(replay_required && fp_reassoc_unrestricted) &&
                !(replay_required && fp_contract_fast) &&
