@@ -199,6 +199,91 @@ template <Effect E>
 template <Effect E>
 concept IsEffect = detail::is_effect_atom_<E>();
 
+// ── Observability classification (FIXY-FOUND-133, closes FIXY-FOUND-017) ──
+//
+// Each Effect atom carries an "observable" property — whether ghost-code
+// elision is allowed to silently drop a binding tagged with that effect.
+// Alloc / IO / Block / Bg are observable (ghost-with-observable is a
+// runtime contradiction the §30.14 corpus detects); Init / Test are
+// non-observable (compile-time / test-harness scoped per fixy-M-11).
+//
+// Pattern B reflection-driven gate (FIXY-FOUND-101 precedent):
+//   - per-atom switch with NO default branch → -Werror=switch reddens
+//     on any new Effect enumerator that isn't explicitly classified;
+//   - reflection-driven cardinality witness forces instantiation of the
+//     classifier for every atom in `enumerators_of(^^Effect)` so a new
+//     atom can't be left dormant by an under-used template.
+//
+// The combination closes the FIXY-FOUND-017 forward-compat cliff:
+// adding `Effect::Crash` or `Effect::Network` REQUIRES the contributor
+// to land here with an IN/OUT decision rather than silently inheriting
+// the "not observable" default that the prior hardcoded `||`-chain
+// (Theory.h is_observable_effect_grant) gave new atoms.
+namespace detail {
+
+// FIXY-FOUND-133 cardinality pin: the project compiles with
+// -Werror=switch-default, so the switch below MUST carry a default arm
+// — and the default arm cannot serve as the "new atom = not observable"
+// trap (it would silently default new atoms to false, defeating the
+// FOUND-017 forward-compat premise).  Instead we pin `effect_count`
+// here so adding a new enumerator reddens the build with a structured
+// message; the contributor then lands a deliberate IN/OUT classification
+// in the switch + bumps this assertion to the new count.
+static_assert(effect_count == 6,
+    "FIXY-FOUND-133: when adding a new Effect enumerator, classify it "
+    "IN/OUT under is_observable_effect_atom_'s switch below AND bump "
+    "this cardinality pin.  Forward-compat trap closes FIXY-FOUND-017 "
+    "(\"Effect::Crash/Network forward-compat cliff\").");
+
+template <Effect E>
+[[nodiscard]] consteval bool is_observable_effect_atom_() noexcept {
+    // Exhaustive over every Effect enumerator.  default arm satisfies
+    // -Werror=switch-default but the cardinality pin above is the
+    // real forward-compat gate: a new atom MUST bump that count, and
+    // the bump invariably draws the contributor's eye to this switch.
+    switch (E) {
+        case Effect::Alloc:
+        case Effect::IO:
+        case Effect::Block:
+        case Effect::Bg:
+            return true;
+        case Effect::Init:
+        case Effect::Test:
+            return false;
+        default:
+            return false;
+    }
+}
+
+// Force instantiation of is_observable_effect_atom_<E> for every atom
+// reachable through reflection — if a contributor adds a new atom but
+// forgets to extend the switch above, the per-atom instantiation here
+// drags it through -Werror=switch and the build reddens.
+consteval bool every_effect_observability_classified_() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^Effect));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        (void)is_observable_effect_atom_<([:en:])>();
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_effect_observability_classified_(),
+    "FIXY-FOUND-133: every Effect atom must be CLASSIFIED in "
+    "is_observable_effect_atom_ — adding a new enumerator without "
+    "extending the switch reddens the build via -Werror=switch.");
+
+}  // namespace detail
+
+// Public-surface predicate consumed by Theory.h is_observable_effect_grant
+// and any future ghost-elision-boundary site.
+template <Effect E>
+[[nodiscard]] consteval bool is_observable() noexcept {
+    return detail::is_observable_effect_atom_<E>();
+}
+
 // ── Capability tag types (cap::*) ───────────────────────────────────
 //
 // The Effect enum is the abstract atom catalog used by the Met(X) row

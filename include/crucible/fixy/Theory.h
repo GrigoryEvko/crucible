@@ -440,13 +440,16 @@ template <> struct is_ghost_grant<grant::ghost>
 // contradiction — never silently broaden the predicate.
 template <typename G> struct is_observable_effect_grant
     : std::false_type {};
+// FIXY-FOUND-133: route through effects::is_observable<E> (Pattern B
+// reflection-driven gate in effects/Capabilities.h).  Prior body
+// hardcoded the IN-set `(Alloc || IO || Block || Bg)`; a new Effect
+// atom (Crash / Network) would have silently defaulted to "not
+// observable", which is the FIXY-FOUND-017 forward-compat cliff.
+// The atom-helper's switch has no default branch → -Werror=switch
+// reddens the build on a new atom that isn't deliberately classified.
 template <effects::Effect... Es>
 struct is_observable_effect_grant<grant::with<Es...>>
-    : std::bool_constant<(
-        ((Es == effects::Effect::Alloc) ||
-         (Es == effects::Effect::IO)    ||
-         (Es == effects::Effect::Block) ||
-         (Es == effects::Effect::Bg))   || ...)> {};
+    : std::bool_constant<(effects::is_observable<Es>() || ...)> {};
 
 // fixy-M-11: structural witnesses lock the IN/OUT membership in.
 // If a future contributor changes the predicate, the corresponding
