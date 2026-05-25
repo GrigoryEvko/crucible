@@ -76,6 +76,7 @@
 #include <crucible/effects/ComputationGraded.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/EffectRowLattice.h>
+#include <crucible/effects/ExecCtx.h>
 
 #include <string_view>
 #include <type_traits>
@@ -273,6 +274,55 @@ public:
     template <Effect Cap>
         requires IsEffect<Cap>
     [[nodiscard]] static constexpr auto lift(T x)
+        noexcept(std::is_nothrow_move_constructible_v<T>)
+        -> Computation<Row<Cap>, T>
+    {
+        return Computation<Row<Cap>, T>{std::move(x)};
+    }
+
+    // `lift_in<Cap, Ctx>` — FIXY-FOUND-014 rigorous closure.
+    //
+    // Ctx-witnessed companion to `lift<Cap>(x)`.  The constraint
+    // `row_contains_v<Ctx::row_type, Cap>` is the type-level proof
+    // that the caller's execution context legitimately permits the
+    // claimed effect — the forge surface that the unwitnessed
+    // `lift<Cap>(x)` left open is closed here at the type-system
+    // level.  Production call sites that legitimately attach a row
+    // at construction time MUST migrate to this form; the bare
+    // `lift<Cap>(x)` survives ONLY for the in-file smoke tests
+    // (where the ctx infrastructure is intentionally absent) and
+    // for the FIXY-FOUND-014 forge-surface demonstration sentinel
+    // below.
+    //
+    // Gate composition (left-to-right short-circuit):
+    //   * IsEffect<Cap>                                — Cap is a valid Effect atom
+    //   * IsExecCtx<Ctx>                               — Ctx is a well-formed ExecCtx<...>
+    //   * row_contains_v<Ctx::row_type, Cap>           — Ctx's row carries Cap
+    //
+    // The first two are sanity gates (typo rejection); the third
+    // IS the rigorous closure.  A caller in `HotFgCtx{}` (row =
+    // `Row<>`) CANNOT mint a Bg-claimed Computation via lift_in:
+    // the third predicate evaluates false at substitution, the
+    // function template is constrained-out of overload resolution,
+    // and the call site fails to find a candidate.  A caller in
+    // `BgDrainCtx{}` (row = `Row<Bg, Alloc>`) can.
+    //
+    // Symmetric with `mint_cap<E>(source)` (FOUND-105) — passkey-
+    // free because Computation construction doesn't need an
+    // unforgeable token; the type-level gate IS the unforgeable
+    // proof.  The rvalue-ref-qualified consume discipline applies
+    // to the RETURNED Computation, not to lift_in itself.
+    //
+    // Hot-path note: `Ctx const&` parameter is EBO-collapsible if
+    // Ctx is empty (all canonical ExecCtx aliases are 1-byte empty
+    // types under [[no_unique_address]]).  Zero-cost dispatch at
+    // -O3 — the parameter is unused at runtime, only its TYPE
+    // matters at substitution.
+    template <Effect Cap, class Ctx>
+        requires IsEffect<Cap>
+              && ::crucible::effects::IsExecCtx<Ctx>
+              && row_contains_v<typename std::remove_cvref_t<Ctx>::row_type, Cap>
+    [[nodiscard]] static constexpr auto lift_in(Ctx const&, T x)
         noexcept(std::is_nothrow_move_constructible_v<T>)
         -> Computation<Row<Cap>, T>
     {
@@ -885,6 +935,62 @@ static_assert(
     "The forged claim IS type-visible to RowEngagementWitnessed band-3 "
     "consumers (fixy/Effect.h:172) — provenance is what's missing, "
     "not the engagement claim itself.");
+
+// ── FIXY-FOUND-014 rigorous closure (2026-05-25 follow-up) ─────────
+//
+// `lift_in<Cap, Ctx>(Ctx const&, T)` is the ctx-witnessed closure.
+// The gate is `row_contains_v<Ctx::row_type, Cap>` — the type-level
+// proof that the caller's context permits the claimed effect.  The
+// asymmetry between two canonical ExecCtx aliases (BgDrainCtx admits
+// Bg; HotFgCtx does not) IS the closure.  These structural pins
+// hold the asymmetry — if either reds, the rigorous closure's gate
+// has lost its discriminating power and lift_in either over-admits
+// (false on positive) or over-rejects (true on negative).
+
+// Predicate the gate uses — pinned both ways:
+static_assert(
+    row_contains_v<typename ::crucible::effects::BgDrainCtx::row_type,
+                   Effect::Bg>,
+    "FIXY-FOUND-014: BgDrainCtx::row_type IS Row<Bg, Alloc> per "
+    "ExecCtx.h:806-813.  BgDrainCtx MUST witness Bg — that is the "
+    "production Bg-thread context, and lift_in<Bg>(BgDrainCtx{}, x) "
+    "is the canonical migration target for unwitnessed lift<Bg>(x) "
+    "calls in production Forge / Mimic / Cipher code.");
+
+static_assert(
+    !row_contains_v<typename ::crucible::effects::HotFgCtx::row_type,
+                    Effect::Bg>,
+    "FIXY-FOUND-014: HotFgCtx::row_type IS Row<> per ExecCtx.h:792-801. "
+    "HotFgCtx MUST NOT witness Bg — fg-thread code in the recording "
+    "pipeline must not synthesize Bg-claimed Computations.  If this "
+    "reds, the closure's gate has lost its discriminating power.");
+
+// Positive demonstration: lift_in<Bg> in BgDrainCtx admits.  The
+// requires-clause's third predicate evaluates true, the function is
+// in the overload set, the call succeeds, and the result type is
+// the same engaged Computation the unwitnessed lift<Bg> produces.
+// What's NEW is provenance: the call SITE proves the ctx-permission.
+static_assert(
+    std::is_same_v<
+        decltype(Computation<Row<>, int>::template lift_in<Effect::Bg>(
+            std::declval<::crucible::effects::BgDrainCtx const&>(), 42)),
+        Computation<Row<Effect::Bg>, int>>,
+    "FIXY-FOUND-014 RIGOROUS CLOSURE: lift_in<Bg>(BgDrainCtx{}, int) "
+    "yields Computation<Row<Bg>, int>.  Witnessed-form ADMITS when "
+    "ctx's row contains the requested effect.  Production call "
+    "sites prefer this form over bare lift<Bg>(x).");
+
+// Same effect_count pin as the bare-lift case, applied to the
+// witnessed form to prove the result type is identical (only the
+// CONSTRUCTION PATH gained a gate).
+static_assert(
+    decltype(Computation<Row<>, int>::template lift_in<Effect::Bg>(
+        std::declval<::crucible::effects::BgDrainCtx const&>(), 0))
+            ::effect_count_in_row() == 1u,
+    "FIXY-FOUND-014 RIGOROUS CLOSURE: lift_in<Bg> result has "
+    "effect_count_in_row()==1, identical to bare lift<Bg>.  The "
+    "type-level engagement claim is preserved; only the construction "
+    "gate gained a witness.");
 
 }  // namespace fixy_found_014
 
