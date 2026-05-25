@@ -1639,6 +1639,114 @@ static_assert(
     "row_hash drifted — wire-format break.  Inner-row "
     "non-collapsing through combine_ids must remain bit-stable.");
 
+// ─── FIXY-FOUND-053 — expanded Computation pins ───────────────────
+//
+// The prior 4 anchors covered only the most basic cases (EmptyRow + Bg
+// singleton + Alloc/IO pair + one nested).  Per-Effect singletons and
+// expanded nested cases close the coverage gap so a regression in:
+//   • combine_ids order-sensitivity,
+//   • per-Effect singleton row dispatch,
+//   • cross-row nested fold,
+//   • triple-nested chained combine_ids,
+// reddens the build instead of silently moving federation cache slots.
+
+// Per-Effect singletons (Bg already pinned above) — one anchor per
+// every Effect enum value so a per-Effect routing regression would not
+// silently drift the cache slot for kernels declaring that effect.
+
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
+ == 0x058CA6EFB434D439ULL,
+    "Computation<Row<Alloc>, int> row_hash drifted — wire-format break.");
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>>
+ == 0xCCFE717213BBA49CULL,
+    "Computation<Row<IO>, int> row_hash drifted — wire-format break.");
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Block>, int>>
+ == 0x6D28A236D0E146C7ULL,
+    "Computation<Row<Block>, int> row_hash drifted — wire-format break.");
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Init>, int>>
+ == 0x64EF4D0126C4A4E3ULL,
+    "Computation<Row<Init>, int> row_hash drifted — wire-format break.");
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Test>, int>>
+ == 0xF4060D16B464EFDEULL,
+    "Computation<Row<Test>, int> row_hash drifted — wire-format break.");
+
+// Nested EmptyRow-over-singleton (IO already pinned above) — exercises
+// the inner-row-engaged-outer-row-empty composition, which is the
+// shape that an outer caller wraps in a top-level no-effect frame.
+
+static_assert(
+    row_hash_contribution_v<effects::Computation<EmptyRow,
+        effects::Computation<Row<Effect::Alloc>, int>>>
+ == 0x0BECBF75AD6D7A0CULL,
+    "Computation<EmptyRow, Computation<Row<Alloc>, int>> drifted.");
+static_assert(
+    row_hash_contribution_v<effects::Computation<EmptyRow,
+        effects::Computation<Row<Effect::Block>, int>>>
+ == 0x32894FE89819DEA1ULL,
+    "Computation<EmptyRow, Computation<Row<Block>, int>> drifted.");
+static_assert(
+    row_hash_contribution_v<effects::Computation<EmptyRow,
+        effects::Computation<Row<Effect::Bg>, int>>>
+ == 0xEDF6E609659BD93CULL,
+    "Computation<EmptyRow, Computation<Row<Bg>, int>> drifted.");
+static_assert(
+    row_hash_contribution_v<effects::Computation<EmptyRow,
+        effects::Computation<Row<Effect::Init>, int>>>
+ == 0x93C6E9DAD4DDF07AULL,
+    "Computation<EmptyRow, Computation<Row<Init>, int>> drifted.");
+static_assert(
+    row_hash_contribution_v<effects::Computation<EmptyRow,
+        effects::Computation<Row<Effect::Test>, int>>>
+ == 0x792A21E2C4F20C13ULL,
+    "Computation<EmptyRow, Computation<Row<Test>, int>> drifted.");
+
+// Asymmetric reverse — outer-engaged, inner-empty.  Pinned because
+// combine_ids is non-commutative, so this MUST hash differently from
+// the EmptyRow-outer/Row-inner forms above.
+
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Bg>,
+        effects::Computation<EmptyRow, int>>>
+ == 0x40D0E7791202A526ULL,
+    "Computation<Row<Bg>, Computation<EmptyRow, int>> drifted — "
+    "asymmetric-reverse order pinning.");
+
+// Same-row nested — pins that doubled-up engaged rows don't
+// accidentally collapse via combine_ids.
+
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Bg>,
+        effects::Computation<Row<Effect::Bg>, int>>>
+ == 0xAFCB34F7B12A2F95ULL,
+    "Computation<Row<Bg>, Computation<Row<Bg>, int>> drifted — "
+    "same-row nested must remain distinct from single-Bg via "
+    "combine_ids non-collapsing fold.");
+
+// Cross-row nested — pins the canonical two-distinct-Effect carrier
+// composition (e.g. Alloc-outer wrapping IO-inner kernel result).
+
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>,
+        effects::Computation<Row<Effect::IO>, int>>>
+ == 0xB25AFEA0CE322A7EULL,
+    "Computation<Row<Alloc>, Computation<Row<IO>, int>> drifted.");
+
+// Triple-nested — pins the chained combine_ids fold over three
+// engaged rows.
+
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>,
+        effects::Computation<Row<Effect::IO>,
+            effects::Computation<Row<Effect::Block>, int>>>>
+ == 0xAC3F22322B23C1FEULL,
+    "Triple-nested Computation<Alloc, IO, Block> drifted — "
+    "chained combine_ids fold must remain bit-stable.");
+
 // ─── FIXY-V-055 — Witness<Tier, T> self-test deferred ─────────────
 //
 // `safety::Witness<Tier, T>` is the Observability-axis Graded carrier

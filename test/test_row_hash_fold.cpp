@@ -363,6 +363,69 @@ static void test_runtime_federation_hash_pins() {
         Computation<Row<Effect::IO>, int>>>.raw();
     assert(sink == 0x94EC56B861A6B8FDULL);
 
+    // ── FIXY-FOUND-053 — expanded Computation pins ────────────────
+    //
+    // Per-Effect singletons (Bg already pinned above) + nested
+    // expansions covering EmptyRow-outer, asymmetric-reverse,
+    // same-row, cross-row, and triple-nested compositions.  Mirrors
+    // the static_assert pins in safety/diag/RowHashFold.h.
+
+    sink = cd::row_hash_of_v<Computation<Row<Effect::Alloc>, int>>.raw();
+    assert(sink == 0x058CA6EFB434D439ULL);
+
+    sink = cd::row_hash_of_v<Computation<Row<Effect::IO>, int>>.raw();
+    assert(sink == 0xCCFE717213BBA49CULL);
+
+    sink = cd::row_hash_of_v<Computation<Row<Effect::Block>, int>>.raw();
+    assert(sink == 0x6D28A236D0E146C7ULL);
+
+    sink = cd::row_hash_of_v<Computation<Row<Effect::Init>, int>>.raw();
+    assert(sink == 0x64EF4D0126C4A4E3ULL);
+
+    sink = cd::row_hash_of_v<Computation<Row<Effect::Test>, int>>.raw();
+    assert(sink == 0xF4060D16B464EFDEULL);
+
+    sink = cd::row_hash_of_v<Computation<EmptyRow,
+        Computation<Row<Effect::Alloc>, int>>>.raw();
+    assert(sink == 0x0BECBF75AD6D7A0CULL);
+
+    sink = cd::row_hash_of_v<Computation<EmptyRow,
+        Computation<Row<Effect::Block>, int>>>.raw();
+    assert(sink == 0x32894FE89819DEA1ULL);
+
+    sink = cd::row_hash_of_v<Computation<EmptyRow,
+        Computation<Row<Effect::Bg>, int>>>.raw();
+    assert(sink == 0xEDF6E609659BD93CULL);
+
+    sink = cd::row_hash_of_v<Computation<EmptyRow,
+        Computation<Row<Effect::Init>, int>>>.raw();
+    assert(sink == 0x93C6E9DAD4DDF07AULL);
+
+    sink = cd::row_hash_of_v<Computation<EmptyRow,
+        Computation<Row<Effect::Test>, int>>>.raw();
+    assert(sink == 0x792A21E2C4F20C13ULL);
+
+    // Asymmetric reverse (combine_ids non-commutative witness).
+    sink = cd::row_hash_of_v<Computation<Row<Effect::Bg>,
+        Computation<EmptyRow, int>>>.raw();
+    assert(sink == 0x40D0E7791202A526ULL);
+
+    // Same-row nested — distinct from single-Bg.
+    sink = cd::row_hash_of_v<Computation<Row<Effect::Bg>,
+        Computation<Row<Effect::Bg>, int>>>.raw();
+    assert(sink == 0xAFCB34F7B12A2F95ULL);
+
+    // Cross-row nested.
+    sink = cd::row_hash_of_v<Computation<Row<Effect::Alloc>,
+        Computation<Row<Effect::IO>, int>>>.raw();
+    assert(sink == 0xB25AFEA0CE322A7EULL);
+
+    // Triple-nested chained fold.
+    sink = cd::row_hash_of_v<Computation<Row<Effect::Alloc>,
+        Computation<Row<Effect::IO>,
+            Computation<Row<Effect::Block>, int>>>>.raw();
+    assert(sink == 0xAC3F22322B23C1FEULL);
+
     std::printf("  test_federation_hash_pins:       PASSED\n");
 }
 
