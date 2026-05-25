@@ -55,25 +55,19 @@ src/perf/SyscallTpBtf.cpp:222 — effects::Init via SyscallTpBtf::attach (mmap B
 # ── cntp/ — congestion telemetry + pacing ─────────────────────────────
 # IO-row socket option / netlink syscalls.  Bg-drain context paths
 # (Pacing.cpp netlink loop hardened in fixy-A5-004 + A5-036, FIXY-U-089).
-src/cntp/CongestionControl.cpp:197 — effects::IO via CongestionControl::query (TCP_CC_INFO getsockopt)
-src/cntp/CongestionControl.cpp:223 — effects::IO via CongestionControl::query (TCP_INFO getsockopt)
 src/cntp/IncastControl.cpp:33 — effects::IO via IncastControl::apply (TCP_QUICKACK setsockopt)
-src/cntp/Pacing.cpp:160 — effects::IO+Block via Pacing::netlink_open (socket AF_NETLINK)
-src/cntp/Pacing.cpp:175 — effects::IO via Pacing::netlink_open (bind to PID, fixy-A5-036)
-src/cntp/Pacing.cpp:189 — effects::IO via Pacing::query (NETLINK send)
-src/cntp/Pacing.cpp:204 — effects::IO+Block via Pacing::query (NETLINK recv, SO_RCVTIMEO-bounded fixy-A5-004)
-src/cntp/Pacing.cpp:212 — effects::IO via Pacing::netlink_close (close fd)
-src/cntp/Pacing.cpp:293 — effects::IO via Pacing::set (NETLINK setsockopt)
+src/cntp/Pacing.cpp:138 — effects::IO via query_active_qdisc (socket AF_NETLINK SOCK_RAW NETLINK_ROUTE, LocalFd-owned)
+src/cntp/Pacing.cpp:153 — effects::IO via query_active_qdisc (bind nl_pid=0 kernel-assigned PID, fixy-A5-036)
+src/cntp/Pacing.cpp:167 — effects::IO via query_active_qdisc (setsockopt SO_RCVTIMEO bounded recv, fixy-A5-004)
+src/cntp/Pacing.cpp:182 — effects::IO via query_active_qdisc (NETLINK send RTM_GETQDISC dump)
+src/cntp/Pacing.cpp:190 — effects::IO+Block via query_active_qdisc (NETLINK recv, SO_RCVTIMEO-bounded fixy-A5-004)
+src/cntp/Pacing.cpp:271 — effects::IO via set_socket_pacing_rate (setsockopt SO_MAX_PACING_RATE)
 
 # ── topology/ — link telemetry + PTP ──────────────────────────────────
 # IO-row socket / device ioctl.  Per-link RTT + bandwidth telemetry
 # (CongestionTelemetry hardened in fixy-A5-041, FIXY-U-089).
 src/topology/CongestionTelemetry.cpp:230 — effects::IO via CongestionTelemetry::harvest_socket (TCP_INFO getsockopt)
 src/topology/CongestionTelemetry.cpp:254 — effects::IO via CongestionTelemetry::harvest_socket (TCP_CC_INFO getsockopt)
-src/topology/Ptp.cpp:221 — effects::IO via Ptp::open (socket SOCK_PACKET)
-src/topology/Ptp.cpp:259 — effects::IO via Ptp::open (SIOCETHTOOL ioctl, IFNAMSIZ bounded fixy-A5-027)
-src/topology/Ptp.cpp:296 — effects::IO via Ptp::close (PTP_CLOCK_UNREGISTER ioctl)
-src/topology/Ptp.cpp:326 — effects::IO via Ptp::close (close fd)
 
 # ── sessions/SessionEventLog.h — durable session event journal ────────
 # IO-row mmap/munmap for log file backing.  Reachable only from
@@ -151,28 +145,30 @@ include/crucible/Platform.h:280 — effects::Init via parse_self_status (close /
 # Bg-row clock_gettime(CLOCK_REALTIME); HLC is a Bg-drain observer.
 include/crucible/canopy/Hlc.h:276 — effects::Bg via Hlc::now (CLOCK_REALTIME read)
 
-# ── topology/Ptp.cpp — PTP hardware clock device ──────────────────────
-# IO-row file ops on /dev/ptp* PTP clock device.  Reachable only from
-# Init-row topology probing.
-src/topology/Ptp.cpp:54  — effects::IO via PtpClock::~PtpClock (RAII close /dev/ptp*)
-src/topology/Ptp.cpp:126 — effects::IO via PtpClock::close (explicit close)
-src/topology/Ptp.cpp:208 — effects::IO via PtpClock::open (open /dev/ptp*)
-src/topology/Ptp.cpp:242 — effects::IO via PtpClock::now (clock_gettime CLOCK_TAI or vendor clockid)
+# ── topology/Ptp.cpp — PTP hardware clock + socket timestamping ───────
+# IO-row /dev/ptp* clock ops (open/caps/read/close) plus NIC-socket
+# hardware-timestamping ops (SO_TIMESTAMPING setsockopt, SIOCSHWTSTAMP
+# ioctl, recvmsg cmsg).  Reachable only from Init-row topology probing.
+src/topology/Ptp.cpp:101 — effects::IO via PtpClock::close (close /dev/ptp* fd)
+src/topology/Ptp.cpp:183 — effects::IO via open_ptp_clock (open /dev/ptp<N> O_RDONLY|O_CLOEXEC, LocalFd→PtpClock)
+src/topology/Ptp.cpp:196 — effects::IO via query_ptp_clock_caps (PTP_CLOCK_GETCAPS2 ioctl)
+src/topology/Ptp.cpp:217 — effects::IO via ptp_now (clock_gettime PHC clockid_from_fd)
+src/topology/Ptp.cpp:252 — effects::IO via enable_socket_timestamping (setsockopt SO_TIMESTAMPING)
+src/topology/Ptp.cpp:289 — effects::IO via configure_hardware_timestamping (SIOCSHWTSTAMP ioctl, IFNAMSIZ bounded fixy-A5-027)
+src/topology/Ptp.cpp:319 — effects::IO via recv_with_hw_timestamp (recvmsg MSG_DONTWAIT + SCM_TIMESTAMPING)
 
-# ── cntp/CongestionControl.cpp — /proc/sys/net/ipv4/tcp_available_cc ──
-# IO-row /proc reads to detect kernel-supported CC algorithms.  Init.
-src/cntp/CongestionControl.cpp:43  — effects::IO via CongestionControl::~CongestionControl (RAII close)
-src/cntp/CongestionControl.cpp:171 — effects::IO via CongestionControl::detect (open /proc CC list)
-src/cntp/CongestionControl.cpp:177 — effects::IO via CongestionControl::detect (read /proc CC list)
+# ── cntp/CongestionControl.cpp — CC detection + per-socket TCP_CONGESTION ──
+# IO-row /proc read to detect kernel-supported CC algorithms (Init) plus
+# per-socket TCP_CONGESTION set/get.  All LocalFd-owned (no explicit close).
+src/cntp/CongestionControl.cpp:146 — effects::IO via read_available_congestion_control (open /proc tcp_available_congestion_control, LocalFd-owned)
+src/cntp/CongestionControl.cpp:152 — effects::IO via read_available_congestion_control (read /proc CC list)
+src/cntp/CongestionControl.cpp:172 — effects::IO via set_cc_for_socket (setsockopt TCP_CONGESTION)
+src/cntp/CongestionControl.cpp:198 — effects::IO via query_cc_selection_for_socket (getsockopt TCP_CONGESTION)
 
-# ── cntp/Pacing.cpp — RAII close of netlink fd ────────────────────────
-src/cntp/Pacing.cpp:44 — effects::IO via Pacing::~Pacing (RAII close netlink fd)
-
-# ── cntp/RoceConfig.cpp — RoCE sysfs probe ────────────────────────────
-# IO-row /sys/class/infiniband reads at Init time.
-src/cntp/RoceConfig.cpp:40 — effects::IO via RoceConfig::~RoceConfig (RAII close)
-src/cntp/RoceConfig.cpp:82 — effects::IO via RoceConfig::probe (open /sys/class/infiniband)
-src/cntp/RoceConfig.cpp:87 — effects::IO via RoceConfig::probe (read sysfs)
+# ── cntp/RoceConfig.cpp — NIC pause-frame counter sysfs probe ─────────
+# IO-row /sys/class/net/<iface>/statistics counter reads at Init/Bg time.
+src/cntp/RoceConfig.cpp:57 — effects::IO via read_counter_file (open /sys/class/net/<iface>/statistics counter, LocalFd-owned)
+src/cntp/RoceConfig.cpp:62 — effects::IO via read_counter_file (read sysfs pause-frame counter)
 
 # ── perf/PmuSample.cpp — Init-row perf_event_open + fd/mmap lifecycle ──
 # perf_event_open raw syscall, perf-fd closes (State dtor + attach-
