@@ -7072,6 +7072,18 @@ crucible_neg_compile_test(neg_collision_T001_unverified_capability
 # do not regress.
 crucible_neg_compile_test(neg_collision_R001_coroutine_hot_path
   "R001")
+# FIXY-FOUND-069 sub-HS14 closure for R001: structural-tier fixture
+# complements the marker-tier fixture above.  R001_OK reads
+# `is_hot_path_v<F>` — the FOUND-067 OR-fold over marks_hot_path
+# specialization PLUS structural HotPath<Hot, T> wrapper detection.
+# Reentrancy = Coroutine is itself a structural Fn axis; the only
+# tier-split is the HotPath OR-fold.  This companion fixture uses
+# payload = HotPath<Hot, int> + Reentrancy::Coroutine + NO marker
+# so the structural detector alone fires R001.  Parallel to
+# H001/H002/H010 structural wrapper fixtures.  Fourth FOUND-067-
+# family rule graduated to full-HS14.
+crucible_neg_compile_test(neg_collision_R001_structural_hotpath_wrapper
+  "R001")
 crucible_neg_compile_test(neg_collision_R002_coroutine_borrow
   "R002")
 crucible_neg_compile_test(neg_collision_R003_coroutine_bg
