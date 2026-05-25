@@ -228,6 +228,61 @@ static_assert(fixy_id_distinct_witness::every_fixy_tag_id_distinct(),
     "regression that introduced a colliding tag name.  Resolve by "
     "renaming the offending tag to break the hash collision.");
 
+// ─── FIXY-FOUND-029: description-prose drift guard ────────────────
+//
+// Pre-FOUND-029, the `CRUCIBLE_FIXY_NOT_ENGAGED_TAG` macro's
+// `description` field hardcoded the substring "29 dimensions",
+// expanded into every FixyNotEngaged_<Axis> tag.  By the time the
+// DimensionAxis universe reached 33 enumerators (per FIXY-V-088 /
+// V-097 / V-238 / V-253 / V-266 extensions), the prose was stale by
+// 4 axes — a reviewer reading the error would be misled about the
+// true cardinality.
+//
+// FOUND-029 closure: rewrote the macro's prose to refer the reader
+// to `safety::DIMENSION_AXIS_COUNT` + `kFixyCatalogDocstringCardinality`
+// rather than embed any literal count.  The fold below is the
+// regression witness — it walks every FixyCatalog entry's description
+// at consteval and asserts no entry contains a hardcoded-count
+// substring.  Adding "29 dimensions" / "33 dimensions" / etc. to ANY
+// tag's description (via accidental copy-paste during a future macro
+// rewrite) fires this assertion immediately at the tag-definition TU.
+
+namespace found_029_drift_witness {
+
+template <std::size_t I>
+[[nodiscard]] inline consteval bool description_lacks_hardcoded_count() noexcept
+{
+    using Tag = std::tuple_element_t<I, fd::FixyCatalog>;
+    constexpr std::string_view desc = Tag::description;
+    return desc.find("29 dimensions") == std::string_view::npos
+        && desc.find("33 dimensions") == std::string_view::npos
+        && desc.find("29 axes")       == std::string_view::npos
+        && desc.find("33 axes")       == std::string_view::npos
+        && desc.find("twenty-nine")   == std::string_view::npos
+        && desc.find("thirty-three")  == std::string_view::npos;
+}
+
+template <std::size_t... Is>
+[[nodiscard]] inline consteval bool all_descriptions_clean(
+    std::index_sequence<Is...>) noexcept
+{
+    return (description_lacks_hardcoded_count<Is>() && ...);
+}
+
+}  // namespace found_029_drift_witness
+
+static_assert(found_029_drift_witness::all_descriptions_clean(
+    std::make_index_sequence<fd::fixy_catalog_size>{}),
+    "FIXY-FOUND-029: a FixyNotEngaged_<Axis> tag's description "
+    "reintroduced a hardcoded axis-count phrase ('29 dimensions', "
+    "'33 dimensions', 'twenty-nine', 'thirty-three', or similar).  "
+    "These are forbidden because they drift the moment a new axis "
+    "ships.  Per the macro at fixy/Reject.h:110 CRUCIBLE_FIXY_NOT_"
+    "ENGAGED_TAG, drop the count entirely and refer the reader to "
+    "the source-of-truth constants instead "
+    "(`safety::DIMENSION_AXIS_COUNT` or "
+    "`fixy::diag::kFixyCatalogDocstringCardinality`).");
+
 int main() {
     return 0;
 }

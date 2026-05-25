@@ -115,8 +115,12 @@ namespace diag {
             "Dimension '" #AxisName "' (" AxisDesc ") has no engagement marker "    \
             "or relaxation tag in the binding's Grants pack.  Per misc/"            \
             "16_05_2026_fixy.md §3, every fixy:: binding MUST engage with every "   \
-            "one of the 29 dimensions either via an explicit relaxation tag or "    \
-            "via `grant::accept_default_strict_for<dim::DimensionAxis::"            \
+            "dimension in the DimensionAxis universe (cardinality is the "          \
+            "reflection-derived `safety::DIMENSION_AXIS_COUNT`, mirrored by "       \
+            "`fixy::diag::kFixyCatalogDocstringCardinality` — never hard-code "     \
+            "this number in prose, per FIXY-FOUND-029 + FIXY-V-007 drift policy) "  \
+            "either via an explicit relaxation tag or via "                         \
+            "`grant::accept_default_strict_for<dim::DimensionAxis::"                \
             #AxisName ">`.";                                                        \
         static constexpr ::std::string_view remediation =                           \
             "Add `grant::accept_default_strict_for<dim::DimensionAxis::"            \
