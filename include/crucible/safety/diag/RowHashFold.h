@@ -931,12 +931,65 @@ struct row_hash_contribution<safety::Tagged<Inner, Source>> {
         row_hash_contribution_v<Inner>);
 };
 
+// ─── pred_canonical_id — predicate identity extension point (FOUND-058) ───
+//
+// `row_hash_contribution<Refined<Pred, Inner>>` and the same shape for
+// `SealedRefined<Pred, Inner>` fold a per-predicate identity into the
+// federation cache key.  The DEFAULT identity is the predicate's
+// `stable_type_id` (which routes through `display_string_of`, see
+// FOUND-055 V1 pins).  This is purely STRUCTURAL — two predicates with
+// identical behavior but distinct C++ types hash to distinct slots
+// (cache fragmentation), and renaming a predicate orphans every cached
+// entry from the prior name (rename bug).
+//
+// The trait `pred_canonical_id<auto Pred>` is the open extension
+// point for behavioral identity:
+//
+//   * DEFAULT (most predicates) — identity = stable_type_id<decltype(Pred)>.
+//     Bit-stable within a build, distinct per type, fragments under
+//     rename/alias.
+//
+//   * SPECIALIZED (rename / alias migration) — projects two distinct
+//     predicate types onto the same canonical id.  Use when:
+//       - introducing a friendlier alias for an existing predicate
+//         (decide::positive vs my::is_positive — same behavior)
+//       - renaming a predicate at v(N+1) but the federation cache
+//         was already populated under v(N) — pin the new name to the
+//         old canonical id to avoid orphaning cached entries
+//       - distributed deployments where peers may carry different
+//         names for the same canonical predicate (federation peering)
+//
+// Specialization shape:
+//
+//   namespace crucible::safety::diag {
+//   template <>
+//   struct pred_canonical_id<my::is_positive_v2> {
+//     static constexpr std::uint64_t value =
+//         pred_canonical_id<decide::positive>::value;
+//   };
+//   }
+//
+// The discipline: NEVER alias a catalog predicate at the federation
+// boundary without specializing pred_canonical_id, OR the cache
+// fragments silently.  Grep target: `pred_canonical_id<` locates every
+// behavioral-identity declaration; absence at an alias site is the
+// audit signal.
+template <auto Pred>
+struct pred_canonical_id {
+    static constexpr std::uint64_t value =
+        stable_type_id<std::remove_cvref_t<decltype(Pred)>>;
+};
+
+template <auto Pred>
+inline constexpr std::uint64_t pred_canonical_id_v =
+    pred_canonical_id<Pred>::value;
+
 template <auto Pred, typename Inner>
 struct row_hash_contribution<safety::Refined<Pred, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::combine_ids(
             detail::WRAPPER_REFINED_TAG,
-            stable_type_id<std::remove_cvref_t<decltype(Pred)>>),
+            pred_canonical_id_v<Pred>),
         row_hash_contribution_v<Inner>);
 };
 
@@ -970,14 +1023,17 @@ struct row_hash_contribution<safety::Linear<Inner>> {
 // below close Tier-L, Observability, Synchronization, and FpMode.
 
 // SealedRefined<Pred, T> — same shape as Refined<Pred, T>: the
-// predicate's type folds into the hash so two refinements over the
-// same Inner with different predicates produce distinct slots.
+// predicate's identity folds into the hash so two refinements over
+// the same Inner with different predicates produce distinct slots.
+// Routes through pred_canonical_id (FOUND-058) so a specialization
+// migrating a rename applies to BOTH Refined and SealedRefined cache
+// keys in lockstep.
 template <auto Pred, typename Inner>
 struct row_hash_contribution<safety::SealedRefined<Pred, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::combine_ids(
             detail::WRAPPER_SEALED_REFINED_TAG,
-            stable_type_id<std::remove_cvref_t<decltype(Pred)>>),
+            pred_canonical_id_v<Pred>),
         row_hash_contribution_v<Inner>);
 };
 

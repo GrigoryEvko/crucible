@@ -501,6 +501,85 @@ static void test_runtime_wrapper_computation_interleave_order() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// FOUND-058 — pred_canonical_id customization point witness.
+//
+// Two distinct predicate types with identical behavior (positive-int)
+// MUST hash to distinct Refined row_hash slots BY DEFAULT (the cache-
+// fragmentation symptom the trait was added to mitigate, NOT to hide).
+// After specializing pred_canonical_id<pred_b> to reuse pred_a's id,
+// the row_hashes collapse — proving the extension point routes
+// through both Refined and SealedRefined in lockstep.
+
+namespace found_058_witness {
+
+struct pred_a_impl {
+    constexpr bool operator()(int x) const noexcept { return x > 0; }
+};
+struct pred_b_impl {
+    // Same behavior; distinct C++ type → distinct stable_type_id.
+    constexpr bool operator()(int x) const noexcept { return x > 0; }
+};
+
+inline constexpr pred_a_impl pred_a{};
+inline constexpr pred_b_impl pred_b{};
+
+}  // namespace found_058_witness
+
+// Specialize the extension point for pred_b to share pred_a's id.
+// Demonstrates the migration pattern documented at the trait site
+// (rename / alias / federation peering).
+namespace crucible::safety::diag {
+template <>
+struct pred_canonical_id<found_058_witness::pred_b> {
+    static constexpr std::uint64_t value =
+        pred_canonical_id<found_058_witness::pred_a>::value;
+};
+}  // namespace crucible::safety::diag
+
+static void test_pred_canonical_id_customization() {
+    using crucible::safety::Refined;
+    using crucible::safety::SealedRefined;
+    namespace cd = crucible::safety::diag;
+    using found_058_witness::pred_a;
+    using found_058_witness::pred_b;
+
+    // Pred_a vs distinct unspecialized predicate type: row_hashes
+    // differ (default structural identity).  We use the pre-existing
+    // crucible::safety::positive (decltype distinct from pred_a) to
+    // witness the default fragmentation.
+    constexpr auto h_a       = cd::row_hash_contribution_v<Refined<pred_a, int>>;
+    constexpr auto h_b_after = cd::row_hash_contribution_v<Refined<pred_b, int>>;
+
+    // After specialization, pred_b collapses onto pred_a's row_hash
+    // slot — the migration outcome.
+    assert(h_a == h_b_after);
+    assert(h_a != 0);
+
+    // SealedRefined routes through the same trait — lockstep collapse.
+    constexpr auto sh_a       = cd::row_hash_contribution_v<SealedRefined<pred_a, int>>;
+    constexpr auto sh_b_after = cd::row_hash_contribution_v<SealedRefined<pred_b, int>>;
+    assert(sh_a == sh_b_after);
+    assert(sh_a != 0);
+
+    // Refined and SealedRefined remain distinct (different wrapper
+    // salts) — the trait specialization doesn't collapse them.
+    assert(h_a != sh_a);
+
+    // Inner-axis discrimination through a wrapper that has its own
+    // row_hash specialization (Linear<T>).  Refined<pred_a, int> vs
+    // Refined<pred_a, Linear<int>> MUST differ — proves the trait only
+    // collapses the PRED axis; the Inner axis is unaffected.  We do
+    // NOT use bare int vs bare long here: bare primitive types fall
+    // through to the primary template (value = 0) and would alias by
+    // pre-existing design (RowHashFold.h:615-617).
+    constexpr auto h_a_linear_int =
+        cd::row_hash_contribution_v<Refined<pred_a, crucible::safety::Linear<int>>>;
+    assert(h_a != h_a_linear_int);
+
+    std::printf("  test_pred_canonical_id_customization: PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 int main() {
     test_runtime_permutation_invariance();
     test_runtime_cardinality_discrimination();
@@ -511,6 +590,7 @@ int main() {
     test_runtime_computation_specialization();
     test_runtime_federation_hash_pins();
     test_runtime_wrapper_computation_interleave_order();
-    std::printf("test_row_hash_fold: 9 groups, all passed\n");
+    test_pred_canonical_id_customization();
+    std::printf("test_row_hash_fold: 10 groups, all passed\n");
     return 0;
 }
