@@ -394,6 +394,7 @@ crucible_test(test_kernel_cache_key)
 crucible_test(test_row_hash_fold)
 crucible_test(test_row_hash_contribution_sentinel)
 crucible_test(test_row_hash_distinctness)
+crucible_test(test_canonical_order)              # FIXY-FOUND-048
 crucible_test(test_fixy_mint_inventory)
 crucible_test(test_fixy_decide)
 crucible_test(test_fixy_sess_mint_handle_reach)  # FIXY-U-022
@@ -1834,6 +1835,13 @@ target_include_directories(neg_bench_rdtsc_pinned_mint_tag_access
   SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_regime         "FixyNotEngaged_Regime")
+
+# FIXY-FOUND-048 — HS14 fixtures for §XVI canonical-order gate.
+# Both must FAIL to compile via `static_assert(CanonicallyOrdered<...>)`.
+crucible_neg_compile_test(neg_canonical_order_inverted_two_layer
+  "static assertion failed|CanonicallyOrdered|FIXY-FOUND-048")
+crucible_neg_compile_test(neg_canonical_order_duplicate_layer
+  "static assertion failed|CanonicallyOrdered|FIXY-FOUND-048")
 
 # FIXY-AUDIT-D2 — HS14 floor for mint_fn factory.
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_unengaged_axis   "AllDimsEngaged")
