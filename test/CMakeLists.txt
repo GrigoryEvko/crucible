@@ -1734,6 +1734,19 @@ crucible_neg_compile_fixy_test(neg_fixy_unengaged_size           "FixyNotEngaged
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_version        "FixyNotEngaged_Version")
 crucible_neg_compile_fixy_test(neg_fixy_unengaged_synchronization "FixyNotEngaged_Synchronization")
 
+# ─── FIXY-FOUND-026 project<G> structured-diagnostic primary template ──
+#   Two HS14 fixtures, one per substrate-axis-value-discriminator arm:
+#     A. type-valued axes  (Effect — `using type = effects::Row<...>`)
+#     B. enum-valued axes  (Security — `::value` + `::value_type`)
+#   Each fixture mints a per-domain grant tag (final + derives
+#   grant_base + which_dim specialization on a substrate axis) WITHOUT
+#   a `project<G>` specialization.  The FOUND-026 static_assert must
+#   name the tag in the compiler's instantiation context.
+crucible_neg_compile_fixy_test(neg_fixy_project_per_domain_type_axis
+  "project<G> reached for a grant tag with no specialization|FIXY-FOUND-026|per-domain")
+crucible_neg_compile_fixy_test(neg_fixy_project_per_domain_enum_axis
+  "project<G> reached for a grant tag with no specialization|FIXY-FOUND-026|per-domain")
+
 # ─── FIXY-V-190 fixy/Time.h neg-compiles (HS14, two per mint) ──────────
 #   mint_clock_reader  : non-clock-backed source (TscRaw) · non-ExecCtx
 #   mint_tsc_reader    : missing pin proof · non-singleton (multi-core) pin

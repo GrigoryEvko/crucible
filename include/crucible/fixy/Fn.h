@@ -134,9 +134,59 @@ namespace detail::resolve {
 // acceptance marker `accept_default_strict_for<D>` inherits from
 // `strict_default_for<D>` so the projection automatically reaches the
 // substrate default — no per-axis dispatch.
+//
+// FIXY-FOUND-026: the primary template was previously undefined,
+// which means a per-domain grant tag G (downstream-defined,
+// `grant::IsGrantTag_v<G> == true` AND `grant::which_dim_v<G>` is a
+// substrate axis) that lacks a `project<G>` specialization would
+// surface as an opaque "incomplete type project<...>" compile error
+// at the call site — readers cannot tell whether the tag is missing
+// a project<> specialization, was misrouted to the wrong axis, or
+// has a flawed `IsGrantTag_v` setup.
+//
+// The closure is a dependent-false static_assert primary template
+// that NAMES the offending tag in the compiler's instantiation
+// context and enumerates the two failure modes (per-domain tag
+// without project<> specialization; non-grant type that nevertheless
+// passed the IsGrantTag tier).  The discipline mirrors Reject.h's
+// `DiagnoseAxisNotEngaged<Tag>` / `DiagnoseAxisDuplicate<Tag>` /
+// `DiagnoseMalformedGrant<Tag>` family — a dedicated structured
+// diagnostic per failure class is the established fixy pattern.
+//
+// Soundness: this static_assert fires only when project<G> is
+// actually instantiated for an unspecialized G.  The acceptance
+// markers (`accept_default_strict_for<D>`) and every shipped grant
+// tag in this file specialize project<...>, so the static_assert is
+// unreachable through `find_grant_t<D, Grants...>` → known grant or
+// `accept_default_strict_for<D>`.  The diagnostic surface fires
+// EXCLUSIVELY when a downstream domain ships a grant tag that is
+// IsGrantTag-valid + which_dim-claims-a-substrate-axis BUT omits the
+// project<> specialization — the precise scenario FOUND-026 names.
 
 template <typename G>
-struct project;
+struct project {
+    static_assert(::crucible::fixy::detail::diagnose::always_false_v<G>,
+        "fixy::fn<Type, Grants...>: project<G> reached for a grant tag "
+        "with no specialization.  The G template parameter on this "
+        "project<...> instantiation names the offending tag.  Two ways "
+        "to repair:\n"
+        "  (a) Per-domain tag routed to a substrate axis — if G is a "
+        "downstream-defined grant tag (final, derives grant_base, has a "
+        "which_dim<G> specialization on a non-Type DimensionAxis), "
+        "specialize ::crucible::fixy::detail::resolve::project<G> in the "
+        "downstream domain to expose ::type (type-valued axes: "
+        "Refinement / Effect / Protocol / Lifetime / Provenance / Trust "
+        "/ Complexity / Precision / Space / Size / Staleness) or ::value "
+        "+ ::value_type (enum/integer-valued axes: Usage / Security / "
+        "Representation / Overflow / Mutation / Reentrancy / Version).\n"
+        "  (b) Non-grant type leaked through IsGrantTag — if G is NOT a "
+        "grant tag, ensure `fixy::grant::IsGrantTag_v<G>` returns false "
+        "at the grant-validation tier (Reject.h §AllGrantsWellFormed) so "
+        "the type never reaches project<G> in the first place.  A "
+        "per-domain extension should never reach this template — the "
+        "wrapper-tier diagnostic FixyMalformedGrant is the correct "
+        "catch-point for non-grant inputs.");
+};
 
 // Acceptance markers delegate to strict_default_for<D>
 template <dim::DimensionAxis D>
