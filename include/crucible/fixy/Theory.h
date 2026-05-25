@@ -153,6 +153,7 @@
 #include <meta>
 #include <string>
 #include <string_view>
+#include <tuple>                             // FIXY-FOUND-136: secret_policy_roster
 #include <type_traits>
 #include <utility>                           // fixy-A4-015: std::to_underlying
 
@@ -356,6 +357,142 @@ static_assert(
     "default DischargeAxis::None — any future axis lift requires an "
     "explicit specialization with Hunt-Sands-style justification at "
     "the policy tag's declaration site (substrate safety/Secret.h).");
+
+// ═══════════════════════════════════════════════════════════════════
+// FIXY-FOUND-136 — secret_policy roster + per-policy sentinels
+// ═══════════════════════════════════════════════════════════════════
+//
+// Pre-FOUND-136 state: the substrate ships 6 secret_policy::* tags
+// but only 2 (AuthorizedReplay → Staleness, AuditedLogging → None)
+// had explicit axes_discharged_of_v sentinels above.  The other 4
+// (WireSerialize, HashForCompare, LengthOnly, UserDisplay) inherited
+// the safe-default None implicitly — meaning a malicious or careless
+// future specialization (e.g. `axes_discharged_of<UserDisplay> =
+// Staleness`) would compile clean and silently silence the §30.14
+// corpus's staleness_secret_without_declassify reject.
+//
+// FOUND-136 closes this with three locks:
+//   (a) `secret_policy_roster` — a single source-of-truth tuple
+//       enumerating every policy tag.  Adding a new policy requires
+//       extending the roster.
+//   (b) `kPolicyRosterCardinality == 6` cardinality pin — reddens
+//       loudly if the substrate adds a policy without updating the
+//       roster.
+//   (c) Per-policy explicit sentinels for all 6 entries (the 2
+//       existing + the 4 newly-pinned) AND a fold-based closed-set
+//       invariant: exactly ONE policy in the roster discharges
+//       anything non-None.  A future axis-lift (e.g. WireSerialize
+//       → IO) requires (i) shipping the axes_discharged_of
+//       specialization in this file and (ii) bumping the
+//       closed-set count below.
+//
+// The cardinality pin + closed-set fold together make Hunt-Sands
+// safe-default discipline structurally enforced rather than
+// convention-only — appending a policy without specializing the
+// discharge mask leaves the closed-set count at 1 (good); changing
+// an existing policy's discharge silently moves the count off 1
+// (bad — fires the assertion).
+
+namespace secret_policy_roster {
+
+using AllPolicies = std::tuple<
+    ::crucible::safety::secret_policy::AuditedLogging,
+    ::crucible::safety::secret_policy::WireSerialize,
+    ::crucible::safety::secret_policy::HashForCompare,
+    ::crucible::safety::secret_policy::LengthOnly,
+    ::crucible::safety::secret_policy::UserDisplay,
+    ::crucible::safety::secret_policy::AuthorizedReplay>;
+
+inline constexpr std::size_t kPolicyRosterCardinality =
+    std::tuple_size_v<AllPolicies>;
+
+static_assert(kPolicyRosterCardinality == 6,
+    "FIXY-FOUND-136 cardinality pin: secret_policy roster grew "
+    "beyond 6 entries.  Adding a new policy to safety/Secret.h "
+    "requires (a) appending the type to AllPolicies above, (b) "
+    "shipping an axes_discharged_of<NewPolicy> specialization in "
+    "this file (default None per Hunt-Sands safe-default), (c) "
+    "adding an explicit sentinel below witnessing the expected "
+    "discharge mask, and (d) bumping this assertion to the new "
+    "count.  See safety/Secret.h secret_policy:: doc-block for the "
+    "rationale on per-tag NotInherited<> + final discipline.");
+
+}  // namespace secret_policy_roster
+
+// ── Per-policy sentinels for the 4 previously-implicit Nones ──────
+//
+// AuditedLogging and AuthorizedReplay already have explicit sentinels
+// above (lines 340-358).  These four close the gap so EVERY entry in
+// the roster has a structurally-enforced expected discharge.
+
+static_assert(
+    axes_discharged_of_v<
+        ::crucible::safety::secret_policy::WireSerialize>
+        == DischargeAxis::None,
+    "FIXY-FOUND-136: WireSerialize is an IO-channel serialization "
+    "policy, NOT an axis-discharge policy.  Lifting to IO (when the "
+    "Sabelfeld-Myers 2003 implicit-flow IO axis matcher tightens) "
+    "requires explicit specialization + bumping the closed-set "
+    "count below.");
+static_assert(
+    axes_discharged_of_v<
+        ::crucible::safety::secret_policy::HashForCompare>
+        == DischargeAxis::None,
+    "FIXY-FOUND-136: HashForCompare is a Security-relaxation policy "
+    "(release-as-hash), NOT a temporal-replay or IO discharge.  "
+    "Hunt-Sands safe-default applies.");
+static_assert(
+    axes_discharged_of_v<
+        ::crucible::safety::secret_policy::LengthOnly>
+        == DischargeAxis::None,
+    "FIXY-FOUND-136: LengthOnly releases only size metadata; the "
+    "channel-axis taxonomy treats it as Hunt-Sands None — size "
+    "telemetry IS an information channel but no current matcher "
+    "axis-types it.  Future tightening would mint a dedicated "
+    "DischargeAxis::SizeChannel bit and lift this sentinel.");
+static_assert(
+    axes_discharged_of_v<
+        ::crucible::safety::secret_policy::UserDisplay>
+        == DischargeAxis::None,
+    "FIXY-FOUND-136: UserDisplay is a UI-render policy (e.g. last-4 "
+    "of a card number).  Not a temporal-replay / IO / Bg / Crash / "
+    "Reentrancy discharge; Hunt-Sands safe-default applies.");
+
+// ── Closed-set invariant: exactly one non-None policy ──────────────
+//
+// Folds over the roster pack via a helper-template that consumes
+// std::tuple<Ps...>.  Counts how many roster entries have a non-None
+// discharge mask.  The expected count is 1 — only AuthorizedReplay
+// has been lifted off Hunt-Sands safe-default.  When a future task
+// lifts (e.g.) WireSerialize → IO, the count rises to 2 and THIS
+// assertion fires, forcing the maintainer to acknowledge the new
+// axis lift here AND update the expected count.
+
+namespace detail::secret_policy_invariants {
+
+template <typename TupleT>
+struct non_none_policy_count;
+
+template <typename... Ps>
+struct non_none_policy_count<std::tuple<Ps...>>
+    : std::integral_constant<std::size_t,
+          ((axes_discharged_of_v<Ps> != DischargeAxis::None
+              ? std::size_t{1} : std::size_t{0}) + ... + std::size_t{0})> {};
+
+template <typename TupleT>
+inline constexpr std::size_t non_none_policy_count_v =
+    non_none_policy_count<TupleT>::value;
+
+static_assert(non_none_policy_count_v<secret_policy_roster::AllPolicies> == 1,
+    "FIXY-FOUND-136 closed-set invariant: exactly one secret_policy "
+    "in the roster has a non-None axes_discharged_of mask.  The "
+    "single non-None entry is AuthorizedReplay → Staleness "
+    "(fixy-A4-015).  Lifting another policy off Hunt-Sands "
+    "safe-default requires bumping this count AND adding an "
+    "explicit per-axis sentinel above documenting WHICH axis the "
+    "policy is now authoritative on.");
+
+}  // namespace detail::secret_policy_invariants
 
 template <typename G> struct is_io_effect_grant
     : std::false_type {};
