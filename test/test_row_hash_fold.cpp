@@ -11,6 +11,7 @@
 // raw u64 result must materialize through a volatile store.
 
 #include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/safety/diag/RowHashGrade.h>
 #include <crucible/Types.h>
 #include <crucible/effects/Computation.h>
 #include <crucible/safety/HotPath.h>
@@ -580,6 +581,121 @@ static void test_pred_canonical_id_customization() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// FOUND-059: runtime grade discriminator for Regime-4 product-lattice
+// wrappers.  Asserts that row_hash_with_grade(w):
+//   (a) returns DISTINCT hashes for two instances of the same wrapper
+//       type with different runtime grades (instance discrimination),
+//   (b) returns IDENTICAL hashes for two instances with same grade
+//       (determinism / replay equivalence),
+//   (c) returns DIFFERENT hashes across the 4 wrapper types even when
+//       the runtime grade payload happens to overlap (wrapper tag
+//       salt is folded via row_hash_contribution_v<W>),
+//   (d) the type-level row_hash_contribution_v<W> still collapses on
+//       wrapper-tag-only — i.e., the grade discrimination is a
+//       STRICTLY ADDITIVE surface, not a replacement.
+
+static void test_row_hash_with_grade() {
+    using crucible::safety::Budgeted;
+    using crucible::safety::EpochVersioned;
+    using crucible::safety::NumaPlacement;
+    using crucible::safety::RecipeSpec;
+    using crucible::safety::BitsBudget;
+    using crucible::safety::PeakBytes;
+    using crucible::algebra::lattices::Epoch;
+    using crucible::algebra::lattices::Generation;
+    using crucible::algebra::lattices::NumaNodeId;
+    using crucible::algebra::lattices::AffinityMask;
+    using crucible::algebra::lattices::Tolerance;
+    using crucible::algebra::lattices::RecipeFamily;
+
+    // ── Budgeted axis (a) + (b) + (d) ────────────────────────────────
+    Budgeted<int> b0{42, BitsBudget{1000}, PeakBytes{2000}};
+    Budgeted<int> b0_dup{42, BitsBudget{1000}, PeakBytes{2000}};
+    Budgeted<int> b1{42, BitsBudget{5000}, PeakBytes{2000}};  // bits differ
+    Budgeted<int> b2{42, BitsBudget{1000}, PeakBytes{9999}};  // peak differs
+
+    const std::uint64_t hb0     = cd::row_hash_with_grade(b0);
+    const std::uint64_t hb0_dup = cd::row_hash_with_grade(b0_dup);
+    const std::uint64_t hb1     = cd::row_hash_with_grade(b1);
+    const std::uint64_t hb2     = cd::row_hash_with_grade(b2);
+
+    assert(hb0 == hb0_dup);          // (b) determinism
+    assert(hb0 != hb1);              // (a) bits-axis discriminates
+    assert(hb0 != hb2);              // (a) peak-axis discriminates
+    assert(hb1 != hb2);              // (a) the two axes are independent
+    assert(hb0 != 0);                // non-trivial fold
+
+    // Type-level hash collapses (additive surface check (d))
+    constexpr std::uint64_t type_hash_budgeted =
+        cd::row_hash_contribution_v<Budgeted<int>>;
+    assert(type_hash_budgeted != hb0);
+    assert(type_hash_budgeted != hb1);
+
+    // ── EpochVersioned axis (a) + (b) ────────────────────────────────
+    EpochVersioned<int> e0{17, Epoch{1}, Generation{0}};
+    EpochVersioned<int> e0_dup{17, Epoch{1}, Generation{0}};
+    EpochVersioned<int> e1{17, Epoch{2}, Generation{0}};       // epoch differs
+    EpochVersioned<int> e2{17, Epoch{1}, Generation{42}};      // gen differs
+
+    const std::uint64_t he0     = cd::row_hash_with_grade(e0);
+    const std::uint64_t he0_dup = cd::row_hash_with_grade(e0_dup);
+    const std::uint64_t he1     = cd::row_hash_with_grade(e1);
+    const std::uint64_t he2     = cd::row_hash_with_grade(e2);
+
+    assert(he0 == he0_dup);
+    assert(he0 != he1);
+    assert(he0 != he2);
+    assert(he1 != he2);
+
+    // ── NumaPlacement axis (a) + (b) ─────────────────────────────────
+    NumaPlacement<int> n0{99, NumaNodeId{0}, AffinityMask::single(0)};
+    NumaPlacement<int> n0_dup{99, NumaNodeId{0}, AffinityMask::single(0)};
+    NumaPlacement<int> n1{99, NumaNodeId{1}, AffinityMask::single(0)};  // node differs
+    NumaPlacement<int> n2{99, NumaNodeId{0}, AffinityMask::single(7)};  // aff differs
+
+    const std::uint64_t hn0     = cd::row_hash_with_grade(n0);
+    const std::uint64_t hn0_dup = cd::row_hash_with_grade(n0_dup);
+    const std::uint64_t hn1     = cd::row_hash_with_grade(n1);
+    const std::uint64_t hn2     = cd::row_hash_with_grade(n2);
+
+    assert(hn0 == hn0_dup);
+    assert(hn0 != hn1);
+    assert(hn0 != hn2);
+    assert(hn1 != hn2);
+
+    // ── RecipeSpec axis (a) + (b) ────────────────────────────────────
+    RecipeSpec<int> r0{7, Tolerance::ULP_FP32, RecipeFamily::Pairwise};
+    RecipeSpec<int> r0_dup{7, Tolerance::ULP_FP32, RecipeFamily::Pairwise};
+    RecipeSpec<int> r1{7, Tolerance::BITEXACT,   RecipeFamily::Pairwise};  // tol differs
+    RecipeSpec<int> r2{7, Tolerance::ULP_FP32,   RecipeFamily::Kahan};     // family differs
+
+    const std::uint64_t hr0     = cd::row_hash_with_grade(r0);
+    const std::uint64_t hr0_dup = cd::row_hash_with_grade(r0_dup);
+    const std::uint64_t hr1     = cd::row_hash_with_grade(r1);
+    const std::uint64_t hr2     = cd::row_hash_with_grade(r2);
+
+    assert(hr0 == hr0_dup);
+    assert(hr0 != hr1);
+    assert(hr0 != hr2);
+    assert(hr1 != hr2);
+
+    // ── (c) Cross-wrapper distinctness ───────────────────────────────
+    // Hashes across the 4 wrapper types must differ even when grade
+    // payload happens to be similar — the wrapper-tag salt in
+    // row_hash_contribution_v<W> is the discriminator.  All 4 anchor
+    // instances above use Inner type int with payload 42/17/99/7
+    // (different payloads + different grades, distinct row_hashes).
+    assert(hb0 != he0);
+    assert(hb0 != hn0);
+    assert(hb0 != hr0);
+    assert(he0 != hn0);
+    assert(he0 != hr0);
+    assert(hn0 != hr0);
+
+    std::printf("  test_row_hash_with_grade: PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 int main() {
     test_runtime_permutation_invariance();
     test_runtime_cardinality_discrimination();
@@ -591,6 +707,7 @@ int main() {
     test_runtime_federation_hash_pins();
     test_runtime_wrapper_computation_interleave_order();
     test_pred_canonical_id_customization();
-    std::printf("test_row_hash_fold: 10 groups, all passed\n");
+    test_row_hash_with_grade();
+    std::printf("test_row_hash_fold: 11 groups, all passed\n");
     return 0;
 }

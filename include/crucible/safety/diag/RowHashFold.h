@@ -1127,8 +1127,21 @@ struct row_hash_contribution<safety::Crash<Class, Inner>> {
 };
 
 // Budgeted<T> / EpochVersioned<T> / NumaPlacement<T> / RecipeSpec<T>
-// — single-template-arg wrappers.  No internal attributes to fold;
-// just the wrapper-tag salt over Inner's contribution.
+// — Regime-4 product-lattice wrappers.  These wrappers DO carry
+// meaningful per-instance RUNTIME grade (Budgeted: 16 B bits+peak;
+// EpochVersioned: 16 B epoch+gen; NumaPlacement: 33 B node+affinity;
+// RecipeSpec: 2 B tolerance+family).  Type-level row_hash folds ONLY
+// the wrapper-tag salt over Inner's contribution — the runtime grade
+// is intentionally INVISIBLE at this layer because row_hash is a
+// federation cache SLOT KEY (type identity, not instance identity).
+//
+// Downstream consumers that need per-instance discrimination (drift
+// attribution, instance-cache, fleet rollup) opt in via the runtime
+// peer `row_hash_with_grade(w)` shipped in
+// `safety/diag/RowHashGrade.h` (FIXY-FOUND-059).  That function
+// folds row_hash_contribution_v<W> with a per-instance grade
+// extraction; it is a STRICTLY ADDITIVE surface — it does NOT
+// replace this type-level hash for federation cache slot routing.
 template <typename Inner>
 struct row_hash_contribution<safety::Budgeted<Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
