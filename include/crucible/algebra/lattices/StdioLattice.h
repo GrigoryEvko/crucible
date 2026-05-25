@@ -202,6 +202,40 @@ static_assert(StdioLattice::join(Stdio::NoStdio, Stdio::BufferedWrite)
 static_assert(StdioLattice::meet(Stdio::InteractiveRead, Stdio::BufferedWrite)
               == Stdio::BufferedWrite);
 
+// ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
+//
+// AUDIT RESULT for StdioLattice (2026-05-25): INVERTED.
+//   * chain direction: NoStdio (bottom, most restrictive — "no stdio
+//     surface allowed") → BufferedWrite → UnbufferedWrite →
+//     InteractiveRead (top, most disruptive / loosest)
+//   * "strictest" in cross-tree contract = most-restrictive admission
+//     policy = NoStdio = chain-min = MEET, NOT JOIN
+//   * join(low, high) returns InteractiveRead = MOST-disruptive (looser)
+//   * meet(low, high) returns NoStdio = NO-STDIO floor (stricter)
+//   * cross-tree reading: "par=join, strictest-wins" ✗ — JOIN returns
+//     the most-disruptive stdio surface, NOT the strictest
+//
+// SAME family of defect as FOUND-009/010 + FOUND-076 PART A.  A
+// hot-path admission gate calling join() to enforce "no stdio" minimum
+// on a region would silently admit InteractiveRead.  Gates wanting the
+// no-stdio floor MUST call MEET.
+//
+// Polarity-witness pin: a refactor inverting the chain would red these
+// asserts.
+static_assert(StdioLattice::join(Stdio::NoStdio, Stdio::InteractiveRead)
+              == Stdio::InteractiveRead,
+    "FIXY-FOUND-076: StdioLattice's JOIN gives MOST-disruptive "
+    "(top=InteractiveRead).  A consumer treating compose as "
+    "'strictest-wins stdio-surface minimization' would silently admit "
+    "InteractiveRead.  Gates wanting NoStdio floor MUST call MEET — "
+    "SAME defect family as FOUND-009/010/076 PART A.");
+static_assert(StdioLattice::meet(Stdio::NoStdio, Stdio::InteractiveRead)
+              == Stdio::NoStdio,
+    "FIXY-FOUND-076: StdioLattice's MEET gives strictest-stdio-floor "
+    "(bottom=NoStdio).  Hot-path admission gates MUST call MEET — "
+    "calling JOIN silently admits the most-permissive participant's "
+    "stdio surface.");
+
 static_assert(std::is_empty_v<StdioLattice::At<Stdio::NoStdio>::element_type>);
 static_assert(std::is_empty_v<StdioLattice::At<Stdio::BufferedWrite>::element_type>);
 static_assert(std::is_empty_v<StdioLattice::At<Stdio::UnbufferedWrite>::element_type>);

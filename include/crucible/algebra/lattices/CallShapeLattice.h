@@ -324,6 +324,43 @@ static_assert(CallShapeLattice::join(CallShape::Direct, CallShape::BoundedRecurs
 static_assert(CallShapeLattice::meet(CallShape::Unbounded, CallShape::BoundedRecurses)
               == CallShape::BoundedRecurses);
 
+// ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
+//
+// AUDIT RESULT for CallShapeLattice (2026-05-25): INVERTED.
+//   * chain direction: Direct (bottom, most analyzable / strictest call
+//     shape) → BoundedRecurses → Indirect → Virtual → Unbounded (top,
+//     least analyzable / loosest)
+//   * "strictest" in cross-tree contract = most-restrictive admission
+//     policy = Direct = chain-min = MEET, NOT JOIN
+//   * join(low, high) returns Unbounded = LEAST-analyzable (looser)
+//   * meet(low, high) returns Direct = MOST-analyzable floor (stricter)
+//   * cross-tree reading: "par=join, strictest-wins" ✗ — JOIN returns
+//     the LEAST-analyzable shape, NOT the strictest
+//
+// SAME family of defect as FOUND-009/010 (MemOrder/HwInstruction) +
+// FOUND-076 PART A (StackUse, GlobalState, ControlFlow).  A Forge
+// hot-path admission gate calling join() to enforce "Direct-only"
+// minimum on a region would silently admit Unbounded.  Hot-path gates
+// MUST call MEET to get the most-analyzable floor.
+//
+// Polarity-witness pin: a refactor inverting the chain (so Unbounded
+// moves to bottom) would red these asserts.
+static_assert(CallShapeLattice::join(CallShape::Direct,
+                                     CallShape::Unbounded)
+              == CallShape::Unbounded,
+    "FIXY-FOUND-076: CallShapeLattice's JOIN gives LEAST-analyzable "
+    "(top=Unbounded).  A consumer treating compose as 'strictest-wins "
+    "call-shape minimization' would silently admit Unbounded.  Forge "
+    "hot-path admission gates wanting Direct-only floor MUST call "
+    "MEET — SAME defect family as FOUND-009/010/076 PART A.");
+static_assert(CallShapeLattice::meet(CallShape::Direct,
+                                     CallShape::Unbounded)
+              == CallShape::Direct,
+    "FIXY-FOUND-076: CallShapeLattice's MEET gives strictest-call-"
+    "shape (bottom=Direct).  Forge phase E hot-path admission gates "
+    "MUST call MEET — calling JOIN silently admits the most-permissive "
+    "participant's call shape.");
+
 // At<T> singleton — empty element_type for EBO collapse at every use
 // site.  V-242's `Graded<Absolute, At<T>, P>` relies on this for
 // zero-byte overhead.

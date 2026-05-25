@@ -212,39 +212,59 @@ static_assert(GlobalStateLattice::join(GlobalState::Stateless, GlobalState::Cons
 static_assert(GlobalStateLattice::meet(GlobalState::InitOrderHazard, GlobalState::ConstGlobal)
               == GlobalState::ConstGlobal);
 
-// ── FIXY-FOUND-076 audit pin: cross-tree convention alignment ────────
+// ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
 //
-// AUDIT RESULT for GlobalStateLattice (2026-05-25): ALIGNED.
-//   * chain direction: Stateless (bottom, lowest hazard) → ConstGlobal
-//     → MutableGlobal → InitOrderHazard (top, highest hazard)
-//   * join(low, high) returns high (InitOrderHazard absorbs in join)
-//   * meet(low, high) returns low (Stateless absorbs in meet)
-//   * cross-tree reading: "par=join, strictest-wins" ✓ where
-//     "strictest" = hazardier = top.  Composition reading: a region
-//     containing ANY init-order-hazard function inherits the hazard.
+// AUDIT RESULT for GlobalStateLattice (2026-05-25, corrected): INVERTED.
 //
-// Consumers wanting strictest-wins composition can call JOIN directly
-// on this lattice — same convention as BarrierStrengthLattice; UNLIKE
-// MemOrder/HwInstruction/StackUse which require MEET for strictest-wins
-// (FOUND-009/010/076).
+// Initial classification of this lattice as ALIGNED on commit e288420e
+// was a mis-read: I conflated the propagation-reading ("compose two
+// regions and the hazardier dominates") with the strictness-reading
+// ("which value is the most restrictive admission policy").
 //
-// Polarity-witness pin: a refactor inverting the chain (so Stateless
-// moves to top) would red THIS assert in lockstep with the cross-lattice
-// audit.
+// Re-classified per the same lens FOUND-009/010 use:
+//   * chain direction: Stateless (bottom, MOST restrictive — "no global
+//     state allowed") → ConstGlobal → MutableGlobal → InitOrderHazard
+//     (top, LEAST restrictive — "init-order hazards permitted")
+//   * "strictest" in cross-tree contract = most-restrictive admission
+//     policy = Stateless = chain-min = MEET, NOT JOIN
+//   * join(low, high) returns InitOrderHazard = LOOSEST claim
+//   * meet(low, high) returns Stateless = STRICTEST claim
+//   * cross-tree reading: "par=join, strictest-wins" ✗ — JOIN returns
+//     the LOOSEST hazard policy, NOT the strictest
+//
+// SAME family of defect as FOUND-009 (MemOrderLattice), FOUND-010
+// (HwInstructionLattice), and FOUND-076 PART A (StackUseLattice).
+// A CSL/admission gate calling join() to enforce "no global state
+// minimum" would silently admit InitOrderHazard — equivalent to the
+// FOUND-010 PrivilegedMsr escalation pattern for global-state hazard.
+//
+// The LOCAL doc comment "par=join (higher-hazard dominates)" at L206
+// accurately describes the propagation semantics (a region containing
+// a hazardful function inherits the hazard).  That propagation reading
+// is correct AT THE LATTICE LEVEL.  The cross-tree contract requires
+// the CALLER to choose the operator (MEET for strictness, JOIN for
+// propagation), NOT the lattice's join to match strictness directly.
+//
+// Polarity-witness pin: a refactor inverting the chain (so InitOrderHazard
+// moves to bottom) would red these asserts in lockstep with the
+// FOUND-009/010 convention.
 static_assert(GlobalStateLattice::join(GlobalState::Stateless,
                                        GlobalState::InitOrderHazard)
               == GlobalState::InitOrderHazard,
-    "FIXY-FOUND-076: GlobalStateLattice's JOIN gives strictest-wins "
-    "under the natural-hazard convention (top=InitOrderHazard). "
-    "join(Stateless, InitOrderHazard) returns InitOrderHazard — the "
-    "hazardier value dominates.  Cross-tree 'par=join, strictest-wins' "
-    "contract holds; consumers can call JOIN directly here.");
+    "FIXY-FOUND-076: GlobalStateLattice's JOIN gives LOOSEST-hazard-"
+    "policy (top=InitOrderHazard).  A consumer treating compose as "
+    "'strictest-wins global-state minimization' would silently admit "
+    "InitOrderHazard.  Consumers wanting the tightest hazard policy "
+    "MUST call MEET — SAME defect family as FOUND-009/010 (MemOrder/"
+    "HwInstruction) and FOUND-076 PART A (StackUse).");
 static_assert(GlobalStateLattice::meet(GlobalState::Stateless,
                                        GlobalState::InitOrderHazard)
               == GlobalState::Stateless,
-    "FIXY-FOUND-076: GlobalStateLattice's MEET gives lowest-hazard-"
-    "floor (bottom=Stateless).  Admission gates wanting a 'no global "
-    "state' minimum MUST call MEET — Stateless absorbs in meet.");
+    "FIXY-FOUND-076: GlobalStateLattice's MEET gives strictest-hazard-"
+    "policy (bottom=Stateless).  CSL/admission gates wanting capability-"
+    "minimization (admit only the tightest hazard policy every "
+    "participant claims) MUST call MEET — calling JOIN silently admits "
+    "the most-permissive party's hazard.");
 
 static_assert(std::is_empty_v<GlobalStateLattice::At<GlobalState::Stateless>::element_type>);
 static_assert(std::is_empty_v<GlobalStateLattice::At<GlobalState::ConstGlobal>::element_type>);

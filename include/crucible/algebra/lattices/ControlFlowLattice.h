@@ -317,6 +317,58 @@ static_assert(ControlFlowLattice::join(ControlFlow::ThrowOnly, ControlFlow::MayL
 static_assert(ControlFlowLattice::meet(ControlFlow::MaySignal, ControlFlow::AbortOnly)
               == ControlFlow::AbortOnly);
 
+// ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
+//
+// AUDIT RESULT for ControlFlowLattice (2026-05-25): INVERTED.
+//
+// The local doc at L310 ABOVE says "par=join (strictest-wins /
+// wider-escape-dominates)" — that's a self-contradicting pair:
+// "strictest" and "wider-escape" point in OPPOSITE directions for this
+// lattice.  Pure is the strictest control-flow policy (no escape), and
+// MaySignal is the widest escape (every escape capability).  Join
+// returns chain-max = MaySignal = WIDEST escape, NOT strictest.
+//
+//   * chain direction: Pure (bottom, most restrictive — "only normal
+//     returns admitted") → AbortOnly → ThrowOnly → MayLongjmp →
+//     MaySignal (top, least restrictive — "any escape admitted")
+//   * "strictest" in cross-tree contract = most-restrictive admission
+//     policy = Pure = chain-min = MEET, NOT JOIN
+//   * join(low, high) returns MaySignal = WIDEST escape (looser claim)
+//   * meet(low, high) returns Pure = NO-ESCAPE floor (stricter claim)
+//   * cross-tree reading: "par=join, strictest-wins" ✗ — JOIN returns
+//     the LOOSEST escape policy, NOT the strictest
+//
+// SAME family of defect as FOUND-009/010 (MemOrder/HwInstruction) +
+// FOUND-076 PART A (StackUse, GlobalState).  A CSL/permission_fork
+// admission gate that calls join() to enforce "no escape allowed"
+// minimum would silently admit MaySignal — exactly the V-087
+// permission_fork no-throw enforcement gap the ControlFlow axis was
+// added to close.  permission_fork itself uses MEET for this reason
+// (structurally, via grant::ctrl::* rejection); the lattice's join is
+// reserved for the PROPAGATION reading ("a region containing a
+// throwing function has the throwing capability").
+//
+// Polarity-witness pin: a refactor inverting the chain (so MaySignal
+// moves to bottom) would red these asserts in lockstep with the
+// FOUND-009/010/076 family.
+static_assert(ControlFlowLattice::join(ControlFlow::Pure,
+                                       ControlFlow::MaySignal)
+              == ControlFlow::MaySignal,
+    "FIXY-FOUND-076: ControlFlowLattice's JOIN gives WIDEST-escape "
+    "(top=MaySignal).  A consumer treating compose as 'strictest-wins "
+    "control-flow minimization' would silently admit MaySignal.  "
+    "Consumers wanting Pure floor MUST call MEET — SAME defect family "
+    "as FOUND-009/010 (MemOrder/HwInstruction) + FOUND-076 PART A "
+    "(StackUse, GlobalState).");
+static_assert(ControlFlowLattice::meet(ControlFlow::Pure,
+                                       ControlFlow::MaySignal)
+              == ControlFlow::Pure,
+    "FIXY-FOUND-076: ControlFlowLattice's MEET gives strictest-control-"
+    "flow (bottom=Pure).  permission_fork's no-throw enforcement MUST "
+    "call MEET (or use the V-087 grant::ctrl::* structural reject) — "
+    "calling JOIN silently admits the most-permissive participant's "
+    "escape capabilities.");
+
 // At<T> singleton — empty element_type for EBO collapse at every use
 // site.  V-242's `Graded<Absolute, At<T>, P>` relies on this for
 // zero-byte overhead.
