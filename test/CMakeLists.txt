@@ -4883,6 +4883,16 @@ crucible_neg_compile_test(neg_collision_N002_decimal_overflow_wrap
   "N002:")
 crucible_neg_compile_test(neg_collision_L003_unscoped_spawn_borrow_capture
   "L003:")
+# FIXY-FOUND-069 sub-HS14 closure for L003: marker × marker composition
+# complements the usage × marker fixture above.  L003 reads
+# has_borrow_capture_v (3-way OR-fold) AND marks_unscoped_spawn (single
+# marker).  The shipped fixture engages (Usage::Borrow × marks_unscoped_spawn);
+# this companion engages (marks_borrow_capture × marks_unscoped_spawn)
+# with Linear usage and bare int payload.  Defends against a refactor
+# dropping the marker arm from has_borrow_capture_v's OR-fold, which
+# would silently let downstream marker-opted adapters slip past L003.
+crucible_neg_compile_test(neg_collision_L003_borrow_unscoped_spawn_marker
+  "L003:")
 crucible_neg_compile_test(neg_collision_L004_linear_region_lifetime
   "L004:")
 crucible_neg_compile_test(neg_collision_M011_linear_fail_no_cleanup
