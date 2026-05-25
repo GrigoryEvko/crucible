@@ -15,7 +15,7 @@ namespace probe {
         eff::Row<>, sfn::SecLevel::Classified,
         sfn::proto::None, sfn::lifetime::Static,
         crucible::safety::source::FromInternal,
-        crucible::safety::trust::Verified,
+        crucible::safety::trust::Unverified,    // Fn<> default (FOUND-034: Biba-safe bottom)
         sfn::ReprKind::Opaque,
         sfn::cost::Unstated, sfn::precision::Exact,
         sfn::space::Zero, sfn::OverflowMode::Trap,
