@@ -560,11 +560,13 @@ struct classified_io_without_declassify {
 // threaded imperative language" (POPL); Sabelfeld-Sands 2000,
 // "Probabilistic noninterference for multi-threaded programs";
 // Hedin-Sabelfeld 2012, "A perspective on information-flow control"
-// (NATO ASI Marktoberdorf 2011 lecture article / IOS Press 2012
-// tutorial §4 — concurrency).  FIXY-FOUND-131: the paper is a
-// tutorial/perspective in a NATO Summer School volume, NOT a
-// peer-reviewed survey.  Sabelfeld-Myers 2003 (JSAC) is the
-// canonical IFC survey cited at Entry 1 above.
+// (in NATO Science for Peace and Security Series D33, "Software
+// Safety and Security: Tools for Analysis and Verification", IOS
+// Press 2012, §4 — concurrency).  FIXY-FOUND-131: the paper is a
+// tutorial/perspective in a NATO ASI volume, NOT a peer-reviewed
+// survey — the title's literal word "perspective" signals as much.
+// Sabelfeld-Myers 2003 (JSAC) is the canonical IFC survey cited at
+// Entry 1 above.
 //
 // Pattern: a binding engages `as_secret` (or `as_classified`) on
 // Security AND `with<..., Bg, ...>` on Effect AND omits any
