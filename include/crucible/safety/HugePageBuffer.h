@@ -86,7 +86,22 @@ public:
     // — needed by the caller for register_hot_region / madvise.
     [[nodiscard]] static HugePageBuffer allocate(size_type count) {
         if (count == 0) [[unlikely]] return HugePageBuffer{};
-        const size_type raw_bytes = count * sizeof(T);
+        // TypeSafe/MemSafe (CLAUDE.md §II): overflow-check the byte math.
+        // A bare `count * sizeof(T)` wraps silently for large `count`,
+        // under-provisioning the buffer that the caller then overruns.
+        // We also guard the 2-MB round-up: round_up_huge() computes
+        // `(n + kHugePageBytes - 1) & ~(kHugePageBytes - 1)`, whose inner
+        // add wraps to 0 when raw_bytes > SIZE_MAX - (kHugePageBytes - 1),
+        // yielding a zero-byte allocation.  Both overflows are fatal
+        // caller bugs (no valid count of T can exceed SIZE_MAX bytes), so
+        // we abort exactly as the OOM path does.
+        size_type raw_bytes = 0;
+        if (__builtin_mul_overflow(count, sizeof(T), &raw_bytes)) [[unlikely]]
+            std::abort();
+        size_type round_probe = 0;
+        if (__builtin_add_overflow(raw_bytes, huge_page_bytes - 1,
+                                   &round_probe)) [[unlikely]]
+            std::abort();
         const size_type alloc_bytes = ::crucible::warden::round_up_huge(raw_bytes);
         void* raw = std::aligned_alloc(huge_page_bytes, alloc_bytes);
         if (!raw) [[unlikely]] {

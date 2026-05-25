@@ -59,11 +59,25 @@ public:
     // Static factory — exactly one allocation path.  Aborts on OOM
     // (CLAUDE.md §II MemSafe — Crucible never runs where OOM is
     // recoverable).
+    //
+    // TypeSafe/MemSafe (CLAUDE.md §II): the byte-count math is overflow-
+    // checked.  A bare `count * sizeof(T)` wraps silently for large
+    // `count`, producing a too-small allocation that the caller then
+    // overruns (heap-buffer-overflow).  __builtin_mul_overflow detects
+    // the product wrap; the subsequent alignment round-up is an
+    // __builtin_add_overflow-checked sum.  Either overflow is a fatal
+    // caller bug (no valid `count` of T can exceed SIZE_MAX bytes), so
+    // we abort exactly as the OOM path does.
     [[nodiscard]] static AlignedBuffer allocate(size_type count) {
         if (count == 0) [[unlikely]] return AlignedBuffer{};
-        const size_type bytes_raw = count * sizeof(T);
+        size_type bytes_raw = 0;
+        if (__builtin_mul_overflow(count, sizeof(T), &bytes_raw)) [[unlikely]]
+            std::abort();
         // aligned_alloc requires size to be a multiple of alignment.
-        const size_type bytes = (bytes_raw + Alignment - 1) & ~(Alignment - 1);
+        size_type bytes = 0;
+        if (__builtin_add_overflow(bytes_raw, Alignment - 1, &bytes)) [[unlikely]]
+            std::abort();
+        bytes &= ~(Alignment - 1);
         void* raw = std::aligned_alloc(Alignment, bytes);
         if (!raw) [[unlikely]] std::abort();
         return AlignedBuffer{static_cast<T*>(raw), count};
