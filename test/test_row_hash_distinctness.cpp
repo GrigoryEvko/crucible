@@ -269,7 +269,19 @@ inline constexpr std::uint64_t kFoldSeed = 0xC0FFEEBADF00DBA5ULL;
 // fold-position drift, not a hash drift, and is the expected
 // federation-key wire-format-break for an Observability-axis carrier
 // joining the universe.  See V-055 commit.
-inline constexpr std::uint64_t kFoldAnchor = 0xCF47CF6C1D6D6AAAULL;
+//
+// FIXY-FOUND-034 (2026-05-25): rolled OLD=0xCF47CF6C1D6D6AAA →
+// NEW=0x33366794620504E6 after flipping the Trust strict-default
+// from safety::trust::Verified to safety::trust::Unverified at the
+// substrate Fn<> default-arg slot AND the fixy strict_default_for<
+// DimensionAxis::Trust> specialization.  Every stance::* alias that
+// strict-defaults Trust (all 14 of them) now folds Unverified into
+// the row_hash where Verified used to live, so trailing fold state
+// across the entire stance matrix moves uniformly.  This is the
+// EXPECTED wire-format break for closing the Biba upside-down-
+// lattice defect; federation cache keys for every existing kernel
+// MUST be reindexed in coordination with this ship.  See FOUND-034.
+inline constexpr std::uint64_t kFoldAnchor = 0x33366794620504E6ULL;
 
 static_assert(fold_anchor() == kFoldAnchor,
     "FIXY-V-008: ceremony anchor drift.  A row_hash_contribution<> "

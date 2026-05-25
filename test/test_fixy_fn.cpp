@@ -256,6 +256,70 @@ static_assert(
 static_assert(sizeof(fixy::stance::InternalApi<int>)         == sizeof(int));
 static_assert(sizeof(fixy::stance::UnclassifiedScratch<int>) == sizeof(int));
 
+// ─── 7c. FIXY-FOUND-034 — Trust strict-default fail-safe sentinel ─
+//
+// Defect: Before FOUND-034, strict_default_for<Trust>::type and the
+// substrate Fn<>'s Trust= default were both `safety::trust::Verified`
+// (TOP of the integrity lattice).  Every unannotated binding
+// `fixy::fn<T>` silently claimed maximum integrity — a Biba violation
+// analogous to BLP "default Public" being correct for confidentiality
+// but DEFAULT-TOP being WRONG for integrity (Biba 1977,
+// "Integrity Considerations for Secure Computer Systems").
+//
+// Fix: Default = `safety::trust::Unverified` (lattice bottom).
+// `Verified` is now an EARNED status — callers that have discharged
+// a proof obligation engage `grant::trust_verified` explicitly,
+// making the verification surface grep-discoverable.
+//
+// Drift defense: this sentinel pins (a) the new safe default,
+// (b) the explicit-engagement path still works, and (c) the lattice
+// asymmetry (Verified ≠ Unverified) so a future refactor that
+// accidentally aliases them reds at compile time.
+
+// Substrate-level: every default-constructed Fn<T> resolves Trust to
+// the new Biba-safe bottom.
+static_assert(std::is_same_v<
+    typename crucible::safety::fn::Fn<int>::trust_t,
+    crucible::safety::trust::Unverified>,
+    "FIXY-FOUND-034: safety::fn::Fn<int> with no explicit Trust must "
+    "default to safety::trust::Unverified (Biba lattice bottom). A "
+    "regression back to trust::Verified would silently re-introduce "
+    "the upside-down-lattice defect.");
+
+// Fixy facade: stance::PureLinear strict-defaults every axis including
+// Trust → must surface the same fail-safe default through the facade.
+static_assert(std::is_same_v<
+    typename fixy::stance::PureLinear<int>::safety_fn_t::trust_t,
+    crucible::safety::trust::Unverified>,
+    "FIXY-FOUND-034: stance::PureLinear (strict on every axis) must "
+    "resolve Trust to Unverified, mirroring the substrate default. "
+    "If this reds, fixy::strict_default_for<Trust> and the substrate "
+    "Fn<>::Trust default have drifted apart.");
+
+// Explicit-engagement: the canonical opt-in for Verified status.
+static_assert(std::is_same_v<
+    typename crucible::safety::fn::Fn<
+        int,
+        crucible::safety::fn::pred::True,
+        crucible::safety::fn::UsageMode::Linear,
+        crucible::effects::Row<>,
+        crucible::safety::fn::SecLevel::Classified,
+        crucible::safety::fn::proto::None,
+        crucible::safety::fn::lifetime::Static,
+        crucible::safety::source::FromInternal,
+        crucible::safety::trust::Verified>::trust_t,
+    crucible::safety::trust::Verified>,
+    "FIXY-FOUND-034: explicit substrate Fn<..., trust::Verified> "
+    "must resolve trust_t to safety::trust::Verified — earning the "
+    "Verified status remains the canonical opt-in path.");
+
+static_assert(!std::is_same_v<
+    crucible::safety::trust::Verified,
+    crucible::safety::trust::Unverified>,
+    "FIXY-FOUND-034: Verified and Unverified must remain distinct "
+    "types — if a future refactor aliases them, the lattice "
+    "collapse would defeat the fail-safe default.");
+
 // ─── 8. EBO collapse across multiple types ────────────────────────
 
 static_assert(sizeof(fixy::stance::PureLinear<int>)    == sizeof(int));

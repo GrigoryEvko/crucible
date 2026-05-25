@@ -2075,7 +2075,7 @@ using direct_substrate = safety::fn::Fn<int,
     safety::fn::proto::None,
     safety::fn::lifetime::Static,
     safety::source::FromInternal,
-    safety::trust::Verified,
+    safety::trust::Unverified,                  // FIXY-FOUND-034: mirror substrate default flip
     safety::fn::ReprKind::Opaque,
     safety::fn::cost::Unstated,
     safety::fn::precision::Exact,

@@ -29,7 +29,9 @@
 //   safety::fn::proto::None       — Protocol (DimensionAxis::Protocol = 5) strict default
 //   safety::fn::lifetime::Static  — Lifetime (DimensionAxis::Lifetime = 6) strict default
 //   safety::source::FromInternal  — Provenance (DimensionAxis::Provenance = 7) strict default
-//   safety::trust::Verified       — Trust (DimensionAxis::Trust = 8) strict default
+//   safety::trust::Unverified     — Trust (DimensionAxis::Trust = 8) strict default
+//                                   (FIXY-FOUND-034: was Verified — Biba-style
+//                                    upside-down lattice flipped to fail-safe)
 //   safety::fn::ReprKind::Opaque  — Representation (DimensionAxis::Representation = 9) strict default
 //   safety::fn::cost::Unstated    — Complexity (DimensionAxis::Complexity = 11) strict default
 //   safety::fn::precision::Exact  — Precision (DimensionAxis::Precision = 12) strict default
@@ -177,9 +179,17 @@ struct strict_default_for<dim::DimensionAxis::Provenance> {
     using type = safety::source::FromInternal;
 };
 
+// FIXY-FOUND-034: Trust strict default = Unverified (Biba lattice bottom).
+// Previously defaulted to Verified (TOP), which silently asserted maximum
+// integrity for every unannotated binding — a Biba violation analogous to
+// Bell-LaPadula "default Public" being correct for confidentiality but
+// "default Verified" being WRONG for integrity.  Verified is now an EARNED
+// status: callers that have discharged a proof obligation engage it via
+// grant::trust_verified at the binding site, making the verification
+// surface grep-discoverable.
 template <>
 struct strict_default_for<dim::DimensionAxis::Trust> {
-    using type = safety::trust::Verified;
+    using type = safety::trust::Unverified;
 };
 
 template <>

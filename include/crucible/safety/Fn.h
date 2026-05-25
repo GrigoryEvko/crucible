@@ -35,7 +35,7 @@
 //    6  T    Protocol        proto::None                   EBO
 //    7  S    Lifetime        lifetime::Static              EBO
 //    8  S    Source          source::FromInternal          re-export
-//    9  S    Trust           trust::Verified               re-export
+//    9  S    Trust           trust::Unverified             re-export (FIXY-FOUND-034)
 //   10  L    Repr            ReprKind::Opaque              enum
 //   11  S    (Observability) — derived from EffectRow      not stored
 //   12  —    (FX dim 12 Clock Domain dropped per §24.1)
@@ -464,7 +464,7 @@ template <
     typename       Protocol     = proto::None,
     typename       Lifetime     = lifetime::Static,
     typename       Source       = source::FromInternal,
-    typename       Trust        = trust::Verified,
+    typename       Trust        = trust::Unverified,                 // FIXY-FOUND-034: Biba-safe bottom (was Verified)
     ReprKind       Repr         = ReprKind::Opaque,
     typename       Cost         = cost::Unstated,
     typename       Precision    = precision::Exact,
@@ -656,7 +656,11 @@ static_assert(DefaultFn::security_v                  == SecLevel::Classified);
 static_assert(std::is_same_v<DefaultFn::protocol_t,   proto::None>);
 static_assert(std::is_same_v<DefaultFn::lifetime_t,   lifetime::Static>);
 static_assert(std::is_same_v<DefaultFn::source_t,     source::FromInternal>);
-static_assert(std::is_same_v<DefaultFn::trust_t,      trust::Verified>);
+// FIXY-FOUND-034: unannotated default is trust::Unverified (Biba bottom).
+// `trust::Verified` is now an EARNED status — code that has discharged a
+// proof obligation must engage it explicitly via grant::trust_verified,
+// making the verification surface grep-discoverable.
+static_assert(std::is_same_v<DefaultFn::trust_t,      trust::Unverified>);
 static_assert(DefaultFn::repr_v                      == ReprKind::Opaque);
 static_assert(std::is_same_v<DefaultFn::cost_t,       cost::Unstated>);
 static_assert(std::is_same_v<DefaultFn::precision_t,  precision::Exact>);
