@@ -964,10 +964,18 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(W001, "W001",
     "HotPath functions do not wrap their return/parameter type in a syscall-blocking Wait strategy",
     "marks_hot_path is true AND F::type_t is safety::Wait<Park, U> or safety::Wait<Block, U> "
     "(strategies that involve futex / condvar / poll syscalls, 1-5 µs latency)",
+    // FIXY-FOUND-124: previous remediation also listed Wait<UmwaitC01> and
+    // Wait<AcquireWait> — both are explicitly contraindicated for hot path by
+    // CLAUDE.md §IX (UMWAIT: 'Not applicable on our hot path'; futex / atomic::
+    // wait: 'BANNED on hot path').  Recommend only the two §IX-admissible hot-
+    // path strategies; see safety/Wait.h `is_hot_path_waiter_admissible` for
+    // the strict admissibility gate.
     "drop the Wait wrapper from the hot path, switch to a non-blocking strategy "
-    "(Wait<SpinPause>, Wait<BoundedSpin>, Wait<UmwaitC01>, or Wait<AcquireWait>), "
-    "or move the blocking call into an Init/Bg context that owns the syscall cost",
-    "fixy.md §24.2 W001");
+    "(Wait<SpinPause> — the §IX default, 10-40 ns intra-socket; or Wait<BoundedSpin> "
+    "for unknown-delay signals), or move the blocking call into an Init/Bg context "
+    "that owns the syscall cost. Wait<UmwaitC01> and Wait<AcquireWait> are NOT "
+    "valid hot-path replacements (CLAUDE.md §IX latency hierarchy)",
+    "fixy.md §24.2 W001; CLAUDE.md §IX");
 CRUCIBLE_COLLISION_DIAGNOSTIC(W002, "W002",
     "Bg-row functions do not wrap their return/parameter type in an active-spin Wait strategy",
     "effect_row contains Effect::Bg AND F::type_t is safety::Wait<SpinPause, U> or "
@@ -2562,9 +2570,14 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "MUST NOT wrap return/parameter type in a syscall-blocking Wait "
             "strategy. Park (condvar) and Block (poll/epoll_wait) involve "
             "1-5 us latency, incompatible with the hot-path budget "
-            "(<= 40 ns intra-socket). Switch to Wait<SpinPause>, "
-            "Wait<BoundedSpin>, Wait<UmwaitC01>, Wait<AcquireWait>, or "
-            "move the blocking call into an Init/Bg context.");
+            "(<= 40 ns intra-socket). Switch to Wait<SpinPause> (CLAUDE.md "
+            "SXIV default, 10-40 ns intra-socket) or Wait<BoundedSpin> for "
+            "unknown-delay signals; or move the blocking call into an Init/"
+            "Bg context. Wait<UmwaitC01> and Wait<AcquireWait> are NOT valid "
+            "hot-path replacements per CLAUDE.md SXIV latency hierarchy "
+            "(UMWAIT: 'Not applicable on our hot path'; futex/atomic::wait: "
+            "'BANNED on hot path'); see safety/Wait.h is_hot_path_waiter_"
+            "admissible for the strict gate. FIXY-FOUND-124.");
         static_assert(!(row_has_bg && type_has_active_spin_wait),
             "W002: Bg-row x Wait<SpinPause> or Wait<BoundedSpin>. Bg-context "
             "functions MUST NOT wrap return/parameter type in an active-spin "
