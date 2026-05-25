@@ -406,6 +406,71 @@ template <dim::DimensionAxis D>
 using dup_tag_for_axis_t = typename dup_tag_for_axis<D>::type;
 
 // ═══════════════════════════════════════════════════════════════════
+// FIXY-FOUND-138 — newest-axes hygiene completion
+// ═══════════════════════════════════════════════════════════════════
+//
+// `every_axis_has_insight_provider` (fixy/Insights.h:735) already
+// reflection-checks the `tag_for_axis<D>::type` family — adding a
+// DimensionAxis enumerator without a tag_for_axis<> specialization
+// reddens loudly there.
+//
+// The PEER family `dup_tag_for_axis<D>::type` had no analogous
+// sentinel pre-FOUND-138: a future axis without a dup_tag_for_axis
+// specialization would compile clean until the first `dup_tag_for_axis_t<>`
+// use-site (typically the tier-4 duplicate-engagement diagnostic
+// path), surfacing as a confusing "no type named 'type'" template
+// error instead of an actionable cardinality-pin failure.
+//
+// This is precisely the "newest axes hygiene" gap — FpMode (V-088),
+// SyscallSurface (V-097), ControlFlow / CallShape / StackUse /
+// GlobalState / Stdio (V-238), HwInstruction / BarrierStrength /
+// SimdIsa (V-253), MemoryScope (V-266) all currently ship explicit
+// dup_tag_for_axis<> specializations above, but the closure
+// invariant — that EVERY DimensionAxis enumerator has one — was
+// convention-only.  This sentinel makes it structural.
+
+namespace detail::reject_dup_tag_self_test {
+
+[[nodiscard]] consteval bool every_axis_has_dup_tag() noexcept {
+    static constexpr auto enumerators = std::define_static_array(
+        std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        constexpr auto axis = ([:en:]);
+        // SFINAE: requires-expression yields false when the primary
+        // template `dup_tag_for_axis<axis>` lacks `::type` (i.e., no
+        // specialization shipped for this axis).
+        constexpr bool has_dup_tag = requires {
+            typename dup_tag_for_axis<axis>::type;
+        };
+        if (!has_dup_tag) return false;
+        // Type must inherit safety::diag::tag_base — guards against
+        // a specialization that ships `using type = SomeUnrelatedType`
+        // by mistake.
+        using DupT = typename dup_tag_for_axis<axis>::type;
+        if (!::crucible::safety::diag::is_diagnostic_class_v<DupT>) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+static_assert(every_axis_has_dup_tag(),
+    "FIXY-FOUND-138: a DimensionAxis enumerator has no corresponding "
+    "dup_tag_for_axis<D>::type specialization in fixy/Reject.h (or "
+    "the specialization names a type that doesn't inherit "
+    "safety::diag::tag_base).  Add a CRUCIBLE_FIXY_DUP_TAG(...) "
+    "invocation for the new axis followed by a template <> struct "
+    "dup_tag_for_axis<dim::DimensionAxis::NewAxis> { using type = "
+    "FixyDuplicate_NewAxis; }; specialization.  Peers the "
+    "`every_axis_has_insight_provider` sentinel in fixy/Insights.h "
+    "that closes the same gap for the tag_for_axis<> family.");
+
+}  // namespace detail::reject_dup_tag_self_test
+
+// ═══════════════════════════════════════════════════════════════════
 // ── FixyCatalog — closed enumeration of fixy diagnostic tags ───────
 // ═══════════════════════════════════════════════════════════════════
 //
