@@ -343,7 +343,21 @@ inline constexpr std::uint64_t kFoldSeed = 0xC0FFEEBADF00DBA5ULL;
 // from APPENDING 10 entries past the prior wrapper-bucket terminus
 // (W27_Witness), NOT a hash drift.  Federation cache keys for every
 // existing kernel MUST be reindexed in coordination with this ship.
-inline constexpr std::uint64_t kFoldAnchor = 0x4D91646D23F8B6FDULL;
+//
+// FIXY-FOUND-049 (2026-05-25): rolled OLD=0x4D91646D23F8B6FD →
+// NEW=0x4DC454CD4512E7F2 after AppendOnly<T, Storage> row_hash
+// specialization started folding `stable_type_id<Storage<
+// StorageProbe>>` (previously ignored).  W09_AppendOnly<int> uses
+// default Storage=std::vector, so its individual hash CHANGES even
+// though the cell still uses the same (T, default-Storage) shape.
+// All 36 entries after position 9 re-fold positionally as a result.
+// This is a TRUE hash drift (not fold-position drift) — the AppendOnly
+// row_hash function itself emits a different value.  Federation cache
+// keys for every AppendOnly-using kernel slot MUST be reindexed; pre-
+// FOUND-049 peers and post-FOUND-049 peers will silently route to
+// different slots, which is the EXPECTED wire-format break for
+// closing the storage-discrimination cache aliasing defect.
+inline constexpr std::uint64_t kFoldAnchor = 0x4DC454CD4512E7F2ULL;
 
 static_assert(fold_anchor() == kFoldAnchor,
     "FIXY-V-008: ceremony anchor drift.  A row_hash_contribution<> "

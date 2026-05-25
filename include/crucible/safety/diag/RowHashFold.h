@@ -282,6 +282,20 @@ inline constexpr std::uint64_t WRAPPER_EPOCH_VERSIONED_TAG  = 0x1A00'0000'0000'0
 inline constexpr std::uint64_t WRAPPER_NUMA_PLACEMENT_TAG   = 0x1B00'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_RECIPE_SPEC_TAG      = 0x1C00'0000'0000'0000ULL;
 
+// ── FIXY-FOUND-049: StorageProbe — phantom for AppendOnly Storage ──
+//
+// AppendOnly<T, Storage> takes a `template <typename...> class Storage`
+// template-template parameter.  `stable_type_id` requires a CONCRETE
+// type — it cannot directly accept a template-template.  Instantiating
+// `Storage` with this phantom probe yields a concrete type whose
+// `stable_type_id` discriminates the Storage policy (std::vector vs
+// std::deque vs any custom container) while remaining decoupled from
+// any production payload type.
+//
+// Empty struct — zero footprint, valid first-arg to any reasonable
+// Storage template, audit-readable when it appears in a hash trace.
+struct StorageProbe {};
+
 // ── FIXY-V-001 / V-002: Fn aggregator + fixy::fn facade row-hash salts ─
 //
 // The 19-axis `safety::fn::Fn<Type, ...>` aggregator AND the higher-level
@@ -941,17 +955,33 @@ struct row_hash_contribution<safety::Monotonic<Inner, Cmp>> {
         row_hash_contribution_v<Inner>);
 };
 
-// AppendOnly<T, Storage> — Storage is a template-template parameter
-// and cannot directly participate in stable_type_id (which takes a
-// concrete type).  The wrapper-tag distinguishes the wrapper family;
-// callers that swap Storage classes will produce identical row hashes,
-// which matches the contract that AppendOnly is policy-bearing only
-// at the value-level (the storage choice is an implementation detail,
-// not a row-relevant property).
+// AppendOnly<T, Storage> — Storage IS row-relevant (FIXY-FOUND-049):
+// a peer that swaps std::vector → std::deque (or any other valid
+// template-template) gets DIFFERENT growth-amortization behavior,
+// DIFFERENT allocator interaction, and ultimately a DIFFERENT
+// federation cache slot.  The pre-FOUND-049 fold ignored Storage
+// because `stable_type_id` takes a concrete type and Storage is a
+// template-template parameter.  Fix: instantiate Storage with the
+// phantom `detail::StorageProbe` to obtain a CONCRETE-type
+// discriminator without coupling to any real element type.
+//
+// StorageProbe is an empty struct whose only role is "valid first-
+// argument to any `template <typename...> class Storage`".  Picking
+// a tag type (rather than `int`) makes the fold's contribution
+// audit-readable: `stable_type_id<Storage<StorageProbe>>` is clearly
+// a discriminator, not a value-type artifact.
+//
+// Pre-FOUND-049 behavior was a silent federation cache aliasing risk:
+// `AppendOnly<RegionNode*, std::vector>` and
+// `AppendOnly<RegionNode*, std::deque>` would route to the SAME slot
+// despite distinct runtime semantics.  Post-fix: distinct Storage →
+// distinct row hash → distinct cache slot.
 template <typename Inner, template <typename...> class Storage>
 struct row_hash_contribution<safety::AppendOnly<Inner, Storage>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_APPEND_ONLY_TAG,
+        detail::combine_ids(
+            detail::WRAPPER_APPEND_ONLY_TAG,
+            stable_type_id<Storage<detail::StorageProbe>>),
         row_hash_contribution_v<Inner>);
 };
 
@@ -1668,6 +1698,58 @@ static_assert(
 static_assert(
     detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 0>{}, 0xCC)
  == 0xCC);
+
+// ─── FIXY-FOUND-049 — AppendOnly Storage discrimination ─────────────
+//
+// Pre-FOUND-049 the AppendOnly row_hash specialization ignored the
+// Storage template-template, so AppendOnly<int, std::vector> and
+// AppendOnly<int, std::deque> folded to the SAME hash → silent
+// federation cache slot aliasing.  Post-fix: Storage is folded via
+// `stable_type_id<Storage<StorageProbe>>`, distinguishing distinct
+// Storage policies while remaining decoupled from payload types.
+
+// Local probe templates — distinct identities, same arity.  Defined
+// HERE (in the self-test namespace) rather than at <vector>/<deque>
+// to keep RowHashFold.h free of heavy STL container includes.
+template <typename T> class FoundO49_ProbeA { T x_{}; };
+template <typename T> class FoundO49_ProbeB { T x_{}; };
+
+// (1) Distinct Storage policies ⇒ distinct row hashes.
+static_assert(
+    row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>> !=
+    row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeB>>,
+    "FIXY-FOUND-049: AppendOnly<T, ProbeA> and AppendOnly<T, ProbeB> "
+    "MUST produce DISTINCT row hashes — Storage IS row-relevant.");
+
+// (2) Idempotence: same instantiation ⇒ same hash (sanity).
+static_assert(
+    row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>> ==
+    row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>>);
+
+// (3) Inner discriminates via its OWN row_hash_contribution.  Bare
+//     fundamentals (int vs long) contribute 0 each — both inner
+//     yields the same hash because the row_hash machinery is
+//     payload-blind on bare types.  Use distinct INNER WRAPPERS to
+//     witness discrimination: Linear<int> has WRAPPER_LINEAR_TAG,
+//     Stale<int> has WRAPPER_STALE_TAG, so their contributions
+//     differ — and that difference propagates through AppendOnly's
+//     final fold.
+static_assert(
+    row_hash_contribution_v<safety::AppendOnly<safety::Linear<int>, FoundO49_ProbeA>> !=
+    row_hash_contribution_v<safety::AppendOnly<safety::Stale<int>,  FoundO49_ProbeA>>,
+    "FIXY-FOUND-049: AppendOnly<Linear<T>, P> and AppendOnly<Stale<T>, P> "
+    "MUST produce DISTINCT row hashes — Inner wrapper discriminates "
+    "within a single Storage policy.");
+
+// (4) The WRAPPER_APPEND_ONLY_TAG salt is still applied — hash != 0.
+static_assert(
+    row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>> != 0);
+
+// (5) Cross-product: changing BOTH Inner-wrapper AND Storage yields
+//     a hash distinct from either single-axis change.
+static_assert(
+    row_hash_contribution_v<safety::AppendOnly<safety::Linear<int>, FoundO49_ProbeA>> !=
+    row_hash_contribution_v<safety::AppendOnly<safety::Stale<int>,  FoundO49_ProbeB>>);
 
 }  // namespace detail::row_hash_self_test
 
