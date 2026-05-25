@@ -320,6 +320,64 @@ static_assert(SyscallFamilyLattice::leq(SyscallFamily::ProcessControl, SyscallFa
 static_assert(!SyscallFamilyLattice::leq(SyscallFamily::VdsoOnly,       SyscallFamily::NoSyscall));
 static_assert(!SyscallFamilyLattice::leq(SyscallFamily::Privilege,      SyscallFamily::ProcessControl));
 
+// ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
+//
+// AUDIT RESULT for SyscallFamilyLattice (2026-05-25): INVERTED.
+//
+// The cross-tree contract documented in DimensionTraits.h L252-256
+// SIMULTANEOUSLY claims "par=join (strictest-wins)" AND "composition
+// of two sites' syscall surfaces is the JOIN (the larger family),
+// matching subset-inclusion semantics".  These are self-contradicting
+// for this lattice — "strictest" syscall surface = NoSyscall (smallest
+// set) = chain-bottom; "JOIN (the larger family)" = chain-top = Privilege.
+//
+//   * chain direction: NoSyscall (bottom, smallest set — hot-path
+//     target) → VdsoOnly → ReadOnlyState → FileMutation → MemoryMapping
+//     → ThreadSync → NetworkIo → ProcessControl → Privilege (top,
+//     largest set — privileged ioctls)
+//   * "strictest" syscall surface = NoSyscall (function makes ZERO
+//     syscalls, fully analyzable) = chain-min = MEET, NOT JOIN
+//   * join(low, high) returns Privilege = LARGEST syscall set (looser)
+//     — the propagation reading: a region containing ANY privileged
+//     function has the privileged surface (correct for subset-union)
+//   * meet(low, high) returns NoSyscall = empty floor (stricter)
+//   * cross-tree reading: "par=join, strictest-wins" ✗ — JOIN returns
+//     the WIDEST syscall surface, NOT the strictest (smallest)
+//
+// SAME family of defect as FOUND-009/010 (MemOrder/HwInstruction) +
+// FOUND-076 PART A/B (StackUse, GlobalState, ControlFlow, CallShape,
+// Stdio).  Hot-path admission gates ("surface ⊑ NoSyscall") MUST call
+// MEET (or the equivalent leq check), NOT JOIN.  Forge phase E gates
+// that compose two function surfaces and admit only NoSyscall-bound
+// regions must use the MEET operator — calling JOIN on a NoSyscall +
+// Privilege pair returns Privilege (silent admission of ring-0
+// surface to the hot path).
+//
+// The local doc L67-68 ("only when their JOIN with the hot-path
+// target's surface ⊑ NoSyscall") describes the leq-check against the
+// JOIN result, which is the propagation reading — correct for
+// subset-union semantics.  The cross-tree summary's "strictest-wins"
+// label is the misleading part; the actual contract here is "join =
+// subset union for propagation; admission gates compose differently".
+//
+// Polarity-witness pin.
+static_assert(SyscallFamilyLattice::join(SyscallFamily::NoSyscall,
+                                         SyscallFamily::Privilege)
+              == SyscallFamily::Privilege,
+    "FIXY-FOUND-076: SyscallFamilyLattice's JOIN gives WIDEST-surface "
+    "(top=Privilege).  A consumer treating compose as 'strictest-wins "
+    "syscall-surface minimization' would silently admit Privilege.  "
+    "Hot-path admission gates wanting NoSyscall floor MUST call MEET "
+    "(or leq against NoSyscall directly) — SAME defect family as "
+    "FOUND-009/010 + FOUND-076 PART A/B (7 sibling lattices).");
+static_assert(SyscallFamilyLattice::meet(SyscallFamily::NoSyscall,
+                                         SyscallFamily::Privilege)
+              == SyscallFamily::NoSyscall,
+    "FIXY-FOUND-076: SyscallFamilyLattice's MEET gives strictest-"
+    "syscall-floor (bottom=NoSyscall).  Forge hot-path admission gates "
+    "MUST call MEET — calling JOIN silently admits the most-permissive "
+    "participant's syscall surface.");
+
 // At<T> singleton — empty element_type for EBO collapse at every use
 // site.  V-098+ wrappers wired via `Graded<Absolute, At<T>, P>` will
 // rely on this for zero-byte overhead.

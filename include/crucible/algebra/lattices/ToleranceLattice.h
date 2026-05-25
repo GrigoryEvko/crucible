@@ -298,6 +298,52 @@ static_assert(ToleranceLattice::join(Tolerance::ULP_FP8, Tolerance::ULP_FP16) ==
 static_assert(ToleranceLattice::meet(Tolerance::RELAXED, Tolerance::BITEXACT) == Tolerance::RELAXED);
 static_assert(ToleranceLattice::meet(Tolerance::ULP_FP32, Tolerance::ULP_FP16) == Tolerance::ULP_FP16);
 
+// ── FIXY-FOUND-076 audit pin: cross-tree convention alignment ────────
+//
+// AUDIT RESULT for ToleranceLattice (2026-05-25): ALIGNED.
+//
+// This lattice is the CANONICAL prototype for the cross-tree "par=join,
+// strictest-wins" contract — its chain direction puts the strictest
+// tolerance (BITEXACT, zero error budget) at TOP.  Composing two ops'
+// tolerance contributions correctly takes the TIGHTER as the joint
+// requirement via JOIN.
+//
+//   * chain direction: RELAXED (bottom, loosest — no tolerance bound) →
+//     ULP_INT8 → ... → ULP_FP64 → BITEXACT (top, strictest — bit-exact)
+//   * "strictest" in cross-tree contract = tightest tolerance budget =
+//     BITEXACT = chain-max = JOIN
+//   * join(low, high) returns BITEXACT = strictest (correct propagation)
+//   * meet(low, high) returns RELAXED = loosest (admission floor)
+//   * cross-tree reading: "par=join, strictest-wins" ✓ — JOIN directly
+//     yields the strictest tolerance, matching the contract semantics
+//
+// SAME alignment as BarrierStrengthLattice (FOUND-076 PART A).
+// CONTRARY to MemOrder, HwInstruction, StackUse, GlobalState,
+// ControlFlow, CallShape, Stdio — all of which are INVERTED because
+// their refinement-lattice convention puts the strictest value at
+// BOTTOM (chain-min), requiring MEET for the strictest-wins reading.
+//
+// Consumers wanting strictest-wins composition can call JOIN directly
+// on this lattice.  Forge phase E.RecipeSelect's NumericalRecipe
+// aggregation calls join — that's the correct operator for ToleranceLattice.
+//
+// Polarity-witness pin: a refactor inverting the chain (so RELAXED
+// moves to top) would red THIS assert and force coordinated cross-tree
+// audit of all Forge phase E aggregation sites.
+static_assert(ToleranceLattice::join(Tolerance::RELAXED, Tolerance::BITEXACT)
+              == Tolerance::BITEXACT,
+    "FIXY-FOUND-076: ToleranceLattice's JOIN gives strictest-wins "
+    "under the natural-tolerance-budget convention (top=BITEXACT). "
+    "join(RELAXED, BITEXACT) returns BITEXACT — the tighter budget "
+    "dominates.  Cross-tree 'par=join, strictest-wins' contract holds; "
+    "consumers can call JOIN directly here.  Forge phase E.RecipeSelect "
+    "depends on this alignment.");
+static_assert(ToleranceLattice::meet(Tolerance::RELAXED, Tolerance::BITEXACT)
+              == Tolerance::RELAXED,
+    "FIXY-FOUND-076: ToleranceLattice's MEET gives loosest-floor "
+    "(bottom=RELAXED).  Admission gates wanting a 'permit any tolerance' "
+    "minimum MUST call MEET — RELAXED absorbs in meet by chain-minimum.");
+
 // Diagnostic names.
 static_assert(ToleranceLattice::name() == "ToleranceLattice");
 static_assert(tolerance::RelaxedTier::name()  == "ToleranceLattice::At<RELAXED>");
