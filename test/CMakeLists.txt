@@ -7180,11 +7180,21 @@ crucible_neg_compile_test(neg_collision_P010_ghost_runtime
 # covered by the fixture above; this companion fixture covers the
 # BLOCK-arm.  Block emits blocking primitives (mutex / condvar / futex)
 # and is the most orthogonal sibling to Alloc and IO — distinct
-# observable runtime effect, distinct erasure-violation surface.  Both
-# fixtures together guard against a refactor that drops `Block` (or
-# `Alloc`) from the inner OR.  The IO-arm remains uncovered today and
-# is a future sub-HS14 follow-up under the FOUND-069 sweep.
+# observable runtime effect, distinct erasure-violation surface.
 crucible_neg_compile_test(neg_collision_P010_ghost_block
+  "P010")
+
+# FIXY-FOUND-069 sub-HS14 closure: third (final) arm of P010's 3-way
+# OR-fold — the IO arm.  After this fixture lands, P010 graduates
+# from sub-HS14 (partial arm witnessing) to full-HS14 (all three
+# arms witnessed).  All three fixtures together — Alloc/Block/IO —
+# guard against a refactor dropping ANY single atom from the inner
+# OR-fold and silently shipping a 2-effect or 1-effect degenerate
+# rule.  IO emits syscall / kernel-mediated traffic; a Ghost-usage
+# binding that emits a syscall is the most pernicious erasure
+# violation because it looks "lightweight" at the source but
+# contractually forbidden.
+crucible_neg_compile_test(neg_collision_P010_ghost_io
   "P010")
 
 # ─── FIXY-FOUND-065 CollisionCatalog L007 neg-compile (per-rule) ─────
