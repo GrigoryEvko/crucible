@@ -150,6 +150,53 @@ private:
         mimic::detail::semaphore_signal<Backend>(semaphore_, signal.value);
     }
 
+    // ── FIXY-FOUND-015: substrate `wait` is a POLL, NOT a block ────────
+    //
+    // The function name `wait` and `bool` return type would naturally
+    // read as blocking semantics: "wait blocks until the signal arrives;
+    // returns true on signal, false on timeout/error".  THAT IS NOT
+    // WHAT THIS DOES TODAY.
+    //
+    // The implementation delegates to
+    //   `mimic::detail::semaphore_wait<Backend>(semaphore_, value)`
+    // which today routes — for EVERY backend (NV / AMD / TPU / TRN / CPU)
+    // — through `mimic::detail::semaphore_poll_oracle` (one acquire
+    // load + one compare; mimic/Semaphore.h:43-51).  The TRUE current
+    // semantic is:
+    //   true   ↔ current_value >= signal.value AT THE LOAD MOMENT
+    //              (snapshot, may be stale by the time caller observes)
+    //   false  ↔ current_value <  signal.value AT THE LOAD MOMENT, OR
+    //              the signal doesn't match this ChainEdge's expected
+    //              (matches_expected_signal_() short-circuit returned
+    //               false; see early-return above)
+    //
+    // The `wait` SPELLING is preserved because real vendor backends
+    // (fixy-V-205 future work) will land blocking implementations
+    // behind the SAME function name and same `bool` return — but with
+    // DIFFERENT post-conditions:
+    //   true   ↔ signal arrived (may have blocked, semantics unchanged
+    //              from caller's perspective if they did spin-then-
+    //              try-again)
+    //   false  ↔ timeout / cancellation / driver error (NOT "not ready
+    //              yet" — that's the polling-era semantic that goes
+    //              away once real vendor backends ship)
+    //
+    // The semantic SHIFT is silent at the type level — same function
+    // signature, same return type, different post-condition contract.
+    // Consumers MUST NOT rely on the polling-era "false means not-
+    // ready-yet, retry me" behavior; the canonical retry pattern lives
+    // in PermissionedChainEdge::WaiterHandle::try_wait (public-facing
+    // surface CORRECTLY renamed to `try_wait`, documenting the polling
+    // semantic AND the adaptive spin-then-yield retry shape per
+    // FIXY-FOUND-111/119).  Session-level consumers route through
+    // sessions/ChainEdgeSession.h::wait_transport which implements the
+    // retry directly.
+    //
+    // Substrate-direct callers (= friend-access via detail::ChainEdge
+    // Access, currently ONLY PermissionedChainEdge::wait_substrate_)
+    // MUST treat the bool return as "polling oracle result, retry on
+    // false" until the vendor backends migrate.  Tests calling this
+    // path: same discipline.
     [[nodiscard]] bool wait(detail::ChainEdgeAccess,
                             const SemaphoreSignal& signal) const noexcept {
         if (!matches_expected_signal_(signal)) return false;
