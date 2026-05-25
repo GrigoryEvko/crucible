@@ -276,13 +276,24 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "grant::accept_default_strict_for<dim::DimensionAxis::Mutation>",
     "fixy::fn<T, /* no Mutation grant */, ...>");
 
+// FIXY-FOUND-129: prior doc-block cited "§6.8 L002 / E044" as the
+// Reentrancy-axis collision rules.  Both citations are wrong: L002
+// (borrow × Async) dispatches on Lifetime × Synchronization, and E044
+// (CT × Async) dispatches on Security × Synchronization.  Neither
+// reads the Reentrancy grade.  The Reentrancy axis currently ships
+// with ZERO dispatching collision rules (FIXY-FOUND-071 tracks the
+// R001/R002/R003 family that would close the gap); engagement here
+// is therefore a SCOPE-LEVEL audit-trail discipline rather than a
+// concept-gate prerequisite for any active rule.
 CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::diag::FixyNotEngaged_Reentrancy,
     ::crucible::safety::diag::Severity::Error,
     "Reentrancy engages re-entry safety (NonReentrant / Reentrant / "
-    "Coroutine).  Strict default is NonReentrant.  Coroutine and "
-    "Reentrant must be cited so collision rules dispatch on async-vs-"
-    "borrow patterns (§6.8 L002 / E044).",
+    "Coroutine).  Strict default is NonReentrant.  Engagement is "
+    "currently SCOPE-LEVEL audit-trail only — no §6.8 collision rule "
+    "dispatches on the Reentrancy grade today (FIXY-FOUND-071 tracks "
+    "the planned R001/R002/R003 family).  Cite explicitly so a future "
+    "rule family lands on a binding that already declares its position.",
     "Grants pack omits grant::reentrancy::* AND omits "
     "accept_default_strict_for<Reentrancy>.",
     "grant::accept_default_strict_for<dim::DimensionAxis::Reentrancy>",
