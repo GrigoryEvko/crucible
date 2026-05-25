@@ -202,3 +202,12 @@ include/crucible/warden/CpuTopology.h:197 — effects::Init via CpuTopology::iso
 # Ctx parameter.  Grandfathered pending the fixy-A5-006 ctx-gating of
 # open_dirfd().  The other 5 Fs.cpp syscalls are inline-marked at site.
 src/fixy/Fs.cpp:86 — effects::IO via open_dirfd → do_open_dirfd_impl (O_DIRECTORY|O_NOFOLLOW dirfd open)
+
+# ── fixy/Time.h + warden/DeadlineWatchdog.h — Bg clock_gettime reads ──
+# effects::Bg vDSO clock reads — no fd, no privilege, no kernel-state
+# mutation.  Each wraps its result in a ClockSource<Source> provenance
+# witness (mint_clock_source).  Bare methods (ClockReader<Source>::read;
+# the watchdog verdict path), NOT ctx-gated — grandfathered exactly like
+# canopy/Hlc.h:241's CLOCK_REALTIME read.
+include/crucible/fixy/Time.h:175 — effects::Bg via ClockReader<Source>::read (clock_gettime, ClockSource<Source>-tagged)
+include/crucible/warden/DeadlineWatchdog.h:269 — effects::Bg via watchdog verdict path (clock_gettime CLOCK_BOOTTIME, ClockSource<Boot>-tagged)
