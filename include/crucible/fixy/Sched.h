@@ -133,7 +133,7 @@ struct sched_attr_abi {
     attr.sched_runtime  = runtime_ns;
     attr.sched_deadline = deadline_ns;
     attr.sched_period   = period_ns;
-    return static_cast<int>(::syscall(SYS_sched_setattr, 0, &attr, 0u));
+    return static_cast<int>(::syscall(SYS_sched_setattr, 0, &attr, 0u));  // SYSCALL-CAP-OK: detail helper for mint_scheduler_policy ctx-gate (CtxFitsSchedPolicyMint, effects::Init)
 }
 
 // Apply a scheduler policy to the calling thread, returning the syscall rc.
@@ -236,7 +236,7 @@ template <AffinityMask Mask, PinningPosture Posture = PinningPosture::PinnedExpl
 mint_affinity(Ctx const&) noexcept {
     cpu_set_t set;
     detail::fill_cpu_set(Mask, set);
-    if (::sched_setaffinity(0, sizeof(set), &set) != 0) [[unlikely]] {
+    if (::sched_setaffinity(0, sizeof(set), &set) != 0) [[unlikely]] {  // SYSCALL-CAP-OK: mint_affinity body, CtxFitsAffinityMint ctx-gate (effects::Init)
         return std::unexpected(errno);
     }
     return sf::mint_cpu_pinned<Mask, Posture, ProofUnit>(0);
@@ -306,7 +306,7 @@ template <eff::IsExecCtx Ctx>
     cpu_set_t set;
     CPU_ZERO(&set);
     CPU_SET(static_cast<std::size_t>(cpu), &set);
-    if (::sched_setaffinity(0, sizeof(set), &set) != 0) [[unlikely]] {
+    if (::sched_setaffinity(0, sizeof(set), &set) != 0) [[unlikely]] {  // SYSCALL-CAP-OK: apply_affinity_to_cpu CtxFitsRuntimeAffinity ctx-gate (Bg|Init)
         return std::unexpected(errno);
     }
     return {};
