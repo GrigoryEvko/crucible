@@ -408,6 +408,56 @@ struct Block {
 
 }  // namespace cap
 
+// ── FIXY-FOUND-104 no-state invariant pin ───────────────────────────
+//
+// Bg / Init / Test (below) carry the cap atoms as PUBLIC NSDMI fields
+// (`[[no_unique_address]] cap::Alloc alloc{};` and friends).  The
+// public surface lets production call sites name the cap tag through
+// the context — `arena.alloc(bg.alloc, ...)` — without minting a
+// freestanding `cap::Alloc{}` at every call.  That convenience is
+// SOUND today ONLY because cap::Alloc / cap::IO / cap::Block are
+// stateless empty structs — a copy out of `bg.alloc` is observationally
+// indistinguishable from `cap::Alloc{}` direct construction, so the
+// public field grants no privilege that wasn't already universally
+// available via the empty default ctor.
+//
+// The structural enforcement of capability-gated authorization lives
+// elsewhere: `Capability<E, S>` (FOUND-102) is the linear proof token
+// minted via `mint_from_ctx<E>(ctx)` and consumed at the API boundary.
+// The bare cap atoms are TYPE MARKERS for parameter routing; the
+// Capability<E, S> is the LINEAR PROOF.  Two complementary surfaces
+// with explicit tradeoffs — neither replaces the other.
+//
+// If a future PR adds runtime state to ANY cap atom, the design
+// premise breaks: `bg.alloc` would now carry observable state that
+// callers could copy out, store, and use outside Bg's intended scope
+// — a privilege escalation that the public field wouldn't catch but
+// the Capability<E, S> linear discipline would.  The static_asserts
+// below are the regression tripwire: a cap atom gaining state reds
+// the build with the FOUND-104 tag and the exact remediation:
+// privatize the Bg/Init/Test field whose type just became stateful.
+static_assert(std::is_empty_v<cap::Alloc>,
+    "FIXY-FOUND-104: cap::Alloc must remain a stateless empty struct.  "
+    "Bg / Init / Test below carry public NSDMI fields of this type "
+    "(`[[no_unique_address]] cap::Alloc alloc{};`); the public surface "
+    "is sound ONLY because copies out of those fields are observationally "
+    "indistinguishable from `cap::Alloc{}` direct construction.  Adding "
+    "state to cap::Alloc makes `bg.alloc` carry that state, and a "
+    "caller can `cap::Alloc a = bg.alloc;` to capture a freestanding "
+    "stateful capability — bypassing the ctx-scoped lifetime intent.  "
+    "Fix: either (a) privatize the corresponding fields on Bg/Init/Test "
+    "and gate access through a passkey-friended accessor, OR (b) keep "
+    "the state out of cap::Alloc and add it to Capability<Alloc, S> "
+    "instead (the linear-proof surface where lifecycle is structurally "
+    "enforced).");
+static_assert(std::is_empty_v<cap::IO>,
+    "FIXY-FOUND-104: cap::IO must remain stateless — see cap::Alloc "
+    "diagnostic.  Bg / Init / Test below carry `cap::IO io{};`.");
+static_assert(std::is_empty_v<cap::Block>,
+    "FIXY-FOUND-104: cap::Block must remain stateless — see cap::Alloc "
+    "diagnostic.  Bg / Test below carry `cap::Block block{};` (Init "
+    "omits Block per its non-blocking context contract).");
+
 // ── Top-level effects:: aliases for the cap tags ────────────────────
 //
 // Production call sites use the short form (`effects::Alloc`); the
