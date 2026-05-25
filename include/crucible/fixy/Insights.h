@@ -373,7 +373,9 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
 // deferring to safety::Fp* value wrappers (V-090 ships them).  Missing
 // engagement disables the §6.8 F101-F105 collision family (FpMode ×
 // Precision, FpMode × Vendor, FpMode × NumericalRecipe, FpMode ×
-// DetSafe, FpMode × HotPath) once V-091 lands those rules.
+// DetSafe, FpMode × HotPath) shipped by V-091 (FIXY-FOUND-126:
+// previously "once V-091 lands"; V-091's rules are now in the
+// catalog).
 CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::diag::FixyNotEngaged_FpMode,
     ::crucible::safety::diag::Severity::Error,
@@ -385,7 +387,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "element).  Missing engagement defeats the §6.8 F101-F105 collision "
     "family (FpMode × Precision, FpMode × Vendor, FpMode × "
     "NumericalRecipe, FpMode × DetSafe, FpMode × HotPath) which V-091 "
-    "will ship — those rules dispatch on the FpMode grade.",
+    "ships — those rules dispatch on the FpMode grade.",
     "Grants pack omits grant::with_fp_mode<...> AND omits "
     "accept_default_strict_for<FpMode>.",
     "grant::accept_default_strict_for<dim::DimensionAxis::FpMode>",
@@ -449,8 +451,10 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
 // safety::fn::<ns>::Unconstrained — bindings make no claim about that
 // behavior at this scope, deferring to V-242's value wrapper if one is
 // present.  Missing engagement disables the §6.8 C001 / D001 / D002 /
-// G001 / L006 / P003 / S001 / S004 collision family (V-243) once it
-// wires up — those rules dispatch on the respective behavior grade.
+// G001 / L006 / P003 / S001 / S004 collision family shipped by V-243
+// (FIXY-FOUND-126: previously "once it wires up"; V-243's rules now
+// live in the catalog) — those rules dispatch on the respective
+// behavior grade.
 CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::diag::FixyNotEngaged_ControlFlow,
     ::crucible::safety::diag::Severity::Error,
@@ -475,7 +479,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "chain V-240 ships in algebra/lattices/CallShapeLattice.h).  Strict "
     "default is call_shape::Unconstrained.  Missing engagement defeats "
     "bounded-stack admission (D001) and devirtualization gating (D002) "
-    "which V-243 will ship — those rules dispatch on the CallShape grade.",
+    "which V-243 ships — those rules dispatch on the CallShape grade.",
     "Grants pack omits grant::dispatch::* AND omits "
     "accept_default_strict_for<CallShape>.",
     "grant::accept_default_strict_for<dim::DimensionAxis::CallShape>",
@@ -488,7 +492,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "unbounded stack growth — the chain V-241 ships in "
     "algebra/lattices/StackUseLattice.h).  Strict default is "
     "stack_use::Unconstrained.  Missing engagement defeats the §6.8 "
-    "G001 / S001 stack-bound collision rules which V-243 will ship.",
+    "G001 / S001 stack-bound collision rules which V-243 ships.",
     "Grants pack omits grant::stack::* AND omits "
     "accept_default_strict_for<StackUse>.",
     "grant::accept_default_strict_for<dim::DimensionAxis::StackUse>",
@@ -502,7 +506,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "algebra/lattices/GlobalStateLattice.h).  Strict default is "
     "global_state::Unconstrained.  Missing engagement defeats the §6.8 "
     "L006 / S004 Meyers-singleton init-cycle detection (V-248) which "
-    "V-243 will ship — those rules dispatch on the GlobalState grade.",
+    "V-243 ships — those rules dispatch on the GlobalState grade.",
     "Grants pack omits grant::global::* AND omits "
     "accept_default_strict_for<GlobalState>.",
     "grant::accept_default_strict_for<dim::DimensionAxis::GlobalState>",
@@ -514,7 +518,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "Stdio engages the C stdio surface (none / reads / writes — the "
     "chain V-241 ships in algebra/lattices/StdioLattice.h).  Strict "
     "default is stdio::Unconstrained.  Missing engagement defeats the "
-    "§6.8 P003 stdio-IO collision rule which V-243 will ship — that "
+    "§6.8 P003 stdio-IO collision rule which V-243 ships — that "
     "rule dispatches on the Stdio grade.",
     "Grants pack omits grant::stdio::* AND omits "
     "accept_default_strict_for<Stdio>.",
@@ -530,7 +534,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "PrivilegedMsr — the chain V-251 ships in "
     "algebra/lattices/HwInstructionLattice.h).  Strict default is "
     "hw_instruction::Unconstrained.  Missing engagement defeats the "
-    "§6.8 H001/H002 rdtsc/rdmsr admission rules which V-260 will ship — "
+    "§6.8 H001/H002 rdtsc/rdmsr admission rules which V-260 ships — "
     "those rules dispatch on the HwInstruction grade.",
     "Grants pack omits grant::hw::* AND omits "
     "accept_default_strict_for<HwInstruction>.",
@@ -545,7 +549,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "FullFence — the chain V-252 ships in "
     "algebra/lattices/BarrierStrengthLattice.h).  Strict default is "
     "barrier_strength::Unconstrained.  Missing engagement defeats the "
-    "§6.8 B001 explicit-fence rule which V-260 will ship — that rule "
+    "§6.8 B001 explicit-fence rule which V-260 ships — that rule "
     "dispatches on the BarrierStrength grade.",
     "Grants pack omits grant::hw::barrier<...> AND omits "
     "accept_default_strict_for<BarrierStrength>.",
@@ -560,7 +564,7 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "trunk lattice V-250 ships in algebra/lattices/SimdIsaLattice.h).  "
     "Strict default is simd_isa::Unconstrained.  Missing engagement "
     "defeats the §6.8 V001/V002/S001/S002 cross-ISA + width rules which "
-    "V-260 will ship — those rules dispatch on the SimdIsa grade.",
+    "V-260 ships — those rules dispatch on the SimdIsa grade.",
     "Grants pack omits grant::simd::width<...> AND omits "
     "accept_default_strict_for<SimdIsa>.",
     "grant::accept_default_strict_for<dim::DimensionAxis::SimdIsa>",
