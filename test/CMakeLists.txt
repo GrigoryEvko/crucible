@@ -4895,6 +4895,16 @@ crucible_neg_compile_test(neg_collision_L003_borrow_unscoped_spawn_marker
   "L003:")
 crucible_neg_compile_test(neg_collision_L004_linear_region_lifetime
   "L004:")
+# FIXY-FOUND-069 sub-HS14 closure for L004: explicit-marker fixture
+# defends the third conjunct's truth via explicit specialization
+# (vs the shipped fixture's reliance on default-TRUE behavior).
+# Distinct mismatch class: defends against a future default-flip of
+# the marks_lifetime_region_unprotected anti-marker OR a refactor
+# that auto-derives the marker from another axis.  Without this
+# fixture, either flavor of refactor could silently slip past L004
+# while the shipped default-relied-upon fixture continues to compile.
+crucible_neg_compile_test(neg_collision_L004_linear_region_lifetime_explicit_marker
+  "L004:")
 crucible_neg_compile_test(neg_collision_M011_linear_fail_no_cleanup
   "M011:")
 crucible_neg_compile_test(neg_collision_S010_stale_ct
