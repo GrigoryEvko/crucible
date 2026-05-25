@@ -4873,6 +4873,12 @@ crucible_neg_compile_test(neg_collision_I003_ct_fail_secret
   "I003:")
 crucible_neg_compile_test(neg_collision_M012_monotonic_concurrent_no_atomic
   "M012:")
+# FIXY-FOUND-069 sub-HS14 closure for M012: marker-tier trigger of the
+# concurrent_context_v OR-fold (marks_concurrent_context), companion to the
+# Bg-row-tier fixture above.  Distinct mismatch class — a refactor dropping
+# the marker arm from concurrent_context_v slips the row-tier fixture.
+crucible_neg_compile_test(neg_collision_M012_monotonic_concurrent_marker
+  "M012:")
 crucible_neg_compile_test(neg_collision_P002_ghost_runtime
   "P002:")
 crucible_neg_compile_test(neg_collision_I004_classified_async_session_no_ct
