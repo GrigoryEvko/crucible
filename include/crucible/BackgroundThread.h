@@ -90,7 +90,7 @@ struct BackgroundThread {
   // adapter knows the encoding; BgThread does not).  A future task
   // tightens with vendor-routed source::VendorSpec × Refined pairs.
   using DeviceCapability = ::crucible::fixy::wrap::Tagged<
-      uint64_t, ::crucible::safety::source::Meridian>;
+      uint64_t, ::crucible::fixy::tags::source::Meridian>;
   DeviceCapability device_capability{0};
 
   // Active region pointer (written by background, read by foreground).

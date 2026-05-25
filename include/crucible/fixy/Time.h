@@ -73,6 +73,8 @@ namespace eff = ::crucible::effects;
 namespace ml  = ::crucible::algebra::lattices;
 
 using sf::ClockSource_v;
+using sf::MonotonicClockBytes;   // FIXY-U-096z: clock-bytes carrier re-export
+using sf::mint_clock_source;     // FIXY-U-096z: §XXI clock-source mint re-export
 using TscMode = ::crucible::fixy::hw::TscMode;
 
 // ── clockid mapping — only the static-clockid clock_gettime sources ─

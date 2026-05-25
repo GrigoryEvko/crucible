@@ -44,7 +44,8 @@
 #include <crucible/fixy/Is.h>               // is_opaque_lifetime_v
 #include <crucible/fixy/SessContentAddr.h>  // ContentAddressed / is_content_addressed_v
 #include <crucible/fixy/SessEventLog.h>     // SessionEvent / StepId / SessionTagId / KeyFn / Less
-#include <crucible/fixy/Source.h>           // tags::source::Durable
+#include <crucible/fixy/Source.h>           // tags::source::Durable / CipherPath
+#include <crucible/fixy/Time.h>             // ClockSource_v / MonotonicClockBytes / mint_clock_source
 #include <crucible/fixy/Wrap.h>             // Tagged / WriteOnce / OrderedAppendOnly / Positive / Refined / Wait / CipherTier(Tag_v) / cipher_tier / Lifetime_v / mint_view / ScopedView / no_scoped_view_field_check
 #include <crucible/safety/source/Path.h>    // WRAP-Cipher-3 #886: source::CipherPath
 #include <crucible/safety/ClockSource.h>   // FIXY-V-198: MonotonicClockBytes
@@ -1732,8 +1733,8 @@ class CRUCIBLE_OWNER Cipher {
     // companion ship) may admit CipherPath at Sanitized-consuming
     // syscall helpers via a dedicated retag_policy specialization.
     [[nodiscard]] auto obj_path(uint64_t hash) const
-        -> ::crucible::safety::Tagged<
-              std::string, ::crucible::safety::source::CipherPath>
+        -> ::crucible::fixy::wrap::Tagged<
+              std::string, ::crucible::fixy::tags::source::CipherPath>
     {
         char hex[16];
         hex16_(hash, hex);
@@ -1747,8 +1748,8 @@ class CRUCIBLE_OWNER Cipher {
         path.append(hex, 2);
         path.push_back('/');
         path.append(hex + 2, 14);
-        return ::crucible::safety::Tagged<
-            std::string, ::crucible::safety::source::CipherPath>{
+        return ::crucible::fixy::wrap::Tagged<
+            std::string, ::crucible::fixy::tags::source::CipherPath>{
                 std::move(path)};
     }
 
@@ -1766,8 +1767,8 @@ class CRUCIBLE_OWNER Cipher {
     // helper that tightens to demand CipherPath proof at its
     // signature catches BOTH the absolute and the relative forms.
     [[nodiscard]] static auto obj_relpath_(std::uint64_t hash)
-        -> ::crucible::safety::Tagged<
-              std::string, ::crucible::safety::source::CipherPath>
+        -> ::crucible::fixy::wrap::Tagged<
+              std::string, ::crucible::fixy::tags::source::CipherPath>
     {
         char hex[16];
         hex16_(hash, hex);
@@ -1777,8 +1778,8 @@ class CRUCIBLE_OWNER Cipher {
         r.append(hex, 2);
         r.push_back('/');
         r.append(hex + 2, 14);
-        return ::crucible::safety::Tagged<
-            std::string, ::crucible::safety::source::CipherPath>{
+        return ::crucible::fixy::wrap::Tagged<
+            std::string, ::crucible::fixy::tags::source::CipherPath>{
                 std::move(r)};
     }
 
@@ -2044,14 +2045,14 @@ class CRUCIBLE_OWNER Cipher {
     // extract the raw u64 for LogEntry construction (whose field is
     // declared as a plain timestamp).
     [[nodiscard]] static auto now_ns() noexcept
-        -> ::crucible::safety::MonotonicClockBytes<std::uint64_t>
+        -> ::crucible::fixy::time::MonotonicClockBytes<std::uint64_t>
     {
         const auto tp = std::chrono::steady_clock::now();
         const std::uint64_t raw = static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(
                 tp.time_since_epoch()).count());
-        return ::crucible::safety::mint_clock_source<
-            ::crucible::safety::ClockSource_v::Monotonic,
+        return ::crucible::fixy::time::mint_clock_source<
+            ::crucible::fixy::time::ClockSource_v::Monotonic,
             std::uint64_t>(raw);
     }
 
@@ -2064,14 +2065,14 @@ class CRUCIBLE_OWNER Cipher {
     static_assert(
         std::is_same_v<
             decltype(now_ns()),
-            ::crucible::safety::MonotonicClockBytes<std::uint64_t>>,
+            ::crucible::fixy::time::MonotonicClockBytes<std::uint64_t>>,
         "FIXY-V-198: Cipher::now_ns must return MonotonicClockBytes<u64>.");
     static_assert(
         sizeof(decltype(now_ns())) == sizeof(std::uint64_t),
         "FIXY-V-198: MonotonicClockBytes is regime-2 — zero-cost wrap.");
     static_assert(
         decltype(now_ns())::source
-            == ::crucible::safety::ClockSource_v::Monotonic,
+            == ::crucible::fixy::time::ClockSource_v::Monotonic,
         "FIXY-V-198: Cipher commit timestamp provenance must be Monotonic.");
 };
 

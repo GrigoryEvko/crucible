@@ -125,7 +125,7 @@ struct Reader {
 // Pad bytes are written as zero for deterministic serialization.
 //
 // WRAP-Serialize-5 #1014: the two "MUST be zero" write sites pin their
-// invariant at the type level via safety::Refined<safety::is_zero, ...>.
+// invariant at the type level via fixy::wrap::Refined<fixy::wrap::is_zero, ...>.
 // A future refactor that accidentally feeds m.data_ptr (or any non-zero
 // expression) into either constructor contract-fires immediately at the
 // construction site — the violation surfaces as a clean Refined-ctor
@@ -136,7 +136,7 @@ inline void write_meta(Writer& w, const TensorMeta& m) {
     w.write_bytes(m.sizes.raw_data(),   sizeof(m.sizes));
     w.write_bytes(m.strides.raw_data(), sizeof(m.strides));
     // data_ptr → always 0 on disk (runtime address, meaningless persisted).
-    const safety::Refined<safety::is_zero, std::uint64_t> zero_ptr{
+    const fixy::wrap::Refined<fixy::wrap::is_zero, std::uint64_t> zero_ptr{
         std::uint64_t{0}};
     w.w(zero_ptr.value());
     w.w(m.ndim);
@@ -151,7 +151,7 @@ inline void write_meta(Writer& w, const TensorMeta& m) {
     w.w(m.version);
     w.w(m.storage_nbytes);
     // grad_fn_hash → always 0 on disk (Family-B process-local identity).
-    const safety::Refined<safety::is_zero, std::uint64_t> zero_grad_fn_hash{
+    const fixy::wrap::Refined<fixy::wrap::is_zero, std::uint64_t> zero_grad_fn_hash{
         std::uint64_t{0}};
     w.w(zero_grad_fn_hash.value());
 }
