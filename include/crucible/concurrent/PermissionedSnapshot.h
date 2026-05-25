@@ -307,8 +307,8 @@ public:
     // type-level); one CAS on the reader pool to acquire-exclusive,
     // one release-store to deposit back.
     struct WithRecombinedResult {
-        safety::Permission<writer_tag> writer_perm;
-        bool                           body_ran;
+        [[no_unique_address]] safety::Permission<writer_tag> writer_perm;
+        bool                                                 body_ran;
     };
 
     template <typename Body>
