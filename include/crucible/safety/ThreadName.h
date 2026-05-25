@@ -114,17 +114,17 @@ concept IsThreadNamed = detail::thread_name_extract::is_thread_named_v<std::remo
 // ── CtxIsInitPhase — the single §XXI mint gate ──────────────────────
 //
 // Admits either the bare `effects::Init` context (what `effects::testing
-// ::init()` produces) OR any ExecCtx whose effect-row contains Effect::Init.
-// The `||` short-circuits: when the left atom is false the right is not
-// evaluated, so `row_type_of_t<Ctx>` is never named on a non-ExecCtx (the
-// same guard pattern as ExecCtx.h's CtxAdmitsCap).
+// ::init()` produces) OR any ExecCtx whose effect-row owns Effect::Init.
+// The right arm uses the named lift `effects::CtxOwnsCapability`
+// (fixy-A5-039) rather than an inline `row_contains_v<row_type_of_t<...>,
+// ...>`; the lift folds the `IsExecCtx` guard so `row_type_of_t<Ctx>` is
+// never named on a non-ExecCtx, and the `||` short-circuits the bare-`Init`
+// case before the right arm is evaluated.
 template <typename Ctx>
 concept CtxIsInitPhase =
     std::same_as<std::remove_cvref_t<Ctx>, ::crucible::effects::Init>
-    || (::crucible::effects::IsExecCtx<std::remove_cvref_t<Ctx>>
-        && ::crucible::effects::row_contains_v<
-               ::crucible::effects::row_type_of_t<std::remove_cvref_t<Ctx>>,
-               ::crucible::effects::Effect::Init>);
+    || ::crucible::effects::CtxOwnsCapability<std::remove_cvref_t<Ctx>,
+                                              ::crucible::effects::Effect::Init>;
 
 // ── mint_thread_name — the Init-row syscall mint (§XXI) ─────────────
 //
