@@ -44,6 +44,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>      // std::addressof
+#include <meta>        // FIXY-FOUND-018: reflection-driven roster completeness
 #include <string_view>
 #include <tuple>       // FIXY-FOUND-018: secret_policy::roster::All
 #include <type_traits>
@@ -191,6 +192,80 @@ static_assert(kCount == 6,
     "fires AT this assertion if the substrate count is bumped first "
     "and AT fixy's kPolicyRosterCardinality if fixy is bumped "
     "first — either order reds the cross-tree handshake.");
+
+// ── FIXY-FOUND-018 reflection-driven completeness check ───────────
+//
+// Closes the "developer adds tag but forgets roster::All" path that
+// the cardinality pin alone leaves open (kCount == tuple_size_v<All>
+// is identity; adding a tag without growing All keeps kCount == 6
+// and the assertion above silently passes).  P2996 namespace member
+// reflection enumerates EVERY class type in `namespace secret_policy`
+// derived from `secret_policy_base` (excluding the base itself) and
+// counts them.  The count is compared to `kCount` — if a tag exists
+// in the namespace but is absent from `roster::All`, the counts
+// diverge and the static_assert below reds at substrate compile.
+//
+// Pattern: `std::meta::members_of(^^ns, access_context)` returns
+// every member reflection of the namespace; `template for` over a
+// `std::define_static_array`-materialized view; per-member predicate
+// gates `std::is_class_v && std::is_base_of_v<secret_policy_base, T>
+// && !std::is_same_v<secret_policy_base, T>`.  Mirrors the
+// `enumerators_of`-driven cardinality pins in safety/DimensionTraits.h
+// (lines 150 / 327 / 898 — the FOUND-133/134 reflective uniformity
+// batches).
+//
+// Why `static_assert` instead of a concept?  The completeness check
+// runs ONCE per TU that includes Secret.h; embedding it as a
+// header-level static_assert at the point of declaration is the
+// "axiom" placement.  Concept gating would require every consumer of
+// roster::All to invoke the concept, which is heavier and noisier.
+
+namespace detail::roster_completeness {
+
+[[nodiscard]] consteval std::size_t
+count_policy_tags_in_namespace() noexcept {
+    std::size_t found = 0;
+    // `template for` synthesizes a fresh `constexpr auto m` per
+    // expansion-iteration in the same enclosing scope; with
+    // -Werror=shadow this reds (each iteration shadows the prior).
+    // Codebase-standard remedy per memory feedback (header-only
+    // static_assert blind spot, ALGEBRA-1..11 template-for shadow):
+    // suppress -Wshadow over the expansion's lexical extent.
+    _Pragma("GCC diagnostic push")
+    _Pragma("GCC diagnostic ignored \"-Wshadow\"")
+    template for (constexpr auto m :
+                  std::define_static_array(std::meta::members_of(
+                      ^^::crucible::safety::secret_policy,
+                      std::meta::access_context::unchecked()))) {
+        if constexpr (std::meta::is_type(m)) {
+            using member_type = typename [: m :];
+            if constexpr (std::is_class_v<member_type>
+                       && std::is_base_of_v<secret_policy_base, member_type>
+                       && !std::is_same_v<secret_policy_base, member_type>) {
+                ++found;
+            }
+        }
+    }
+    _Pragma("GCC diagnostic pop")
+    return found;
+}
+
+inline constexpr std::size_t kNamespacePolicyTags =
+    count_policy_tags_in_namespace();
+
+static_assert(kNamespacePolicyTags == kCount,
+    "FIXY-FOUND-018 reflection-driven completeness: the secret_policy "
+    "namespace contains a different number of secret_policy_base-"
+    "derived class types than roster::All enumerates.  Either a tag "
+    "was added to the namespace without appending to roster::All "
+    "(more namespace tags than roster entries — audit-trail gap), "
+    "OR a tag was removed without shrinking roster::All (fewer "
+    "namespace tags than roster entries — roster references a "
+    "non-existent type).  Reconcile by ensuring roster::All "
+    "enumerates every `struct X final : secret_policy_base {}` "
+    "declared above.");
+
+}  // namespace detail::roster_completeness
 
 }  // namespace roster
 
