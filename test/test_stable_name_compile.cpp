@@ -139,6 +139,36 @@ void test_stable_type_id_consistent() {
     }
 }
 
+// FOUND-055 — V1 bit-stability runtime peers for primitives.
+//
+// Mirror of the static_assert pins in StableName.h:431-443.  Runtime
+// evaluation catches consteval miscompiles that the compile-time
+// asserts could not (PR c++/124241 lineage: the constant-folder bypass
+// where the static_assert sees a "good" value but runtime emits a
+// different one).  Both layers must agree.
+//
+// If these reds in CI, treat as a row_hash_contribution ceremony:
+// (1) audit the canonicalization shift in display_string_of, (2)
+// refresh both the static_assert pins AND these EXPECT_EQ literals
+// in lockstep, (3) regen the golden snapshot.
+
+void test_stable_type_id_pinned_v1_bit_stability() {
+    // Primitive bit-stability roster — must match StableName.h pins.
+    EXPECT_EQ(diag::stable_type_id<int>,                0x038bf5d93760ba14ULL);
+    EXPECT_EQ(diag::stable_type_id<unsigned int>,       0x3e40352bf14d5e8cULL);
+    EXPECT_EQ(diag::stable_type_id<float>,              0xaac94173610ce8ebULL);
+    EXPECT_EQ(diag::stable_type_id<double>,             0x5a427827acb3b7f4ULL);
+    EXPECT_EQ(diag::stable_type_id<void>,               0x7095b61429cf52a0ULL);
+    EXPECT_EQ(diag::stable_type_id<char>,               0x24810aa534fd4e53ULL);
+    EXPECT_EQ(diag::stable_type_id<unsigned char>,      0xeb532a1cd85a3221ULL);
+    EXPECT_EQ(diag::stable_type_id<signed char>,        0xe668b88a72723d2eULL);
+    EXPECT_EQ(diag::stable_type_id<short>,              0x76a26fe7af41346dULL);
+    EXPECT_EQ(diag::stable_type_id<long>,               0xb398537731c4a05dULL);
+    EXPECT_EQ(diag::stable_type_id<long long>,          0x8e73a318de406be0ULL);
+    EXPECT_EQ(diag::stable_type_id<unsigned long long>, 0xcb9dc82adf69491aULL);
+    EXPECT_EQ(diag::stable_type_id<bool>,               0xc7dfd75159543180ULL);
+}
+
 void test_canonicalize_pack_empty_and_single() {
     static_assert(std::is_same_v<
         diag::canonicalize_pack_t<>,
@@ -212,6 +242,8 @@ int main() {
     run_test("test_stable_name_non_empty",              test_stable_name_non_empty);
     run_test("test_stable_type_id_distinguishes",       test_stable_type_id_distinguishes);
     run_test("test_stable_type_id_consistent",          test_stable_type_id_consistent);
+    run_test("test_stable_type_id_pinned_v1_bit_stability",
+                                                        test_stable_type_id_pinned_v1_bit_stability);
     run_test("test_canonicalize_pack_empty_and_single", test_canonicalize_pack_empty_and_single);
     run_test("test_canonicalize_pack_order_invariance", test_canonicalize_pack_order_invariance);
     run_test("test_canonicalize_pack_dedup_deferred",   test_canonicalize_pack_dedup_deferred);

@@ -403,6 +403,45 @@ static_assert(stable_type_id<void>  != 0);
 // — included for documentation discipline.)
 static_assert(stable_type_id<int> == stable_type_id<int>);
 
+// ─── V1 bit-stability pins for primitive types ─────────────────────
+//
+// stable_type_id<T> reduces a string through FNV-1a + fmix64 — the
+// arithmetic is deterministic, but the input string is whatever
+// `std::meta::display_string_of` produces in THIS build.  GCC's
+// canonicalization is TU-context-fragile: inline namespaces, ADL
+// scope, or compiler version changes can shift the string, and every
+// downstream hash moves silently along with it.
+//
+// These pins bind the current build's canonical hashes for the
+// 13 primitive types.  A cross-build hash shift will redden ONE of
+// these static_asserts immediately — the diagnostic names the type,
+// shows old vs new literal, and forces a ceremony commit that
+// (a) audits whether the shift is benign or breaks consumers, then
+// (b) refreshes the pins + golden snapshot in lockstep.
+//
+// V1 contract: pins are valid WITHIN one build family.  Cross
+// compiler-major-version rolls are EXPECTED to red these.  When
+// they do, treat it as a row_hash_contribution ceremony, not a bug.
+//
+// Discipline: companion runtime peers in test/test_stable_name_compile.cpp
+// (EXPECT_EQ literal form) catch consteval miscompiles that the
+// static_assert could not (e.g., constant folder bypass per
+// PR c++/124241, even patched).
+
+static_assert(stable_type_id<int>                == 0x038bf5d93760ba14ULL);
+static_assert(stable_type_id<unsigned int>       == 0x3e40352bf14d5e8cULL);
+static_assert(stable_type_id<float>              == 0xaac94173610ce8ebULL);
+static_assert(stable_type_id<double>             == 0x5a427827acb3b7f4ULL);
+static_assert(stable_type_id<void>               == 0x7095b61429cf52a0ULL);
+static_assert(stable_type_id<char>               == 0x24810aa534fd4e53ULL);
+static_assert(stable_type_id<unsigned char>      == 0xeb532a1cd85a3221ULL);
+static_assert(stable_type_id<signed char>        == 0xe668b88a72723d2eULL);
+static_assert(stable_type_id<short>              == 0x76a26fe7af41346dULL);
+static_assert(stable_type_id<long>               == 0xb398537731c4a05dULL);
+static_assert(stable_type_id<long long>          == 0x8e73a318de406be0ULL);
+static_assert(stable_type_id<unsigned long long> == 0xcb9dc82adf69491aULL);
+static_assert(stable_type_id<bool>               == 0xc7dfd75159543180ULL);
+
 // ─── canonicalize_pack<Ts...> sorts by stable name ─────────────────
 
 // Empty pack → empty tuple.
