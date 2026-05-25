@@ -1240,13 +1240,32 @@ private:
     adaptive_detail::QueuePortal<policy_queue_type> queue_{};
     std::unique_ptr<TaskSlot[]>     task_slots_;
     std::vector<int>                selected_cores_;
-    std::atomic<std::uint64_t>      next_sequence_{0};
+    // FIXY-FOUND-120-AUDIT: cache-line isolation by access pattern.
+    // Producer threads (submit path) and worker threads write
+    // DIFFERENT subsets of these counters.  Without alignment, all 7
+    // fit on ~1 cache line and every producer increment ping-pongs
+    // MESI against every worker increment — 40x latency penalty per
+    // counter touch.  Three groups, three cache lines:
+    //
+    //   line A (producer-writes): next_sequence_, submitted_,
+    //                             queued_tickets_
+    //   line B (worker-writes):   completed_, failed_, running_workers_
+    //   line C (init/migration):  affinity_applied_ (rare; own line so
+    //                             init-side bursts don't invalidate
+    //                             either hot line)
+    //
+    // alignas(64) on the FIRST member of each group; the trailing
+    // members of the group pack into the same line via natural layout
+    // (3 × 8 bytes = 24 bytes used, 40 bytes trailing padding per line).
+    alignas(64) std::atomic<std::uint64_t> next_sequence_{0};
     std::atomic<std::uint64_t>      submitted_{0};
-    std::atomic<std::uint64_t>      completed_{0};
-    std::atomic<std::uint64_t>      failed_{0};
     std::atomic<std::size_t>        queued_tickets_{0};
+
+    alignas(64) std::atomic<std::uint64_t> completed_{0};
+    std::atomic<std::uint64_t>      failed_{0};
     std::atomic<std::size_t>        running_workers_{0};
-    std::atomic<std::size_t>        affinity_applied_{0};
+
+    alignas(64) std::atomic<std::size_t> affinity_applied_{0};
     std::size_t                     worker_count_ = 0;
     bool                            topology_consulted_ = false;
     // Last by declaration, first by destruction: jthread destructors
