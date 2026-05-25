@@ -170,6 +170,15 @@ while IFS=: read -r file line text; do
             # does NOT extend grant_base hierarchy.
             continue
             ;;
+        include/crucible/fixy/spawn/SpawnGrant.h)
+            # V-204 spawn engagement-grant catalog (5 spawn::grant::* grants:
+            # detach_with<R>/syscall_only<R>/subprocess<R>/fork_parent<Tag>/
+            # exec_ctx<Ctx> → DimensionAxis::Protocol).  The grant_base
+            # derivation lives in `crucible::fixy::spawn::grant`; the reopen
+            # of `crucible::fixy::grant` here specializes which_dim<> ONLY,
+            # same discipline as the grant/* and axis catalogs above.
+            continue
+            ;;
         include/crucible/fixy/Vendor.h)
             # V-258 HwInstruction axis-specialized catalog (grant::vendor::
             # intrinsic<V, I> over the IsaTag per-vendor ISA-family enum,
@@ -224,6 +233,22 @@ while IFS=: read -r file line text; do
                 continue
             fi
             printf 'fixy_grant_purity: cheat probe %s missing acknowledgement comment\n' \
+                "$rel" >&2
+            printf 'fixy_grant_purity:   add a comment "// fixy-CR-09: known residual gap" near the namespace reopen\n' >&2
+            status=1
+            continue
+            ;;
+        test/fixy_neg/neg_fixy_project_per_domain_*.cpp)
+            # FIXY-FOUND-026 negative-compile fixtures: a per-domain grant
+            # tag with a which_dim<> spec but NO project<> spec must red at
+            # the structured static_assert.  The which_dim reopen is
+            # intrinsic to the test (it manufactures the structurally-valid
+            # but unprojected tag), so it exercises the same residual gap as
+            # the cheat probes above and carries the same acknowledgement.
+            if rg -q 'fixy-CR-09: known residual gap' "$file"; then
+                continue
+            fi
+            printf 'fixy_grant_purity: neg fixture %s missing acknowledgement comment\n' \
                 "$rel" >&2
             printf 'fixy_grant_purity:   add a comment "// fixy-CR-09: known residual gap" near the namespace reopen\n' >&2
             status=1

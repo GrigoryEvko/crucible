@@ -32,6 +32,9 @@ struct DomainEffectTag final : ::crucible::fixy::grant::grant_base {};
 // which_dim specialization routes the tag to substrate axis Effect.
 // This MUST live in the originating namespace (per Grant.h
 // reopened-namespace discipline).
+// fixy-CR-09: known residual gap — this neg-compile fixture intentionally
+// reopens crucible::fixy::grant to manufacture a structurally-valid but
+// unprojected per-domain tag; the reopen IS the FOUND-026 test surface.
 namespace crucible::fixy::grant {
 template <>
 struct which_dim<::DomainEffectTag> {
