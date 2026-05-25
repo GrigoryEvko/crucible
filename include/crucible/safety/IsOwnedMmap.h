@@ -107,4 +107,17 @@ static_assert(std::is_same_v<ProbeOwnedMmap::prot_type,  ProbeProt>);
 static_assert(std::is_same_v<ProbeOwnedMmap::share_type, ProbeShare>);
 }  // namespace self_test
 
+// ── extract:: parity alias (FIXY-U-104) ──────────────────────────────
+//
+// Every sibling `IsX.h` declares its recognizer in `crucible::safety
+// ::extract`; this header keeps the canonical `is_owned_mmap_v` /
+// `IsOwnedMmap` in `crucible::safety` (the OwnedMmap wrapper's own
+// namespace) but mirrors both into `extract` so the fixy/Is.h re-export
+// surface stays uniform with its peers and the isx-parity guard sees a
+// single spelling.
+namespace extract {
+using ::crucible::safety::is_owned_mmap_v;
+using ::crucible::safety::IsOwnedMmap;
+}  // namespace extract
+
 }  // namespace crucible::safety

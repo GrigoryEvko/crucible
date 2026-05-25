@@ -86,23 +86,28 @@
 // across the alias boundary.
 
 #include <crucible/safety/IsAllocClass.h>
+#include <crucible/safety/IsBarrierGuarded.h>
 #include <crucible/safety/IsBits.h>
 #include <crucible/safety/IsBorrowed.h>
 #include <crucible/safety/IsBorrowedRef.h>
 #include <crucible/safety/IsBudgeted.h>
 #include <crucible/safety/IsCipherTier.h>
+#include <crucible/safety/IsClockSource.h>
 #include <crucible/safety/IsConsistency.h>
 #include <crucible/safety/IsConsumerHandle.h>
+#include <crucible/safety/IsCpuPinned.h>
 #include <crucible/safety/IsCrash.h>
 #include <crucible/safety/IsDetSafe.h>
 #include <crucible/safety/IsEpochVersioned.h>
 #include <crucible/safety/IsHotPath.h>
+#include <crucible/safety/IsHw.h>
 #include <crucible/safety/IsJoinPolicy.h>
 #include <crucible/safety/IsLinear.h>
 #include <crucible/safety/IsMemOrder.h>
 #include <crucible/safety/IsNumaPlacement.h>
 #include <crucible/safety/IsNumericalTier.h>
 #include <crucible/safety/IsOpaqueLifetime.h>
+#include <crucible/safety/IsOwnedMmap.h>
 #include <crucible/safety/IsOwnedRegion.h>
 #include <crucible/safety/IsPermission.h>
 #include <crucible/safety/IsProducerHandle.h>
@@ -111,9 +116,13 @@
 #include <crucible/safety/IsReduceInto.h>
 #include <crucible/safety/IsRefined.h>
 #include <crucible/safety/IsResidencyHeat.h>
+#include <crucible/safety/IsSchedClass.h>
+#include <crucible/safety/IsScopedFence.h>
 #include <crucible/safety/IsSecret.h>
 #include <crucible/safety/IsSessionHandle.h>
+#include <crucible/safety/IsSimdWidthPinned.h>
 #include <crucible/safety/IsStale.h>
+#include <crucible/safety/IsSuspendBehavior.h>
 #include <crucible/safety/IsSwmrHandle.h>
 #include <crucible/safety/IsTagged.h>
 #include <crucible/safety/IsVendor.h>
@@ -198,22 +207,27 @@ concept WitnessAtLeast = ::crucible::safety::witness::WitnessAtLeast<W, Min>;
 // paths have a clean surface too.
 
 using ::crucible::safety::extract::is_alloc_class_v;
+using ::crucible::safety::extract::is_barrier_guarded_v;
 using ::crucible::safety::extract::is_bits_v;
 using ::crucible::safety::extract::is_borrowed_v;
 using ::crucible::safety::extract::is_borrowed_ref_v;
 using ::crucible::safety::extract::is_budgeted_v;
 using ::crucible::safety::extract::is_cipher_tier_v;
+using ::crucible::safety::extract::is_clock_source_v;
 using ::crucible::safety::extract::is_consistency_v;
 using ::crucible::safety::extract::is_consumer_handle_v;
+using ::crucible::safety::extract::is_cpu_pinned_v;
 using ::crucible::safety::extract::is_crash_v;
 using ::crucible::safety::extract::is_det_safe_v;
 using ::crucible::safety::extract::is_epoch_versioned_v;
 using ::crucible::safety::extract::is_hot_path_v;
+using ::crucible::safety::extract::is_hw_v;
 using ::crucible::safety::extract::is_linear_v;
 using ::crucible::safety::extract::is_mem_order_v;
 using ::crucible::safety::extract::is_numa_placement_v;
 using ::crucible::safety::extract::is_numerical_tier_v;
 using ::crucible::safety::extract::is_opaque_lifetime_v;
+using ::crucible::safety::extract::is_owned_mmap_v;
 using ::crucible::safety::extract::is_owned_region_v;
 using ::crucible::safety::extract::is_permission_v;
 using ::crucible::safety::extract::is_producer_handle_v;
@@ -223,10 +237,14 @@ using ::crucible::safety::extract::is_reduce_into_v;
 using ::crucible::safety::extract::is_refined_v;
 using ::crucible::safety::extract::refined_is_sealed_v;
 using ::crucible::safety::extract::is_residency_heat_v;
+using ::crucible::safety::extract::is_sched_class_v;
+using ::crucible::safety::extract::is_scoped_fence_v;
 using ::crucible::safety::extract::is_secret_v;
 using ::crucible::safety::extract::is_session_handle_v;
 using ::crucible::safety::extract::is_shared_permission_v;
+using ::crucible::safety::extract::is_simd_width_pinned_v;
 using ::crucible::safety::extract::is_stale_v;
+using ::crucible::safety::extract::is_suspend_behavior_v;
 using ::crucible::safety::extract::is_swmr_reader_v;
 using ::crucible::safety::extract::is_swmr_writer_v;
 using ::crucible::safety::extract::is_tagged_v;
@@ -253,6 +271,7 @@ using ::crucible::safety::extract::is_wait_v;
 // land in their lexical home with no churn.
 
 using ::crucible::safety::extract::alloc_class_value_t;
+using ::crucible::safety::extract::barrier_guarded_value_t;
 using ::crucible::safety::extract::bits_enum_t;
 using ::crucible::safety::extract::bits_underlying_t;
 using ::crucible::safety::extract::borrowed_ref_value_t;
@@ -260,12 +279,15 @@ using ::crucible::safety::extract::borrowed_source_t;
 using ::crucible::safety::extract::borrowed_value_t;
 using ::crucible::safety::extract::budgeted_value_t;
 using ::crucible::safety::extract::cipher_tier_value_t;
+using ::crucible::safety::extract::clock_source_value_t;
 using ::crucible::safety::extract::consistency_value_t;
 using ::crucible::safety::extract::consumer_handle_value_t;
+using ::crucible::safety::extract::cpu_pinned_value_t;
 using ::crucible::safety::extract::crash_value_t;
 using ::crucible::safety::extract::det_safe_value_t;
 using ::crucible::safety::extract::epoch_versioned_value_t;
 using ::crucible::safety::extract::hot_path_value_t;
+using ::crucible::safety::extract::hw_value_t;
 using ::crucible::safety::extract::linear_value_t;
 using ::crucible::safety::extract::mem_order_value_t;
 using ::crucible::safety::extract::numa_placement_value_t;
@@ -282,12 +304,16 @@ using ::crucible::safety::extract::reduce_into_reducer_t;
 using ::crucible::safety::extract::refined_predicate_type_t;
 using ::crucible::safety::extract::refined_value_t;
 using ::crucible::safety::extract::residency_heat_value_t;
+using ::crucible::safety::extract::sched_class_value_t;
+using ::crucible::safety::extract::scoped_fence_value_t;
 using ::crucible::safety::extract::secret_value_t;
 using ::crucible::safety::extract::session_handle_proto_t;
 using ::crucible::safety::extract::shared_permission_tag_t;
+using ::crucible::safety::extract::simd_width_pinned_value_t;
 using ::crucible::safety::extract::stale_semiring_t;
 using ::crucible::safety::extract::stale_staleness_t;
 using ::crucible::safety::extract::stale_value_t;
+using ::crucible::safety::extract::suspend_behavior_value_t;
 using ::crucible::safety::extract::swmr_reader_value_t;
 using ::crucible::safety::extract::swmr_writer_value_t;
 using ::crucible::safety::extract::tagged_tag_t;
