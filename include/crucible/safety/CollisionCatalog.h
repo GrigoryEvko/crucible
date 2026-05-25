@@ -187,12 +187,16 @@ enum class RuleCode : std::uint8_t {
     // cross-axis compositions where pinning one FP sub-axis defeats a
     // load-bearing property on a DIFFERENT Fn axis:
     //
-    //   F101: marks_replay_required × FpReassociate<UnrestrictedRewrite>
-    //         Algebraic rewrite (`-fassociative-math`) reorders FP
-    //         additions; the bit pattern depends on the compiler's
-    //         instruction-scheduler micro-state and diverges across
-    //         vendors.  Bit-exact replay requires Forbidden (the IEEE
-    //         754 default) or BoundedTreeDepth with canonical topology.
+    //   F101: marks_replay_required × FpReassociate<non-strict>
+    //         FOUND-074: F101 rejects both UnrestrictedRewrite AND
+    //         BoundedTreeDepth.  UnrestrictedRewrite reorders FP additions
+    //         freely (compiler-scheduler-dependent).  BoundedTreeDepth
+    //         pins a log-N tree DEPTH but lets vendors pick the per-level
+    //         LANE ASSIGNMENT (NVIDIA warp-shuffle, AMD wavefront, Intel
+    //         SVE differ on operand ordering within the same tree shape);
+    //         the bit pattern diverges across the cross-vendor numerics
+    //         CI matrix.  Bit-exact replay requires Forbidden — the IEEE
+    //         754 default, the ONLY setting compatible with replay.
     //
     //   F102: marks_replay_required × FpContract<Fast>
     //         `-ffp-contract=fast` allows cross-statement FMA folding.
@@ -216,7 +220,7 @@ enum class RuleCode : std::uint8_t {
     //         denormal outputs (output side; F104 is input side).  CT
     //         paths PIN FlushToZero so the result-magnitude doesn't
     //         leak through cycle count.
-    F101 = 22,  // Replay-required × FpReassociate<UnrestrictedRewrite>
+    F101 = 22,  // Replay-required × FpReassociate non-strict (Unrestricted OR BoundedTreeDepth)  FOUND-074
     F102 = 23,  // Replay-required × FpContract<Fast>
     F103 = 24,  // CT × FpReassociate<UnrestrictedRewrite>
     F104 = 25,  // CT × FpDenormalInput<HonorDenormals>
@@ -1934,15 +1938,26 @@ struct wraps_fp_axis_mode<AxisMode, T const&>
 template <auto AxisMode, typename T>
 inline constexpr bool wraps_fp_axis_mode_v = wraps_fp_axis_mode<AxisMode, T>::value;
 
-// F101: Replay-required × FpReassociate<UnrestrictedRewrite> rejected.
-// Algebraic rewrite reorders FP additions; bit pattern diverges across
-// vendors.  IEEE 754 default (Forbidden) is the only setting compatible
-// with bit-exact replay across the CI matrix.
+// F101: Replay-required × FpReassociate non-strict rejected (FOUND-074).
+// IEEE 754 default (Forbidden) is the only setting compatible with bit-
+// exact replay across the cross-vendor CI matrix.  Pre-FOUND-074 the
+// rule rejected ONLY UnrestrictedRewrite; BoundedTreeDepth slipped
+// through despite being equally non-deterministic across vendors —
+// vendors agree on the log-N tree DEPTH but disagree on the per-level
+// LANE ASSIGNMENTS (NVIDIA warp-shuffle reductions and AMD wavefront
+// reductions use different operand orderings within the same tree
+// shape).  Same source → different FP bits across vendors, defeating
+// bit-exact replay.  F101 now rejects ANY non-Forbidden setting under
+// replay_required; F103 (CT-axis) remains narrow because BoundedTreeDepth
+// has data-independent topology and is CT-safe.
 template <typename F>
 concept F101_OK = !(marks_replay_required<F>::value &&
-                    wraps_fp_axis_mode_v<
+                    (wraps_fp_axis_mode_v<
                         ::crucible::safety::FpReassociate::UnrestrictedRewrite,
-                        typename F::type_t>);
+                        typename F::type_t> ||
+                     wraps_fp_axis_mode_v<
+                        ::crucible::safety::FpReassociate::BoundedTreeDepth,
+                        typename F::type_t>));
 
 // F102: Replay-required × FpContract<Fast> rejected.  Cross-statement
 // FMA folding picks DIFFERENT contraction boundaries per vendor; same
@@ -2867,6 +2882,18 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
     static constexpr bool fp_reassoc_unrestricted =
         collision::wraps_fp_axis_mode_v<
             ::crucible::safety::FpReassociate::UnrestrictedRewrite, Type>;
+    // FIXY-FOUND-074: any non-Forbidden FpReassociate setting under
+    // replay defeats bit-exact cross-vendor replay (BoundedTreeDepth's
+    // vendor-specific lane assignment within the log-N tree shape
+    // diverges the same as UnrestrictedRewrite's free reordering).
+    // F103 (CT-axis) still reads the narrower fp_reassoc_unrestricted
+    // because BoundedTreeDepth has data-independent topology and is
+    // CT-safe even though it is replay-unsafe.
+    static constexpr bool fp_reassoc_bounded_tree =
+        collision::wraps_fp_axis_mode_v<
+            ::crucible::safety::FpReassociate::BoundedTreeDepth, Type>;
+    static constexpr bool fp_reassoc_non_strict =
+        fp_reassoc_unrestricted || fp_reassoc_bounded_tree;
     static constexpr bool fp_contract_fast =
         collision::wraps_fp_axis_mode_v<
             ::crucible::safety::FpContract::Fast, Type>;
@@ -3110,13 +3137,19 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "Wait<AcquireWait> (futex), Wait<Park> (condvar), or Wait<Block> "
             "(poll/epoll).");
         // ── FIXY-V-091 F-family static asserts ───────────────────────
-        static_assert(!(replay_required && fp_reassoc_unrestricted),
-            "F101: Replay-required x FpReassociatePinned<UnrestrictedRewrite>. "
-            "Algebraic rewrite (-fassociative-math) reorders FP additions; "
-            "bit pattern diverges across vendors. Switch to "
-            "FpReassociatePinned<Forbidden> (IEEE 754 default) or "
-            "FpReassociatePinned<BoundedTreeDepth> with canonical topology, "
-            "or remove the marks_replay_required marker.");
+        static_assert(!(replay_required && fp_reassoc_non_strict),
+            "F101: Replay-required x non-strict FpReassociatePinned "
+            "(UnrestrictedRewrite OR BoundedTreeDepth). UnrestrictedRewrite "
+            "(-fassociative-math) reorders FP additions freely; "
+            "BoundedTreeDepth pins a log-N tree DEPTH but lets vendors pick "
+            "the per-level LANE ASSIGNMENT (NVIDIA warp-shuffle vs AMD "
+            "wavefront vs Intel SVE differ on operand ordering within the "
+            "same tree shape). Both paths diverge bit-equality across the "
+            "cross-vendor numerics CI matrix. Switch to "
+            "FpReassociatePinned<Forbidden> (IEEE 754 default, the ONLY "
+            "setting compatible with bit-exact replay), or remove the "
+            "marks_replay_required marker if the binding does not require "
+            "bit-exact replay. FIXY-FOUND-074.");
         static_assert(!(replay_required && fp_contract_fast),
             "F102: Replay-required x FpContractPinned<Fast>. Cross-statement "
             "FMA folding picks different contraction boundaries per vendor "
@@ -3283,7 +3316,7 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(federation_peer && unbounded_cost) &&
                !(hot_path && type_has_kernel_wait) &&
                !(row_has_bg && type_has_active_spin_wait) &&
-               !(replay_required && fp_reassoc_unrestricted) &&
+               !(replay_required && fp_reassoc_non_strict) &&
                !(replay_required && fp_contract_fast) &&
                !(ct && fp_reassoc_unrestricted) &&
                !(ct && fp_denormal_input_honored) &&

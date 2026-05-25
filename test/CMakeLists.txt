@@ -7140,6 +7140,11 @@ crucible_neg_compile_test(neg_pack_F001_frame_axis_consistent
 # Five fixtures saturate the matrix.
 crucible_neg_compile_test(neg_collision_f101_replay_fp_reassoc
   "F101|replay-required|UnrestrictedRewrite|FpReassoc")
+# FOUND-074: F101 also rejects BoundedTreeDepth under replay — vendor
+# lane-assignment differs (NVIDIA warp-shuffle / AMD wavefront / Intel
+# SVE) within the same tree depth, producing different FP bits.
+crucible_neg_compile_test(neg_collision_F101_replay_bounded_tree
+  "F101|BoundedTreeDepth|non-strict|FpReassoc")
 crucible_neg_compile_test(neg_collision_f102_replay_fp_contract_fast
   "F102|FpContractPinned|Cross-statement FMA|Replay-required")
 crucible_neg_compile_test(neg_collision_f103_ct_fp_reassoc
