@@ -65,36 +65,36 @@
     }
   ],
   "buildPresets": [
-    { "name": "default", "configurePreset": "default" },
-    { "name": "analyzer", "configurePreset": "analyzer" },
-    { "name": "release", "configurePreset": "release" },
-    { "name": "bench",   "configurePreset": "bench" },
-    { "name": "tsan",    "configurePreset": "tsan" }
+    { "name": "default", "configurePreset": "default", "jobs": 192 },
+    { "name": "analyzer", "configurePreset": "analyzer", "jobs": 192 },
+    { "name": "release", "configurePreset": "release", "jobs": 192 },
+    { "name": "bench",   "configurePreset": "bench", "jobs": 192 },
+    { "name": "tsan",    "configurePreset": "tsan", "jobs": 192 }
   ],
   "testPresets": [
     {
       "name": "default",
       "configurePreset": "default",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 24 }
+      "execution": { "jobs": 192 }
     },
     {
       "name": "release",
       "configurePreset": "release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 24 }
+      "execution": { "jobs": 192 }
     },
     {
       "name": "analyzer",
       "configurePreset": "analyzer",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 24 }
+      "execution": { "jobs": 192 }
     },
     {
       "name": "tsan",
       "configurePreset": "tsan",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 24 }
+      "execution": { "jobs": 192 }
     },
     {
       "name": "stress",
@@ -102,7 +102,7 @@
       "displayName": "Repeat-until-fail ×50 (race condition detector)",
       "output": { "outputOnFailure": true },
       "execution": {
-        "jobs": 16,
+        "jobs": 192,
         "repeat": { "mode": "until-fail", "count": 50 }
       }
     }
