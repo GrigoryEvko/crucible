@@ -76,6 +76,36 @@ static_assert(fxt::corpus_entry_name_for_v<TypeProbe,
     "L-11.E2: classified_bg_without_declassify detects "
     "as_secret + with_bg + no-declassify pattern in isolation.");
 
+// ── FIXY-FOUND-005 witness: declassify-only + IO admits cleanly ────
+//
+// A binding with `declassify<Policy> + with_io` (no as_secret /
+// as_classified / strict<Security>) MUST NOT match Entry 1.  Pre-
+// FOUND-005 the predicate self-cancelled: the same declassify
+// satisfied has_secret (via fixy-A4-015 making declassify count as
+// Security engagement) AND fired has_declassify, conjunction-collapsing
+// to FALSE (admit) — same OUTCOME as the fix, but for the wrong
+// STRUCTURAL reason (the predicate lied that classified data was
+// present then blocked the matcher with !declassify).  After FOUND-005
+// the matches() arm reads `is_secret_carrier` (which is FALSE for
+// declassify-only), so has_secret_carrier=FALSE → predicate FALSE →
+// admit, for the right STRUCTURAL reason (no classified data carrier).
+// This witness locks the post-fix behavior: a future regression that
+// (mis)wires has_secret back to is_secret_grant would still have the
+// same OUTCOME (admit), but `corpus_entry_name_for_v` would be empty
+// (no entry matched) — which we assert here.  If anyone reverts the
+// FOUND-005 carrier discipline AND simultaneously breaks Entry 1's
+// matcher in some other way that ends up MATCHING declassify-only,
+// this static_assert reddens.
+static_assert(fxt::corpus_entry_name_for_v<TypeProbe,
+                  gr::declassify<::crucible::safety::secret_policy::AuditedLogging>,
+                  gr::with_io>
+              == std::string_view{},
+    "FIXY-FOUND-005: declassify-only + with_io admits cleanly — no "
+    "entry matches.  has_secret_carrier is FALSE (no as_secret/"
+    "as_classified/strict<Security> grant), so Entry 1 does not "
+    "self-cancel: it admits via the carrier-not-present path, NOT "
+    "the declassify-cancels-itself path.");
+
 // Entry 5: internal_io_without_declassify
 //   Signature: is_internal_grant + is_io_effect_grant + !declassify
 static_assert(fxt::corpus_entry_name_for_v<TypeProbe,

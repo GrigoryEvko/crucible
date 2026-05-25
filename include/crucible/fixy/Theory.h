@@ -234,6 +234,39 @@ template <typename Policy>
 struct is_declassify_grant<grant::declassify<Policy>>
     : std::true_type {};
 
+// ── FIXY-FOUND-005: is_secret_carrier — carrier-only Security ─────
+//
+// Distinct from `is_secret_grant` above (which includes
+// `declassify<Policy>` per fixy-A4-015), `is_secret_carrier` is true
+// ONLY for grants that *carry* classified data:
+//   - grant::as_secret
+//   - grant::as_classified
+//   - grant::accept_default_strict_for<DimensionAxis::Security>
+// It is INTENTIONALLY false for `grant::declassify<Policy>`: declassify
+// is the DISCHARGE-side surface, not the carrier-side.  Entry 1's
+// predicate read `is_secret_grant && !is_declassify_grant`, which for a
+// `declassify<P> + IO` binding (no as_secret) self-cancelled — the
+// same declassify simultaneously fired has_secret (via the A4-015
+// specialization) and blocked the !has_declassify arm.  The predicate
+// structurally lied that the binding contained classified-flow data.
+// Switching Entry 1 to read `is_secret_carrier` makes the predicate
+// honest: has_secret_carrier is true ONLY when a carrier grant is
+// present, distinct from any declassify on the same binding.  Other
+// corpus entries (2, 5, 6) retain `is_secret_grant` until FOUND-006's
+// sweep migrates them.
+template <typename G> struct is_secret_carrier
+    : std::false_type {};
+template <> struct is_secret_carrier<grant::as_secret>
+    : std::true_type {};
+template <> struct is_secret_carrier<grant::as_classified>
+    : std::true_type {};
+template <>
+struct is_secret_carrier<grant::accept_default_strict_for<
+        dim::DimensionAxis::Security>>
+    : std::true_type {};
+// Note: NO specialization for grant::declassify<Policy> — declassify
+// is the discharge-side surface (FIXY-FOUND-005 self-cancellation fix).
+
 // ── fixy-A4-015: per-axis declassify discipline ────────────────────
 //
 // Pre-A4-015 the §30.14 corpus treated `declassify<Policy>` as a
@@ -1289,8 +1322,24 @@ namespace corpus {
 struct classified_io_without_declassify {
     template <typename Type, typename... Grants>
     [[nodiscard]] static consteval bool matches() noexcept {
+        // FIXY-FOUND-005: has_secret reads `is_secret_carrier` (NOT
+        // `is_secret_grant`).  Pre-fix, both arms of the predicate
+        // (`has_secret` and `has_declassify`) were satisfied by the same
+        // `grant::declassify<P>` (per fixy-A4-015 making declassify
+        // engage the Security axis).  A declassify-only binding hit
+        // has_secret=TRUE && has_declassify=TRUE → predicate FALSE →
+        // admit, but the structural reason ("classified data present")
+        // was a lie — the same grant simultaneously fired the carrier
+        // arm AND blocked the matcher.  Carrier-only detection ensures
+        // has_secret reflects an as_secret / as_classified / strict-
+        // default-Security grant, distinct from any declassify on the
+        // same binding.  Outcomes for canonical cases (as_secret + IO
+        // + no_declassify still REJECTS; as_secret + IO + declassify
+        // still admits; declassify-only + IO still admits) unchanged;
+        // the predicate is now structurally honest.  Future downstream
+        // consumers reading `has_secret` see what the name claims.
         const bool has_secret =
-            detail::has_grant_of<detail::is_secret_grant, Grants...>();
+            detail::has_grant_of<detail::is_secret_carrier, Grants...>();
         const bool has_io =
             detail::has_grant_of<detail::is_io_effect_grant, Grants...>();
         const bool has_declassify =
