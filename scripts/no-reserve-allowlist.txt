@@ -22,12 +22,12 @@ include/crucible/vis/TraceVisualizer.h:1019
 # isn't forgotten.  V-030 added two new entries (obj_relpath_ +
 # session_event_dir_relpath_) — relative-path counterparts of
 # obj_path / session_event_dir for dirfd-anchored openat().
-include/crucible/Cipher.h:1282
-include/crucible/Cipher.h:1745
-include/crucible/Cipher.h:1775
-include/crucible/Cipher.h:1791
-include/crucible/Cipher.h:1807
-include/crucible/Cipher.h:1852
+include/crucible/Cipher.h:1283
+include/crucible/Cipher.h:1746
+include/crucible/Cipher.h:1776
+include/crucible/Cipher.h:1792
+include/crucible/Cipher.h:1808
+include/crucible/Cipher.h:1853
 #
 # ── BackgroundThread.h ──────────────────────────────────────────────
 # WRAP-BgThread-6 (#877): current_trace + parallel vectors reserved
