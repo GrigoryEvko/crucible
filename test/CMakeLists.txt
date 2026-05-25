@@ -7175,6 +7175,18 @@ crucible_neg_compile_test(neg_collision_H010_hotpath_bg
 crucible_neg_compile_test(neg_collision_P010_ghost_runtime
   "P010")
 
+# FIXY-FOUND-069 sub-HS14 closure: P010's inner conjunct is a 3-way
+# OR-fold (Alloc || IO || Block) under Ghost usage.  The Alloc-arm is
+# covered by the fixture above; this companion fixture covers the
+# BLOCK-arm.  Block emits blocking primitives (mutex / condvar / futex)
+# and is the most orthogonal sibling to Alloc and IO — distinct
+# observable runtime effect, distinct erasure-violation surface.  Both
+# fixtures together guard against a refactor that drops `Block` (or
+# `Alloc`) from the inner OR.  The IO-arm remains uncovered today and
+# is a future sub-HS14 follow-up under the FOUND-069 sweep.
+crucible_neg_compile_test(neg_collision_P010_ghost_block
+  "P010")
+
 # ─── FIXY-FOUND-065 CollisionCatalog L007 neg-compile (per-rule) ─────
 #
 # L007 — borrow_capture × Row<Bg> cross-thread lifetime hazard.
