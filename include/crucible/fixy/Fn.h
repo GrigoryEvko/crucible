@@ -2446,10 +2446,22 @@ fold_canonicalized_grants_hash(std::uint64_t seed) noexcept {
     // Iterate the FIXY-ONLY DimensionAxis enumerators (Synchronization
     // .. MemoryScope) in numeric order.  For each such axis K, any
     // grant in `Grants...` routing to axis K updates `h` via
-    // combine_ids(h, stable_type_id<G>).  Non-grant types short-circuit
-    // via IsGrantTag_v guard.  Result depends only on (axis, grant-type)
-    // pairs in canonical-axis order, NOT on the user's source-order of
-    // the Grants pack.
+    // combine_ids(h, stable_type_id<G>).  Result depends only on
+    // (axis, grant-type) pairs in canonical-axis order, NOT on the
+    // user's source-order of the Grants pack.
+    //
+    // CONTRACT: every type in `Grants...` MUST be a grant tag (i.e.
+    // `IsGrantTag_v<G>` AND a defined `which_dim<G>` specialization).
+    // The `IsGrantTag_v<Grants> &&` term below is NOT a short-circuit
+    // that tolerates non-grant types — `which_dim_v<Grants>` is a
+    // variable template whose instantiation is forced regardless of `&&`
+    // operand order, so a non-grant `G` (incomplete `which_dim<G>`
+    // primary) is a hard error, not a silent skip.  This is sound
+    // because the ONLY callers are (a) `row_hash_contribution<fixy::fn<
+    // Type, Grants...>>`, where `fixy::fn`'s class-body
+    // AllGrantsWellFormed gate has already rejected any non-grant Grant,
+    // and (b) the self-tests below, which pass grant tags exclusively.
+    // The guard term remains as defense-in-depth for the per-axis match.
     //
     // FIXY-FOUND-045 structural fix: the loop starts at Synchronization
     // (the first Crucible-extension axis), NOT 0.  Axes 0..19 (Type ..
@@ -2466,7 +2478,18 @@ fold_canonicalized_grants_hash(std::uint64_t seed) noexcept {
     // arity (e.g. hw::cache<Op,Loc>, hw::msr<Id>) with positionally-
     // distinct args, so no set-semantics permutation issue arises for
     // them; only the Effect `with<>` pack had it, and it is now excluded.
-    constexpr int kAxisCount   = 33;  // DimensionAxis enumerator count.
+    // FIXY-FOUND-045 drift fix: derive the axis-count upper bound from
+    // the reflection-driven `dim::DIMENSION_AXIS_COUNT` rather than a
+    // hardcoded `33`.  A hardcoded literal silently STOPS covering the
+    // next fixy-only axis the moment a contributor appends enumerator 33
+    // to safety::DimensionAxis (per Dim.h's own anti-hardcode discipline,
+    // feedback_gcc16_c26_reflection_gotchas.md §3).  If that new axis is
+    // fixy-only (≥ Synchronization), a grant routing to it would be
+    // DROPPED from the fold — two kernels differing only in that grant
+    // would collide to the same federation cache slot, which is precisely
+    // the kernel-substitution attack this fold exists to prevent.
+    constexpr int kAxisCount =
+        static_cast<int>(::crucible::fixy::dim::DIMENSION_AXIS_COUNT);
     constexpr int kFirstFixyOnly =
         static_cast<int>(::crucible::fixy::dim::DimensionAxis::Synchronization);
     for (int axis = kFirstFixyOnly; axis < kAxisCount; ++axis) {
