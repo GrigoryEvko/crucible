@@ -450,6 +450,20 @@ enum class RuleCode : std::uint8_t {
     //         trunks composed in one binding).
     V401 = 45,  // scope ⊒ Cluster × BarrierStrength ⊏ AcqRel (cross-CTA publish under-fenced)
     V402 = 46,  // scope-trunk × host-arch cross-trunk (GPU scope on CPU host / ARM scope on x86)
+    // ── FIXY-FOUND-063 H-family extension — context-row contradictions ─
+    //
+    // H010 closes a gap among the existing H001/H002/H003 rules: those
+    // catch HotPath × {Unbounded cost, trivial refinement, Alloc/IO with
+    // unbounded cost}, but NONE of them catches the direct contextual
+    // contradiction `HotPath × Row<Bg>`.  A Bg-row function declares
+    // "I run in background context (allocations / IO / blocking allowed,
+    // milliseconds latency)"; a HotPath function declares "I run on the
+    // ≤40 ns intra-socket hot path".  These are mutually exclusive
+    // contexts per CLAUDE.md §IX latency hierarchy.  Marking both is a
+    // structural contradiction the type system must reject — closing
+    // the gap left by H001/H003 (which depend on cost / Alloc/IO carriers
+    // and miss HotPath × Bg × cost::Constant × no-Alloc/IO).
+    H010 = 47,  // HotPath × Row<Bg> (mutually exclusive context markers)
     None = 255,
 };
 
@@ -612,6 +626,11 @@ struct V402_ScopeArchCrossTrunk : diag::tag_base {
     static constexpr std::string_view name = "V402_ScopeArchCrossTrunk";
 };
 
+// ── FIXY-FOUND-063 H010 — HotPath × Bg row contradiction ────────────
+struct H010_HotPathBgContradiction : diag::tag_base {
+    static constexpr std::string_view name = "H010_HotPathBgContradiction";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -659,11 +678,12 @@ using Catalog = std::tuple<
     V203_ReplayNondetTsc,
     V301_HotPathFullFence,
     V401_ScopeStrengthInsufficient,
-    V402_ScopeArchCrossTrunk
+    V402_ScopeArchCrossTrunk,
+    H010_HotPathBgContradiction
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 47);
+static_assert(catalog_size == 48);
 
 // FIXY-FOUND-139: reflection-derived RuleCode enum ceiling.
 //
@@ -743,6 +763,7 @@ template <> struct rule_tag<RuleCode::V203> { using type = V203_ReplayNondetTsc;
 template <> struct rule_tag<RuleCode::V301> { using type = V301_HotPathFullFence; };
 template <> struct rule_tag<RuleCode::V401> { using type = V401_ScopeStrengthInsufficient; };
 template <> struct rule_tag<RuleCode::V402> { using type = V402_ScopeArchCrossTrunk; };
+template <> struct rule_tag<RuleCode::H010> { using type = H010_HotPathBgContradiction; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -890,6 +911,9 @@ template <> struct rule_code_of<V401_ScopeStrengthInsufficient> {
 };
 template <> struct rule_code_of<V402_ScopeArchCrossTrunk> {
     static constexpr RuleCode value = RuleCode::V402;
+};
+template <> struct rule_code_of<H010_HotPathBgContradiction> {
+    static constexpr RuleCode value = RuleCode::H010;
 };
 
 template <typename Tag>
@@ -1266,6 +1290,20 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(V401, "V401",
     "scope publication, or narrow the ScopedFence scope to Cta / Warp where the weaker "
     "barrier suffices",
     "fixy.md §24.2 V401 (V-268, V-FOUND-062)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(H010, "H010",
+    "HotPath functions do not also claim Bg-context membership",
+    "marks_hot_path AND F::effect_row_t contains effects::Effect::Bg — a function "
+    "cannot be BOTH on the hot path (≤40 ns intra-socket per CLAUDE.md §IX) AND "
+    "in background context (Alloc / IO / Block / millisecond latency allowed). The "
+    "two contexts are mutually exclusive by design. H001 catches HotPath × unbounded "
+    "cost; H003 catches HotPath × Alloc/IO × unbounded cost; but a HotPath × Row<Bg> "
+    "with cost::Constant and no Alloc/IO/Block atoms slips both of those rules — "
+    "yet is structurally still a context contradiction",
+    "drop the HotPath marker (the function is genuinely Bg / not on the hot path), "
+    "OR drop the Bg atom from the effect row (the function is genuinely hot-path — "
+    "if it really does need an Alloc/IO/Block effect, use the appropriate atom "
+    "alongside a bounded cost and route it through H001/H003 instead)",
+    "fixy.md §24.2 H010 (V-FOUND-063)");
 CRUCIBLE_COLLISION_DIAGNOSTIC(V402, "V402",
     "a memory-scope trunk is coherent with the binding's pinned host architecture",
     "marks_scope_arch_cross_trunk OR F::type_t pins a ScopedFence whose trunk contradicts "
@@ -1616,6 +1654,19 @@ concept H003_OK = !(marks_hot_path<F>::value &&
                     (row_has_effect_v<typename F::effect_row_t, effects::Effect::Alloc> ||
                      row_has_effect_v<typename F::effect_row_t, effects::Effect::IO>) &&
                     is_unbounded_cost<typename F::cost_t>::value);
+
+// H010: HotPath × Row<Bg> contradiction (FIXY-FOUND-063).  HotPath
+// declares "≤40 ns intra-socket per CLAUDE.md §IX"; Bg declares
+// "background context, Alloc/IO/Block allowed, millisecond latency".
+// These are mutually exclusive contexts; marking both is a structural
+// contradiction.  H001 / H003 cover the unbounded-cost and Alloc/IO
+// subcases, but a HotPath × Bg × cost::Constant × no-Alloc/IO/Block
+// Fn slips both — yet is still a context contradiction the type
+// system must reject.
+template <typename F>
+concept H010_OK = !(marks_hot_path<F>::value &&
+                    row_has_effect_v<typename F::effect_row_t,
+                                     effects::Effect::Bg>);
 
 template <typename F>
 concept F002_OK = !(marks_federation_peer<F>::value &&
@@ -2098,7 +2149,8 @@ concept AllRulesOK =
     G002_OK<F> &&
     V001_OK<F> && V002_OK<F> && V101_OK<F> && V102_OK<F> &&
     V201_OK<F> && V202_OK<F> && V203_OK<F> && V301_OK<F> &&
-    V401_OK<F> && V402_OK<F>;
+    V401_OK<F> && V402_OK<F> &&
+    H010_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -2194,6 +2246,8 @@ template <typename F>
         return RuleCode::V401;
     } else if constexpr (!V402_OK<F>) {
         return RuleCode::V402;
+    } else if constexpr (!H010_OK<F>) {
+        return RuleCode::H010;
     } else {
         return RuleCode::None;
     }
@@ -2650,6 +2704,16 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "H003: HotPath x (Alloc or IO) x unbounded cost. Move Alloc/IO "
             "outside the hot path or attach an Init/Bg context that owns "
             "the unbounded surface.");
+        static_assert(!(hot_path && row_has_bg),
+            "H010: HotPath x Row<Bg>. A function cannot be BOTH on the hot "
+            "path (<=40 ns intra-socket per CLAUDE.md §IX) AND in background "
+            "context (Alloc/IO/Block/millisecond latency allowed). The two "
+            "contexts are mutually exclusive. H001 catches HotPath x unbounded "
+            "cost; H003 catches HotPath x Alloc/IO x unbounded cost; but a "
+            "HotPath x Row<Bg> x cost::Constant x no-Alloc/IO/Block Fn slips "
+            "both — yet is still a context contradiction. Drop the HotPath "
+            "marker (genuinely Bg) OR drop the Bg atom (genuinely hot-path). "
+            "FIXY-FOUND-063.");
         static_assert(!(federation_peer && unbounded_cost),
             "F002: federation peer x unbounded cost. Attach a wall-clock "
             "budget (cost::Linear<N>) and a terminating bound; federation "
@@ -2875,7 +2939,8 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                !(replay_required && hot_path_nondet_tsc) &&
                !(hot_path && hot_path_full_fence) &&
                !scope_strength_insufficient &&
-               !scope_arch_cross_trunk;
+               !scope_arch_cross_trunk &&
+               !(hot_path && row_has_bg);
     }
 
     static constexpr bool valid = validate();

@@ -7027,6 +7027,21 @@ crucible_neg_compile_test(neg_collision_V401_cluster_scope
 crucible_neg_compile_test(neg_collision_V402_scope_arch
   "V402")
 
+# ─── FIXY-FOUND-063 CollisionCatalog H010 neg-compile (HotPath × Bg) ──
+#
+# H010 closes a gap among H001/H002/H003: those catch HotPath ×
+# {Unbounded cost, trivial refinement, Alloc/IO with unbounded cost},
+# but NONE catch the direct contextual contradiction HotPath × Row<Bg>
+# with cost::Constant and no Alloc/IO/Block atoms.  HotPath declares
+# "≤40 ns intra-socket" and Bg declares "background context, ms
+# latency"; marking both is a structural contradiction the type system
+# must reject.  HS14 fixture instantiates a real fn::Fn<...> with
+# marks_hot_path AND Row<Bg> AND cost::Constant AND no Alloc/IO/Block;
+# H010 alone catches this case (H001/H003 pass on bounded cost +
+# no-Alloc/IO).
+crucible_neg_compile_test(neg_collision_H010_hotpath_bg
+  "H010")
+
 # ─── FIXY-V-091 CollisionCatalog F101..F105 neg-compiles (per-rule) ──
 #
 # V-091 ships 5 new CollisionCatalog rules (F101..F105) gating
