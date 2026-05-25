@@ -157,6 +157,8 @@ static_assert(static_cast<std::uint8_t>(VendorBackend::Portable) == 255,
 static_assert(std::is_same_v<std::underlying_type_t<HwInstruction>,
                              std::uint8_t>,
     "FIXY-FOUND-046: HwInstruction underlying type drifted from uint8_t.");
+static_assert(hw_instruction_count == 5,
+    "FIXY-FOUND-046: HwInstruction cardinality drifted from 5.");
 static_assert(static_cast<std::uint8_t>(HwInstruction::NoneAllowed)         == 0,
     "FIXY-FOUND-046: HwInstruction::NoneAllowed drifted.");
 static_assert(static_cast<std::uint8_t>(HwInstruction::Scalar)              == 1,
@@ -172,6 +174,8 @@ static_assert(static_cast<std::uint8_t>(HwInstruction::PrivilegedMsr)       == 4
 static_assert(std::is_same_v<std::underlying_type_t<BarrierStrength>,
                              std::uint8_t>,
     "FIXY-FOUND-046: BarrierStrength underlying type drifted from uint8_t.");
+static_assert(barrier_strength_count == 7,
+    "FIXY-FOUND-046: BarrierStrength cardinality drifted from 7.");
 static_assert(static_cast<std::uint8_t>(BarrierStrength::None)            == 0,
     "FIXY-FOUND-046: BarrierStrength::None drifted.");
 static_assert(static_cast<std::uint8_t>(BarrierStrength::CompilerBarrier) == 1,
@@ -187,7 +191,7 @@ static_assert(static_cast<std::uint8_t>(BarrierStrength::SeqCst)          == 5,
 static_assert(static_cast<std::uint8_t>(BarrierStrength::FullFence)       == 6,
     "FIXY-FOUND-046: BarrierStrength::FullFence drifted.");
 
-// ── (7) MemoryScope — 9 enumerators, trunk-packed layout ───────────
+// ── (7) MemoryScope — 8 enumerators, trunk-packed layout ───────────
 //
 // HIGH NIBBLE encodes the trunk (0x0 = sentinel, 0x1 = GPU,
 // 0x2 = ARM-host); LOW NIBBLE encodes the within-trunk rank.
@@ -197,6 +201,8 @@ static_assert(static_cast<std::uint8_t>(BarrierStrength::FullFence)       == 6,
 static_assert(std::is_same_v<std::underlying_type_t<MemoryScope>,
                              std::uint8_t>,
     "FIXY-FOUND-046: MemoryScope underlying type drifted from uint8_t.");
+static_assert(memory_scope_count == 8,
+    "FIXY-FOUND-046: MemoryScope cardinality drifted from 8.");
 static_assert(static_cast<std::uint8_t>(MemoryScope::Thread)  == 0x00,
     "FIXY-FOUND-046: MemoryScope::Thread drifted from 0x00 (⊥ sentinel).");
 static_assert(static_cast<std::uint8_t>(MemoryScope::Warp)    == 0x10,
@@ -214,7 +220,7 @@ static_assert(static_cast<std::uint8_t>(MemoryScope::Outer)   == 0x21,
 static_assert(static_cast<std::uint8_t>(MemoryScope::System)  == 0xFF,
     "FIXY-FOUND-046: MemoryScope::System drifted from 0xFF (⊤ sentinel).");
 
-// ── (8) SimdIsa — 14 enumerators, trunk-packed layout ──────────────
+// ── (8) SimdIsa — 15 enumerators, trunk-packed layout ──────────────
 //
 // HIGH NIBBLE: 0x0 = Scalar, 0x1 = x86, 0x2 = ARM, 0xF = Portable.
 // LOW NIBBLE: within-trunk rank.  Wire format — drift requires
@@ -383,6 +389,8 @@ static_assert(static_cast<std::uint8_t>(SuspendBehavior::KeepsTicking)    == 2,
 static_assert(std::is_same_v<std::underlying_type_t<JoinPolicy>,
                              std::uint8_t>,
     "FIXY-FOUND-046: JoinPolicy underlying type drifted from uint8_t.");
+static_assert(join_policy_count == 6,
+    "FIXY-FOUND-046: JoinPolicy cardinality drifted from 6.");
 static_assert(static_cast<std::uint8_t>(JoinPolicy::FORGET)        == 0,
     "FIXY-FOUND-046: JoinPolicy::FORGET drifted.");
 static_assert(static_cast<std::uint8_t>(JoinPolicy::DETACH)        == 1,
@@ -417,6 +425,8 @@ static_assert(static_cast<std::uint8_t>(Consistency::STRONG)            == 4,
 static_assert(std::is_same_v<std::underlying_type_t<Witness>,
                              std::uint8_t>,
     "FIXY-FOUND-046: Witness underlying type drifted from uint8_t.");
+static_assert(witness_count == 4,
+    "FIXY-FOUND-046: Witness cardinality drifted from 4.");
 static_assert(static_cast<std::uint8_t>(Witness::UNWITNESSED)       == 0,
     "FIXY-FOUND-046: Witness::UNWITNESSED drifted.");
 static_assert(static_cast<std::uint8_t>(Witness::TYPE_CHECKED)      == 1,
@@ -430,6 +440,8 @@ static_assert(static_cast<std::uint8_t>(Witness::FORMALLY_VERIFIED) == 3,
 static_assert(std::is_same_v<std::underlying_type_t<ClockSource>,
                              std::uint8_t>,
     "FIXY-FOUND-046: ClockSource underlying type drifted from uint8_t.");
+static_assert(clock_source_count == 10,
+    "FIXY-FOUND-046: ClockSource cardinality drifted from 10.");
 static_assert(static_cast<std::uint8_t>(ClockSource::Realtime)      == 0,
     "FIXY-FOUND-046: ClockSource::Realtime drifted.");
 static_assert(static_cast<std::uint8_t>(ClockSource::Monotonic)     == 1,
