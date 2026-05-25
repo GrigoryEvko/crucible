@@ -457,21 +457,22 @@ static void test_runtime_sentinel_guards() {
     std::printf("  test_runtime_sentinel_guards: PASSED\n");
 }
 
-// Re-derive the ceremony anchor at runtime using the published
-// `combine_ids` algebra.  combine_ids is `consteval` and can't be
-// invoked from runtime, but `crucible::detail::fmix64` is constexpr
-// and the Boost mix is a 4-op straight line — we replicate it
-// verbatim and assert equality with the consteval value.
-[[nodiscard]] static std::uint64_t combine_ids_runtime(
-    std::uint64_t a, std::uint64_t b) noexcept
-{
-    a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);
-    return ::crucible::detail::fmix64(a);
-}
-
+// Re-derive the ceremony anchor at runtime using THE SAME
+// `combine_ids` that the consteval fold uses.  FIXY-FOUND-050 weakened
+// `combine_ids` from `consteval` to `constexpr` exactly so this
+// runtime fold goes through a single source of truth — no parallel
+// `combine_ids_runtime` body to drift out of sync with the consteval
+// algebra.  If a future maintainer adds back a runtime-only duplicate,
+// the CI grep guard at scripts/check-no-combine-ids-duplicate.sh
+// reddens the build.
 static void test_runtime_fold_anchor() {
     std::uint64_t acc = kFoldSeed;
-    for (auto h : kHashes) acc = combine_ids_runtime(acc, h);
+    for (auto h : kHashes) {
+        // `cd::detail::combine_ids` is constexpr post-FIXY-FOUND-050,
+        // so this call resolves to the SAME body the consteval
+        // `fold_anchor()` calls.
+        acc = cd::detail::combine_ids(acc, h);
+    }
     volatile std::uint64_t runtime_acc = acc;
     assert(runtime_acc == kFoldAnchor);
     std::printf("  test_runtime_fold_anchor:     PASSED (anchor=0x%016llx)\n",

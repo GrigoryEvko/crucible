@@ -163,7 +163,22 @@ inline constexpr std::uint64_t FNV1A_PRIME        = 0x00000100000001b3ULL;
 // stable_function_id from per-parameter stable_type_id values).
 // Boost-style hash combine: a ^= b + golden_ratio + (a << 6) + (a >> 2).
 // Avalanche-strong, order-sensitive (combining (a, b) ≠ (b, a)).
-[[nodiscard]] consteval std::uint64_t combine_ids(
+//
+// ── Single source of truth (FIXY-FOUND-050) ────────────────────────
+//
+// Declared `constexpr`, NOT `consteval` — the same body discharges
+// both compile-time fold (every `row_hash_contribution<W>::value`
+// static-constexpr initialization) AND runtime fold (the cross-build
+// runtime witness in test/test_row_hash_distinctness.cpp re-derives
+// the ceremony anchor by calling THIS function at runtime).  A
+// runtime-only duplicate of this body anywhere in the codebase is a
+// drift surface: a change to the salt, the mix, or the finalizer
+// would silently leave the duplicate stale and break the wire-format
+// witness without tripping the static_assert.  `constexpr` over
+// `consteval` is the structural fix — never re-introduce a parallel
+// `combine_ids_runtime` or any other name.  CI grep guard at
+// scripts/check-no-combine-ids-duplicate.sh enforces this.
+[[nodiscard]] constexpr std::uint64_t combine_ids(
     std::uint64_t a, std::uint64_t b) noexcept
 {
     a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);
