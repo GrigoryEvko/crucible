@@ -2571,10 +2571,10 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "strategy. Park (condvar) and Block (poll/epoll_wait) involve "
             "1-5 us latency, incompatible with the hot-path budget "
             "(<= 40 ns intra-socket). Switch to Wait<SpinPause> (CLAUDE.md "
-            "SXIV default, 10-40 ns intra-socket) or Wait<BoundedSpin> for "
+            "§IX default, 10-40 ns intra-socket) or Wait<BoundedSpin> for "
             "unknown-delay signals; or move the blocking call into an Init/"
             "Bg context. Wait<UmwaitC01> and Wait<AcquireWait> are NOT valid "
-            "hot-path replacements per CLAUDE.md SXIV latency hierarchy "
+            "hot-path replacements per CLAUDE.md §IX latency hierarchy "
             "(UMWAIT: 'Not applicable on our hot path'; futex/atomic::wait: "
             "'BANNED on hot path'); see safety/Wait.h is_hot_path_waiter_"
             "admissible for the strict gate. FIXY-FOUND-124.");
