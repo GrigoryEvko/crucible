@@ -3,6 +3,8 @@
 #include <crucible/Platform.h>
 
 #include <atomic>
+#include <cstddef>
+#include <thread>
 
 namespace crucible::concurrent {
 
@@ -33,8 +35,34 @@ public:
     SpinLock& operator=(SpinLock&&) = delete;
 
     void lock() noexcept {
+        // FIXY-FOUND-119: adaptive backoff.  Pause-only spin burns the
+        // waiter's core for the holder's full scheduling quantum
+        // (10ms+) if the holder is descheduled between acquire and
+        // release.  Same defense as MpmcRing's two-phase consumer
+        // wait (FIXY-FOUND-111): pause for kPauseBeforeYield
+        // iterations (intra-core MESI propagation: ~64 × 40ns ≈ 2.5
+        // μs), then escalate to std::this_thread::yield() so the
+        // scheduler can run the lock holder.  Common case (holder
+        // released within a few pauses) unchanged; bounded-waste
+        // worst case ~2.5 μs of burned CPU before yield-loop.
+        //
+        // SpinLock IS a short-spin-gate primitive (CLAUDE.md §IX
+        // hot-path yield-ban targets TraceRing; SpinLock is the
+        // ConnectionPool / Backpressure / Backend-Thread mutex
+        // analogue where holders are bounded but may be plausibly
+        // descheduled).  The pause budget keeps the fast-path
+        // unchanged on x86 (~140 cycles per pause); the yield
+        // escalation kicks in only when the holder is genuinely
+        // descheduled.
+        constexpr std::size_t kPauseBeforeYield = 64;
+        std::size_t spin_iters = 0;
         while (flag_.test_and_set(std::memory_order_acquire)) {
-            CRUCIBLE_SPIN_PAUSE;
+            if (spin_iters < kPauseBeforeYield) {
+                CRUCIBLE_SPIN_PAUSE;
+                ++spin_iters;
+            } else {
+                std::this_thread::yield();
+            }
         }
     }
 
