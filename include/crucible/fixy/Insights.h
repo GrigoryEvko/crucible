@@ -82,7 +82,14 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     "this diagnostic fires when IsAccepted is invoked directly without it.",
     "User wrote IsAccepted<Grants...> at namespace scope with no Type marker "
     "passed (also no fixy::fn<> wrapper to inject one).",
-    "fixy::fn<MyCallable, grant::with<>, ...>(MyCallable{});",
+    // FIXY-FOUND-128: previous correct_example shipped `grant::with<>, ...`
+    // which reads as if Effect engagement alone satisfies the gate.  It does
+    // not — 32 other axes still need engagement, so a literal copy-paste
+    // tier-3 reds on Refinement/Usage/Security/Lifetime/...  Use a canonical
+    // pre-built stance pack to demonstrate a clean-compile fixy::fn shape;
+    // stance::RealtimeHot ships a documented complete grants pack
+    // (Fn.h:1804-1820 self-tests it).
+    "fixy::fn<MyCallable, stance::RealtimeHot<MyCallable>>(MyCallable{});",
     "static_assert(IsAccepted<Grants...>);  // no Type → engagement-incomplete");
 
 CRUCIBLE_DEFINE_INSIGHTS_QV(
