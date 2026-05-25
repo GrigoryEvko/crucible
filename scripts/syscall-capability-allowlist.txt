@@ -22,18 +22,18 @@
 # munlock, madvise, prctl.  All sites are inside Hardening::apply() or
 # its detail helpers, reachable only from mint_hardening() (FIXY-U-084)
 # which gates on CtxFitsHardeningMint = IsExecCtx ∧ row_contains<Init>.
-include/crucible/warden/Hardening.h:86  — effects::Init via Hardening::apply (mint_hardening ctx-bound)
-include/crucible/warden/Hardening.h:90  — effects::Init via Hardening::apply
-include/crucible/warden/Hardening.h:95  — effects::Init via Hardening::apply
-include/crucible/warden/Hardening.h:166 — effects::Init via AppliedPolicy::revert (RAII pair of apply)
-include/crucible/warden/Hardening.h:171 — effects::Init via AppliedPolicy::revert
-include/crucible/warden/Hardening.h:176 — effects::Init via AppliedPolicy::revert (prctl THP re-enable)
-include/crucible/warden/Hardening.h:241 — effects::Init via Hardening::apply (sched_getaffinity)
-include/crucible/warden/Hardening.h:248 — effects::Init via Hardening::apply (sched_setaffinity)
-include/crucible/warden/Hardening.h:342 — effects::Init via Hardening::apply (prctl THP disable)
-include/crucible/warden/Hardening.h:388 — effects::Init via Hardening::lock_region (mlock fallback)
-include/crucible/warden/Hardening.h:416 — effects::Init via Hardening::hint_hugepage (madvise MADV_HUGEPAGE)
-include/crucible/warden/Hardening.h:441 — effects::Init via Hardening::collapse_hugepage (madvise MADV_COLLAPSE)
+include/crucible/warden/Hardening.h:89  — effects::Init via Hardening::apply (mint_hardening ctx-bound)
+include/crucible/warden/Hardening.h:93  — effects::Init via Hardening::apply
+include/crucible/warden/Hardening.h:98  — effects::Init via Hardening::apply
+include/crucible/warden/Hardening.h:169 — effects::Init via AppliedPolicy::revert (RAII pair of apply)
+include/crucible/warden/Hardening.h:174 — effects::Init via AppliedPolicy::revert
+include/crucible/warden/Hardening.h:179 — effects::Init via AppliedPolicy::revert (prctl THP re-enable)
+include/crucible/warden/Hardening.h:244 — effects::Init via Hardening::apply (sched_getaffinity)
+include/crucible/warden/Hardening.h:251 — effects::Init via Hardening::apply (sched_setaffinity)
+include/crucible/warden/Hardening.h:345 — effects::Init via Hardening::apply (prctl THP disable)
+include/crucible/warden/Hardening.h:391 — effects::Init via Hardening::lock_region (mlock fallback)
+include/crucible/warden/Hardening.h:419 — effects::Init via Hardening::hint_hugepage (madvise MADV_HUGEPAGE)
+include/crucible/warden/Hardening.h:444 — effects::Init via Hardening::collapse_hugepage (madvise MADV_COLLAPSE)
 
 # ── perf/ — BPF program load + BPF-map mmap ───────────────────────────
 # Init-row BPF loaders and the per-hub BPF-map mmap.  All sites belong
@@ -123,23 +123,23 @@ include/crucible/safety/OwnedMmap.h:251 — effects::IO via OwnedMmap::release_ 
 # through the same Ctx-bound entry surface — record_event() declares
 # effects::IO + effects::Block in the row (CONTRACT-107-POST + FOUND-
 # I09 row-typed event recording).  Cipher::open()'s root_dirfd_
-# acquisition is Init-row (one-shot at construction).  The line-53
+# acquisition is Init-row (one-shot at construction).  The line-56
 # #include comment is allowlisted because the script naively pattern-
 # matches "::open(" in the comment text.
-include/crucible/Cipher.h:53 — effects::IO via #include <fcntl.h> comment text (no syscall here)
-include/crucible/Cipher.h:246 — effects::Init via Cipher::open (V-030 root_dirfd_ O_DIRECTORY|O_NOFOLLOW acquire)
-include/crucible/Cipher.h:270 — effects::IO via Cipher::open (read HEAD file content at startup)
-include/crucible/Cipher.h:1460 — effects::IO via fdatasync_at_::openat (V-026 + V-030 O_NOFOLLOW)
-include/crucible/Cipher.h:1466 — effects::Block via fdatasync_at_::fdatasync (V-026 durability barrier)
-include/crucible/Cipher.h:1529 — effects::IO via atomic_write_at_::openat (V-027 + V-030 tmp O_NOFOLLOW)
-include/crucible/Cipher.h:1545 — effects::IO via atomic_write_at_::write (V-027 HEAD tmp data)
-include/crucible/Cipher.h:1559 — effects::Block via atomic_write_at_::fdatasync (V-027 HEAD tmp sync)
-include/crucible/Cipher.h:1587 — effects::Block via atomic_write_at_::fsync (V-027 + V-030 parent-dirfd sync)
-include/crucible/Cipher.h:1634 — effects::IO via atomic_append_at_::openat (V-028/V-029 + V-030 O_NOFOLLOW)
-include/crucible/Cipher.h:1650 — effects::IO via atomic_append_at_::write (V-028/V-029 record bytes)
-include/crucible/Cipher.h:1663 — effects::Block via atomic_append_at_::fdatasync (V-028/V-029 durable)
-include/crucible/Cipher.h:1672 — effects::Block via atomic_append_at_::fsync (V-028/V-029 + V-030 parent-dirfd)
-include/crucible/Cipher.h:1698 — effects::IO via open_dir_at_::openat (V-030 session subdir O_DIRECTORY|O_NOFOLLOW)
+include/crucible/Cipher.h:56 — effects::IO via #include <fcntl.h> comment text (no syscall here)
+include/crucible/Cipher.h:249 — effects::Init via Cipher::open (V-030 root_dirfd_ O_DIRECTORY|O_NOFOLLOW acquire)
+include/crucible/Cipher.h:273 — effects::IO via Cipher::open (read HEAD file content at startup)
+include/crucible/Cipher.h:1478 — effects::IO via fdatasync_at_::openat (V-026 + V-030 O_NOFOLLOW)
+include/crucible/Cipher.h:1484 — effects::Block via fdatasync_at_::fdatasync (V-026 durability barrier)
+include/crucible/Cipher.h:1547 — effects::IO via atomic_write_at_::openat (V-027 + V-030 tmp O_NOFOLLOW)
+include/crucible/Cipher.h:1563 — effects::IO via atomic_write_at_::write (V-027 HEAD tmp data)
+include/crucible/Cipher.h:1577 — effects::Block via atomic_write_at_::fdatasync (V-027 HEAD tmp sync)
+include/crucible/Cipher.h:1605 — effects::Block via atomic_write_at_::fsync (V-027 + V-030 parent-dirfd sync)
+include/crucible/Cipher.h:1652 — effects::IO via atomic_append_at_::openat (V-028/V-029 + V-030 O_NOFOLLOW)
+include/crucible/Cipher.h:1668 — effects::IO via atomic_append_at_::write (V-028/V-029 record bytes)
+include/crucible/Cipher.h:1681 — effects::Block via atomic_append_at_::fdatasync (V-028/V-029 durable)
+include/crucible/Cipher.h:1690 — effects::Block via atomic_append_at_::fsync (V-028/V-029 + V-030 parent-dirfd)
+include/crucible/Cipher.h:1716 — effects::IO via open_dir_at_::openat (V-030 session subdir O_DIRECTORY|O_NOFOLLOW)
 
 # ── Platform.h — process startup probes ───────────────────────────────
 # Init-row /proc reads at startup (CPU topology, isolated CPUs).
@@ -149,7 +149,7 @@ include/crucible/Platform.h:280 — effects::Init via parse_self_status (close /
 
 # ── canopy/Hlc.h — Hybrid Logical Clock wall-time read ────────────────
 # Bg-row clock_gettime(CLOCK_REALTIME); HLC is a Bg-drain observer.
-include/crucible/canopy/Hlc.h:241 — effects::Bg via Hlc::now (CLOCK_REALTIME read)
+include/crucible/canopy/Hlc.h:276 — effects::Bg via Hlc::now (CLOCK_REALTIME read)
 
 # ── topology/Ptp.cpp — PTP hardware clock device ──────────────────────
 # IO-row file ops on /dev/ptp* PTP clock device.  Reachable only from
@@ -200,4 +200,4 @@ include/crucible/perf/detail/BpfLoader.h:238 — effects::Init via BpfLoader::re
 include/crucible/perf/detail/BpfLoader.h:242 — effects::Init via BpfLoader::resolve_btf (access /sys/kernel/btf/vmlinux fallback)
 
 # ── warden/CpuTopology.h — /sys/devices/system/cpu/isolated probe ─────
-include/crucible/warden/CpuTopology.h:193 — effects::Init via CpuTopology::isolated_cpus (access /sys/.../isolated)
+include/crucible/warden/CpuTopology.h:197 — effects::Init via CpuTopology::isolated_cpus (access /sys/.../isolated)
