@@ -4859,6 +4859,16 @@ crucible_neg_compile_test(neg_collision_I002_classified_fail_payload
   "I002:")
 crucible_neg_compile_test(neg_collision_L002_borrow_async
   "L002:")
+# FIXY-FOUND-069 sub-HS14 closure for L002: marker × marker composition
+# complements the usage × marker fixture above.  L002 reads
+# has_borrow_capture_v AND has_async_v — both 3-way OR-folds.  The
+# shipped fixture engages (Usage::Borrow × marks_async); this companion
+# engages (marks_borrow_capture × marks_async) with Linear usage and
+# Row<> empty.  Defends against a refactor dropping the marker arm
+# from has_borrow_capture_v's OR-fold, which would silently let
+# downstream marker-opted adapters slip past L002.
+crucible_neg_compile_test(neg_collision_L002_borrow_async_marker
+  "L002:")
 crucible_neg_compile_test(neg_collision_E044_ct_async
   "E044:")
 crucible_neg_compile_test(neg_collision_I003_ct_fail_secret
