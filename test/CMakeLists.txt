@@ -7028,6 +7028,8 @@ crucible_neg_compile_test(neg_collision_V402_scope_arch
   "V402")
 crucible_neg_compile_test(neg_collision_V402_nested_cross_trunk
   "V402")
+crucible_neg_compile_test(neg_collision_T001_unverified_capability
+  "T001")
 
 # ─── FIXY-FOUND-063 CollisionCatalog H010 neg-compile (HotPath × Bg) ──
 #

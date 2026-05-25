@@ -500,6 +500,19 @@ enum class RuleCode : std::uint8_t {
     // Parallel to P010 (Ghost × Row<observable-effects>) on the Usage
     // axis but on the Borrow side of the Borrow/Ghost split.
     L007 = 49,  // borrow_capture × Row<Bg> (cross-thread borrow lifetime hazard)
+    // ── FIXY-FOUND-070: Trust-axis rule (catalog grown 50 → 51) ───────
+    //
+    // Trust grades the binding's provenance: Verified > Tested > Unverified
+    // (FOUND-034 set the default to Unverified, the Biba-safe bottom).  Before
+    // FOUND-070 the Trust axis was destructured by Fn but read by ZERO §6.8
+    // collision rules — every binding could declare any UsageMode regardless
+    // of provenance, including UsageMode::Capability which mints a non-
+    // revocable authorization token.  A Capability from an Unverified call
+    // path is the canonical privilege-escalation shape: untrusted code mints
+    // an authority token that downstream consumers treat as legitimate.
+    // T001 closes the gap structurally — any Capability binding must declare
+    // its provenance Verified or Tested.
+    T001 = 50,  // Trust::Unverified × UsageMode::Capability (capability minted from untrusted provenance)
     None = 255,
 };
 
@@ -677,6 +690,11 @@ struct L007_BorrowBgRow : diag::tag_base {
     static constexpr std::string_view name = "L007_BorrowBgRow";
 };
 
+// ── FIXY-FOUND-070 T001 — Trust::Unverified × UsageMode::Capability ─
+struct T001_UnverifiedCapability : diag::tag_base {
+    static constexpr std::string_view name = "T001_UnverifiedCapability";
+};
+
 using Catalog = std::tuple<
     I002_ClassifiedFailPayload,
     L002_BorrowAsync,
@@ -727,11 +745,12 @@ using Catalog = std::tuple<
     V402_ScopeArchCrossTrunk,
     H010_HotPathBgContradiction,
     P010_GhostNonErasable,
-    L007_BorrowBgRow
+    L007_BorrowBgRow,
+    T001_UnverifiedCapability
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
-static_assert(catalog_size == 50);
+static_assert(catalog_size == 51);
 
 // FIXY-FOUND-139: reflection-derived RuleCode enum ceiling.
 //
@@ -814,6 +833,7 @@ template <> struct rule_tag<RuleCode::V402> { using type = V402_ScopeArchCrossTr
 template <> struct rule_tag<RuleCode::H010> { using type = H010_HotPathBgContradiction; };
 template <> struct rule_tag<RuleCode::P010> { using type = P010_GhostNonErasable; };
 template <> struct rule_tag<RuleCode::L007> { using type = L007_BorrowBgRow; };
+template <> struct rule_tag<RuleCode::T001> { using type = T001_UnverifiedCapability; };
 
 template <RuleCode R>
 using rule_tag_t = typename rule_tag<R>::type;
@@ -970,6 +990,9 @@ template <> struct rule_code_of<P010_GhostNonErasable> {
 };
 template <> struct rule_code_of<L007_BorrowBgRow> {
     static constexpr RuleCode value = RuleCode::L007;
+};
+template <> struct rule_code_of<T001_UnverifiedCapability> {
+    static constexpr RuleCode value = RuleCode::T001;
 };
 
 template <typename Tag>
@@ -1419,6 +1442,27 @@ CRUCIBLE_COLLISION_DIAGNOSTIC(V402, "V402",
     "scope), drop the contradicting ScopedFence scope, OR flatten the nested ScopedFence "
     "stack to a single trunk-coherent scope",
     "fixy.md §24.2 V402 (V-268, FOUND-073)");
+CRUCIBLE_COLLISION_DIAGNOSTIC(T001, "T001",
+    "every Capability-usage binding declares Verified or Tested provenance",
+    "F::usage_v == UsageMode::Capability AND F::trust_t is trust::Unverified "
+    "(the FOUND-034 Biba-safe default).  UsageMode::Capability mints a "
+    "non-revocable authorization token that downstream consumers treat as "
+    "legitimate proof of authority; a binding whose provenance is Unverified "
+    "cannot establish that authority chain — the binding's call path may have "
+    "originated from untrusted code that constructed the capability shape "
+    "without earning the underlying authorization.  This is the canonical "
+    "privilege-escalation pattern: untrusted code mints an authority token, "
+    "downstream consumers honor it.  The Trust axis was unread by any §6.8 "
+    "rule before FOUND-070, so every Capability binding silently passed "
+    "regardless of provenance",
+    "engage grant::trust_verified at the binding's mint site (capabilities "
+    "minted from cryptographically-verified or proof-witnessed call paths) "
+    "OR grant::trust_tested (capabilities exercised under test isolation "
+    "with measured behavior).  If the binding genuinely should not assert "
+    "any authority, drop UsageMode::Capability and pick Linear / Borrow / "
+    "Ghost as appropriate.  Never elevate an Unverified binding to "
+    "Capability without engaging Trust at the same site",
+    "fixy.md §24.2 T001 (V-FOUND-070)");
 
 #undef CRUCIBLE_COLLISION_DIAGNOSTIC
 
@@ -1809,6 +1853,19 @@ template <typename F>
 concept L007_OK = !(has_borrow_capture_v<F> &&
                     row_has_effect_v<typename F::effect_row_t,
                                      effects::Effect::Bg>);
+
+// T001: Trust::Unverified × UsageMode::Capability rejected (FIXY-FOUND-070).
+// A Capability binding mints a non-revocable authorization token; a binding
+// whose provenance is Unverified cannot establish the authority chain.
+// Closed the Trust-axis no-op gap — before FOUND-070 the Trust axis was
+// destructured by Fn but read by ZERO §6.8 rules.  The rule is asymmetric
+// (only Unverified rejected; Tested and Verified both establish the
+// authority chain — Tested via measured behavior under test isolation,
+// Verified via cryptographic / proof-witnessed mint).
+template <typename F>
+concept T001_OK = !(F::usage_v == UsageMode::Capability &&
+                    std::is_same_v<typename F::trust_t,
+                                   ::crucible::safety::trust::Unverified>);
 
 template <typename F>
 concept F002_OK = !(marks_federation_peer<F>::value &&
@@ -2403,7 +2460,7 @@ concept AllRulesOK =
     V001_OK<F> && V002_OK<F> && V101_OK<F> && V102_OK<F> &&
     V201_OK<F> && V202_OK<F> && V203_OK<F> && V301_OK<F> &&
     V401_OK<F> && V402_OK<F> &&
-    H010_OK<F> && P010_OK<F> && L007_OK<F>;
+    H010_OK<F> && P010_OK<F> && L007_OK<F> && T001_OK<F>;
 
 template <typename F>
 [[nodiscard]] consteval RuleCode first_failure() noexcept {
@@ -2505,6 +2562,8 @@ template <typename F>
         return RuleCode::P010;
     } else if constexpr (!L007_OK<F>) {
         return RuleCode::L007;
+    } else if constexpr (!T001_OK<F>) {
+        return RuleCode::T001;
     } else {
         return RuleCode::None;
     }
@@ -3008,6 +3067,20 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
             "the Bg atom from the effect row, OR use the explicit "
             "permission_fork API for lifetime-scoped fork-join borrow "
             "patterns. FIXY-FOUND-065.");
+        static_assert(!(Usage == UsageMode::Capability &&
+                        std::is_same_v<Trust,
+                                       ::crucible::safety::trust::Unverified>),
+            "T001: UsageMode::Capability x trust::Unverified. A Capability "
+            "binding mints a non-revocable authorization token that "
+            "downstream consumers treat as legitimate proof of authority; "
+            "a binding whose provenance is Unverified (the FOUND-034 "
+            "Biba-safe default) cannot establish that authority chain. "
+            "Engage grant::trust_verified (cryptographically-verified or "
+            "proof-witnessed mint sites) OR grant::trust_tested "
+            "(capabilities exercised under test isolation with measured "
+            "behavior). If the binding should not assert any authority, "
+            "drop UsageMode::Capability and pick Linear / Borrow / Ghost. "
+            "FIXY-FOUND-070.");
         static_assert(!(federation_peer && unbounded_cost),
             "F002: federation peer x unbounded cost. Attach a wall-clock "
             "budget (cost::Linear<N>) and a terminating bound; federation "
@@ -3239,7 +3312,10 @@ struct CollisionRules<Fn<Type, Refinement, Usage, EffectRow, Security,
                  (row_has_alloc_or_io ||
                   collision::row_has_effect_v<EffectRow,
                                               effects::Effect::Block>)) &&
-               !(borrow_capture && row_has_bg);
+               !(borrow_capture && row_has_bg) &&
+               !(Usage == UsageMode::Capability &&
+                 std::is_same_v<Trust,
+                                ::crucible::safety::trust::Unverified>);
     }
 
     static constexpr bool valid = validate();
