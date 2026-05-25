@@ -213,6 +213,28 @@ static_assert(fixy::stance::UnclassifiedScratch<int>::security_v
     "FIXY-FOUND-033: stance::UnclassifiedScratch must resolve "
     "Security to Unclassified via grant::as_unclassified.");
 
+// Per-stance axis rigor — parity with CtCrypto/PublicEmit (3-check shape).
+// InternalApi + UnclassifiedScratch are strict on Effect (no IO/Bg/Alloc/
+// Block) and ship no declassify policy.
+static_assert(std::is_same_v<
+    typename fixy::stance::InternalApi<int>::effect_row_t,
+    crucible::effects::Row<>>,
+    "FIXY-FOUND-033: stance::InternalApi must have empty Effect row.");
+static_assert(std::is_same_v<
+    typename fixy::stance::InternalApi<int>::policy_t, void>,
+    "FIXY-FOUND-033: stance::InternalApi must have no declassify "
+    "policy (policy_t == void).");
+
+static_assert(std::is_same_v<
+    typename fixy::stance::UnclassifiedScratch<int>::effect_row_t,
+    crucible::effects::Row<>>,
+    "FIXY-FOUND-033: stance::UnclassifiedScratch must have empty "
+    "Effect row.");
+static_assert(std::is_same_v<
+    typename fixy::stance::UnclassifiedScratch<int>::policy_t, void>,
+    "FIXY-FOUND-033: stance::UnclassifiedScratch must have no "
+    "declassify policy (policy_t == void).");
+
 // All five SecLevel enumerators are stance-reachable.  Pinned literals
 // because the lattice expands only at the top (FOUND-I04 append-only
 // universe extension discipline); any new enumerator must add a

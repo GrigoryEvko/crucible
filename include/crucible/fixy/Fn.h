@@ -49,8 +49,8 @@
 //
 //   mint_fn<Type, Grants...>(value) — Universal Mint Pattern factory
 //
-// Twelve stance aliases (misc/16_05_2026_fixy.md §5 catalog +
-// FIXY-U-041 extension):
+// Fourteen stance aliases (misc/16_05_2026_fixy.md §5 catalog +
+// FIXY-U-041 extension + FIXY-FOUND-033 SecLevel coverage closure):
 //
 //   stance::PureLinear        — every axis strict-default
 //   stance::PureCopy          — copy usage, otherwise strict
