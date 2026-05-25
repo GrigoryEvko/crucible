@@ -78,10 +78,22 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::safety::diag::Severity::Error,
     "The Type axis names the function/callable's principal type and is the "
     "anchor for §6.8 collision rules in safety/CollisionCatalog.h.  "
-    "fixy::fn<T, ...> implicitly mints the Type marker (FIXY-AUDIT-A7); "
-    "this diagnostic fires when IsAccepted is invoked directly without it.",
-    "User wrote IsAccepted<Grants...> at namespace scope with no Type marker "
-    "passed (also no fixy::fn<> wrapper to inject one).",
+    "fixy::fn<T, ...> implicitly mints the Type marker (FIXY-AUDIT-A7); the "
+    "wrapper-tier alias fixy::IsAccepted<T, Grants...> ALSO auto-injects via "
+    "ImplicitTypeMarker (Reject.h:1468-1469) so it can never surface this "
+    "diagnostic — the only path that fires FixyNotEngaged_Type is the "
+    "low-level fixy::IsAcceptedDirect<T, Grants...> with no explicit Type "
+    "engagement marker in the Grants pack.",
+    // FIXY-FOUND-030: previous violating_pattern referred to "IsAccepted" — a "
+    // misnomer because `IsAccepted` auto-injects ImplicitTypeMarker.  A literal
+    // `IsAccepted<MyCallable>` would actually fire FixyNotEngaged_Refinement
+    // (axis 1, the first axis WITHOUT auto-injection) because Type is "
+    // implicitly engaged before the engagement walk reaches it.  Correct shape:
+    // call `IsAcceptedDirect` which has no auto-injection.
+    "User invoked IsAcceptedDirect<MyCallable, Grants...> (the low-level "
+    "gate that bypasses ImplicitTypeMarker auto-injection) with no Type "
+    "engagement marker in Grants — most often a refactor that bypassed the "
+    "fixy::fn wrapper or used `IsAcceptedDirect` for a hand-rolled gate.",
     // FIXY-FOUND-128: previous correct_example shipped `grant::with<>, ...`
     // which reads as if Effect engagement alone satisfies the gate.  It does
     // not — 32 other axes still need engagement, so a literal copy-paste
@@ -90,7 +102,11 @@ CRUCIBLE_DEFINE_INSIGHTS_QV(
     // stance::RealtimeHot ships a documented complete grants pack
     // (Fn.h:1804-1820 self-tests it).
     "fixy::fn<MyCallable, stance::RealtimeHot<MyCallable>>(MyCallable{});",
-    "static_assert(IsAccepted<Grants...>);  // no Type → engagement-incomplete");
+    // FIXY-FOUND-030 corrects the violating example to actually fire
+    // FixyNotEngaged_Type.  The substrate gate is IsAcceptedDirect (NOT
+    // IsAccepted), because IsAccepted auto-injects ImplicitTypeMarker and
+    // therefore never reaches the Type-axis missing-engagement branch.
+    "static_assert(IsAcceptedDirect<MyCallable>);  // no Type marker → fires _Type");
 
 CRUCIBLE_DEFINE_INSIGHTS_QV(
     ::crucible::fixy::diag::FixyNotEngaged_Refinement,
