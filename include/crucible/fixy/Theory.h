@@ -1240,33 +1240,72 @@ struct internal_bg_without_declassify {
 // first match; the FIRST entry whose shape applies is the one that
 // fires (and whose cite() drives the diagnostic).
 
+namespace detail {
+
+// ── FIXY-FOUND-021 closure: single source of corpus order ────────────
+//
+// Pre-FOUND-021, four hand-written if-chains (is_in_unsoundness_corpus,
+// corpus_cite_for_v, corpus_entry_name_for_v, corpus_full_diagnostic_v)
+// each listed all corpus entries in the same order.  The discipline
+// burden: any maintainer adding/reordering entries had to update all
+// four chains in lockstep.  Order drift between chains was a SILENT
+// bug — the binding got rejected, but the rejection diagnostic
+// surfaced the WRONG entry's name + cite.
+//
+// This tuple is now the SINGLE source of order.  All four chains
+// iterate this tuple via `corpus_first_match_string_` (below) or a
+// direct fold-expression.  Adding a new entry now means: (a) define
+// the corpus struct, (b) append it here.  The four chains
+// automatically pick up the new entry in the canonical order.  Order
+// misalignment becomes STRUCTURALLY IMPOSSIBLE — there is no separate
+// per-chain order to misalign.
+//
+// To bump corpus_size_v: append to this tuple AND increment
+// corpus_size_v (sentinel below catches forgetting either side).
+using CorpusEntries = std::tuple<
+    corpus::classified_io_without_declassify,
+    corpus::classified_bg_without_declassify,
+    corpus::staleness_secret_without_declassify,
+    corpus::ghost_runtime_observable,
+    corpus::internal_io_without_declassify,
+    corpus::internal_bg_without_declassify
+>;
+
+// Fold over CorpusEntries, returning Extractor(Entry) for the first
+// matching Entry's accessor, or empty string_view if none match.
+// Extractor is a templated lambda taking <typename E>() and returning
+// std::string_view (the accessor selection — cite / name /
+// full_diagnostic).
+template <typename Type, typename... Grants, typename Extractor>
+[[nodiscard]] consteval std::string_view
+corpus_first_match_string_(Extractor extractor) noexcept {
+    std::string_view result{};
+    bool found = false;
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
+        auto check = [&]<typename E>() consteval {
+            if (!found && E::template matches<Type, Grants...>()) {
+                result = extractor.template operator()<E>();
+                found = true;
+            }
+        };
+        (check.template operator()<
+            std::tuple_element_t<Is, CorpusEntries>>(), ...);
+    }(std::make_index_sequence<std::tuple_size_v<CorpusEntries>>{});
+    return result;
+}
+
+}  // namespace detail
+
 template <typename Type, typename... Grants>
 [[nodiscard]] consteval bool is_in_unsoundness_corpus() noexcept {
-    return corpus::classified_io_without_declassify::matches<Type, Grants...>()
-        || corpus::classified_bg_without_declassify::matches<Type, Grants...>()
-        || corpus::staleness_secret_without_declassify::matches<Type, Grants...>()
-        || corpus::ghost_runtime_observable::matches<Type, Grants...>()
-        || corpus::internal_io_without_declassify::matches<Type, Grants...>()
-        || corpus::internal_bg_without_declassify::matches<Type, Grants...>();
-    // MAINTENANCE PROTOCOL (fixy-L-09 / fixy-L-10).  Adding a new
-    // corpus entry requires FOUR aligned edits, not just this one:
-    //
-    //   (1) Append `|| corpus::<entry>::matches<...>()` to the OR
-    //       fold above, in the new entry's canonical order.
-    //   (2) Append the matching if-clause to `corpus_cite_for_v`
-    //       (returns `<entry>::cite()`) at the SAME order position.
-    //   (3) Append the matching if-clause to `corpus_entry_name_for_v`
-    //       (returns `<entry>::name()`) at the SAME order position.
-    //   (4) Append the matching if-clause to `corpus_full_diagnostic_v`
-    //       (returns `<entry>::full_diagnostic()`) at the SAME order
-    //       position.
-    //   (5) Bump `corpus_size_v` below.  The static sentinel breaks
-    //       the build if the bump is forgotten.
-    //
-    // All four chains short-circuit on first match.  Order
-    // misalignment between (1) and (2)/(3)/(4) is a SILENT bug —
-    // the binding gets rejected, but the rejection diagnostic
-    // surfaces the WRONG entry's name + cite.
+    // OR-fold over detail::CorpusEntries — short-circuits on first
+    // match.  Replaces the hand-written 6-clause `||` chain; order
+    // now derives from the tuple, eliminating FOUND-021 silent-bug
+    // surface.
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
+        return (std::tuple_element_t<Is, detail::CorpusEntries>
+                    ::template matches<Type, Grants...>() || ...);
+    }(std::make_index_sequence<std::tuple_size_v<detail::CorpusEntries>>{});
 }
 
 template <typename Type, typename... Grants>
@@ -1409,35 +1448,13 @@ concept NotInTheoryCorpus = !IsInUnsoundnessCorpus_v<Type, Grants...>;
 // short-circuit on first match; keeping the orders aligned preserves
 // the "which entry fired" predictability across both surfaces.
 
+// FIXY-FOUND-021: iterates detail::CorpusEntries (single source of
+// order) — replaces the hand-written 6-clause if-chain that was
+// silent-bug-prone vs the OR-fold's order.
 template <typename Type, typename... Grants>
 inline constexpr std::string_view corpus_cite_for_v =
-    []() consteval -> std::string_view {
-        if (corpus::classified_io_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::classified_io_without_declassify::cite();
-        }
-        if (corpus::classified_bg_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::classified_bg_without_declassify::cite();
-        }
-        if (corpus::staleness_secret_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::staleness_secret_without_declassify::cite();
-        }
-        if (corpus::ghost_runtime_observable
-                ::matches<Type, Grants...>()) {
-            return corpus::ghost_runtime_observable::cite();
-        }
-        if (corpus::internal_io_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::internal_io_without_declassify::cite();
-        }
-        if (corpus::internal_bg_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::internal_bg_without_declassify::cite();
-        }
-        return std::string_view{};
-    }();
+    detail::corpus_first_match_string_<Type, Grants...>(
+        []<typename E>() consteval -> std::string_view { return E::cite(); });
 
 // ═════════════════════════════════════════════════════════════════════
 // ── corpus_entry_name_for_v — struct name of first-matching entry ──
@@ -1459,35 +1476,11 @@ inline constexpr std::string_view corpus_cite_for_v =
 // variables must short-circuit on the same entry for the same Grants
 // pack so the rejection diagnostic is internally consistent.
 
+// FIXY-FOUND-021: iterates detail::CorpusEntries (single source of order).
 template <typename Type, typename... Grants>
 inline constexpr std::string_view corpus_entry_name_for_v =
-    []() consteval -> std::string_view {
-        if (corpus::classified_io_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::classified_io_without_declassify::name();
-        }
-        if (corpus::classified_bg_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::classified_bg_without_declassify::name();
-        }
-        if (corpus::staleness_secret_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::staleness_secret_without_declassify::name();
-        }
-        if (corpus::ghost_runtime_observable
-                ::matches<Type, Grants...>()) {
-            return corpus::ghost_runtime_observable::name();
-        }
-        if (corpus::internal_io_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::internal_io_without_declassify::name();
-        }
-        if (corpus::internal_bg_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::internal_bg_without_declassify::name();
-        }
-        return std::string_view{};
-    }();
+    detail::corpus_first_match_string_<Type, Grants...>(
+        []<typename E>() consteval -> std::string_view { return E::name(); });
 
 // ═════════════════════════════════════════════════════════════════════
 // ── corpus_full_diagnostic_v — combined name + cite for tier-5 ─────
@@ -1512,40 +1505,13 @@ inline constexpr std::string_view corpus_entry_name_for_v =
 // entry for the same Grants pack so the rejection diagnostic is
 // internally consistent.
 
+// FIXY-FOUND-021: iterates detail::CorpusEntries (single source of order).
+// No corpus match → empty string_view (tier-5 succeeds; message unused).
 template <typename Type, typename... Grants>
 inline constexpr std::string_view corpus_full_diagnostic_v =
-    []() consteval -> std::string_view {
-        if (corpus::classified_io_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::classified_io_without_declassify
-                ::full_diagnostic();
-        }
-        if (corpus::classified_bg_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::classified_bg_without_declassify
-                ::full_diagnostic();
-        }
-        if (corpus::staleness_secret_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::staleness_secret_without_declassify
-                ::full_diagnostic();
-        }
-        if (corpus::ghost_runtime_observable
-                ::matches<Type, Grants...>()) {
-            return corpus::ghost_runtime_observable::full_diagnostic();
-        }
-        if (corpus::internal_io_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::internal_io_without_declassify
-                ::full_diagnostic();
-        }
-        if (corpus::internal_bg_without_declassify
-                ::matches<Type, Grants...>()) {
-            return corpus::internal_bg_without_declassify
-                ::full_diagnostic();
-        }
-        // No corpus match — tier-5 succeeds; message unused.
-        return std::string_view{};
-    }();
+    detail::corpus_first_match_string_<Type, Grants...>(
+        []<typename E>() consteval -> std::string_view {
+            return E::full_diagnostic();
+        });
 
 }  // namespace crucible::fixy::theory
