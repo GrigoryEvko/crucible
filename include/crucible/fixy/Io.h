@@ -678,7 +678,7 @@ mint_io_uring_ring(Ctx const&) noexcept {
         params.flags |= IORING_SETUP_CQSIZE;
     }
 
-    const long setup = ::syscall(__NR_io_uring_setup,
+    const long setup = ::syscall(__NR_io_uring_setup,  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
                                  static_cast<unsigned int>(sq_n),
                                  &params);
     if (setup < 0) {
@@ -700,12 +700,12 @@ mint_io_uring_ring(Ctx const&) noexcept {
     const std::size_t sqes_array_size =
         static_cast<std::size_t>(params.sq_entries) * sizeof(::io_uring_sqe);
 
-    void* const sq_ring = ::mmap(
+    void* const sq_ring = ::mmap(  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
         nullptr, sq_ring_size, PROT_READ | PROT_WRITE,
         MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQ_RING);
     if (sq_ring == MAP_FAILED) {
         const int e = errno;
-        ::close(fd);
+        ::close(fd);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
         return std::unexpected{std::error_code{e, std::system_category()}};
     }
 
@@ -716,28 +716,28 @@ mint_io_uring_ring(Ctx const&) noexcept {
         // is the documented contract.  Dtor marker: cq_size_for_dtor=0.
         cq_ring = sq_ring;
     } else {
-        cq_ring = ::mmap(
+        cq_ring = ::mmap(  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
             nullptr, cq_ring_size, PROT_READ | PROT_WRITE,
             MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_CQ_RING);
         if (cq_ring == MAP_FAILED) {
             const int e = errno;
-            ::munmap(sq_ring, sq_ring_size);
-            ::close(fd);
+            ::munmap(sq_ring, sq_ring_size);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
+            ::close(fd);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
             return std::unexpected{std::error_code{e, std::system_category()}};
         }
         cq_size_for_dtor = cq_ring_size;
     }
 
-    void* const sqes = ::mmap(
+    void* const sqes = ::mmap(  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
         nullptr, sqes_array_size, PROT_READ | PROT_WRITE,
         MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQES);
     if (sqes == MAP_FAILED) {
         const int e = errno;
         if (cq_size_for_dtor != 0) {
-            ::munmap(cq_ring, cq_ring_size);
+            ::munmap(cq_ring, cq_ring_size);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
         }
-        ::munmap(sq_ring, sq_ring_size);
-        ::close(fd);
+        ::munmap(sq_ring, sq_ring_size);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
+        ::close(fd);  // SYSCALL-CAP-OK: mint_io_uring_ring body (CtxFitsIoUringMint, IO+Block)
         return std::unexpected{std::error_code{e, std::system_category()}};
     }
 
