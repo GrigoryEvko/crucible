@@ -236,6 +236,20 @@ concept IsRefinementPredicate =
 // inherits from a heavyweight base) surfaces here rather than
 // silently breaking downstream resolution.  Stricter than the other
 // two concepts because the substrate's convention IS stricter.
+//
+// FIXY-FOUND-044 audit conclusion (2026-05-25): the ticket's premise
+// "misses source::ForgePhase" is incorrect.  `ForgePhase<Phase>` is
+// an NTTP-parameterized class template (`template <char Phase> struct
+// ForgePhase { static_assert(...) }`) with NO data members — the
+// `Phase` parameter is a non-type template parameter, NOT a stored
+// field.  `std::is_empty_v<ForgePhase<'F'>>` is true; Tagged.h:327
+// explicitly documents "sizeof(ForgePhase<P>) is 1 but EBO-collapses
+// in Tagged<T, ForgePhase<P>> per the standard Graded regime-1
+// storage rule."  IsProvenanceSource ACCEPTS every legal ForgePhase
+// instantiation today.  The sentinel block below pins this for all
+// 12 forge phases (A=INGEST..L=VALIDATE) so a future refactor that
+// silently broke the empty-marker shape of ForgePhase would red
+// this site.
 template <typename Source>
 concept IsProvenanceSource =
        std::is_same_v<Source, std::remove_cvref_t<Source>>
@@ -727,6 +741,27 @@ static_assert(which_dim_v<space_unbounded>                                   == 
 static_assert(which_dim_v<productive>                                        == dim::DimensionAxis::Size);
 static_assert(which_dim_v<in_region<0>>                                      == dim::DimensionAxis::Lifetime);
 static_assert(which_dim_v<from_source<safety::source::FromUser>>             == dim::DimensionAxis::Provenance);
+// FIXY-FOUND-044: pin IsProvenanceSource ACCEPTS every legal
+// ForgePhase<P> for P in A..L (Forge 12-phase pipeline).  The audit
+// ticket framed this as "misses source::ForgePhase" but ForgePhase
+// is empty-by-construction (NTTP `char Phase`, no data members) per
+// Tagged.h:327; the concept ACCEPTS all 12 instantiations.  A future
+// refactor that broke the empty-marker shape of ForgePhase would
+// red this site directly, surfacing the regression at the concept
+// boundary rather than downstream at `from_source<>` use sites.
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'A'>>);  // INGEST
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'B'>>);  // ANALYZE
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'C'>>);  // REWRITE
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'D'>>);  // FUSE
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'E'>>);  // LOWER_TO_KERNELS
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'F'>>);  // TILE
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'G'>>);  // MEMPLAN
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'H'>>);  // COMPILE
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'I'>>);  // SCHEDULE
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'J'>>);  // EMIT
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'K'>>);  // DISTRIBUTE
+static_assert(IsProvenanceSource<safety::source::ForgePhase<'L'>>);  // VALIDATE
+static_assert(which_dim_v<from_source<safety::source::ForgePhase<'F'>>>      == dim::DimensionAxis::Provenance);
 static_assert(which_dim_v<trust_assumed<axis_query_tag>>                     == dim::DimensionAxis::Trust);
 static_assert(which_dim_v<protocol<safety::fn::proto::None>>                 == dim::DimensionAxis::Protocol);
 
