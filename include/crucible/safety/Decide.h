@@ -2599,4 +2599,65 @@ constexpr bool is_non_zero(T const& x) noexcept(noexcept(T{} != x)) {
     return zero != x;
 }
 
+// ─── not_sentinel_hash ─────────────────────────────────────────────
+//
+// Returns true iff `h.is_sentinel() == false` — the strong-hash type
+// `H` is NOT at its reserved end-of-region sentinel value.
+//
+// FIXY-FOUND-056: Crucible reserves TWO distinct values per
+// strong-hash type for incompatible bookkeeping purposes:
+//
+//   * `H{}`           — default-constructed (raw == 0) — used by
+//                       KernelCache as the EMPTY-slot probe marker
+//                       (MerkleDag.h §1361-1377).  Guarded by
+//                       `decide::is_non_zero`.
+//   * `H::sentinel()` — raw == UINT64_MAX — reserved as the
+//                       end-of-region marker in RegionNode traversal
+//                       (Types.h §253-261).  No real FNV/fmix64 hash
+//                       function ever produces this value (the
+//                       avalanche output distribution covers ~2^64
+//                       outputs but the all-ones sentinel is
+//                       reserved by contract).
+//
+// `is_non_zero` alone does NOT reject `H::sentinel()` — UINT64_MAX
+// is non-zero.  Conversely, `!h.is_sentinel()` alone does NOT
+// reject `H{}`.  A real KernelCache cache-key invariant requires
+// BOTH: cite `is_non_zero(h)` AND `not_sentinel_hash(h)` as a pair
+// at every publish / claim boundary that admits raw H from
+// untrusted (deserialize / FFI) or future-self-malicious paths.
+//
+// The two-cite pair is the catalog-grown discipline rather than a
+// single "is_valid_cache_key" composite predicate so that grep can
+// independently audit each end of the sentinel landscape:
+//
+//   grep "decide::is_non_zero"         → empty-slot defense sites
+//   grep "decide::not_sentinel_hash"   → reserved-sentinel defense sites
+//
+// USAGE
+//
+//   void publish(ContentHash h, CompiledKernel* kernel)
+//       pre (decide::is_non_zero(h))
+//       pre (decide::not_sentinel_hash(h))
+//       pre (kernel != nullptr)
+//   { ... }
+//
+// PRODUCTION CITES (FOUND-056)
+//
+//   * KernelCache::publish_l1 — MerkleDag.h:1935 — cache-tier publish.
+//   * KernelCache::publish_l2 — MerkleDag.h:1961 — Phase-5 stub.
+//   * KernelCache::publish_l3 — MerkleDag.h:1982 — Phase-5 stub.
+//
+// VC DISCHARGE: this procedure pins ONLY the reserved-sentinel side
+// of the two-axis cache-key invariant.  The complementary
+// empty-slot (zero) side stays at `is_non_zero`.  Together they form
+// the complete cache-key admissibility witness.
+template <typename H>
+    requires requires (H const& h) {
+        { h.is_sentinel() } -> std::convertible_to<bool>;
+    }
+[[nodiscard, gnu::pure]]
+constexpr bool not_sentinel_hash(H const& h) noexcept(noexcept(h.is_sentinel())) {
+    return !h.is_sentinel();
+}
+
 }  // namespace crucible::decide

@@ -1934,7 +1934,14 @@ class CRUCIBLE_OWNER KernelCache {
   fixy::wrap::residency_heat::Hot<std::expected<void, InsertError>>
   publish_l1(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
       CRUCIBLE_NO_THREAD_SAFETY
+      // FIXY-FOUND-056: two-axis sentinel discipline.  `is_non_zero`
+      // rejects ContentHash{} which collides with the EMPTY-slot
+      // marker; `not_sentinel_hash` rejects ContentHash::sentinel()
+      // which is reserved as the RegionNode end-of-region marker
+      // (Types.h §253-261).  Both cites are required — UINT64_MAX is
+      // non-zero, and a zero is non-sentinel.
       pre (::crucible::decide::is_non_zero(content_hash))
+      pre (::crucible::decide::not_sentinel_hash(content_hash))
       pre (kernel != nullptr)
   {
     return fixy::wrap::residency_heat::Hot<std::expected<void, InsertError>>{
@@ -1960,7 +1967,9 @@ class CRUCIBLE_OWNER KernelCache {
   fixy::wrap::residency_heat::Warm<std::expected<void, InsertError>>
   publish_l2(ContentHash content_hash, RowHash /*row_hash*/,
              CompiledKernel* kernel) noexcept
+      // FIXY-FOUND-056: same two-axis sentinel discipline as publish_l1.
       pre (::crucible::decide::is_non_zero(content_hash))
+      pre (::crucible::decide::not_sentinel_hash(content_hash))
       pre (kernel != nullptr)
   {
     (void)content_hash;
@@ -1981,7 +1990,9 @@ class CRUCIBLE_OWNER KernelCache {
   fixy::wrap::residency_heat::Cold<std::expected<void, InsertError>>
   publish_l3(ContentHash content_hash, RowHash /*row_hash*/,
              CompiledKernel* kernel) noexcept
+      // FIXY-FOUND-056: same two-axis sentinel discipline as publish_l1.
       pre (::crucible::decide::is_non_zero(content_hash))
+      pre (::crucible::decide::not_sentinel_hash(content_hash))
       pre (kernel != nullptr)
   {
     (void)content_hash;

@@ -21,6 +21,7 @@
 #include <crucible/algebra/lattices/CipherTierLattice.h>
 #include <crucible/algebra/lattices/DetSafeLattice.h>
 #include <crucible/algebra/lattices/HotPathLattice.h>
+#include <crucible/Types.h>          // FOUND-056: ContentHash for not_sentinel_hash witness
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>
 
@@ -1569,6 +1570,68 @@ static_assert(dc::is_non_zero(AggregateZero{0xDEADBEEF, 0xCAFEBABE}));
 // Positive — non-zero aggregate, hash succeeds.
 static_assert(hash_aggregate(AggregateZero{1, 2}) == (1u ^ 2u));
 static_assert(hash_aggregate(AggregateZero{0xDEADBEEF, 0}) == 0xDEADBEEFu);
+
+// ── not_sentinel_hash positive + negative witnesses (FOUND-056) ────
+//
+// The predicate gates the strong-hash side of the KernelCache cache-
+// key admissibility witness.  Pair-companion to `is_non_zero`; both
+// must hold for a hash to be admissible as a real cache key.
+//
+// Coverage roster: every strong-hash CRUCIBLE_STRONG_HASH type in
+// Types.h.  Each type ships `H{}` default-construct AND
+// `H::sentinel()` factory; the predicate distinguishes them
+// independent of the type's identity.
+
+// SchemaHash — operator handle identity.
+static_assert(!dc::not_sentinel_hash(crucible::SchemaHash::sentinel()));
+static_assert( dc::not_sentinel_hash(crucible::SchemaHash{}));
+static_assert( dc::not_sentinel_hash(crucible::SchemaHash{0xDEADBEEFULL}));
+
+// ContentHash — region content identity / kernel cache key.  THE
+// FOUND-056 primary cite target.  Default-construct (zero) returns
+// true (not sentinel — collides with EMPTY-slot marker but THAT'S
+// the `is_non_zero` predicate's job).  `sentinel()` (UINT64_MAX)
+// returns false.
+static_assert(!dc::not_sentinel_hash(crucible::ContentHash::sentinel()));
+static_assert( dc::not_sentinel_hash(crucible::ContentHash{}));
+static_assert( dc::not_sentinel_hash(crucible::ContentHash{1ULL}));
+static_assert( dc::not_sentinel_hash(crucible::ContentHash{0xCAFEBABEULL}));
+
+// RowHash — effect-row content identity.  Same shape as ContentHash.
+static_assert(!dc::not_sentinel_hash(crucible::RowHash::sentinel()));
+static_assert( dc::not_sentinel_hash(crucible::RowHash{}));
+static_assert( dc::not_sentinel_hash(crucible::RowHash{0xFEEDFACEULL}));
+
+// RecipeHash, MerkleHash, ShapeHash, ScopeHash, CallsiteHash — round
+// out the strong-hash family.  All ship `is_sentinel()` via the
+// CRUCIBLE_STRONG_HASH macro, so the predicate accepts the family
+// uniformly.
+static_assert(!dc::not_sentinel_hash(crucible::RecipeHash::sentinel()));
+static_assert( dc::not_sentinel_hash(crucible::RecipeHash{0x123ULL}));
+static_assert(!dc::not_sentinel_hash(crucible::MerkleHash::sentinel()));
+static_assert( dc::not_sentinel_hash(crucible::MerkleHash{0x456ULL}));
+static_assert(!dc::not_sentinel_hash(crucible::ShapeHash::sentinel()));
+static_assert( dc::not_sentinel_hash(crucible::ShapeHash{0x789ULL}));
+
+// Composition with is_non_zero — the production-cite pair shape used
+// at KernelCache::publish_l*.  An admissible cache key satisfies
+// BOTH: structurally non-zero (not the EMPTY-slot marker) AND not
+// the reserved end-of-region sentinel.
+[[nodiscard]] constexpr bool is_admissible_cache_key(
+    crucible::ContentHash const& h) noexcept
+{
+    return dc::is_non_zero(h) && dc::not_sentinel_hash(h);
+}
+
+// Default-construct (zero) — `is_non_zero` rejects (EMPTY-slot).
+static_assert(!is_admissible_cache_key(crucible::ContentHash{}));
+// Sentinel (UINT64_MAX) — `not_sentinel_hash` rejects.
+static_assert(!is_admissible_cache_key(crucible::ContentHash::sentinel()));
+// Real hash — both predicates pass.
+static_assert( is_admissible_cache_key(crucible::ContentHash{1ULL}));
+static_assert( is_admissible_cache_key(crucible::ContentHash{0xCAFEBABEULL}));
+static_assert( is_admissible_cache_key(
+    crucible::ContentHash{crucible::ContentHash::sentinel().raw() - 1}));
 
 // ── positive witnesses ─────────────────────────────────────────────
 //
