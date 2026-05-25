@@ -7295,6 +7295,13 @@ crucible_neg_compile_test(neg_collision_L006_linear_longjmp_marker
   "L006|Linear|longjmp|MayLongjmp")
 crucible_neg_compile_test(neg_collision_P003_fork_body_throws
   "P003|fork|ThrowOnly|terminate")
+# FIXY-FOUND-069 sub-HS14 closure for P003: marker-tier inner-arm fixture
+# complements the wrapper-tier inner-arm fixture above.  P003_OK gates on
+# marks_fork_worker AND inner-OR(marks_throws OR cf_at_or_above ThrowOnly);
+# both inner arms now have witness fixtures so a refactor dropping either
+# inner term reds the build.
+crucible_neg_compile_test(neg_collision_P003_fork_body_throws_marker
+  "P003|fork|ThrowOnly|terminate")
 crucible_neg_compile_test(neg_collision_S001_hotpath_stdio
   "S001|hot-path|stdio|BufferedWrite")
 crucible_neg_compile_test(neg_collision_S004_singleton_cycle
