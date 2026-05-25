@@ -5,10 +5,11 @@
 // Per misc/16_05_2026_fixy.md §4.  This is the LOAD-BEARING
 // reject-by-default surface that closes
 // the FX §30.14 type-theory unsoundness corpus.  Currently ships
-// SIX entries — classified_io_without_declassify,
+// SEVEN entries — classified_io_without_declassify,
 // classified_bg_without_declassify, staleness_secret_without_declassify,
-// ghost_runtime_observable, internal_io_without_declassify, and
-// internal_bg_without_declassify — each pairs:
+// ghost_runtime_observable, internal_io_without_declassify,
+// internal_bg_without_declassify, and (FOUND-019)
+// external_to_verified_without_attest — each pairs:
 //
 //   (a) a named pattern detector — a constexpr predicate over
 //       (Type, Grants...) that returns true iff the binding matches
@@ -612,6 +613,71 @@ static_assert( is_observable_effect_grant<grant::with<effects::Effect::Block>>::
     "fixy-M-11: Block must remain IN the observable set.");
 static_assert( is_observable_effect_grant<grant::with<effects::Effect::Bg>>::value,
     "fixy-M-11: Bg must remain IN the observable set.");
+
+// ── FIXY-FOUND-019 detectors (Biba/Clark-Wilson integrity dual) ──
+//
+// The §30.14 corpus modeled the Bell-LaPadula CONFIDENTIALITY axis
+// (no-write-down, entries 1/2/5/6) but lacked the INTEGRITY dual
+// (Biba 1977 no-write-up, Clark-Wilson 1987 Transformation
+// Procedure).  Entry 7 (external_to_verified_without_attest) closes
+// that gap.  Detectors below identify the three grant shapes the
+// integrity matcher inspects.
+
+// `is_external_source_grant<G>` — true iff G is `grant::from_source<
+// safety::source::External>`, the canonical low-integrity provenance
+// tag for raw untrusted input (network bytes, FFI handoffs, raw user
+// text).  Tagged.h:75 declares the source tag; retag_policy<External,
+// IntegrityVerified> is the canonical discharge path (Tagged.h:710).
+template <typename G> struct is_external_source_grant
+    : std::false_type {};
+template <>
+struct is_external_source_grant<
+    grant::from_source<::crucible::safety::source::External>>
+    : std::true_type {};
+
+// `is_trust_verified_grant<G>` — true iff G is `grant::trust_verified`,
+// the high-integrity Trust-axis claim (Grant.h:510).  A binding that
+// engages this is asserting "my output is verified-trustworthy" —
+// the Biba/Clark-Wilson "Constrained Data Item" producer position.
+template <typename G> struct is_trust_verified_grant
+    : std::false_type {};
+template <>
+struct is_trust_verified_grant<grant::trust_verified>
+    : std::true_type {};
+
+// `is_trust_assumed_grant<G>` — true iff G is `grant::trust_assumed<
+// Rationale>` (any Rationale NTTP per FOUND-038's axis_query_tag
+// discipline).  The grant is Crucible's Clark-Wilson "Transformation
+// Procedure": developer-documented integrity attestation bridging
+// External → Verified with an audit-grade rationale literal.
+template <typename G> struct is_trust_assumed_grant
+    : std::false_type {};
+template <auto Rationale>
+struct is_trust_assumed_grant<grant::trust_assumed<Rationale>>
+    : std::true_type {};
+
+// Structural witnesses — pin the canonical positive/negative cases so
+// a future refactor that changes from_source / trust_verified /
+// trust_assumed shape reds these BEFORE the corpus entry below
+// silently misfires.
+static_assert(is_external_source_grant<
+    grant::from_source<::crucible::safety::source::External>>::value,
+    "FIXY-FOUND-019: from_source<External> must remain detectable as "
+    "the low-integrity provenance tag.  If this reds, source::External "
+    "was renamed or from_source's shape changed.");
+static_assert(!is_external_source_grant<
+    grant::from_source<::crucible::safety::source::Sanitized>>::value,
+    "FIXY-FOUND-019: from_source<Sanitized> must NOT match the "
+    "External detector — Sanitized is the DISCHARGED tag (retag from "
+    "External admitted at Tagged.h:706).");
+static_assert(is_trust_verified_grant<grant::trust_verified>::value,
+    "FIXY-FOUND-019: trust_verified must remain detectable as the "
+    "high-integrity Trust claim.");
+static_assert(is_trust_assumed_grant<
+    grant::trust_assumed<grant::axis_query_tag>>::value,
+    "FIXY-FOUND-019: trust_assumed<Rationale> with any Rationale NTTP "
+    "must match the attestation detector.  If this reds, FOUND-038's "
+    "mandatory-Rationale form was broken.");
 
 }  // namespace detail
 
@@ -1236,6 +1302,109 @@ struct internal_bg_without_declassify {
     }
 };
 
+// ── Entry 7: external_to_verified_without_attest ────────────────
+//
+// FIXY-FOUND-019: pre-019, the §30.14 corpus modeled the
+// CONFIDENTIALITY axis (Bell-LaPadula "no write down") via entries
+// 1/2/5/6, but the INTEGRITY DUAL (Biba 1977 "no write up", Clark-
+// Wilson 1987 Transformation Procedure) had no corpus entry.  Closed
+// here.
+//
+// Cite: Biba 1977 "Integrity Considerations for Secure Computer
+// Systems" MITRE MTR-3153 — the integrity model dual to BLP.
+// Where BLP forbids high→low confidentiality flows, Biba forbids
+// low→high integrity flows.  Clark-Wilson 1987 "A Comparison of
+// Commercial and Military Computer Security Policies" IEEE
+// Symposium on Security and Privacy — replaces the lattice with
+// Constrained Data Items (CDIs) maintained by Transformation
+// Procedures (TPs) and Integrity Verification Procedures (IVPs);
+// every untrusted-data-item (UDI) to CDI flow requires a TP that
+// the auditor can identify.  Crucible's
+// `grant::trust_assumed<Rationale>` IS the TP — a developer-
+// authored, audit-grade documented bridge from low-integrity
+// (source::External) to high-integrity (trust_verified) state.
+//
+// Pattern: a binding engages `from_source<safety::source::External>`
+// (the canonical low-integrity provenance) AND `trust_verified` (the
+// high-integrity sink claim) AND omits any `trust_assumed<Rationale>`
+// grant (no documented attestation bridging the two).  The substrate
+// admits this composition at the type level — `retag_policy<External,
+// IntegrityVerified>` exists in Tagged.h — but every retag is a TP
+// per Clark-Wilson, and a TP without a documented Rationale is the
+// integrity-discipline analogue of an unaudited declassification.
+//
+// Why distinct from entries 1/2/5/6: those entries protect the
+// Security axis (SecLevel::Public/Internal/Classified/Secret).
+// Entry 7 protects the Trust axis (safety::trust::Verified vs
+// Unverified) AND the Provenance axis (source::External vs
+// source::Sanitized / IntegrityVerified).  An information-flow
+// type system that catches only confidentiality but not integrity
+// is sound for one direction of the IFC lattice and unsound for
+// the other; the §30.14 corpus is now bidirectionally closed
+// across the dual.
+//
+// Remediation: the user MUST EITHER (a) drop the `trust_verified`
+// claim (output retains Unverified status — no integrity promise
+// made), (b) drop the `from_source<External>` grant (binding does
+// NOT consume raw untrusted input — the trust-verified claim flows
+// from already-Sanitized state), OR (c) interpose
+// `grant::trust_assumed<Rationale>` with a literal rationale
+// documenting the integrity bridge — the auditor's grep target is
+// "grant::trust_assumed<" per FOUND-038 audit-trail discipline.
+//
+// Companion future work: FOUND-020 (termination-channel covert
+// flow, Askarov-Hunt-Sabelfeld-Sands 2008) and FOUND-022 (Type-
+// aware corpus matchers — the present entry inspects only Grants;
+// extending to `Tagged<T, source::External>` payload inspection is
+// the FOUND-022 closure shape).
+
+struct external_to_verified_without_attest {
+    template <typename Type, typename... Grants>
+    [[nodiscard]] static consteval bool matches() noexcept {
+        const bool has_external =
+            detail::has_grant_of<detail::is_external_source_grant, Grants...>();
+        const bool has_verified =
+            detail::has_grant_of<detail::is_trust_verified_grant, Grants...>();
+        const bool has_attest =
+            detail::has_grant_of<detail::is_trust_assumed_grant, Grants...>();
+        return has_external && has_verified && !has_attest;
+    }
+
+    static constexpr std::string_view name() noexcept {
+        return "external_to_verified_without_attest";
+    }
+
+    static constexpr std::string_view cite() noexcept {
+        return "Biba 1977 'Integrity Considerations for Secure "
+               "Computer Systems' MITRE MTR-3153 / Clark-Wilson 1987 "
+               "'A Comparison of Commercial and Military Computer "
+               "Security Policies' IEEE SP — integrity dual to BLP "
+               "no-write-down: low-integrity source (External) flows "
+               "into a high-integrity sink (trust_verified) without "
+               "a documented Transformation Procedure attestation.  "
+               "Insert grant::trust_assumed<Rationale> with a literal "
+               "rationale documenting the integrity bridge, OR drop "
+               "from_source<External> (input is already Sanitized), "
+               "OR drop trust_verified (output retains Unverified).";
+    }
+
+    // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
+    static constexpr std::string_view full_diagnostic() noexcept {
+        static constexpr std::string_view storage =
+            []() consteval -> std::string_view {
+                std::string msg;
+                msg += "fixy::fn<Type, Grants...> [tier 5: "
+                       "NotInTheoryCorpus]: binding matches §30.14 "
+                       "unsoundness corpus entry: ";
+                msg.append(name().data(), name().size());
+                msg += ".  ";
+                msg.append(cite().data(), cite().size());
+                return std::define_static_string(msg);
+            }();
+        return storage;
+    }
+};
+
 }  // namespace corpus
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1274,7 +1443,8 @@ using CorpusEntries = std::tuple<
     corpus::staleness_secret_without_declassify,
     corpus::ghost_runtime_observable,
     corpus::internal_io_without_declassify,
-    corpus::internal_bg_without_declassify
+    corpus::internal_bg_without_declassify,
+    corpus::external_to_verified_without_attest  // FOUND-019 Biba/Clark-Wilson integrity dual
 >;
 
 // Fold over CorpusEntries, returning Extractor(Entry) for the first
@@ -1352,7 +1522,7 @@ inline constexpr bool IsInUnsoundnessCorpus_v =
 // 5-step PR shape lives in the Discipline block at the top of this
 // header.
 
-inline constexpr std::size_t corpus_size_v = 6;
+inline constexpr std::size_t corpus_size_v = 7;
 
 namespace detail::corpus_size_sentinel {
 
@@ -1390,6 +1560,9 @@ inline constexpr std::array kRoster = {
     entry_witness{corpus::internal_bg_without_declassify::name(),
                   corpus::internal_bg_without_declassify::cite(),
                   corpus::internal_bg_without_declassify::full_diagnostic()},
+    entry_witness{corpus::external_to_verified_without_attest::name(),
+                  corpus::external_to_verified_without_attest::cite(),
+                  corpus::external_to_verified_without_attest::full_diagnostic()},
 };
 static_assert(kRoster.size() == corpus_size_v,
     "fixy-L-09/L-10: corpus_size_v drifted from the actual entry "
