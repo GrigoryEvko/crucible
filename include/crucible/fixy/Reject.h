@@ -545,15 +545,105 @@ using FixyCatalog = ::std::tuple<
 inline constexpr ::std::size_t fixy_catalog_size =
     ::std::tuple_size_v<FixyCatalog>;
 
-// ─── is_fixy_diag_v — fixy-tag discriminator ───────────────────────
+// ═════════════════════════════════════════════════════════════════════
+// ── FixyDuplicateCatalog — closed enumeration of duplicate tags ────
+// ═════════════════════════════════════════════════════════════════════
 //
-// True iff T appears in FixyCatalog.  Lets generic diagnostic
-// machinery route fixy tags through the fixy-side surface and leave
-// substrate Catalog tags to the substrate (the two enumerations are
-// disjoint by design per FOUND-E01).
+// FIXY-FOUND-028 reconciliation surface.  The `FixyDuplicate_<Axis>`
+// tag family (one tag per DimensionAxis enumerator, defined by the
+// `CRUCIBLE_FIXY_DUPLICATE_TAG` macro above) IS shipped — every
+// `UniqueEngagementPerAxis` violation routes through one of them via
+// `DiagnoseAxisDuplicate<Tag>`.  But pre-FOUND-028 these tags were
+// NOT in any catalog, so `is_fixy_diag_v<FixyDuplicate_X>` returned
+// FALSE — generic diagnostic dispatchers checking that predicate
+// would route a real fixy diagnostic into the substrate-side surface
+// (or worse, the "not a fixy diagnostic" fallback).
+//
+// The closure: a parallel APPEND-ONLY catalog mirroring FixyCatalog's
+// ordering — index I ↔ `dim::DimensionAxis(I)` ↔ `FixyDuplicate_<X>`.
+// The bijection self-test below walks this catalog with the
+// `dup_tag_for_axis<>` family declared earlier in this header to
+// guarantee 1:1 correspondence with DimensionAxis enumerators.
+//
+// `is_fixy_diag_v<T>` (rewritten below) unions FixyCatalog +
+// FixyDuplicateCatalog + FixyMalformedCatalog so callers get
+// uniform "is this a fixy-emitted diagnostic?" semantics.
+
+using FixyDuplicateCatalog = ::std::tuple<
+    FixyDuplicate_Type,            //  0
+    FixyDuplicate_Refinement,      //  1
+    FixyDuplicate_Usage,           //  2
+    FixyDuplicate_Effect,          //  3
+    FixyDuplicate_Security,        //  4
+    FixyDuplicate_Protocol,        //  5
+    FixyDuplicate_Lifetime,        //  6
+    FixyDuplicate_Provenance,      //  7
+    FixyDuplicate_Trust,           //  8
+    FixyDuplicate_Representation,  //  9
+    FixyDuplicate_Observability,   // 10
+    FixyDuplicate_Complexity,      // 11
+    FixyDuplicate_Precision,       // 12
+    FixyDuplicate_Space,           // 13
+    FixyDuplicate_Overflow,        // 14
+    FixyDuplicate_Mutation,        // 15
+    FixyDuplicate_Reentrancy,      // 16
+    FixyDuplicate_Size,            // 17
+    FixyDuplicate_Version,         // 18
+    FixyDuplicate_Staleness,       // 19
+    FixyDuplicate_Synchronization, // 20
+    FixyDuplicate_Regime,          // 21
+    FixyDuplicate_FpMode,          // 22
+    FixyDuplicate_SyscallSurface,  // 23
+    FixyDuplicate_ControlFlow,     // 24
+    FixyDuplicate_CallShape,       // 25
+    FixyDuplicate_StackUse,        // 26
+    FixyDuplicate_GlobalState,     // 27
+    FixyDuplicate_Stdio,           // 28
+    FixyDuplicate_HwInstruction,   // 29
+    FixyDuplicate_BarrierStrength, // 30
+    FixyDuplicate_SimdIsa,         // 31
+    FixyDuplicate_MemoryScope      // 32
+>;
+
+inline constexpr ::std::size_t fixy_duplicate_catalog_size =
+    ::std::tuple_size_v<FixyDuplicateCatalog>;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FixyMalformedCatalog — single-entry malformed-grant catalog ────
+// ═════════════════════════════════════════════════════════════════════
+//
+// FIXY-FOUND-028 reconciliation surface.  `FixyMalformedGrant` (the
+// `AllGrantsWellFormed` rejection tag, defined earlier in this
+// header) was shipped but un-catalogued — same gap as the duplicate
+// family.  A single-entry catalog is structurally appropriate (the
+// malformed-grant tag has no per-axis variants; the violation is
+// "some grant in the pack isn't IsGrantTag-shaped"), giving
+// `is_fixy_diag_v<FixyMalformedGrant>` the correct TRUE result via
+// the same tuple-membership predicate.
+
+using FixyMalformedCatalog = ::std::tuple<FixyMalformedGrant>;
+
+inline constexpr ::std::size_t fixy_malformed_catalog_size =
+    ::std::tuple_size_v<FixyMalformedCatalog>;
+
+// ─── is_fixy_diag_v — fixy-tag discriminator (FOUND-028 union) ────
+//
+// True iff T appears in ANY of the three fixy catalogs (FixyCatalog
+// for FixyNotEngaged_* + FixyDuplicateCatalog for FixyDuplicate_* +
+// FixyMalformedCatalog for FixyMalformedGrant).  Lets generic
+// diagnostic machinery route ALL fixy-emitted tags through the
+// fixy-side surface and leave substrate Catalog tags to the substrate
+// (the two enumerations remain disjoint by design per FOUND-E01).
 //
 // Substrate `safety::diag::HotPathViolation` and friends MUST return
 // false here.
+//
+// FOUND-028 closes the gap where `FixyDuplicate_*` (33 axis-violation
+// tags) and `FixyMalformedGrant` (the well-formedness rejection tag)
+// existed but were structurally invisible to `is_fixy_diag_v`,
+// causing the `DiagnoseAxisDuplicate<Tag>` / `DiagnoseMalformedGrant
+// <Tag>` rails to emit tags that downstream dispatchers couldn't
+// recognize as fixy-originated.
 
 namespace detail::fixy_catalog {
 
@@ -568,7 +658,9 @@ struct in_tuple_impl<T, ::std::tuple<Us...>>
 
 template <typename T>
 inline constexpr bool is_fixy_diag_v =
-    detail::fixy_catalog::in_tuple_impl<T, FixyCatalog>::value;
+       detail::fixy_catalog::in_tuple_impl<T, FixyCatalog>::value
+    || detail::fixy_catalog::in_tuple_impl<T, FixyDuplicateCatalog>::value
+    || detail::fixy_catalog::in_tuple_impl<T, FixyMalformedCatalog>::value;
 
 // ─── axis_for_tag — reverse lookup (Tag → DimensionAxis) ──────────
 //
@@ -718,6 +810,93 @@ static_assert(!is_fixy_diag_v<::crucible::safety::diag::HotPathViolation>,
     "(FOUND-E01 + FIXY-AUDIT-C8 reconciliation).");
 static_assert(!is_fixy_diag_v<::crucible::safety::diag::EffectRowMismatch>,
     "Substrate diagnostic tags MUST NOT register as fixy diagnostics.");
+
+// ── FIXY-FOUND-028 witnesses ───────────────────────────────────────
+//
+// Pre-FOUND-028, `is_fixy_diag_v<T>` only recognized `FixyNotEngaged_*`
+// tags.  The `FixyDuplicate_*` family (33 tags emitted by
+// `DiagnoseAxisDuplicate<Tag>` for `UniqueEngagementPerAxis` violations)
+// and the singleton `FixyMalformedGrant` (emitted by
+// `DiagnoseMalformedGrant<Tag>` for `AllGrantsWellFormed` violations)
+// would return FALSE — a real fixy-emitted diagnostic was structurally
+// indistinguishable from a non-fixy type at the dispatcher boundary.
+//
+// FOUND-028 closure: `is_fixy_diag_v<T>` now unions FixyCatalog +
+// FixyDuplicateCatalog + FixyMalformedCatalog.  Spot-check witnesses
+// at every category boundary; the exhaustive per-entry verification
+// rides on the catalog-membership predicate so any drift between a
+// catalog tuple and the union predicate auto-reds.
+
+static_assert(is_fixy_diag_v<FixyDuplicate_Type>,
+    "FOUND-028: FixyDuplicate_Type must be recognized as a fixy "
+    "diagnostic (FixyDuplicateCatalog entry).");
+static_assert(is_fixy_diag_v<FixyDuplicate_Staleness>,
+    "FOUND-028: FixyDuplicate_Staleness must be recognized as a fixy "
+    "diagnostic.");
+static_assert(is_fixy_diag_v<FixyDuplicate_MemoryScope>,
+    "FOUND-028: FixyDuplicate_MemoryScope (newest axis dup tag) must "
+    "be recognized as a fixy diagnostic — sentinel for the FixyDuplicate "
+    "tail growing in lockstep with DimensionAxis appends.");
+static_assert(is_fixy_diag_v<FixyMalformedGrant>,
+    "FOUND-028: FixyMalformedGrant must be recognized as a fixy "
+    "diagnostic (FixyMalformedCatalog entry).");
+
+// ── FIXY-FOUND-028 cardinality pins ────────────────────────────────
+//
+// FixyDuplicateCatalog must have EXACTLY the same cardinality as
+// FixyCatalog (and therefore as DimensionAxis), because there is one
+// FixyDuplicate_<X> tag per FixyNotEngaged_<X> tag (the duplicate
+// tag family is generated by the CRUCIBLE_FIXY_DUPLICATE_TAG macro
+// alongside the not-engaged family).  Drift here means an axis
+// got a NotEngaged tag without the matching Duplicate tag (or vice
+// versa) — fixy::IsAccepted's duplicate-engagement check would
+// silently route through a missing tag rail.
+
+static_assert(fixy_duplicate_catalog_size == fixy_catalog_size,
+    "FOUND-028: FixyDuplicateCatalog cardinality drifted from "
+    "FixyCatalog.  Adding a new DimensionAxis enumerator requires "
+    "(a) the matching FixyNotEngaged_<Axis> tag (via "
+    "CRUCIBLE_FIXY_NOT_ENGAGED_TAG), (b) the matching FixyDuplicate_"
+    "<Axis> tag (via CRUCIBLE_FIXY_DUPLICATE_TAG), (c) appending BOTH "
+    "to their respective catalogs in DimensionAxis order, (d) the "
+    "tag_for_axis + dup_tag_for_axis specializations, and (e) the "
+    "axis_for_tag specialization.  This assertion fires when (c) was "
+    "skipped on the FixyDuplicate side.");
+
+static_assert(fixy_malformed_catalog_size == 1,
+    "FOUND-028: FixyMalformedCatalog must contain exactly the "
+    "singleton FixyMalformedGrant tag.  Adding additional malformed-"
+    "grant tags is a deliberate redesign — update the catalog AND "
+    "either route through a richer Diagnose* family or extend "
+    "AllGrantsWellFormed to discriminate them.");
+
+// ── FIXY-FOUND-028 fold-style discipline ──────────────────────────
+//
+// Every entry of FixyDuplicateCatalog must satisfy `is_fixy_diag_v`.
+// The fold below walks the tuple via index sequence and asserts the
+// predicate per entry — guarantees the predicate definition above
+// stays in sync with the catalog tuple itself (an entry added to the
+// catalog but accidentally omitted from the predicate union would
+// silently fail on that entry; the fold fires immediately).
+
+namespace detail::fixy_catalog {
+
+template <::std::size_t... Is>
+[[nodiscard]] consteval bool all_duplicate_fixy_diag(
+    ::std::index_sequence<Is...>) noexcept
+{
+    return (is_fixy_diag_v<::std::tuple_element_t<Is, FixyDuplicateCatalog>>
+            && ...);
+}
+
+}  // namespace detail::fixy_catalog
+
+static_assert(detail::fixy_catalog::all_duplicate_fixy_diag(
+    ::std::make_index_sequence<fixy_duplicate_catalog_size>{}),
+    "FOUND-028: every FixyDuplicateCatalog entry must satisfy "
+    "is_fixy_diag_v.  If this fires, an entry was added to the "
+    "catalog but the predicate union was not extended — keep them "
+    "in sync at the definition site.");
 
 // ── fixy-A4-030: exhaustive substrate-catalog disjointness sentinel
 //
