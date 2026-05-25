@@ -7133,6 +7133,18 @@ crucible_neg_compile_test(neg_collision_E044_structural_async_coroutine
   "E044")
 crucible_neg_compile_test(neg_collision_H002_hotpath_trivial_refinement
   "H002")
+# FIXY-FOUND-069 sub-HS14 closure for H002: structural-tier fixture
+# complements the marker-tier fixture above.  H002_OK reads
+# `is_hot_path_v<F>` — the FOUND-067 OR-fold over marks_hot_path
+# specialization PLUS structural HotPath<Hot, T> wrapper detection
+# (extract::is_hot_path_v).  The shipped fixture exercises the
+# marker-tier path; this companion exercises the structural-tier
+# path with payload = HotPath<Hot, int> and NO marker.  Both arms
+# witnessed means a refactor dropping either OR term reds the
+# build, preventing H002 from silently regressing to a single-tier
+# rule.  Parallel to H001's marker / structural fixture pair.
+crucible_neg_compile_test(neg_collision_H002_structural_hotpath_wrapper
+  "H002")
 crucible_neg_compile_test(neg_collision_H003_hotpath_alloc_unbounded
   "H003")
 # FIXY-FOUND-069 sub-HS14 closure for H003: IO-arm fixture complements
