@@ -783,6 +783,58 @@ static_assert(!is_secret_type<::crucible::safety::Secret<int>*>::value,
     "Secret to fire entry 9, that is a separate specialization "
     "decision (covered by a future FIXY-FOUND-* task).");
 
+// ── FIXY-FOUND-023 sentinel (SecLevel growth audit) ────────────────
+//
+// `is_secret_grant` (above) hardcodes specializations for a closed
+// set of grant tags: `as_secret`, `as_classified`, `declassify<P>`,
+// and `accept_default_strict_for<Security>`.  Each of these
+// engagements corresponds to a position on the `safety::SecLevel`
+// lattice (Unclassified / Public / Internal / Classified / Secret).
+// If the SecLevel enum grows — e.g., a future `SecLevel::TopSecret`
+// to represent a tier above Secret, or a refinement between two
+// existing tiers — the corresponding `as_<tier>` grant must be
+// authored AND `is_secret_grant` must be audited: if the new tier
+// represents secrecy-raising (must remain confidential without an
+// explicit declassify), it requires a new `is_secret_grant`
+// specialization; if it represents projection-down (an additional
+// "less classified" tier), no `is_secret_grant` update is needed
+// (downward projection is intentionally NOT a silencer per
+// FOUND-022 entry 9 cite correction), but Security-axis-aware
+// detectors elsewhere in the codebase should be audited.
+//
+// `safety::sec_level_count()` (defined in `safety/Fn.h:712`) returns
+// the live enumerator count via P2996 `enumerators_of` reflection
+// over the SecLevel enum.  This sentinel pins the count at 5 so a
+// build-time green build is the witness that no SecLevel-tier
+// addition has slipped past the is_secret_grant audit discipline.
+// Bumping `sec_level_count() == N` requires a deliberate audit
+// commit that EITHER extends is_secret_grant (secrecy-raising
+// tier) OR documents the tier as projection-down (no detector
+// extension).  This closes the FOUND-023 "closed-set fragile for
+// future SecLevel tier additions" surface structurally — adding
+// a SecLevel enumerator now reds the build instead of silently
+// bypassing the corpus.
+static_assert(std::meta::enumerators_of(
+        ^^::crucible::safety::fn::SecLevel).size() == 5,
+    "FIXY-FOUND-023: safety::SecLevel grew beyond its 5-enumerator "
+    "audit anchor (Unclassified/Public/Internal/Classified/Secret "
+    "as of FOUND-023 ship).  `is_secret_grant` in this header "
+    "hardcodes specializations for `as_secret`, `as_classified`, "
+    "`declassify<P>`, and `accept_default_strict_for<Security>` — "
+    "all of which engage secrecy-raising or declassification on "
+    "the existing 5-tier lattice.  A new SecLevel enumerator does "
+    "NOT automatically extend `is_secret_grant`; the maintainer "
+    "MUST audit: (a) is the new tier secrecy-raising (above the "
+    "old Secret top)?  → add an `is_secret_grant` specialization "
+    "for the corresponding `as_<tier>` grant.  (b) is the new "
+    "tier projection-down (between Unclassified and Public, or "
+    "below Unclassified)?  → no `is_secret_grant` update needed "
+    "(downward projection is not a silencer per FOUND-022 entry 9 "
+    "cite).  Other Security-axis-aware detectors across the "
+    "codebase (corpus matchers, retag_policy specializations, "
+    "stance tables) should be re-audited regardless.  Bump this "
+    "5 to the new count after auditing.");
+
 }  // namespace detail
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1685,9 +1737,15 @@ struct secret_payload_without_security_claim {
                "the policy level), (b) unwrap the Secret<T> via "
                "grant::declassify<Policy> BEFORE the binding "
                "boundary (the payload type reflects declassified "
-               "data), OR (c) project Security to as_public / "
-               "as_unclassified with documented rationale (audit-"
-               "traceable wrapper-policy mismatch).";
+               "data).  Note: downward Security projection via "
+               "grant::as_public / as_unclassified is NOT a valid "
+               "silencing remediation — `is_secret_grant` (the "
+               "Security-engagement detector consumed here) "
+               "intentionally matches only secrecy-raising or "
+               "declassify-related forms, so adding as_public to a "
+               "Secret<T>-wrapped payload still fires this entry as "
+               "raw declassification (the formal audit channel is "
+               "declassify<Policy>, not silent downward projection).";
     }
 
     // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
