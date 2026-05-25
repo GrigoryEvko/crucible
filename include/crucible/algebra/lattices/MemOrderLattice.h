@@ -316,7 +316,51 @@ static_assert(!MemOrderLattice::leq(MemOrderTag::AcqRel,  MemOrderTag::SeqCst));
 static_assert(MemOrderLattice::bottom() == MemOrderTag::SeqCst);
 static_assert(MemOrderLattice::top()    == MemOrderTag::Relaxed);
 
-// Join strengthens (max); meet weakens (min).
+// ── FIXY-FOUND-009: lattice convention vs cross-tree "strictest-wins" ──
+//
+// MemOrderLattice uses the REFINEMENT-LATTICE convention:
+//
+//   bottom = SeqCst   — most-constrained / fewest-allowed-reorderings
+//   top    = Relaxed  — least-constrained / most-allowed-reorderings
+//   leq(a, b)        ↔ "a refines b" (a's freedom-set ⊆ b's)
+//   join(a, b)        = least common GENERALIZATION = WEAKEST common
+//                       memory order that admits both
+//   meet(a, b)        = greatest common SPECIALIZATION = STRICTEST common
+//                       memory order admitted by both
+//
+// The cross-tree Tier-S contract documented in
+//   safety/DimensionTraits.h (Wait + MemOrder + JoinPolicy block)
+//   fixy/Default.h               §"par=join, strictest-wins"
+//   fixy/Fp.h                    §F101-F105 sites
+//   fixy/syscall/Family.h        §composition law
+// is written as "par=join, strictest-wins".  For MemOrderLattice that
+// reading applies via MEET, not JOIN — because MemOrderLattice's
+// chain direction is INVERTED relative to FpModeLattice / ControlFlow-
+// Lattice / HwInstructionLattice (which use the strength-lattice
+// convention: top = strictest).
+//
+// Concrete consequence: a consumer composing two Graded<Absolute,
+// MemOrderLattice::At<...>, T> values via Graded::compose() (which
+// uses L::join under the hood — algebra/Graded.h:460) would get the
+// WEAKEST common order, NOT the strictest.  As of FOUND-009 audit
+// (2026-05-25), grep confirms NO production consumer of MemOrder
+// Graded composition exists outside of in-file self-tests — see
+// FOUND-076 for the audit-sweep that completes the cross-lattice
+// convention normalization.  Until that sweep lands, callers needing
+// the strictest-wins reading on MemOrderLattice MUST call ::meet
+// directly (or migrate to FpModeLattice's strength-lattice convention).
+//
+// The static_assert immediately below pins the CURRENT (refinement-
+// lattice) reality so a refactor that flipped bottom/top to the
+// strength-lattice convention would red this site and force a
+// coordinated fix.  Polarity pinned both ways: join goes UP-CHAIN to
+// Relaxed (weakest); meet goes DOWN-CHAIN to SeqCst (strictest).
+//
+// NOTE on the original comment "Join strengthens (max); meet weakens
+// (min)" — "strengthens" / "weakens" here refer to LATTICE-THEORY
+// position (climb / descend the chain), NOT memory-ordering strength.
+// In this inverted convention, climbing the lattice = weakening the
+// memory order.  See FOUND-076 for the cross-tree audit.
 static_assert(MemOrderLattice::join(MemOrderTag::SeqCst, MemOrderTag::Relaxed)
               == MemOrderTag::Relaxed);
 static_assert(MemOrderLattice::join(MemOrderTag::AcqRel, MemOrderTag::Release)
@@ -325,6 +369,39 @@ static_assert(MemOrderLattice::meet(MemOrderTag::SeqCst, MemOrderTag::Relaxed)
               == MemOrderTag::SeqCst);
 static_assert(MemOrderLattice::meet(MemOrderTag::Acquire, MemOrderTag::Relaxed)
               == MemOrderTag::Acquire);
+
+// FIXY-FOUND-009 strictest-wins pin — for THIS lattice's refinement-
+// lattice convention, the "strictest-wins" composition reading is the
+// MEET, not the JOIN.  If a future refactor inverts the chain (making
+// top = SeqCst, strength-lattice convention), these asserts MUST
+// migrate to the join side in lockstep.  Pinning both witnesses here
+// localizes the audit-coverage to a single file.
+//
+// Note: MemOrderLattice is a CHAIN (totally ordered), with
+// SeqCst < AcqRel < Release < Acquire < Relaxed.  Meet returns the
+// chain-minimum (= the LOWER ordinal = stricter under this convention).
+// Join returns the chain-maximum (= the HIGHER ordinal = weaker).
+// This is NOT the same as the "natural" memory-ordering partial order
+// where Acquire ∥ Release are incomparable — the lattice linearizes
+// for chain-ops uniformity.
+static_assert(MemOrderLattice::meet(MemOrderTag::AcqRel, MemOrderTag::Relaxed)
+              == MemOrderTag::AcqRel,
+    "FIXY-FOUND-009: MemOrderLattice's MEET gives strictest-wins under "
+    "the refinement-lattice convention (bottom=SeqCst). meet(AcqRel, "
+    "Relaxed) returns AcqRel — the stricter of the two.");
+static_assert(MemOrderLattice::meet(MemOrderTag::Release, MemOrderTag::Acquire)
+              == MemOrderTag::Release,
+    "FIXY-FOUND-009: chain meet(Release, Acquire) = Release (the lower-"
+    "ordinal in this linearized chain).  This linearization is a "
+    "modeling choice — the natural memory-order partial order makes "
+    "Acquire ∥ Release incomparable; this chain admits a single result.");
+static_assert(MemOrderLattice::join(MemOrderTag::Release, MemOrderTag::Acquire)
+              == MemOrderTag::Acquire,
+    "FIXY-FOUND-009: chain JOIN(Release, Acquire) = Acquire (the higher-"
+    "ordinal = WEAKER under refinement-lattice convention).  Consumers "
+    "wanting strictest-wins must call MEET, not JOIN — direct contradiction "
+    "of the cross-tree Tier-S 'par=join, strictest-wins' contract.  See "
+    "FOUND-076 for the audit-sweep that normalizes the convention.");
 
 // Diagnostic names.
 static_assert(MemOrderLattice::name() == "MemOrderLattice");
