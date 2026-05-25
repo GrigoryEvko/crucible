@@ -33,6 +33,7 @@
 
 #include <array>
 #include <cstdint>
+#include <meta>            // FIXY-FOUND-134: reflection-driven rule_bijection fold
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -2817,44 +2818,36 @@ static_assert(std::is_same_v<
     collision::I002_ClassifiedFailPayload>);
 static_assert(collision::rule_code_of_v<collision::I002_ClassifiedFailPayload>
               == collision::RuleCode::I002);
-static_assert(collision::rule_bijection_v<collision::RuleCode::I002>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::L002>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::E044>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::I003>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::M012>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::P002>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::I004>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::N002>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::L003>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::M011>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::S010>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::S011>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::L004>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::B001>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::H001>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::H002>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::L005>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::F001>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::H003>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::F002>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::W001>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::W002>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::F101>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::F102>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::F103>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::F104>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::F105>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::M001>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::C001>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::D001>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::D002>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::G001>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::L006>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::P003>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::S001>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::S004>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::V401>);
-static_assert(collision::rule_bijection_v<collision::RuleCode::V402>);
+// FIXY-FOUND-134: replaces 38 hand-maintained per-rule static_asserts with
+// a Pattern B reflection fold that iterates `enumerators_of(^^RuleCode)` and
+// instantiates `rule_bijection_v<E>` for every non-sentinel enumerator.
+// Auto-extends to new RuleCode atoms on append; closes FIXY-FOUND-075
+// (the 9 codes G002 / V001 / V002 / V101 / V102 / V201 / V202 / V203 / V301
+// shipped with `rule_tag` + `rule_code_of` specializations but no bijection
+// assertion).  Mirrors the effects::is_observable Pattern B from FOUND-133.
+consteval bool every_rule_code_has_bijection_() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^collision::RuleCode));
+    bool result = true;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        constexpr collision::RuleCode code = [:en:];
+        // RuleCode::None is the "no violation" sentinel — no rule_tag
+        // specialization exists for it (intentional; the inverse map
+        // would have no payload).  Skip; every other code MUST bijct.
+        if constexpr (code != collision::RuleCode::None) {
+            result = result && collision::rule_bijection_v<code>;
+        }
+    }
+#pragma GCC diagnostic pop
+    return result;
+}
+static_assert(every_rule_code_has_bijection_(),
+    "FIXY-FOUND-134: every RuleCode enumerator (excluding None) must satisfy "
+    "rule_code_of_v<rule_tag_t<C>> == C.  Adding a new RuleCode requires a "
+    "matching rule_tag + rule_code_of specialization; the reflection fold "
+    "above instantiates rule_bijection_v<C> for every catalog atom.");
 static_assert(collision::CollisionDiagnosticByRule<DefaultFn, collision::RuleCode::I002>::rule_code()
               == std::string_view{"I002"});
 static_assert(collision::CollisionDiagnostic<DefaultFn>::category()
