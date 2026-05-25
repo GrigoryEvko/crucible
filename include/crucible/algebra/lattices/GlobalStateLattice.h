@@ -212,6 +212,40 @@ static_assert(GlobalStateLattice::join(GlobalState::Stateless, GlobalState::Cons
 static_assert(GlobalStateLattice::meet(GlobalState::InitOrderHazard, GlobalState::ConstGlobal)
               == GlobalState::ConstGlobal);
 
+// ── FIXY-FOUND-076 audit pin: cross-tree convention alignment ────────
+//
+// AUDIT RESULT for GlobalStateLattice (2026-05-25): ALIGNED.
+//   * chain direction: Stateless (bottom, lowest hazard) → ConstGlobal
+//     → MutableGlobal → InitOrderHazard (top, highest hazard)
+//   * join(low, high) returns high (InitOrderHazard absorbs in join)
+//   * meet(low, high) returns low (Stateless absorbs in meet)
+//   * cross-tree reading: "par=join, strictest-wins" ✓ where
+//     "strictest" = hazardier = top.  Composition reading: a region
+//     containing ANY init-order-hazard function inherits the hazard.
+//
+// Consumers wanting strictest-wins composition can call JOIN directly
+// on this lattice — same convention as BarrierStrengthLattice; UNLIKE
+// MemOrder/HwInstruction/StackUse which require MEET for strictest-wins
+// (FOUND-009/010/076).
+//
+// Polarity-witness pin: a refactor inverting the chain (so Stateless
+// moves to top) would red THIS assert in lockstep with the cross-lattice
+// audit.
+static_assert(GlobalStateLattice::join(GlobalState::Stateless,
+                                       GlobalState::InitOrderHazard)
+              == GlobalState::InitOrderHazard,
+    "FIXY-FOUND-076: GlobalStateLattice's JOIN gives strictest-wins "
+    "under the natural-hazard convention (top=InitOrderHazard). "
+    "join(Stateless, InitOrderHazard) returns InitOrderHazard — the "
+    "hazardier value dominates.  Cross-tree 'par=join, strictest-wins' "
+    "contract holds; consumers can call JOIN directly here.");
+static_assert(GlobalStateLattice::meet(GlobalState::Stateless,
+                                       GlobalState::InitOrderHazard)
+              == GlobalState::Stateless,
+    "FIXY-FOUND-076: GlobalStateLattice's MEET gives lowest-hazard-"
+    "floor (bottom=Stateless).  Admission gates wanting a 'no global "
+    "state' minimum MUST call MEET — Stateless absorbs in meet.");
+
 static_assert(std::is_empty_v<GlobalStateLattice::At<GlobalState::Stateless>::element_type>);
 static_assert(std::is_empty_v<GlobalStateLattice::At<GlobalState::ConstGlobal>::element_type>);
 static_assert(std::is_empty_v<GlobalStateLattice::At<GlobalState::MutableGlobal>::element_type>);
