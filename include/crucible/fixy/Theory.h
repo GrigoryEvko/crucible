@@ -5,13 +5,14 @@
 // Per misc/16_05_2026_fixy.md §4.  This is the LOAD-BEARING
 // reject-by-default surface that closes
 // the FX §30.14 type-theory unsoundness corpus.  Currently ships
-// NINE entries — classified_io_without_declassify,
+// TEN entries — classified_io_without_declassify,
 // classified_bg_without_declassify, staleness_secret_without_declassify,
 // ghost_runtime_observable, internal_io_without_declassify,
 // internal_bg_without_declassify, (FOUND-019)
 // external_to_verified_without_attest, (FOUND-020)
-// secret_unbounded_termination_channel, and (FOUND-022)
-// secret_payload_without_security_claim — each pairs:
+// secret_unbounded_termination_channel, (FOUND-022)
+// secret_payload_without_security_claim, and (FOUND-024)
+// secret_catastrophic_staleness — each pairs:
 //
 //   (a) a named pattern detector — a constexpr predicate over
 //       (Type, Grants...) that returns true iff the binding matches
@@ -287,6 +288,21 @@ enum class DischargeAxis : std::uint32_t {
     // Secret engagement" until such a policy ships.  Held to the
     // Hunt-Sands safe-default: silence requires axis-matched authority.
     Termination = 1u << 5,  // reserved — FOUND-020 / Askarov-Hunt 2008
+    // FOUND-024: CatastrophicReplay — reserved bit for a future
+    // secret_policy::AuthorizedCatastrophicReplay (or equivalent)
+    // that admits Secret + stale_to<N> for catastrophically large
+    // N.  AuthorizedReplay discharges Staleness only (any N), but a
+    // catastrophic window (N >= kStaleToCatastrophic, currently
+    // 1024 — over a thousand generations of replay) carries
+    // qualitatively different risk than a small window and is held
+    // to a stricter discharge policy.  Entry 10 (secret_catastrophic
+    // _staleness) fires on Secret + stale_to<N>(N >= threshold) +
+    // !CatastrophicReplay-discharge.  No policy ships this bit yet;
+    // remediation reduces to "lower the stale_to N below the
+    // catastrophic threshold" or "drop Secret engagement" until a
+    // policy lifts the bit.  Gradient-soft staleness policy per
+    // FOUND-024 premise.
+    CatastrophicReplay = 1u << 6,  // reserved — FOUND-024 staleness gradient
 };
 
 [[nodiscard]] constexpr DischargeAxis
@@ -556,6 +572,97 @@ template <typename G> struct is_stale_grant
 template <auto TauMax>
 struct is_stale_grant<grant::stale_to<TauMax>>
     : std::true_type {};
+
+// ── FIXY-FOUND-024: magnitude-aware stale_to predicate ─────────────
+//
+// `is_stale_grant<G>` is a binary detector — it answers "is G a
+// stale_to<N> for any N?" but the magnitude of N is structurally
+// invisible.  Entry 4 (staleness_secret_without_declassify) treats
+// stale_to<5> and stale_to<10000> as semantically equivalent: both
+// fire the matcher, both silence on AuthorizedReplay.  This opacity
+// hides the qualitative difference between "the value is one
+// generation old" (mild replay surface) and "the value is ten
+// thousand generations old" (catastrophic replay surface).
+//
+// The closure: an NTTP-capturing extractor `stale_to_value<G>` that
+// surfaces TauMax at the type level, and a fold helper
+// `any_stale_to_at_least<Threshold, Grants...>()` that filters by
+// magnitude.  Entry 10 (secret_catastrophic_staleness) uses these
+// to add a second-tier reject for catastrophic windows that
+// requires a stricter discharge policy (DischargeAxis::Catastrophic
+// Replay) than AuthorizedReplay carries.
+//
+// `stale_to_value<G>::value` — uint64_t-canonicalized TauMax if G
+// is `grant::stale_to<N>`, otherwise 0 (the sentinel for "not a
+// stale_to grant").  uint64_t canonicalization handles the
+// heterogeneous-NTTP-type case (stale_to<5> uses int 5, stale_to
+// <5ULL> uses unsigned long long) so the threshold predicate
+// compares apples-to-apples.
+
+template <typename G>
+struct stale_to_value {
+    static constexpr std::uint64_t value = 0;
+};
+template <auto N>
+struct stale_to_value<grant::stale_to<N>> {
+    static constexpr std::uint64_t value = static_cast<std::uint64_t>(N);
+};
+
+// `any_stale_to_at_least<Threshold, Grants...>()` — fold-OR over
+// the grant pack, returns true iff any G in Grants is a
+// `grant::stale_to<N>` whose N (canonicalized to uint64_t) is at
+// least `Threshold`.  Empty pack returns false (no stale claim →
+// no catastrophic claim).
+template <std::uint64_t Threshold, typename... Grants>
+[[nodiscard]] consteval bool
+any_stale_to_at_least() noexcept {
+    if constexpr (sizeof...(Grants) == 0) {
+        return false;
+    } else {
+        return ((stale_to_value<Grants>::value >= Threshold) || ...);
+    }
+}
+
+// FOUND-024 threshold constant.  1024 generations is the
+// conservative default for "catastrophic" replay window — over a
+// thousand generations of stale state carries qualitatively
+// different risk (large enough to amortize replay-channel attacks
+// across many observations) than smaller windows.  Future tuning
+// per workload should override via a fixy-config mechanism (not
+// shipped); current default is a single source-of-truth audit
+// anchor.
+inline constexpr std::uint64_t kStaleToCatastrophic = 1024;
+
+// Structural witnesses — pin the canonical positive/negative cases
+// so a refactor of stale_to or the NTTP extractor reds these BEFORE
+// entry 10 silently misfires.
+static_assert(stale_to_value<grant::stale_to<5>>::value == 5u,
+    "FIXY-FOUND-024: stale_to<5> must surface TauMax = 5 via the "
+    "uint64_t canonicalization.  If this reds, grant::stale_to's "
+    "template shape changed (e.g. dropped the auto NTTP) and the "
+    "extractor specialization needs to follow.");
+static_assert(stale_to_value<grant::stale_to<10000>>::value == 10000u,
+    "FIXY-FOUND-024: stale_to<10000> must surface TauMax = 10000 "
+    "(canonical large-window witness for entry 10).");
+static_assert(stale_to_value<grant::as_secret>::value == 0u,
+    "FIXY-FOUND-024: non-stale_to grants must surface 0 (the "
+    "sentinel for 'no stale claim') — Security-axis grants must "
+    "NOT leak into the staleness-magnitude predicate.");
+static_assert(any_stale_to_at_least<kStaleToCatastrophic,
+              grant::stale_to<5000>>(),
+    "FIXY-FOUND-024: stale_to<5000> exceeds the catastrophic "
+    "threshold (1024) and must trigger entry 10's magnitude-aware "
+    "reject.");
+static_assert(!any_stale_to_at_least<kStaleToCatastrophic,
+              grant::stale_to<100>>(),
+    "FIXY-FOUND-024: stale_to<100> is below the catastrophic "
+    "threshold (1024) and must NOT trigger entry 10 — small "
+    "windows route through entry 4 with normal AuthorizedReplay "
+    "discharge.");
+static_assert(!any_stale_to_at_least<kStaleToCatastrophic>(),
+    "FIXY-FOUND-024: empty grant pack must return false from the "
+    "magnitude predicate (no stale claim implies no catastrophic "
+    "claim).");
 
 // `is_ghost_grant<G>` — true iff G is the `grant::ghost` Usage tag
 // (Usage = Ghost).  Used by the `ghost_runtime_observable` corpus
@@ -1701,6 +1808,125 @@ struct secret_unbounded_termination_channel {
 // developer to make the type-level / wrapper-level discrepancy
 // EXPLICIT rather than silent.
 
+// ── Entry 10: secret_catastrophic_staleness ────────────────────────
+//
+// FIXY-FOUND-024: pre-024 the §30.14 corpus matched stale_to<N>
+// regardless of N's magnitude — stale_to<5> and stale_to<10000>
+// both fired entry 4 (staleness_secret_without_declassify) and both
+// silenced on declassify<AuthorizedReplay>.  This binary treatment
+// obscured the qualitative difference between mild replay windows
+// (acceptable under AuthorizedReplay) and catastrophic windows
+// (over a thousand generations of replay surface, which carries
+// qualitatively different risk).  Entry 10 closes the gradient via
+// the FOUND-024 magnitude predicate.
+//
+// Pattern: secret engagement (via is_secret_grant Grants OR
+// is_secret_type<Type> per FOUND-022 strengthening) +
+// any_stale_to_at_least<kStaleToCatastrophic, Grants...>() (TauMax
+// >= 1024) + no declassify<Policy> whose axes_discharged_of covers
+// DischargeAxis::CatastrophicReplay (which AuthorizedReplay does
+// NOT lift — see CatastrophicReplay reservation in DischargeAxis
+// enum).
+//
+// Cite: Askarov-Hunt-Sabelfeld-Sands 2008 ESORICS — the replay
+// channel formalization is structurally equivalent to the
+// termination channel: an observer of repeated executions extracts
+// arbitrarily many bits of a Secret by exploiting the replay
+// surface.  Window magnitude matters because a larger window
+// admits more observations per attack iteration, accelerating the
+// extraction.  Sabelfeld-Sands 2009 "Declassification: Dimensions
+// and Principles" supports the gradient-soft policy: the "when"
+// dimension (temporal authorization) can have multiple
+// authorization tiers — a small replay window is authorizable by
+// AuthorizedReplay; a catastrophic window requires a stricter
+// policy that this corpus reserves the discharge bit for.
+//
+// Remediation: (a) lower the stale_to<N> grant to N < 1024 (the
+// kStaleToCatastrophic threshold), routing through entry 4's
+// normal AuthorizedReplay discharge path, OR (b) drop the Secret
+// engagement (project Security to as_public / as_unclassified —
+// note this still fires entry 9 per FOUND-022 raw-declassification
+// guard), OR (c) declassify<Policy> where Policy's
+// axes_discharged_of lifts DischargeAxis::CatastrophicReplay (no
+// such policy currently ships — Termination-style reservation per
+// Hunt-Sands safe-default).  The threshold (1024 generations) is a
+// conservative default per FOUND-024 doc-block and future tuning
+// should override via fixy-config (not yet shipped).
+
+struct secret_catastrophic_staleness {
+    template <typename Type, typename... Grants>
+    [[nodiscard]] static consteval bool matches() noexcept {
+        // FOUND-022 strengthening: type-level Secret<T> AND
+        // grant-level secrecy claim both count as engagement.
+        const bool has_secret =
+            detail::has_grant_of<detail::is_secret_grant, Grants...>()
+            || detail::is_secret_type<Type>::value;
+        // FOUND-024 magnitude predicate: catastrophic window
+        // (TauMax >= 1024) AT THE TYPE LEVEL.
+        const bool has_catastrophic_stale =
+            detail::any_stale_to_at_least<
+                detail::kStaleToCatastrophic, Grants...>();
+        // FOUND-024 discharge: AuthorizedReplay lifts Staleness but
+        // NOT CatastrophicReplay; entry 10 requires the latter.
+        const bool has_catastrophic_discharge =
+            detail::has_declassify_for_axis<
+                detail::DischargeAxis::CatastrophicReplay,
+                Grants...>();
+        return has_secret && has_catastrophic_stale &&
+               !has_catastrophic_discharge;
+    }
+
+    static constexpr std::string_view name() noexcept {
+        return "secret_catastrophic_staleness";
+    }
+
+    static constexpr std::string_view cite() noexcept {
+        return "Askarov-Hunt-Sabelfeld-Sands 2008 'Termination-"
+               "Insensitive Noninterference Leaks More Than Just a "
+               "Bit' (ESORICS) — PRIMARY: the replay channel "
+               "formalization is structurally equivalent to the "
+               "termination channel.  An observer of repeated "
+               "executions extracts arbitrarily many bits of a "
+               "Secret by exploiting the replay surface, and the "
+               "extraction rate scales with the replay window "
+               "magnitude.  A catastrophic window (N >= 1024 "
+               "generations of stale replay) carries qualitatively "
+               "different attack-amortization risk than a mild "
+               "window (N < 1024) and is held to a stricter "
+               "discharge policy.  Supporting: Sabelfeld-Sands "
+               "2009 'Declassification: Dimensions and Principles' "
+               "(J. Computer Security) — the 'when' dimension "
+               "(temporal authorization) admits a graded policy "
+               "structure; AuthorizedReplay authorizes mild "
+               "windows (any N via Staleness axis), but a "
+               "catastrophic window requires a stronger policy "
+               "(DischargeAxis::CatastrophicReplay, reserved here, "
+               "no shipping policy lifts it yet).  Remediation: (a) "
+               "lower stale_to<N> to N < 1024 (route through entry "
+               "4's normal AuthorizedReplay discharge), (b) drop "
+               "the Secret engagement (note: as_public still fires "
+               "entry 9 per FOUND-022 raw-declassification guard), "
+               "OR (c) future declassify<Policy> with "
+               "axes_discharged_of covering CatastrophicReplay.";
+    }
+
+    // fixy-A4-029: see classified_io_without_declassify::full_diagnostic.
+    static constexpr std::string_view full_diagnostic() noexcept {
+        static constexpr std::string_view storage =
+            []() consteval -> std::string_view {
+                std::string msg;
+                msg += "fixy::fn<Type, Grants...> [tier 5: "
+                       "NotInTheoryCorpus]: binding matches §30.14 "
+                       "unsoundness corpus entry: ";
+                msg.append(name().data(), name().size());
+                msg += ".  ";
+                msg.append(cite().data(), cite().size());
+                return std::define_static_string(msg);
+            }();
+        return storage;
+    }
+};
+
 struct secret_payload_without_security_claim {
     template <typename Type, typename... Grants>
     [[nodiscard]] static consteval bool matches() noexcept {
@@ -1806,7 +2032,8 @@ using CorpusEntries = std::tuple<
     corpus::internal_bg_without_declassify,
     corpus::external_to_verified_without_attest,        // FOUND-019 Biba/Clark-Wilson integrity dual
     corpus::secret_unbounded_termination_channel,       // FOUND-020 Askarov-Hunt termination channel
-    corpus::secret_payload_without_security_claim       // FOUND-022 payload-classification opacity closure
+    corpus::secret_payload_without_security_claim,      // FOUND-022 payload-classification opacity closure
+    corpus::secret_catastrophic_staleness               // FOUND-024 staleness magnitude gradient
 >;
 
 // Fold over CorpusEntries, returning Extractor(Entry) for the first
@@ -1884,7 +2111,7 @@ inline constexpr bool IsInUnsoundnessCorpus_v =
 // 5-step PR shape lives in the Discipline block at the top of this
 // header.
 
-inline constexpr std::size_t corpus_size_v = 9;
+inline constexpr std::size_t corpus_size_v = 10;
 
 namespace detail::corpus_size_sentinel {
 
@@ -1931,6 +2158,9 @@ inline constexpr std::array kRoster = {
     entry_witness{corpus::secret_payload_without_security_claim::name(),
                   corpus::secret_payload_without_security_claim::cite(),
                   corpus::secret_payload_without_security_claim::full_diagnostic()},
+    entry_witness{corpus::secret_catastrophic_staleness::name(),
+                  corpus::secret_catastrophic_staleness::cite(),
+                  corpus::secret_catastrophic_staleness::full_diagnostic()},
 };
 static_assert(kRoster.size() == corpus_size_v,
     "fixy-L-09/L-10: corpus_size_v drifted from the actual entry "
