@@ -7165,6 +7165,19 @@ crucible_neg_compile_test(neg_collision_H003_hotpath_alloc_unbounded
 # dropping either Effect-row check reds the build.
 crucible_neg_compile_test(neg_collision_H003_hotpath_io_unbounded
   "H003")
+# FIXY-FOUND-069 sub-HS14 closure for H003: structural-tier fixture
+# complements the two marker-tier fixtures above.  H003_OK reads
+# `is_hot_path_v<F>` — the FOUND-067 OR-fold over marks_hot_path
+# specialization PLUS structural HotPath<Hot, T> wrapper detection.
+# The two shipped fixtures exercise the marker-tier path through
+# both Alloc and IO OR-arms; this companion exercises the structural-
+# tier path via payload = HotPath<Hot, int> + Row<Alloc> + cost::
+# Unbounded + NO marker.  All three rule-firing axes (tier, OR-arm,
+# cost) covered: tier now has both arms (marker + structural), OR-
+# arm has both Alloc and IO (marker-tier), cost::Unbounded is a
+# single point.  Fifth FOUND-067-family rule graduated.
+crucible_neg_compile_test(neg_collision_H003_structural_hotpath_wrapper
+  "H003")
 crucible_neg_compile_test(neg_collision_F002_federation_peer_unbounded
   "F002")
 
