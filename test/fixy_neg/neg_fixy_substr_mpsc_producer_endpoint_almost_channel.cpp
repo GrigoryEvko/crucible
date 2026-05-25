@@ -43,8 +43,13 @@ struct AlmostMpscChannel {
     };
 
     // NOTE: deliberately MISSING `.producer()` — concept fails here.
+    // The hand-rolled "almost channel" must mirror the real
+    // PermissionedMpscChannel consumer() signature so the
+    // MpscChannelSessionSurface concept passes the six typedef checks and
+    // rejects ONLY on the missing producer() method — the substrate
+    // spelling IS the shape under test, not production code.
     ConsumerHandle consumer(
-        ::crucible::safety::Permission<ConsumerTag>&&) {
+        ::crucible::safety::Permission<ConsumerTag>&&) {  // FIXY-DISCIPLINE-OK: neg-fixture mirrors real channel consumer() signature
         return ConsumerHandle{};
     }
 };
