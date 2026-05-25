@@ -232,6 +232,44 @@ public:
     // Static (the current row R is irrelevant to the result type).
     // Explicit `IsEffect<Cap>` requires-clause rejects template typos
     // at substitution time, not at use site.
+    //
+    // ── FIXY-FOUND-014 band-3 closure (2026-05-25) ────────────────────
+    //
+    // `lift<Cap>(x)` is the SECOND of two forging surfaces V-219
+    // identified.  The FIRST (weaken-from-empty) is closed at
+    // `weaken<R2>` by the `(row_size_v<R> > 0 || row_size_v<R2> == 0)`
+    // guard.  THIS surface remains OPEN at the type level:
+    //
+    //     Computation<Row<>, int>::lift<Effect::IO>(42)
+    //   // ↑ compiles, yields Computation<Row<IO>, int>
+    //   // ↑ NO PROOF the production of `42` exercised IO
+    //
+    // The caller declares an effect at the lift site; the type system
+    // trusts the declaration without provenance.  This is symmetric
+    // with `then`'s callback-honesty hole (FIXY-FOUND-108, closed by
+    // banning engaged-Computation payloads via `extract_admits_payload_v`)
+    // and `extract`'s laundering hole (FIXY-FOUND-107, closed by the
+    // same trait).  Lift's hole is structural — there is NO type-level
+    // axis available on a raw T that proves "this value's production
+    // exercised Cap."  The honesty discipline is reviewer-policed.
+    //
+    // The companion concept `fixy::effect::RowEngagementWitnessed<C>`
+    // surfaces the resulting type-level engagement claim at band-3
+    // (see fixy/Effect.h:172).  When a future audit lands the
+    // RIGOROUS closure shape — a ctx-witnessed `lift_in<Cap>(Ctx const&, T)`
+    // overload that gates on `row_contains_v<Ctx::row_type, Cap>` —
+    // the unwitnessed form here moves to a deprecation shim, the
+    // sibling concept `RowEngagementProvenancePinned<C>` lands per
+    // fixy/Effect.h:139-144, and production-Forge call sites migrate.
+    //
+    // Cycle-budget note: the witnessed-form overload requires pulling
+    // ExecCtx.h into Computation.h's hot-path include set and
+    // updating the 10 in-file smoke-test call sites.  That is the
+    // follow-up ship (next FOUND-014 cycle).  Today's ship is the
+    // loud audit-conclusion documentation here + the static_assert
+    // sentinel below proving the forge IS structurally possible —
+    // i.e., the open-hole status is structurally documented at the
+    // call-site source, not just in the ticket text.
     template <Effect Cap>
         requires IsEffect<Cap>
     [[nodiscard]] static constexpr auto lift(T x)
@@ -746,6 +784,109 @@ static_assert(
     "be laundered past the outer row_union.");
 
 }  // namespace fixy_found_108
+
+// ── FIXY-FOUND-014: lift<Cap> band-3 forge-status sentinel ─────────
+//
+// Lift's open hole (per the audit-conclusion doc-block at the
+// `lift<Cap>` declaration, ~line 240) is DEMONSTRATED here as a
+// structural fact rather than just narrative.  The point of this
+// sentinel: a future reader sees the forge IS structurally possible
+// at the type level, the `RowEngagementWitnessed<C>` band-3 concept
+// in fixy/Effect.h:172 surfaces the resulting claim, and the
+// rigorous closure (ctx-witnessed `lift_in<Cap>(Ctx const&, T)`)
+// is the documented follow-up shape.
+//
+// "Forge" here is shorthand for "the type system grants the
+// caller's effect claim without provenance" — symmetric with the
+// weaken-from-empty forge V-219 closed (which IS structurally
+// impossible now) and the then/extract laundering forges
+// FIXY-FOUND-107/108 closed via `extract_admits_payload_v`.
+//
+// What 014 ships TODAY:
+//   * (1) Source-level audit-conclusion doc-block at the lift
+//         declaration making the forgeability LOUD;
+//   * (2) The static_asserts below proving the forge IS possible
+//         (positive demonstration of the open hole, NOT a bug —
+//         the regression we'd catch is the lift becoming gate-
+//         less-DIFFERENTLY, e.g. accepting non-Effect Cap values);
+//   * (3) Forward-pointer to `RowEngagementProvenancePinned<C>`
+//         per fixy/Effect.h:139-144 for the rigorous closure.
+//
+// What 014 DEFERS to a follow-up cycle (cycle-fit constraint):
+//   * (a) Ctx-witnessed `lift_in<Cap, Ctx>(Ctx const&, T)` overload
+//         gating on `row_contains_v<Ctx::row_type, Cap>` — requires
+//         adding ExecCtx.h to Computation.h's hot-path include set
+//         + updating the 10 in-file smoke-test call sites;
+//   * (b) Production-side `RowEngagementProvenancePinned<C>` sibling
+//         concept landing in fixy/Effect.h next to its band-3 peer;
+//   * (c) The bare `lift<Cap>(x)` form gets deprecation-shim status.
+//
+// The CTX-WITNESSED shape is the right structural closure: a
+// caller in a Bg-context (i.e., `ExecCtx<Bg, ...>{}`) CAN claim
+// Bg-effect, but a caller in a fg / Init / Test context with
+// `row_type == Row<>` (or `Row<X>` for X != Bg) CANNOT.  The
+// substitution principle still works: lift<Cap>(x) gives Row<Cap>
+// at the type level — provenance is added as a SEPARATE gate, not
+// a Row<> shrinkage.
+
+namespace fixy_found_014 {
+
+// Demonstration that lift<Cap>(x) accepts ANY value at ANY
+// IsEffect Cap — the open forge surface.  This is NOT a regression
+// guard saying "the forge SHOULD be impossible"; this IS the
+// audit-finding witnessed as structural fact.  The witness pins
+// the SURFACE so a future contraction (e.g. requiring a cap-token
+// to invoke lift) would red this fixture and force a documented
+// migration.
+
+// Plain int → Computation<Row<Bg>, int>; no Bg-effecting code
+// ever ran during the production of `42`, the claim is naked.
+static_assert(
+    std::is_same_v<
+        decltype(Computation<Row<>, int>::lift<Effect::Bg>(42)),
+        Computation<Row<Effect::Bg>, int>>,
+    "FIXY-FOUND-014 SURFACE: lift<Bg>(pure int) yields engaged Row<Bg>. "
+    "This static_assert PASSING is the documented open-hole status. "
+    "When the rigorous ctx-witnessed closure lands (lift_in<Cap,Ctx>), "
+    "this sentinel is the migration anchor.");
+
+// Same forge with IO; structural — not Bg-specific.
+static_assert(
+    std::is_same_v<
+        decltype(Computation<Row<>, int>::lift<Effect::IO>(7)),
+        Computation<Row<Effect::IO>, int>>,
+    "FIXY-FOUND-014 SURFACE: lift<IO>(pure int) yields engaged Row<IO>. "
+    "Same open-hole status as the Bg case above.");
+
+// Demonstration that the GATE that IS in place — `IsEffect<Cap>` —
+// correctly admits every legitimate Effect enumerator.  This pins
+// the gate that EXISTS today; pairs with the static_asserts above
+// showing the gate ADMITS for Bg / IO — the only Cap values lift
+// is meant to accept.  The negative "lift<not-an-Effect>" case is
+// covered by the IsEffect concept's own audit harness
+// (test_effects.cpp) — pinning it again here would require a
+// SFINAE detector that's brittle across GCC versions for static
+// member templates.
+static_assert(
+    IsEffect<Effect::Bg>  && IsEffect<Effect::IO>
+ && IsEffect<Effect::Alloc> && IsEffect<Effect::Block>,
+    "FIXY-FOUND-014: lift<Cap>'s `IsEffect<Cap>` gate must accept "
+    "every documented Effect enumerator.  If this reds, IsEffect "
+    "stopped recognising a core Effect atom — investigate "
+    "Capabilities.h:IsEffect before chasing lift call-site errors.");
+
+// And: row arithmetic remains honest.  `effect_count_in_row()` on
+// the lift result reports 1 — i.e., the lift's row claim is
+// type-visible.  Companion to FOUND-051 (effect_count pinning).
+static_assert(
+    decltype(Computation<Row<>, int>::lift<Effect::Bg>(0))
+        ::effect_count_in_row() == 1u,
+    "FIXY-FOUND-014: lift<Cap> result has effect_count_in_row()==1. "
+    "The forged claim IS type-visible to RowEngagementWitnessed band-3 "
+    "consumers (fixy/Effect.h:172) — provenance is what's missing, "
+    "not the engagement claim itself.");
+
+}  // namespace fixy_found_014
 
 // extract() rvalue overload moves; correctness checked by replicating
 // the value with a move-only-equivalent payload (int suffices for
