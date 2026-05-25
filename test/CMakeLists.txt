@@ -7262,6 +7262,18 @@ crucible_neg_compile_test(neg_collision_P010_ghost_io
 # Bg-row axis.
 crucible_neg_compile_test(neg_collision_L007_borrow_bg_row
   "L007")
+# FIXY-FOUND-069 sub-HS14 closure for L007: marker-tier fixture
+# complements the usage-tier fixture above.  L007's has_borrow_capture_v
+# is a 3-way OR (Usage::Borrow || is_borrowed_carrier<type_t> ||
+# marks_borrow_capture).  The shipped fixture exercises the USAGE arm;
+# this companion exercises the MARKER arm via Linear usage + bare-int
+# payload + marks_borrow_capture specialization.  Carrier-tier arm
+# (Borrowed wrapper on type_t) remains as future sub-HS14 follow-up.
+# Defends against a refactor dropping the marker-tier read from the
+# 3-way OR, which would silently let downstream borrow-capture adapters
+# slip past L007.
+crucible_neg_compile_test(neg_collision_L007_borrow_bg_row_marker
+  "L007")
 
 # ─── FIXY-FOUND-066 CollisionCatalog L005 / F001 pack-level neg-compiles ─
 #
