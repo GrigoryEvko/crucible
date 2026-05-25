@@ -3866,6 +3866,8 @@ crucible_neg_compile_effects_test(neg_capability_mint_from_fg_ctx
 # the §XXI surface inherits the gate at substitution.
 crucible_neg_compile_effects_test(neg_mint_computation_non_pure_row
     "associated constraints are not satisfied|row_size_v|mint_computation")
+crucible_neg_compile_effects_test(neg_mint_computation_io_row
+    "associated constraints are not satisfied|row_size_v|mint_computation")
 crucible_neg_compile_effects_test(neg_mint_computation_in_ctx_unfit_row
     "associated constraints are not satisfied|row_contains_v|mint_computation_in_ctx")
 crucible_neg_compile_effects_test(neg_capability_cap_matches_ctx

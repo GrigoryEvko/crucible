@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-25T14:44:45Z`.
+Snapshot generated: `2026-05-25T14:48:42Z`.
 
 ## bridges/
 
@@ -71,7 +71,7 @@ Snapshot generated: `2026-05-25T14:44:45Z`.
 |---|---|---|---|---|---|---|---|---|
 | `mint_bg_context` | `include/crucible/effects/Capabilities.h:705` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:207` | HS14: 4 |
 | `mint_cap` | `include/crucible/effects/Capability.h:247` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:17` | HS14: 11 |
-| `mint_computation` | `include/crucible/effects/Computation.h:213` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_computation` | `include/crucible/effects/Computation.h:213` | Y | Y | Y | Y | token | [✗ NO-FIXY] | HS14: 2 |
 | `mint_computation_in_ctx` | `include/crucible/effects/Computation.h:371` | Y | Y | Y | Y | ctx | [✗ NO-FIXY] | HS14: 2 |
 | `mint_from_ctx` | `include/crucible/effects/Capability.h:319` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Cap.h:18` | HS14: 3 |
 | `mint_init_context` | `include/crucible/effects/Capabilities.h:715` | Y | Y | Y | Y | token | `include/crucible/fixy/Cap.h:207` | HS14: 5 |
