@@ -84,6 +84,7 @@ crucible_property_fuzzer(prop_trace_ring_spsc)
 crucible_property_fuzzer(prop_saturate_math_invariants)
 crucible_property_fuzzer(prop_guard_hash_invariants)
 crucible_property_fuzzer(prop_integrity_xxhash)
+crucible_property_fuzzer(prop_hdr_histogram_buckets)
 
 # ── Boundary fuzzers (adversarial input) ───────────────────────
 
