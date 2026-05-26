@@ -151,6 +151,7 @@
 #include <crucible/safety/JoinPolicy.h>      // canonical Tier-S (thread-join band)
 #include <crucible/safety/CallShape.h>       // canonical Tier-S (call-shape effect surface)
 #include <crucible/safety/ControlFlow.h>     // canonical Tier-S (control-flow effect surface)
+#include <crucible/safety/GlobalState.h>     // canonical Tier-S (global-state effect surface)
 #include <crucible/safety/SuspendBehavior.h>  // canonical Tier-S (suspend-behavior band)
 #include <crucible/safety/SimdWidthPinned.h>  // canonical Tier-S (SIMD-ISA band)
 #include <crucible/safety/Tagged.h>
@@ -500,6 +501,16 @@ using ::crucible::safety::ControlFlow;        // axis enum (bare name, no _v)
 using ::crucible::safety::ControlFlowLattice;
 using ::crucible::safety::ControlFlowPinned;  // wrapper class
 using ::crucible::safety::mint_control_flow;
+
+// GlobalStatePinned<Tier, T> — global/static-state-interaction band.
+// Absolute modality over GlobalStateLattice (Stateless ⊑ ConstGlobal
+// ⊑ MutableGlobal ⊑ InitOrderHazard); companion §XXI factory
+// `mint_global_state<Tier, T>(args...)`.  Pick a tier inline as
+// `GlobalStatePinned<GlobalState::ConstGlobal, T>`.
+using ::crucible::safety::GlobalState;        // axis enum (bare name, no _v)
+using ::crucible::safety::GlobalStateLattice;
+using ::crucible::safety::GlobalStatePinned;  // wrapper class
+using ::crucible::safety::mint_global_state;
 
 // ─── Structural wrappers (deliberately not Graded) ────────────────
 // Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
@@ -1412,6 +1423,25 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_control_flow<
         ::crucible::safety::ControlFlow::AbortOnly, int, int>)>,
     "fixy::wrap::mint_control_flow must alias safety::mint_control_flow.");
+
+// GlobalStatePinned<GlobalState, T> base-type identity — Tier-S
+// effect-surface band re-export (this commit).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::GlobalStatePinned<
+        ::crucible::fixy::wrap::GlobalState::ConstGlobal, int>,
+    ::crucible::safety::GlobalStatePinned<
+        ::crucible::safety::GlobalState::ConstGlobal, int>>,
+    "fixy::wrap::GlobalStatePinned must alias safety::GlobalStatePinned.");
+
+// mint_global_state §XXI factory reach via qualified-id decltype
+// identity — same pattern as mint_call_shape.  Closes the
+// mint_global_state `[✗ NO-FIXY]` inventory marker.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_global_state<
+        ::crucible::fixy::wrap::GlobalState::ConstGlobal, int, int>),
+    decltype(&::crucible::safety::mint_global_state<
+        ::crucible::safety::GlobalState::ConstGlobal, int, int>)>,
+    "fixy::wrap::mint_global_state must alias safety::mint_global_state.");
 
 // FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
 // fixy::wrap:: surface is the V-058 re-export).
