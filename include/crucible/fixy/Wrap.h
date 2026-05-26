@@ -148,6 +148,7 @@
 #include <crucible/safety/GradedExtract.h>     // FIXY-V-178: universal GradedWrapper extractors
 #include <crucible/safety/BarrierGuarded.h>   // canonical Tier-S (memory-barrier band)
 #include <crucible/safety/Hw.h>               // canonical Tier-S (hardware-instruction band)
+#include <crucible/safety/JoinPolicy.h>      // canonical Tier-S (thread-join band)
 #include <crucible/safety/SimdWidthPinned.h>  // canonical Tier-S (SIMD-ISA band)
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Path.h>             // FIXY-V-031: Path<Source> + sanitize_path
@@ -452,6 +453,15 @@ using ::crucible::safety::SimdWidthPinned;
 using ::crucible::safety::SimdIsaLattice;
 using ::crucible::safety::SimdIsa_v;
 using ::crucible::safety::mint_simd_width_pinned;
+
+// JoinPolicy<Tier, T> — thread-join-discipline band.  Absolute
+// modality over JoinPolicyLattice; companion §XXI factory
+// `mint_join_policy<Tier, T>(args...)`.  Per-tier aliases live under
+// safety:: — pick a tier inline as `JoinPolicy<JoinPolicy_v::JOIN_ALL, T>`.
+using ::crucible::safety::JoinPolicy;
+using ::crucible::safety::JoinPolicyLattice;
+using ::crucible::safety::JoinPolicy_v;
+using ::crucible::safety::mint_join_policy;
 
 // ─── Structural wrappers (deliberately not Graded) ────────────────
 // Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
@@ -1287,6 +1297,25 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_simd_width_pinned<
         ::crucible::safety::SimdIsa_v::Avx512Bw, int, int>)>,
     "fixy::wrap::mint_simd_width_pinned must alias safety::mint_simd_width_pinned.");
+
+// JoinPolicy<JoinPolicy_v, T> base-type identity — Tier-S thread-join
+// band re-export (this commit).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::JoinPolicy<
+        ::crucible::fixy::wrap::JoinPolicy_v::JOIN_ALL, int>,
+    ::crucible::safety::JoinPolicy<
+        ::crucible::safety::JoinPolicy_v::JOIN_ALL, int>>,
+    "fixy::wrap::JoinPolicy must alias safety::JoinPolicy.");
+
+// mint_join_policy §XXI factory reach via qualified-id decltype
+// identity — same pattern as mint_hw.  Closes the mint_join_policy
+// `[✗ NO-FIXY]` inventory marker.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_join_policy<
+        ::crucible::fixy::wrap::JoinPolicy_v::JOIN_ALL, int, int>),
+    decltype(&::crucible::safety::mint_join_policy<
+        ::crucible::safety::JoinPolicy_v::JOIN_ALL, int, int>)>,
+    "fixy::wrap::mint_join_policy must alias safety::mint_join_policy.");
 
 // FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
 // fixy::wrap:: surface is the V-058 re-export).
