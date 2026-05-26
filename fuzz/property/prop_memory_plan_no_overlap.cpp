@@ -30,6 +30,15 @@
 //       offsets and pool_bytes.  Same input → same plan → same
 //       addresses, the property the whole replay/reincarnation
 //       story rests on.
+//   (E) Alignment: every internal slot's offset is a multiple of
+//       the planner's 256-byte ALIGNMENT.  A compiled kernel writes
+//       to pool_base + offset; a misaligned offset faults on ISAs
+//       that require aligned vector stores and silently perf-cliffs
+//       the rest.  The planner reserves round_up(nbytes, 256) per
+//       slot and only ever places offsets at pool_end (a running
+//       multiple of 256) or at inherited/split free-block offsets
+//       (aligned by induction), so the invariant must hold for every
+//       internal slot regardless of the random liveness shape.
 //
 // A fresh BackgroundThread is constructed per iteration: its default
 // ctor spawns NO pipeline thread (start() does that), so the only
@@ -59,6 +68,12 @@ namespace {
 inline constexpr uint32_t kMaxSlots = 64;
 inline constexpr uint32_t kMaxOp = 48;
 inline constexpr uint64_t kMaxSlotBytes = 4096;
+
+// Mirrors compute_memory_plan's private `static constexpr uint32_t
+// ALIGNMENT = 256` (BackgroundThread.h).  The planner does not expose
+// it, so the fuzzer pins the coupling here; if the planner's alignment
+// ever changes, invariant (E) reds until this constant is updated.
+inline constexpr uint64_t kPlanAlignment = 256;
 
 struct SlotSpec {
     uint32_t birth = 0;       // <= death, both in [0, kMaxOp)
@@ -162,6 +177,7 @@ int main(int argc, char** argv) {
 
             // (C) Containment: internal slots fit the pool; external
             //     slots are not placed (offset stays 0).
+            // (E) Alignment: internal slot offsets are 256-aligned.
             for (uint32_t i = 0; i < num_slots; ++i) {
                 if (slots1[i].is_external) {
                     if (slots1[i].offset_bytes != 0) return false;
@@ -169,6 +185,8 @@ int main(int argc, char** argv) {
                     // offset + nbytes can't wrap: both < 2^20 by gen bounds.
                     if (slots1[i].offset_bytes + slots1[i].nbytes >
                         plan1->pool_bytes)
+                        return false;
+                    if (slots1[i].offset_bytes % kPlanAlignment != 0)
                         return false;
                 }
             }
