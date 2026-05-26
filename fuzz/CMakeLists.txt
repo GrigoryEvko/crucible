@@ -89,6 +89,7 @@ crucible_property_fuzzer(prop_sdc_tolerance)
 crucible_property_fuzzer(prop_checked_arith)
 crucible_property_fuzzer(prop_hlc_update)
 crucible_property_fuzzer(prop_vector_clock)
+crucible_property_fuzzer(prop_swim_membership)
 
 # ── Boundary fuzzers (adversarial input) ───────────────────────
 
