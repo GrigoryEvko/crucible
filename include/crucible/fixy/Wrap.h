@@ -146,6 +146,7 @@
 #include <crucible/safety/SwmrWriter.h>        // FIXY-V-036: SwmrWriter<auto FnPtr> (function-ptr shape)
 #include <crucible/safety/SignatureTraits.h>   // FIXY-V-178: signature_traits<auto FnPtr> family
 #include <crucible/safety/GradedExtract.h>     // FIXY-V-178: universal GradedWrapper extractors
+#include <crucible/safety/Hw.h>               // canonical Tier-S (hardware-instruction band)
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Path.h>             // FIXY-V-031: Path<Source> + sanitize_path
 #include <crucible/safety/TimeOrdered.h>
@@ -418,6 +419,18 @@ using TestPassed = ::crucible::safety::Witness<
 template <typename T>
 using FormallyVerified = ::crucible::safety::Witness<
     ::crucible::safety::Witness_v::FORMALLY_VERIFIED, T>;
+
+// ─── Tier-S hardware-instruction band Graded wrappers ─────────────
+// Newer than the §XVI off-tree set above (V-254 era).  Hw<Tier, T>
+// pins an instruction-capability band: Absolute modality, 5-tier
+// chain NoneAllowed ⊑ Scalar ⊑ Vectorizable ⊑ NonDeterministicTsc ⊑
+// PrivilegedMsr.  Companion §XXI factory `mint_hw<Tier, T>(args...)`;
+// per-tier aliases live under safety::hw_pin:: — pick a tier inline
+// as `Hw<HwInstruction_v::Vectorizable, T>`.
+using ::crucible::safety::Hw;
+using ::crucible::safety::HwInstructionLattice;
+using ::crucible::safety::HwInstruction_v;
+using ::crucible::safety::mint_hw;
 
 // ─── Structural wrappers (deliberately not Graded) ────────────────
 // Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
@@ -1195,6 +1208,26 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_witness<
         ::crucible::safety::Witness_v::FORMALLY_VERIFIED, int, int>)>,
     "FIXY-V-056: fixy::wrap::mint_witness must alias safety::mint_witness.");
+
+// Hw<HwInstruction_v, T> base-type identity — Tier-S hardware band
+// re-export (this commit).  Pins the fixy surface to safety::Hw.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::Hw<
+        ::crucible::fixy::wrap::HwInstruction_v::Vectorizable, int>,
+    ::crucible::safety::Hw<
+        ::crucible::safety::HwInstruction_v::Vectorizable, int>>,
+    "fixy::wrap::Hw must alias safety::Hw.");
+
+// mint_hw §XXI factory reach via qualified-id decltype identity —
+// same pattern as mint_witness / mint_affine.  Closes the mint_hw
+// `[✗ NO-FIXY]` inventory marker: a refactor of safety::mint_hw's
+// signature reds this cell at the fixy boundary.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_hw<
+        ::crucible::fixy::wrap::HwInstruction_v::Vectorizable, int, int>),
+    decltype(&::crucible::safety::mint_hw<
+        ::crucible::safety::HwInstruction_v::Vectorizable, int, int>)>,
+    "fixy::wrap::mint_hw must alias safety::mint_hw.");
 
 // FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
 // fixy::wrap:: surface is the V-058 re-export).
