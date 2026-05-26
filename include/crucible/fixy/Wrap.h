@@ -152,6 +152,7 @@
 #include <crucible/safety/CallShape.h>       // canonical Tier-S (call-shape effect surface)
 #include <crucible/safety/ControlFlow.h>     // canonical Tier-S (control-flow effect surface)
 #include <crucible/safety/GlobalState.h>     // canonical Tier-S (global-state effect surface)
+#include <crucible/safety/StackUse.h>        // canonical Tier-S (stack-use effect surface)
 #include <crucible/safety/SuspendBehavior.h>  // canonical Tier-S (suspend-behavior band)
 #include <crucible/safety/SimdWidthPinned.h>  // canonical Tier-S (SIMD-ISA band)
 #include <crucible/safety/Tagged.h>
@@ -511,6 +512,16 @@ using ::crucible::safety::GlobalState;        // axis enum (bare name, no _v)
 using ::crucible::safety::GlobalStateLattice;
 using ::crucible::safety::GlobalStatePinned;  // wrapper class
 using ::crucible::safety::mint_global_state;
+
+// StackUsePinned<Tier, T> — stack-frame-bound band.  Absolute
+// modality over StackUseLattice (ConstantFrame ⊑ BoundedByParam ⊑
+// BoundedDynamic ⊑ Unbounded); companion §XXI factory
+// `mint_stack_use<Tier, T>(args...)`.  Pick a tier inline as
+// `StackUsePinned<StackUse::BoundedByParam, T>`.
+using ::crucible::safety::StackUse;        // axis enum (bare name, no _v)
+using ::crucible::safety::StackUseLattice;
+using ::crucible::safety::StackUsePinned;  // wrapper class
+using ::crucible::safety::mint_stack_use;
 
 // ─── Structural wrappers (deliberately not Graded) ────────────────
 // Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
@@ -1442,6 +1453,25 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_global_state<
         ::crucible::safety::GlobalState::ConstGlobal, int, int>)>,
     "fixy::wrap::mint_global_state must alias safety::mint_global_state.");
+
+// StackUsePinned<StackUse, T> base-type identity — Tier-S effect-
+// surface band re-export (this commit).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::StackUsePinned<
+        ::crucible::fixy::wrap::StackUse::BoundedByParam, int>,
+    ::crucible::safety::StackUsePinned<
+        ::crucible::safety::StackUse::BoundedByParam, int>>,
+    "fixy::wrap::StackUsePinned must alias safety::StackUsePinned.");
+
+// mint_stack_use §XXI factory reach via qualified-id decltype
+// identity — same pattern as mint_call_shape.  Closes the
+// mint_stack_use `[✗ NO-FIXY]` inventory marker.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_stack_use<
+        ::crucible::fixy::wrap::StackUse::BoundedByParam, int, int>),
+    decltype(&::crucible::safety::mint_stack_use<
+        ::crucible::safety::StackUse::BoundedByParam, int, int>)>,
+    "fixy::wrap::mint_stack_use must alias safety::mint_stack_use.");
 
 // FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
 // fixy::wrap:: surface is the V-058 re-export).
