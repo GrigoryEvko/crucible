@@ -317,6 +317,67 @@ static void test_schema_name_table_corrupt_oversize_len() {
     std::printf("  test_schema_name_table_corrupt_oversize_len: PASSED\n");
 }
 
+// ── Meta-range overrun resistance ────────────────────────────────────
+//
+// load_trace builds meta_starts[i] from a running cursor over each op's
+// (num_inputs + num_outputs).  Every consumer (BackgroundThread build
+// path, vis/BlockDetector) indexes metas[meta_start + k]; if the cursor
+// runs past num_metas, those reads overrun the metas vector — a heap OOB
+// read from an untrusted .crtrace.  load_trace must reject such input so
+// the LoadedTrace it returns is always self-consistent.
+
+// Build a 1-op .crtrace with the given num_metas and op tensor counts.
+// The metas region is zero-filled (ndim=0, valid).  Returns the temp path.
+static std::string write_one_op_trace(uint32_t n_metas,
+                                      uint16_t num_inputs,
+                                      uint16_t num_outputs) {
+    std::vector<uint8_t> buf(16 + 80 + static_cast<size_t>(n_metas) * 168, 0);
+    const char magic[4] = {'C','R','T','R'};
+    const uint32_t version = 1, n_ops = 1;
+    std::memcpy(buf.data() + 0,  magic,    4);
+    std::memcpy(buf.data() + 4,  &version, 4);
+    std::memcpy(buf.data() + 8,  &n_ops,   4);
+    std::memcpy(buf.data() + 12, &n_metas, 4);
+    // Op record begins at offset 16; num_inputs @ +72, num_outputs @ +74.
+    std::memcpy(buf.data() + 16 + 72, &num_inputs,  2);
+    std::memcpy(buf.data() + 16 + 74, &num_outputs, 2);
+    return write_tmp(buf.data(), buf.size());
+}
+
+static void test_meta_overrun_rejected() {
+    // Op claims 5 tensors (3 in + 2 out) but only 2 metas exist — the
+    // running meta cursor would overrun the metas vector.  Reject.
+    std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/3, /*out=*/2);
+    auto t = load_trace(path.c_str());
+    assert(!t);
+    std::remove(path.c_str());
+    std::printf("  test_meta_overrun_rejected:     PASSED\n");
+}
+
+static void test_meta_exact_count_loads() {
+    // Op claims exactly 5 tensors and 5 metas exist — in bounds, loads.
+    std::string path = write_one_op_trace(/*n_metas=*/5, /*in=*/3, /*out=*/2);
+    auto t = load_trace(path.c_str());
+    assert(t);
+    assert(t->num_ops == 1);
+    assert(t->num_metas == 5);
+    assert(t->entries[0].num_inputs  == 3);
+    assert(t->entries[0].num_outputs == 2);
+    assert(t->meta_starts[0].raw() == 0);  // sole op starts at metas[0]
+    std::remove(path.c_str());
+    std::printf("  test_meta_exact_count_loads:    PASSED\n");
+}
+
+static void test_meta_count_uint16_overflow_rejected() {
+    // 65535 + 1 = 65536 wraps to 0 if computed in uint16; computed in
+    // uint32 it is a genuine 65536-tensor claim that overruns num_metas=2.
+    std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/65535, /*out=*/1);
+    auto t = load_trace(path.c_str());
+    assert(!t);
+    std::remove(path.c_str());
+    std::printf("  test_meta_uint16_overflow:      PASSED\n");
+}
+
 int main() {
     test_missing_file();
     test_empty_file();
@@ -330,6 +391,9 @@ int main() {
     test_schema_name_table_round_trip();
     test_schema_name_table_corrupt_zero_len();
     test_schema_name_table_corrupt_oversize_len();
-    std::printf("test_trace_loader: 12 groups, all passed\n");
+    test_meta_overrun_rejected();
+    test_meta_exact_count_loads();
+    test_meta_count_uint16_overflow_rejected();
+    std::printf("test_trace_loader: 15 groups, all passed\n");
     return 0;
 }

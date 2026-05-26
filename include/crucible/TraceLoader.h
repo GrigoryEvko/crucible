@@ -413,9 +413,31 @@ static_assert(std::endian::native == std::endian::little,
     for (uint16_t j = 0; j < num_inline_scalars; j++)
       entry.scalar_values[j] = op_record.scalar_values[j];
 
-    const auto total_tensors =
-        static_cast<uint16_t>(op_record.num_inputs + op_record.num_outputs);
+    // num_inputs + num_outputs in uint32: each is a uint16, so their sum can
+    // reach 131070 and would WRAP if computed in uint16 (65535 + 1 -> 0),
+    // hiding an op that claims tens of thousands of tensors behind a
+    // meta_start of none().
+    const uint32_t total_tensors =
+        static_cast<uint32_t>(op_record.num_inputs) +
+        static_cast<uint32_t>(op_record.num_outputs);
     if (total_tensors > 0) {
+      // meta_starts[i] indexes the metas vector (num_metas entries); every
+      // consumer (BackgroundThread build path, vis/BlockDetector) reads
+      // metas[meta_start + k] for k in [0, num_inputs + num_outputs).  The
+      // running cursor must never reach past num_metas, else those reads
+      // overrun the vector — a heap OOB read from an untrusted .crtrace.
+      // Reject at the load boundary so load_trace always yields a self-
+      // consistent LoadedTrace.  `total_tensors > num_metas - meta_cursor`
+      // is the overflow-safe form of `meta_cursor + total_tensors >
+      // num_metas`: meta_cursor <= num_metas is the loop invariant (held by
+      // this very check), so num_metas - meta_cursor never underflows.
+      if (total_tensors > num_metas - meta_cursor) [[unlikely]] {
+        std::fprintf(stderr,
+            "load_trace: op[%u] meta range (%u tensors at cursor %u) "
+            "overruns num_metas=%u in %s\n",
+            i, total_tensors, meta_cursor, num_metas, path);
+        return nullptr;
+      }
       trace->meta_starts[i] = MetaIndex{meta_cursor};
       meta_cursor += total_tensors;
     } else {
