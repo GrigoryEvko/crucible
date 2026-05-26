@@ -15,6 +15,7 @@
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
+#include <crucible/PoolAllocator.h>  // kMaxPoolBytes: the init() pre this load gate mirrors
 #include <crucible/fixy/Source.h>   // FIXY-U-096t: tags::source::* provenance
 #include <crucible/fixy/Wrap.h>     // FIXY-U-096t: Tagged via the fixy umbrella
 
@@ -382,6 +383,19 @@ inline Header read_header(Reader& r) {
     if (has_plan) {
         plan                   = arena.alloc_obj<MemoryPlan>(a);
         plan->pool_bytes        = r.r<uint64_t>();
+        // pool_bytes feeds PoolAllocator::init()'s
+        // pre(in_range(pool_bytes, 0, kMaxPoolBytes)).  Under release
+        // semantic=ignore that clause is `[[assume]]`, so a corrupt or
+        // version-skewed Cipher byte with pool_bytes > kMaxPoolBytes
+        // (256 GB) reaches init as `[[assume]]`-UB — and the body then
+        // feeds the value to aligned_alloc.  Reject at the load boundary
+        // against the SAME constant init checks (single source of truth),
+        // companion to the num_slots / num_external bounds below.  The
+        // bound is inclusive (in_range is closed [0, kMaxPoolBytes]), so
+        // only a strictly-greater value is rejected.
+        if (plan->pool_bytes > ::crucible::PoolAllocator::kMaxPoolBytes) [[unlikely]] {
+            return LoadedRegionNode{nullptr};
+        }
         plan->num_slots         = r.r<uint32_t>();
         if (plan->num_slots > CDAG_MAX_SLOTS) return LoadedRegionNode{nullptr};
         plan->num_external      = r.r<uint32_t>();

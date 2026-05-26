@@ -339,6 +339,55 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         region->plan = nullptr;  // restore: no later use, but stay clean.
     }
 
+    // ── pool_bytes bound (plan-bearing regions) ────────────────────
+    // plan->pool_bytes feeds PoolAllocator::init()'s
+    // pre(in_range(pool_bytes, 0, kMaxPoolBytes)) — under release
+    // semantic=ignore an out-of-range value is [[assume]]-UB.
+    // deserialize_region rejects it at the load boundary against the
+    // SAME constant init uses.  num_slots=21 keeps the slot_id gate
+    // satisfied (region slot_ids {0,10,20} < 21), so the only thing that
+    // can reject `over_plan` is the pool_bytes gate.  The bound is
+    // inclusive: pool_bytes == kMaxPoolBytes loads, +1 is rejected.
+    {
+        // NEGATIVE: pool_bytes one past the cap.
+        crucible::MemoryPlan over_plan{};
+        over_plan.num_slots = 21;
+        over_plan.slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, 21);
+        std::uninitialized_value_construct_n(over_plan.slots, 21);
+        over_plan.pool_bytes = crucible::PoolAllocator::kMaxPoolBytes + 1;
+        region->plan = &over_plan;
+
+        uint8_t obuf[65536];
+        const size_t on = crucible::serialize_region(
+            region, nullptr, std::span<uint8_t>{obuf, sizeof(obuf)});
+        assert(on > 0 && "over-pool_bytes serialize failed");
+        crucible::Arena oarena(1 << 16);
+        auto over_loaded = crucible::deserialize_region(
+            test.alloc, std::span<const uint8_t>{obuf, on}, oarena);
+        assert(over_loaded.value() == nullptr
+               && "deserialize_region must reject pool_bytes > kMaxPoolBytes");
+
+        // POSITIVE: pool_bytes exactly at the cap is accepted (inclusive).
+        crucible::MemoryPlan at_plan{};
+        at_plan.num_slots = 21;
+        at_plan.slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, 21);
+        std::uninitialized_value_construct_n(at_plan.slots, 21);
+        at_plan.pool_bytes = crucible::PoolAllocator::kMaxPoolBytes;
+        region->plan = &at_plan;
+
+        uint8_t abuf[65536];
+        const size_t an = crucible::serialize_region(
+            region, nullptr, std::span<uint8_t>{abuf, sizeof(abuf)});
+        assert(an > 0 && "at-cap pool_bytes serialize failed");
+        crucible::Arena aarena(1 << 16);
+        auto at_loaded = crucible::deserialize_region(
+            test.alloc, std::span<const uint8_t>{abuf, an}, aarena);
+        assert(at_loaded.value() != nullptr
+               && "pool_bytes == kMaxPoolBytes must be accepted (inclusive)");
+
+        region->plan = nullptr;  // restore.
+    }
+
     std::printf("test_serialize: all tests passed\n");
     return 0;
 }
