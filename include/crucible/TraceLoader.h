@@ -322,6 +322,22 @@ static_assert(std::endian::native == std::endian::little,
             i, metas[i].ndim, path);
         return nullptr;
       }
+      // dtype gate (sibling of the ndim check): load_trace bulk-reads
+      // TensorMeta as raw struct bytes, so dtype is an unvalidated disk
+      // byte — unlike Serialize.h read_meta, which gates it through
+      // ValidScalarType.  An out-of-range dtype drives element_size()
+      // (Types.h) into its `default: std::unreachable()` via
+      // compute_storage_nbytes_det in the BackgroundThread build path —
+      // true UB the optimizer exploits.  valid_scalar_type is the same
+      // fail-closed named-case predicate ValidScalarType wraps; reject
+      // the corrupt trace here, mirroring the ndim boundary.
+      if (!valid_scalar_type(static_cast<std::int8_t>(metas[i].dtype)))
+          [[unlikely]] {
+        std::fprintf(stderr,
+            "load_trace: meta[%u].dtype=%d invalid in %s — corrupt trace\n",
+            i, static_cast<int>(metas[i].dtype), path);
+        return nullptr;
+      }
       metas[i].data_ptr = external_data_ptr(nullptr);
     }
   }
