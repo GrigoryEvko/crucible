@@ -149,6 +149,7 @@
 #include <crucible/safety/BarrierGuarded.h>   // canonical Tier-S (memory-barrier band)
 #include <crucible/safety/Hw.h>               // canonical Tier-S (hardware-instruction band)
 #include <crucible/safety/JoinPolicy.h>      // canonical Tier-S (thread-join band)
+#include <crucible/safety/CallShape.h>       // canonical Tier-S (call-shape effect surface)
 #include <crucible/safety/SuspendBehavior.h>  // canonical Tier-S (suspend-behavior band)
 #include <crucible/safety/SimdWidthPinned.h>  // canonical Tier-S (SIMD-ISA band)
 #include <crucible/safety/Tagged.h>
@@ -473,6 +474,21 @@ using ::crucible::safety::SuspendBehavior;
 using ::crucible::safety::SuspendBehaviorLattice;
 using ::crucible::safety::SuspendBehavior_v;
 using ::crucible::safety::mint_suspend_behavior;
+
+// ─── Tier-S effect-surface band Graded wrappers (`*Pinned`) ───────
+// Function behavioral-surface axes (V-254 era).  Naming wrinkle vs the
+// hardware band above: the WRAPPER is `XPinned<Tier, T>` while the
+// hoisted enum keeps the bare axis name `X` (no `_v` suffix).
+//
+// CallShapePinned<Tier, T> — call-dispatch-shape band.  Absolute
+// modality over CallShapeLattice (Direct ⊑ BoundedRecurses ⊑ Indirect
+// ⊑ Virtual ⊑ Unbounded); companion §XXI factory
+// `mint_call_shape<Tier, T>(args...)`.  Pick a tier inline as
+// `CallShapePinned<CallShape::Indirect, T>`.
+using ::crucible::safety::CallShape;        // axis enum (bare name, no _v)
+using ::crucible::safety::CallShapeLattice;
+using ::crucible::safety::CallShapePinned;  // wrapper class
+using ::crucible::safety::mint_call_shape;
 
 // ─── Structural wrappers (deliberately not Graded) ────────────────
 // Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
@@ -1346,6 +1362,26 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_suspend_behavior<
         ::crucible::safety::SuspendBehavior_v::KeepsTicking, int, int>)>,
     "fixy::wrap::mint_suspend_behavior must alias safety::mint_suspend_behavior.");
+
+// CallShapePinned<CallShape, T> base-type identity — Tier-S effect-
+// surface band re-export (this commit).  Note: enum is the bare
+// `CallShape`, wrapper class is `CallShapePinned`.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::CallShapePinned<
+        ::crucible::fixy::wrap::CallShape::Indirect, int>,
+    ::crucible::safety::CallShapePinned<
+        ::crucible::safety::CallShape::Indirect, int>>,
+    "fixy::wrap::CallShapePinned must alias safety::CallShapePinned.");
+
+// mint_call_shape §XXI factory reach via qualified-id decltype
+// identity — same pattern as mint_hw.  Closes the mint_call_shape
+// `[✗ NO-FIXY]` inventory marker.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_call_shape<
+        ::crucible::fixy::wrap::CallShape::Indirect, int, int>),
+    decltype(&::crucible::safety::mint_call_shape<
+        ::crucible::safety::CallShape::Indirect, int, int>)>,
+    "fixy::wrap::mint_call_shape must alias safety::mint_call_shape.");
 
 // FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
 // fixy::wrap:: surface is the V-058 re-export).
