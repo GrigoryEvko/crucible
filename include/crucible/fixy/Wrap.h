@@ -154,6 +154,7 @@
 #include <crucible/safety/GlobalState.h>     // canonical Tier-S (global-state effect surface)
 #include <crucible/safety/StackUse.h>        // canonical Tier-S (stack-use effect surface)
 #include <crucible/safety/Stdio.h>           // canonical Tier-S (stdio effect surface)
+#include <crucible/safety/ThreadLocalRef.h>  // structural (tag-distinguished TLS handle)
 #include <crucible/safety/SuspendBehavior.h>  // canonical Tier-S (suspend-behavior band)
 #include <crucible/safety/SimdWidthPinned.h>  // canonical Tier-S (SIMD-ISA band)
 #include <crucible/safety/Tagged.h>
@@ -557,6 +558,14 @@ using ::crucible::safety::no_scoped_view_field_check;
 // IsBorrowedRef<T> — concept witnessing T is a safety::BorrowedRef<U>.
 // Used in static_asserts on member-type aliases (e.g. ReplayEngine::PoolBorrow).
 using ::crucible::safety::extract::IsBorrowedRef;
+
+// ThreadLocalRef<Tag, T> — stateless handle to a per-thread thread_local
+// storage cell distinct per (Tag, T).  Structural (NOT Graded): the
+// Tag is a phantom discriminator, not a lattice tier.  Companion §XXI
+// token mint `mint_thread_local_ref<Tag, T>()` (no Ctx, no args; gates
+// on default-constructible T).  Peer to ScopedView in this section.
+using ::crucible::safety::ThreadLocalRef;
+using ::crucible::safety::mint_thread_local_ref;
 
 // FIXY-V-035 — SWMR (single-writer-multiple-reader) handle shapes.  Two
 // independent concept surfaces routed through the fixy::wrap:: umbrella so
@@ -1502,6 +1511,21 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_stdio<
         ::crucible::safety::Stdio::BufferedWrite, int, int>)>,
     "fixy::wrap::mint_stdio must alias safety::mint_stdio.");
+
+// ThreadLocalRef<Tag, T> base-type identity — structural (tag-phantom)
+// re-export (this commit).  Tag=int is an arbitrary phantom witness.
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::ThreadLocalRef<int, int>,
+    ::crucible::safety::ThreadLocalRef<int, int>>,
+    "fixy::wrap::ThreadLocalRef must alias safety::ThreadLocalRef.");
+
+// mint_thread_local_ref §XXI token factory reach via qualified-id
+// decltype identity — no-arg mint over (Tag, T).  Closes the
+// mint_thread_local_ref `[✗ NO-FIXY]` inventory marker.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_thread_local_ref<int, int>),
+    decltype(&::crucible::safety::mint_thread_local_ref<int, int>)>,
+    "fixy::wrap::mint_thread_local_ref must alias safety::mint_thread_local_ref.");
 
 // FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
 // fixy::wrap:: surface is the V-058 re-export).
