@@ -59,9 +59,15 @@
 //      level contract: every Rational consumed by FractionalLattice
 //      ops MUST satisfy `is_well_formed()`.  At this bound:
 //        • cross-product           a.num × b.den  ≤ 2^62
-//        • additive numerator sum  a.num × b.den + b.num × a.den ≤ 2^63 - 1
+//        • additive numerator sum  a.num × b.den + b.num × a.den ≤ 2^63
+//          (= 2·2^62 at the INCLUSIVE bound — ONE past INT64_MAX; `add`
+//          therefore gcd-reduces this sum in __int128 BEFORE the int64
+//          cast, see `simplify_wide`, so the STORED numerator always
+//          fits.  A naive cast-then-reduce wrapped 2^63 to INT64_MIN
+//          and fed std::gcd an unrepresentable magnitude → UB.)
 //        • product denominator     a.den × b.den  ≤ 2^62
-//      All three fit in int64_t with margin.  The bound is documented
+//      The cross-product and denominator fit int64_t with margin; the
+//      additive sum is reduced wide before truncation.  The bound is documented
 //      ALSO at the original ALGEBRA-8 design point — typical CSL
 //      shares are 1/N for moderate N (1/2, 1/4, ..., 1/2^16) so the
 //      bound never binds in real workloads.
@@ -207,6 +213,38 @@ struct Rational {
     return Rational{r.num / g, r.den / g};
 }
 
+// ── simplify_wide: reduce a __int128 num/den, gcd-reducing BEFORE the
+//    narrowing int64 cast ───────────────────────────────────────────
+//
+// FractionalLattice::add computes the unsimplified numerator
+// `a.num·b.den + b.num·a.den`.  For well-formed inputs at the INCLUSIVE
+// MAX_SAFE_MAGNITUDE bound this reaches 2·(2^31)² = 2^63 — exactly ONE
+// past INT64_MAX.  Casting that to int64 BEFORE reducing wraps it to
+// INT64_MIN, and `simplify`'s `std::gcd(INT64_MIN, …)` then computes a
+// magnitude (2^63) that int64 cannot represent → UB (libstdc++
+// __abs_r assertion under _GLIBCXX_ASSERTIONS; silent wrong result
+// otherwise — observed: add(2^31/2^31, 2^31/2^31) yielding -2 instead
+// of 2).
+//
+// Reducing in __int128 first is sound: the gcd-reduced numerator
+// ALWAYS fits int64 for well-formed inputs.  num128 == 2^63 only when
+// a == b == 2^31/2^31 == 1, where den128 == 2^62 and gcd(2^63, 2^62)
+// == 2^62, reducing to 2/1.  Generally num128 == 2^63 ⟹ gcd ≥ 2^62 ⟹
+// reduced numerator ≤ 2; for num128 ≤ 2^63 - 1 the cast was already
+// lossless.  den128 = a.den·b.den ≤ 2^62 always fits.
+[[nodiscard]] constexpr Rational simplify_wide(
+    Rational::wide_signed num, Rational::wide_signed den) noexcept {
+    using W = Rational::wide_signed;
+    if (num == 0) return Rational{0, 1};
+    // den > 0 for well-formed inputs (product of positive denominators).
+    W a = num < 0 ? -num : num;
+    W b = den;
+    while (b != 0) { const W t = a % b; a = b; b = t; }  // __int128 Euclid
+    const W g = a;  // gcd(|num|, den), g ≥ 1
+    return Rational{static_cast<std::int64_t>(num / g),
+                    static_cast<std::int64_t>(den / g)};
+}
+
 // ── FractionalLattice ───────────────────────────────────────────────
 struct FractionalLattice {
     using element_type = Rational;
@@ -259,14 +297,14 @@ struct FractionalLattice {
         const W num128 = static_cast<W>(a.num) * b.den
                        + static_cast<W>(b.num) * a.den;
         const W den128 = static_cast<W>(a.den) * b.den;
-        // For well-formed inputs each product is ≤ 2^62 and the
-        // additive numerator sum is ≤ 2^63 - 1, so the truncating cast
-        // back to int64 is lossless.  The contract_assert above is
-        // the boundary check; the cast is sound under that contract.
-        return simplify(Rational{
-            static_cast<std::int64_t>(num128),
-            static_cast<std::int64_t>(den128),
-        });
+        // The additive numerator sum reaches 2·(MAX_SAFE_MAGNITUDE)² =
+        // 2^63 at the inclusive bound (a == b == 2^31/2^31 == 1) — ONE
+        // past INT64_MAX.  Reduce in __int128 BEFORE the narrowing cast
+        // (simplify_wide): the gcd-reduced result always fits int64 for
+        // well-formed inputs.  Casting first would wrap 2^63 to
+        // INT64_MIN and hand std::gcd a magnitude int64 cannot
+        // represent (UB).
+        return simplify_wide(num128, den128);
     }
     // mul: rational multiplication with simplification.  Used to
     // split shares (e.g. mul({1, 2}, {1, 2}) = {1, 4} — split a half
@@ -400,6 +438,36 @@ static_assert(FractionalLattice::join(r14, r12) == r12,
     "Join is max — joining readers picks the biggest share.");
 static_assert(FractionalLattice::meet(r14, r12) == r14,
     "Meet is min — meeting picks the smallest share.");
+
+// ── AUDIT-FRAC-ADD-OVERFLOW regression ──────────────────────────────
+//
+// add()'s UNSIMPLIFIED numerator `a.num·b.den + b.num·a.den` reaches
+// 2·(MAX_SAFE_MAGNITUDE)² = 2^63 at the inclusive bound — two full
+// shares in max-magnitude form (2^31/2^31 == 1).  Pre-fix, add cast
+// that __int128 sum to int64 BEFORE reducing: 2^63 wrapped to
+// INT64_MIN, then simplify's std::gcd(INT64_MIN, …) computed an
+// unrepresentable magnitude (UB — libstdc++ __abs_r assertion fires;
+// the result was -2/1 instead of 2/1).  simplify_wide reduces in
+// __int128 first (gcd(2^63, 2^62) == 2^62 ⟹ 2/1), so the result is
+// correct and the cast lossless.  These static_asserts would FAIL TO
+// COMPILE pre-fix (the consteval std::gcd UB poisons the constant
+// expression), so they pin the fix structurally.
+static_assert(FractionalLattice::add(
+        Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUDE},
+        Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUDE})
+    == Rational{2, 1},
+    "add of two max-magnitude full shares (1 + 1) must reduce to 2/1 "
+    "without int64 overflow.");
+static_assert(FractionalLattice::add(
+        Rational{Rational::MAX_SAFE_MAGNITUDE, 1},
+        Rational{Rational::MAX_SAFE_MAGNITUDE, 1})
+    == Rational{std::int64_t{2} * Rational::MAX_SAFE_MAGNITUDE, 1},
+    "add of two 2^31/1 shares must give 2^32/1 (numerator 2^32 fits int64).");
+// Equivalence with the small-magnitude representation: 1 + 1 via the
+// canonical top()/top() path agrees with the max-magnitude path.
+static_assert(FractionalLattice::add(FractionalLattice::top(),
+                                     FractionalLattice::top())
+    == Rational{2, 1});
 
 // Diagnostic name.
 static_assert(FractionalLattice::name() == "FractionalLattice");
