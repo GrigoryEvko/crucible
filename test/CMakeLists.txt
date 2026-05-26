@@ -4984,6 +4984,13 @@ crucible_neg_compile_test(neg_collision_V203_replay_nondet_tsc
   "V203:")
 crucible_neg_compile_test(neg_collision_V301_hotpath_full_fence
   "V301:")
+# FIXY-FOUND-069 sub-HS14 closure: V301 fires on a BarrierStrength
+# tier-threshold (>= SeqCst), and the lattice has two values at/above it.
+# The fixture above witnesses the FullFence (top) arm; this companion
+# witnesses the SeqCst (threshold-boundary) arm, so a refactor narrowing
+# `>= SeqCst` to `== FullFence` reds the build.
+crucible_neg_compile_test(neg_collision_V301_hotpath_seqcst
+  "V301:")
 crucible_neg_compile_test(neg_collision_V101_replay_simd_isa
   "V101:")
 crucible_neg_compile_test(neg_collision_V001_vendor_isa_inconsistent
