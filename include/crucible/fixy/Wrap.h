@@ -153,6 +153,7 @@
 #include <crucible/safety/ControlFlow.h>     // canonical Tier-S (control-flow effect surface)
 #include <crucible/safety/GlobalState.h>     // canonical Tier-S (global-state effect surface)
 #include <crucible/safety/StackUse.h>        // canonical Tier-S (stack-use effect surface)
+#include <crucible/safety/Stdio.h>           // canonical Tier-S (stdio effect surface)
 #include <crucible/safety/SuspendBehavior.h>  // canonical Tier-S (suspend-behavior band)
 #include <crucible/safety/SimdWidthPinned.h>  // canonical Tier-S (SIMD-ISA band)
 #include <crucible/safety/Tagged.h>
@@ -522,6 +523,16 @@ using ::crucible::safety::StackUse;        // axis enum (bare name, no _v)
 using ::crucible::safety::StackUseLattice;
 using ::crucible::safety::StackUsePinned;  // wrapper class
 using ::crucible::safety::mint_stack_use;
+
+// StdioPinned<Tier, T> — console-I/O-surface band.  Absolute modality
+// over StdioLattice (NoStdio ⊑ BufferedWrite ⊑ UnbufferedWrite ⊑
+// InteractiveRead); companion §XXI factory
+// `mint_stdio<Tier, T>(args...)`.  Pick a tier inline as
+// `StdioPinned<Stdio::BufferedWrite, T>`.
+using ::crucible::safety::Stdio;        // axis enum (bare name, no _v)
+using ::crucible::safety::StdioLattice;
+using ::crucible::safety::StdioPinned;  // wrapper class
+using ::crucible::safety::mint_stdio;
 
 // ─── Structural wrappers (deliberately not Graded) ────────────────
 // Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
@@ -1472,6 +1483,25 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_stack_use<
         ::crucible::safety::StackUse::BoundedByParam, int, int>)>,
     "fixy::wrap::mint_stack_use must alias safety::mint_stack_use.");
+
+// StdioPinned<Stdio, T> base-type identity — Tier-S effect-surface
+// band re-export (this commit).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::StdioPinned<
+        ::crucible::fixy::wrap::Stdio::BufferedWrite, int>,
+    ::crucible::safety::StdioPinned<
+        ::crucible::safety::Stdio::BufferedWrite, int>>,
+    "fixy::wrap::StdioPinned must alias safety::StdioPinned.");
+
+// mint_stdio §XXI factory reach via qualified-id decltype identity —
+// same pattern as mint_call_shape.  Closes the mint_stdio
+// `[✗ NO-FIXY]` inventory marker.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_stdio<
+        ::crucible::fixy::wrap::Stdio::BufferedWrite, int, int>),
+    decltype(&::crucible::safety::mint_stdio<
+        ::crucible::safety::Stdio::BufferedWrite, int, int>)>,
+    "fixy::wrap::mint_stdio must alias safety::mint_stdio.");
 
 // FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
 // fixy::wrap:: surface is the V-058 re-export).
