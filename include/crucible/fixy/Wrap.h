@@ -146,6 +146,7 @@
 #include <crucible/safety/SwmrWriter.h>        // FIXY-V-036: SwmrWriter<auto FnPtr> (function-ptr shape)
 #include <crucible/safety/SignatureTraits.h>   // FIXY-V-178: signature_traits<auto FnPtr> family
 #include <crucible/safety/GradedExtract.h>     // FIXY-V-178: universal GradedWrapper extractors
+#include <crucible/safety/BarrierGuarded.h>   // canonical Tier-S (memory-barrier band)
 #include <crucible/safety/Hw.h>               // canonical Tier-S (hardware-instruction band)
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Path.h>             // FIXY-V-031: Path<Source> + sanitize_path
@@ -420,7 +421,7 @@ template <typename T>
 using FormallyVerified = ::crucible::safety::Witness<
     ::crucible::safety::Witness_v::FORMALLY_VERIFIED, T>;
 
-// ─── Tier-S hardware-instruction band Graded wrappers ─────────────
+// ─── Tier-S hardware / concurrency band Graded wrappers ───────────
 // Newer than the §XVI off-tree set above (V-254 era).  Hw<Tier, T>
 // pins an instruction-capability band: Absolute modality, 5-tier
 // chain NoneAllowed ⊑ Scalar ⊑ Vectorizable ⊑ NonDeterministicTsc ⊑
@@ -431,6 +432,16 @@ using ::crucible::safety::Hw;
 using ::crucible::safety::HwInstructionLattice;
 using ::crucible::safety::HwInstruction_v;
 using ::crucible::safety::mint_hw;
+
+// BarrierGuarded<Tier, T> — memory-barrier-strength band.  Absolute
+// modality over BarrierStrengthLattice; companion §XXI factory
+// `mint_barrier_guarded<Tier, T>(args...)`.  Per-tier aliases live
+// under safety:: — pick a tier inline as
+// `BarrierGuarded<BarrierStrength_v::SeqCst, T>`.
+using ::crucible::safety::BarrierGuarded;
+using ::crucible::safety::BarrierStrengthLattice;
+using ::crucible::safety::BarrierStrength_v;
+using ::crucible::safety::mint_barrier_guarded;
 
 // ─── Structural wrappers (deliberately not Graded) ────────────────
 // Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
@@ -1228,6 +1239,25 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_hw<
         ::crucible::safety::HwInstruction_v::Vectorizable, int, int>)>,
     "fixy::wrap::mint_hw must alias safety::mint_hw.");
+
+// BarrierGuarded<BarrierStrength_v, T> base-type identity — Tier-S
+// memory-barrier band re-export (this commit).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::BarrierGuarded<
+        ::crucible::fixy::wrap::BarrierStrength_v::SeqCst, int>,
+    ::crucible::safety::BarrierGuarded<
+        ::crucible::safety::BarrierStrength_v::SeqCst, int>>,
+    "fixy::wrap::BarrierGuarded must alias safety::BarrierGuarded.");
+
+// mint_barrier_guarded §XXI factory reach via qualified-id decltype
+// identity — same pattern as mint_hw.  Closes the
+// mint_barrier_guarded `[✗ NO-FIXY]` inventory marker.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_barrier_guarded<
+        ::crucible::fixy::wrap::BarrierStrength_v::SeqCst, int, int>),
+    decltype(&::crucible::safety::mint_barrier_guarded<
+        ::crucible::safety::BarrierStrength_v::SeqCst, int, int>)>,
+    "fixy::wrap::mint_barrier_guarded must alias safety::mint_barrier_guarded.");
 
 // FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
 // fixy::wrap:: surface is the V-058 re-export).
