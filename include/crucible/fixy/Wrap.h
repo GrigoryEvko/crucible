@@ -148,6 +148,7 @@
 #include <crucible/safety/GradedExtract.h>     // FIXY-V-178: universal GradedWrapper extractors
 #include <crucible/safety/BarrierGuarded.h>   // canonical Tier-S (memory-barrier band)
 #include <crucible/safety/Hw.h>               // canonical Tier-S (hardware-instruction band)
+#include <crucible/safety/SimdWidthPinned.h>  // canonical Tier-S (SIMD-ISA band)
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Path.h>             // FIXY-V-031: Path<Source> + sanitize_path
 #include <crucible/safety/TimeOrdered.h>
@@ -442,6 +443,15 @@ using ::crucible::safety::BarrierGuarded;
 using ::crucible::safety::BarrierStrengthLattice;
 using ::crucible::safety::BarrierStrength_v;
 using ::crucible::safety::mint_barrier_guarded;
+
+// SimdWidthPinned<Isa, T> — SIMD-ISA-width band.  Absolute modality
+// over SimdIsaLattice; companion §XXI factory
+// `mint_simd_width_pinned<Isa, T>(args...)`.  Pick an ISA inline as
+// `SimdWidthPinned<SimdIsa_v::Avx512Bw, T>`.
+using ::crucible::safety::SimdWidthPinned;
+using ::crucible::safety::SimdIsaLattice;
+using ::crucible::safety::SimdIsa_v;
+using ::crucible::safety::mint_simd_width_pinned;
 
 // ─── Structural wrappers (deliberately not Graded) ────────────────
 // Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
@@ -1258,6 +1268,25 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_barrier_guarded<
         ::crucible::safety::BarrierStrength_v::SeqCst, int, int>)>,
     "fixy::wrap::mint_barrier_guarded must alias safety::mint_barrier_guarded.");
+
+// SimdWidthPinned<SimdIsa_v, T> base-type identity — Tier-S SIMD-ISA
+// band re-export (this commit).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::SimdWidthPinned<
+        ::crucible::fixy::wrap::SimdIsa_v::Avx512Bw, int>,
+    ::crucible::safety::SimdWidthPinned<
+        ::crucible::safety::SimdIsa_v::Avx512Bw, int>>,
+    "fixy::wrap::SimdWidthPinned must alias safety::SimdWidthPinned.");
+
+// mint_simd_width_pinned §XXI factory reach via qualified-id decltype
+// identity — same pattern as mint_hw.  Closes the
+// mint_simd_width_pinned `[✗ NO-FIXY]` inventory marker.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_simd_width_pinned<
+        ::crucible::fixy::wrap::SimdIsa_v::Avx512Bw, int, int>),
+    decltype(&::crucible::safety::mint_simd_width_pinned<
+        ::crucible::safety::SimdIsa_v::Avx512Bw, int, int>)>,
+    "fixy::wrap::mint_simd_width_pinned must alias safety::mint_simd_width_pinned.");
 
 // FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
 // fixy::wrap:: surface is the V-058 re-export).
