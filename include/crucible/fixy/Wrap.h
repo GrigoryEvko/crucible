@@ -150,6 +150,7 @@
 #include <crucible/safety/Hw.h>               // canonical Tier-S (hardware-instruction band)
 #include <crucible/safety/JoinPolicy.h>      // canonical Tier-S (thread-join band)
 #include <crucible/safety/CallShape.h>       // canonical Tier-S (call-shape effect surface)
+#include <crucible/safety/ControlFlow.h>     // canonical Tier-S (control-flow effect surface)
 #include <crucible/safety/SuspendBehavior.h>  // canonical Tier-S (suspend-behavior band)
 #include <crucible/safety/SimdWidthPinned.h>  // canonical Tier-S (SIMD-ISA band)
 #include <crucible/safety/Tagged.h>
@@ -489,6 +490,16 @@ using ::crucible::safety::CallShape;        // axis enum (bare name, no _v)
 using ::crucible::safety::CallShapeLattice;
 using ::crucible::safety::CallShapePinned;  // wrapper class
 using ::crucible::safety::mint_call_shape;
+
+// ControlFlowPinned<Tier, T> — non-local-control-flow band.  Absolute
+// modality over ControlFlowLattice (Pure ⊑ AbortOnly ⊑ ThrowOnly ⊑
+// MayLongjmp ⊑ MaySignal); companion §XXI factory
+// `mint_control_flow<Tier, T>(args...)`.  Pick a tier inline as
+// `ControlFlowPinned<ControlFlow::AbortOnly, T>`.
+using ::crucible::safety::ControlFlow;        // axis enum (bare name, no _v)
+using ::crucible::safety::ControlFlowLattice;
+using ::crucible::safety::ControlFlowPinned;  // wrapper class
+using ::crucible::safety::mint_control_flow;
 
 // ─── Structural wrappers (deliberately not Graded) ────────────────
 // Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
@@ -1382,6 +1393,25 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_call_shape<
         ::crucible::safety::CallShape::Indirect, int, int>)>,
     "fixy::wrap::mint_call_shape must alias safety::mint_call_shape.");
+
+// ControlFlowPinned<ControlFlow, T> base-type identity — Tier-S
+// effect-surface band re-export (this commit).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::ControlFlowPinned<
+        ::crucible::fixy::wrap::ControlFlow::AbortOnly, int>,
+    ::crucible::safety::ControlFlowPinned<
+        ::crucible::safety::ControlFlow::AbortOnly, int>>,
+    "fixy::wrap::ControlFlowPinned must alias safety::ControlFlowPinned.");
+
+// mint_control_flow §XXI factory reach via qualified-id decltype
+// identity — same pattern as mint_call_shape.  Closes the
+// mint_control_flow `[✗ NO-FIXY]` inventory marker.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_control_flow<
+        ::crucible::fixy::wrap::ControlFlow::AbortOnly, int, int>),
+    decltype(&::crucible::safety::mint_control_flow<
+        ::crucible::safety::ControlFlow::AbortOnly, int, int>)>,
+    "fixy::wrap::mint_control_flow must alias safety::mint_control_flow.");
 
 // FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
 // fixy::wrap:: surface is the V-058 re-export).
