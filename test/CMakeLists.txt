@@ -4978,6 +4978,15 @@ crucible_neg_compile_test(neg_collision_W002_bg_wait_boundedspin
 #   V102 : simd width exceeds ISA family       (marker, concept-direct)
 crucible_neg_compile_test(neg_collision_V201_hotpath_nondet_tsc
   "V201:")
+# FIXY-FOUND-069 sub-HS14 closure: V201 fires on a Hw tier-threshold
+# (>= NonDeterministicTsc), with two values at/above it. The fixture
+# above witnesses the NonDeterministicTsc (boundary) arm; this companion
+# witnesses the PrivilegedMsr (top) arm so a refactor narrowing `>=` to
+# `==` reds the build. The grep is "V201:" specifically: PrivilegedMsr
+# without an Init row also fires V202, but V202 alone cannot satisfy the
+# V201: grep — the test reds iff V201 stops rejecting PrivilegedMsr.
+crucible_neg_compile_test(neg_collision_V201_hotpath_privileged_msr
+  "V201:")
 crucible_neg_compile_test(neg_collision_V202_privileged_msr_no_init
   "V202:")
 crucible_neg_compile_test(neg_collision_V203_replay_nondet_tsc
