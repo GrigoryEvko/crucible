@@ -361,3 +361,98 @@ static_assert(!IsGrantTag_v<fp_strict_ieee&>);
 }  // namespace detail::fp_grant_self_test
 
 }  // namespace crucible::fixy::grant
+
+// ═════════════════════════════════════════════════════════════════════
+// ── FpMode composite WRAPPER + §XXI mint re-export ────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// The 11 per-sub-axis FpModePinned wrappers are *engaged* at the fixy
+// grant layer above (the with_fp_* tags) and reached as types through
+// the safety substrate.  Their canonical 11-deep composite — the
+// FpModeComposite type alias and its §XXI token mint
+// `mint_fp_mode_composite` — previously had NO fixy:: re-export site
+// (`[✗ NO-FIXY]` in misc/mint-inventory.md).  This block closes that
+// gap: the full FP-mode nest is now mintable through fixy:: exactly
+// like every other Tier-S wrapper.  Both names alias the substrate
+// declaration verbatim (a using-decl, not a re-declaration), so
+// sizeof / row_hash / the §XVI nesting order are unchanged.
+
+namespace crucible::fixy::wrap {
+
+using ::crucible::safety::FpModeComposite;
+using ::crucible::safety::mint_fp_mode_composite;
+
+namespace fp_composite_self_test {
+
+namespace sf = ::crucible::safety;
+
+// Canonical strict-IEEE 754 pin across all 11 sub-axes — the same
+// values the substrate's fp_strict_ieee aggregate grant denotes.
+using strict_ieee_composite = FpModeComposite<
+    sf::FpRounding::RoundToNearestEven,
+    sf::FpFtz::PreserveSubnormals,
+    sf::FpContract::Off,
+    sf::FpTrapMask::AllMasked,
+    sf::FpDenormalInput::HonorDenormals,
+    sf::FpNanPolicy::PropagateQuiet,
+    sf::FpInfPolicy::PropagateInfinity,
+    sf::FpComplexLayout::Interleaved,
+    sf::FpLibmPolicy::ScalarLibm,
+    sf::FpReassociate::Forbidden,
+    sf::FpConstantRounding::SameAsRuntime,
+    double>;
+
+// FIXY-U-115 cell 1 — base-type identity: the fixy:: composite IS the
+// substrate type, not a distinct re-declaration that could drift.
+static_assert(std::is_same_v<
+    strict_ieee_composite,
+    sf::FpModeComposite<
+        sf::FpRounding::RoundToNearestEven,
+        sf::FpFtz::PreserveSubnormals,
+        sf::FpContract::Off,
+        sf::FpTrapMask::AllMasked,
+        sf::FpDenormalInput::HonorDenormals,
+        sf::FpNanPolicy::PropagateQuiet,
+        sf::FpInfPolicy::PropagateInfinity,
+        sf::FpComplexLayout::Interleaved,
+        sf::FpLibmPolicy::ScalarLibm,
+        sf::FpReassociate::Forbidden,
+        sf::FpConstantRounding::SameAsRuntime,
+        double>>,
+    "fixy::wrap::FpModeComposite must alias the safety substrate type");
+
+// FIXY-U-115 cell 2 — mint decltype-alias identity: the re-exported
+// factory pointer carries the exact substrate signature (no shadow /
+// forwarder drift would survive this).
+static_assert(std::is_same_v<
+    decltype(&mint_fp_mode_composite<
+        sf::FpRounding::RoundToNearestEven,
+        sf::FpFtz::PreserveSubnormals,
+        sf::FpContract::Off,
+        sf::FpTrapMask::AllMasked,
+        sf::FpDenormalInput::HonorDenormals,
+        sf::FpNanPolicy::PropagateQuiet,
+        sf::FpInfPolicy::PropagateInfinity,
+        sf::FpComplexLayout::Interleaved,
+        sf::FpLibmPolicy::ScalarLibm,
+        sf::FpReassociate::Forbidden,
+        sf::FpConstantRounding::SameAsRuntime,
+        double, double>),
+    decltype(&sf::mint_fp_mode_composite<
+        sf::FpRounding::RoundToNearestEven,
+        sf::FpFtz::PreserveSubnormals,
+        sf::FpContract::Off,
+        sf::FpTrapMask::AllMasked,
+        sf::FpDenormalInput::HonorDenormals,
+        sf::FpNanPolicy::PropagateQuiet,
+        sf::FpInfPolicy::PropagateInfinity,
+        sf::FpComplexLayout::Interleaved,
+        sf::FpLibmPolicy::ScalarLibm,
+        sf::FpReassociate::Forbidden,
+        sf::FpConstantRounding::SameAsRuntime,
+        double, double>)>,
+    "fixy::wrap::mint_fp_mode_composite must have the substrate signature");
+
+}  // namespace fp_composite_self_test
+
+}  // namespace crucible::fixy::wrap
