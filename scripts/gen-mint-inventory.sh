@@ -320,6 +320,24 @@ scan_substrate() {
         done
         (( saw_delete == 1 )) && continue
 
+        # FIXY-FOUND-141: skip `static` member-function mints.  A
+        # `[[nodiscard]] static constexpr … mint_X(` inside a class body is
+        # a CLASS METHOD (e.g. `Computation<R,T>::mint_computation` /
+        # `::mint_computation_in_ctx`), NOT a namespace-scope free function.
+        # Class-method mints CANNOT be `using`-re-exported through fixy::
+        # (a using-decl moves a free-function NAME, but a member function's
+        # authority is its object) — they belong in the Member-function
+        # mints section (cb=member, fixy cell structurally inapplicable),
+        # captured by scan_member_function_mints below.  A free-function
+        # mint is NEVER `static` (that would give a header-inline template
+        # factory internal linkage), so matching the `static` keyword on the
+        # declaration line is a zero-false-positive drop.  Without this skip
+        # the substrate scan mis-classified the two `effects/Computation.h`
+        # member mints as token/ctx and falsely flagged them `[✗ NO-FIXY]`.
+        if [[ "$text" =~ (^|[^A-Za-z0-9_])static([^A-Za-z0-9_]|$) ]]; then
+            continue
+        fi
+
         # Extract mint name from the matched line.  awk avoids head -1 +
         # pipefail traps; rg's pattern guarantees at least one match.
         # The `(^|[^A-Za-z0-9_])` prefix is a word-boundary guard: without
@@ -396,6 +414,20 @@ scan_member_function_mints() {
     # are not part of any substrate tree in `trees=()`.  Scan them here.
     for f in "$scan_root"/include/crucible/*.h; do
         [[ -f "$f" ]] && files+=("$f")
+    done
+    # FIXY-FOUND-141: curated inner-tree headers that host class-method
+    # mints.  effects/Computation.h declares the two Computation<R,T>
+    # static member mints (mint_computation / mint_computation_in_ctx);
+    # they live INSIDE the `effects` substrate tree, so scan_substrate's
+    # static-member filter drops them — they are captured here instead, in
+    # the Member-function section, where the structurally-inapplicable
+    # fixy cell is the correct rendering (a static member cannot be
+    # namespace-`using`-re-exported).  Each entry is `[[ -f ]]`-guarded so
+    # the --self-test temp root (which has no effects/ tree) is unaffected.
+    local extra
+    for extra in effects/Computation.h; do
+        [[ -f "$scan_root/include/crucible/$extra" ]] \
+            && files+=("$scan_root/include/crucible/$extra")
     done
     [[ ${#files[@]} -eq 0 ]] && return 0
 
