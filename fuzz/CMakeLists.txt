@@ -92,6 +92,7 @@ crucible_property_fuzzer(prop_vector_clock)
 crucible_property_fuzzer(prop_swim_membership)
 crucible_property_fuzzer(prop_crdt_gset)
 crucible_property_fuzzer(prop_crdt_orset)
+crucible_property_fuzzer(prop_crdt_counter)
 
 # ── Boundary fuzzers (adversarial input) ───────────────────────
 
