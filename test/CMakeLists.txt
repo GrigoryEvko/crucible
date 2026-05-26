@@ -4991,6 +4991,14 @@ crucible_neg_compile_test(neg_collision_V202_privileged_msr_no_init
   "V202:")
 crucible_neg_compile_test(neg_collision_V203_replay_nondet_tsc
   "V203:")
+# FIXY-FOUND-069 sub-HS14 closure: V203 fires on a Hw tier-threshold
+# (>= NonDeterministicTsc), with two values at/above it. The fixture
+# above witnesses the NonDeterministicTsc (boundary) arm; this companion
+# witnesses the PrivilegedMsr (top) arm so a refactor narrowing `>=` to
+# `==` reds the build. PrivilegedMsr without Init also fires V202, but the
+# grep is "V203:" specifically — V202 alone cannot satisfy it.
+crucible_neg_compile_test(neg_collision_V203_replay_privileged_msr
+  "V203:")
 crucible_neg_compile_test(neg_collision_V301_hotpath_full_fence
   "V301:")
 # FIXY-FOUND-069 sub-HS14 closure: V301 fires on a BarrierStrength
