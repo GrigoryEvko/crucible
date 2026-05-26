@@ -338,6 +338,38 @@ static_assert(std::endian::native == std::endian::little,
             i, static_cast<int>(metas[i].dtype), path);
         return nullptr;
       }
+      // device_type gate (parity with Serialize.h read_meta's
+      // ValidDeviceType gate, sibling of the dtype/ndim checks):
+      // load_trace bulk-reads TensorMeta raw, so device_type is an
+      // unvalidated disk byte.  Unlike dtype it has no std::unreachable
+      // consumer (not a UB fix), but it IS folded into the node's
+      // ContentHash (BackgroundThread.h packs `device_type << 8` into
+      // meta_packed; MerkleDag.h's compute path does the same), so a
+      // corrupt/skewed byte silently corrupts node identity → a wrong
+      // (content_hash, device_capability) KernelCache key.  read_meta
+      // fails closed here; the raw-read boundary must match.
+      if (!valid_device_type(static_cast<std::int8_t>(metas[i].device_type)))
+          [[unlikely]] {
+        std::fprintf(stderr,
+            "load_trace: meta[%u].device_type=%d invalid in %s — corrupt trace\n",
+            i, static_cast<int>(metas[i].device_type), path);
+        return nullptr;
+      }
+      // layout gate (completes read_meta parity — read_meta gates all
+      // four untrusted ndim/dtype/device_type/layout fields).  The
+      // TraceLoader build path copies layout into slot metadata rather
+      // than the ContentHash, but the Forge IR001 comm path
+      // (forge/Ir001/Comm.h) does hash it, and the canonical read_meta
+      // boundary fails closed on a corrupt layout byte.  Match it:
+      // fail-closed at the raw-read boundary for uniformity and
+      // forward-safety rather than admit an out-of-enum layout.
+      if (!valid_layout(static_cast<std::int8_t>(metas[i].layout)))
+          [[unlikely]] {
+        std::fprintf(stderr,
+            "load_trace: meta[%u].layout=%d invalid in %s — corrupt trace\n",
+            i, static_cast<int>(metas[i].layout), path);
+        return nullptr;
+      }
       metas[i].data_ptr = external_data_ptr(nullptr);
     }
   }
