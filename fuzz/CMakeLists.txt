@@ -97,6 +97,7 @@ crucible_property_fuzzer(prop_crdt_mvregister)
 crucible_property_fuzzer(prop_scuttlebutt_digest)
 crucible_property_fuzzer(prop_scuttlebutt_compare)
 crucible_property_fuzzer(prop_crdt_rga)
+crucible_property_fuzzer(prop_crdt_rga_merge)
 
 # ── Boundary fuzzers (adversarial input) ───────────────────────
 
