@@ -164,6 +164,23 @@ static void test_normal() {
         auto [n0, n1] = Philox::box_muller(r[0], r[1]);
         assert(std::isfinite(n0) && std::isfinite(n1));
     }
+
+    // Boundary corners — box_muller maps u1_raw ∈ [0, 2^32) to
+    // u1 = (u1_raw + 1) * 2^-32 ∈ [2^-32, 1.0], and the `+ 1` is the
+    // guard against the log(0) = -inf trap (u1_raw == 0 → u1 = 2^-32,
+    // NOT 0).  The random loop above cannot reach u1_raw == 0
+    // (probability 2^-32), so it would NOT catch a regression that
+    // dropped the shift.  Pin the exact corners the guard protects:
+    // u1_raw ∈ {0, UINT32_MAX} × u2_raw ∈ {0, UINT32_MAX}.  u1_raw == 0
+    // is the log(0) edge; u1_raw == UINT32_MAX gives u1 = 1.0 → log = 0
+    // → r = 0 (finite).
+    for (uint32_t u1 : {0u, UINT32_MAX}) {
+        for (uint32_t u2 : {0u, UINT32_MAX}) {
+            auto [c0, c1] = Philox::box_muller(u1, u2);
+            assert(std::isfinite(c0) && std::isfinite(c1) &&
+                   "box_muller boundary corner must be finite (log(0) guard)");
+        }
+    }
 }
 
 // ── Per-op key derivation ──────────────────────────────────────────
