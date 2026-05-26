@@ -78,7 +78,9 @@
 
 #include <crucible/algebra/Lattice.h>
 
+#include <cstdint>
 #include <meta>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -165,5 +167,60 @@ template <typename ChainLattice>
 #pragma GCC diagnostic pop
     return true;
 }
+
+// ── Runtime smoke test ─────────────────────────────────────────────
+//
+// Per feedback_algebra_runtime_smoke_test_discipline: ChainLatticeOps was
+// EXTRACTED from Lifetime / Consistency / Tolerance during an audit Tier-2
+// sweep (see the header doc-block) and shipped WITHOUT its own smoke test —
+// the only algebra/lattices/ header with runtime-evaluable ops lacking one.
+// Exercise leq / join / meet over a FRESH chain enum (independent of the
+// three production callers, so the base is verified for an arbitrary
+// scoped-enum ordinal layout) and instantiate the two
+// verify_chain_lattice_* consteval helpers over it — previously reachable
+// only through the production lattices' static_asserts.
+namespace detail::chain_lattice_self_test {
+
+enum class SmokeTier : std::uint8_t { Lo = 0, Mid = 1, Hi = 2 };
+
+struct SmokeChainLattice : ChainLatticeOps<SmokeTier> {
+    [[nodiscard]] static constexpr SmokeTier bottom() noexcept {
+        return SmokeTier::Lo;
+    }
+    [[nodiscard]] static constexpr SmokeTier top() noexcept {
+        return SmokeTier::Hi;
+    }
+    [[nodiscard]] static consteval std::string_view name() noexcept {
+        return "SmokeChainLattice";
+    }
+};
+
+// Compile-time: the two consteval verifiers (defined above) over the fresh
+// enum.  A regression that breaks bounded- or distributive-lattice axioms
+// for an arbitrary chain surfaces here, not only via the production enums.
+static_assert(verify_chain_lattice_exhaustive<SmokeChainLattice>(),
+              "ChainLatticeOps must satisfy bounded-lattice axioms for an "
+              "arbitrary scoped enum");
+static_assert(verify_chain_lattice_distributive_exhaustive<SmokeChainLattice>(),
+              "ChainLatticeOps must satisfy distributive-lattice axioms for "
+              "an arbitrary scoped enum");
+
+// Runtime: drive the inline leq / join / meet bodies with a NON-CONSTANT
+// operand (the discipline's purpose — exercise the runtime path under
+// ASan/UBSan, which the compile-time static_asserts above cannot).
+inline void runtime_smoke_test() {
+    volatile std::uint8_t raw_hi = 2;
+    const SmokeTier lo = SmokeTier::Lo;
+    const SmokeTier hi = static_cast<SmokeTier>(raw_hi);
+
+    [[maybe_unused]] bool      le_dir = SmokeChainLattice::leq(lo, hi);
+    [[maybe_unused]] bool      ge_dir = SmokeChainLattice::leq(hi, lo);
+    [[maybe_unused]] SmokeTier mx     = SmokeChainLattice::join(lo, hi);
+    [[maybe_unused]] SmokeTier mn     = SmokeChainLattice::meet(lo, hi);
+    [[maybe_unused]] SmokeTier bot    = SmokeChainLattice::bottom();
+    [[maybe_unused]] SmokeTier top    = SmokeChainLattice::top();
+}
+
+}  // namespace detail::chain_lattice_self_test
 
 }  // namespace crucible::algebra::lattices

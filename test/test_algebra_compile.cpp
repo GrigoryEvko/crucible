@@ -43,6 +43,7 @@
 #include <crucible/algebra/lattices/AllocClassLattice.h>
 #include <crucible/algebra/lattices/BitsBudgetLattice.h>
 #include <crucible/algebra/lattices/BoolLattice.h>
+#include <crucible/algebra/lattices/ChainLattice.h>
 #include <crucible/algebra/lattices/CipherTierLattice.h>
 #include <crucible/algebra/lattices/ConfLattice.h>
 #include <crucible/algebra/lattices/ConsistencyLattice.h>
@@ -160,6 +161,10 @@ void test_happens_before_runtime_smoke() {
     ::crucible::algebra::lattices::detail::happens_before_self_test::runtime_smoke_test();
 }
 
+void test_chain_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::chain_lattice_self_test::runtime_smoke_test();
+}
+
 void test_lifetime_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::lifetime_lattice_self_test::runtime_smoke_test();
 }
@@ -272,6 +277,8 @@ int main() {
              test_product_lattice_runtime_smoke);
     run_test("test_happens_before_runtime_smoke",
              test_happens_before_runtime_smoke);
+    run_test("test_chain_lattice_runtime_smoke",
+             test_chain_lattice_runtime_smoke);
     run_test("test_lifetime_lattice_runtime_smoke",
              test_lifetime_lattice_runtime_smoke);
     run_test("test_consistency_lattice_runtime_smoke",
