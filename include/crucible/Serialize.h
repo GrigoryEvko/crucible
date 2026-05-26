@@ -512,13 +512,46 @@ inline Header read_header(Reader& r) {
         te.input_slot_ids = (te.num_inputs > 0)
             ? arena.alloc_array<SlotId>(a, te.num_inputs) : nullptr;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
-            te.input_slot_ids[j] = SlotId{r.r<uint32_t>()};
+            const SlotId sid = SlotId{r.r<uint32_t>()};
+            // A loaded slot_id indexes ReplayEngine::slot_table_, which
+            // holds exactly the replay pool's num_slots void* entries.
+            // The replay hot path (input_ptr / output_ptr) guards ONLY
+            // sid.is_valid() (the none-sentinel), NOT sid.raw() <
+            // num_slots — by design that bound is a construction-time
+            // invariant the hot path trusts as [[assume]] (single-MOV
+            // slot_table_[sid.raw()]).  For a plan-BEARING region the
+            // replay pool is materialized from THIS plan, so every valid
+            // slot_id must be a real index (< plan->num_slots); the
+            // planner (and external-slot numbering, which shares the
+            // [0,num_slots) index space) guarantees this in trusted flow.
+            // A corrupt/version-skewed Cipher could deliver sid.raw() >=
+            // num_slots with is_valid() true, reaching slot_table_[sid
+            // .raw()] = OUT-OF-BOUNDS heap read.  Reject at the load
+            // boundary, companion to the num_slots / num_external bounds
+            // above; same fail-closed deserialize-error policy.  A plan-
+            // LESS region carries opaque slot_ids that bind no pool until
+            // one is supplied elsewhere, so it has no bound to enforce
+            // here (and is not executable without that pool).
+            if (plan != nullptr && sid.is_valid()
+                && sid.raw() >= plan->num_slots) [[unlikely]] {
+                return LoadedRegionNode{nullptr};
+            }
+            te.input_slot_ids[j] = sid;
         }
 
         te.output_slot_ids = (te.num_outputs > 0)
             ? arena.alloc_array<SlotId>(a, te.num_outputs) : nullptr;
         for (uint16_t j = 0; j < te.num_outputs; j++) {
-            te.output_slot_ids[j] = SlotId{r.r<uint32_t>()};
+            const SlotId sid = SlotId{r.r<uint32_t>()};
+            // Same plan-bearing OOB-index guard as input_slot_ids above:
+            // an untrusted out-of-range slot_id would reach ReplayEngine
+            // output_ptr's slot_table_[sid.raw()] OOB read.  Plan-less
+            // regions are exempt (no pool to bound against).
+            if (plan != nullptr && sid.is_valid()
+                && sid.raw() >= plan->num_slots) [[unlikely]] {
+                return LoadedRegionNode{nullptr};
+            }
+            te.output_slot_ids[j] = sid;
         }
     }
 

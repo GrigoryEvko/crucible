@@ -290,6 +290,55 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
                && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
     }
 
+    // ── slot_id in-bounds gate (plan-bearing regions) ──────────────
+    // A loaded TraceEntry slot_id indexes ReplayEngine::slot_table_,
+    // which is sized to the replay pool's num_slots.  For a plan-BEARING
+    // region the pool is materialized from THIS plan, so every valid
+    // slot_id must be < plan->num_slots; the replay hot path guards only
+    // sid.is_valid(), so an untrusted out-of-range slot_id would reach
+    // slot_table_[sid.raw()] = OOB heap read.  deserialize_region rejects
+    // such input at the load boundary.  The `region` above uses
+    // output_slot_ids {0,10,20}, so num_slots=21 admits all of them and
+    // num_slots=3 rejects {10,20}.  (Plan-less regions, exercised by the
+    // round-trip above, are exempt — no pool to bound against.)
+    {
+        // POSITIVE: num_slots large enough to admit every slot_id.
+        crucible::MemoryPlan ok_plan{};
+        ok_plan.num_slots = 21;
+        ok_plan.slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, 21);
+        std::uninitialized_value_construct_n(ok_plan.slots, 21);
+        region->plan = &ok_plan;
+
+        uint8_t pbuf[65536];
+        const size_t pn = crucible::serialize_region(
+            region, nullptr, std::span<uint8_t>{pbuf, sizeof(pbuf)});
+        assert(pn > 0 && "plan-bearing serialize failed");
+        crucible::Arena parena(1 << 16);
+        auto ok_loaded = crucible::deserialize_region(
+            test.alloc, std::span<const uint8_t>{pbuf, pn}, parena);
+        assert(ok_loaded.value() != nullptr
+               && "plan-bearing region with in-range slot_ids must load");
+
+        // NEGATIVE: num_slots too small — slot_ids {10,20} are now OOB.
+        crucible::MemoryPlan bad_plan{};
+        bad_plan.num_slots = 3;
+        bad_plan.slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, 3);
+        std::uninitialized_value_construct_n(bad_plan.slots, 3);
+        region->plan = &bad_plan;
+
+        uint8_t nbuf[65536];
+        const size_t nn = crucible::serialize_region(
+            region, nullptr, std::span<uint8_t>{nbuf, sizeof(nbuf)});
+        assert(nn > 0 && "plan-bearing (oob) serialize failed");
+        crucible::Arena narena(1 << 16);
+        auto bad_loaded = crucible::deserialize_region(
+            test.alloc, std::span<const uint8_t>{nbuf, nn}, narena);
+        assert(bad_loaded.value() == nullptr
+               && "deserialize_region must reject slot_id >= plan->num_slots");
+
+        region->plan = nullptr;  // restore: no later use, but stay clean.
+    }
+
     std::printf("test_serialize: all tests passed\n");
     return 0;
 }
