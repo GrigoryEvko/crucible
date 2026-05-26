@@ -98,6 +98,7 @@ crucible_property_fuzzer(prop_scuttlebutt_digest)
 crucible_property_fuzzer(prop_scuttlebutt_compare)
 crucible_property_fuzzer(prop_crdt_rga)
 crucible_property_fuzzer(prop_crdt_rga_merge)
+crucible_property_fuzzer(prop_ptp_degradation)
 
 # ── Boundary fuzzers (adversarial input) ───────────────────────
 
