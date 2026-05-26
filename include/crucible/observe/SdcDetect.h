@@ -140,13 +140,19 @@ template <typename T>
                                    std::uint64_t tolerance) noexcept {
     if constexpr (std::integral<T>) {
         using U = std::make_unsigned_t<T>;
-        U const delta = [&] {
+        // Explicit U return + static_cast keeps the abs-diff in the unsigned
+        // domain for sub-int widths: int8/int16 operands promote to int for
+        // the subtraction, and the modular truncation back to U is the
+        // intended magnitude (|a-b| mod 2^bits).  The cast documents that
+        // intent AND keeps the path -Werror=conversion-clean, so the template
+        // compiles for EVERY integral width, not only those ≥ int.
+        U const delta = [&]() -> U {
             if constexpr (std::signed_integral<T>) {
                 return a >= b
-                    ? static_cast<U>(a) - static_cast<U>(b)
-                    : static_cast<U>(b) - static_cast<U>(a);
+                    ? static_cast<U>(static_cast<U>(a) - static_cast<U>(b))
+                    : static_cast<U>(static_cast<U>(b) - static_cast<U>(a));
             } else {
-                return a >= b ? a - b : b - a;
+                return a >= b ? static_cast<U>(a - b) : static_cast<U>(b - a);
             }
         }();
         return static_cast<std::uint64_t>(delta) <= tolerance;

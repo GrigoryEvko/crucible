@@ -85,6 +85,7 @@ crucible_property_fuzzer(prop_saturate_math_invariants)
 crucible_property_fuzzer(prop_guard_hash_invariants)
 crucible_property_fuzzer(prop_integrity_xxhash)
 crucible_property_fuzzer(prop_hdr_histogram_buckets)
+crucible_property_fuzzer(prop_sdc_tolerance)
 
 # ── Boundary fuzzers (adversarial input) ───────────────────────
 
