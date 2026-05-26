@@ -385,6 +385,15 @@ inline Header read_header(Reader& r) {
         plan->num_slots         = r.r<uint32_t>();
         if (plan->num_slots > CDAG_MAX_SLOTS) return LoadedRegionNode{nullptr};
         plan->num_external      = r.r<uint32_t>();
+        // External slots are a subset of total slots (num_external counts
+        // how many of num_slots are external), so num_external <= num_slots
+        // is a structural invariant — and it is PoolAllocator::init()'s
+        // `pre(plan->num_external <= plan->num_slots)`.  A corrupt or
+        // version-skewed Cipher byte could deliver num_external > num_slots;
+        // unchecked, that reaches the init precondition where, under
+        // semantic=ignore, the violated clause is `[[assume]]` UB.  Reject
+        // at the boundary, companion to the num_slots bound above.
+        if (plan->num_external > plan->num_slots) return LoadedRegionNode{nullptr};
         // device_type gate (reuses ValidDeviceType): same boundary-
         // hardening as the read_meta gate — a corrupt/version-skewed
         // byte would otherwise enter pool selection (== DeviceType::CPU)
