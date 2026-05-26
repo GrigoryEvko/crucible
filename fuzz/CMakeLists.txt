@@ -93,6 +93,7 @@ crucible_property_fuzzer(prop_swim_membership)
 crucible_property_fuzzer(prop_crdt_gset)
 crucible_property_fuzzer(prop_crdt_orset)
 crucible_property_fuzzer(prop_crdt_counter)
+crucible_property_fuzzer(prop_crdt_mvregister)
 
 # ── Boundary fuzzers (adversarial input) ───────────────────────
 
