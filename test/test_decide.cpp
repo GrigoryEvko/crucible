@@ -750,6 +750,34 @@ constexpr dc::Interval<uint64_t> with_empty[] = {
 };
 static_assert(dc::intervals_pairwise_disjoint(std::span{with_empty}));
 
+// Regression: an empty interval STRICTLY INSIDE a nonempty one.
+// `with_empty` above only places empties at BOUNDARIES (an empty at
+// the shared edge of two slots, where the `hi <= lo` left-of test
+// happens to hold).  The strictly-inside case — `[5, 5)` between
+// `[0, 10)`'s endpoints — is the one the half-open left-of test
+// alone misreports as overlap (neither `5 <= 0` nor `10 <= 5`).
+// Semantic note 2 promises empties are disjoint from everything, so
+// these MUST pass.  Pre-fix, both static_asserts failed.
+constexpr dc::Interval<uint64_t> empty_inside[] = {{0, 10}, {5, 5}};
+static_assert(dc::intervals_pairwise_disjoint(std::span{empty_inside}));
+
+// Order-independence: same pair with the empty interval FIRST.  The
+// fix skips any pair touching an empty interval regardless of which
+// position (i or j) the empty occupies.
+constexpr dc::Interval<uint64_t> empty_inside_first[] = {{5, 5}, {0, 10}};
+static_assert(dc::intervals_pairwise_disjoint(std::span{empty_inside_first}));
+
+// A zero-byte memory-plan slot (`offset == offset + 0`) sitting
+// inside a live slot's byte range is the concrete CONTRACT-112
+// shape this fixes: a 0-byte allocation occupies no bytes, so it
+// cannot overlap the live slot, and the no-overlap pre must accept.
+constexpr dc::Interval<uint64_t> zero_byte_slot_inside_live[] = {
+    {0, 256},      // a live 256-byte slot
+    {128, 128},    // a 0-byte slot whose offset lands mid-range
+    {256, 512},    // the next live slot
+};
+static_assert(dc::intervals_pairwise_disjoint(std::span{zero_byte_slot_inside_live}));
+
 // ── Negative cases ─────────────────────────────────────────────────
 
 // Adjacent overlap (the canonical bug — common in incorrect sweep-

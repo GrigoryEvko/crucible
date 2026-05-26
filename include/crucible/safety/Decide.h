@@ -979,6 +979,17 @@ constexpr bool intervals_pairwise_disjoint(
     //     I_i ∩ I_j = ∅  ⇔  hi_i <= lo_j  ∨  hi_j <= lo_i.
     for (std::size_t i = 0; i < ivs.size(); ++i) {
         for (std::size_t j = i + 1; j < ivs.size(); ++j) {
+            // An empty interval `[k, k)` contains no integer, so it
+            // is disjoint from every interval (semantic note 2).  Skip
+            // the overlap test for any pair involving an empty
+            // interval — the `hi <= lo` left-of test alone misreports
+            // an empty interval STRICTLY INSIDE another (e.g. `[5, 5)`
+            // inside `[0, 10)`: neither `5 <= 0` nor `10 <= 5` holds)
+            // as an overlap, contradicting note 2 and the empty-set
+            // semantics.
+            if (ivs[i].lo == ivs[i].hi || ivs[j].lo == ivs[j].hi) {
+                continue;
+            }
             const bool a_left_of_b = ivs[i].hi <= ivs[j].lo;
             const bool b_left_of_a = ivs[j].hi <= ivs[i].lo;
             if (!a_left_of_b && !b_left_of_a) {
