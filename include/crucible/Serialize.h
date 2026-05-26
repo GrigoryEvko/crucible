@@ -48,7 +48,14 @@ static constexpr CdagFormatVersion CDAG_VERSION{9u};   // v9 (FOUND-057): Conten
 // Reject adversarial headers up front so we don't attempt TB-scale
 // allocations before discovering the body is truncated.
 static constexpr uint32_t CDAG_MAX_OPS          = 1u << 22;   // 4 M ops
-static constexpr uint32_t CDAG_MAX_SLOTS        = 1u << 22;
+// SLOTS tracks the allocator's runtime cap, NOT the family's 4 M slack: a
+// loaded plan materializes the replay pool via PoolAllocator::init(), whose
+// pre(in_range(num_slots, 0, kMaxNumSlots)) is `[[assume]]` under release
+// semantic=ignore.  Making the deserialize cap EQUAL init's cap (by deriving
+// it here) means "deserializes ⇒ safe to init" holds by construction — a
+// looser wire cap (formerly 4 M) let num_slots in (kMaxNumSlots, 4 M] pass
+// deserialize yet `[[assume]]`-violate init on a large enough corrupt Cipher.
+static constexpr uint32_t CDAG_MAX_SLOTS        = ::crucible::PoolAllocator::kMaxNumSlots;
 static constexpr uint16_t CDAG_MAX_INPUTS       = 1024;
 static constexpr uint16_t CDAG_MAX_OUTPUTS      = 1024;
 static constexpr uint16_t CDAG_MAX_SCALAR_ARGS  = 256;
