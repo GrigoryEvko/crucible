@@ -7500,6 +7500,13 @@ crucible_neg_compile_test(neg_collision_P003_fork_body_throws_marker
   "P003|fork|ThrowOnly|terminate")
 crucible_neg_compile_test(neg_collision_S001_hotpath_stdio
   "S001|hot-path|stdio|BufferedWrite")
+# FIXY-FOUND-069 sub-HS14 closure: S001 fires on a Stdio tier-threshold
+# (>= BufferedWrite), and the lattice has three values at/above it.  The
+# fixture above witnesses the BufferedWrite arm; this companion witnesses
+# the UnbufferedWrite arm (strictly worse — one flushing syscall per call)
+# so a refactor narrowing `>=` to `==` reds the build.
+crucible_neg_compile_test(neg_collision_S001_hotpath_unbuffered
+  "S001")
 crucible_neg_compile_test(neg_collision_S004_singleton_cycle
   "S004|singleton|cycle")
 
