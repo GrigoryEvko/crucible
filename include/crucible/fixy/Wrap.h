@@ -149,6 +149,7 @@
 #include <crucible/safety/BarrierGuarded.h>   // canonical Tier-S (memory-barrier band)
 #include <crucible/safety/Hw.h>               // canonical Tier-S (hardware-instruction band)
 #include <crucible/safety/JoinPolicy.h>      // canonical Tier-S (thread-join band)
+#include <crucible/safety/SuspendBehavior.h>  // canonical Tier-S (suspend-behavior band)
 #include <crucible/safety/SimdWidthPinned.h>  // canonical Tier-S (SIMD-ISA band)
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Path.h>             // FIXY-V-031: Path<Source> + sanitize_path
@@ -462,6 +463,16 @@ using ::crucible::safety::JoinPolicy;
 using ::crucible::safety::JoinPolicyLattice;
 using ::crucible::safety::JoinPolicy_v;
 using ::crucible::safety::mint_join_policy;
+
+// SuspendBehavior<Behavior, T> — suspend-resilience band.  Absolute
+// modality over SuspendBehaviorLattice (Unknown ⊑ PausesOnSuspend ⊑
+// KeepsTicking); companion §XXI factory
+// `mint_suspend_behavior<Behavior, T>(args...)`.  Pick a tier inline
+// as `SuspendBehavior<SuspendBehavior_v::KeepsTicking, T>`.
+using ::crucible::safety::SuspendBehavior;
+using ::crucible::safety::SuspendBehaviorLattice;
+using ::crucible::safety::SuspendBehavior_v;
+using ::crucible::safety::mint_suspend_behavior;
 
 // ─── Structural wrappers (deliberately not Graded) ────────────────
 // Per CLAUDE.md §XVI: these follow non-Graded disciplines (RAII,
@@ -1316,6 +1327,25 @@ static_assert(std::is_same_v<
     decltype(&::crucible::safety::mint_join_policy<
         ::crucible::safety::JoinPolicy_v::JOIN_ALL, int, int>)>,
     "fixy::wrap::mint_join_policy must alias safety::mint_join_policy.");
+
+// SuspendBehavior<SuspendBehavior_v, T> base-type identity — Tier-S
+// suspend-behavior band re-export (this commit).
+static_assert(std::is_same_v<
+    ::crucible::fixy::wrap::SuspendBehavior<
+        ::crucible::fixy::wrap::SuspendBehavior_v::KeepsTicking, int>,
+    ::crucible::safety::SuspendBehavior<
+        ::crucible::safety::SuspendBehavior_v::KeepsTicking, int>>,
+    "fixy::wrap::SuspendBehavior must alias safety::SuspendBehavior.");
+
+// mint_suspend_behavior §XXI factory reach via qualified-id decltype
+// identity — same pattern as mint_hw.  Closes the
+// mint_suspend_behavior `[✗ NO-FIXY]` inventory marker.
+static_assert(std::is_same_v<
+    decltype(&::crucible::fixy::wrap::mint_suspend_behavior<
+        ::crucible::fixy::wrap::SuspendBehavior_v::KeepsTicking, int, int>),
+    decltype(&::crucible::safety::mint_suspend_behavior<
+        ::crucible::safety::SuspendBehavior_v::KeepsTicking, int, int>)>,
+    "fixy::wrap::mint_suspend_behavior must alias safety::mint_suspend_behavior.");
 
 // FIXY-V-058 — Affine alias sentinel (substrate ships in V-057;
 // fixy::wrap:: surface is the V-058 re-export).
