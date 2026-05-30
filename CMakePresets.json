@@ -8,15 +8,9 @@
       "binaryDir": "${sourceDir}/build",
       "generator": "Ninja",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "$env{HOME}/.local/gcc16-patched/usr/bin/gcc-16p",
-        "CMAKE_CXX_COMPILER": "$env{HOME}/.local/gcc16-patched/usr/bin/g++-16p",
-        "CMAKE_AR": "$env{HOME}/.local/gcc16-patched/usr/bin/gcc-ar-16p",
-        "CMAKE_NM": "$env{HOME}/.local/gcc16-patched/usr/bin/gcc-nm-16p",
-        "CMAKE_RANLIB": "$env{HOME}/.local/gcc16-patched/usr/bin/gcc-ranlib-16p",
+        "_comment_toolchain": "Patched GCC 16.1.1 + libstdc++ 16 are resolved by cmake/Toolchain-gcc16.cmake. Override the location WITHOUT editing this file: set CRUCIBLE_GCC16_PREFIX=<install-prefix> (binaries at <prefix>/usr/bin/g++-16p, libs at <prefix>/usr/lib64), or CRUCIBLE_CXX=<full-g++-path>. Unset -> falls back to $HOME/.local/gcc16-patched (the canonical dev-box default, so this preset configures verbatim here). The libstdc++ rpath is derived from the same prefix.",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/Toolchain-gcc16.cmake",
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXE_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16-patched/usr/lib64:$env{HOME}/.local/gcc16-patched/lib64",
-        "CMAKE_SHARED_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16-patched/usr/lib64:$env{HOME}/.local/gcc16-patched/lib64",
-        "CMAKE_MODULE_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16-patched/usr/lib64:$env{HOME}/.local/gcc16-patched/lib64",
         "CRUCIBLE_BENCH": "OFF",
         "CRUCIBLE_WERROR": "ON"
       }
