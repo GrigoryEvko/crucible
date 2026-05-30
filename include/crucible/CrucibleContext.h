@@ -95,13 +95,19 @@ struct DispatchResult {
   // COMPILED-only payload accessors.  pre() fires if the caller
   // reaches for status/op_index without first confirming COMPILED.
   [[nodiscard, gnu::pure]] ReplayStatus compiled_status() const noexcept
-      pre (action == Action::COMPILED)
   {
+    // CONTRACT-fix-10: `action` is a `this->` member predicate — the GCC
+    // 16.1.1 consteval-bypass family.  Vanilla pre(action == COMPILED)
+    // silently no-ops at consteval on the un-patched distro toolchain;
+    // CRUCIBLE_PRE fires toolchain-independently (consteval poison +
+    // debug-runtime abort), collapses to [[assume]] under NDEBUG.
+    CRUCIBLE_PRE(action == Action::COMPILED);
     return status;
   }
   [[nodiscard, gnu::pure]] OpIndex compiled_op_index() const noexcept
-      pre (action == Action::COMPILED)
   {
+    // CONTRACT-fix-10: same `this->`-member consteval-bypass migration.
+    CRUCIBLE_PRE(action == Action::COMPILED);
     return op_index;
   }
 
@@ -199,8 +205,13 @@ struct CrucibleContext {
   // the hot path.
   [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus
   advance(SchemaHash schema_hash, ShapeHash shape_hash)
-      pre (mode_ == ContextMode::COMPILED)
   {
+    // CONTRACT-fix-10: `mode_` is a `this->` member predicate (consteval-
+    // bypass family).  In-body CRUCIBLE_PRE fires across both the patched
+    // and un-patched GCC 16.1.1 builds; hot-path TUs compiled
+    // contract_evaluation_semantic=ignore are unaffected (the macro is
+    // [[assume]] under NDEBUG — zero bytes, zero cycles).
+    CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
     // Exhaustive switch: a new ReplayStatus variant added to the enum
     // would previously have silently been routed to the DIVERGED branch
     // (the old if/else-if fell through anything that wasn't MATCH or
@@ -232,23 +243,30 @@ struct CrucibleContext {
   // memory-plan slots.  Not gnu::flatten — the delegate already
   // always_inlines the engine call.
   [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
-      pre (mode_ == ContextMode::COMPILED)
   {
+    // CONTRACT-fix-10: `mode_` member predicate (consteval-bypass family).
+    CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
     return engine_.output_ptr(j);
   }
 
   [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
-      pre (mode_ == ContextMode::COMPILED)
   {
+    // CONTRACT-fix-10: `mode_` member predicate (consteval-bypass family).
+    CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
     return engine_.input_ptr(j);
   }
 
   // ── Switch to a different compiled region (mid-iteration safe) ──
   [[nodiscard]] bool switch_region(const RegionNode* alt, uint32_t div_pos)
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (mode_ == ContextMode::COMPILED)
       pre (alt != nullptr)
   {
+    // CONTRACT-fix-10: `mode_` is a `this->` member predicate (consteval-
+    // bypass family) — migrated to in-body CRUCIBLE_PRE.  The `alt !=
+    // nullptr` clause is a const-pointer-param literal comparison (the one
+    // shape that fires even on the un-patched build), so it stays a
+    // vanilla pre() in the signature where it is discoverable.
+    CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
     if (!alt->plan) [[unlikely]]
       return false;
 
@@ -325,8 +343,9 @@ struct CrucibleContext {
   }
 
   [[nodiscard]] CRUCIBLE_INLINE CompiledView mint_compiled_view() const noexcept
-      pre (mode_ == ContextMode::COMPILED)
   {
+    // CONTRACT-fix-10: `mode_` member predicate (consteval-bypass family).
+    CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
     return crucible::fixy::wrap::mint_view<ctx_mode::Compiled>(*this);
   }
 

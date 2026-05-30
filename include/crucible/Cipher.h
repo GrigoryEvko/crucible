@@ -305,8 +305,13 @@ class CRUCIBLE_OWNER Cipher {
     using OpenView = ::crucible::CipherOpenView;
 
     [[nodiscard]] OpenView mint_open_view() const noexcept
-        pre (is_open())
     {
+        // CONTRACT-fix-10: is_open() reads the `this->root_` member, so the
+        // vanilla pre(is_open()) is the GCC 16.1.1 consteval-bypass family
+        // (silently no-ops at consteval on the un-patched distro build).
+        // In-body CRUCIBLE_PRE fires toolchain-independently and collapses
+        // to [[assume]] under NDEBUG — zero cost on the open-view mint path.
+        CRUCIBLE_PRE(is_open());
         return crucible::fixy::wrap::mint_view<cipher_state::Open>(*this);
     }
 

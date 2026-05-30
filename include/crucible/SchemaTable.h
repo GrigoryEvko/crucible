@@ -153,14 +153,20 @@ struct SchemaTable {
   using SealedView  = crucible::fixy::wrap::ScopedView<SchemaTable, schema_state::Sealed>;
 
   [[nodiscard]] MutableView mint_mutable_view() const noexcept
-      pre (!is_sealed())
   {
+    // CONTRACT-fix-10: is_sealed() reads the `this->sealed_` member, so the
+    // vanilla pre(!is_sealed()) is the GCC 16.1.1 consteval-bypass family
+    // (silently no-ops at consteval on the un-patched distro build).
+    // In-body CRUCIBLE_PRE fires toolchain-independently; [[assume]] under
+    // NDEBUG keeps the view-mint path zero-cost.
+    CRUCIBLE_PRE(!is_sealed());
     return crucible::fixy::wrap::mint_view<schema_state::Mutable>(*this);
   }
 
   [[nodiscard]] SealedView mint_sealed_view() const noexcept
-      pre (is_sealed())
   {
+    // CONTRACT-fix-10: same `this->sealed_` member-predicate migration.
+    CRUCIBLE_PRE(is_sealed());
     return crucible::fixy::wrap::mint_view<schema_state::Sealed>(*this);
   }
 

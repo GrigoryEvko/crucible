@@ -461,14 +461,20 @@ struct CKernelTable {
     using SealedView  = crucible::fixy::wrap::ScopedView<CKernelTable, ckernel_state::Sealed>;
 
     [[nodiscard]] MutableView mint_mutable_view() const noexcept
-        pre (!is_sealed())
     {
+        // CONTRACT-fix-10: is_sealed() reads `this->sealed_`, so the vanilla
+        // pre(!is_sealed()) is the GCC 16.1.1 consteval-bypass family (same
+        // family as the CKernel-Seal-POST above).  In-body CRUCIBLE_PRE
+        // fires toolchain-independently; [[assume]] under NDEBUG keeps the
+        // view-mint path zero-cost.
+        CRUCIBLE_PRE(!is_sealed());
         return crucible::fixy::wrap::mint_view<ckernel_state::Mutable>(*this);
     }
 
     [[nodiscard]] SealedView mint_sealed_view() const noexcept
-        pre (is_sealed())
     {
+        // CONTRACT-fix-10: same `this->sealed_` member-predicate migration.
+        CRUCIBLE_PRE(is_sealed());
         return crucible::fixy::wrap::mint_view<ckernel_state::Sealed>(*this);
     }
 

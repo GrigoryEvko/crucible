@@ -12396,6 +12396,15 @@ crucible_neg_compile_test(neg_decide_non_negative_minus_one
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_non_negative_int_min
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+# fix-10 — DispatchResult member-predicate pre() migrated to CRUCIBLE_PRE so
+# it fires at consteval toolchain-independently (vanilla pre() was silently
+# bypassed on stock GCC 16.1.1).  Same predicate shape across both bodies;
+# the mode_/is_open/is_sealed migrations can't be consteval-witnessed
+# (non-constexpr atomic/optional state — documented architectural limit).
+crucible_neg_compile_test(neg_dispatch_result_compiled_status_on_record
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_dispatch_result_compiled_op_index_on_record
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 
 # CONTRACT-055: crucible::decide::valid_span — span-shape disjunction
 # predicate (count == C{0} || ptr != nullptr).  TWO HS14 fixtures
