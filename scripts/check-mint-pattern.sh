@@ -95,10 +95,16 @@ case "${1:-}" in
         cat >"$tmp_root/include/crucible/planted/planted_violation.h" <<'PLANTED'
 #pragma once
 // Synthetic §XXI MINT-PATTERN drift fixtures for --self-test.
+#include <crucible/elsewhere.h>  // mint_token_from_include_comment (re-export)
 namespace crucible::planted {
 struct Token { int v = 0; };
 struct Source { int s = 0; };
 template <typename T> concept SomeConcept = true;
+
+// Comment-line false-positive guard: a `mint_*(` token that appears
+// only inside a trailing `//` comment must NOT be flagged.  The real
+// definition (mint_token_ok) carries the attributes.
+constexpr int unrelated = 0;  // call mint_token_comment_only(x) elsewhere
 
 // Canonical mint — all four attributes present.  Must NOT be flagged.
 template <typename T>
@@ -169,6 +175,19 @@ PLANTED
             rm -f "$result_file"
             exit 2
         fi
+        # False-positive guard: a `mint_*` token that lives only inside a
+        # trailing `//` comment OR on an `#include` line must NOT be
+        # flagged — those are documentation mentions, not declarations.
+        for ghost in 'mint_token_from_include_comment' 'mint_token_comment_only'; do
+            if grep -q "$ghost" "$result_file"; then
+                printf 'check-mint-pattern: SELF-TEST FAILED — false positive on comment/include mention: %s\n' \
+                    "$ghost" >&2
+                printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                    "$(cat "$result_file")" >&2
+                rm -f "$result_file"
+                exit 2
+            fi
+        done
         rm -f "$result_file"
 
         # ── Phase 2: stale-allowlist-entry detection ─────────────────
@@ -348,7 +367,80 @@ ALLOW
         fi
         rm -f "$prec_file"
 
-        printf 'check-mint-pattern: self-test passed — drift fires on all four axes (none on canonical); stale detection flags dead allowlist entries across both grammars (none on live); violations preempt the stale pass.\n' >&2
+        # ── Phase 5: NAME-KEYED grammar (drift-proof suppression) ────
+        # Suppress every drift mint by NAME (no line number anywhere in
+        # the allowlist) so the entries cannot be invalidated by a line
+        # shift.  Then PROVE drift-resistance: prepend extra lines to the
+        # fixture so every mint moves to a different line, and re-run —
+        # the name-keyed entries must STILL suppress (a line-keyed entry
+        # would have gone stale).  Also plant one name-keyed entry that
+        # matches NO live failure (the canonical mint's name) which MUST
+        # be flagged stale; and verify the four live name-keyed entries
+        # are NOT falsely flagged.
+        cat >"$tmp_root/scripts/mint-pattern-allowlist.txt" <<ALLOW
+$rel:mint_token_drift_nodiscard:nodiscard-ok
+$rel:mint_token_drift_noexcept:noexcept-ok
+$rel:mint_token_drift_constexpr:constexpr-ok
+$rel:mint_token_drift_requires:requires-ok
+$rel:mint_token_ok:nodiscard-ok
+ALLOW
+        # Force a line shift: prepend 7 blank lines so every mint's line
+        # number changes.  Name keys are immune; line keys would stale.
+        shifted="$tmp_root/include/crucible/planted/shifted.tmp"
+        { printf '\n\n\n\n\n\n\n'; cat "$planted"; } > "$shifted"
+        mv "$shifted" "$planted"
+        name_file="$(mktemp)"
+        name_rc=0
+        CRUCIBLE_MINT_PATTERN_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$name_file" || name_rc=$?
+        # Expect exit 2 (the canonical-name entry is stale) and NO
+        # surviving violation (all four drifts suppressed by name despite
+        # the line shift).
+        if (( name_rc != 2 )); then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 5) — expected exit 2 (name-keyed stale after line shift), got %d.\n' \
+                "$name_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$name_file")" >&2
+            rm -f "$name_file"
+            exit 2
+        fi
+        if grep -q '^MINT-PATTERN violation:' "$name_file"; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 5) — name-keyed entries failed to suppress after a line shift (drift-proofing broken).\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$name_file")" >&2
+            rm -f "$name_file"
+            exit 2
+        fi
+        # Exactly one stale: the canonical mint's name-keyed entry.
+        name_stale="$(grep -c '^MINT-PATTERN stale:' "$name_file" || true)"
+        if [[ "$name_stale" -ne 1 ]]; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 5) — expected 1 name-keyed stale diagnostic, got %s.\n' \
+                "$name_stale" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$name_file")" >&2
+            rm -f "$name_file"
+            exit 2
+        fi
+        if ! grep -qF -- "$rel:mint_token_ok:nodiscard-ok" "$name_file"; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 5) — expected name-keyed stale entry not flagged: %s\n' \
+                "$rel:mint_token_ok:nodiscard-ok" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$name_file")" >&2
+            rm -f "$name_file"
+            exit 2
+        fi
+        # A LIVE name-keyed entry must NOT appear in a stale diagnostic.
+        if grep '^MINT-PATTERN stale:' "$name_file" \
+            | grep -qF -- "$rel:mint_token_drift_nodiscard:nodiscard-ok"; then
+            printf 'check-mint-pattern: SELF-TEST FAILED (phase 5) — live name-keyed entry falsely flagged stale.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$name_file")" >&2
+            rm -f "$name_file"
+            exit 2
+        fi
+        rm -f "$name_file"
+
+        printf 'check-mint-pattern: self-test passed — drift fires on all four axes (none on canonical); comment/include mentions are not false-flagged; stale detection flags dead allowlist entries across line-keyed AND name-keyed grammars (none on live); name-keyed entries survive a line shift (drift-proof); violations preempt the stale pass.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -426,6 +518,33 @@ has_noexcept_in_signature() {
     return 1
 }
 
+# ── Helper: deleted-declaration detection ────────────────────────────
+# A `= delete("...")` overload is a deliberately-poisoned tombstone, not
+# a factory — it carries a diagnostic for a mis-spelled call and is
+# structurally exempt from all four §XXI axes (a deleted function has no
+# [[nodiscard]], no noexcept, no constexpr, no body to gate).  Scan the
+# candidate line plus up to 14 lines forward for an `= delete` token,
+# stopping at the body-open `{` (a real definition) which precludes a
+# deletion.  Returns 0 (skip) when a deletion is found before any body.
+is_deleted_decl() {
+    local file="$1" line="$2"
+    local offset ln text
+    for offset in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
+        ln=$((line + offset))
+        text="$(sed -n "${ln}p" "$file" 2>/dev/null || true)"
+        [[ -z "$text" ]] && break
+        case "$text" in
+            *'= delete'*|*'=delete'*) return 0 ;;
+        esac
+        # A body-open brace means this is a real definition, not a
+        # deletion — stop before mis-reading a later overload's deletion.
+        case "$text" in
+            *'{') return 1 ;;
+        esac
+    done
+    return 1
+}
+
 # ── Helper: requires-clause presence when templated ──────────────────
 # Walks back up to 15 lines.  If `template <` / `template<` is
 # found in the preceding block, the same block must contain a
@@ -466,11 +585,37 @@ has_requires_if_templated() {
 }
 
 # ── Helper: per-check allowlist lookup ───────────────────────────────
+# Two interchangeable entry grammars are honoured:
+#
+#   LINE-KEYED  path:line[:check-ok]      — keyed on the source line.
+#   NAME-KEYED  path:mint_name[:check-ok] — keyed on the mint factory
+#                                           identifier (the `mint_<noun>`
+#                                           token on the candidate line).
+#
+# NAME-KEYED entries are DRIFT-PROOF: a line-shifting edit (e.g. a
+# concurrent agent inserting members above the mint) moves the line
+# number but NOT the mint's identifier, so a name-keyed exemption keeps
+# tracking the same factory across edits.  This is the fix-18 approach:
+# eliminate the line number as the drift vector.  Prefer name-keying for
+# any new exemption; line-keyed entries are retained for backward
+# compatibility but are inherently fragile.
+#
+# A name-keyed entry's `path` must match `rel` exactly (a mint of the
+# same name in another header is a DIFFERENT factory and must carry its
+# own entry).  Overloads sharing one name in one file collapse to a
+# single name-keyed entry — this is intentional: an overload set is one
+# §XXI factory with one carve-out rationale.
 allowlisted_for() {
-    local rel="$1" line="$2" check="$3"
+    local rel="$1" line="$2" check="$3" name="$4"
     [[ -f "$allowlist" ]] || return 1
+    # Line-keyed (legacy, fragile).
     grep -Fxq -- "$rel:$line" "$allowlist" && return 0
     grep -Fxq -- "$rel:$line:$check-ok" "$allowlist" && return 0
+    # Name-keyed (drift-proof).
+    if [[ -n "$name" ]]; then
+        grep -Fxq -- "$rel:$name" "$allowlist" && return 0
+        grep -Fxq -- "$rel:$name:$check-ok" "$allowlist" && return 0
+    fi
     return 1
 }
 
@@ -511,15 +656,43 @@ while IFS= read -r match; do
         '//'*|'///'*|'*'*|'/*'*) continue ;;
     esac
 
+    # Skip preprocessor #include lines.  A re-export header routinely
+    # documents the imported symbol in a trailing comment, e.g.
+    #     #include <crucible/safety/ThreadName.h>  // mint_thread_name
+    # The `mint_` token lives in the comment, not in a declaration —
+    # the real definition is in the included header and is scanned
+    # there.  Without this skip the `#include` line is a false
+    # positive on all four axes.
+    case "$stripped" in
+        '#include'*|'#'[[:space:]]*'include'*) continue ;;
+    esac
+
+    # Skip lines whose `mint_` token appears ONLY inside a trailing
+    # `//` comment.  A definition's `mint_<name>(` always precedes any
+    # comment on the line; if every `mint_` occurrence sits after the
+    # first `//`, the candidate is a documentation mention, not a
+    # declaration.  (Block-comment `/* ... */` mentions are rarer and
+    # the leading-`/*` case above already covers a comment that opens
+    # the line.)
+    code_part="${text%%//*}"
+    case "$code_part" in
+        *'mint_'*) ;;                 # real code occurrence — keep scanning
+        *) continue ;;                # mint_ only after `//` — skip
+    esac
+
     # Skip friend forwards — the attribute discipline lives on the
     # definition, not the friend re-declaration.  Scan the
-    # candidate line PLUS the two preceding non-empty lines:
-    # friend declarations frequently split as
-    #     template <...>            ← line N-2
-    #     friend constexpr Type     ← line N-1
-    #     mint_X(args) noexcept;    ← line N (candidate)
+    # candidate line PLUS the FOUR preceding non-empty lines:
+    # friend declarations frequently split across the `friend`
+    # keyword, the return type, and the declarator, e.g.
+    #     template <...>            ← line N-3
+    #     friend std::expected<     ← line N-2 (friend keyword here)
+    #         Linear<Handle>, ...>  ← line N-1 (return type continues)
+    #     mint_X(args) noexcept;    ← line N (candidate declarator)
+    # so the `friend` keyword can sit up to three lines above the
+    # declarator that carries the `mint_` token.
     is_friend_forward=0
-    for friend_offset in 0 -1 -2; do
+    for friend_offset in 0 -1 -2 -3 -4; do
         friend_ln=$((line + friend_offset))
         (( friend_ln < 1 )) && break
         friend_text="$(sed -n "${friend_ln}p" "$file" 2>/dev/null || true)"
@@ -534,6 +707,13 @@ while IFS= read -r match; do
     case "$text" in
         *'using '*'mint_'*) continue ;;
     esac
+
+    # Skip deleted overloads — `= delete("...")` tombstones are not
+    # factories; they exist only to produce a readable diagnostic when a
+    # caller picks the wrong overload.  Structurally exempt from §XXI.
+    if is_deleted_decl "$file" "$line"; then
+        continue
+    fi
 
     # Skip method-call / qualified-name call shapes:
     #   `.mint_X(`     — member call on an instance.
@@ -552,10 +732,25 @@ while IFS= read -r match; do
     case "$prefix" in
         *'return '*|*'= '*|*'co_return '*|*'co_yield '*) continue ;;
     esac
-    # Skip call-in-argument-position: a `(` followed by another
-    # token before `mint_X` means mint is nested in an outer call.
+    # Skip call/argument-position: ANY `(` before the `mint_` token on
+    # the same line means the mint is nested inside an outer call or a
+    # condition (e.g. `static_assert(mint_fn(42)...)`, `foo(mint_x(...))`).
+    # A factory DEFINITION never has a `(` before its own declarator —
+    # the declarator's first `(` opens its parameter list.  Verified
+    # against every live definition in include/ (none has a leading-paren
+    # prefix), so this is a structural, not heuristic, skip.
     case "$prefix" in
-        *'('*[a-zA-Z_0-9]*) continue ;;
+        *'('*) continue ;;
+    esac
+    # Skip string-literal position: a `"` before the `mint_` token on
+    # the same line means the token is text inside a string literal —
+    # canonically a `static_assert(...)` diagnostic message that names
+    # the mint it guards (e.g. `"mint_permission_split(ctx, ...) requires "`).
+    # A factory DEFINITION never has a `"` before its declarator.
+    # Verified against every live candidate in include/ (every
+    # quote-prefixed occurrence is a diagnostic string, none a definition).
+    case "$prefix" in
+        *'"'*) continue ;;
     esac
     # Skip assignment-on-previous-line shapes: `auto x =`
     # continuation followed by `mint_X(...)` on the next line.
@@ -588,12 +783,21 @@ while IFS= read -r match; do
         case "$check" in
             nodiscard) has_attribute_above   "$file" "$line" '[[nodiscard]]' || check_fails=1 ;;
             noexcept)  has_noexcept_in_signature "$file" "$line"             || check_fails=1 ;;
-            constexpr) has_attribute_above   "$file" "$line" 'constexpr'     || check_fails=1 ;;
+            constexpr) has_attribute_above   "$file" "$line" 'constexpr' \
+                        || has_attribute_above "$file" "$line" 'consteval' \
+                        || check_fails=1 ;;
             requires)  has_requires_if_templated "$file" "$line"             || check_fails=1 ;;
         esac
         (( check_fails == 0 )) && continue
+        # Record BOTH the line-keyed and the name-keyed live-failure
+        # tuples so post-scan stale detection can validate either entry
+        # grammar.  The `@`-prefixed name key cannot collide with a
+        # numeric line key.
         printf '%s:%s:%s\n' "$rel" "$line" "$check" >> "$live_fail_file"
-        allowlisted_for "$rel" "$line" "$check" || site_violations+=("$check")
+        if [[ -n "$mint_name" ]]; then
+            printf '%s:@%s:%s\n' "$rel" "$mint_name" "$check" >> "$live_fail_file"
+        fi
+        allowlisted_for "$rel" "$line" "$check" "$mint_name" || site_violations+=("$check")
     done
 
     if (( ${#site_violations[@]} > 0 )); then
@@ -650,12 +854,22 @@ HINT
 fi
 
 # ── Outcome (stale allowlist entries) ────────────────────────────────
-# Every allowlist entry must correspond to a LIVE check-failure.  A
-# `path:line:check-ok` entry is live iff (path:line:check) is in the
-# live-failure set; a bare `path:line` (all-checks) entry is live iff
-# ANY of the four checks fails at that line.  Entries matching neither
-# are STALE (the mint moved on a line shift, was fixed, or renamed) and
-# must be pruned so the guard regains drift coverage at that site.
+# Every allowlist entry must correspond to a LIVE check-failure across
+# either entry grammar:
+#
+#   LINE-KEYED  path:line[:check-ok]      — live iff the matching
+#                                           (path:line[:check]) tuple is
+#                                           in the live-failure set.
+#   NAME-KEYED  path:mint_name[:check-ok] — live iff the matching
+#                                           (path:@mint_name[:check])
+#                                           tuple is in the live-failure
+#                                           set.  Drift-proof: survives
+#                                           the line shift that would
+#                                           stale a line-keyed entry.
+#
+# Entries matching neither are STALE (the mint was fixed or renamed, or
+# a line-keyed entry's line shifted) and must be pruned so the guard
+# regains drift coverage at that site.
 stale_count=0
 if [[ -f "$allowlist" ]]; then
     sort -u "$live_fail_file" -o "$live_fail_file"
@@ -665,26 +879,46 @@ if [[ -f "$allowlist" ]]; then
         trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
         [[ -z "$trimmed" ]] && continue
 
+        # Split into the base (path:key) and an optional `:check-ok`.
         if [[ "$trimmed" == *-ok ]]; then
-            # path:line:check-ok → live iff path:line:check ∈ live set.
-            live_key="${trimmed%-ok}"          # path:line:check
-            check_name="${live_key##*:}"       # check
-            if ! grep -Fxq -- "$live_key" "$live_fail_file" 2>/dev/null; then
-                printf 'MINT-PATTERN stale: %s — STALE allowlist entry (no live %s failure at this line; the mint moved, was fixed, or renamed — remove from allowlist).\n' \
+            base="${trimmed%-ok}"              # path:key:check
+            check_name="${base##*:}"           # check
+            keyed="${base%:*}"                 # path:key
+        else
+            base="$trimmed"                    # path:key
+            check_name=""
+            keyed="$trimmed"
+        fi
+        # The key is the final segment of `path:key`; name-keyed entries
+        # carry a `mint_`-prefixed identifier there, line-keyed entries a
+        # bare number.  Distinguish on the prefix.
+        key_seg="${keyed##*:}"                 # line number OR mint_name
+        if [[ "$key_seg" == mint_* ]]; then
+            # Name-keyed: rebuild the live-set lookup with the `@` prefix.
+            rel_part="${keyed%:*}"             # path
+            live_base="$rel_part:@$key_seg"    # path:@mint_name
+        else
+            live_base="$keyed"                 # path:line
+        fi
+
+        if [[ -n "$check_name" ]]; then
+            # Per-check entry → live iff (live_base:check) ∈ live set.
+            if ! grep -Fxq -- "$live_base:$check_name" "$live_fail_file" 2>/dev/null; then
+                printf 'MINT-PATTERN stale: %s — STALE allowlist entry (no live %s failure for this key; the mint moved, was fixed, or renamed — remove from allowlist).\n' \
                     "$trimmed" "$check_name" >&2
                 stale_count=$((stale_count + 1))
             fi
         else
-            # path:line (all-checks) → live iff ANY of the four fails.
+            # All-checks entry → live iff ANY of the four fails.
             entry_is_live=0
             for chk in nodiscard noexcept constexpr requires; do
-                if grep -Fxq -- "$trimmed:$chk" "$live_fail_file" 2>/dev/null; then
+                if grep -Fxq -- "$live_base:$chk" "$live_fail_file" 2>/dev/null; then
                     entry_is_live=1
                     break
                 fi
             done
             if (( entry_is_live == 0 )); then
-                printf 'MINT-PATTERN stale: %s — STALE allowlist entry (no live failure at this line; the mint moved, was fixed, or renamed — remove from allowlist).\n' \
+                printf 'MINT-PATTERN stale: %s — STALE allowlist entry (no live failure for this key; the mint moved, was fixed, or renamed — remove from allowlist).\n' \
                     "$trimmed" >&2
                 stale_count=$((stale_count + 1))
             fi
