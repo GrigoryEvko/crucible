@@ -1,0 +1,226 @@
+# Crucible CI.
+#
+# IMPORTANT HONESTY NOTE — read before extending this file.
+#
+# The full C++ build REQUIRES a patched GCC 16.1.1 (PR c++/124241 contracts-
+# cache bypass cherry-picked) plus its matching libstdc++ 16. That toolchain
+# does NOT exist on any stock GitHub-hosted runner, so a naive "build
+# everything" job CANNOT run on ubuntu-latest. This workflow therefore splits
+# into two honest tiers:
+#
+#   * guards   — the bash/ripgrep discipline suite (the `ci_guard`-labelled
+#                ctest registrations in test/CMakeLists.txt). These operate on
+#                the source tree alone, need no compiler, and run on a stock
+#                runner. Cheapest, highest-signal checks; gated on every push
+#                and PR.
+#
+#   * build    — the compile/run + negative-compile + golden-binary suite
+#                (every `crucible_test()` plus `row_hash_golden_diff`). These
+#                NEED the patched toolchain. The job is wired but DOES NOT run
+#                on stock runners: it targets a self-hosted runner / container
+#                carrying g++-16p, and is opt-in via workflow_dispatch. It is
+#                NOT a fiction that pretends to compile on ubuntu-latest.
+#
+# The guard list below is kept in 1:1 correspondence with the `ci_guard`
+# registrations in test/CMakeLists.txt. When a guard is added/removed there,
+# mirror it here (the scripts are invoked directly because ctest cannot drive
+# them without first configuring CMake, which itself needs the patched GCC).
+
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Toolchain-FREE discipline guards. Stock ubuntu-latest runner. No compiler,
+  # no CMake configure, no build artifacts — pure source-tree scans.
+  # ---------------------------------------------------------------------------
+  guards:
+    name: discipline guards (toolchain-free)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
+
+      # Each step mirrors a `ci_guard`-labelled ctest registration in
+      # test/CMakeLists.txt, invoked with the same arguments. Scripts run from
+      # the repo root (== ${CMAKE_SOURCE_DIR}). Self-test variants prove the
+      # guard FIRES on a planted violation; the bare variant scans the real
+      # tree. A nonzero exit fails the job.
+
+      - name: trait injection guard
+        run: bash scripts/check-trait-injection.sh
+
+      - name: session-persistence include audit
+        run: bash scripts/check-session-persistence-include-audit.sh
+
+      - name: contract cite regression (pre-callsite count vs baseline)
+        run: bash scripts/audit-pre-callsite-count.sh --check scripts/contracts-baseline.json
+
+      - name: contract decide-cite ratio
+        run: bash scripts/audit-decide-cite-ratio.sh
+
+      - name: refined/pre subsumption (self-test + scan)
+        run: |
+          bash scripts/check-refined-pre-subsumption.sh --self-test
+          bash scripts/check-refined-pre-subsumption.sh
+
+      - name: fixy discipline (self-test + scan)
+        run: |
+          bash scripts/check-fixy-discipline.sh --self-test
+          bash scripts/check-fixy-discipline.sh
+
+      - name: mint pattern (self-test + scan)
+        run: |
+          bash scripts/check-mint-pattern.sh --self-test
+          bash scripts/check-mint-pattern.sh
+
+      - name: permission storage antipattern (self-test + scan)
+        run: |
+          bash scripts/check-permission-storage.sh --self-test
+          bash scripts/check-permission-storage.sh
+
+      - name: no vector::reserve (self-test + scan)
+        run: |
+          bash scripts/check-no-reserve.sh --self-test
+          bash scripts/check-no-reserve.sh
+
+      - name: no raw fstream (self-test + scan)
+        run: |
+          bash scripts/check-no-raw-ofstream.sh --self-test
+          bash scripts/check-no-raw-ofstream.sh
+
+      - name: fixy hardware discipline (self-test + scan)
+        run: |
+          bash scripts/check-fixy-hw-discipline.sh --self-test
+          bash scripts/check-fixy-hw-discipline.sh
+
+      - name: no reinterpret_cast (self-test + scan)
+        run: |
+          bash scripts/check-no-reinterpret-cast.sh --self-test
+          bash scripts/check-no-reinterpret-cast.sh
+
+      - name: no -ffast-math (self-test + scan)
+        run: |
+          bash scripts/check-no-ffast-math.sh --self-test
+          bash scripts/check-no-ffast-math.sh
+
+      - name: fixy clean headers (self-test + scan)
+        run: |
+          bash scripts/check-fixy-clean-headers.sh --self-test
+          bash scripts/check-fixy-clean-headers.sh
+
+      - name: fixy dimension prose
+        run: bash scripts/check-fixy-dim-prose.sh
+
+      - name: syscall capability admission (self-test + scan)
+        run: |
+          bash scripts/check-syscall-capability.sh --self-test
+          bash scripts/check-syscall-capability.sh
+
+      - name: spawn discipline (self-test + scan)
+        run: |
+          bash scripts/check-fixy-spawn-discipline.sh --self-test
+          bash scripts/check-fixy-spawn-discipline.sh
+
+      - name: row-contains discipline (self-test + scan)
+        run: |
+          bash scripts/check-row-contains-discipline.sh --self-test
+          bash scripts/check-row-contains-discipline.sh
+
+      - name: fixy::is alias parity (self-test + scan)
+        run: |
+          bash scripts/check-isx-parity.sh --self-test
+          bash scripts/check-isx-parity.sh
+
+      - name: stub-vs-live discipline (self-test + scan)
+        run: |
+          bash scripts/check-stub-discipline.sh --self-test
+          bash scripts/check-stub-discipline.sh
+
+      - name: lock-free sibling-assert discipline (self-test + scan)
+        run: |
+          bash scripts/check-lock-free-asserts.sh --self-test
+          bash scripts/check-lock-free-asserts.sh
+
+      - name: mint inventory (self-test + drift check + HS14 floor)
+        run: |
+          bash scripts/gen-mint-inventory.sh --self-test
+          bash scripts/gen-mint-inventory.sh --check
+          bash scripts/gen-mint-inventory.sh --check-floor
+
+      - name: fixy::grant namespace purity
+        run: bash scripts/check-fixy-grant-namespace-purity.sh
+
+      - name: splits_into orphan-specialization purity
+        run: bash scripts/check-splits-into-orphan.sh
+
+  # ---------------------------------------------------------------------------
+  # Toolchain-DEPENDENT compile + run + golden-binary suite.
+  #
+  # NOT runnable on stock GitHub-hosted runners — needs the patched GCC 16.1.1
+  # + libstdc++ 16. Two ways to make this job execute (both out of scope to
+  # provision here, but the workflow is ready for either):
+  #
+  #   (a) Self-hosted runner: register a runner that has g++-16p installed,
+  #       then this job picks it up via the `self-hosted` label. Point the
+  #       toolchain at its location with CRUCIBLE_GCC16_PREFIX / CRUCIBLE_CXX
+  #       (see cmake/Toolchain-gcc16.cmake) — fix-20 made the preset portable
+  #       precisely so a non-default install path Just Works.
+  #
+  #   (b) Container image: build an image carrying the patched toolchain at a
+  #       known prefix and add `container: <image>` to this job, setting
+  #       CRUCIBLE_GCC16_PREFIX to that prefix. The image build itself is out
+  #       of scope for this workflow.
+  #
+  # Gated to manual dispatch so it never silently "passes" by being skipped on
+  # a stock runner — it runs only where the toolchain actually exists.
+  # ---------------------------------------------------------------------------
+  build:
+    name: build + test + negative-compile + golden (needs patched GCC 16)
+    needs: guards
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: [ self-hosted, gcc16-patched ]
+    env:
+      # Override on the runner/container if g++-16p is not under the default
+      # $HOME/.local/gcc16-patched prefix. Leave unset to use that default.
+      CRUCIBLE_GCC16_PREFIX: ${{ vars.CRUCIBLE_GCC16_PREFIX }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (portable toolchain resolution)
+        run: cmake --preset default
+
+      - name: Build
+        run: cmake --build --preset default
+
+      # Runs the entire ctest set on this runner: the C++ unit/compile tests,
+      # the negative-compile fixtures, row_hash_golden_diff (built binary), AND
+      # the ci_guard bash guards (harmless duplication with the guards job).
+      - name: Test
+        run: ctest --preset default
+
+      # Bit-exact / cross-build determinism + ThreadSanitizer gates, per the
+      # CLAUDE.md §XIII pre-merge matrix. Kept as a follow-on once the toolchain
+      # runner exists; uncomment when a TSan-capable runner is available.
+      # - name: ThreadSanitizer
+      #   run: |
+      #     cmake --preset tsan
+      #     cmake --build --preset tsan
+      #     ctest --preset tsan
