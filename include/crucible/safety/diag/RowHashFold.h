@@ -62,6 +62,30 @@
 //    `combine_ids` — the same Boost-style combiner used by
 //    StableName.h.
 //
+// ── Federation portability bound (fix-23, READ BEFORE FEDERATING) ───
+//
+// row_hash portability is guaranteed ONLY within a single (compiler,
+// stdlib, ABI) tuple — i.e. SAME-TOOLCHAIN federation.  Most fold
+// inputs are portable (salts, enum underlying values, NTTP values,
+// Effect values, the fmix64/FNV-1a/combine_ids arithmetic), but seven
+// wrapper kinds (Tagged, Refined, SealedRefined, Monotonic,
+// TimeOrdered, AppendOnly, and the Fn aggregators) fold a
+// `stable_type_id<T>` contribution that routes through
+// `std::meta::display_string_of` — which is compiler/stdlib-specific
+// (see StableName.h "Federation contract", V1/V2 scope).  Two peers on
+// DIFFERENT toolchains can therefore compute different hashes for the
+// same type (cache fragmentation), or — worse — collide two different
+// computations onto one slot if those ids coincide cross-toolchain.
+//
+// The bare `row_hash_of_v<T>` is consequently a safe federation join
+// key ONLY when every peer runs the same toolchain.  CROSS-toolchain
+// federation must fold in the portable toolchain discriminator via
+// `federation_key_with_toolchain<T>()` (below), which makes
+// cross-toolchain keys DISJOINT by construction, or is otherwise out
+// of scope pending a V2 canonical type-walker (StableName.h).  This
+// bound is intentionally NOT folded into `row_hash_contribution`
+// itself — doing so would move every published hash and the golden.
+//
 // ── Currently shipped specializations (FOUND-I02 + I02-AUDIT) ──────
 //
 // As of this header revision the row-bearing core + every Graded-
@@ -586,6 +610,49 @@ cardinality_seed(std::uint64_t cardinality) noexcept {
 // so the constant is shared between the EmptyRow specialization and
 // the self-test, and so any future audit can compare against it.
 inline constexpr std::uint64_t EMPTY_ROW_HASH = cardinality_seed(0);
+
+// ── fix-23 — federation toolchain discriminator ────────────────────
+//
+// row_hash portability holds ONLY within one (compiler, stdlib, ABI)
+// tuple — see the "Federation portability bound" section in the header
+// doc-block above.  The toolchain-dependent fold inputs are the seven
+// `stable_type_id<T>`-routed contributions (Tagged / Refined /
+// SealedRefined / Monotonic / TimeOrdered / AppendOnly / the Fn
+// aggregators); everything else (salts, enum underlying values, NTTP
+// values, Effect values, the fmix64/FNV-1a/combine_ids arithmetic) is
+// portable.  Because the unsound inputs are mixed in OPAQUELY, two
+// different toolchains can (a) compute different hashes for the same
+// type (cache fragmentation) or — worse — (b) collide two different
+// computations onto one slot if a `display_string_of`-derived id
+// happens to coincide cross-toolchain.
+//
+// FEDERATION_TOOLCHAIN_TAG is a portable integer fold over the
+// predefined `__GNUC__` / `__GNUC_MINOR__` / `__GNUC_PATCHLEVEL__` /
+// `__GLIBCXX__` macros — it uniquely names the (compiler, stdlib)
+// tuple WITHOUT touching `display_string_of`, so it is itself
+// computed identically on any machine running the same toolchain and
+// differs across toolchains by construction.  It is NOT folded into
+// `row_hash_contribution` (that would move every published hash and
+// the golden); instead a cross-ORG federation key folds it in via
+// `federation_key_with_toolchain<T>()` below, making cross-toolchain
+// keys DISJOINT by construction.  Same-toolchain federation keeps
+// using `row_hash_contribution_v<T>` directly and pays nothing.
+//
+// On a non-GCC toolchain these macros differ (or `__GLIBCXX__` is
+// absent), so the tag differs there too — exactly the intended
+// cross-toolchain disjointness.  GCC 16 is the only supported
+// compiler (CLAUDE.md §I), so the macros are always present here.
+[[nodiscard]] consteval std::uint64_t federation_toolchain_id() noexcept {
+    std::uint64_t h = FNV1A_OFFSET_BASIS;
+    h = combine_ids(h, static_cast<std::uint64_t>(__GNUC__));
+    h = combine_ids(h, static_cast<std::uint64_t>(__GNUC_MINOR__));
+    h = combine_ids(h, static_cast<std::uint64_t>(__GNUC_PATCHLEVEL__));
+    h = combine_ids(h, static_cast<std::uint64_t>(__GLIBCXX__));
+    return h;
+}
+
+inline constexpr std::uint64_t FEDERATION_TOOLCHAIN_TAG =
+    federation_toolchain_id();
 
 }  // namespace detail
 
@@ -1336,6 +1403,42 @@ template <typename T>
 inline constexpr RowHash row_hash_of_v = row_hash_of<T>();
 
 // ═════════════════════════════════════════════════════════════════════
+// ── Cross-ORG federation key — toolchain-disjoint (fix-23) ─────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// `row_hash_of<T>()` is portable ONLY within one (compiler, stdlib,
+// ABI) tuple — see the "Federation portability bound" section in the
+// header doc-block.  WITHIN one toolchain (same-org federation, the V1
+// scope of MerkleDag.h §9 KernelCache), join cache entries by
+// `row_hash_of_v<T>` directly; the toolchain is implicitly fixed and
+// nothing extra is needed.
+//
+// ACROSS toolchains (a multi-org federation whose peers may run GCC ↔
+// Clang, or GCC 16 ↔ GCC 17), the bare row hash is NOT a safe join
+// key.  `federation_toolchain_tag()` exposes the portable
+// (compiler, stdlib) discriminator, and `federation_key_with_toolchain
+// <T>()` folds it into the row hash so that two peers on DIFFERENT
+// toolchains map the same computation to DISJOINT slots — preventing
+// both the silent cross-toolchain collision AND the false-sharing of
+// a slot whose `stable_type_id`-derived bits only coincidentally
+// matched.  Peers that genuinely intend to share a slot must agree on
+// a toolchain (or ship a V2 canonical type-walker — see StableName.h
+// "What V1 DOES NOT guarantee").
+[[nodiscard]] consteval std::uint64_t federation_toolchain_tag() noexcept {
+    return detail::FEDERATION_TOOLCHAIN_TAG;
+}
+
+template <typename T>
+[[nodiscard]] consteval RowHash federation_key_with_toolchain() noexcept {
+    return RowHash{detail::combine_ids(detail::FEDERATION_TOOLCHAIN_TAG,
+                                       row_hash_contribution_v<T>)};
+}
+
+template <typename T>
+inline constexpr RowHash federation_key_with_toolchain_v =
+    federation_key_with_toolchain<T>();
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Self-test block — invariants asserted at header inclusion ──────
 // ═════════════════════════════════════════════════════════════════════
 
@@ -1999,6 +2102,47 @@ static_assert(
 static_assert(
     row_hash_contribution_v<safety::AppendOnly<safety::Linear<int>, FoundO49_ProbeA>> !=
     row_hash_contribution_v<safety::AppendOnly<safety::Stale<int>,  FoundO49_ProbeB>>);
+
+// ─── fix-23 — federation toolchain discriminator ───────────────────
+//
+// The toolchain tag is non-zero (FNV-1a basis is non-zero, combine_ids
+// preserves that) and is NOT itself a row hash — it only enters a
+// cross-org key.  The toolchain-keyed federation key folds the tag
+// over the bare row hash, so:
+//   (a) it differs from the bare row_hash (cross-toolchain disjoint),
+//   (b) it stays row-discriminating (different rows → different keys),
+//   (c) it stays payload-blind for bare T (same as the bare hash), and
+//   (d) it never collides with the cache EMPTY-slot sentinel.
+// None of this perturbs row_hash_contribution, so the published golden
+// and the FOUND-I04 wire-format pins above are untouched.
+
+static_assert(detail::FEDERATION_TOOLCHAIN_TAG != 0);
+static_assert(federation_toolchain_tag() == detail::FEDERATION_TOOLCHAIN_TAG);
+
+// (a) toolchain-keyed ≠ bare row hash — combine_ids(tag, X) ≠ X for the
+//     golden-ratio mixer, so cross-toolchain keys are disjoint from the
+//     same-toolchain keys that omit the tag.
+static_assert(federation_key_with_toolchain_v<EmptyRow>.raw()
+           != row_hash_contribution_v<EmptyRow>);
+static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>>.raw()
+           != row_hash_contribution_v<Row<Effect::Alloc>>);
+
+// (b) row-discriminating through the toolchain key.
+static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>>
+           != federation_key_with_toolchain_v<Row<Effect::IO>>);
+static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>>
+           != federation_key_with_toolchain_v<EmptyRow>);
+
+// (c) payload-blind for bare payload T (row-shape only, exactly like
+//     the bare hash — payload identity lives in ContentHash).
+static_assert(federation_key_with_toolchain_v<effects::Computation<EmptyRow, int>>
+           == federation_key_with_toolchain_v<effects::Computation<EmptyRow, double>>);
+
+// (d) no sentinel collision on common rows.
+static_assert(federation_key_with_toolchain_v<EmptyRow>.raw()
+           != static_cast<std::uint64_t>(-1));
+static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>>.raw()
+           != static_cast<std::uint64_t>(-1));
 
 }  // namespace detail::row_hash_self_test
 

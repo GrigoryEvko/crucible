@@ -535,7 +535,7 @@ Goal: distributed, self-healing, persistent, cross-run-shareable.
 
 - Keeper daemon: systemd service, health monitoring, self-updating. Executes the runtime observer's advice.
 - Canopy mesh: SWIM gossip + Raft-scoped consensus, peer discovery. No master.
-- Cipher: hot tier (RAID redundancy), warm tier (NVMe), cold tier (S3/GCS). Event-sourced. Three-level KernelCache: L1 IR002 snapshot federation-shareable cross-vendor; L2 IR003\* snapshot cross-chip within vendor family; L3 compiled bytes per-chip.
+- Cipher: hot tier (RAID redundancy), warm tier (NVMe), cold tier (S3/GCS). Event-sourced. Three-level KernelCache: L1 IR002 snapshot federation-shareable cross-vendor; L2 IR003\* snapshot cross-chip within vendor family; L3 compiled bytes per-chip. **Federation cache-key portability bound:** the `RowHash` half of the federation key (`safety/diag/RowHashFold.h`) is bit-stable cross-vendor and cross-run ONLY within one (compiler, stdlib, ABI) tuple — same-toolchain federation. Seven wrapper kinds fold a `stable_type_id` contribution through `display_string_of`, which is toolchain-specific, so cross-toolchain federation (GCC ↔ Clang, or major-version rolls) must fold in the toolchain discriminator via `federation_key_with_toolchain<T>()` (disjoint-by-construction) or is out of scope pending a V2 canonical type-walker.
 - TrainingCheckpoints (weights, optimizer, data cursor, seed, step_idx, fleet UUIDs at checkpoint) survive reincarnation. Hardware-specific kernels recompiled by Mimic on new hardware using the warm-started Cipher archive.
 
 **Phase 6: L8-L12 Intelligence**
