@@ -12,6 +12,12 @@
 #              wired via CRUCIBLE_CXX=/usr/bin/g++. cmake/Toolchain-gcc16.cmake
 #              derives the matching gcc-ar / gcc-ranlib siblings + rpath from
 #              that compiler basename, so no patched toolchain is needed.
+#              Aggressively cached (public repo, free cache): ccache wraps the
+#              compiler (objects restored across runs via actions/cache, so a
+#              warm cache turns the ~150-TU C++26 build into mostly hits), and
+#              /var/cache/dnf is cached so the rawhide package install skips
+#              re-downloads. ccache cannot corrupt output — a hash miss just
+#              recompiles, and any stale hit would surface as a ctest failure.
 #
 # Toolchain honesty: the dev `default` preset uses a locally-built GCC 16.1.1
 # with ONE extra commit cherry-picked — PR c++/124241, the contracts consteval-
@@ -186,28 +192,78 @@ jobs:
   # the only packages Fedora ships separately from gcc-c++.
   # ---------------------------------------------------------------------------
   build:
-    name: build + test (fedora:rawhide, stock gcc-16)
+    name: build + test (fedora:rawhide, stock gcc-16, ccache)
     needs: guards
     runs-on: ubuntu-latest
     container: fedora:rawhide
     env:
       CRUCIBLE_CXX: /usr/bin/g++
+      # ccache lives at an absolute path (not in $WORKSPACE) so it survives the
+      # checkout wipe and is cached as a whole directory by actions/cache.
+      CCACHE_DIR: /ccache
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_COMPRESS: "true"
+      # The build is deterministic (no __DATE__/__TIME__; -fno-fast-math), so
+      # the default ccache hashing is safe — every reflection/contract flag is
+      # part of the command line and thus part of the hash.
     steps:
-      # git is needed by actions/checkout's git operations; install before it.
-      - name: Install toolchain + sanitizer/BPF runtimes
+      # Minimal tooling actions/cache needs to pack/unpack inside the container.
+      # Runs before any cache step (chicken-and-egg: can't cache the cache tool).
+      - name: Bootstrap cache tooling
+        run: dnf install -y --setopt=install_weak_deps=False tar zstd
+
+      # Restore the rawhide RPM cache so the toolchain install skips downloads.
+      # Unique key per run + restore-keys fallback => always restore newest,
+      # always save a fresh entry on success (standard rolling-cache pattern).
+      - name: Restore dnf package cache
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/dnf
+          key: dnf-rawhide-${{ github.run_id }}
+          restore-keys: dnf-rawhide-
+
+      # git is needed by actions/checkout; keepcache=1 retains RPMs for the
+      # dnf-cache save. ccache itself is installed here.
+      - name: Install toolchain + sanitizer/BPF runtimes + ccache
         run: >
-          dnf install -y --setopt=install_weak_deps=False
+          dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
           gcc-c++ libasan libubsan
-          cmake ninja-build git ripgrep libbpf-devel
+          cmake ninja-build git ripgrep libbpf-devel ccache
+
+      # Restore the compiled-object cache. Keyed by branch+sha (never an exact
+      # hit -> always saves a fresh entry); restore-keys walk back to the
+      # newest entry on this branch, then main, then anything.
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: /ccache
+          key: ccache-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-${{ github.ref_name }}-
+            ccache-main-
+            ccache-
 
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure (stock gcc-16 via CRUCIBLE_CXX)
-        run: cmake --preset default
+      # CMAKE_*_COMPILER_LAUNCHER=ccache composes with the toolchain file: CMake
+      # invokes `ccache /usr/bin/g++ ...`, leaving compiler/ar/rpath resolution
+      # (cmake/Toolchain-gcc16.cmake) untouched.
+      - name: Configure (stock gcc-16 + ccache launcher)
+        run: >
+          cmake --preset default
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Reset ccache stats
+        run: ccache -z
 
       - name: Build
         run: cmake --build --preset default
+
+      # Hit rate lands in the job log — the headline metric for this cache setup.
+      - name: ccache stats
+        run: ccache -s
 
       # The entire ctest set: C++ unit/compile tests, the negative-compile
       # fixtures, row_hash_golden_diff (built binary), AND the ci_guard bash
