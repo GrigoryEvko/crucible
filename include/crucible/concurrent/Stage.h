@@ -443,9 +443,12 @@ private:
 
     // mint_stage is the sole authorized constructor — friend the
     // entire template family so any (FnPtr, Ctx) instantiation can
-    // reach the private ctor.
+    // reach the private ctor.  The constraint MUST match mint_stage's
+    // requires-clause IDENTICALLY (CtxFitsStage<MintFnPtr, MintCtx>) —
+    // a constrained function template is befriended only when the friend
+    // declaration carries the same associated constraints (fix-12).
     template <auto MintFnPtr, ::crucible::effects::IsExecCtx MintCtx>
-        requires ::crucible::safety::extract::PipelineStage<MintFnPtr>
+        requires CtxFitsStage<MintFnPtr, MintCtx>
     friend constexpr auto mint_stage(
         MintCtx const&,
         std::remove_reference_t<
@@ -703,7 +706,7 @@ private:
 // load-bearing site that pins WHICH stage body runs.
 
 template <auto FnPtr, ::crucible::effects::IsExecCtx Ctx>
-    requires ::crucible::safety::extract::PipelineStage<FnPtr>
+    requires CtxFitsStage<FnPtr, Ctx>
 [[nodiscard]] constexpr auto mint_stage(
     Ctx const&                                                       ctx,
     std::remove_reference_t<
@@ -721,6 +724,14 @@ template <auto FnPtr, ::crucible::effects::IsExecCtx Ctx>
     using output_offending_row =
         ::crucible::effects::row_difference_t<output_row, ctx_row>;
 
+    // Belt-and-suspenders (fix-12): row admission is now the load-bearing
+    // gate in the requires-clause (CtxFitsStage<FnPtr, Ctx>, whose
+    // StageInputRowAdmitted / StageOutputRowAdmitted conjuncts ARE these
+    // two subset checks).  A row mismatch is rejected at the
+    // requires-clause — SFINAE-detectable — before this body instantiates.
+    // These asserts therefore run only as a backstop; they are retained
+    // for defense-in-depth and for the readable EffectRowMismatch
+    // diagnostic (offending-row attribution) the bare concept does not give.
     CRUCIBLE_ROW_MISMATCH_ASSERT(
         (::crucible::decide::row_subset<input_row, ctx_row>()),
         EffectRowMismatch,
@@ -838,6 +849,42 @@ static_assert(!std::is_copy_constructible_v<S1>);
 static_assert(!std::is_copy_assignable_v<S1>);
 static_assert( std::is_move_constructible_v<S1>);
 static_assert( std::is_move_assignable_v<S1>);
+
+// ── fix-12: mint_stage row admission is SFINAE-detectable ──────────
+//
+// Before fix-12, row admission lived in an in-body
+// CRUCIBLE_ROW_MISMATCH_ASSERT, so a `requires { mint_stage<bad>(...) }`
+// probe reported the mint CALLABLE even on a row mismatch — the hard
+// error fired inside the body, opaque to SFINAE.  Now the requires-
+// clause IS CtxFitsStage<FnPtr, Ctx>, so a row mismatch is rejected at
+// the constraint and the probe is well-formed-and-false.  These two
+// witnesses pin that visibility (HS14 SFINAE-visibility witnesses).
+
+// Helper handles for the probe (move-consumed by mint_stage).
+template <auto FnPtr, class Ctx>
+concept MintStageCallable = requires(
+    Ctx const& probe_ctx,
+    std::remove_reference_t<
+        ::crucible::safety::extract::param_type_t<FnPtr, 0>>&& probe_in,
+    std::remove_reference_t<
+        ::crucible::safety::extract::param_type_t<FnPtr, 1>>&& probe_out) {
+    {
+        ::crucible::concurrent::mint_stage<FnPtr>(
+            probe_ctx, std::move(probe_in), std::move(probe_out))
+    };
+};
+
+// Well-formed rows → mint is SFINAE-callable.
+static_assert( MintStageCallable<&stage_pass_through, eff::HotFgCtx>);
+static_assert( MintStageCallable<&stage_bg_input,     eff::BgDrainCtx>);
+// Row mismatch → mint is SFINAE-REJECTED (not a hard body error).
+static_assert(!MintStageCallable<&stage_bg_input,     eff::HotFgCtx>);
+static_assert(!MintStageCallable<&stage_io_output,    eff::HotFgCtx>);
+// The probe result tracks CtxFitsStage exactly.
+static_assert(MintStageCallable<&stage_pass_through, eff::HotFgCtx>
+              == CtxFitsStage<&stage_pass_through, eff::HotFgCtx>);
+static_assert(MintStageCallable<&stage_bg_input, eff::HotFgCtx>
+              == CtxFitsStage<&stage_bg_input, eff::HotFgCtx>);
 
 }  // namespace detail::stage_self_test
 
