@@ -394,6 +394,10 @@ crucible_test(test_kernel_cache_key)
 crucible_test(test_row_hash_fold)
 crucible_test(test_row_hash_contribution_sentinel)
 crucible_test(test_row_hash_distinctness)
+# fix-14 — SchedClass SCHED_DEADLINE budget NTTPs were folded with a
+# collidable shift-XOR pre-mix; now per-field combine_ids.  Witnesses an
+# old-collision triple pair now produces distinct row_hash.
+crucible_test(test_row_hash_sched_class_collision)
 crucible_test(test_canonical_order)              # FIXY-FOUND-048
 crucible_test(test_fixy_mint_inventory)
 crucible_test(test_fixy_decide)

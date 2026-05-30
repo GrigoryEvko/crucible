@@ -2,7 +2,7 @@
 # format-version: 1
 # matrix-size:    44
 # fold-seed:      0xc0ffeebadf00dba5
-# fold-anchor:    0x5eb752331374fb74
+# fold-anchor:    0x7a48bbe6d5d97b9d
 # (a mismatch on diff means a row_hash_contribution specialization moved — document the ceremony in the commit message and re-capture this golden.)
 W01_Linear             0xba3d8586917ed8f0
 W02_Refined            0xd92fd7098ee52143
@@ -38,7 +38,7 @@ W31_ScopedFence        0x44f9811488b73c7d
 W32_ClockSource        0xf913d20285aa0878
 W33_SuspendBehavior    0x0f25106b7e36c2fa
 W34_JoinPolicy         0x80f878813e041d0c
-W35_SchedClass         0x4a2d4c767df91dfa
+W35_SchedClass         0x4952cfb0d8a86b70
 W36_FpModePinned_R     0x75b4dfd9edf70e2c
 W37_FpModePinned_F     0x7b5f7ca68d004377
 S01_PureLinear         0xfc74373403ae7162

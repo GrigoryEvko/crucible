@@ -369,7 +369,22 @@ inline constexpr std::uint64_t kFoldSeed = 0xC0FFEEBADF00DBA5ULL;
 // drops one entry and re-folds the trailing position; every existing
 // kernel's federation-cache slot past the removed index moves.  This
 // is the EXPECTED wire-format break for retiring an unsound stance.
-inline constexpr std::uint64_t kFoldAnchor = 0x5EB752331374FB74ULL;
+//
+// fix-14 (2026-05-30): rolled OLD=0x5EB752331374FB74 →
+// NEW=0x7A48BBE6D5D97B9D after replacing the SchedClass SCHED_DEADLINE
+// budget pre-mix `RuntimeNs ^ (DeadlineNs << 1) ^ (PeriodNs << 2)` with
+// SEPARATE per-field `combine_ids` steps (one per budget NTTP).  The
+// shift-XOR pre-mix was trivially collidable — distinct (runtime,
+// deadline, period) triples could share one pre-mix value, and the
+// downstream combine_ids→fmix64 avalanche cannot UNDO a collision that
+// already happened.  W35_SchedClass uses the zero-budget Fifo shape, so
+// its individual hash changes (the fold STRUCTURE changed uniformly even
+// for the zero-budget case); all 9 trailing entries re-fold positionally
+// as a consequence.  This is a TRUE hash drift for SchedClass-wrapped
+// types — federation cache keys for any SCHED_DEADLINE kernel slot MUST
+// be reindexed.  Only the SchedClass fold changed; every other wrapper's
+// row_hash is byte-identical (golden diff touches exactly W35 + anchor).
+inline constexpr std::uint64_t kFoldAnchor = 0x7A48BBE6D5D97B9DULL;
 
 static_assert(fold_anchor() == kFoldAnchor,
     "FIXY-V-008: ceremony anchor drift.  A row_hash_contribution<> "

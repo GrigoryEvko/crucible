@@ -852,14 +852,29 @@ struct row_hash_contribution<safety::ClockSource<Source, Inner>> {
 // with different (runtime, deadline, period) never alias.  This is the
 // row_hash the V-183 SchedulerPolicyLattice deferred — on the WRAPPER,
 // never the lattice At<>.
+//
+// fix-14 — each budget NTTP is folded through a SEPARATE `combine_ids`
+// step (matching the CpuPinned multi-field idiom).  The earlier
+// `RuntimeNs ^ (DeadlineNs << 1) ^ (PeriodNs << 2)` pre-mix was
+// trivially collidable: distinct (runtime, deadline, period) triples can
+// share one shifted-XOR value (e.g. flip one bit in DeadlineNs and the
+// compensating bit-1 position in RuntimeNs), and the downstream
+// combine_ids→fmix64 avalanche cannot UNDO a collision that already
+// happened in the pre-mix.  Per-field combine_ids is order-sensitive and
+// golden-ratio mixed, so each NTTP contributes collision-resistantly and
+// distinct triples land in distinct federation-cache slots.
 template <algebra::lattices::SchedulerPolicy Policy, typename Inner,
           std::uint64_t RuntimeNs, std::uint64_t DeadlineNs, std::uint64_t PeriodNs>
 struct row_hash_contribution<
     safety::SchedClass<Policy, Inner, RuntimeNs, DeadlineNs, PeriodNs>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::combine_ids(
-            detail::WRAPPER_SCHED_CLASS_TAG | static_cast<std::uint64_t>(Policy),
-            RuntimeNs ^ (DeadlineNs << 1) ^ (PeriodNs << 2)),
+            detail::combine_ids(
+                detail::combine_ids(
+                    detail::WRAPPER_SCHED_CLASS_TAG | static_cast<std::uint64_t>(Policy),
+                    RuntimeNs),
+                DeadlineNs),
+            PeriodNs),
         row_hash_contribution_v<Inner>);
 };
 
