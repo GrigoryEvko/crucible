@@ -390,6 +390,22 @@ make_mpmc_stage_from_endpoint_tuple(Ctx const& ctx,
     return stage_type{ctx, std::move(inputs), std::move(outputs)};
 }
 
+// fix-03: sole authorized constructor of SwmrStage (its ctor is private +
+// friends this factory).  Forward-declared in Stage.h so SwmrStage's class
+// body can friend it without seeing CtxFitsSwmrStageFromEndpoint (which is
+// defined below, after Stage.h is included).  Intentionally unconstrained —
+// the row-admission gate runs in mint_swmr_stage BEFORE this is called.
+template <auto FnPtr, class Ctx>
+[[nodiscard]] constexpr auto
+make_swmr_stage(Ctx const& ctx,
+                std::remove_reference_t<
+                    ::crucible::safety::extract::param_type_t<FnPtr, 0>>&& in,
+                std::remove_reference_t<
+                    ::crucible::safety::extract::param_type_t<FnPtr, 1>>&& writer)
+    noexcept {
+    return SwmrStage<FnPtr, Ctx>{ctx, std::move(in), std::move(writer)};
+}
+
 inline void mpmc_stage_row_admission_anchor_() noexcept {}
 inline void swmr_stage_row_admission_anchor_() noexcept {}
 
@@ -574,10 +590,13 @@ template <auto FnPtr,
         required_row,
         offending_row);
 
-    return SwmrStage<FnPtr, Ctx>{
+    // fix-03: construct via the friended detail factory (SwmrStage's ctor
+    // is now private).  The row admission above is the load-bearing §XXI
+    // gate; direct `SwmrStage<FnPtr, Ctx>{...}` construction is rejected.
+    return detail::make_swmr_stage<FnPtr>(
         ctx,
         std::move(in_ep).into_handle(),
-        std::forward<Writer>(writer)};
+        std::forward<Writer>(writer));
 }
 
 // ═════════════════════════════════════════════════════════════════════

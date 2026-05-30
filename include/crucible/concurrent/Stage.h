@@ -301,6 +301,23 @@ template <auto FnPtr, class Ctx, class Tuple>
 make_mpmc_stage_from_endpoint_tuple(Ctx const& ctx,
                                     Tuple& endpoints) noexcept;
 
+// Forward-declared so SwmrStage<>'s class body can `friend` it (fix-03).
+// The definition lives in StageEndpointBridge.h and is the sole call site
+// that constructs a SwmrStage — reached only through mint_swmr_stage, which
+// performs the input/output-row-vs-ctx admission (CRUCIBLE_ROW_MISMATCH_
+// ASSERT).  This factory is intentionally UNCONSTRAINED: mint_swmr_stage's
+// CtxFitsSwmrStageFromEndpoint concept lives in the bridge header (included
+// AFTER this one), so the SwmrStage friend declaration cannot reference it.
+// Mirrors make_mpmc_stage_from_endpoint_tuple's role for MpmcStage.
+template <auto FnPtr, class Ctx>
+[[nodiscard]] constexpr auto
+make_swmr_stage(Ctx const& ctx,
+                std::remove_reference_t<
+                    ::crucible::safety::extract::param_type_t<FnPtr, 0>>&& in,
+                std::remove_reference_t<
+                    ::crucible::safety::extract::param_type_t<FnPtr, 1>>&& writer)
+    noexcept;
+
 }  // namespace detail
 
 template <auto FnPtr>
@@ -622,15 +639,6 @@ public:
         }
     }();
 
-    [[nodiscard]] explicit constexpr SwmrStage(
-        Ctx const& ctx,
-        consumer_handle_type&& in,
-        writer_handle_type&& writer) noexcept
-        : ctx_{ctx}
-        , in_{std::move(in)}
-        , writer_{std::move(writer)}
-    {}
-
     SwmrStage(SwmrStage const&) = delete(
         "SwmrStage owns endpoint handles");
     SwmrStage& operator=(SwmrStage const&) = delete(
@@ -645,6 +653,35 @@ public:
     [[nodiscard]] constexpr Ctx const& ctx() const noexcept { return ctx_; }
 
 private:
+    // ── Construction (used by mint_swmr_stage; not user-facing) ────
+    //
+    // Private per CLAUDE.md §XXI — mint_swmr_stage is the single load-
+    // bearing authorization point.  A direct call site like
+    // `SwmrStage<&body, Ctx>{ctx, in, writer}` would bypass
+    // CtxFitsSwmrStageFromEndpoint's input/output-row-vs-ctx admission
+    // (the CRUCIBLE_ROW_MISMATCH_ASSERT in mint_swmr_stage) and emit a
+    // SwmrStage whose effect rows never see Subrow<row, ctx_row>.  fix-03.
+    [[nodiscard]] explicit constexpr SwmrStage(
+        Ctx const& ctx,
+        consumer_handle_type&& in,
+        writer_handle_type&& writer) noexcept
+        : ctx_{ctx}
+        , in_{std::move(in)}
+        , writer_{std::move(writer)}
+    {}
+
+    // detail::make_swmr_stage (StageEndpointBridge.h) is the sole
+    // authorized constructor — friend the entire template family so any
+    // (FnPtr, Ctx) instantiation can reach the private ctor.  The factory
+    // is unconstrained; mint_swmr_stage's concept gate runs before it.
+    template <auto MintFnPtr, class MintCtx>
+    friend constexpr auto detail::make_swmr_stage(
+        MintCtx const&,
+        std::remove_reference_t<
+            ::crucible::safety::extract::param_type_t<MintFnPtr, 0>>&&,
+        std::remove_reference_t<
+            ::crucible::safety::extract::param_type_t<MintFnPtr, 1>>&&) noexcept;
+
     [[no_unique_address]] Ctx ctx_;
     consumer_handle_type in_;
     writer_handle_type writer_;

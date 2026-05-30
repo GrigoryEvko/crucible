@@ -4531,6 +4531,14 @@ crucible_neg_compile_effects_test(neg_stage_ctor_public_bypass
 crucible_neg_compile_effects_test(neg_mpmc_stage_ctor_public_bypass
     "is private within this context")
 
+# fix-03 HS14 companion — SwmrStage's previously-public ctor is now
+# private, with detail::make_swmr_stage (the helper mint_swmr_stage
+# forwards to after running CtxFitsSwmrStageFromEndpoint's row admission)
+# friended.  A direct `SwmrStage<&body, Ctx>{ctx, in, writer}` call site
+# bypasses that admission and is rejected at the access-control check.
+crucible_neg_compile_effects_test(neg_swmr_stage_ctor_public_bypass
+    "is private within this context")
+
 # FIXY-V-012 HS14 companion — PipelineDag's previously-public ctor is
 # now private, with mint_pipeline_dag friended.  A direct
 # `PipelineDag<Graph>{stages...}` call site bypasses
