@@ -31,10 +31,22 @@ def _replace_output(argv: list[str], output: Path) -> list[str]:
 
 
 def main() -> int:
-    if len(sys.argv) != 5:
+    # argv[4..] are one OR MORE required-diagnostic regexes.  The
+    # single-regex form (exactly 5 argv) is the original one-file-one-
+    # assertion contract.  Supplying additional regexes (argv >= 6) is
+    # the multi-cell contract: the fixture is a single positive-syntax
+    # TU containing N independent `static_assert`-failure cells, and
+    # EVERY listed regex must appear in the compile output — proving
+    # each cell failed independently for its own named reason.  AND
+    # semantics are mandatory: a merged TU whose first cell's regex
+    # matched but whose later cells silently stopped failing would
+    # otherwise pass spuriously.  See test/CMakeLists.txt
+    # `crucible_neg_compile_fixy_multi_test` and the binary-per-TU
+    # soundness note above that function.
+    if len(sys.argv) < 5:
         print(
             "usage: neg_compile_driver.py <build-dir> <source> "
-            "<fixture-name> <expected-regex>",
+            "<fixture-name> <expected-regex> [<expected-regex> ...]",
             file=sys.stderr,
         )
         return 2
@@ -42,7 +54,7 @@ def main() -> int:
     build_dir = Path(sys.argv[1]).resolve()
     source = Path(sys.argv[2]).resolve()
     fixture_name = sys.argv[3]
-    expected_regex = sys.argv[4]
+    expected_regexes = sys.argv[4:]
     compile_db = build_dir / "compile_commands.json"
 
     rows = json.loads(compile_db.read_text())
@@ -80,12 +92,24 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    if not re.search(expected_regex, combined, flags=re.MULTILINE):
-        print(
-            f"expected diagnostic not found for {fixture_name}: "
-            f"{expected_regex}",
-            file=sys.stderr,
-        )
+    # EVERY required regex must appear.  For a single-regex fixture this
+    # is identical to the original `re.search` gate.  For a multi-cell
+    # fixture, a missing regex means one cell stopped failing (discipline
+    # slipped on that cell) OR its diagnostic text drifted — either way
+    # the merged TU no longer proves what it claims, and we fail loudly
+    # naming the specific cell that went silent.
+    missing = [
+        pattern
+        for pattern in expected_regexes
+        if not re.search(pattern, combined, flags=re.MULTILINE)
+    ]
+    if missing:
+        for pattern in missing:
+            print(
+                f"expected diagnostic not found for {fixture_name}: "
+                f"{pattern}",
+                file=sys.stderr,
+            )
         return 1
     return 0
 

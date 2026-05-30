@@ -1741,27 +1741,67 @@ function(crucible_neg_compile_fixy_test name expected_diag)
     LABELS "fixy_neg")
 endfunction()
 
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_usage          "FixyNotEngaged_Usage")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_effect         "FixyNotEngaged_Effect")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_security       "FixyNotEngaged_Security")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_protocol       "FixyNotEngaged_Protocol")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_lifetime       "FixyNotEngaged_Lifetime")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_provenance     "FixyNotEngaged_Provenance")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_trust          "FixyNotEngaged_Trust")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_representation "FixyNotEngaged_Representation")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_complexity     "FixyNotEngaged_Complexity")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_precision      "FixyNotEngaged_Precision")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_mutation       "FixyNotEngaged_Mutation")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_staleness      "FixyNotEngaged_Staleness")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_type           "FixyNotEngaged_Type")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_refinement     "FixyNotEngaged_Refinement")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_observability  "FixyNotEngaged_Observability")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_space          "FixyNotEngaged_Space")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_overflow       "FixyNotEngaged_Overflow")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_reentrancy     "FixyNotEngaged_Reentrancy")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_size           "FixyNotEngaged_Size")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_version        "FixyNotEngaged_Version")
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_synchronization "FixyNotEngaged_Synchronization")
+# ── Multi-cell fixy neg-compile harness (fix-19) ────────────────────
+#
+# A negative-compile TU verifies a soundness gate by FAILING to compile.
+# A *fatal* compile error stops the compiler at the first failure, so N
+# independent fatal-error cells cannot be verified independently from one
+# compile — the first error masks the rest.  That is exactly why the
+# one-file-one-assertion harness above exists, and why a blind merge of
+# arbitrary neg-compile fixtures into one TU is UNSOUND.
+#
+# Consolidation is sound ONLY when every cell fails via a NON-FATAL
+# diagnostic (a `static_assert` — GCC error-recovers and keeps compiling)
+# AND each cell carries a UNIQUE grep token.  Then one TU emits all N
+# distinct diagnostics, and we hand the driver all N regexes with
+# AND-of-all semantics: every regex must appear or the test reddens
+# naming the silent cell.  Per-cell independence is preserved; only the
+# file + ctest-registration count drops.
+#
+# `expected_diags` is a CMake list (semicolon-separated); each element is
+# forwarded to neg_compile_driver.py as a separate required regex.
+function(crucible_neg_compile_fixy_multi_test name)
+  set(expected_diags ${ARGN})
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            ${CMAKE_BINARY_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp
+            ${name}
+            ${expected_diags})
+  set_tests_properties(${name} PROPERTIES
+    LABELS "fixy_neg")
+endfunction()
+
+# fix-19 pilot: 22 one-axis `neg_fixy_unengaged_<axis>` fixtures collapse
+# into one TU (test/fixy_neg/neg_fixy_unengaged_all_axes.cpp).  Each axis
+# remains an independently-verified cell because its diagnostic carries a
+# unique `FixyNotEngaged_<Axis>:` token and all 22 regexes are required.
+crucible_neg_compile_fixy_multi_test(neg_fixy_unengaged_all_axes
+  "FixyNotEngaged_Usage:"
+  "FixyNotEngaged_Effect:"
+  "FixyNotEngaged_Security:"
+  "FixyNotEngaged_Protocol:"
+  "FixyNotEngaged_Lifetime:"
+  "FixyNotEngaged_Provenance:"
+  "FixyNotEngaged_Trust:"
+  "FixyNotEngaged_Representation:"
+  "FixyNotEngaged_Complexity:"
+  "FixyNotEngaged_Precision:"
+  "FixyNotEngaged_Mutation:"
+  "FixyNotEngaged_Staleness:"
+  "FixyNotEngaged_Type:"
+  "FixyNotEngaged_Refinement:"
+  "FixyNotEngaged_Observability:"
+  "FixyNotEngaged_Space:"
+  "FixyNotEngaged_Overflow:"
+  "FixyNotEngaged_Reentrancy:"
+  "FixyNotEngaged_Size:"
+  "FixyNotEngaged_Version:"
+  "FixyNotEngaged_Synchronization:"
+  "FixyNotEngaged_Regime:")
 
 # ─── FIXY-FOUND-026 project<G> structured-diagnostic primary template ──
 #   Two HS14 fixtures, one per substrate-axis-value-discriminator arm:
@@ -1862,7 +1902,8 @@ crucible_neg_compile_test(neg_bench_rdtsc_pinned_mint_tag_access
 target_include_directories(neg_bench_rdtsc_pinned_mint_tag_access
   SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 
-crucible_neg_compile_fixy_test(neg_fixy_unengaged_regime         "FixyNotEngaged_Regime")
+# fix-19: `neg_fixy_unengaged_regime` folded into the consolidated
+# `neg_fixy_unengaged_all_axes` multi-cell TU above (Regime cell).
 
 # FIXY-FOUND-048 — HS14 fixtures for §XVI canonical-order gate.
 # Both must FAIL to compile via `static_assert(CanonicallyOrdered<...>)`.
