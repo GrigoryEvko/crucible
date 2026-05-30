@@ -1,30 +1,36 @@
 # Crucible CI.
 #
-# IMPORTANT HONESTY NOTE — read before extending this file.
+# Two tiers:
 #
-# The full C++ build REQUIRES a patched GCC 16.1.1 (PR c++/124241 contracts-
-# cache bypass cherry-picked) plus its matching libstdc++ 16. That toolchain
-# does NOT exist on any stock GitHub-hosted runner, so a naive "build
-# everything" job CANNOT run on ubuntu-latest. This workflow therefore splits
-# into two honest tiers:
+#   * guards — the bash/ripgrep discipline suite (the `ci_guard`-labelled
+#              ctest registrations in test/CMakeLists.txt). Pure source-tree
+#              scans, no compiler. Runs on stock ubuntu-latest, every push/PR.
 #
-#   * guards   — the bash/ripgrep discipline suite (the `ci_guard`-labelled
-#                ctest registrations in test/CMakeLists.txt). These operate on
-#                the source tree alone, need no compiler, and run on a stock
-#                runner. Cheapest, highest-signal checks; gated on every push
-#                and PR.
+#   * build  — the full compile / run / negative-compile / golden-binary suite
+#              (`cmake --preset default` -> build -> `ctest --preset default`),
+#              in a PUBLIC `fedora:rawhide` container with stock GCC 16.1.1,
+#              wired via CRUCIBLE_CXX=/usr/bin/g++. cmake/Toolchain-gcc16.cmake
+#              derives the matching gcc-ar / gcc-ranlib siblings + rpath from
+#              that compiler basename, so no patched toolchain is needed.
 #
-#   * build    — the compile/run + negative-compile + golden-binary suite
-#                (every `crucible_test()` plus `row_hash_golden_diff`). These
-#                NEED the patched toolchain. The job is wired but DOES NOT run
-#                on stock runners: it targets a self-hosted runner / container
-#                carrying g++-16p, and is opt-in via workflow_dispatch. It is
-#                NOT a fiction that pretends to compile on ubuntu-latest.
+# Toolchain honesty: the dev `default` preset uses a locally-built GCC 16.1.1
+# with ONE extra commit cherry-picked — PR c++/124241, the contracts consteval-
+# cache-bypass fix (branch gcc-16-patched @ 81c597f716e, a single commit on top
+# of releases/gcc-16.1.0). Stock Fedora gcc-16.1.1 differs ONLY by that commit.
+# The CRUCIBLE_PRE / CRUCIBLE_POST migration (safety/Pre.h, safety/Post.h)
+# exists precisely so the consteval-bypass-sensitive contracts fire identically
+# on stock GCC, which is why the stock-Fedora build is a valid gate. Locally
+# verified: stock /usr/bin/g++ configures the tree, compiles the library AND
+# every test TU, and runs the wrapper/federation suites green; the only extra
+# container packages are the sanitizer + BPF RUNTIMES (libasan/libubsan/
+# libbpf-devel), which Fedora ships separately from gcc-c++. For byte-exact
+# parity with the dev compiler an optional self-hosted job carries the patched
+# toolchain (see `build-patched-parity`, gated to workflow_dispatch).
 #
 # The guard list below is kept in 1:1 correspondence with the `ci_guard`
 # registrations in test/CMakeLists.txt. When a guard is added/removed there,
-# mirror it here (the scripts are invoked directly because ctest cannot drive
-# them without first configuring CMake, which itself needs the patched GCC).
+# mirror it here (the scripts are invoked directly so the guard tier needs no
+# CMake configure step at all).
 
 name: ci
 
@@ -171,34 +177,60 @@ jobs:
         run: bash scripts/check-splits-into-orphan.sh
 
   # ---------------------------------------------------------------------------
-  # Toolchain-DEPENDENT compile + run + golden-binary suite.
-  #
-  # NOT runnable on stock GitHub-hosted runners — needs the patched GCC 16.1.1
-  # + libstdc++ 16. Two ways to make this job execute (both out of scope to
-  # provision here, but the workflow is ready for either):
-  #
-  #   (a) Self-hosted runner: register a runner that has g++-16p installed,
-  #       then this job picks it up via the `self-hosted` label. Point the
-  #       toolchain at its location with CRUCIBLE_GCC16_PREFIX / CRUCIBLE_CXX
-  #       (see cmake/Toolchain-gcc16.cmake) — fix-20 made the preset portable
-  #       precisely so a non-default install path Just Works.
-  #
-  #   (b) Container image: build an image carrying the patched toolchain at a
-  #       known prefix and add `container: <image>` to this job, setting
-  #       CRUCIBLE_GCC16_PREFIX to that prefix. The image build itself is out
-  #       of scope for this workflow.
-  #
-  # Gated to manual dispatch so it never silently "passes" by being skipped on
-  # a stock runner — it runs only where the toolchain actually exists.
+  # Full compile + run + negative-compile + golden-binary suite, on a PUBLIC
+  # fedora:rawhide container with stock GCC 16.1.1. This is the real build gate
+  # and runs on every push/PR. CRUCIBLE_CXX=/usr/bin/g++ feeds the portable
+  # toolchain file (cmake/Toolchain-gcc16.cmake), which derives the matching
+  # gcc-ar / gcc-ranlib siblings + rpath from that basename — no patched build
+  # needed. The sanitizer + BPF runtimes (libasan/libubsan/libbpf-devel) are
+  # the only packages Fedora ships separately from gcc-c++.
   # ---------------------------------------------------------------------------
   build:
-    name: build + test + negative-compile + golden (needs patched GCC 16)
+    name: build + test (fedora:rawhide, stock gcc-16)
+    needs: guards
+    runs-on: ubuntu-latest
+    container: fedora:rawhide
+    env:
+      CRUCIBLE_CXX: /usr/bin/g++
+    steps:
+      # git is needed by actions/checkout's git operations; install before it.
+      - name: Install toolchain + sanitizer/BPF runtimes
+        run: >
+          dnf install -y --setopt=install_weak_deps=False
+          gcc-c++ libasan libubsan
+          cmake ninja-build git ripgrep libbpf-devel
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (stock gcc-16 via CRUCIBLE_CXX)
+        run: cmake --preset default
+
+      - name: Build
+        run: cmake --build --preset default
+
+      # The entire ctest set: C++ unit/compile tests, the negative-compile
+      # fixtures, row_hash_golden_diff (built binary), AND the ci_guard bash
+      # guards (harmless duplication with the guards job).
+      - name: Test
+        run: ctest --preset default
+
+  # ---------------------------------------------------------------------------
+  # OPTIONAL byte-exact-parity job on the patched GCC 16.1.1 (PR c++/124241).
+  # Stock gcc differs from the dev compiler only by that one contracts-cache
+  # commit; this job exists for gating on the EXACT dev toolchain + TSan. Gated
+  # to manual dispatch so it never silently "passes" by being skipped where the
+  # patched toolchain is absent — it runs only on a self-hosted runner that has
+  # g++-16p installed (point it via CRUCIBLE_GCC16_PREFIX / CRUCIBLE_CXX, per
+  # cmake/Toolchain-gcc16.cmake).
+  # ---------------------------------------------------------------------------
+  build-patched-parity:
+    name: build + test (patched gcc-16, exact parity)
     needs: guards
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: [ self-hosted, gcc16-patched ]
     env:
-      # Override on the runner/container if g++-16p is not under the default
-      # $HOME/.local/gcc16-patched prefix. Leave unset to use that default.
+      # Leave unset to use the $HOME/.local/gcc16-patched default prefix.
       CRUCIBLE_GCC16_PREFIX: ${{ vars.CRUCIBLE_GCC16_PREFIX }}
     steps:
       - name: Checkout
@@ -210,15 +242,12 @@ jobs:
       - name: Build
         run: cmake --build --preset default
 
-      # Runs the entire ctest set on this runner: the C++ unit/compile tests,
-      # the negative-compile fixtures, row_hash_golden_diff (built binary), AND
-      # the ci_guard bash guards (harmless duplication with the guards job).
       - name: Test
         run: ctest --preset default
 
       # Bit-exact / cross-build determinism + ThreadSanitizer gates, per the
-      # CLAUDE.md §XIII pre-merge matrix. Kept as a follow-on once the toolchain
-      # runner exists; uncomment when a TSan-capable runner is available.
+      # CLAUDE.md §XIII pre-merge matrix. Uncomment when a TSan-capable runner
+      # is available.
       # - name: ThreadSanitizer
       #   run: |
       #     cmake --preset tsan
