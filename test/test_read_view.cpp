@@ -83,10 +83,14 @@ void test_compile_time_properties() {
 }
 
 // EBO collapse: a struct embedding ReadView via [[no_unique_address]]
-// should not pay any byte for the view.
+// should not pay any byte for the view.  The view is supplied at
+// construction (copied from a minted view); ReadView's default ctor is
+// private, so fabrication-from-nothing is impossible.
 struct EboHost {
     void* p = nullptr;
-    [[no_unique_address]] ReadView<ConfigData> view{};
+    [[no_unique_address]] ReadView<ConfigData> view;
+
+    constexpr explicit EboHost(ReadView<ConfigData> v) noexcept : view{v} {}
 };
 static_assert(sizeof(EboHost) == sizeof(void*),
               "ReadView via [[no_unique_address]] must collapse to 0 bytes");

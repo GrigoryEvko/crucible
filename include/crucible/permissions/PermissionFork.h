@@ -324,6 +324,17 @@ template <typename... Children, typename Ctx, typename Parent, typename... Calla
 {
     static_assert(sizeof...(Children) == sizeof...(Callables),
         "mint_permission_fork: number of Child tags must match number of callables.");
+    // fix-07: the child region tags MUST be pairwise distinct.  Without
+    // this, `mint_permission_fork<A, A>(...)` would split the parent into
+    // two `Permission<A>` and hand one to each of two jthreads — two
+    // threads mutating the SAME region, a data race the type system
+    // otherwise claims is impossible.  Asserted here at the fork
+    // boundary (in addition to the split_n it delegates to) so the
+    // diagnostic names the fork primitive directly.
+    static_assert(all_distinct_tags_v<Children...>,
+        "mint_permission_fork: Child region tags must be PAIRWISE DISTINCT — "
+        "forking two threads with Permission<A> each would alias region A and "
+        "produce a data race (fix-07).");
     static_assert((std::is_invocable_v<
                        Callables,
                        Permission<Children>,

@@ -80,25 +80,34 @@
 
 namespace crucible::safety {
 
+// Forward declaration of mint_read_view so the class can friend it
+// before its definition.
+template <typename Tag>
+class ReadView;
+template <typename Tag>
+[[nodiscard]] constexpr ReadView<Tag>
+mint_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
+
+}  // namespace crucible::safety
+
+// Forward declaration of the session-layer Borrowed payload carrier.
+// `proto::Borrowed<T, Tag>` embeds a `ReadView<Tag>` as the type-level
+// proof that the recipient may READ the borrowed resource for the
+// duration of one protocol step; it is a legitimate issuer of a
+// default-constructed view (see sessions/SessionPermPayloads.h).
+namespace crucible::safety::proto {
+template <typename T, typename Tag>
+struct Borrowed;
+}  // namespace crucible::safety::proto
+
+namespace crucible::safety {
+
 // ── ReadView<Tag> ────────────────────────────────────────────────────
 
 template <typename Tag>
 class [[nodiscard]] ReadView {
 public:
     using tag_type = Tag;
-
-    // Empty.  Pure type-level proof token — no data, no observable
-    // state.  EBO-collapses to 0 bytes when held as
-    // [[no_unique_address]] member.
-    //
-    // The default constructor is public so ReadView can be embedded
-    // in containing types (handles, lambdas, structs) via simple
-    // [[no_unique_address]] declaration without per-tag friend
-    // boilerplate.  The discipline lives in mint_read_view being the
-    // canonical (review-discoverable) mint site; the default-ctor is
-    // for composition rather than direct safety enforcement.  The
-    // type-level proof comes from the Tag, not from runtime gating.
-    constexpr ReadView() noexcept = default;
 
     // Copyable: multiple borrowers OK, all referencing the same source.
     constexpr ReadView(const ReadView&) noexcept            = default;
@@ -130,6 +139,35 @@ public:
     static void operator delete[](void*)                   = delete;
     static void operator delete(void*, std::align_val_t)   = delete;
     static void operator delete[](void*, std::align_val_t) = delete;
+
+private:
+    // Private default constructor.  Mirrors Permission<Tag> /
+    // SharedPermission<Tag>: a read-borrow PROOF you can fabricate from
+    // nothing is not a proof.  Only the friended issuers below construct
+    // a fresh ReadView, and every authorization site is grep-discoverable
+    // via the `mint_read_view` name (or the narrow session-layer carrier).
+    //
+    // ReadView remains an empty class — sizeof == 1, EBO-collapses to 0
+    // as a [[no_unique_address]] member.  Copy/move ctors stay public, so
+    // embedding a *minted* view (e.g. WorkerHandle copying `cv`) is
+    // unaffected; only construction-from-nothing is closed.
+    constexpr ReadView() noexcept = default;
+
+    // Friend access list — kept short on purpose.  Each addition is a new
+    // way to mint a ReadView and demands review.
+
+    // The single chokepoint factory.  Derives a fresh view from a held
+    // parent Permission<Tag> whose lifetime bounds the view.
+    friend constexpr ReadView<Tag>
+    mint_read_view<Tag>(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
+
+    // Session-layer borrow carrier.  `proto::Borrowed<T, Tag>` embeds a
+    // ReadView<Tag> as the recipient's read proof for one protocol step;
+    // it default-constructs the embedded view in its aggregate ctor.  The
+    // friend is narrow (one class template) and the soundness story is the
+    // session protocol's PermSet evolution, not ad-hoc construction.
+    template <typename T, typename FriendTag>
+    friend struct ::crucible::safety::proto::Borrowed;
 };
 
 // ── mint_read_view — the single chokepoint factory ──────────────────

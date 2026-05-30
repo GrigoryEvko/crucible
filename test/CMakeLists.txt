@@ -1063,6 +1063,7 @@ crucible_test(test_smoke_safety_wrappers)  # fixy-A1-016 — per-header runtime_
 crucible_test(test_permission_tree_generator)
 crucible_test(test_permission_grid_generator)
 crucible_test(test_read_view)
+crucible_test(test_permission_shared_xor_exclusive)  # fix-06 exploit-guard
 crucible_test(test_topology)
 crucible_test(test_parallelism_rule)
 crucible_test(test_pipeline_dispatch)
@@ -4755,6 +4756,12 @@ crucible_neg_compile_test(neg_mint_read_view_non_permission_arg
   "could not deduce template argument|cannot convert|no matching function")
 crucible_neg_compile_test(neg_mint_read_view_explicit_tag_mismatch
   "invalid initialization of reference|could not convert|cannot bind|no matching function")
+# fix-05 — ReadView default ctor now private (forgeable read-borrow proof
+# closed); mint_read_view + the friended Borrowed carrier are the sole path.
+crucible_neg_compile_test(neg_read_view_default_ctor_private
+  "is private within this context")
+crucible_neg_compile_test(neg_read_view_default_init_private
+  "is private within this context")
 crucible_neg_compile_test(neg_sealed_refined_into_call
   "has no member named")
 crucible_neg_compile_test(neg_graded_concept_void_substrate
@@ -10785,6 +10792,13 @@ crucible_neg_compile_test(neg_permission_fork_ctx_no_bg
     "CtxFitsPermissionFork|row_contains|constraints not satisfied")
 crucible_neg_compile_test(neg_permission_fork_child_ctx_mismatch
     "permission_fork_ctx_callables|constraints not satisfied|no matching function")
+# fix-07 — split/fork child tags must be pairwise distinct (aliasing →
+# data race the type system claims impossible).  Two distinct rejection
+# classes: binary split<A,A> and fork<A,A>.
+crucible_neg_compile_test(neg_permission_split_same_tag
+    "fix-07|DISTINCT|static assertion failed")
+crucible_neg_compile_test(neg_permission_fork_duplicate_child_tag
+    "fix-07|PAIRWISE DISTINCT|data race|static assertion failed")
 
 # fixy-A1-009 — `permission_fork_rebuild_<T>()` is no longer a public
 # free function.  Post-join `Permission<T>` rebuild now routes through

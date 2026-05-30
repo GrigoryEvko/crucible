@@ -382,6 +382,48 @@ inline constexpr bool well_authored_split_pack_v =
     splits_into_pack_v<Parent, Children...> &&
     splits_into_pack_authoring_witness_v<Parent, Children...>;
 
+// ── all_distinct_tags trait (fix-07) ─────────────────────────────────
+//
+// Pairwise-distinctness witness over a child-tag pack.  The
+// splits_into / splits_into_pack manifests declare WHICH parent a set
+// of children decomposes, but say NOTHING about whether the children
+// are pairwise disjoint REGIONS.  A manifest author who writes
+// `splits_into<Whole, A, A>` (or `splits_into_pack<Whole, A, A>`) would
+// otherwise mint two `Permission<A>` from one parent — two linear
+// tokens for the SAME region — defeating the very disjointness the CSL
+// frame rule exists to prove.  `mint_permission_fork<A, A>(...)` would
+// then hand two threads a `Permission<A>` each: a data race the type
+// system claims is impossible.
+//
+// `all_distinct_tags_v<Children...>` is a fold asserting `!is_same` for
+// every ordered pair (i < j).  It is cheap (quadratic in the number of
+// children, all at compile time) and is asserted at every split / fork
+// mint boundary so the footgun is caught where authority is forged, not
+// where the race manifests.  Empty and single-element packs are
+// trivially distinct.
+
+namespace detail {
+
+// Recursive head-vs-rest pairwise comparison.  `all_distinct_tags_rec`
+// is true iff Head is not equal to any tag in Rest AND Rest is itself
+// all-distinct.  The fold `(!is_same<Head, Rest> && ...)` compares the
+// head against every successor; recursion repeats for the tail, giving
+// full ordered-pair coverage with no diagonal self-compare.
+template <typename... Children>
+struct all_distinct_tags_rec : std::true_type {};
+
+template <typename Head, typename... Rest>
+struct all_distinct_tags_rec<Head, Rest...>
+    : std::bool_constant<
+          (!std::is_same_v<Head, Rest> && ...) &&
+          all_distinct_tags_rec<Rest...>::value> {};
+
+}  // namespace detail
+
+template <typename... Children>
+inline constexpr bool all_distinct_tags_v =
+    detail::all_distinct_tags_rec<Children...>::value;
+
 // ── permission_row<Tag> ─────────────────────────────────────────────
 //
 // Most permission tags are pure ownership labels and carry Row<>.  A
@@ -713,6 +755,12 @@ mint_permission_split(Permission<In>&& parent) noexcept {
                   "Add `template <> struct splits_into_authoring_witness<"
                   "In, L, R> : std::true_type {};` next to the splits_into "
                   "specialization.");
+    static_assert(all_distinct_tags_v<L, R>,
+                  "fix-07: mint_permission_split<L, R> requires L and R to be "
+                  "DISTINCT region tags.  A manifest declaring "
+                  "splits_into<In, A, A> would mint two Permission<A> from one "
+                  "parent — two linear tokens for the SAME region, aliasing "
+                  "the very disjointness the CSL frame rule proves.");
     (void)parent;
     return std::pair<Permission<L>, Permission<R>>{
         Permission<L>{}, Permission<R>{}
@@ -733,6 +781,9 @@ mint_permission_split(Ctx const&, Permission<In>&& parent) noexcept {
                   "fixy-M-29: splits_into_authoring_witness<In, L, R> "
                   "missing; declare it next to the splits_into "
                   "specialization in the same TU.");
+    static_assert(all_distinct_tags_v<L, R>,
+                  "fix-07: mint_permission_split<L, R> requires L and R to be "
+                  "DISTINCT region tags (no Permission<A> aliasing).");
     (void)parent;
     return std::pair<Permission<L>, Permission<R>>{
         Permission<L>{}, Permission<R>{}
@@ -754,6 +805,9 @@ mint_permission_split(
                   "fixy-M-29: splits_into_authoring_witness<In, L, R> "
                   "missing for asymmetric-ctx split; declare it next to "
                   "the splits_into specialization.");
+    static_assert(all_distinct_tags_v<L, R>,
+                  "fix-07: mint_permission_split<L, R> requires L and R to be "
+                  "DISTINCT region tags (no Permission<A> aliasing).");
     (void)parent;
     return std::pair<Permission<L>, Permission<R>>{
         Permission<L>{}, Permission<R>{}
@@ -820,6 +874,12 @@ mint_permission_split_n(Permission<In>&& parent) noexcept {
                   "fixy-M-29: splits_into_pack_authoring_witness<In, "
                   "Children...> missing; declare it next to the "
                   "splits_into_pack specialization in the same TU.");
+    static_assert(all_distinct_tags_v<Children...>,
+                  "fix-07: mint_permission_split_n<Children...> requires the "
+                  "child tags to be PAIRWISE DISTINCT.  A manifest declaring "
+                  "splits_into_pack<In, A, A, ...> would mint two Permission<A> "
+                  "from one parent — aliasing the same region across the "
+                  "disjoint children the CSL frame rule promises.");
     (void)parent;
     return std::tuple<Permission<Children>...>{
         Permission<Children>{}...
@@ -839,6 +899,10 @@ mint_permission_split_n(Ctx const&, Permission<In>&& parent) noexcept {
                   "fixy-M-29: splits_into_pack_authoring_witness<In, "
                   "Children...> missing for ctx-bound split_n; declare "
                   "next to the splits_into_pack specialization.");
+    static_assert(all_distinct_tags_v<Children...>,
+                  "fix-07: mint_permission_split_n<Children...> requires the "
+                  "child tags to be PAIRWISE DISTINCT (no Permission<A> "
+                  "aliasing across children).");
     (void)parent;
     return std::tuple<Permission<Children>...>{
         Permission<Children>{}...
@@ -874,6 +938,11 @@ mint_permission_combine_n(Permission<Children>&&... children) noexcept {
                   "fixy-M-29: splits_into_pack_authoring_witness<Parent, "
                   "Children...> missing for combine_n; declare next to "
                   "the splits_into_pack specialization.");
+    static_assert(all_distinct_tags_v<Children...>,
+                  "fix-07: mint_permission_combine_n<Parent, Children...> "
+                  "requires the child tags to be PAIRWISE DISTINCT — folding "
+                  "two Permission<A> back into one parent would require two "
+                  "aliasing tokens to have existed.");
     (void)std::tie(children...);  // consumed by move
     return Permission<Parent>{};
 }
@@ -892,6 +961,10 @@ mint_permission_combine_n(
                   "fixy-M-29: splits_into_pack_authoring_witness<Parent, "
                   "Children...> missing for ctx-bound combine_n; declare "
                   "next to the splits_into_pack specialization.");
+    static_assert(all_distinct_tags_v<Children...>,
+                  "fix-07: mint_permission_combine_n<Parent, Children...> "
+                  "requires the child tags to be PAIRWISE DISTINCT (no "
+                  "Permission<A> aliasing across children).");
     (void)std::tie(children...);  // consumed by move
     return Permission<Parent>{};
 }
@@ -1001,13 +1074,39 @@ rebuild_parent_after_fork_() noexcept {
 //                                upgraded out" bit) implementing the
 //                                lock-free mode-transition protocol.
 //
-// The proof and the lifetime are intentionally decoupled: the
-// SharedPermission token can be passed around freely as a "you have
-// read access" proof, while the Guard ensures the refcount reflects
-// the share's actual lifetime.  Discipline rule: SharedPermission is
-// only valid while a Guard exists somewhere — the type system can't
-// enforce this without a borrow checker, so we accept it as a
-// discipline gap (callers should pair token() with the Guard's scope).
+// The proof and the lifetime are intentionally decoupled, and fix-06
+// makes the consequence of that decoupling EXPLICIT:
+//
+//   SharedPermission<Tag> CONFERS NO RUNTIME ACCESS.  It is a pure
+//   type-level proof token (empty class, no methods that touch the
+//   region).  The object that actually carries a tracked shared-read
+//   capability is the SharedPermissionGuard<Tag> — its construction
+//   bumps the Pool's outstanding count and its destruction decrements
+//   it.  The shared-XOR-exclusive invariant the Pool enforces is
+//   therefore an invariant over GUARDS, not over tokens:
+//
+//     a Guard is live  ⟺  count > 0  ⟺  try_upgrade() fails.
+//
+//   So while ANY Guard exists the exclusive Permission cannot be
+//   upgraded out, and vice-versa — that mutual exclusion is airtight
+//   and lock-free (see the atomic state machine below).
+//
+// fix-06 — why a stashed token is NOT a hole.  Before fix-06 the doc
+// admitted "SharedPermission is only valid while a Guard exists
+// somewhere ... we accept it as a discipline gap".  The apparent
+// exploit was: copy guard.token(), drop the Guard (count→0), then
+// try_upgrade() succeeds and hands out the exclusive Permission while a
+// copied token is still live — "shared read-proof coexists with
+// exclusive write-permission".  The resolution is that the copied
+// token grants NOTHING: it has no accessor, no Pool back-pointer, no
+// way to read or alias the region.  Treating it as a live read-proof
+// is the bug; the type now states (confers_runtime_access == false)
+// that it is not one.  The only object that can stand for a live
+// shared read — the Guard — refcounts correctly, so a real shared read
+// and the exclusive Permission provably cannot coexist for the same
+// region.  Consumers gate access on holding a Guard (see
+// SwmrSession::ReaderHandle, which stores the Guard and (void)-discards
+// the proof token); they MUST NOT gate access on a bare token.
 //
 // ─── The mode-transition race and how the atomic state resolves it ─
 //
@@ -1067,6 +1166,16 @@ class [[nodiscard]] SharedPermission {
 
 public:
     using tag_type = Tag;
+
+    // fix-06: explicit non-ownership marker.  SharedPermission is a
+    // pure type-level PROOF; it confers no runtime access to the
+    // region named by Tag (the class is empty and exposes no accessor).
+    // The access-conferring object is SharedPermissionGuard<Tag>, whose
+    // lifetime IS the tracked share's lifetime via the Pool refcount.
+    // A bare SharedPermission — even one copied out of a Guard and
+    // stashed past that Guard's destruction — therefore CANNOT be a
+    // live read-proof, and downstream code must never treat it as one.
+    static constexpr bool confers_runtime_access = false;
 
     // ── Façade-migration alias (MIGRATE-7, regime-5) ───────────────
     //
@@ -1151,7 +1260,17 @@ public:
 
     // Yield the proof token.  Zero-cost copyable.  The Guard remains
     // alive (the share is still outstanding); the token is the proof.
-    [[nodiscard]] constexpr SharedPermission<Tag> token() const noexcept {
+    //
+    // fix-06: the returned SharedPermission CONFERS NO ACCESS
+    // (SharedPermission::confers_runtime_access == false).  It is a
+    // type-level witness only.  The tracked shared-read capability is
+    // held by THIS Guard via the Pool refcount; the token's value
+    // (and any copy of it) grants nothing once the Guard is gone.  The
+    // [[clang::lifetimebound]] hint documents that intent for the
+    // borrow checker (no-op on GCC); the structural guarantee is the
+    // confers_runtime_access marker plus the Guard-refcount invariant.
+    [[nodiscard]] constexpr SharedPermission<Tag>
+    token() const CRUCIBLE_LIFETIMEBOUND noexcept {
         return SharedPermission<Tag>{};
     }
 
@@ -1570,6 +1689,26 @@ static_assert(!CtxAdmitsPermission<
     ::crucible::permissions::tag::NetworkBufferTag,
     ::crucible::effects::HotFgCtx>);
 
+// fix-07: all_distinct_tags_v pairwise-distinctness witness.  Empty and
+// singleton packs are trivially distinct; a repeated tag (in any
+// position) is rejected.  This is the predicate every split / fork mint
+// asserts to forbid splits_into<Whole, A, A>-style region aliasing.
+static_assert(all_distinct_tags_v<>);
+static_assert(all_distinct_tags_v<detail::seplog_test_left>);
+static_assert(all_distinct_tags_v<detail::seplog_test_left,
+                                  detail::seplog_test_right>);
+static_assert(all_distinct_tags_v<detail::seplog_test_tag,
+                                  detail::seplog_test_left,
+                                  detail::seplog_test_right>);
+static_assert(!all_distinct_tags_v<detail::seplog_test_left,
+                                   detail::seplog_test_left>);
+static_assert(!all_distinct_tags_v<detail::seplog_test_tag,
+                                   detail::seplog_test_left,
+                                   detail::seplog_test_tag>);
+static_assert(!all_distinct_tags_v<detail::seplog_test_left,
+                                   detail::seplog_test_left,
+                                   detail::seplog_test_right>);
+
 // Permission is a 1-byte empty class; not movable across translation
 // units without copies but the move constructor is a noop.
 static_assert(sizeof(Permission<detail::seplog_test_tag>) == 1,
@@ -1596,6 +1735,13 @@ static_assert(std::is_trivially_copyable_v<SharedPermission<detail::seplog_test_
               "SharedPermission<Tag> must be trivially-copyable (zero-cost copy)");
 static_assert(std::is_trivially_destructible_v<SharedPermission<detail::seplog_test_tag>>,
               "SharedPermission<Tag> destructor must be trivial");
+// fix-06: the proof token confers no runtime access — it is a
+// type-level witness only.  The access-conferring object is the
+// SharedPermissionGuard, which refcounts against the Pool.  This marker
+// is what downstream code consults to know a bare/stashed token must
+// never be treated as a live read-proof.
+static_assert(SharedPermission<detail::seplog_test_tag>::confers_runtime_access == false,
+              "SharedPermission<Tag> must confer NO runtime access (fix-06)");
 
 // SharedPermissionGuard: move-only RAII (sizeof = pool pointer).
 static_assert(!std::is_copy_constructible_v<SharedPermissionGuard<detail::seplog_test_tag>>,
