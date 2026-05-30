@@ -1438,42 +1438,10 @@ struct BackgroundThread {
           std::memcpy(te.scalar_args, re.scalar_values.data(),
                       n_scalars * sizeof(int64_t));
 
-        // ── Streaming content hash: XOR-fold dimensions ──
-        //
-        // Independent multiplies (sizes[d] * kDimMix[d]) break the serial
-        // wymix chain. CPU pipelines all multiplies in parallel; XOR chain
-        // at 1 cy/op is the critical path. One wymix per tensor merges.
-        //
-        // REFL-4: this is an inlined-fused copy of compute_content_hash
-        // running directly on the build_trace path (avoiding a redundant
-        // second pass over the ops).  Same intentional-manual rationale
-        // as compute_content_hash itself: heavily perf-tuned XOR-fold
-        // (40% faster than per-dim wymix), Family-A bit-stable, must
-        // produce IDENTICAL bits to compute_content_hash so cache lookups
-        // composed via either path agree.  reflect_hash on TraceEntry
-        // would (a) break that bit identity and (b) lose the optimized
-        // XOR-fold pattern.
-
-        content_h_local = detail::wymix(content_h_local, te.schema_hash.raw());
-        for (uint16_t j = 0; j < n_in; j++) {
-          const TensorMeta& meta = te.input_metas[j];
-          // SIMD dim-hash: bit-identical to the prior inline XOR-fold over
-          // sizes[d]*kDimMix[d] + strides[d]*kDimMix[d+8].  Locked by
-          // test_dim_hash_equivalence_handcoded in test_simd.cpp.
-          const uint64_t dim_h_local =
-              raw_dim_hash(detail::dim_hash_simd_det(meta));
-          uint64_t meta_packed =
-              static_cast<uint64_t>(std::to_underlying(meta.dtype)) |
-              (static_cast<uint64_t>(std::to_underlying(meta.device_type)) << 8) |
-              (static_cast<uint64_t>(static_cast<uint8_t>(meta.device_idx)) << 16);
-          content_h_local = detail::wymix(content_h_local ^ dim_h_local, meta_packed);
-        }
-        if (n_scalars > 0) {
-          for (uint16_t scalar_idx = 0; scalar_idx < n_scalars; scalar_idx++) {
-            content_h_local ^= static_cast<uint64_t>(te.scalar_args[scalar_idx]);
-            content_h_local *= 0x100000001b3ULL;
-          }
-        }
+        // fix-01: per-op content-hash fold moved OUT of this branch to a
+        // single fold_trace_entry_content(content_h_local, te) call after
+        // the if/else below.  This was the "REFL-4" hand-maintained twin of
+        // compute_content_hash; FIXY-FOUND-057 silently diverged the two.
       } else {
         te.input_metas = nullptr;
         te.output_metas = nullptr;
@@ -1483,10 +1451,16 @@ struct BackgroundThread {
         te.output_slot_ids = nullptr;
         te.num_inputs = 0;
         te.num_outputs = 0;
-
-        // Still hash schema for no-tensor ops (profiler hooks).
-        content_h_local = detail::wymix(content_h_local, te.schema_hash.raw());
       }
+
+      // fix-01: single-source-of-truth per-op content-hash fold.  Both
+      // branches above fully populate `te` (schema_hash, num_inputs,
+      // input_metas, num_scalar_args, scalar_args), so this one call covers
+      // the tensor and no-tensor cases identically.  fold_trace_entry_content
+      // (MerkleDag.h) is the SAME helper compute_content_hash uses, so this
+      // streaming hash is bit-identical to the canonical O(n) pass BY
+      // CONSTRUCTION and stays single-pass (no redundant second walk).
+      fold_trace_entry_content(content_h_local, te);
 
       // ── PtrMap prefetch: hide L3 latency for next op's probes ──
       //

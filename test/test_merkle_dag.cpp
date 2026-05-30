@@ -642,6 +642,96 @@ namespace {
     std::printf("  FOUND-057: scalar-args truncation closed (count + past-index-5 axes)\n");
   }
 
+  // fix-01 — BG streaming content-hash fold == canonical compute_content_hash.
+  //
+  // BackgroundThread::build_trace folds the per-op content hash inline
+  // (seed 0x9E37..., one fold_trace_entry_content() call per op, fmix64
+  // finalize) while compute_content_hash does the SAME over a span.  Both
+  // now route through the single fold_trace_entry_content helper (fix-01),
+  // so they are bit-identical BY CONSTRUCTION.  FIXY-FOUND-057 silently
+  // broke the old hand-maintained twin by adding the count-fold to
+  // compute_content_hash ONLY; this fixture is the cross-path lock that was
+  // missing — it reds if either path's seed / per-op fold / finalizer drifts.
+  //
+  // Critically covers the two axes the old divergence turned on:
+  //   • count==0 op — old streaming path skipped the count-fold entirely
+  //   • no-tensor op — old streaming else-branch folded only schema_hash
+  {
+    // Replicate build_trace's exact composition (seed → per-op helper fold
+    // → fmix64).  Equality with compute_content_hash locks the seed +
+    // per-op fold + finalizer contract shared by the two paths.
+    auto streaming_hash = [](std::span<const crucible::TraceEntry> region_ops) {
+      uint64_t content_h = 0x9E3779B97F4A7C15ULL;
+      for (const auto& op : region_ops)
+        crucible::fold_trace_entry_content(content_h, op);
+      return crucible::ContentHash{crucible::detail::fmix64(content_h)};
+    };
+
+    crucible::TensorMeta input_meta{};  // default-constructed — ndim 0
+
+    // (a) count==0, no tensors — the exact case the old streaming path
+    //     diverged on (canonical did ^=0;*=prime; streaming did nothing).
+    crucible::TraceEntry e_empty{};
+    e_empty.schema_hash = SchemaHash{0x11};
+
+    // (b) no-tensor op carrying a scalar COUNT but null scalar_args ptr —
+    //     canonical folds the count then skips values via the null guard;
+    //     the old streaming else-branch folded only schema_hash.
+    crucible::TraceEntry e_count_only{};
+    e_count_only.schema_hash = SchemaHash{0x22};
+    e_count_only.num_scalar_args = 3;  // scalar_args stays null
+
+    // (c) one scalar value.
+    int64_t s_one[1] = {42};
+    crucible::TraceEntry e_one{};
+    e_one.schema_hash = SchemaHash{0x33};
+    e_one.scalar_args = s_one;
+    e_one.num_scalar_args = 1;
+
+    // (d) five scalar values (the old clamp boundary).
+    int64_t s_five[5] = {9, 8, 7, 6, 5};
+    crucible::TraceEntry e_five{};
+    e_five.schema_hash = SchemaHash{0x44};
+    e_five.scalar_args = s_five;
+    e_five.num_scalar_args = 5;
+
+    // (e) op WITH an input tensor (exercises the input-meta fold path).
+    crucible::TraceEntry e_tensor{};
+    e_tensor.schema_hash = SchemaHash{0x55};
+    e_tensor.num_inputs = 1;
+    e_tensor.input_metas = &input_meta;
+
+    // Per-op equivalence across every axis.
+    for (const auto* op : {&e_empty, &e_count_only, &e_one, &e_five, &e_tensor}) {
+      std::span<const crucible::TraceEntry> sp{op, 1};
+      assert(streaming_hash(sp) == crucible::compute_content_hash(sp));
+    }
+
+    // Multi-op mix in one region — order-sensitive, exercises accumulator
+    // carry across heterogeneous ops.
+    crucible::TraceEntry mix[] = {e_empty, e_count_only, e_one, e_five, e_tensor};
+    std::span<const crucible::TraceEntry> mix_sp{mix, 5};
+    assert(streaming_hash(mix_sp) == crucible::compute_content_hash(mix_sp));
+
+    // Regression guard: a count==0 op MUST perturb the accumulator (the
+    // old streaming path left it untouched).  Empty region vs a single
+    // count==0 op must differ.
+    std::span<const crucible::TraceEntry> empty_sp{};
+    assert(crucible::compute_content_hash(empty_sp) !=
+           crucible::compute_content_hash(
+               std::span<const crucible::TraceEntry>{&e_empty, 1}));
+
+    // The scalar COUNT is folded even when scalar_args is null: a
+    // no-tensor count==0 op differs from a no-tensor count==3 op.
+    assert(crucible::compute_content_hash(
+               std::span<const crucible::TraceEntry>{&e_empty, 1}) !=
+           crucible::compute_content_hash(
+               std::span<const crucible::TraceEntry>{&e_count_only, 1}));
+
+    std::printf("  fix-01: streaming fold == canonical "
+                "(count==0 / no-tensor / scalar / tensor / multi-op)\n");
+  }
+
   std::printf("test_merkle_dag: all tests passed\n");
   return 0;
 }

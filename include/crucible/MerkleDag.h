@@ -1081,6 +1081,71 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 // KernelContentHash includes recipe->hash as a first-class
 // composition.  This IR001-level integration is the bridge until
 // KernelNode exists.
+
+// ── Shared per-op content-hash fold (fix-01) ─────────────────────────
+//
+// SINGLE SOURCE OF TRUTH for the per-TraceEntry content-hash contribution.
+// Both compute_content_hash (the canonical O(n) pass) and the fused
+// streaming hash in BackgroundThread::build_trace call this helper, so the
+// two paths are bit-identical BY CONSTRUCTION — there is no second copy to
+// drift.  Prior to fix-01 the two folds were hand-maintained twins (the
+// "REFL-4" inline copy); FIXY-FOUND-057 silently broke their bit-identity
+// by adding the num_scalar_args count-fold + dropping the 5-arg clamp to
+// compute_content_hash ONLY, leaving build_trace's twin behind.  That
+// divergence made every region's BG-published content_hash disagree with
+// compute_content_hash, breaking find_merge_point's suffix/kernel sharing
+// (the comparison at the call site below).  Collapsing both paths onto one
+// inlined helper closes the class of bug structurally.
+//
+// Family-A bit-stable.  Folds, in order: schema_hash (wymix), each input
+// TensorMeta (SIMD dim-hash XOR-folded then wymix'd with dtype/device/idx),
+// the scalar-arg COUNT, then each scalar value.
+//
+// The count-fold uses FNV-1a-style XOR+multiply (NOT wymix): wymix(X, 0) = 0
+// because the underlying 128-bit multiply collapses with a zero operand,
+// and num_scalar_args legitimately takes the value 0 for scalar-free ops —
+// a wymix-fold there would zero the accumulator and propagate through
+// fmix64 to ContentHash{0}, which collides with the EMPTY-slot sentinel.
+// The count is folded UNCONDITIONALLY (before the value loop) so an op with
+// N args is distinct from one with M even when the first min(N,M) scalars
+// agree, and so a no-tensor / no-scalar op still perturbs the accumulator.
+//
+// XOR-fold-per-tensor rationale (40% faster than wymix-per-dimension):
+// independent multiplies (sizes[d] * kDimMix[d]) break the serial
+// wymix-chain dependency; the CPU pipelines the multiplies and one wymix
+// per tensor merges.  Locked bit-identical to the SIMD dim-hash by
+// test_dim_hash_equivalence_handcoded in test_simd.cpp.
+//
+// Storage invariant: op_record.scalar_args allocation always matches
+// op_record.num_scalar_args (BG clamps to <=5 and sizes the arena array to
+// the clamped count; Serialize.h sizes alloc_array exactly to the stored
+// count), so iterating to num_scalar_args is in-bounds in every production
+// path.  scalar_args == nullptr ⟺ num_scalar_args contributes count-only.
+[[gnu::always_inline]] inline void fold_trace_entry_content(
+    uint64_t& content_hash_state, const TraceEntry& op_record) noexcept {
+  content_hash_state = detail::wymix(content_hash_state, op_record.schema_hash.raw());
+
+  for (uint16_t j = 0; j < op_record.num_inputs; j++) {
+    const TensorMeta& input_meta = op_record.input_metas[j];
+    const uint64_t per_dim_hash_xor =
+        raw_dim_hash(detail::dim_hash_simd_det(input_meta));
+    uint64_t meta_packed =
+        static_cast<uint64_t>(std::to_underlying(input_meta.dtype)) |
+        (static_cast<uint64_t>(std::to_underlying(input_meta.device_type)) << 8) |
+        (static_cast<uint64_t>(static_cast<uint8_t>(input_meta.device_idx)) << 16);
+    content_hash_state = detail::wymix(content_hash_state ^ per_dim_hash_xor, meta_packed);
+  }
+
+  content_hash_state ^= static_cast<uint64_t>(op_record.num_scalar_args);
+  content_hash_state *= 0x100000001b3ULL;
+  if (op_record.scalar_args) {
+    for (uint16_t s = 0; s < op_record.num_scalar_args; s++) {
+      content_hash_state ^= static_cast<uint64_t>(op_record.scalar_args[s]);
+      content_hash_state *= 0x100000001b3ULL;
+    }
+  }
+}
+
 [[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(
     std::span<const TraceEntry> ops,
     const NumericalRecipe* recipe = nullptr) noexcept
@@ -1117,52 +1182,12 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     content_hash_state = detail::wymix(content_hash_state, recipe->hash.raw());
   }
 
+  // fix-01: per-op fold delegated to the shared fold_trace_entry_content
+  // helper (defined above), the SINGLE SOURCE OF TRUTH also called by
+  // BackgroundThread::build_trace's streaming hash — so the two paths can
+  // never again drift (the FIXY-FOUND-057 regression that motivated fix-01).
   for (const auto& op_record : ops) {
-    content_hash_state = detail::wymix(content_hash_state, op_record.schema_hash.raw());
-
-    for (uint16_t j = 0; j < op_record.num_inputs; j++) {
-      const TensorMeta& input_meta = op_record.input_metas[j];
-      // SIMD dim-hash: bit-identical to the prior inline XOR-fold.
-      // Locked by test_dim_hash_equivalence_handcoded in test_simd.cpp.
-      const uint64_t per_dim_hash_xor =
-          raw_dim_hash(detail::dim_hash_simd_det(input_meta));
-      uint64_t meta_packed =
-          static_cast<uint64_t>(std::to_underlying(input_meta.dtype)) |
-          (static_cast<uint64_t>(std::to_underlying(input_meta.device_type)) << 8) |
-          (static_cast<uint64_t>(static_cast<uint8_t>(input_meta.device_idx)) << 16);
-      content_hash_state = detail::wymix(content_hash_state ^ per_dim_hash_xor, meta_packed);
-    }
-
-    // FIXY-FOUND-057: fold the count BEFORE the value loop so that
-    // an op with N args is distinct from one with M args even when
-    // the first min(N, M) scalars agree.  Pre-FOUND-057 the count
-    // was invisible to the hash AND the loop truncated at index 5,
-    // so [1,2,3,4,5,99] and [1,2,3,4,5] (and [1,2,3,4,5,42]) all
-    // produced the same ContentHash.  Folding num_scalar_args as a
-    // distinct mixer input fixes the COUNT axis; iterating the full
-    // num_scalar_args (no 5-clamp) fixes the VALUE-PAST-INDEX-5 axis.
-    //
-    // Use FNV-1a-style XOR+multiply (NOT wymix): wymix(X, 0) = 0
-    // because the underlying 128-bit multiply collapses with a zero
-    // operand (documented at line 968).  num_scalar_args legitimately
-    // takes the value 0 for scalar-free ops, and a wymix-fold there
-    // would zero the accumulator and propagate through fmix64 to
-    // ContentHash{0} — which collides with the EMPTY-slot sentinel.
-    //
-    // Storage invariant: te.scalar_args allocation always matches
-    // te.num_scalar_args — checked in BackgroundThread.h:1421-1424
-    // (n_scalars = num_scalar_args after clamp, used to size the
-    // arena array) and Serialize.h:472-475 (arena alloc_array sized
-    // exactly to te.num_scalar_args).  Iterating to num_scalar_args
-    // is therefore in-bounds in every production path.
-    content_hash_state ^= static_cast<uint64_t>(op_record.num_scalar_args);
-    content_hash_state *= 0x100000001b3ULL;
-    if (op_record.scalar_args) {
-      for (uint16_t s = 0; s < op_record.num_scalar_args; s++) {
-        content_hash_state ^= static_cast<uint64_t>(op_record.scalar_args[s]);
-        content_hash_state *= 0x100000001b3ULL;
-      }
-    }
+    fold_trace_entry_content(content_hash_state, op_record);
   }
 
   return ContentHash{detail::fmix64(content_hash_state)};
