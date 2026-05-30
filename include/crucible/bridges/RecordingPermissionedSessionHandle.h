@@ -95,7 +95,57 @@ template <typename Proto,
           typename LoopCtx = void>
 class RecordingPermissionedSessionHandle;
 
+// Forward declaration of the §XXI mint factory, so the passkey below
+// can friend it before its definition (which follows all the
+// specialisations at the bottom of this header).
+template <typename Proto, typename PS, typename Resource, typename LoopCtx>
+    requires ::crucible::safety::extract::IsSessionHandle<
+        PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>>
+[[nodiscard]] constexpr auto mint_recording_session(
+    PermissionedSessionHandle<Proto, PS, Resource, LoopCtx> inner,
+    SessionEventLog& log,
+    RoleTagId self,
+    RoleTagId peer) noexcept;
+
 namespace detail {
+
+// ─── §XXI Universal Mint Pattern closure (fix-15) ──────────────────
+//
+// Passkey gating construction of every RecordingPermissionedSessionHandle
+// specialisation.  Its default constructor is private, so a value of
+// this type can only be materialised by a friend.  Every public ctor of
+// every specialisation takes a `recording_session_construct_key` as its
+// FIRST parameter, making `mint_recording_session` the SOLE construction
+// path (§XXI).  Mirrors detail::permissioned_session_construct_key in
+// sessions/PermissionedSession.h:384.
+//
+// Authorised friends:
+//   * mint_recording_session — the §XXI authorisation point.
+//   * detail::wrap_next_permissioned_ — re-wraps the next-state inner
+//     PSH after a protocol step (the recording layer's internal
+//     re-construction site; see doc-comment §"Wrapping next-state PSHs").
+//   * RecordingPermissionedSessionHandle — member methods (notably the
+//     Offer<...> spec's branch(), which builds a fresh sibling-spec
+//     RecordingPSH for each transport-driven branch handle) need to mint
+//     the key to re-wrap.
+struct recording_session_construct_key {
+private:
+    constexpr recording_session_construct_key() noexcept = default;
+
+    template <typename NextHandle>
+    friend constexpr auto wrap_next_permissioned_(
+        NextHandle, SessionEventLog&, RoleTagId, RoleTagId) noexcept;
+
+    template <typename Proto, typename PS, typename Resource, typename LoopCtx>
+        requires ::crucible::safety::extract::IsSessionHandle<
+            PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>>
+    friend constexpr auto ::crucible::safety::proto::mint_recording_session(
+        PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>,
+        SessionEventLog&, RoleTagId, RoleTagId) noexcept;
+
+    template <typename Proto, typename PS, typename Resource, typename LoopCtx>
+    friend class ::crucible::safety::proto::RecordingPermissionedSessionHandle;
+};
 
 // Build a RecordingPermissionedSessionHandle from a freshly-stepped
 // inner PSH.  Mirrors detail::wrap_next_ for the bare-handle case:
@@ -114,6 +164,7 @@ template <typename NextHandle>
     using NextLoopCtx  = typename NextHandle::loop_ctx;
     return RecordingPermissionedSessionHandle<
         NextProto, NextPS, NextResource, NextLoopCtx>{
+            recording_session_construct_key{},
             std::move(next), log, self_role, peer_role};
 }
 
@@ -144,6 +195,7 @@ public:
         PermissionedSessionHandle<End, PS, Resource, LoopCtx>;
 
     constexpr RecordingPermissionedSessionHandle(
+        detail::recording_session_construct_key,
         inner_type inner,
         SessionEventLog& log,
         RoleTagId self,
@@ -206,6 +258,7 @@ public:
     static constexpr CrashClass crash_class = C;
 
     constexpr RecordingPermissionedSessionHandle(
+        detail::recording_session_construct_key,
         inner_type inner,
         SessionEventLog& log,
         RoleTagId self,
@@ -269,6 +322,7 @@ public:
         PermissionedSessionHandle<Send<T, K>, PS, Resource, LoopCtx>;
 
     constexpr RecordingPermissionedSessionHandle(
+        detail::recording_session_construct_key,
         inner_type inner,
         SessionEventLog& log,
         RoleTagId self,
@@ -340,6 +394,7 @@ public:
         PermissionedSessionHandle<Recv<T, K>, PS, Resource, LoopCtx>;
 
     constexpr RecordingPermissionedSessionHandle(
+        detail::recording_session_construct_key,
         inner_type inner,
         SessionEventLog& log,
         RoleTagId self,
@@ -415,6 +470,7 @@ public:
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
     constexpr RecordingPermissionedSessionHandle(
+        detail::recording_session_construct_key,
         inner_type inner,
         SessionEventLog& log,
         RoleTagId self,
@@ -510,6 +566,7 @@ public:
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
     constexpr RecordingPermissionedSessionHandle(
+        detail::recording_session_construct_key,
         inner_type inner,
         SessionEventLog& log,
         RoleTagId self,
@@ -574,6 +631,7 @@ public:
                 RecordingPermissionedSessionHandle<
                     BranchProto, BranchPS, BranchResource, BranchLoopCtx>
                     wrapped_branch{
+                        detail::recording_session_construct_key{},
                         std::move(inner_branch_handle),
                         *log_ptr, self_role, peer_role};
                 return std::invoke(std::move(handler),
@@ -638,6 +696,7 @@ public:
         PermissionedSessionHandle<protocol, PS, Resource, LoopCtx>;
 
     constexpr RecordingPermissionedSessionHandle(
+        detail::recording_session_construct_key,
         inner_type inner,
         SessionEventLog& log,
         RoleTagId self,
@@ -754,6 +813,7 @@ public:
         PermissionedSessionHandle<Protocol, PS, Resource, LoopCtx>;
 
     constexpr RecordingPermissionedSessionHandle(
+        detail::recording_session_construct_key,
         inner_type inner,
         SessionEventLog& log,
         RoleTagId self,
@@ -879,6 +939,7 @@ public:
         PermissionedSessionHandle<Protocol, PS, Resource, LoopCtx>;
 
     constexpr RecordingPermissionedSessionHandle(
+        detail::recording_session_construct_key,
         inner_type inner,
         SessionEventLog& log,
         RoleTagId self,
@@ -1005,6 +1066,7 @@ public:
     static constexpr std::uint64_t min_generation = MinGeneration;
 
     constexpr RecordingPermissionedSessionHandle(
+        detail::recording_session_construct_key,
         inner_type inner,
         SessionEventLog& log,
         RoleTagId self,
@@ -1139,6 +1201,7 @@ public:
     static constexpr std::uint64_t min_generation = MinGeneration;
 
     constexpr RecordingPermissionedSessionHandle(
+        detail::recording_session_construct_key,
         inner_type inner,
         SessionEventLog& log,
         RoleTagId self,
@@ -1228,6 +1291,7 @@ template <typename Proto, typename PS,
 {
     return RecordingPermissionedSessionHandle<
         Proto, PS, Resource, LoopCtx>{
+            detail::recording_session_construct_key{},
             std::move(inner), log, self, peer};
 }
 

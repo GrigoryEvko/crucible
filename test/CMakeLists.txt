@@ -13800,6 +13800,14 @@ crucible_neg_compile_bridges_test(neg_wrap_crash_return_key_copy_construct
 crucible_neg_compile_bridges_test(neg_wrap_crash_return_key_move_construct
     "use of deleted function|passkey cannot be moved|fixy-A2-032|deleted")
 
+# fix-15 — RecordingPermissionedSessionHandle passkey closure: direct
+# brace-construction of any specialization is rejected (the ctor's leading
+# recording_session_construct_key is unconstructable outside mint_recording_session).
+crucible_neg_compile_bridges_test(neg_recording_psh_ctor_public_bypass
+    "recording_session_construct_key")
+crucible_neg_compile_bridges_test(neg_recording_psh_offer_ctor_public_bypass
+    "recording_session_construct_key")
+
 # ── FIXY-V-071 — fixy::concurrent::SpinLock<Tag> HS14 floor (#1949)
 # ConnectionPoolRuntime.h 11 spin-gate sites migrated to the typed
 # wrapper.  Two HS14 fixtures witness the two soundness gates:
