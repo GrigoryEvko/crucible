@@ -103,18 +103,21 @@ static_assert(std::is_same_v<fixy_mint_t, sub_mint_t>,
     "namespace-level redeclaration in fixy/Sess.h.");
 
 // ═════════════════════════════════════════════════════════════════════
-// Cardinality sentinel — 11 friend mint_session_handle overloads.
-// Bump this constant only when a NEW friend declaration is added to
-// a SessionHandle specialization AND a per-protocol reach cell below
-// is added.  Both edits are coupled.
+// Cardinality sentinel — 11 SessionHandle specializations, each
+// befriending detail::make_session_handle (fix-04: the sole authorized
+// constructor; mint_session_handle / step_to_next route through it).
+// Bump this constant only when a NEW SessionHandle specialization is
+// added with its make_session_handle friend AND a per-protocol reach
+// cell below is added.  Both edits are coupled.
 // ═════════════════════════════════════════════════════════════════════
 
 inline constexpr std::size_t kFixyFriendMintHandleCount = 11;
 
 static_assert(kFixyFriendMintHandleCount == 11,
-    "Friend `mint_session_handle` overload count drift — a friend "
-    "declaration was added/removed in sessions/Session*.h without "
-    "updating both the count and the per-protocol cell here.");
+    "Friend `detail::make_session_handle` reach count drift — a "
+    "SessionHandle specialization was added/removed in "
+    "sessions/Session*.h without updating both the count and the "
+    "per-protocol cell here.");
 
 // ═════════════════════════════════════════════════════════════════════
 // Protocol-shape handle typedefs — each forces the SessionHandle
@@ -414,7 +417,15 @@ void smoke_runtime_mints() {
     //     the specialization parses + the friend decl reaches.
     {
         FakeRes r{seed + 10};
-        H_EpAccept h{std::move(r)};
+        // fix-04: SessionHandle value ctor is private — mint via the
+        // sole authorized factory detail::make_session_handle, which
+        // (unlike bare mint_session_handle) exposes the LoopCtx
+        // parameter so the EpochedAccept body's fresh-EpochCtx
+        // static_assert is satisfiable.
+        auto h = pf::detail::make_session_handle<
+            fs::EpochedAccept<DelegatedProto, fs::End, 1, 1>,
+            FakeRes, EpochLoopCtx>(std::move(r));
+        static_assert(std::is_same_v<H_EpAccept, decltype(h)>);
         smoke_check(h.resource().sentinel == seed + 10,
                     "EpochedAccept resource carry");
         std::move(h).detach(detach_reason::TestInstrumentation{});

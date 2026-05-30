@@ -12774,6 +12774,23 @@ crucible_neg_compile_session_test(neg_is_empty_choice_checkpointed_recovery_empt
     "static assertion failed|static assert|fixy-A2-004")
 
 # ─────────────────────────────────────────────────────────────────
+# fix-04 — SessionHandle value-ctor §XXI authorization-bypass closure
+# ─────────────────────────────────────────────────────────────────
+#
+# Every SessionHandle specialization's value ctor is now private +
+# friends only detail::make_session_handle (the sole authorized
+# constructor; mint_session_handle / step_to_next route through it).
+# These two fixtures prove a direct `SessionHandle<Proto, Res, Ctx>{res}`
+# user call site is rejected ("is private"), across two distinct headers:
+#   #1 Session.h Send<T, R> specialization.
+#   #2 SessionCrash.h Stop_g<C> crash-stop specialization (cross-header
+#      friend reach — the factory is forward-declared in Session.h).
+crucible_neg_compile_session_test(neg_session_handle_ctor_public_bypass
+    "is private")
+crucible_neg_compile_session_test(neg_session_crash_handle_ctor_public_bypass
+    "is private")
+
+# ─────────────────────────────────────────────────────────────────
 # FIXY-GAP-B — Agent B round 2
 # ─────────────────────────────────────────────────────────────────
 #

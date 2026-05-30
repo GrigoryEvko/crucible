@@ -977,18 +977,17 @@ class [[nodiscard]] SessionHandle<Delegate<T, K>, Resource, LoopCtx>
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
-    template <typename P, typename Res>
-    friend constexpr auto mint_session_handle(Res) noexcept;
-    template <typename U, typename Res, typename L>
-    friend constexpr auto detail::step_to_next(Res) noexcept;
+    // detail::make_session_handle (Session.h) is the SOLE authorized
+    // constructor (fix-04) — direct `SessionHandle<Delegate<T,K>, Res,
+    // Ctx>{res}` is rejected ("is private"), so mint_session_handle /
+    // step_to_next gates cannot be bypassed.  Friend reaches across
+    // headers: the factory lives in Session.h, included above.
+    template <typename FProto, typename FRes, typename FLoop>
+    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
+        noexcept(std::is_nothrow_move_constructible_v<FRes>)
+        -> SessionHandle<FProto, FRes, FLoop>;
 
-public:
-    using protocol        = Delegate<T, K>;
-    using delegated_proto = T;
-    using continuation    = K;
-    using resource_type   = Resource;
-    using loop_ctx        = LoopCtx;
-
+    // ── Construction (used by detail::make_session_handle only) ────
     constexpr explicit SessionHandle(
         Resource r,
         std::source_location loc = std::source_location::current())
@@ -996,6 +995,13 @@ public:
         : SessionHandleBase<Delegate<T, K>,
                             SessionHandle<Delegate<T, K>, Resource, LoopCtx>>{loc}
         , resource_{std::move(r)} {}
+
+public:
+    using protocol        = Delegate<T, K>;
+    using delegated_proto = T;
+    using continuation    = K;
+    using resource_type   = Resource;
+    using loop_ctx        = LoopCtx;
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
@@ -1138,18 +1144,16 @@ class [[nodiscard]] SessionHandle<Accept<T, K>, Resource, LoopCtx>
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
-    template <typename P, typename Res>
-    friend constexpr auto mint_session_handle(Res) noexcept;
-    template <typename U, typename Res, typename L>
-    friend constexpr auto detail::step_to_next(Res) noexcept;
+    // detail::make_session_handle (Session.h) is the SOLE authorized
+    // constructor (fix-04) — direct `SessionHandle<Accept<T,K>, Res,
+    // Ctx>{res}` is rejected ("is private"), so mint_session_handle /
+    // step_to_next gates cannot be bypassed.
+    template <typename FProto, typename FRes, typename FLoop>
+    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
+        noexcept(std::is_nothrow_move_constructible_v<FRes>)
+        -> SessionHandle<FProto, FRes, FLoop>;
 
-public:
-    using protocol        = Accept<T, K>;
-    using delegated_proto = T;
-    using continuation    = K;
-    using resource_type   = Resource;
-    using loop_ctx        = LoopCtx;
-
+    // ── Construction (used by detail::make_session_handle only) ────
     constexpr explicit SessionHandle(
         Resource r,
         std::source_location loc = std::source_location::current())
@@ -1157,6 +1161,13 @@ public:
         : SessionHandleBase<Accept<T, K>,
                             SessionHandle<Accept<T, K>, Resource, LoopCtx>>{loc}
         , resource_{std::move(r)} {}
+
+public:
+    using protocol        = Accept<T, K>;
+    using delegated_proto = T;
+    using continuation    = K;
+    using resource_type   = Resource;
+    using loop_ctx        = LoopCtx;
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
@@ -1228,10 +1239,24 @@ class [[nodiscard]] SessionHandle<
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
-    template <typename P, typename Res>
-    friend constexpr auto mint_session_handle(Res) noexcept;
-    template <typename U, typename Res, typename L>
-    friend constexpr auto detail::step_to_next(Res) noexcept;
+    // detail::make_session_handle (Session.h) is the SOLE authorized
+    // constructor (fix-04) — direct `SessionHandle<EpochedDelegate<...>,
+    // Res, Ctx>{res}` is rejected ("is private"), so mint_session_handle
+    // / step_to_next gates cannot be bypassed.
+    template <typename FProto, typename FRes, typename FLoop>
+    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
+        noexcept(std::is_nothrow_move_constructible_v<FRes>)
+        -> SessionHandle<FProto, FRes, FLoop>;
+
+    // ── Construction (used by detail::make_session_handle only) ────
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<
+              Protocol,
+              SessionHandle<Protocol, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
 
 public:
     using protocol        = Protocol;
@@ -1241,15 +1266,6 @@ public:
     using loop_ctx        = LoopCtx;
     static constexpr std::uint64_t min_epoch = MinEpoch;
     static constexpr std::uint64_t min_generation = MinGeneration;
-
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<
-              Protocol,
-              SessionHandle<Protocol, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
@@ -1347,10 +1363,28 @@ class [[nodiscard]] SessionHandle<
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
-    template <typename P, typename Res>
-    friend constexpr auto mint_session_handle(Res) noexcept;
-    template <typename U, typename Res, typename L>
-    friend constexpr auto detail::step_to_next(Res) noexcept;
+    // detail::make_session_handle (Session.h) is the SOLE authorized
+    // constructor (fix-04) — direct `SessionHandle<EpochedAccept<...>,
+    // Res, EpochCtx<E,G>>{res}` is rejected ("is private").  This is
+    // the ONE specialization mint_session_handle cannot reach (its
+    // body static_asserts a fresh EpochCtx LoopCtx, but mint always
+    // builds LoopCtx = void); the epoch-versioned recipient path mints
+    // it via detail::make_session_handle<EpochedAccept<...>, Res,
+    // EpochCtx<E,G>>(res).  The factory is the sanctioned site.
+    template <typename FProto, typename FRes, typename FLoop>
+    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
+        noexcept(std::is_nothrow_move_constructible_v<FRes>)
+        -> SessionHandle<FProto, FRes, FLoop>;
+
+    // ── Construction (used by detail::make_session_handle only) ────
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<
+              Protocol,
+              SessionHandle<Protocol, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
 
 public:
     using protocol        = Protocol;
@@ -1360,15 +1394,6 @@ public:
     using loop_ctx        = LoopCtx;
     static constexpr std::uint64_t min_epoch = MinEpoch;
     static constexpr std::uint64_t min_generation = MinGeneration;
-
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<
-              Protocol,
-              SessionHandle<Protocol, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;

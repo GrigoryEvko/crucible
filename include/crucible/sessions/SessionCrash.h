@@ -303,18 +303,16 @@ class [[nodiscard]] SessionHandle<Stop_g<C>, Resource, LoopCtx>
     template <typename P, typename R, typename L>
     friend class SessionHandle;
 
-    template <typename P, typename R>
-    friend constexpr auto mint_session_handle(R r) noexcept;
+    // detail::make_session_handle (Session.h) is the SOLE authorized
+    // constructor (fix-04) — direct `SessionHandle<Stop_g<C>, Res,
+    // Ctx>{res}` is rejected ("is private"), so mint_session_handle /
+    // step_to_next gates cannot be bypassed.
+    template <typename FProto, typename FRes, typename FLoop>
+    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
+        noexcept(std::is_nothrow_move_constructible_v<FRes>)
+        -> SessionHandle<FProto, FRes, FLoop>;
 
-    template <typename R, typename Res, typename L>
-    friend constexpr auto detail::step_to_next(Res) noexcept;
-
-public:
-    using protocol      = Stop_g<C>;
-    using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
-    static constexpr CrashClass crash_class = C;
-
+    // ── Construction (used by detail::make_session_handle only) ────
     constexpr explicit SessionHandle(
         Resource r,
         std::source_location loc = std::source_location::current())
@@ -322,6 +320,12 @@ public:
         : SessionHandleBase<Stop_g<C>,
                             SessionHandle<Stop_g<C>, Resource, LoopCtx>>{loc}
         , resource_{std::move(r)} {}
+
+public:
+    using protocol      = Stop_g<C>;
+    using resource_type = Resource;
+    using loop_ctx      = LoopCtx;
+    static constexpr CrashClass crash_class = C;
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;

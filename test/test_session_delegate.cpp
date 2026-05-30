@@ -351,12 +351,20 @@ int run_delegate_stop_composition() {
 int run_epoched_delegate_reshard() {
     std::deque<std::string> wire;
 
-    SessionHandle<EpochedReshardDelegate, MockChannel> sender{
-        MockChannel{.name = "reshard-sender", .wire_bytes = &wire}};
+    // fix-04: SessionHandle value ctors are private; detail::make_session_handle
+    // is the sole construction path.  The sender's EpochedDelegate head has no
+    // LoopCtx restriction, so a bare mint would also do — but the recipient's
+    // EpochedAccept head static_asserts a fresh EpochCtx LoopCtx that bare
+    // mint_session_handle (LoopCtx = void) cannot satisfy, so the epoch-versioned
+    // recipient must be minted with the explicit EpochCtx<5, 3> via the factory.
+    auto sender = ::crucible::safety::proto::detail::make_session_handle<
+        EpochedReshardDelegate, MockChannel, void>(
+        MockChannel{.name = "reshard-sender", .wire_bytes = &wire});
 
     using FreshRecipientCtx = EpochCtx<5, 3>;
-    SessionHandle<EpochedReshardAccept, MockChannel, FreshRecipientCtx> recipient{
-        MockChannel{.name = "reshard-recipient", .wire_bytes = &wire}};
+    auto recipient = ::crucible::safety::proto::detail::make_session_handle<
+        EpochedReshardAccept, MockChannel, FreshRecipientCtx>(
+        MockChannel{.name = "reshard-recipient", .wire_bytes = &wire});
 
     auto hot_handle = mint_session_handle<HotTierHandle>(
         MockChannel{.name = "hot-tier-shard", .wire_bytes = &wire});

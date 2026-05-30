@@ -1164,10 +1164,15 @@ int run_recording_epoched_delegate_accept_fidelity() {
         std::move(delegate_end_a).close();
     if (carrier_after_delegate_a.transferred_endpoint != 77)     return 1;
 
-    // Direct aggregate-construct on the Accept side so the EpochCtx
-    // LoopCtx flows through mint_recording_session unchanged.
-    SessionHandle<AcceptCarrierA, CarrierResource, RecipientCtxA>
-        accept_bare_a{carrier_after_delegate_a};
+    // Mint the Accept-side handle with the explicit EpochCtx LoopCtx
+    // so it flows through mint_recording_session unchanged.  fix-04:
+    // SessionHandle value ctors are private; detail::make_session_handle
+    // is the sole construction path, and it (unlike bare
+    // mint_session_handle) exposes the LoopCtx parameter the
+    // EpochedAccept body's fresh-EpochCtx static_assert requires.
+    auto accept_bare_a = detail::make_session_handle<
+        AcceptCarrierA, CarrierResource, RecipientCtxA>(
+        carrier_after_delegate_a);
     auto accept_rec_a = mint_recording_session(
         std::move(accept_bare_a), log, kServer, kClient);
     auto [accepted_handle_a, accept_end_a] =
@@ -1194,8 +1199,9 @@ int run_recording_epoched_delegate_accept_fidelity() {
         std::move(delegate_end_b).close();
     if (carrier_after_delegate_b.transferred_endpoint != 99)     return 4;
 
-    SessionHandle<AcceptCarrierB, CarrierResource, RecipientCtxB>
-        accept_bare_b{carrier_after_delegate_b};
+    auto accept_bare_b = detail::make_session_handle<
+        AcceptCarrierB, CarrierResource, RecipientCtxB>(
+        carrier_after_delegate_b);
     auto accept_rec_b = mint_recording_session(
         std::move(accept_bare_b), log, kServer, kClient);
     auto [accepted_handle_b, accept_end_b] =

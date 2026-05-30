@@ -1823,6 +1823,36 @@ class SessionHandle;
 
 namespace detail {
 
+// ─── Internal: make_session_handle<Proto, Resource, LoopCtx> ─────
+//
+// The SOLE authorized constructor of a bare SessionHandle (fix-04).
+// Every SessionHandle specialization's value ctor is private and
+// friends ONLY this factory + the SessionHandle template family
+// (for move) — so a direct `SessionHandle<Proto, Res, Ctx>{res}`
+// at a user call site is a hard "is private" error, bypassing
+// neither mint_session_handle's well-formedness / Loop-unrolling
+// gate nor step_to_next's Continue/Loop resolution.
+//
+// Intentionally UNCONSTRAINED: this is the unconstrained inner
+// factory that mint_session_handle (constrained on
+// WellFormedRunnableProtocol + SessionResource) and step_to_next
+// (post-resolution, head-shape-asserted) both route through after
+// their own admission runs.  Exposes the LoopCtx parameter so the
+// epoch-versioned recipient path (SessionHandle<EpochedAccept<...>,
+// Res, EpochCtx<E, G>>, whose body static_asserts a fresh LoopCtx)
+// has a sanctioned construction site — mint_session_handle alone
+// always builds LoopCtx = void and cannot reach it.  Mirrors fix-03's
+// detail::make_swmr_stage role for SwmrStage.
+template <typename Proto, typename Resource, typename LoopCtx>
+[[nodiscard]] constexpr auto make_session_handle(
+    Resource r,
+    std::source_location loc = std::source_location::current())
+    noexcept(std::is_nothrow_move_constructible_v<Resource>)
+    -> SessionHandle<Proto, Resource, LoopCtx>
+{
+    return SessionHandle<Proto, Resource, LoopCtx>{std::move(r), loc};
+}
+
 template <typename R, typename Resource, typename LoopCtx>
 [[nodiscard]] constexpr auto step_to_next(
     Resource r,
@@ -1851,7 +1881,7 @@ template <typename R, typename Resource, typename LoopCtx>
             "crucible::session::diagnostic [Protocol_Ill_Formed]: "
             "proto: unexpected protocol shape after resolution.  "
             "Only Send/Recv/Select/Offer/End/Continue are valid heads.");
-        return SessionHandle<R, Resource, LoopCtx>{std::move(r), loc};
+        return make_session_handle<R, Resource, LoopCtx>(std::move(r), loc);
     }
 }
 
@@ -1870,23 +1900,28 @@ class [[nodiscard]] SessionHandle<End, Resource, LoopCtx>
     template <typename P, typename R, typename L>
     friend class SessionHandle;
 
-    template <typename P, typename R>
-    friend constexpr auto mint_session_handle(R r) noexcept;
+    // detail::make_session_handle is the SOLE authorized constructor
+    // (fix-04) — mint_session_handle and step_to_next both route
+    // through it after their own admission.  A direct
+    // `SessionHandle<End, Res, Ctx>{res}` user call site is rejected
+    // ("is private"), so the factory's gate cannot be bypassed.
+    template <typename FProto, typename FRes, typename FLoop>
+    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
+        noexcept(std::is_nothrow_move_constructible_v<FRes>)
+        -> SessionHandle<FProto, FRes, FLoop>;
 
-    template <typename R, typename Res, typename L>
-    friend constexpr auto detail::step_to_next(Res) noexcept;
-
-public:
-    using protocol      = End;
-    using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
-
+    // ── Construction (used by detail::make_session_handle only) ────
     constexpr explicit SessionHandle(
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<End, SessionHandle<End, Resource, LoopCtx>>{loc}
         , resource_{std::move(r)} {}
+
+public:
+    using protocol      = End;
+    using resource_type = Resource;
+    using loop_ctx      = LoopCtx;
 
     // Copy-delete with reason inherited from SessionHandleBase<End>.
     // Move-ctor/assign: = default invokes base's custom move (which
@@ -1923,18 +1958,16 @@ class [[nodiscard]] SessionHandle<Send<T, R>, Resource, LoopCtx>
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
-    template <typename P, typename Res>
-    friend constexpr auto mint_session_handle(Res) noexcept;
-    template <typename U, typename Res, typename L>
-    friend constexpr auto detail::step_to_next(Res) noexcept;
+    // detail::make_session_handle is the SOLE authorized constructor
+    // (fix-04) — direct `SessionHandle<Send<T,R>, Res, Ctx>{res}` is
+    // rejected ("is private"), so mint_session_handle / step_to_next
+    // gates cannot be bypassed.
+    template <typename FProto, typename FRes, typename FLoop>
+    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
+        noexcept(std::is_nothrow_move_constructible_v<FRes>)
+        -> SessionHandle<FProto, FRes, FLoop>;
 
-public:
-    using protocol      = Send<T, R>;
-    using message_type  = T;
-    using continuation  = R;
-    using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
-
+    // ── Construction (used by detail::make_session_handle only) ────
     constexpr explicit SessionHandle(
         Resource r,
         std::source_location loc = std::source_location::current())
@@ -1942,6 +1975,13 @@ public:
         : SessionHandleBase<Send<T, R>,
                             SessionHandle<Send<T, R>, Resource, LoopCtx>>{loc}
         , resource_{std::move(r)} {}
+
+public:
+    using protocol      = Send<T, R>;
+    using message_type  = T;
+    using continuation  = R;
+    using resource_type = Resource;
+    using loop_ctx      = LoopCtx;
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
@@ -1979,18 +2019,16 @@ class [[nodiscard]] SessionHandle<Recv<T, R>, Resource, LoopCtx>
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
-    template <typename P, typename Res>
-    friend constexpr auto mint_session_handle(Res) noexcept;
-    template <typename U, typename Res, typename L>
-    friend constexpr auto detail::step_to_next(Res) noexcept;
+    // detail::make_session_handle is the SOLE authorized constructor
+    // (fix-04) — direct `SessionHandle<Recv<T,R>, Res, Ctx>{res}` is
+    // rejected ("is private"), so mint_session_handle / step_to_next
+    // gates cannot be bypassed.
+    template <typename FProto, typename FRes, typename FLoop>
+    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
+        noexcept(std::is_nothrow_move_constructible_v<FRes>)
+        -> SessionHandle<FProto, FRes, FLoop>;
 
-public:
-    using protocol      = Recv<T, R>;
-    using message_type  = T;
-    using continuation  = R;
-    using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
-
+    // ── Construction (used by detail::make_session_handle only) ────
     constexpr explicit SessionHandle(
         Resource r,
         std::source_location loc = std::source_location::current())
@@ -1998,6 +2036,13 @@ public:
         : SessionHandleBase<Recv<T, R>,
                             SessionHandle<Recv<T, R>, Resource, LoopCtx>>{loc}
         , resource_{std::move(r)} {}
+
+public:
+    using protocol      = Recv<T, R>;
+    using message_type  = T;
+    using continuation  = R;
+    using resource_type = Resource;
+    using loop_ctx      = LoopCtx;
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
@@ -2035,10 +2080,25 @@ class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx>
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
-    template <typename P, typename Res>
-    friend constexpr auto mint_session_handle(Res) noexcept;
-    template <typename U, typename Res, typename L>
-    friend constexpr auto detail::step_to_next(Res) noexcept;
+    // detail::make_session_handle is the SOLE authorized constructor
+    // (fix-04) — direct `SessionHandle<Select<...>, Res, Ctx>{res}`
+    // is rejected ("is private"), so mint_session_handle / step_to_next
+    // gates cannot be bypassed.  The branch_count > 0 static_assert
+    // below still fires belt-and-braces on any (now factory-only)
+    // Select<> instantiation.
+    template <typename FProto, typename FRes, typename FLoop>
+    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
+        noexcept(std::is_nothrow_move_constructible_v<FRes>)
+        -> SessionHandle<FProto, FRes, FLoop>;
+
+    // ── Construction (used by detail::make_session_handle only) ────
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Select<Branches...>,
+                            SessionHandle<Select<Branches...>, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
 
 public:
     using protocol       = Select<Branches...>;
@@ -2060,14 +2120,6 @@ public:
         "on Select<> with zero branches — there is no branch for "
         ".pick<I>() to select.  See mint_session_handle for the full "
         "diagnostic and remediation.");
-
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Select<Branches...>,
-                            SessionHandle<Select<Branches...>, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
@@ -2172,10 +2224,24 @@ class [[nodiscard]] SessionHandle<Offer<Branches...>, Resource, LoopCtx>
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
-    template <typename P, typename Res>
-    friend constexpr auto mint_session_handle(Res) noexcept;
-    template <typename U, typename Res, typename L>
-    friend constexpr auto detail::step_to_next(Res) noexcept;
+    // detail::make_session_handle is the SOLE authorized constructor
+    // (fix-04) — direct `SessionHandle<Offer<...>, Res, Ctx>{res}` is
+    // rejected ("is private"), so mint_session_handle / step_to_next
+    // gates cannot be bypassed.  The branch_count > 0 static_assert
+    // below still fires belt-and-braces on any Offer<> instantiation.
+    template <typename FProto, typename FRes, typename FLoop>
+    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
+        noexcept(std::is_nothrow_move_constructible_v<FRes>)
+        -> SessionHandle<FProto, FRes, FLoop>;
+
+    // ── Construction (used by detail::make_session_handle only) ────
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Offer<Branches...>,
+                            SessionHandle<Offer<Branches...>, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
 
 public:
     using protocol      = Offer<Branches...>;
@@ -2195,14 +2261,6 @@ public:
         "on Offer<> with zero branches — there is no label the peer "
         "can send.  See mint_session_handle for the full diagnostic "
         "and remediation.");
-
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Offer<Branches...>,
-                            SessionHandle<Offer<Branches...>, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
@@ -2517,7 +2575,7 @@ template <typename Proto, typename Resource>
         static_assert(!std::is_same_v<Proto, Continue>,
             "crucible::session::diagnostic [Continue_Without_Loop]: "
             "proto: Continue cannot be the top-level protocol.");
-        return SessionHandle<Proto, Resource, void>{std::move(r), loc};
+        return detail::make_session_handle<Proto, Resource, void>(std::move(r), loc);
     }
 }
 
