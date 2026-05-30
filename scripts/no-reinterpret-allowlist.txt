@@ -1,13 +1,26 @@
 # scripts/no-reinterpret-allowlist.txt — grandfathered reinterpret_cast sites.
 #
-# Format: `path:line` (one per line, relative to project root).
+# Format: `path:text` (one per line, relative to project root).  `text`
+# is the EXACT trimmed source of the violating call line (leading and
+# trailing whitespace stripped) — a content key, NOT a line number.
 # Comments start with '#'.  Blank lines ignored.
 #
+# fix-18: content-keying replaces the legacy `path:line` form.  A line
+# number drifts the instant ANY edit lands above the call (a concurrent
+# agent inserting a member, a new `#include`, a reflowed comment),
+# silently staling the entry: the real reinterpret_cast reads as
+# un-suppressed AND the dangling line-keyed entry trips the stale gate.
+# The call line's TEXT is stable across line shifts.  Mirror of the
+# name-keyed mint-pattern guard (mint-pattern-allowlist.txt).
+#
 # Every entry is a TODO awaiting a tracked migration.  When the
-# referenced FIXY-U-082 / fixy-A5-028 / WRAP-* ticket lands, delete
-# the line — the guard then catches any future drift at that line.
-# Stale entries (no reinterpret_cast at the listed line) red CI at
-# exit 2 so the allowlist drains in lockstep with substrate fixes.
+# referenced FIXY-U-082 / fixy-A5-028 / WRAP-* ticket lands, delete the
+# line — the guard then catches any future drift.  Stale entries (no
+# matching call text in the file) red CI at exit 2 so the allowlist
+# drains in lockstep with substrate fixes.
+#
+# Inline suppression (preferred for new code): `// NO-REINTERPRET-OK:
+# <reason>` on the call line exempts that single line directly.
 #
 # (No active grandfathered sites — FIXY-U-082 drained the cntp/Fec +
 # AfXdp + Integrity + GpuDirect cluster.)

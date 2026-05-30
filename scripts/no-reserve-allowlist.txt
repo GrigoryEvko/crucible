@@ -1,46 +1,78 @@
 # scripts/no-reserve-allowlist.txt — grandfathered std::vector::reserve sites.
 #
-# Format: `path:line` (one per line, relative to project root).
+# Format: `path:text` (one per line, relative to project root).  `text`
+# is the EXACT trimmed source of the violating call line (leading and
+# trailing whitespace stripped) — a content key, NOT a line number.
 # Comments start with '#'.  Blank lines ignored.
 #
+# ── Why content-keyed, not line-keyed (fix-18) ──────────────────────
+#
+# A LINE-KEYED entry (`path:line`) pins an exemption to a source LINE
+# NUMBER.  Any edit above the call — a concurrent agent inserting a
+# member, a new `#include`, a reflowed comment — shifts the line and
+# silently invalidates the entry: the real reserve reads as an
+# un-suppressed violation AND the now-dangling entry trips the
+# stale-entry gate.  That is the exact failure mode this file kept
+# hitting (memory documents two recent regressions; the six Cipher.h
+# entries had already drifted by 5 lines when fix-18 landed).
+#
+# A CONTENT-KEYED entry pins the exemption to the call line's TEXT.
+# The text is stable across line shifts, so a content-keyed exemption
+# keeps tracking the same call no matter how the file above it churns.
+# fix-18 eliminates the line number as the drift vector entirely; the
+# mint-pattern guard took the same approach (name-keyed) — see
+# scripts/mint-pattern-allowlist.txt.
+#
+# Content-keyed semantics: `path` must match the candidate's file
+# exactly; `text` must equal the trimmed source of the call line
+# byte-for-byte.  Each call line in a given file is unique by its
+# trimmed text, so one entry maps to exactly one site.  A future
+# duplicate-text call in the same file would (correctly) be covered by
+# the same waiver — they share one migration rationale by construction.
+#
 # Every entry is a TODO awaiting a tracked migration.  When the
-# referenced fixy-A5-* or WRAP-* ticket lands, delete the line —
-# the guard then enforces no regression.
+# referenced fixy-A5-* / WRAP-* ticket lands, delete the line — the
+# guard then enforces no regression.  Stale entries (no matching call
+# text in the file) red CI at exit 2 so the allowlist drains in
+# lockstep with the §IV migration.
+#
+# Inline suppression (preferred for new code): `// NO-RESERVE-OK:
+# <reason>` on the call line exempts that single line directly.
 #
 # ── vis/TraceVisualizer.h ───────────────────────────────────────────
 # Trace visualization tools — cold-tier, but still bound by §IV.
 # Migrate to fixed-capacity per-graph buffers when the visualizer
 # tooling is refactored (no dedicated ticket yet).
-include/crucible/vis/TraceVisualizer.h:1006
-include/crucible/vis/TraceVisualizer.h:1019
+include/crucible/vis/TraceVisualizer.h:nodes.reserve(blocks.size());
+include/crucible/vis/TraceVisualizer.h:layout_edges.reserve(view.edges.size());
 #
 # ── Cipher.h ────────────────────────────────────────────────────────
 # WRAP-Cipher-2 / WRAP-Cipher-3 / WRAP-Cipher-5 cluster (#885, #886,
 # #888): Cipher cold-tier path constructs O(K) buffers before
 # serialization; amortization is acceptable but the guard tracks
 # them so the long-term migration to inplace_vector + Linear<bytes>
-# isn't forgotten.  V-030 added two new entries (obj_relpath_ +
+# isn't forgotten.  V-030 added two entries (obj_relpath_ +
 # session_event_dir_relpath_) — relative-path counterparts of
 # obj_path / session_event_dir for dirfd-anchored openat().
-include/crucible/Cipher.h:1283
-include/crucible/Cipher.h:1746
-include/crucible/Cipher.h:1776
-include/crucible/Cipher.h:1792
-include/crucible/Cipher.h:1808
-include/crucible/Cipher.h:1853
+include/crucible/Cipher.h:out.reserve(out.size() + decoded.size());
+include/crucible/Cipher.h:path.reserve(root.size() + OBJECT_PATH_SUFFIX_BYTES);
+include/crucible/Cipher.h:r.reserve(sizeof("objects/") - 1 + 2 + 1 + 14);
+include/crucible/Cipher.h:path.reserve(root.size() + sizeof("/session_events/") - 1 + 16);
+include/crucible/Cipher.h:path.reserve(sizeof("session_events/") - 1 + 16);
+include/crucible/Cipher.h:resident_cache_.reserve(MAX_RESIDENT_CACHE_ENTRIES);
 #
 # ── BackgroundThread.h ──────────────────────────────────────────────
 # WRAP-BgThread-6 (#877): current_trace + parallel vectors reserved
 # to kInitialTraceCapacity at iteration start.  Migration target:
 # length-coupled SoA newtype where the SoA backing storage is
 # arena-owned or inplace_vector<T, kInitialTraceCapacity>.
-include/crucible/BackgroundThread.h:333
-include/crucible/BackgroundThread.h:334
-include/crucible/BackgroundThread.h:335
-include/crucible/BackgroundThread.h:336
+include/crucible/BackgroundThread.h:current_trace.reserve(kInitialTraceCapacity);
+include/crucible/BackgroundThread.h:current_meta_starts.reserve(kInitialTraceCapacity);
+include/crucible/BackgroundThread.h:current_scope_hashes.reserve(kInitialTraceCapacity);
+include/crucible/BackgroundThread.h:current_callsite_hashes.reserve(kInitialTraceCapacity);
 #
 # ── concurrent/AdaptiveScheduler.h ──────────────────────────────────
 # workers_.reserve(worker_count_) during pool init — bounded by
 # the CostModel's cap, would convert cleanly to inplace_vector
 # with NUMA-pinned capacity.  No dedicated ticket yet.
-include/crucible/concurrent/AdaptiveScheduler.h:765
+include/crucible/concurrent/AdaptiveScheduler.h:workers_.reserve(worker_count_);

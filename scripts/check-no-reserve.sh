@@ -23,9 +23,19 @@
 # False positives (e.g. third-party-style class methods named
 # `reserve`) go in the allowlist with a tracked-migration TODO.
 #
-# Per-line allowlist: scripts/no-reserve-allowlist.txt.  Each line
-# is `path:line` (relative to project root).  Comment lines start
-# with `#`.  Empty lines are ignored.
+# Content-keyed allowlist: scripts/no-reserve-allowlist.txt.  Each line
+# is `path:text` (relative to project root), where `text` is the EXACT
+# trimmed source of the violating call line — a CONTENT KEY, not a line
+# number.  Comment lines start with `#`.  Empty lines are ignored.
+#
+# fix-18: content-keying replaces the legacy `path:line` form.  A line
+# number drifts the instant ANY edit lands above the call (a concurrent
+# agent inserting a member, a new `#include`, a reflowed comment),
+# silently staling the entry: the real reserve reads as un-suppressed
+# AND the dangling line-keyed entry trips the stale gate.  The call
+# line's TEXT is stable across line shifts, so a content-keyed entry
+# keeps tracking the same site no matter how the file above it churns.
+# Mirror of the name-keyed mint-pattern guard (mint-pattern-allowlist.txt).
 #
 # Inline suppression: `// NO-RESERVE-OK: <reason>` on the call line
 # exempts that single line.
@@ -36,15 +46,16 @@
 # Exit status:
 #   0 — clean (no NEW reserve sites, no stale allowlist entries)
 #   1 — at least one violation (takes precedence over stale)
-#   2 — stale allowlist entry (a path:line where reserve no longer
-#       exists — the call moved on a line shift, or the site was
-#       migrated away; prune it) OR bad invocation / missing dependency
+#   2 — stale allowlist entry (a path:text whose call no longer exists
+#       in the file — the site was migrated away or its text changed;
+#       prune it) OR bad invocation / missing dependency
 #
 # Stale-entry detection (parity with check-no-reinterpret-cast.sh):
 # every allowlist entry must correspond to a LIVE reserve site.  A
-# line-shifting edit silently invalidates a grandfather entry; without
-# this gate a migrated-away entry lingers and could re-grandfather a
-# future reserve re-introduced at the same line.
+# migrated-away or text-rewritten entry lingers as a dead exemption
+# and could re-grandfather a future reserve that happens to match the
+# same text; this gate flags it so the allowlist drains in lockstep
+# with the §IV migration.
 
 set -euo pipefail
 
@@ -62,7 +73,8 @@ Usage:
 Suppression:
   // NO-RESERVE-OK: <reason>             on call line — exempts THIS line
   scripts/no-reserve-allowlist.txt:
-    path:line                            — exempts the call at that line
+    path:text                            — exempts the call whose trimmed
+                                           source equals `text` (content key)
     # comment                            — ignored
 USAGE
 }
@@ -72,39 +84,44 @@ case "${1:-}" in
     --self-test)
         # Plant ONE violation in a synthetic file under a temp root.
         # The scanner must flag it; otherwise the regex is broken.
-        # Also plant ONE allowlisted call to verify the allowlist
-        # mechanism (otherwise a hostile entry could mask everything).
+        # Also plant ONE allowlisted call to verify the content-keyed
+        # allowlist mechanism (otherwise a hostile entry could mask
+        # everything).  Each reserve call carries TEXTUALLY DISTINCT
+        # arguments so the content key maps each to exactly one site —
+        # this is the fix-18 invariant the self-test must pin.
         tmp_root="$(mktemp -d)"
         trap 'rm -rf "$tmp_root"' EXIT
         mkdir -p "$tmp_root/include/crucible/planted" "$tmp_root/scripts"
         cat >"$tmp_root/include/crucible/planted/planted_violation.h" <<'PLANTED'
 #pragma once
 // Synthetic no-reserve fixture for --self-test.
+// Call lines carry NO trailing comment so the content key equals the
+// bare call source (mirrors real grandfathered sites in Cipher.h etc.).
 #include <vector>
 namespace crucible::planted {
 inline void planted_drift() {
     std::vector<int> v;
-    v.reserve(64);                    // FLAGGED — must be caught
+    v.reserve(7);
 }
 inline void planted_allowlisted() {
     std::vector<int> v;
-    v.reserve(64);                    // ALLOWLISTED — must NOT be caught
+    v.reserve(11);
 }
 inline void planted_suppressed() {
     std::vector<int> v;
-    v.reserve(64);  // NO-RESERVE-OK: synthetic --self-test inline marker
+    v.reserve(15);  // NO-RESERVE-OK: synthetic --self-test inline marker
 }
 inline void planted_in_comment() {
-    // someobj.reserve(64);           // commented out — must NOT be caught
+    // someobj.reserve(18);  commented out — must NOT be caught
 }
 }  // namespace crucible::planted
 PLANTED
-        # Allowlist entry targets the SECOND .reserve() call site
-        # (line 11 of planted_violation.h — count manually for
-        # determinism in --self-test).
+        # Allowlist entry is CONTENT-KEYED: it names the exact trimmed
+        # source of the SECOND .reserve() call (`v.reserve(11);`), not
+        # its line number.  This is the fix-18 drift-proof key.
         cat >"$tmp_root/scripts/no-reserve-allowlist.txt" <<'ALLOW'
-# self-test grandfathered entry
-include/crucible/planted/planted_violation.h:11
+# self-test grandfathered entry (content-keyed)
+include/crucible/planted/planted_violation.h:v.reserve(11);
 ALLOW
         result_file="$(mktemp)"
         if CRUCIBLE_NO_RESERVE_TEST_ROOT="$tmp_root" \
@@ -115,32 +132,32 @@ ALLOW
             rm -f "$result_file"
             exit 2
         fi
-        # The planted_drift line (line 7) must be flagged.
-        if ! grep -qF 'planted_violation.h:7' "$result_file"; then
-            printf 'check-no-reserve: SELF-TEST FAILED — expected diagnostic for line 7 missing.\n' >&2
+        # The planted_drift call (`v.reserve(7);`) must be flagged.
+        if ! grep -qF 'v.reserve(7);' "$result_file"; then
+            printf 'check-no-reserve: SELF-TEST FAILED — expected diagnostic for v.reserve(7); missing.\n' >&2
             printf '── scanner stderr ───\n%s\n────────────────────\n' \
                 "$(cat "$result_file")" >&2
             rm -f "$result_file"
             exit 2
         fi
-        # The allowlisted line (line 11) must NOT be flagged.
-        if grep -qF 'planted_violation.h:11' "$result_file"; then
+        # The allowlisted call (`v.reserve(11);`) must NOT be flagged.
+        if grep -qF 'v.reserve(11);' "$result_file"; then
             printf 'check-no-reserve: SELF-TEST FAILED — allowlist entry leaked.\n' >&2
             printf '── scanner stderr ───\n%s\n────────────────────\n' \
                 "$(cat "$result_file")" >&2
             rm -f "$result_file"
             exit 2
         fi
-        # The inline-suppressed line (line 15) must NOT be flagged.
-        if grep -qF 'planted_violation.h:15' "$result_file"; then
+        # The inline-suppressed call (`v.reserve(15);`) must NOT be flagged.
+        if grep -qF 'v.reserve(15);' "$result_file"; then
             printf 'check-no-reserve: SELF-TEST FAILED — inline NO-RESERVE-OK marker leaked.\n' >&2
             printf '── scanner stderr ───\n%s\n────────────────────\n' \
                 "$(cat "$result_file")" >&2
             rm -f "$result_file"
             exit 2
         fi
-        # The commented-out call (line 18) must NOT be flagged.
-        if grep -qF 'planted_violation.h:18' "$result_file"; then
+        # The commented-out call (`someobj.reserve(18);`) must NOT be flagged.
+        if grep -qF 'someobj.reserve(18);' "$result_file"; then
             printf 'check-no-reserve: SELF-TEST FAILED — comment line leaked through filter.\n' >&2
             printf '── scanner stderr ───\n%s\n────────────────────\n' \
                 "$(cat "$result_file")" >&2
@@ -149,43 +166,86 @@ ALLOW
         fi
         rm -f "$result_file"
 
-        # ── Phase 2: stale-allowlist-entry detection ─────────────────
-        # Reuse the planted fixture.  Suppress BOTH real reserve sites
-        # (lines 7 and 11) with live allowlist entries so the scan
-        # reaches the stale pass with zero violations, then add a stale
-        # entry (line 99 — no reserve there) that MUST be flagged.
+        # ── Phase 2: drift-proofing (the fix-18 core invariant) ──────
+        # Insert a blank line ABOVE the allowlisted call so its LINE
+        # NUMBER shifts.  A content-keyed allowlist must STILL exempt
+        # it (old line-keyed form would red here — that is the bug).
+        # Re-plant the fixture with one extra leading blank line; the
+        # content-keyed entry (`v.reserve(11);`) is unchanged.  Both
+        # real reserve sites (drift + allowlisted) get exempted so the
+        # scan reaches a clean exit 0.
+        cat >"$tmp_root/include/crucible/planted/planted_violation.h" <<'PLANTED'
+
+#pragma once
+// Synthetic no-reserve fixture for --self-test (line-shifted).
+#include <vector>
+namespace crucible::planted {
+inline void planted_drift() {
+    std::vector<int> v;
+    v.reserve(7);
+}
+inline void planted_allowlisted() {
+    std::vector<int> v;
+    v.reserve(11);
+}
+}  // namespace crucible::planted
+PLANTED
         cat >"$tmp_root/scripts/no-reserve-allowlist.txt" <<'ALLOW'
-# self-test live entries (real reserve sites)
-include/crucible/planted/planted_violation.h:7
-include/crucible/planted/planted_violation.h:11
-# self-test stale entry (no reserve at this line)
-include/crucible/planted/planted_violation.h:99
+# self-test live entries (content-keyed; survive the line shift)
+include/crucible/planted/planted_violation.h:v.reserve(7);
+include/crucible/planted/planted_violation.h:v.reserve(11);
+ALLOW
+        drift_file="$(mktemp)"
+        drift_rc=0
+        CRUCIBLE_NO_RESERVE_TEST_ROOT="$tmp_root" \
+            bash "${BASH_SOURCE[0]}" 2>"$drift_file" || drift_rc=$?
+        if [[ "$drift_rc" -ne 0 ]]; then
+            printf 'check-no-reserve: SELF-TEST FAILED (phase 2) — content key did NOT survive line shift (got exit %d, want 0).\n' \
+                "$drift_rc" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$drift_file")" >&2
+            rm -f "$drift_file"
+            exit 2
+        fi
+        rm -f "$drift_file"
+
+        # ── Phase 3: stale-allowlist-entry detection ─────────────────
+        # Reuse the line-shifted fixture.  Suppress BOTH real reserve
+        # sites with live content-keyed entries so the scan reaches the
+        # stale pass with zero violations, then add a stale entry (a
+        # call text that exists NOWHERE in the file) that MUST be flagged.
+        cat >"$tmp_root/scripts/no-reserve-allowlist.txt" <<'ALLOW'
+# self-test live entries (real reserve sites, content-keyed)
+include/crucible/planted/planted_violation.h:v.reserve(7);
+include/crucible/planted/planted_violation.h:v.reserve(11);
+# self-test stale entry (no such call text in the file)
+include/crucible/planted/planted_violation.h:v.reserve(99);
 ALLOW
         stale_file="$(mktemp)"
         stale_rc=0
         CRUCIBLE_NO_RESERVE_TEST_ROOT="$tmp_root" \
             bash "${BASH_SOURCE[0]}" 2>"$stale_file" || stale_rc=$?
         if [[ "$stale_rc" -ne 2 ]]; then
-            printf 'check-no-reserve: SELF-TEST FAILED (phase 2) — expected exit 2 (stale), got %d.\n' \
+            printf 'check-no-reserve: SELF-TEST FAILED (phase 3) — expected exit 2 (stale), got %d.\n' \
                 "$stale_rc" >&2
             printf '── scanner stderr ───\n%s\n────────────────────\n' \
                 "$(cat "$stale_file")" >&2
             rm -f "$stale_file"
             exit 2
         fi
-        # Exactly one stale diagnostic — the live entries (7, 11) must
-        # NOT be flagged (count==1 implies no false positive).
+        # Exactly one stale diagnostic — the live entries must NOT be
+        # flagged (count==1 implies no false positive).
         stale_emitted="$(grep -c '^NO-RESERVE stale:' "$stale_file" || true)"
         if [[ "$stale_emitted" -ne 1 ]]; then
-            printf 'check-no-reserve: SELF-TEST FAILED (phase 2) — expected 1 stale diagnostic, got %s.\n' \
+            printf 'check-no-reserve: SELF-TEST FAILED (phase 3) — expected 1 stale diagnostic, got %s.\n' \
                 "$stale_emitted" >&2
             printf '── scanner stderr ───\n%s\n────────────────────\n' \
                 "$(cat "$stale_file")" >&2
             rm -f "$stale_file"
             exit 2
         fi
-        if ! grep -qF -- 'planted_violation.h:99' "$stale_file"; then
-            printf 'check-no-reserve: SELF-TEST FAILED (phase 2) — stale entry :99 not flagged.\n' >&2
+        if ! grep -qF -- 'v.reserve(99);' "$stale_file"; then
+            printf 'check-no-reserve: SELF-TEST FAILED (phase 3) — stale entry v.reserve(99); not flagged.\n' >&2
             printf '── scanner stderr ───\n%s\n────────────────────\n' \
                 "$(cat "$stale_file")" >&2
             rm -f "$stale_file"
@@ -193,7 +253,7 @@ ALLOW
         fi
         rm -f "$stale_file"
 
-        printf 'check-no-reserve: self-test passed — drift caught, allowlist + inline marker + comment-filter honoured; stale detection flags dead allowlist entries (none on live).\n' >&2
+        printf 'check-no-reserve: self-test passed — drift caught, content-keyed allowlist + inline marker + comment-filter honoured; content key survives line shift; stale detection flags dead entries (none on live).\n' >&2
         exit 0
         ;;
     "") ;;
@@ -217,21 +277,25 @@ fi
 # unaffected.  `->reserve\s*\(` mirrors the pointer-member case.
 candidate_pattern='\.reserve\s*\(|->reserve\s*\('
 
-# ── Allowlist lookup ─────────────────────────────────────────────────
+# ── Allowlist lookup (content-keyed) ─────────────────────────────────
 allowlisted() {
-    local rel="$1" line="$2"
+    local rel="$1" key="$2"
     [[ -f "$allowlist" ]] || return 1
-    # Skip blank/comment lines; match `path:line` exactly.
+    # Skip blank/comment lines; match `path:text` exactly, where `text`
+    # is the trimmed source of the call line.  The `-Fx` whole-line
+    # fixed match makes the call-text comparison byte-for-byte.
     grep -E -v '^[[:space:]]*(#|$)' "$allowlist" | \
-        grep -Fxq -- "$rel:$line"
+        grep -Fxq -- "$rel:$key"
 }
 
-# ── Live set of (path:line) for stale-entry detection ────────────────
+# ── Live set of (path:text) for stale-entry detection ────────────────
 # Every candidate reserve site that survives the comment / inline-marker
-# filters records its (rel:line) here, allowlist-blind.  After the scan,
-# every allowlist entry must be in this set; entries that aren't (the
-# call moved on a line shift, or the site was migrated away) are STALE
-# and flagged — parity with check-no-reinterpret-cast.sh.
+# filters records its (rel:trimmed-text) here, allowlist-blind.  After
+# the scan, every allowlist entry must be in this set; entries that
+# aren't (the site was migrated away, or its call text was rewritten)
+# are STALE and flagged — parity with check-no-reinterpret-cast.sh.
+# Content keys are immune to line shifts, so an entry only goes stale on
+# a real source change, not on incidental churn above the call.
 live_set_file="$(mktemp)"
 trap 'rm -f "$live_set_file"' EXIT
 
@@ -257,15 +321,22 @@ while IFS= read -r match; do
         *'NO-RESERVE-OK'*) continue ;;
     esac
 
-    rel="${file#"$scan_root"/}"
-    printf '%s:%s\n' "$rel" "$line" >> "$live_set_file"
+    # Content key — trimmed source of the call line (strip BOTH leading
+    # and trailing whitespace so the key is stable against re-indent /
+    # trailing-space edits).  `stripped` already dropped leading ws.
+    key="${stripped%"${stripped##*[![:space:]]}"}"
 
-    if allowlisted "$rel" "$line"; then
+    rel="${file#"$scan_root"/}"
+    printf '%s:%s\n' "$rel" "$key" >> "$live_set_file"
+
+    if allowlisted "$rel" "$key"; then
         continue
     fi
 
-    printf 'NO-RESERVE violation: %s:%s — std::vector::reserve banned (CLAUDE.md §IV).\n' \
-        "$rel" "$line" >&2
+    # Report with BOTH the line (for the human jumping to the site) and
+    # the content key (the stable allowlist key to add if grandfathering).
+    printf 'NO-RESERVE violation: %s:%s — std::vector::reserve banned (CLAUDE.md §IV).  Allowlist key: %s:%s\n' \
+        "$rel" "$line" "$rel" "$key" >&2
     violation_count=$((violation_count + 1))
 done < <(
     rg -nP \
@@ -303,28 +374,40 @@ Remediations, in order of preference:
       structurally-justified exceptions (e.g. third-party method
       named reserve that semantically isn't vector::reserve).
 
-  (4) Add 'path:line' to scripts/no-reserve-allowlist.txt for
-      grandfathered code awaiting a tracked migration — every
-      entry is a TODO referencing its fixy-A5-* migration ticket.
+  (4) Add 'path:text' to scripts/no-reserve-allowlist.txt for
+      grandfathered code awaiting a tracked migration, where 'text'
+      is the trimmed call source printed as the "Allowlist key"
+      above — a content key that survives line shifts.  Every entry
+      is a TODO referencing its fixy-A5-* migration ticket.
 HINT
     exit 1
 fi
 
 # ── Outcome (stale allowlist entries) ────────────────────────────────
 # Every allowlist entry must correspond to a LIVE reserve site.  An
-# entry whose (path:line) is not in the live set points at a line where
-# reserve no longer exists — the call moved on a line shift, or the site
-# was migrated away.  Flag it so the allowlist drains as the §IV
+# entry whose (path:text) content key is not in the live set points at a
+# call that no longer exists — the site was migrated away, or its call
+# text was rewritten.  Flag it so the allowlist drains as the §IV
 # migration lands and can never silently re-grandfather a future site.
+#
+# Comment detection: a `#` is only a comment when it is the FIRST
+# non-whitespace character of the line (the documented allowlist
+# grammar).  We do NOT strip a trailing `#...` because a content key is
+# the call source and could in principle contain `#`; full-line-comment
+# detection is sufficient and avoids corrupting keys.
 stale_count=0
 if [[ -f "$allowlist" ]]; then
     while IFS= read -r entry; do
-        trimmed="${entry%%#*}"
+        # Strip leading whitespace for the comment / blank test.
+        trimmed="${entry#"${entry%%[![:space:]]*}"}"
+        case "$trimmed" in
+            ''|'#'*) continue ;;
+        esac
+        # Strip trailing whitespace; the remainder is the `path:text` key.
         trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-        trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
         [[ -z "$trimmed" ]] && continue
         if ! grep -Fxq -- "$trimmed" "$live_set_file" 2>/dev/null; then
-            printf 'NO-RESERVE stale: %s — STALE allowlist entry (no std::vector::reserve at this line; the call moved on a line shift or the site was migrated away — remove from allowlist).\n' \
+            printf 'NO-RESERVE stale: %s — STALE allowlist entry (no std::vector::reserve call with this text in the file; the site was migrated away or the call text was rewritten — remove from allowlist).\n' \
                 "$trimmed" >&2
             stale_count=$((stale_count + 1))
         fi
@@ -335,11 +418,11 @@ if [[ "$stale_count" -ne 0 ]]; then
     cat >&2 <<HINT
 
 check-no-reserve detected ${stale_count} stale allowlist entr(y/ies).
-Each entry points at a path:line where std::vector::reserve no longer
-exists — the call moved (line shift) or the site was migrated away.
-Prune the stale entries from scripts/no-reserve-allowlist.txt so the
-guard regains drift coverage and cannot re-grandfather a future reserve
-re-introduced at the same line.
+Each entry points at a path:text whose std::vector::reserve call no
+longer exists — the site was migrated away or its call text was
+rewritten.  Prune the stale entries from scripts/no-reserve-allowlist.txt
+so the guard regains drift coverage and cannot re-grandfather a future
+reserve re-introduced with the same text.
 HINT
     exit 2
 fi
