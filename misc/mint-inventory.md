@@ -18,7 +18,7 @@ factory is named `mint_<noun>`.  Each row records:
 |---|---|
 | `mint_name` | The factory's identifier. |
 | `file:line` | Substrate declaration site (canonical). |
-| `nd cx ne rq` | §XXI compliance flags: `[[nodiscard]]` / `constexpr` (or `consteval`) / `noexcept` / `requires`-clause.  `Y` = present, `-` = absent.  `- (alloc)` in the `cx` column = documented carve-out (FIXY-V-021): the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI `constexpr` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the `// §XXI carve-out: cx=alloc` marker placed immediately above the `[[nodiscard]]` line at the mint signature.  `- (pre)` in the `rq` column = documented carve-out (FIXY-FOUND-082): the gate is a P2900 `pre(...)` clause instead of a `requires`-clause because the predicate is value-dependent (inspects carrier runtime state, not just template arguments) and cannot lift into a concept.  Canonical example: `mint_view`'s `pre(view_ok(c, type_identity<Tag>{}))`.  Marker: `// §XXI carve-out: rq=pre` above the mint signature. |
+| `nd cx ne rq` | §XXI compliance flags: `[[nodiscard]]` / `constexpr` (or `consteval`) / `noexcept` / `requires`-clause.  `Y` = present, `-` = absent.  `- (alloc)` in the `cx` column = documented carve-out (FIXY-V-021): the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI `constexpr` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the `// §XXI carve-out: cx=alloc` marker placed immediately above the `[[nodiscard]]` line at the mint signature.  `- (pre)` in the `rq` column = documented carve-out (FIXY-FOUND-082): the gate is a P2900 `pre(...)` clause instead of a `requires`-clause because the predicate is value-dependent (inspects carrier runtime state, not just template arguments) and cannot lift into a concept.  Canonical example: `mint_view`'s `pre(view_ok(c, type_identity<Tag>{}))`.  Marker: `// §XXI carve-out: rq=pre` above the mint signature.  `Y (taut)` in the `rq` column = documented tautological clause (fix-16, fixy-A2-026): the `requires` clause is present but references ONLY the already-deduced parameter type, so it is tautologically true and can never reject — the real gate is in-body `static_assert`s.  Distinguishes a decorative clause (`mint_recording_session`, `mint_crash_watched_session`) from a load-bearing fit-check (`mint_endpoint`'s `CtxFitsEndpointMint`).  Registry: `is_tautological_requires_mint` in this script. |
 | `cb` | Authorization shape: `ctx` (ctx-bound mint, `Ctx const&` first parameter), `token` (token mint, derives authority from a parent token), or `member` (class-method mint — see "Member-function mints" section below). |
 | `fixy` | fixy:: re-export site (`include/crucible/fixy/...`) or `[✗ NO-FIXY]` gap.  Inapplicable for the `member` row (class-method mints cannot be `using`-re-exported at namespace scope). |
 | `HS14` | Count of neg-compile fixtures across all `test/*_neg/` trees (fixy_neg, warden_neg, perf_neg, effects_neg, safety_neg, …) mentioning this mint (HS14 floor is 2). |
@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-30T21:02:02Z`.
+Snapshot generated: `2026-05-30T21:06:32Z`.
 
 ## bridges/
 
@@ -38,10 +38,10 @@ Snapshot generated: `2026-05-30T21:02:02Z`.
 |---|---|---|---|---|---|---|---|---|
 | `mint_atomic_session` | `include/crucible/bridges/MachineSessionBridge.h:281` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:105` | HS14: 4 |
 | `mint_crash_watched_endpoint` | `include/crucible/bridges/EndpointMint.h:127` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:227` | HS14: 4 |
-| `mint_crash_watched_session` | `include/crucible/bridges/CrashTransport.h:1265` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:134` | HS14: 5 |
+| `mint_crash_watched_session` | `include/crucible/bridges/CrashTransport.h:1265` | Y | Y | Y | Y (taut) | token | `include/crucible/fixy/Bridge.h:134` | HS14: 5 |
 | `mint_persisted_session` | `include/crucible/bridges/SessionPersistence.h:733` | Y | - (alloc) | Y | Y | ctx | `include/crucible/fixy/Bridge.h:100` | HS14: 14 |
 | `mint_recording_endpoint` | `include/crucible/bridges/EndpointMint.h:99` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Bridge.h:226` | HS14: 4 |
-| `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:104` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:123` | HS14: 16 |
+| `mint_recording_session` | `include/crucible/bridges/RecordingPermissionedSessionHandle.h:104` | Y | Y | Y | Y (taut) | token | `include/crucible/fixy/Bridge.h:123` | HS14: 16 |
 | `mint_vigil_mode_bridge` | `include/crucible/bridges/VigilModeHandle.h:218` | Y | Y | Y | Y | token | `include/crucible/fixy/Bridge.h:233` | HS14: 4 |
 
 ## cipher/

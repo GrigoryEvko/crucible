@@ -69,6 +69,24 @@ esac
 # documentation (visual ⚠ marker) and enforcement (build red).
 HS14_FLOOR=2
 
+# ── Tautological-requires registry (fix-16, fixy-A2-026 / CLAUDE.md §XXI) ──
+# These bridge-wrap mints carry an explicit `requires
+# IsSessionHandle<SessionHandle<Proto,Resource,LoopCtx>>` clause whose argument
+# is ALREADY the deduced parameter type — the clause is tautologically true and
+# can never reject.  CLAUDE.md §XXI documents this ("tautological via parameter
+# SFINAE, ships for §XXI grep-discoverability"); the real gates are the in-body
+# static_asserts.  The inventory renders their `rq` column as `Y (taut)` so an
+# auditor can tell a decorative clause from a load-bearing fit-check (e.g.
+# mint_endpoint's CtxFitsEndpointMint).  To add a mint here: confirm its
+# requires-clause references ONLY the already-deduced parameter type, and cite
+# the rationale at the mint signature.
+is_tautological_requires_mint() {
+    case "$1" in
+        mint_recording_session|mint_crash_watched_session) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 if ! command -v rg >/dev/null 2>&1; then
     printf 'gen-mint-inventory: ripgrep (rg) is required\n' >&2
     exit 2
@@ -861,7 +879,7 @@ factory is named \`mint_<noun>\`.  Each row records:
 |---|---|
 | \`mint_name\` | The factory's identifier. |
 | \`file:line\` | Substrate declaration site (canonical). |
-| \`nd cx ne rq\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause.  \`Y\` = present, \`-\` = absent.  \`- (alloc)\` in the \`cx\` column = documented carve-out (FIXY-V-021): the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI \`constexpr\` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the \`// §XXI carve-out: cx=alloc\` marker placed immediately above the \`[[nodiscard]]\` line at the mint signature.  \`- (pre)\` in the \`rq\` column = documented carve-out (FIXY-FOUND-082): the gate is a P2900 \`pre(...)\` clause instead of a \`requires\`-clause because the predicate is value-dependent (inspects carrier runtime state, not just template arguments) and cannot lift into a concept.  Canonical example: \`mint_view\`'s \`pre(view_ok(c, type_identity<Tag>{}))\`.  Marker: \`// §XXI carve-out: rq=pre\` above the mint signature. |
+| \`nd cx ne rq\` | §XXI compliance flags: \`[[nodiscard]]\` / \`constexpr\` (or \`consteval\`) / \`noexcept\` / \`requires\`-clause.  \`Y\` = present, \`-\` = absent.  \`- (alloc)\` in the \`cx\` column = documented carve-out (FIXY-V-021): the mint genuinely allocates (BPF program load, perf_event_open + mmap, heap, syscall) so the §XXI \`constexpr\` qualifier would lie about the runtime cost.  The carve-out is grep-discoverable via the \`// §XXI carve-out: cx=alloc\` marker placed immediately above the \`[[nodiscard]]\` line at the mint signature.  \`- (pre)\` in the \`rq\` column = documented carve-out (FIXY-FOUND-082): the gate is a P2900 \`pre(...)\` clause instead of a \`requires\`-clause because the predicate is value-dependent (inspects carrier runtime state, not just template arguments) and cannot lift into a concept.  Canonical example: \`mint_view\`'s \`pre(view_ok(c, type_identity<Tag>{}))\`.  Marker: \`// §XXI carve-out: rq=pre\` above the mint signature.  \`Y (taut)\` in the \`rq\` column = documented tautological clause (fix-16, fixy-A2-026): the \`requires\` clause is present but references ONLY the already-deduced parameter type, so it is tautologically true and can never reject — the real gate is in-body \`static_assert\`s.  Distinguishes a decorative clause (\`mint_recording_session\`, \`mint_crash_watched_session\`) from a load-bearing fit-check (\`mint_endpoint\`'s \`CtxFitsEndpointMint\`).  Registry: \`is_tautological_requires_mint\` in this script. |
 | \`cb\` | Authorization shape: \`ctx\` (ctx-bound mint, \`Ctx const&\` first parameter), \`token\` (token mint, derives authority from a parent token), or \`member\` (class-method mint — see "Member-function mints" section below). |
 | \`fixy\` | fixy:: re-export site (\`include/crucible/fixy/...\`) or \`[✗ NO-FIXY]\` gap.  Inapplicable for the \`member\` row (class-method mints cannot be \`using\`-re-exported at namespace scope). |
 | \`HS14\` | Count of neg-compile fixtures across all \`test/*_neg/\` trees (fixy_neg, warden_neg, perf_neg, effects_neg, safety_neg, …) mentioning this mint (HS14 floor is ${HS14_FLOOR}). |
@@ -932,6 +950,13 @@ HEADER
             rq_cell="- (pre)"
         fi
 
+        # fix-16: `rq=Y (taut)` distinguishes a tautological requires-clause
+        # (present but cannot reject — gate is in-body static_asserts) from a
+        # load-bearing fit-check.  See is_tautological_requires_mint above.
+        if [[ "$rq" == "1" ]] && is_tautological_requires_mint "$name"; then
+            rq_cell="Y (taut)"
+        fi
+
         local hs14_cell="HS14: $hs14"
         if (( hs14 < HS14_FLOOR )); then
             hs14_cell="HS14: $hs14 ⚠"
@@ -984,6 +1009,10 @@ HEADER
             # FIXY-FOUND-082: §XXI rq=pre carve-out for member-function mints.
             if [[ "$cv_rq" == "1" && "$rq" == "0" ]]; then
                 mf_rq_cell="- (pre)"
+            fi
+            # fix-16: tautological-requires marker (parallel to substrate path).
+            if [[ "$rq" == "1" ]] && is_tautological_requires_mint "$name"; then
+                mf_rq_cell="Y (taut)"
             fi
 
             local mf_hs14 mf_hs14_cell
