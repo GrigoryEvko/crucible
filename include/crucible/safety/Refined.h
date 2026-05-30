@@ -18,6 +18,36 @@
 //
 // Name every load-bearing predicate.  Don't define anonymous refinements
 // at call sites — aliases are what participate in grep and review.
+//
+// ── Debug-vs-release enforcement split (TRUST-BOUNDARY WARNING) ──────
+//
+// The checked constructor's `pre(Pred(v))` is enforced as a real runtime
+// branch ONLY under contract semantic enforce/observe — the `default`,
+// `debug`, `tsan`, and `verify` presets.  Under the `release` preset
+// (-DNDEBUG, -fcontract-evaluation-semantic=ignore) that pre clause
+// collapses to `[[assume(Pred(v))]]`: NO runtime check, the predicate is
+// handed to the optimizer as an UNCONDITIONAL fact.
+//
+// Consequence: a Refined<Pred, T> carries its invariant as a promise to
+// the OPTIMIZER, not as a release-time guard.  For values whose validity
+// is structurally guaranteed by the surrounding code (the common case)
+// this is exactly right and zero-cost.  But a Refined constructed
+// DIRECTLY from an UNTRUSTED value (a wire/disk byte, an FFI return, a
+// network payload) at a trust boundary is unsound in release: a malformed
+// value satisfies the `[[assume]]` vacuously and propagates downstream as
+// a false invariant (e.g. an out-of-enum byte feeding a
+// `default: std::unreachable()`, or a corrupted content-hash identity).
+//
+// Discipline: at a trust boundary, HARD-GATE the value with a real,
+// non-contract runtime branch (`if (!Pred(v)) return <error>;` /
+// fail-closed via the surrounding deserialize error channel) BEFORE
+// constructing the Refined.  The Refined ctor then stands as typed
+// defense-in-depth — its pre clause holds by construction, so it never
+// fires, but the type continues to carry the invariant for the optimizer
+// and for every downstream reader.  Crucible's deserialize boundaries
+// (Serialize.h read_meta/read_header/deserialize_region via
+// Reader::read_gated, TraceLoader.h load_trace via explicit if-return
+// guards) follow this pattern; see those files for the canonical shape.
 
 // ── MIGRATED to Graded<Absolute, BoolLattice<Pred>, T>  (#462) ─────
 //

@@ -442,6 +442,10 @@ crucible_test(test_merkle_dag_visualizer)
 set_target_properties(test_merkle_dag_visualizer PROPERTIES CRUCIBLE_NO_WERROR TRUE)
 crucible_test(test_memory_plan)
 crucible_test(test_serialize)
+# fix-11 — release-mode (NDEBUG) witness: malformed wire bytes are rejected
+# by Serialize.h's hard read_gated branch even when the Refined ctor pre()
+# collapses to [[assume]].  Uses exit codes, not assert() (a no-op under NDEBUG).
+crucible_test(test_serialize_release_gate)
 crucible_test(test_cipher)
 crucible_test(test_transaction)
 crucible_test(test_vigil)

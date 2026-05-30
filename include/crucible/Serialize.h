@@ -98,6 +98,51 @@ struct Reader {
     template <typename T>
     [[nodiscard]] T r() { T v{}; read_bytes(&v, sizeof(T)); return v; }
 
+    // Read a T and HARD-gate it against a deserialize predicate, failing
+    // closed (sets `ok = false`) on a malformed value.
+    //
+    // This is the release-safe companion to the typed Refined<> gates that
+    // follow it.  A fixy::wrap::Refined<Pred, T> constructed directly from a
+    // wire byte enforces `pre(Pred(v))` only under contract semantic
+    // enforce/observe (Debug / default presets).  Under the release preset
+    // (-DNDEBUG, semantic=ignore) that pre clause collapses to
+    // `[[assume(Pred(v))]]` — NO runtime branch — so an untrusted byte that
+    // violates the predicate becomes a false promise fed to the optimizer
+    // (downstream `default: std::unreachable()` UB, corrupted content-hash
+    // identity, etc.).  Trust-boundary reads must therefore reject malformed
+    // input through a real runtime branch BEFORE constructing the Refined.
+    //
+    // `read_gated` is that branch: it reads the byte through the existing
+    // truncation-checked path, evaluates `pred` unconditionally (the
+    // predicate is a plain constexpr callable, never a contract clause), and
+    // sets `ok = false` on failure — the same soft-fail channel a truncated
+    // read uses, which every deserialize entry point already turns into a
+    // nullptr/LoadedRegionNode{nullptr} return.
+    //
+    // On FAILURE it returns `valid_substitute` (a caller-supplied value the
+    // predicate is known to accept — `T{0}` for every deserialize predicate,
+    // since 0 is the first enumerator / a valid count) RATHER than the
+    // malformed byte.  This is deliberate: the immediate downstream caller
+    // feeds the result into a Refined<Pred, T> ctor, whose `pre(Pred(v))`
+    // would itself ABORT on a malformed value under semantic=enforce
+    // (Debug).  Substituting a predicate-valid sentinel makes the rejection
+    // UNIFORM — a clean nullptr return via `ok=false` in BOTH Debug and
+    // release, rather than abort-in-Debug / silent-pass-in-release.  The
+    // substituted value is never observed: `ok=false` forces the caller to
+    // discard the whole parse.
+    //
+    // On a well-formed value the returned byte is identical to `r<T>()`, so
+    // the success-path bytes and behaviour (DetSafe bit-stable replay) are
+    // unchanged — the gate only ADDS rejection of malformed input.
+    template <typename T, typename Pred>
+    [[nodiscard]] T read_gated(Pred pred, T valid_substitute = T{0}) {
+        const T v = r<T>();
+        // Only judge bytes we actually read; a prior truncation already
+        // set ok=false and v is the zero default — don't double-report.
+        if (ok && !pred(v)) [[unlikely]] { ok = false; return valid_substitute; }
+        return v;
+    }
+
     // Bytes remaining from the cursor.
     [[nodiscard]] size_t remaining() const noexcept {
         return (pos <= len) ? (len - pos) : 0;
@@ -180,29 +225,40 @@ inline TensorMeta read_meta(Reader& r) {
     // The byte on disk could be in [9, 255] under corruption or
     // version skew (a uint8_t carries no inherent bound, but ndim is
     // structurally bounded by sizes[8]/strides[8] = kMaxTensorNDim =
-    // 8).  ValidNDim's ctor pre-clause rejects any byte past 8 via
-    // P1494R5 partial-program correctness — the deserialize path then
-    // handles the contract violation through the standard
-    // handle_contract_violation path (logged, terminated).  TraceLoader's
-    // ndim > 8 guard at line 321 is retained as defense-in-depth.
-    m.ndim       = make_ndim(ValidNDim{r.r<uint8_t>()});
-    // dtype gate (sibling of #534/#892): validated widening — a corrupt
-    // or skewed byte outside ScalarType's sparse enumerator set (e.g. 14)
-    // would otherwise reach element_size()'s `default: std::unreachable()`
-    // as UB.  ValidScalarType's ctor rejects it at deserialize entry.
-    m.dtype      = make_scalar_type(ValidScalarType{r.r<int8_t>()});
+    // 8).  `read_gated` is the HARD (non-contract) runtime branch that
+    // fails closed (sets r.ok=false → deserialize_region returns
+    // LoadedRegionNode{nullptr}) in BOTH Debug and release: ValidNDim's
+    // ctor pre-clause alone collapses to `[[assume]]` under the release
+    // preset (-DNDEBUG, semantic=ignore), so it cannot reject a corrupt
+    // byte there.  The Refined ctor still runs as a typed defense-in-depth
+    // re-check — its pre clause holds by construction because read_gated
+    // already established the bound.  TraceLoader's ndim > 8 guard is a
+    // further independent layer.
+    m.ndim       = make_ndim(ValidNDim{r.read_gated<uint8_t>(
+                       ::crucible::fixy::wrap::bounded_above<kMaxTensorNDim>)});
+    // dtype gate (sibling of #534/#892): a corrupt or skewed byte outside
+    // ScalarType's sparse enumerator set (e.g. 14) would otherwise reach
+    // element_size()'s `default: std::unreachable()` as UB.  read_gated
+    // rejects it at deserialize entry in release too (the ValidScalarType
+    // ctor's pre clause is `[[assume]]`-only under -DNDEBUG).
+    m.dtype      = make_scalar_type(ValidScalarType{
+                       r.read_gated<int8_t>(valid_scalar_type)});
     // device_type gate (sibling of the dtype gate): boundary-validate the
     // untrusted byte — device_type feeds the content hash (node identity),
     // so a corrupt/skewed value silently corrupts it.  Fail-closed rather
     // than admit a node with a corrupted hash.  (Not a UB fix — DeviceType
-    // has no std::unreachable consumer, unlike ScalarType.)
-    m.device_type = make_device_type(ValidDeviceType{r.r<int8_t>()});
+    // has no std::unreachable consumer, unlike ScalarType.)  Hard-gated via
+    // read_gated so release rejects it (ctor pre is `[[assume]]`-only).
+    m.device_type = make_device_type(ValidDeviceType{
+                        r.read_gated<int8_t>(valid_device_type)});
     m.device_idx  = r.r<int8_t>();
     // layout gate (last read_meta enum): boundary-validate the untrusted
     // byte — layout feeds the content hash (node identity), so a corrupt
     // value silently corrupts it.  Fail-closed.  (Not a UB fix — Layout
-    // has no std::unreachable consumer.)
-    m.layout          = make_layout(ValidLayout{r.r<int8_t>()});
+    // has no std::unreachable consumer.)  Hard-gated via read_gated so
+    // release rejects it (ctor pre is `[[assume]]`-only).
+    m.layout          = make_layout(ValidLayout{
+                            r.read_gated<int8_t>(valid_layout)});
     m.requires_grad   = r.r<bool>();
     m.flags           = r.r<uint8_t>();
     m.output_nr       = r.r<uint8_t>();
@@ -240,12 +296,17 @@ inline Header read_header(Reader& r) {
     h.version = ExternalCdagVersion{r.r<uint32_t>()};
     // ── WRAP-Serialize-6 (#1015) — typed widening at deserialize boundary ──
     // The byte on disk could be in [4, 255] under corruption or version
-    // skew.  ValidTraceNodeKindRaw's ctor pre-clause rejects any byte
-    // past TERMINAL via P1494R5 partial-program correctness — the
-    // deserialize path then handles the contract violation through the
-    // standard handle_contract_violation path (logged, terminated).
+    // skew.  read_gated is the HARD (non-contract) branch that fails
+    // closed (sets r.ok=false → the read_header callers' `if (!r.ok)
+    // return nullptr` fires) in BOTH Debug and release: ValidTraceNodeKindRaw's
+    // ctor pre-clause alone collapses to `[[assume]]` under the release
+    // preset (-DNDEBUG, semantic=ignore) and cannot reject a corrupt byte
+    // there.  The Refined ctor still runs as a typed defense-in-depth
+    // re-check (its pre clause holds by construction).
     h.kind    = make_trace_node_kind(
-                    ValidTraceNodeKindRaw{r.r<uint8_t>()});
+                    ValidTraceNodeKindRaw{r.read_gated<uint8_t>(
+                        ::crucible::fixy::wrap::bounded_above<
+                            static_cast<uint8_t>(TraceNodeKind::TERMINAL)>)});
     uint8_t pad7[7]{};
     r.read_bytes(pad7, 7);
     h.merkle_hash  = MerkleHash{r.r<uint64_t>()};
@@ -419,8 +480,12 @@ inline Header read_header(Reader& r) {
         // hardening as the read_meta gate — a corrupt/version-skewed
         // byte would otherwise enter pool selection (== DeviceType::CPU)
         // unchecked.  Completes DeviceType deserialize coverage across
-        // both boundaries (TensorMeta + MemoryPlan).
-        plan->device_type       = make_device_type(ValidDeviceType{r.r<int8_t>()});
+        // both boundaries (TensorMeta + MemoryPlan).  Hard-gated via
+        // read_gated so release rejects it too (the ValidDeviceType ctor
+        // pre is `[[assume]]`-only under -DNDEBUG); r.ok=false on a
+        // malformed byte propagates to the `if (!r.ok)` return below.
+        plan->device_type       = make_device_type(ValidDeviceType{
+                                      r.read_gated<int8_t>(valid_device_type)});
         plan->device_idx        = r.r<int8_t>();
         r.read_bytes(plan->pad0, sizeof(plan->pad0));
         plan->device_capability = r.r<uint64_t>();
