@@ -295,10 +295,21 @@ case "$mode" in
         printf 'audit-pre-callsite-count: baseline written to %s\n' "$baseline_path" >&2
         ;;
     check)
-        # Diff strategy: any aggregate counter that DECREASED without
-        # cause is flagged.  Per-procedure counters are checked the
-        # same way.  Increases are silent.  This is asymmetric on
-        # purpose — adoption growth is good; regression is the signal.
+        # Diff strategy: any checked counter that DECREASED is flagged;
+        # increases are silent (adoption growth is good; regression is the
+        # signal).
+        #
+        # The legacy P2900 forms (p2900_pre / p2900_post) are deliberately
+        # EXCLUDED from the must-not-decrease set: the codebase is actively
+        # migrating vanilla `pre()` / `post (r:...)` to the stronger
+        # CRUCIBLE_PRE / CRUCIBLE_POST macros (consteval-firing, toolchain-
+        # independent — see fix-10 + the CONTRACT-* sweep).  That migration
+        # MOVES a cite from p2900_pre to crucible_pre, so p2900_pre shrinks by
+        # design.  Genuine coverage loss (a pre() deleted, not migrated) still
+        # trips the AGGREGATE guards (total_pre_cites / total_post_cites /
+        # total_contract_cites), which net out the migration and only fall when
+        # real coverage drops.  The preferred crucible_* forms stay in the set
+        # (a drop there IS a real regression).
         if [[ ! -f "$baseline_path" ]]; then
             printf 'audit-pre-callsite-count: baseline file not found: %s\n' \
                    "$baseline_path" >&2
@@ -311,7 +322,7 @@ case "$mode" in
         regressed=0
         for field in crucible_pre crucible_pre_fast crucible_pre_msg \
                      crucible_post crucible_post_fast crucible_post_msg \
-                     p2900_pre p2900_post contract_assert \
+                     contract_assert \
                      decide_total total_pre_cites total_post_cites \
                      total_contract_cites; do
             # Tolerate either compact `"field":42` or pretty `"field": 42`
