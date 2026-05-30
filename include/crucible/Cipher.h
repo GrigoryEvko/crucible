@@ -1480,13 +1480,13 @@ class CRUCIBLE_OWNER Cipher {
     [[nodiscard]] static bool fdatasync_at_(
         int parent_dirfd,
         const std::string& relpath) noexcept {
-        const int fd = ::openat(parent_dirfd, relpath.c_str(),
+        const int fd = ::openat(parent_dirfd, relpath.c_str(),  // SYSCALL-CAP-OK: Cipher cold-tier durable-flush open — effects::IO, held by the record_event/persist_session_events Subrow<Row<IO,Block>> boundary that reaches this static helper on the Bg persistence thread (fixy-A5-016)
                                  O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
         if (fd < 0) return false;
         crucible::fixy::handle::FileHandle guard{fd};
         int rc;
         do {
-            rc = ::fdatasync(fd);
+            rc = ::fdatasync(fd);  // SYSCALL-CAP-OK: Cipher cold-tier durable flush blocks on disk — effects::IO + effects::Block, held by the Subrow<Row<IO,Block>> persistence boundary (fixy-A5-016)
         } while (rc < 0 && errno == EINTR);
         return rc == 0;
     }
@@ -1549,7 +1549,7 @@ class CRUCIBLE_OWNER Cipher {
         const std::string& relpath,
         std::span<const std::uint8_t> bytes) noexcept {
         const std::string tmp_relpath = relpath + ".tmp";
-        const int tmp_fd = ::openat(parent_dirfd, tmp_relpath.c_str(),
+        const int tmp_fd = ::openat(parent_dirfd, tmp_relpath.c_str(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace tmp open — effects::IO, held by the record_event Subrow<Row<IO,Block>> boundary that reaches this static helper on the Bg persistence thread (fixy-A5-016)
                                      O_WRONLY | O_CREAT | O_TRUNC |
                                      O_NOFOLLOW | O_CLOEXEC, 0644);
         if (tmp_fd < 0) return false;
@@ -1565,7 +1565,7 @@ class CRUCIBLE_OWNER Cipher {
             // Write all bytes, EINTR-safe.
             std::size_t off = 0;
             while (off < bytes.size()) {
-                const ssize_t r = ::write(tmp_fd,
+                const ssize_t r = ::write(tmp_fd,  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace bytes write — effects::IO, held by the record_event Subrow<Row<IO,Block>> persistence boundary (fixy-A5-016)
                                            bytes.data() + off,
                                            bytes.size() - off);
                 if (r < 0) {
@@ -1579,7 +1579,7 @@ class CRUCIBLE_OWNER Cipher {
             // fdatasync the tmp file's bytes before the rename.
             int frc;
             do {
-                frc = ::fdatasync(tmp_fd);
+                frc = ::fdatasync(tmp_fd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace flush blocks on disk — effects::IO + effects::Block, held by the Subrow<Row<IO,Block>> persistence boundary (fixy-A5-016)
             } while (frc < 0 && errno == EINTR);
             if (frc != 0) {
                 ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);
@@ -1607,7 +1607,7 @@ class CRUCIBLE_OWNER Cipher {
         // past this call.
         int drc;
         do {
-            drc = ::fsync(parent_dirfd);
+            drc = ::fsync(parent_dirfd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace parent-dir fsync blocks on disk — effects::IO + effects::Block, held by the record_event Subrow<Row<IO,Block>> persistence boundary (fixy-A5-016)
         } while (drc < 0 && errno == EINTR);
         return drc == 0;
     }
@@ -1654,7 +1654,7 @@ class CRUCIBLE_OWNER Cipher {
         int parent_dirfd,
         const std::string& relpath,
         std::span<const std::uint8_t> bytes) noexcept {
-        const int fd = ::openat(parent_dirfd, relpath.c_str(),
+        const int fd = ::openat(parent_dirfd, relpath.c_str(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append log open — effects::IO, held by the record_event/persist_session_events Subrow<Row<IO,Block>> persistence boundary on the Bg thread (fixy-A5-016)
                                  O_WRONLY | O_APPEND | O_CREAT |
                                  O_NOFOLLOW | O_CLOEXEC, 0644);
         if (fd < 0) return false;
@@ -1670,7 +1670,7 @@ class CRUCIBLE_OWNER Cipher {
             // fresh kernel-atomic O_APPEND write.
             std::size_t off = 0;
             while (off < bytes.size()) {
-                const ssize_t r = ::write(fd,
+                const ssize_t r = ::write(fd,  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append record write — effects::IO, held by the record_event/persist_session_events Subrow<Row<IO,Block>> persistence boundary (fixy-A5-016)
                                            bytes.data() + off,
                                            bytes.size() - off);
                 if (r < 0) {
@@ -1683,7 +1683,7 @@ class CRUCIBLE_OWNER Cipher {
             // fdatasync the record onto disk.
             int frc;
             do {
-                frc = ::fdatasync(fd);
+                frc = ::fdatasync(fd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append flush blocks on disk — effects::IO + effects::Block, held by the Subrow<Row<IO,Block>> persistence boundary (fixy-A5-016)
             } while (frc < 0 && errno == EINTR);
             if (frc != 0) return false;
             // guard's dtor closes fd here.
@@ -1692,7 +1692,7 @@ class CRUCIBLE_OWNER Cipher {
         // fsync parent_dirfd directly for first-record durability.
         int drc;
         do {
-            drc = ::fsync(parent_dirfd);
+            drc = ::fsync(parent_dirfd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append parent-dir fsync blocks on disk — effects::IO + effects::Block, held by the record_event/persist_session_events Subrow<Row<IO,Block>> persistence boundary (fixy-A5-016)
         } while (drc < 0 && errno == EINTR);
         return drc == 0;
     }
@@ -1718,7 +1718,7 @@ class CRUCIBLE_OWNER Cipher {
     // directory itself is attacker-controlled.
     [[nodiscard]] static crucible::fixy::handle::FileHandle open_dir_at_(
         int parent_dirfd, const char* relpath) noexcept {
-        const int dfd = ::openat(parent_dirfd, relpath,
+        const int dfd = ::openat(parent_dirfd, relpath,  // SYSCALL-CAP-OK: Cipher cold-tier session-subdir open — effects::IO, held by the persist_session_events Subrow<Row<IO,Block>> persistence boundary that reaches this static helper on the Bg thread (fixy-A5-016)
                                   O_DIRECTORY | O_RDONLY |
                                   O_NOFOLLOW | O_CLOEXEC);
         if (dfd < 0) return crucible::fixy::handle::FileHandle{};
