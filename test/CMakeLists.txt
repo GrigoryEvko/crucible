@@ -3433,6 +3433,13 @@ crucible_neg_compile_fixy_test(neg_fixy_wrap_timeordered_zero_processes
 #   _trust_vs_source     — source::FromUser != trust::Verified
 crucible_neg_compile_fixy_test(neg_fixy_algebra_non_lattice
     "Lattice|element_type|static assertion|associated constraints are not satisfied")
+# fix-09 — Lattice<L> now requires a law witness (laws_hold<L>() at the
+# lattice's own bottom/top): a signature-valid but law-violating lattice is
+# rejected at the concept gate, not silently accepted into Graded/row_hash.
+crucible_neg_compile_fixy_test(neg_fixy_algebra_lattice_nonidempotent
+    "Lattice|laws_hold|static assertion|associated constraints are not satisfied")
+crucible_neg_compile_fixy_test(neg_fixy_algebra_lattice_nonassociative
+    "Lattice|laws_hold|static assertion|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_algebra_non_graded
     "IsGraded|static assertion|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_eff_subrow_missing

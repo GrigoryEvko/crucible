@@ -46,6 +46,20 @@
 // `verify_*` helpers below for representative element witnesses.  No
 // lattice ships without proving the laws it claims to satisfy.
 //
+// ── Centralized law witness (fix-09) ────────────────────────────────
+//
+// The `Lattice<L>` concept is NOT signature-only: beyond leq/join/meet
+// existing, it requires that L's OWN CANONICAL WITNESSES (its bottom()/
+// top(), or a default-constructed element_type for the unbounded case)
+// satisfy the lattice axioms.  This makes law-conformance STRUCTURAL —
+// a lattice with correct signatures but a non-idempotent / non-
+// associative / non-commutative / non-absorbing join FAILS `Lattice<L>`
+// and so cannot be used as a `Graded<M, L, T>` grade.  The per-lattice
+// self-test blocks (exhaustive over finite carriers, spot-check over
+// ℕ / ℚ) remain the FULL coverage; the concept gate is the mechanical
+// FLOOR no contributor can forget.  See the `detail::lattice_laws`
+// machinery and the `Lattice` concept below.
+//
 // See ALGEBRA-15 (#460) for the project-wide static_assert sweep
 // auditing `sizeof(Graded<M, L, T>) == sizeof(T)` per lattice + T pair.
 
@@ -61,19 +75,171 @@ namespace crucible::algebra {
 template <typename L>
 using LatticeElement = typename L::element_type;
 
-// ── Core Lattice concept ────────────────────────────────────────────
+// ── Structural-signature probe (NOT the public Lattice concept) ─────
 //
-// A type L is a Lattice iff it publishes element_type plus the
-// signatures above for leq/join/meet.  Bounded variants below add
-// bottom() / top() requirements.
+// `LatticeShape<L>` is the SIGNATURE-only check: L publishes
+// element_type plus leq/join/meet with the right shapes.  It is the
+// pre-witness gate the law-witness machinery below builds on — every
+// law verifier needs the signatures to exist before it can evaluate
+// them.  Downstream code MUST use the strengthened `Lattice<L>`
+// concept (below), which additionally demands a tractable law
+// WITNESS; `LatticeShape` is internal scaffolding so the witness
+// predicate can name the members without recursing through `Lattice`.
 template <typename L>
-concept Lattice = requires {
+concept LatticeShape = requires {
     typename L::element_type;
 } && requires (LatticeElement<L> a, LatticeElement<L> b) {
     { L::leq(a, b)  } -> std::convertible_to<bool>;
     { L::join(a, b) } -> std::same_as<LatticeElement<L>>;
     { L::meet(a, b) } -> std::same_as<LatticeElement<L>>;
 };
+
+// ── Bounded-signature probes (NOT yet law-witnessed) ────────────────
+//
+// Signature-only bottom()/top() probes, expressed over LatticeShape so
+// the canonical-witness selector below can ask "does L expose bottom()
+// / top()?" WITHOUT triggering the law-witness requirement (which is
+// the very thing those probes feed).  The PUBLIC BoundedBelowLattice /
+// BoundedAboveLattice concepts (further down) are stated over the
+// strengthened `Lattice` and so carry the law witness transitively.
+template <typename L>
+concept HasBottom = LatticeShape<L> && requires {
+    { L::bottom() } -> std::same_as<LatticeElement<L>>;
+};
+
+template <typename L>
+concept HasTop = LatticeShape<L> && requires {
+    { L::top() } -> std::same_as<LatticeElement<L>>;
+};
+
+// ── Centralized law-witness machinery ───────────────────────────────
+//
+// The structural signatures above only prove leq/join/meet EXIST — a
+// contributor can ship a lattice with a non-idempotent or non-
+// associative join and the SIGNATURE check happily accepts it.  The
+// per-lattice self-test blocks under lattices/ DO call the verify_*
+// helpers, but that is a CONVENTION a new lattice can silently omit;
+// the omission would feed a non-lattice into Graded::compose and into
+// row_hash federation keying with no diagnostic.
+//
+// To make law-conformance STRUCTURAL (a witness-less or law-violating
+// lattice fails `Lattice<L>` and cannot be used as a Graded grade), the
+// concept below requires that the lattice's OWN CANONICAL WITNESSES
+// satisfy the lattice axioms.  No per-lattice header edit is needed:
+// the witnesses are derived centrally from each lattice's bottom()/
+// top() (every concrete lattice in the tree is bounded) — or, for the
+// concept-permitted unbounded case, from a default-constructed
+// element_type.
+//
+// This catches the COMMON law break (a join that is non-idempotent /
+// non-commutative / non-associative at bottom/top — i.e. everywhere on
+// a 2+-element lattice) at the concept gate.  Interior-only breaks on
+// infinite carriers remain the domain of the exhaustive per-lattice
+// self-tests (Lattice.h cannot exhaust ℚ or ℕ); the concept gate is the
+// mechanical FLOOR no contributor can forget, not a replacement for the
+// per-lattice spot/exhaustive checks.
+//
+// IMPORTANT — no recursion: these helpers are templated on plain
+// `typename L` constrained by `LatticeShape` (the signature probe), NOT
+// by the `Lattice` concept they help define.  A `Lattice`-constrained
+// helper here would make the concept self-referential.
+namespace detail::lattice_laws {
+
+// Raw (unconstrained-by-`Lattice`) equivalence + axiom checks.  These
+// mirror the public verify_* helpers below but stay on the LatticeShape
+// signature probe so the concept can call them without recursion.
+template <LatticeShape L>
+[[nodiscard]] consteval bool raw_equivalent(
+    LatticeElement<L> a, LatticeElement<L> b) noexcept {
+    return L::leq(a, b) && L::leq(b, a);
+}
+
+template <LatticeShape L>
+[[nodiscard]] consteval bool raw_axioms_at(
+    LatticeElement<L> a, LatticeElement<L> b, LatticeElement<L> c) noexcept {
+    // Idempotence (join, meet).
+    const bool idem_join = raw_equivalent<L>(L::join(a, a), a);
+    const bool idem_meet = raw_equivalent<L>(L::meet(a, a), a);
+    // Commutativity (join, meet).
+    const bool comm_join = raw_equivalent<L>(L::join(a, b), L::join(b, a));
+    const bool comm_meet = raw_equivalent<L>(L::meet(a, b), L::meet(b, a));
+    // Associativity (join, meet).
+    const bool assoc_join =
+        raw_equivalent<L>(L::join(L::join(a, b), c), L::join(a, L::join(b, c)));
+    const bool assoc_meet =
+        raw_equivalent<L>(L::meet(L::meet(a, b), c), L::meet(a, L::meet(b, c)));
+    // Absorption (the lattice-defining law).
+    const bool absorb = raw_equivalent<L>(L::join(a, L::meet(a, b)), a)
+                     && raw_equivalent<L>(L::meet(a, L::join(a, b)), a);
+    // Partial-order: reflexive on each witness, antisymmetric,
+    // transitive on the (a, b, c) chain.
+    const bool reflexive    = L::leq(a, a) && L::leq(b, b) && L::leq(c, c);
+    const bool antisymmetric =
+        !(L::leq(a, b) && L::leq(b, a)) || raw_equivalent<L>(a, b);
+    const bool transitive   = !(L::leq(a, b) && L::leq(b, c)) || L::leq(a, c);
+    return idem_join && idem_meet && comm_join && comm_meet
+        && assoc_join && assoc_meet && absorb
+        && reflexive && antisymmetric && transitive;
+}
+
+// Canonical-witness law check.  Picks the lattice's own representative
+// elements and evaluates raw_axioms_at over the cross-product:
+//
+//   • Bounded (bottom() AND top()) — the universal case in the tree:
+//     evaluate over every triple drawn from {bottom, top}, exercising
+//     mixed witnesses so commutativity / associativity / absorption are
+//     stressed on a genuine two-point span (when bottom ≠ top) and the
+//     degenerate one-point span (singleton lattices: bottom == top).
+//   • One-bounded (only bottom() XOR top()) — single available extreme.
+//   • Unbounded (neither) — default-constructed element_type witness;
+//     catches at least idempotence + the single-element partial order.
+//     No concrete lattice in the tree is unbounded, but the base
+//     `Lattice` concept permits it, so the witness must still exist.
+template <LatticeShape L>
+[[nodiscard]] consteval bool laws_hold() noexcept {
+    if constexpr (HasBottom<L> && HasTop<L>) {
+        const LatticeElement<L> lo = L::bottom();
+        const LatticeElement<L> hi = L::top();
+        return raw_axioms_at<L>(lo, lo, lo)
+            && raw_axioms_at<L>(hi, hi, hi)
+            && raw_axioms_at<L>(lo, hi, lo)
+            && raw_axioms_at<L>(hi, lo, hi)
+            && raw_axioms_at<L>(lo, lo, hi)
+            && raw_axioms_at<L>(hi, hi, lo)
+            && raw_axioms_at<L>(lo, hi, hi)
+            && raw_axioms_at<L>(hi, lo, lo);
+    } else if constexpr (HasBottom<L>) {
+        const LatticeElement<L> lo = L::bottom();
+        return raw_axioms_at<L>(lo, lo, lo);
+    } else if constexpr (HasTop<L>) {
+        const LatticeElement<L> hi = L::top();
+        return raw_axioms_at<L>(hi, hi, hi);
+    } else if constexpr (std::is_default_constructible_v<LatticeElement<L>>) {
+        const LatticeElement<L> e{};
+        return raw_axioms_at<L>(e, e, e);
+    } else {
+        // No bottom()/top() AND element_type is not default-
+        // constructible — no canonical witness exists, so L cannot
+        // produce a tractable law witness and fails `Lattice<L>`.  No
+        // concrete lattice in the tree reaches this branch.
+        return false;
+    }
+}
+
+}  // namespace detail::lattice_laws
+
+// ── Core Lattice concept (signatures + centralized law witness) ─────
+//
+// A type L is a Lattice iff it (1) publishes element_type plus the
+// leq/join/meet signatures AND (2) its canonical witnesses satisfy the
+// lattice axioms.  Requirement (2) is the law WITNESS: a lattice with
+// correct signatures but a non-idempotent / non-commutative / non-
+// associative / non-absorbing join cannot satisfy the concept and so
+// cannot be used as a `Graded<M, L, T>` grade.  Bounded variants below
+// add bottom() / top() requirements over this strengthened base.
+template <typename L>
+concept Lattice = LatticeShape<L>
+               && detail::lattice_laws::laws_hold<L>();
 
 template <typename L>
 concept BoundedBelowLattice = Lattice<L> && requires {
