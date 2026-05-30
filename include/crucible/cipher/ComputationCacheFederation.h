@@ -69,11 +69,20 @@
 //   DetSafe    — same (FnPtr, Row, Args...) → same federation key,
 //                bit-stable within one build (inherited from F11
 //                computation_cache_key_in_row + I02 row_hash_fold).
+//                The §XVI canonical-order gate (fix-08, below) also
+//                enforces that semantically-identical-but-differently-
+//                ordered wrapper stacks cannot reach distinct slots:
+//                an out-of-order stack is rejected at the publish
+//                boundary, so two parties' canonical stacks always
+//                project to the same KernelCacheKey.  The gate adds NO
+//                runtime work and moves NO existing hash value — bare
+//                payloads and flat rows are vacuously canonical.
 
 #include <crucible/Types.h>                          // KernelCacheKey, ContentHash, RowHash
 #include <crucible/cipher/ComputationCache.h>        // computation_cache_key_in_row, IsCacheableFunction, IsEffectRow
 #include <crucible/cipher/FederationProtocol.h>      // FederationEntryHeader, codec, FederationError
 #include <crucible/permissions/FederationPermission.h>
+#include <crucible/safety/diag/CanonicalOrder.h>     // CanonicallyOrdered — §XVI publish-boundary gate
 #include <crucible/safety/diag/RowHashFold.h>        // row_hash_contribution_v
 #include <crucible/sessions/FederationProtocol.h>    // typed Sender/Receiver/Coord MPST facade
 
@@ -151,6 +160,46 @@ using ComputationCacheFederationContentAddressedPayload =
         ComputationCacheFederationPayload<FnPtr, Row, Args...>>;
 
 // ═════════════════════════════════════════════════════════════════════
+// ── §XVI canonical-order publish-boundary gate (fix-08) ─────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// The federation key is the cross-org cache-slot identity: two parties
+// computing the SAME kernel must project it to the SAME
+// KernelCacheKey, or the L16 computation genome fragments (each party
+// publishes to a private slot and the network effect evaporates).
+//
+// The `Row` axis is already canonical by construction — it is fenced
+// to `effects::Row<Es...>` (IsEffectRow), and RowHashFold.h's
+// Row<Es...> specialization is a sort+dedup fold, so `Row<Bg, IO>` and
+// `Row<IO, Bg>` map to one slot.
+//
+// The `Args...` axis is the OPEN door.  A safety-wrapper STACK
+// (HotPath ⊃ DetSafe ⊃ … ⊃ Computation, CLAUDE.md §XVI) presented as
+// an Arg type is NOT auto-canonicalized: `combine_ids` in
+// row_hash_contribution is order-sensitive, so `Stale<Tagged<T>>` and
+// `Tagged<Stale<T>>` are semantically identical but fold to DIFFERENT
+// hashes — and even the name-based `stable_type_id<Args>` fold (which
+// the content axis uses for Args) splits them by spelling.  Either
+// way, an out-of-order wrapper stack lands in a DIFFERENT federation
+// cache slot than a canonical-order peer's identical stack.
+//
+// FIXY-FOUND-048 shipped `CanonicallyOrdered<W>` (CanonicalOrder.h) as
+// the compile-time predicate for exactly this §XVI nesting order, but
+// left it OPT-IN — no production publish path constrained on it, so it
+// was dead.  This boundary is where it becomes load-bearing: every
+// federation key projection REQUIRES each Arg type to be in §XVI
+// canonical order.  Bare payload types (`int`, `double`, …) and flat
+// effect rows are vacuously canonical (CanonicalOrder.h self-test (3)),
+// so existing call sites are unaffected; only a genuinely inverted
+// wrapper stack is rejected — at the publish/lookup site, naming the
+// offending Arg, rather than silently fragmenting the cache downstream.
+
+template <typename... Args>
+concept ArgsCanonicallyOrdered =
+    (::crucible::safety::diag::canonical_order::CanonicallyOrdered<Args>
+     && ...);
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Per-axis projections ────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
@@ -163,6 +212,7 @@ using ComputationCacheFederationContentAddressedPayload =
 //   * distinct from row-blind cache key (slot isolation invariant)
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+          && ArgsCanonicallyOrdered<Args...>
 [[nodiscard]] inline constexpr ContentHash
 federation_content_hash() noexcept {
     return ContentHash{
@@ -186,6 +236,7 @@ federation_row_hash() noexcept {
 // uses as the (content, row) header field.
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+          && ArgsCanonicallyOrdered<Args...>
 [[nodiscard]] inline constexpr KernelCacheKey
 federation_key() noexcept {
     return KernelCacheKey{
@@ -204,6 +255,7 @@ federation_key() noexcept {
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+          && ArgsCanonicallyOrdered<Args...>
 [[nodiscard]] inline std::expected<std::size_t, FederationError>
 serialize_computation_cache_federation_entry(
     const ::crucible::permissions::LocalCipherPermission& local_permission,
@@ -220,6 +272,7 @@ serialize_computation_cache_federation_entry(
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+          && ArgsCanonicallyOrdered<Args...>
 [[nodiscard]] inline std::expected<std::size_t, FederationError>
 serialize_computation_cache_federation_entry(
     const ::crucible::permissions::LocalCipherPermission& local_permission,
@@ -372,6 +425,44 @@ static_assert(IsCacheableFunction<&f12_p_unary>);
 static_assert(IsEffectRow<EmptyR>);
 static_assert(IsEffectRow<BgR>);
 static_assert(IsEffectRow<BgIOR>);
+
+// ── §XVI canonical-order gate witnesses (fix-08) ──────────────────
+//
+// The ArgsCanonicallyOrdered gate accepts bare payload args and
+// canonical wrapper stacks, and rejects inverted wrapper stacks at
+// the federation publish boundary.
+
+static_assert(ArgsCanonicallyOrdered<>,
+    "fix-08: zero-arg pack is vacuously canonical.");
+static_assert(ArgsCanonicallyOrdered<int>,
+    "fix-08: a bare payload type is vacuously canonical.");
+static_assert(ArgsCanonicallyOrdered<int, double>,
+    "fix-08: a pack of bare payload types is vacuously canonical.");
+
+// Canonical wrapper stack: Stale(10) ⊃ Tagged(11) — strictly
+// increasing §XVI layer indices — is accepted as an Arg.
+static_assert(ArgsCanonicallyOrdered<
+    ::crucible::safety::Stale<
+        ::crucible::safety::Tagged<int, ::crucible::safety::source::FromUser>>>,
+    "fix-08: Stale ⊃ Tagged is §XVI-canonical and must be accepted.");
+
+// Inverted wrapper stack: Tagged(11) ⊃ Stale(10) — strictly
+// DECREASING — is rejected.  This is the load-bearing assertion: the
+// previously-dead CanonicallyOrdered predicate now gates the boundary.
+static_assert(!ArgsCanonicallyOrdered<
+    ::crucible::safety::Tagged<
+        ::crucible::safety::Stale<int>, ::crucible::safety::source::FromUser>>,
+    "fix-08: Tagged ⊃ Stale is §XVI-INVERTED and must be rejected at "
+    "the federation publish boundary.");
+
+// A canonical stack passes the WHOLE federation key projection (not
+// just the gate concept): federation_key instantiates for it.
+static_assert(!federation_key<&f12_p_unary, EmptyR,
+        ::crucible::safety::Stale<
+            ::crucible::safety::Tagged<int,
+                ::crucible::safety::source::FromUser>>>().is_zero(),
+    "fix-08: canonical wrapper-stack Arg projects to a well-formed "
+    "federation key.");
 
 }  // namespace detail::computation_cache_federation_self_test
 

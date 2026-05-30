@@ -1862,6 +1862,12 @@ crucible_neg_compile_test(neg_canonical_order_inverted_two_layer
   "static assertion failed|CanonicallyOrdered|FIXY-FOUND-048")
 crucible_neg_compile_test(neg_canonical_order_duplicate_layer
   "static assertion failed|CanonicallyOrdered|FIXY-FOUND-048")
+# fix-08 — the federation publish boundary now gates on ArgsCanonicallyOrdered,
+# making CanonicallyOrdered load-bearing: a non-canonical Args stack
+# (Tagged<Stale<int>>) is rejected at federation_key, not silently mapped to
+# a divergent cache slot.
+crucible_neg_compile_test(neg_federation_key_noncanonical_args
+  "ArgsCanonicallyOrdered|federation_key|CanonicallyOrdered")
 
 # FIXY-AUDIT-D2 — HS14 floor for mint_fn factory.
 crucible_neg_compile_fixy_test(neg_fixy_mint_fn_unengaged_axis   "AllDimsEngaged")

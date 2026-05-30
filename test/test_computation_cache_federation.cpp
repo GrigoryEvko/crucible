@@ -44,6 +44,9 @@
 #include <crucible/Types.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/Capabilities.h>
+#include <crucible/safety/Stale.h>
+#include <crucible/safety/Tagged.h>
+#include <crucible/safety/diag/CanonicalOrder.h>
 
 #include "test_assert.h"
 
@@ -649,6 +652,76 @@ static void test_audit_e_saturation_row_round_trip() {
     std::printf("  AUDIT-E saturation_row_round_trip:           PASSED\n");
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// ── fix-08 — §XVI canonical-order publish-boundary gate ─────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// CanonicalOrder.h's `CanonicallyOrdered` predicate was dead (used only
+// in its own self-test) until it was wired to the federation key
+// boundary.  These groups pin that wiring as load-bearing:
+//
+//   GATE-A — bare-type and canonical-stack Args are accepted; the key
+//            projection instantiates and yields a well-formed key.
+//   GATE-B — an inverted wrapper stack does NOT satisfy the boundary
+//            gate (the static-side witness; the hard rejection is the
+//            neg-compile fixture neg_federation_key_noncanonical_args).
+//   GATE-C — for a canonical stack Arg, the federation content/row key
+//            stays deterministic and the wrapper stack distinguishes
+//            from the bare payload (no accidental collapse).
+
+namespace {
+namespace co = crucible::safety::diag::canonical_order;
+namespace sf = crucible::safety;
+
+// Canonical wrapper stack: Stale(10) ⊃ Tagged(11) — §XVI-ordered.
+using CanonStack = sf::Stale<sf::Tagged<int, sf::source::FromUser>>;
+// Inverted wrapper stack: Tagged(11) ⊃ Stale(10) — §XVI-violating.
+using InvStack   = sf::Tagged<sf::Stale<int>, sf::source::FromUser>;
+}  // namespace
+
+static void test_gate_a_canonical_args_accepted() {
+    // The gate concept accepts bare types AND canonical stacks.
+    static_assert(fed::ArgsCanonicallyOrdered<int>);
+    static_assert(fed::ArgsCanonicallyOrdered<int, double>);
+    static_assert(fed::ArgsCanonicallyOrdered<CanonStack>);
+
+    // The whole federation key projection instantiates for a canonical
+    // wrapper-stack Arg and produces a well-formed key.
+    constexpr auto k = fed::federation_key<&t_unary, R0, CanonStack>();
+    static_assert(!k.is_zero());
+    static_assert(!k.is_sentinel());
+
+    std::printf("  GATE-A canonical_args_accepted:              PASSED\n");
+}
+
+static void test_gate_b_inverted_args_rejected() {
+    // The load-bearing assertion: an inverted wrapper stack does NOT
+    // satisfy the federation publish-boundary gate.  Before fix-08 this
+    // predicate was never consulted on any publish path — it was dead.
+    static_assert(!co::CanonicallyOrdered<InvStack>,
+        "fix-08: Tagged ⊃ Stale inverts §XVI order (11 then 10).");
+    static_assert(!fed::ArgsCanonicallyOrdered<InvStack>,
+        "fix-08: the federation Args gate must reject the inverted "
+        "wrapper stack — making CanonicallyOrdered load-bearing.");
+
+    std::printf("  GATE-B inverted_args_rejected:               PASSED\n");
+}
+
+static void test_gate_c_canonical_stack_deterministic_distinct() {
+    // Deterministic for the same canonical-stack Arg.
+    static_assert(fed::federation_key<&t_unary, R0, CanonStack>()
+                  == fed::federation_key<&t_unary, R0, CanonStack>());
+
+    // The wrapper stack does NOT collapse to the bare payload — a
+    // wrapped Arg is a distinct cache slot from the unwrapped one.
+    static_assert(fed::federation_key<&t_unary, R0, CanonStack>()
+                  != fed::federation_key<&t_unary, R0, int>(),
+        "fix-08: a canonical wrapper-stack Arg keys to a slot distinct "
+        "from the bare payload (no accidental collapse).");
+
+    std::printf("  GATE-C canonical_stack_deterministic_distinct: PASSED\n");
+}
+
 int main() {
     std::printf("test_computation_cache_federation — FOUND-F12 bridge\n");
     test_t01_content_hash_well_formed();
@@ -672,6 +745,9 @@ int main() {
     test_audit_c_cross_universe_cardinality_rejection();
     test_audit_d_row_permutation_byte_invariance();
     test_audit_e_saturation_row_round_trip();
-    std::printf("test_computation_cache_federation: 21 groups, all passed\n");
+    test_gate_a_canonical_args_accepted();
+    test_gate_b_inverted_args_rejected();
+    test_gate_c_canonical_stack_deterministic_distinct();
+    std::printf("test_computation_cache_federation: 24 groups, all passed\n");
     return 0;
 }
