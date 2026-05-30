@@ -677,8 +677,7 @@ make_self_signed_handshake(
 
 template <typename Org,
           typename Policy = policy::admit_orgs<Org>>
-[[nodiscard,
-  deprecated(
+[[deprecated(
       "fixy-CR-02/CR-03/CR-04: self-signed federation handshake is "
       "forgeable (CR-02: signature_fingerprint is a deterministic "
       "mix64 of public values, NOT a MAC), replayable (CR-03: no "
@@ -691,7 +690,10 @@ template <typename Org,
       "before production deployment.  Suppress locally via "
       "_Pragma(\"GCC diagnostic ignored \\\"-Wdeprecated-declarations\\\"\") "
       "if you are calling this knowingly (tests, V1 development)." )]]
-constexpr std::expected<
+// §XXI: standalone [[nodiscard]] on the signature line (not folded into the
+// [[deprecated]] attribute above) so the mint-inventory scanner's qualifier
+// window reaches it — the federation admission gate must be nd=Y (fix-17).
+[[nodiscard]] constexpr std::expected<
     FederatedPeerPermission<Org>,
     AdmittanceError>
 mint_federation_admittance(

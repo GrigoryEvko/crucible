@@ -156,7 +156,6 @@ include/crucible/perf/SyscallTpBtf.h:mint_syscall_tp_btf:constexpr-ok
 include/crucible/perf/WorkloadProfiler.h:mint_workload_profiler:constexpr-ok
 
 # ── permissions/ token + structured-concurrency mints ────────────────
-include/crucible/permissions/FederationPermission.h:mint_federation_admittance:nodiscard-ok
 include/crucible/permissions/PermissionFork.h:mint_permission_fork:constexpr-ok
 include/crucible/permissions/Permission.h:mint_permission_combine:requires-ok
 include/crucible/permissions/Permission.h:mint_permission_combine_n:requires-ok

@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-30T20:47:33Z`.
+Snapshot generated: `2026-05-30T20:52:37Z`.
 
 ## bridges/
 
@@ -93,7 +93,7 @@ Snapshot generated: `2026-05-30T20:47:33Z`.
 
 | mint_name | file:line | nd | cx | ne | rq | cb | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h:697` | - | Y | Y | - | token | `include/crucible/fixy/Perm.h:201` | HS14: 24 |
+| `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h:699` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:201` | HS14: 24 |
 | `mint_permission_combine` | `include/crucible/permissions/Permission.h:821` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:33` | HS14: 2 |
 | `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:926` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:35` | HS14: 2 |
 | `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/ctrl/Throws.h:14` | HS14: 11 |
