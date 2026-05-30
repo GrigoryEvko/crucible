@@ -36,12 +36,21 @@ if(DEFINED ENV{CRUCIBLE_CXX} AND NOT "$ENV{CRUCIBLE_CXX}" STREQUAL "")
   get_filename_component(_crucible_bindir "${_crucible_cxx}" DIRECTORY)        # .../usr/bin
   get_filename_component(_crucible_usrdir "${_crucible_bindir}" DIRECTORY)     # .../usr
   get_filename_component(_crucible_prefix "${_crucible_usrdir}" DIRECTORY)     # ...
-  # Sibling tool names follow the binary's own suffix convention. The canonical
-  # patched build uses the -16p suffix; derive sibling tools from the bindir.
-  set(_crucible_cc     "${_crucible_bindir}/gcc-16p")
-  set(_crucible_ar     "${_crucible_bindir}/gcc-ar-16p")
-  set(_crucible_nm     "${_crucible_bindir}/gcc-nm-16p")
-  set(_crucible_ranlib "${_crucible_bindir}/gcc-ranlib-16p")
+  # Sibling tool names follow the binary's own suffix convention. Extract
+  # whatever trails "g++" in the compiler basename and reuse it for the gcc /
+  # gcc-ar / gcc-nm / gcc-ranlib wrappers, so the chosen compiler picks its
+  # matching toolchain wrappers:
+  #   g++      -> gcc,     gcc-ar,     gcc-nm,     gcc-ranlib        (stock Fedora)
+  #   g++-16p  -> gcc-16p, gcc-ar-16p, gcc-nm-16p, gcc-ranlib-16p    (patched build)
+  #   g++-16   -> gcc-16,  gcc-ar-16,  gcc-nm-16,  gcc-ranlib-16     (versioned)
+  # The gcc-ar/gcc-ranlib wrappers (not bare ar/ranlib) are mandatory: they load
+  # the GCC LTO plugin, without which -flto=auto archives drop symbols.
+  get_filename_component(_crucible_cxx_name "${_crucible_cxx}" NAME)           # e.g. g++-16p
+  string(REGEX REPLACE "^g\\+\\+" "" _crucible_suffix "${_crucible_cxx_name}") # e.g. -16p / ""
+  set(_crucible_cc     "${_crucible_bindir}/gcc${_crucible_suffix}")
+  set(_crucible_ar     "${_crucible_bindir}/gcc-ar${_crucible_suffix}")
+  set(_crucible_nm     "${_crucible_bindir}/gcc-nm${_crucible_suffix}")
+  set(_crucible_ranlib "${_crucible_bindir}/gcc-ranlib${_crucible_suffix}")
 else()
   # Prefix-based resolution (env var or canonical default).
   if(DEFINED ENV{CRUCIBLE_GCC16_PREFIX} AND NOT "$ENV{CRUCIBLE_GCC16_PREFIX}" STREQUAL "")
