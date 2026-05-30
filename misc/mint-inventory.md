@@ -30,7 +30,7 @@ not a gap.  The auditor surface for member-function mints lives in a
 separate "Member-function mints" section after the substrate trees
 (FIXY-U-118b).
 
-Snapshot generated: `2026-05-30T21:06:32Z`.
+Snapshot generated: `2026-05-30T23:42:45Z`.
 
 ## bridges/
 
@@ -96,9 +96,9 @@ Snapshot generated: `2026-05-30T21:06:32Z`.
 | `mint_federation_admittance` | `include/crucible/permissions/FederationPermission.h:699` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:201` | HS14: 24 |
 | `mint_permission_combine` | `include/crucible/permissions/Permission.h:821` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:33` | HS14: 2 |
 | `mint_permission_combine_n` | `include/crucible/permissions/Permission.h:926` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:35` | HS14: 2 |
-| `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/ctrl/Throws.h:14` | HS14: 11 |
+| `mint_permission_fork` | `include/crucible/permissions/PermissionFork.h:320` | Y | - | Y | Y | ctx | `include/crucible/fixy/Perm.h:100` | HS14: 11 |
 | `mint_permission_inherit` | `include/crucible/permissions/PermissionInherit.h:287` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:109` | HS14: 6 |
-| `mint_permission_root` | `include/crucible/permissions/Permission.h:705` | Y | Y | Y | - | token | `include/crucible/fixy/concurrent/SpinLock.h:303` | HS14: 177 |
+| `mint_permission_root` | `include/crucible/permissions/Permission.h:705` | Y | Y | Y | - | token | `include/crucible/fixy/Hw.h:664` | HS14: 177 |
 | `mint_permission_share` | `include/crucible/permissions/Permission.h:1481` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:19` | HS14: 4 |
 | `mint_permission_split` | `include/crucible/permissions/Permission.h:738` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:32` | HS14: 28 |
 | `mint_permission_split_n` | `include/crucible/permissions/Permission.h:864` | Y | Y | Y | - | token | `include/crucible/fixy/Perm.h:34` | HS14: 4 |
@@ -152,11 +152,11 @@ Snapshot generated: `2026-05-30T21:06:32Z`.
 | `mint_chainedge_signaler_session` | `include/crucible/sessions/ChainEdgeSession.h:79` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:523` | HS14: 3 |
 | `mint_chainedge_waiter` | `include/crucible/sessions/ChainEdgeSession.h:70` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:522` | HS14: 2 |
 | `mint_chainedge_waiter_session` | `include/crucible/sessions/ChainEdgeSession.h:87` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:524` | HS14: 3 |
-| `mint_channel` | `include/crucible/sessions/FederationProtocol.h:270` | Y | Y | Y | Y | ctx | `include/crucible/fixy/SessFederation.h:119` | HS14: 13 |
+| `mint_channel` | `include/crucible/sessions/FederationProtocol.h:270` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:16` | HS14: 13 |
 | `mint_chaselev_owner` | `include/crucible/sessions/ChaseLevDequeSession.h:86` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:350` | HS14: 3 |
 | `mint_chaselev_thief` | `include/crucible/sessions/ChaseLevDequeSession.h:103` | Y | - (alloc) | Y | - | token | `include/crucible/fixy/Substr.h:351` | HS14: 3 |
 | `mint_consumer_session` | `include/crucible/sessions/CalendarGridSession.h:90` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:116` | HS14: 6 |
-| `mint_coord` | `include/crucible/sessions/FederationProtocol.h:289` | Y | Y | Y | Y | ctx | `include/crucible/fixy/SessFederation.h:118` | HS14: 3 |
+| `mint_coord` | `include/crucible/sessions/FederationProtocol.h:289` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:24` | HS14: 3 |
 | `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h:209` | Y | Y | Y | - | token | `include/crucible/fixy/SessFederation.h:130` | HS14: 13 |
 | `mint_metalog_consumer` | `include/crucible/sessions/MetaLogSession.h:75` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:436` | HS14: 2 |
 | `mint_metalog_consumer_session` | `include/crucible/sessions/MetaLogSession.h:92` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:438` | HS14: 2 |
@@ -171,8 +171,8 @@ Snapshot generated: `2026-05-30T21:06:32Z`.
 | `mint_producer_session` | `include/crucible/sessions/CalendarGridSession.h:79` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:116` | HS14: 7 |
 | `mint_reader_runtime_session` | `include/crucible/sessions/SwmrSession.h:250` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:268` | HS14: 2 |
 | `mint_reader_session` | `include/crucible/sessions/SwmrSession.h:231` | Y | Y | Y | - | ctx | `include/crucible/fixy/Substr.h:266` | HS14: 2 |
-| `mint_receiver` | `include/crucible/sessions/FederationProtocol.h:245` | Y | Y | Y | Y | ctx | `include/crucible/fixy/SessFederation.h:118` | HS14: 6 |
-| `mint_sender` | `include/crucible/sessions/FederationProtocol.h:221` | Y | Y | Y | Y | ctx | `include/crucible/fixy/SessFederation.h:118` | HS14: 14 |
+| `mint_receiver` | `include/crucible/sessions/FederationProtocol.h:245` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:23` | HS14: 6 |
+| `mint_sender` | `include/crucible/sessions/FederationProtocol.h:221` | Y | Y | Y | Y | ctx | `include/crucible/fixy/Sess.h:22` | HS14: 14 |
 | `mint_session_handle` | `include/crucible/sessions/Session.h:2517` | Y | Y | Y | Y | token | `include/crucible/fixy/Sess.h:17` | HS14: 29 |
 | `mint_session_view` | `include/crucible/sessions/SessionView.h:279` | Y | Y | Y | Y | token | `include/crucible/fixy/Sess.h:569` | HS14: 7 |
 | `mint_sharded_calendar_grid_consumer` | `include/crucible/sessions/ShardedCalendarGridSession.h:63` | Y | Y | Y | - | token | `include/crucible/fixy/Substr.h:797` | HS14: 2 |
@@ -214,9 +214,9 @@ to distinguish this third authorization shape.
 
 | class::mint_name | file:line | nd | cx | ne | rq | cb | HS14 |
 |---|---|---|---|---|---|---|---|
-| `Cipher::mint_open_view` | `include/crucible/Cipher.h:307` | Y | Y | Y | - | member | HS14: 18 |
 | `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h:463` | Y | Y | Y | - | member | HS14: 4 |
 | `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h:474` | Y | - | Y | - | member | HS14: 3 |
+| `Cipher::mint_open_view` | `include/crucible/Cipher.h:307` | Y | Y | Y | - | member | HS14: 18 |
 | `Computation::mint_computation` | `include/crucible/effects/Computation.h:213` | Y | Y | Y | Y | member | HS14: 2 |
 | `Computation::mint_computation_in_ctx` | `include/crucible/effects/Computation.h:371` | Y | Y | Y | Y | member | HS14: 2 |
 | `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h:345` | Y | Y | Y | - | member | HS14: 3 |

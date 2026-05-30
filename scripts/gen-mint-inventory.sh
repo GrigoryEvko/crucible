@@ -29,6 +29,14 @@
 
 set -euo pipefail
 
+# Pin byte-collation for every sort/grep/awk in this script.  The inventory is
+# a SORTED markdown artifact committed to misc/mint-inventory.md and diffed by
+# --check; locale-dependent `sort` ordering (en_US.UTF-8 vs the C locale on a
+# stock CI runner) would otherwise reorder rows and report spurious drift.
+# LC_ALL=C is the POSIX default — always present, never needs a locale package —
+# and makes the generated inventory bit-identical across every machine.
+export LC_ALL=C
+
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
@@ -1111,18 +1119,24 @@ case "$mode" in
         # Strip the `Snapshot generated:` timestamp line from both sides;
         # it embeds wall-clock time and would always diff between runs.
         # CI cares about CONTENT drift, not when the file was last touched.
-        if diff -q \
-            <(grep -v '^Snapshot generated:' "$head_copy") \
-            <(emit_inventory | grep -v '^Snapshot generated:') \
-            >/dev/null 2>&1; then
+        #
+        # Materialize emit_inventory to a temp file FIRST, then diff file-vs-
+        # file.  Feeding emit_inventory straight into `diff -q <(...)` lets
+        # diff short-circuit on the first difference and close the pipe, which
+        # SIGPIPE-storms emit_inventory's row-printf loop under `set -o
+        # pipefail` (a broken-pipe-message-per-remaining-row mess in the log).
+        # A finished temp file has no live writer to kill.
+        cur_tmp="$(mktemp)"
+        head_filtered_tmp="$(mktemp)"
+        trap 'rm -f "$inventory_tmp" "$cur_tmp" "$head_filtered_tmp"' EXIT
+        emit_inventory | grep -v '^Snapshot generated:' >"$cur_tmp"
+        grep -v '^Snapshot generated:' "$head_copy" >"$head_filtered_tmp"
+        if diff -q "$head_filtered_tmp" "$cur_tmp" >/dev/null 2>&1; then
             printf 'gen-mint-inventory: misc/mint-inventory.md is up-to-date.\n' >&2
             exit 0
         fi
         printf 'gen-mint-inventory: DRIFT — misc/mint-inventory.md out of date.  Run scripts/gen-mint-inventory.sh to refresh.\n' >&2
-        diff -u \
-            <(grep -v '^Snapshot generated:' "$head_copy") \
-            <(emit_inventory | grep -v '^Snapshot generated:') | \
-            head -40 >&2 || true
+        diff -u "$head_filtered_tmp" "$cur_tmp" 2>/dev/null | head -40 >&2 || true
         exit 1
         ;;
     check-floor)
