@@ -202,7 +202,7 @@ jobs:
       # ccache lives at an absolute path (not in $WORKSPACE) so it survives the
       # checkout wipe and is cached as a whole directory by actions/cache.
       CCACHE_DIR: /ccache
-      CCACHE_MAXSIZE: "2G"
+      CCACHE_MAXSIZE: "5G"
       CCACHE_COMPRESS: "true"
       # The build is deterministic (no __DATE__/__TIME__; -fno-fast-math), so
       # the default ccache hashing is safe — every reflection/contract flag is
