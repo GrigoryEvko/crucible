@@ -36,12 +36,22 @@ cat > "$PROBE_TU" <<'EOF'
 #include <crucible/bridges/SessionPersistence.h>
 EOF
 
-# Resolve compiler — prefer the patched GCC 16.1.1 (matches default
-# preset), fall back to `g++` if unset.  We compile with the same
-# language standard as the project so #include resolution matches.
-CXX="${CXX:-/root/.local/gcc16-patched/usr/bin/g++-16p}"
-if [[ ! -x "$CXX" ]]; then
-    CXX="g++"
+# Resolve a GCC 16 (contracts + reflection).  This guard is NOT toolchain-
+# free: it runs a real `-H` compile to trace #include edges, so it must run
+# where a GCC 16 lives (locally, or the CI `build` job's fedora:rawhide
+# container — never the toolchain-free `guards` job).  Priority: explicit
+# CXX, then CRUCIBLE_CXX (the CMake toolchain var, e.g. /usr/bin/g++ on the
+# CI container), then the canonical patched prefix under $HOME, then plain
+# g++ (stock Fedora GCC 16 suffices — we only read the include trace, not
+# codegen, and the patch does not change preprocessing).
+if [[ -z "${CXX:-}" ]]; then
+    if [[ -n "${CRUCIBLE_CXX:-}" && -x "${CRUCIBLE_CXX}" ]]; then
+        CXX="${CRUCIBLE_CXX}"
+    elif [[ -x "${HOME}/.local/gcc16-patched/usr/bin/g++-16p" ]]; then
+        CXX="${HOME}/.local/gcc16-patched/usr/bin/g++-16p"
+    else
+        CXX="g++"
+    fi
 fi
 
 # Run the preprocessor with -H to dump the include trace.  -E + -o

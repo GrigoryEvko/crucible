@@ -78,8 +78,9 @@ jobs:
       - name: trait injection guard
         run: bash scripts/check-trait-injection.sh
 
-      - name: session-persistence include audit
-        run: bash scripts/check-session-persistence-include-audit.sh
+      # NOTE: the session-persistence include audit is NOT here — it runs a
+      # real `g++ -H` compile (needs GCC 16 + the header tree), so it lives in
+      # the `build` job below, not this toolchain-free tier.
 
       - name: contract cite regression (pre-callsite count vs baseline)
         run: bash scripts/audit-pre-callsite-count.sh --check scripts/contracts-baseline.json
@@ -245,6 +246,12 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      # The one ci_guard that needs a compiler: it traces #include edges with
+      # `g++ -H`. CRUCIBLE_CXX (=/usr/bin/g++, GCC 16) is picked up by the
+      # script. Runs before the build so a header-bloat regression fails fast.
+      - name: session-persistence include audit (needs gcc-16)
+        run: bash scripts/check-session-persistence-include-audit.sh
 
       # CMAKE_*_COMPILER_LAUNCHER=ccache composes with the toolchain file: CMake
       # invokes `ccache /usr/bin/g++ ...`, leaving compiler/ar/rpath resolution
