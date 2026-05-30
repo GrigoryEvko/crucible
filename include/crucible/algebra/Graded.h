@@ -558,11 +558,32 @@ public:
     // specialization they MUST be — they collapse to one storage
     // cell.  We keep the value (storing it via std::move) and
     // accept the grade by-value to consume the rvalue cleanly.
+    //
+    // The grade-equivalence guard is an IN-BODY `contract_assert` —
+    // NOT a vanilla `pre()` clause — for two load-bearing reasons:
+    //   (1) Layering.  `CRUCIBLE_PRE` (safety/Pre.h) would be the
+    //       project's canonical consteval-AND-runtime guard, but
+    //       algebra/ must not depend "up" on safety/.  The substrate
+    //       already uses in-body `contract_assert` (see weaken /
+    //       compose / at_bottom) precisely to stay within algebra and
+    //       sidestep the GCC-16 `post()`/clause issues.
+    //   (2) Bypass.  A foldable, `this`-free vanilla `pre()` is exactly
+    //       the shape the documented GCC 16.1.1 consteval-bypass family
+    //       can silently skip, and it degrades to NOTHING under
+    //       `contract_evaluation_semantic=ignore`.  This guard is the
+    //       ONLY thing preventing a forged/inconsistent grade from
+    //       silently constructing a Graded whose discarded grade does
+    //       not match its kept value — it must fire unconditionally.
+    //       An in-body `contract_assert` with a false predicate makes
+    //       a consteval call non-constant and is not subject to the
+    //       pure-clause bypass, so the guard cannot be skipped.
     constexpr Graded(T value, grade_type grade) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        pre (L::leq(value, grade) && L::leq(grade, value))
         : value_{std::move(value)}
     {
+        // value_ already holds value; the grade arg is a witness that
+        // must be lattice-equivalent to it.  Guard FIRST, then discard.
+        contract_assert(L::leq(value_, grade) && L::leq(grade, value_));
         // grade is consumed by move binding; we don't store it
         // because value_ already holds the equivalent value.
         (void)grade;
@@ -824,12 +845,25 @@ public:
     // specialization the grade is DERIVED from the value, so the
     // user's argument is a witness — we contract-assert it equals
     // what L would derive, then store only the value.
+    //
+    // Guard is an IN-BODY `contract_assert`, NOT a vanilla `pre()`,
+    // for the same two reasons as the T==element_type specialization
+    // above: (1) algebra/ must not depend "up" on safety/Pre.h, and
+    // the substrate already uses in-body `contract_assert` (weaken /
+    // compose / at_bottom) to stay in-layer; (2) a foldable, `this`-
+    // free `pre()` is the documented GCC 16.1.1 consteval-bypass
+    // shape and degrades to nothing under `semantic=ignore`.  Since
+    // the witness grade is DISCARDED, this guard is the ONLY barrier
+    // against a forged grade silently constructing a Graded — it must
+    // fire at consteval AND runtime regardless of TU semantic.
     constexpr Graded(T value, grade_type grade) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        pre (L::leq(L::grade_of(value), grade)
-             && L::leq(grade, L::grade_of(value)))
         : value_{std::move(value)}
     {
+        // value_ holds value; the grade arg is a witness that must
+        // equal what L derives from value_.  Guard FIRST, then discard.
+        contract_assert(L::leq(L::grade_of(value_), grade)
+                     && L::leq(grade, L::grade_of(value_)));
         // grade is consumed; we don't store it.
         (void)grade;
     }

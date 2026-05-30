@@ -3444,6 +3444,14 @@ crucible_neg_compile_fixy_test(neg_fixy_algebra_lattice_nonidempotent
     "Lattice|laws_hold|static assertion|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_algebra_lattice_nonassociative
     "Lattice|laws_hold|static assertion|associated constraints are not satisfied")
+# fix-13 — Graded regime-2/3 two-arg ctor discards `grade` after an
+# equivalence check; the vanilla pre() was consteval-bypassable + NDEBUG-
+# strippable.  Migrated to in-body contract_assert (layering-correct: algebra/
+# must not depend on safety/Pre.h), which fires at consteval + runtime.
+crucible_neg_compile_test(neg_graded_regime2_ctor_grade_mismatch
+    "contract predicate is false in constant expression")
+crucible_neg_compile_test(neg_graded_regime3_ctor_grade_mismatch
+    "contract predicate is false in constant expression")
 crucible_neg_compile_fixy_test(neg_fixy_algebra_non_graded
     "IsGraded|static assertion|associated constraints are not satisfied")
 crucible_neg_compile_fixy_test(neg_fixy_eff_subrow_missing
