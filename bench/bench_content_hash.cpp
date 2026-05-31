@@ -38,8 +38,8 @@ static std::vector<TraceEntry> make_ops(Arena& arena,
             m.dtype       = ScalarType::Float;
             m.device_type = DeviceType::CUDA;
             for (uint8_t d = 0; d < ndim; d++) {
-                m.sizes[d]   = (d == ndim - 1) ? 128 : 32;
-                m.strides[d] = (d == ndim - 1) ? 1   : 128;
+                m.sizes[d]   = tensor_dim((d == ndim - 1) ? 128 : 32);
+                m.strides[d] = tensor_dim((d == ndim - 1) ? 1   : 128);
             }
         }
         te.output_metas = arena.alloc_array<TensorMeta>(A, 1);

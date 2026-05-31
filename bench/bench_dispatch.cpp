@@ -57,8 +57,8 @@ void* fake_ptr(uint32_t iter, uint32_t op) noexcept {
 TensorMeta make_meta(void* data_ptr) noexcept {
     TensorMeta m{};
     m.ndim        = 1;
-    m.sizes[0]    = 1024;
-    m.strides[0]  = 1;
+    m.sizes[0]    = tensor_dim(1024);
+    m.strides[0]  = tensor_dim(1);
     m.dtype       = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.device_idx  = 0;
@@ -145,7 +145,7 @@ void setup_compiled_vigil(Vigil& vigil) {
 // we allocate those too — even though the pointers we write through
 // fake_ptr don't point at real storage.
 struct BenchRegion {
-    auto test = effects::testing::test();
+    effects::Test test = effects::testing::test();
     Arena       arena{1 << 16};
     RegionNode* region = nullptr;
     MemoryPlan* plan   = nullptr;
@@ -166,16 +166,16 @@ struct BenchRegion {
                     arena.alloc_array<TensorMeta>(test.alloc, 1);
                 std::memset(ops[i].input_metas, 0, sizeof(TensorMeta));
                 ops[i].input_metas[0].ndim       = 1;
-                ops[i].input_metas[0].sizes[0]   = 1024;
-                ops[i].input_metas[0].strides[0] = 1;
+                ops[i].input_metas[0].sizes[0]   = tensor_dim(1024);
+                ops[i].input_metas[0].strides[0] = tensor_dim(1);
                 ops[i].input_metas[0].dtype      = ScalarType::Float;
             }
             ops[i].output_metas =
                 arena.alloc_array<TensorMeta>(test.alloc, 1);
             std::memset(ops[i].output_metas, 0, sizeof(TensorMeta));
             ops[i].output_metas[0].ndim       = 1;
-            ops[i].output_metas[0].sizes[0]   = 1024;
-            ops[i].output_metas[0].strides[0] = 1;
+            ops[i].output_metas[0].sizes[0]   = tensor_dim(1024);
+            ops[i].output_metas[0].strides[0] = tensor_dim(1);
             ops[i].output_metas[0].dtype      = ScalarType::Float;
 
             ops[i].output_slot_ids =

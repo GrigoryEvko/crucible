@@ -564,9 +564,9 @@ void bench_phase2_subparts(
                     const TensorMeta& m = te.input_metas[j];
                     uint64_t dim_h = 0;
                     for (uint8_t d = 0; d < m.ndim; d++) {
-                        dim_h ^= static_cast<uint64_t>(m.sizes[d])
+                        dim_h ^= static_cast<uint64_t>(raw_tensor_dim(m.sizes[d]))
                                * detail::kDimMix[d];
-                        dim_h ^= static_cast<uint64_t>(m.strides[d])
+                        dim_h ^= static_cast<uint64_t>(raw_tensor_dim(m.strides[d]))
                                * detail::kDimMix[d + 8];
                     }
                     const uint64_t meta_packed =

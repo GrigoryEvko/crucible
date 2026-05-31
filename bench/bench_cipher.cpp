@@ -46,8 +46,8 @@ static RegionNode* synth_region(Arena& arena, uint32_t num_ops,
         te.input_metas = arena.alloc_array<TensorMeta>(A, 1);
         std::uninitialized_value_construct_n(te.input_metas, 1);
         te.input_metas[0].ndim       = 1;
-        te.input_metas[0].sizes[0]   = 64;
-        te.input_metas[0].strides[0] = 1;
+        te.input_metas[0].sizes[0]   = tensor_dim(64);
+        te.input_metas[0].strides[0] = tensor_dim(1);
         te.input_metas[0].dtype      = ScalarType::Float;
         te.output_metas = arena.alloc_array<TensorMeta>(A, 1);
         std::uninitialized_value_construct_n(te.output_metas, 1);

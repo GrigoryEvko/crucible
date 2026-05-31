@@ -45,19 +45,19 @@ static RegionNode* synth_region(Arena& arena, uint32_t num_ops) {
         std::uninitialized_value_construct_n(te.input_metas, 2);
         for (uint16_t j = 0; j < 2; j++) {
             te.input_metas[j].ndim       = 2;
-            te.input_metas[j].sizes[0]   = 128;
-            te.input_metas[j].sizes[1]   = 256;
-            te.input_metas[j].strides[0] = 256;
-            te.input_metas[j].strides[1] = 1;
+            te.input_metas[j].sizes[0]   = tensor_dim(128);
+            te.input_metas[j].sizes[1]   = tensor_dim(256);
+            te.input_metas[j].strides[0] = tensor_dim(256);
+            te.input_metas[j].strides[1] = tensor_dim(1);
             te.input_metas[j].dtype      = ScalarType::Float;
         }
         te.output_metas = arena.alloc_array<TensorMeta>(A, 1);
         std::uninitialized_value_construct_n(te.output_metas, 1);
         te.output_metas[0].ndim       = 2;
-        te.output_metas[0].sizes[0]   = 128;
-        te.output_metas[0].sizes[1]   = 256;
-        te.output_metas[0].strides[0] = 256;
-        te.output_metas[0].strides[1] = 1;
+        te.output_metas[0].sizes[0]   = tensor_dim(128);
+        te.output_metas[0].sizes[1]   = tensor_dim(256);
+        te.output_metas[0].strides[0] = tensor_dim(256);
+        te.output_metas[0].strides[1] = tensor_dim(1);
         te.output_metas[0].dtype      = ScalarType::Float;
 
         te.input_trace_indices = arena.alloc_array<OpIndex>(A, 2);

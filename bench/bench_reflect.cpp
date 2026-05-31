@@ -121,7 +121,7 @@ uint64_t compute_recipe_hash_reflected(
     constexpr uint64_t kSeed = 0x9E3779B97F4A7C15ULL;
     return crucible::reflect_fmix_fold<kSeed>(RecipeSpec{
         r.accum_dtype, r.out_dtype, r.reduction_algo, r.rounding,
-        r.scale_policy, r.softmax, r.determinism, r.flags
+        r.scale_policy, r.softmax, r.determinism, r.flags.raw()
     });
 }
 
@@ -259,7 +259,7 @@ int main() {
             crucible::NumericalRecipe r{};
             r.accum_dtype = crucible::ScalarType::Float;
             r.out_dtype   = crucible::ScalarType::Half;
-            r.flags       = static_cast<uint8_t>(bump);
+            r.flags       = crucible::safety::Bits<crucible::RecipeFlags>::from_raw(static_cast<uint8_t>(bump));
             auto h = crucible::compute_recipe_hash(r);
             bench::do_not_optimize(h);
         }),
@@ -267,7 +267,7 @@ int main() {
             crucible::NumericalRecipe r{};
             r.accum_dtype = crucible::ScalarType::Float;
             r.out_dtype   = crucible::ScalarType::Half;
-            r.flags       = static_cast<uint8_t>(bump);
+            r.flags       = crucible::safety::Bits<crucible::RecipeFlags>::from_raw(static_cast<uint8_t>(bump));
             auto h = compute_recipe_hash_reflected(r);
             bench::do_not_optimize(h);
         }),

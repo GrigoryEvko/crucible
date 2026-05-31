@@ -44,9 +44,9 @@ using crucible::detail::compute_storage_nbytes_scalar;
     // Common shape pattern: increasing strides, decreasing sizes.
     int64_t stride = 1;
     for (int8_t d = static_cast<int8_t>(ndim) - 1; d >= 0; --d) {
-        m.sizes[d] = (1u << d) + 4;  // 5, 6, 8, 12, 20, 36, 68, 132 for d=0..7
-        m.strides[d] = stride;
-        stride *= m.sizes[d];
+        m.sizes[d] = crucible::tensor_dim((1u << d) + 4);  // 5, 6, 8, 12, 20, 36, 68, 132 for d=0..7
+        m.strides[d] = crucible::tensor_dim(stride);
+        stride *= crucible::raw_tensor_dim(m.sizes[d]);
     }
     return m;
 }
@@ -229,9 +229,9 @@ int main() {
                 mvar.ndim = static_cast<uint8_t>(v_ndim_8);
                 int64_t stride = 1;
                 for (int d = mvar.ndim - 1; d >= 0; --d) {
-                    mvar.sizes[d] = (1 << d) + 4;
-                    mvar.strides[d] = stride;
-                    stride *= mvar.sizes[d];
+                    mvar.sizes[d] = crucible::tensor_dim((1 << d) + 4);
+                    mvar.strides[d] = crucible::tensor_dim(stride);
+                    stride *= crucible::raw_tensor_dim(mvar.sizes[d]);
                 }
                 uint64_t h = dim_hash_simd(mvar);
                 bench::do_not_optimize(h);

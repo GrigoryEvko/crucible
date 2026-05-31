@@ -65,8 +65,8 @@ TraceEntry make_synthetic_entry(effects::Alloc a, Arena& arena,
             m.device_type = DeviceType::CUDA;
             m.device_idx  = 0;
             for (uint8_t d = 0; d < ndim; d++) {
-                m.sizes[d]   = static_cast<int64_t>(32 + (bench_rand() % 256));
-                m.strides[d] = static_cast<int64_t>(1 + (bench_rand() % 64));
+                m.sizes[d]   = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
+                m.strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
             }
             m.data_ptr = external_data_ptr(std::bit_cast<void*>(
                 static_cast<std::uintptr_t>(
@@ -82,8 +82,8 @@ TraceEntry make_synthetic_entry(effects::Alloc a, Arena& arena,
             m.device_type = DeviceType::CUDA;
             m.device_idx  = 0;
             for (uint8_t d = 0; d < ndim; d++) {
-                m.sizes[d]   = static_cast<int64_t>(32 + (bench_rand() % 256));
-                m.strides[d] = static_cast<int64_t>(1 + (bench_rand() % 64));
+                m.sizes[d]   = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
+                m.strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
             }
             m.data_ptr = external_data_ptr(std::bit_cast<void*>(
                 static_cast<std::uintptr_t>(
@@ -278,8 +278,8 @@ int main(int argc, char* argv[]) {
                 metas[j].device_type = DeviceType::CUDA;
                 metas[j].device_idx  = 0;
                 for (uint8_t d = 0; d < 4; d++) {
-                    metas[j].sizes[d]   = static_cast<int64_t>(32 + (bench_rand() % 256));
-                    metas[j].strides[d] = static_cast<int64_t>(1 + (bench_rand() % 64));
+                    metas[j].sizes[d]   = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
+                    metas[j].strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
                 }
                 metas[j].data_ptr = external_data_ptr(std::bit_cast<void*>(
                     static_cast<std::uintptr_t>(

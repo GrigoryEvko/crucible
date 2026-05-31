@@ -33,7 +33,7 @@ constexpr uint32_t NUM_OPS     = 128;
 constexpr uint32_t NUM_REGIONS = 10;
 
 struct TestFixture {
-    auto test = effects::testing::test();
+    effects::Test test = effects::testing::test();
     Arena       arena{1 << 20};
     RegionNode* regions[NUM_REGIONS]{};
     MemoryPlan* plans[NUM_REGIONS]{};
