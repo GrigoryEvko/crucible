@@ -121,6 +121,30 @@ else()
   set(_CRUCIBLE_CFI_FLAGS)
 endif()
 
+# cntp/Fec.h (off-limits to edit here) instantiates std::start_lifetime_as<const
+# __m256i> inside its `#if defined(__AVX2__)` arm (lines ~292-355). libstdc++ 16
+# implements start_lifetime_as with a writable inline-asm barrier (`"=m"(*p)`), which
+# is a hard "read-only location used as 'asm' output" error whenever the target type
+# is const-qualified — on BOTH stock and patched GCC 16, at every -O level. It only
+# bites when __AVX2__ is defined: release/bench pass -march=native (CMAKE_CXX_FLAGS);
+# default/tsan/analyzer omit it, so the AVX2 arm is #if'd out and the FEC tests compile
+# against the scalar path. Probe the exact idiom under the active flags so the two tests
+# that instantiate the AVX2 kernels are skipped ONLY where they genuinely cannot compile,
+# and auto-re-enable if cntp/Fec.h ever adopts a const-safe load.
+include(CheckCXXSourceCompiles)
+set(_crucible_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
+set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -std=c++26")
+check_cxx_source_compiles("
+#include <immintrin.h>
+#if !defined(__AVX2__)
+int main() {}
+#else
+#include <memory>
+int main() { const __m256i* p = nullptr; (void) std::start_lifetime_as<const __m256i>(p); }
+#endif
+" CRUCIBLE_FEC_CONST_SIMD_OK)
+set(CMAKE_REQUIRED_FLAGS "${_crucible_saved_required_flags}")
+
 # C++26-only flags — applied at target level where -std=c++26 is active
 # (applying them in CMAKE_CXX_FLAGS would poison CMake's compiler-probe).
 target_compile_options(crucible PUBLIC
