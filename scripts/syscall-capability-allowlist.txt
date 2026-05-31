@@ -138,9 +138,9 @@ include/crucible/Platform.h:276 — effects::Init via parse_self_status (open /p
 include/crucible/Platform.h:279 — effects::Init via parse_self_status (read /proc/self/status)
 include/crucible/Platform.h:280 — effects::Init via parse_self_status (close /proc/self/status)
 
-# ── canopy/Hlc.h — Hybrid Logical Clock wall-time read ────────────────
-# Bg-row clock_gettime(CLOCK_REALTIME); HLC is a Bg-drain observer.
-include/crucible/canopy/Hlc.h:276 — effects::Bg via Hlc::now (CLOCK_REALTIME read)
+# canopy/Hlc.h — Hybrid Logical Clock wall-time read: now uses a
+# drift-proof co-located '// SYSCALL-CAP-OK:' marker on the clock_gettime
+# line itself (effects::Bg via Hlc::now), so no line-keyed entry here.
 
 # ── topology/Ptp.cpp — PTP hardware clock + socket timestamping ───────
 # IO-row /dev/ptp* clock ops (open/caps/read/close) plus NIC-socket
@@ -207,8 +207,8 @@ src/fixy/Fs.cpp:86 — effects::IO via open_dirfd → do_open_dirfd_impl (O_DIRE
 # effects::Bg vDSO clock reads — no fd, no privilege, no kernel-state
 # mutation.  Each wraps its result in a ClockSource<Source> provenance
 # witness (mint_clock_source).  Bare methods (ClockReader<Source>::read;
-# the watchdog verdict path), NOT ctx-gated — grandfathered exactly like
-# canopy/Hlc.h:241's CLOCK_REALTIME read.
+# the watchdog verdict path), NOT ctx-gated — same Bg-row clock-read
+# rationale as canopy/Hlc.h's CLOCK_REALTIME read.
 include/crucible/fixy/Time.h:175 — effects::Bg via ClockReader<Source>::read (clock_gettime, ClockSource<Source>-tagged)
 include/crucible/warden/DeadlineWatchdog.h:269 — effects::Bg via watchdog verdict path (clock_gettime CLOCK_BOOTTIME, ClockSource<Boot>-tagged)
 

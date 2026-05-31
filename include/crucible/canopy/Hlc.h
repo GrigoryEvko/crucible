@@ -154,7 +154,7 @@ private:
     // total order and touches no floating point.  x86_64 (cmpxchg16b,
     // above) and LSE128 silicon both remain lock-free.
     struct LockFreeCell {
-        mutable std::atomic<uint128_t> value_{0};
+        mutable std::atomic<uint128_t> value_{0};  // LOCK-FREE-OK: fixy-A5-029 — conditional-selected (lock-free only); SpinlockCell covers the rest, so a sibling static_assert would wrongly fire on non-LSE128 aarch64
         [[nodiscard]] uint128_t load() const noexcept {
             return value_.load(std::memory_order_acquire);
         }
@@ -196,7 +196,7 @@ private:
         }
     };
     using Cell = std::conditional_t<
-        std::atomic<uint128_t>::is_always_lock_free,
+        std::atomic<uint128_t>::is_always_lock_free,  // LOCK-FREE-OK: fixy-A5-029 — dispatch predicate (picks LockFreeCell vs SpinlockCell), not an atomic field
         LockFreeCell, SpinlockCell>;
     mutable Cell cell_{};
 #endif
@@ -319,7 +319,7 @@ private:
     // and the wrap is a 3-line `mint_clock_source + Stale::fresh`.
     [[nodiscard]] static std::uint64_t read_realtime_ns_raw_() noexcept {
         ::timespec ts{};
-        if (::clock_gettime(CLOCK_REALTIME, &ts) != 0) [[unlikely]] {
+        if (::clock_gettime(CLOCK_REALTIME, &ts) != 0) [[unlikely]] {  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Bg via Hlc::now()'s Bg-drain path (wrapped in mint_clock_source); co-located, drift-proof
             return std::uint64_t{1};
         }
 
