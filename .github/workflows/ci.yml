@@ -27,11 +27,12 @@
 # exists precisely so the consteval-bypass-sensitive contracts fire identically
 # on stock GCC, which is why the stock-Fedora build is a valid gate. Locally
 # verified: stock /usr/bin/g++ configures the tree, compiles the library AND
-# every test TU, and runs the wrapper/federation suites green; the only extra
-# container packages are the sanitizer + BPF RUNTIMES (libasan/libubsan/
-# libbpf-devel), which Fedora ships separately from gcc-c++. For byte-exact
-# parity with the dev compiler an optional self-hosted job carries the patched
-# toolchain (see `build-patched-parity`, gated to workflow_dispatch).
+# every test TU, and runs the wrapper/federation suites green. The public build
+# configures CRUCIBLE_SANITIZE=OFF (a compile + test smoke under the stock public
+# compiler); the heavy ASan/UBSan/TSan suites run on the optional self-hosted
+# `build-patched-parity` job (gated to workflow_dispatch), which also carries the
+# patched toolchain for byte-exact dev-compiler parity. Only libbpf-devel is
+# pulled beyond gcc-c++ + cmake/ninja/git/ripgrep/ccache.
 #
 # The guard list below is kept in 1:1 correspondence with the `ci_guard`
 # registrations in test/CMakeLists.txt. When a guard is added/removed there,
@@ -189,8 +190,9 @@ jobs:
   # and runs on every push/PR. CRUCIBLE_CXX=/usr/bin/g++ feeds the portable
   # toolchain file (cmake/Toolchain-gcc16.cmake), which derives the matching
   # gcc-ar / gcc-ranlib siblings + rpath from that basename — no patched build
-  # needed. The sanitizer + BPF runtimes (libasan/libubsan/libbpf-devel) are
-  # the only packages Fedora ships separately from gcc-c++.
+  # needed. libbpf-devel (the BPF runtime) is the only package Fedora ships
+  # separately from gcc-c++; the public build sets CRUCIBLE_SANITIZE=OFF and -j4,
+  # so no libasan/libubsan and no jobs:192 OOM.
   # ---------------------------------------------------------------------------
   build:
     name: build + test (fedora:rawhide, stock gcc-16, ccache)
@@ -202,7 +204,11 @@ jobs:
       # ccache lives at an absolute path (not in $WORKSPACE) so it survives the
       # checkout wipe and is cached as a whole directory by actions/cache.
       CCACHE_DIR: /ccache
-      CCACHE_MAXSIZE: "5G"
+      # GitHub-hosted runners have ~14 GB of disk; a 5 G ccache plus the rawhide
+      # container, dnf cache and build tree exhausts it and wedges the cache-save
+      # post-step. 2 G is the safe ceiling for this runner (non-sanitized objects
+      # are small) and stays well under the 10 GB/repo Actions cache quota.
+      CCACHE_MAXSIZE: "2G"
       CCACHE_COMPRESS: "true"
       # The build is deterministic (no __DATE__/__TIME__; -fno-fast-math), so
       # the default ccache hashing is safe — every reflection/contract flag is
@@ -225,11 +231,14 @@ jobs:
 
       # git is needed by actions/checkout; keepcache=1 retains RPMs for the
       # dnf-cache save. ccache itself is installed here.
-      - name: Install toolchain + sanitizer/BPF runtimes + ccache
+      # No libasan/libubsan: the public build configures CRUCIBLE_SANITIZE=OFF
+      # (sanitizer parity lives on the self-hosted build-patched-parity job, which
+      # has the memory/disk budget for the full ASan/TSan suite). Dropping them
+      # also trims install time and runner disk.
+      - name: Install toolchain + BPF runtime + ccache
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
-          gcc-c++ libasan libubsan
-          cmake ninja-build git ripgrep libbpf-devel ccache
+          gcc-c++ cmake ninja-build git ripgrep libbpf-devel ccache
 
       # Restore the compiled-object cache. Keyed by branch+sha (never an exact
       # hit -> always saves a fresh entry); restore-keys walk back to the
@@ -256,17 +265,26 @@ jobs:
       # CMAKE_*_COMPILER_LAUNCHER=ccache composes with the toolchain file: CMake
       # invokes `ccache /usr/bin/g++ ...`, leaving compiler/ar/rpath resolution
       # (cmake/Toolchain-gcc16.cmake) untouched.
-      - name: Configure (stock gcc-16 + ccache launcher)
+      # CRUCIBLE_SANITIZE=OFF: a public smoke build validates that the tree
+      # COMPILES + tests pass under the stock public compiler; the ASan/UBSan/TSan
+      # suites (heavy, libasan-dependent, memory-hungry) run on the self-hosted
+      # parity job. CMAKE_*_COMPILER_LAUNCHER=ccache composes with the toolchain
+      # file: CMake invokes `ccache /usr/bin/g++ ...`.
+      - name: Configure (stock gcc-16, no sanitizers, ccache launcher)
         run: >
           cmake --preset default
+          -DCRUCIBLE_SANITIZE=OFF
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Reset ccache stats
         run: ccache -z
 
+      # -j4 overrides the preset's jobs:192. GitHub-hosted runners have 4 vCPU /
+      # 16 GB; 192 parallel cc1plus (each heavy C++26 reflection/contract TU peaks
+      # ~1-2 GB) OOM-wedges the job. 4 jobs keeps peak well under 16 GB.
       - name: Build
-        run: cmake --build --preset default
+        run: cmake --build --preset default -j4
 
       # Hit rate lands in the job log — the headline metric for this cache setup.
       - name: ccache stats
@@ -274,9 +292,16 @@ jobs:
 
       # The entire ctest set: C++ unit/compile tests, the negative-compile
       # fixtures, row_hash_golden_diff (built binary), AND the ci_guard bash
-      # guards (harmless duplication with the guards job).
+      # guards (harmless duplication with the guards job). -j4 caps the
+      # testPreset's jobs:192 to the runner's 4 vCPU. -E excludes the two
+      # neg-compile fixtures that assert an in-body consteval contract_assert
+      # poisons the enclosing call: that rejection only fires with PR
+      # c++/124241 (the patched g++-16p), which stock GCC 16.1.1 lacks (its
+      # contract-violation result is wrongly cached, so the consteval proceeds
+      # and the bad ctor compiles). They validate the PATCHED compiler and run
+      # on the self-hosted build-patched-parity job instead.
       - name: Test
-        run: ctest --preset default
+        run: ctest --preset default -j4 -E 'neg_graded_regime[23]_ctor_grade_mismatch'
 
   # ---------------------------------------------------------------------------
   # OPTIONAL byte-exact-parity job on the patched GCC 16.1.1 (PR c++/124241).
@@ -302,11 +327,13 @@ jobs:
       - name: Configure (portable toolchain resolution)
         run: cmake --preset default
 
+      # -j24 caps the preset's jobs:192 to the dev box's validated ceiling
+      # (heavy sanitized C++26 TUs peak ~1 GB; -j24 keeps RAM in budget).
       - name: Build
-        run: cmake --build --preset default
+        run: cmake --build --preset default -j24
 
       - name: Test
-        run: ctest --preset default
+        run: ctest --preset default -j24
 
       # Bit-exact / cross-build determinism + ThreadSanitizer gates, per the
       # CLAUDE.md §XIII pre-merge matrix. Uncomment when a TSan-capable runner
