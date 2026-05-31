@@ -148,19 +148,21 @@ set(CMAKE_REQUIRED_FLAGS "${_crucible_saved_required_flags}")
 # canopy/Hlc.h (off-limits to edit here) static_asserts
 # std::atomic<unsigned __int128>::is_always_lock_free on every non-x86
 # target and refuses to build otherwise — a hidden libstdc++ mutex
-# fallback would tank now() latency on the canopy hot path. On aarch64
-# the property is FALSE by default: GCC's -moutline-atomics (the modern
-# default) lowers 16-byte atomics to runtime-dispatched libgcc helper
-# calls (__aarch64_cas16_*), which by construction are never "always"
-# lock free. -mno-outline-atomics restores the INLINE TImode CAS pattern
-# (base armv8-a LDXP/STXP — present on every aarch64, genuinely atomic),
-# which flips is_always_lock_free true. Probe candidate flag sets at
-# configure time (on the build machine == the runner) and apply the
-# first that genuinely satisfies the assert; ordered safest-first so a
-# universal base-ISA flag wins over an -march bump. No-op on x86 (the
-# Hlc x86 path uses inline cmpxchg16b and carries no such assert), and
-# strictly cannot make the build worse — if no candidate works, behavior
-# is identical to today (the assert fails) but no wrong flag is applied.
+# fallback would tank now() latency on the canopy hot path.
+#
+# EMPIRICAL FINDING (CI run 26714227806, stock GCC 16 / ubuntu-24.04-arm):
+# the property is FALSE for EVERY safe -march, including armv8.4-a (LSE2).
+# Stock GCC 16 only reports a lock-free 128-bit atomic with FEAT_LSE128
+# (armv9.4-a+lse128) — exactly what Hlc.h's own comment names ("AArch64
+# without LSE-128"). The GitHub arm runner's CPU lacks LSE128 (else the
+# -march=native candidate below would have passed), and forcing +lse128
+# on non-LSE128 silicon would compile but SIGILL at runtime on the
+# 128-bit RMW path (LSE128-only SWPP/LDCLRP). So no runtime-safe flag
+# exists on this runner; the probe correctly applies none and the
+# aarch64 leg stays a documented, non-blocking expected-red until either
+# (a) runners gain LSE128 hardware — at which point -march=native here
+# auto-enables it — or (b) Hlc.h gains a non-lock-free fallback.
+# Probe is forward-looking: no-op on x86, strictly cannot regress.
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
   set(_crucible_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
   set(_crucible_lockfree128_flags "")
@@ -188,9 +190,9 @@ int main() {}
   endforeach()
   set(CMAKE_REQUIRED_FLAGS "${_crucible_saved_required_flags}")
   if(_crucible_lockfree128_flags STREQUAL "")
-    message(WARNING
-      "aarch64: no probed flag set yields a lock-free 128-bit atomic; "
-      "canopy/Hlc.h will fail its is_always_lock_free static_assert.")
+    message(STATUS
+      "aarch64: no safe flag yields a lock-free 128-bit atomic (runner "
+      "lacks FEAT_LSE128); canopy/Hlc.h is expected-red here — non-blocking.")
   else()
     # Plain codegen flags (no -std dependency) → safe in CMAKE_CXX_FLAGS;
     # global so every TU that transitively includes Hlc.h is covered,
