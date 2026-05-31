@@ -100,8 +100,26 @@ set_target_properties(crucible PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # inlining doesn't propagate the constant.  Disable the warning ONLY
 # for this TU — the stacktrace machinery is library code we don't own
 # and the SIZE_MAX is a sentinel value that never executes at runtime.
-set_source_files_properties(src/ContractHandler.cpp
+# The same false positive hits tools/lsp_code_action_plugin via
+# append_json_string()'s `std::string += const char*`: libstdc++'s _M_create
+# folds the SIZE_MAX max_size() overflow branch into allocate() under
+# NDEBUG/-march=native (bench/release). Suppress on both TUs — library code
+# we don't own, sentinel never executes.
+set_source_files_properties(
+  src/ContractHandler.cpp
+  tools/lsp_code_action_plugin/crucible_diag_lsp.cpp
   PROPERTIES COMPILE_OPTIONS "-Wno-alloc-size-larger-than")
+
+# Control-flow integrity is ISA-specific: x86 = CET (-fcf-protection),
+# aarch64 = BTI+PAC (-mbranch-protection). -fcf-protection=full is a hard
+# error on aarch64 ("not supported for this target"), so select per-arch.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  set(_CRUCIBLE_CFI_FLAGS -fcf-protection=full)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+  set(_CRUCIBLE_CFI_FLAGS -mbranch-protection=standard)
+else()
+  set(_CRUCIBLE_CFI_FLAGS)
+endif()
 
 # C++26-only flags — applied at target level where -std=c++26 is active
 # (applying them in CMAKE_CXX_FLAGS would poison CMake's compiler-probe).
@@ -983,7 +1001,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -Wabi=0                             # 193  all ABI compat warnings
 
     # ── 3.13  GCC hardening flags (10) ───────────────────────
-    -fcf-protection=full                # 194  control-flow integrity
+    ${_CRUCIBLE_CFI_FLAGS}              # 194  control-flow integrity (x86 CET / arm BTI+PAC)
     -fstack-clash-protection            # 195  stack clash guard pages
     -fharden-compares                   # 196  redundant compare checks
     -fharden-conditional-branches       # 197  redundant branch checks
