@@ -245,7 +245,9 @@ jobs:
       - name: Restore dnf package cache
         uses: actions/cache@v4
         with:
-          path: /var/cache/dnf
+          path: |
+            /var/cache/libdnf5
+            /var/cache/dnf
           key: dnf-${{ matrix.arch }}-${{ github.run_id }}
           restore-keys: dnf-${{ matrix.arch }}-
 
@@ -370,7 +372,9 @@ jobs:
       - name: Restore dnf package cache
         uses: actions/cache@v4
         with:
-          path: /var/cache/dnf
+          path: |
+            /var/cache/libdnf5
+            /var/cache/dnf
           key: dnf-x86_64-${{ github.run_id }}
           restore-keys: dnf-x86_64-
       - name: Install toolchain + BPF stack + ccache
@@ -427,7 +431,9 @@ jobs:
       - name: Restore dnf package cache
         uses: actions/cache@v4
         with:
-          path: /var/cache/dnf
+          path: |
+            /var/cache/libdnf5
+            /var/cache/dnf
           key: dnf-x86_64-${{ github.run_id }}
           restore-keys: dnf-x86_64-
       - name: Install toolchain + BPF stack + sanitizers + ccache
