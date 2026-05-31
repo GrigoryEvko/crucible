@@ -23,9 +23,9 @@
 #include "random_input.h"
 
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
+#include <crucible/effects/Capabilities.h>
 
 #include <array>
 
@@ -45,13 +45,18 @@ int main(int argc, char** argv) {
         },
         [](const std::array<NumericalRecipe, 30>& recipes) {
             Arena arena{};
-            fx::Test test{};
-            RecipePool pool{arena, test.alloc, /*initial_capacity=*/8};
+            // Test contexts mint via the effects::testing scaffolding
+            // entry point; RecipePool takes an Init capability (it
+            // allocates its slot table once at construction) plus an
+            // Alloc capability per intern() call.
+            const effects::Init init = effects::testing::init();
+            RecipePool pool{RecipePool::ArenaBorrow{arena}, init,
+                            /*initial_capacity=*/8};
 
             // Phase 1: insert all, capture pointers.
             std::array<const NumericalRecipe*, 30> ptrs{};
             for (size_t i = 0; i < recipes.size(); ++i) {
-                ptrs[i] = pool.intern(test.alloc, recipes[i]);
+                ptrs[i] = pool.intern(init.alloc, recipes[i]);
                 if (ptrs[i] == nullptr) return false;        // never null
                 // Pool authority: returned recipe carries the
                 // canonical compute_recipe_hash, ignoring any

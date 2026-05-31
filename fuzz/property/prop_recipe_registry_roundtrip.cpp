@@ -28,10 +28,10 @@
 #include "random_input.h"
 
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
+#include <crucible/effects/Capabilities.h>
 
 namespace names = crucible::recipe_names;
 
@@ -49,9 +49,14 @@ int main(int argc, char** argv) {
         },
         [](const NumericalRecipe& extra) {
             Arena arena{};
-            fx::Test test{};
-            RecipePool pool{arena, test.alloc};
-            RecipeRegistry registry{pool, test.alloc};
+            // Test contexts mint via the effects::testing scaffolding
+            // entry point.  RecipePool takes an Init capability at
+            // construction; RecipeRegistry takes an Alloc capability
+            // (it interns the starter recipes into the pool eagerly).
+            const effects::Init init = effects::testing::init();
+            RecipePool pool{RecipePool::ArenaBorrow{arena}, init};
+            RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool},
+                                    init.alloc};
 
             // Phase 1: every starter name → canonical pointer →
             // by_hash recovers the same pointer.
@@ -75,13 +80,15 @@ int main(int argc, char** argv) {
             // If its semantic fields happen to match a starter,
             // by_hash should hit; otherwise it should miss with
             // HashNotFound (NOT NameNotFound).
-            const auto* extra_ptr = pool.intern(test.alloc, extra);
+            const auto* extra_ptr = pool.intern(init.alloc, extra);
             if (extra_ptr == nullptr) return false;
             auto via_hash_extra = registry.by_hash(extra_ptr->hash);
             if (via_hash_extra.has_value()) {
                 // Hit — must be one of the starter recipes.
                 bool found = false;
-                for (const auto& entry : registry.entries()) {
+                // entries() returns Tagged<span<const Entry>,
+                // source::JsonRegistry>; .value() unwraps to the span.
+                for (const auto& entry : registry.entries().value()) {
                     if (entry.recipe == *via_hash_extra) {
                         found = true;
                         break;

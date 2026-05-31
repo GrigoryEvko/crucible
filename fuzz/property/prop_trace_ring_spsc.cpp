@@ -176,14 +176,14 @@ int main(int argc, char** argv) {
                                   ScopeHash{0xA000'0000ULL | i},
                                   CallsiteHash{0xB000'0000ULL | i})) std::abort();
         }
-        if (ring->size() != CAP) std::abort();
+        if (ring->size().peek() != CAP) std::abort();
 
         // (CAP+1)-th must be rejected without mutating the ring.
         {
             TraceRing::Entry e{};
             e.schema_hash = SchemaHash{0xDEADBEEFCAFEBABEULL};
             if (ring->try_append(e)) std::abort();      // must refuse
-            if (ring->size() != CAP)  std::abort();      // must not mutate
+            if (ring->size().peek() != CAP)  std::abort();      // must not mutate
         }
 
         // Drain everything; verify FIFO order + wrap-around memcpy.
@@ -210,11 +210,11 @@ int main(int argc, char** argv) {
             }
             delivered += got;
         }
-        if (ring->size() != 0) std::abort();
+        if (ring->size().peek() != 0) std::abort();
 
         // Clean slate for the property loop.
         ring->reset();
-        if (ring->size()           != 0) std::abort();
+        if (ring->size().peek()    != 0) std::abort();
         if (ring->total_produced() != 0) std::abort();  // post() already checked, belt+braces
     }
 
@@ -272,7 +272,7 @@ int main(int argc, char** argv) {
                         if (pay_idx >= MIRROR_CAPACITY) break;  // defensive
                         const MirrorSlot& src = s.payload[pay_idx++];
 
-                        const uint32_t size_before = ring->size();
+                        const uint32_t size_before = ring->size().peek();
                         const bool     accepted    = ring->try_append(
                             src.entry, src.meta_start,
                             src.scope_hash, src.callsite_hash);
@@ -280,7 +280,7 @@ int main(int argc, char** argv) {
                         // (B) capacity: single-threaded, cannot be full
                         //     in this harness (mirror_live ≤ 4K « CAP).
                         if (!accepted) return false;
-                        if (ring->size() != size_before + 1u) return false;
+                        if (ring->size().peek() != size_before + 1u) return false;
 
                         // Record on the mirror for later FIFO comparison.
                         mirror[mirror_head & (MIRROR_CAPACITY - 1u)] = src;
@@ -319,7 +319,7 @@ int main(int argc, char** argv) {
 
                 // (D) size() agrees with the mirror on every phase boundary.
                 const uint32_t mirror_live = mirror_head - mirror_tail;
-                if (ring->size() != mirror_live) return false;
+                if (ring->size().peek() != mirror_live) return false;
 
                 // total_produced never regresses (acquire-load on a
                 // producer-owned atomic we just wrote monotonically).

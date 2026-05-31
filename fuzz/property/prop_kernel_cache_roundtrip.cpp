@@ -61,7 +61,13 @@ int main(int argc, char** argv) {
             // never DEREFERENCE this pointer, only compare it.
             for (unsigned i = 0; i < N; ++i) {
                 auto* fake = reinterpret_cast<CompiledKernel*>(b.tags[i]);
-                auto ins = cache.insert(b.hashes[i], fake);
+                // RowHash{} is the bare-type / no-row baseline (raw 0):
+                // this fuzzer keys purely on content_hash, so it pins a
+                // single row slot for every insert (FOUND-I05 row-keyed
+                // KernelCache).  insert() returns
+                // std::expected<void, InsertError>; table-full is the
+                // only non-value outcome.
+                auto ins = cache.insert(b.hashes[i], RowHash{}, fake);
                 if (!ins.has_value()) return false;
             }
 
@@ -69,7 +75,7 @@ int main(int argc, char** argv) {
             for (unsigned i = 0; i < N; ++i) {
                 auto* expected =
                     reinterpret_cast<CompiledKernel*>(b.tags[i]);
-                auto* actual = cache.lookup(b.hashes[i]);
+                auto* actual = cache.lookup(b.hashes[i], RowHash{});
                 // Two paths the lookup can return a "wrong" pointer:
                 //   1. Returned someone else's kernel (probe bug)
                 //   2. Returned nullptr (table-full or lost insert)

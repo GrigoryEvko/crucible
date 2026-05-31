@@ -70,8 +70,8 @@ int main(int argc, char** argv) {
             const Header h = read_header(r);
 
             // Round-trip equality on each field.
-            if (h.magic        != CDAG_MAGIC)   return false;
-            if (h.version      != CDAG_VERSION) return false;
+            if (h.magic        != CDAG_MAGIC)         return false;
+            if (!cdag_version_matches(h.version))     return false;
             if (h.kind         != t.kind)       return false;
             if (h.merkle_hash  != t.mh)         return false;
             if (h.content_hash != t.ch)         return false;

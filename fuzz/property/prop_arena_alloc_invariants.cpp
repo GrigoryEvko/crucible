@@ -25,7 +25,7 @@
 #include "random_input.h"
 
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/safety/Refined.h>
 
 #include <array>
@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
             // Use a small arena (4 KB blocks) to force frequent
             // alloc_slow_ engagement on the larger requests.
             Arena arena{4 * 1024};
-            fx::Test test{};
+            auto test = crucible::effects::testing::test();
 
             std::array<void*, 32>  ptrs{};
             std::array<size_t, 32> sizes{};

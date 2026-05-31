@@ -70,7 +70,9 @@ int main(int argc, char** argv) {
                     static_cast<ReductionDeterminism>(
                         (static_cast<uint8_t>(p.a.determinism) + 1) & 3);
                     break;
-                case 7: p.b.flags          = static_cast<uint8_t>(p.a.flags ^ 1); break;
+                case 7: p.b.flags          =
+                    p.a.flags ^ fixy::wrap::Bits<RecipeFlags>{RecipeFlags::FLUSH_TO_ZERO};
+                    break;
                 default: std::unreachable();
             }
             return p;

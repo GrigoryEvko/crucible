@@ -45,25 +45,28 @@ int main(int argc, char** argv) {
             // Mix of normal-scale and overflow-inducing TensorMetas.
             // 50% normal: small sizes (1..1024), small strides
             // 30% medium: sizes 2^16..2^32, strides similar
-            // 20% pathological: sizes/strides near INT64_MAX
+            // 20% pathological: per-dim at the kMaxTensorDimExtent ceiling.
+            // Each dim is bounded to the valid TensorDim range, but the
+            // PRODUCT of up to 8 max dims still overflows int64 — so the
+            // saturation path is exercised without feeding impossible
+            // (non-representable) per-dim extents.
             TensorMeta m{};
             m.ndim = static_cast<uint8_t>(rng.next_below(9));  // [0, 8]
             const uint32_t bucket = rng.next_below(100);
             for (uint8_t d = 0; d < m.ndim; ++d) {
                 if (bucket < 50) {
-                    m.sizes[d]   = static_cast<int64_t>(rng.next_below(1024) + 1);
-                    m.strides[d] = static_cast<int64_t>(rng.next_below(1024) + 1);
+                    m.sizes[d]   = tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1));
+                    m.strides[d] = tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1));
                 } else if (bucket < 80) {
-                    m.sizes[d]   = static_cast<int64_t>(rng.next32());
-                    m.strides[d] = static_cast<int64_t>(rng.next32());
+                    m.sizes[d]   = tensor_dim(static_cast<int64_t>(rng.next32()));
+                    m.strides[d] = tensor_dim(static_cast<int64_t>(rng.next32()));
                 } else {
-                    // Pathological: top-bit cleared (signed positive)
-                    // but otherwise-saturated values.  Drives the
-                    // overflow check.
-                    m.sizes[d]   =
-                        static_cast<int64_t>(rng.next64() & 0x7FFFFFFFFFFFFFFFLL);
-                    m.strides[d] =
-                        static_cast<int64_t>(rng.next64() & 0x7FFFFFFFFFFFFFFFLL);
+                    // Pathological: dims at the top of the valid range.
+                    const int64_t ceil_dim = static_cast<int64_t>(
+                        rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1));
+                    m.sizes[d]   = tensor_dim(ceil_dim);
+                    m.strides[d] = tensor_dim(static_cast<int64_t>(
+                        rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1)));
                 }
             }
             m.dtype = random_scalar_type(rng);

@@ -75,10 +75,10 @@ int main(int argc, char** argv) {
 
             // Property 3: op_key determinism.  Pure function; same
             // inputs → same output.
-            const auto k1 = Philox::op_key(
+            const auto k1 = Philox::op_key_det(
                 p.offset_a, static_cast<uint32_t>(p.key_a),
                 ContentHash{p.offset_b});
-            const auto k2 = Philox::op_key(
+            const auto k2 = Philox::op_key_det(
                 p.offset_a, static_cast<uint32_t>(p.key_a),
                 ContentHash{p.offset_b});
             if (k1 != k2) return false;

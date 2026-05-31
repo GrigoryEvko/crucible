@@ -14,8 +14,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
 #include <crucible/Serialize.h>
+#include <crucible/effects/Capabilities.h>
 
 #include <cstdint>
 #include <span>
@@ -30,11 +30,12 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (size > kMaxBytes) size = kMaxBytes;
 
     crucible::Arena arena;
-    crucible::fx::Test test{};
-    auto* region = crucible::deserialize_region(
+    auto test = crucible::effects::testing::test();
+    auto loaded_region = crucible::deserialize_region(
         test.alloc,
         std::span<const uint8_t>{data, size},
         arena);
+    crucible::RegionNode* region = loaded_region.value();
     // Either valid (non-null) or invalid (nullptr); both are
     // acceptable outcomes — the harness tests the NO-CRASH property
     // on the entire byte space.

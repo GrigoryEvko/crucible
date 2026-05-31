@@ -208,10 +208,10 @@ int main(int argc, char** argv) {
                 if (!t.has(h)) return false;
 
                 const auto& e = t.entries[i];
-                if (e.hash != h)                         return false;
-                if (e.filename != b.recs[i].filename)    return false;
-                if (e.funcname != b.recs[i].funcname)    return false;
-                if (e.lineno   != b.recs[i].lineno)      return false;
+                if (e.hash != h)                                 return false;
+                if (e.filename.value() != b.recs[i].filename)    return false;
+                if (e.funcname.value() != b.recs[i].funcname)    return false;
+                if (e.lineno.value()   != b.recs[i].lineno)      return false;
             }
 
             // ── Dedup phase: re-insert every record with DIFFERENT
@@ -230,19 +230,22 @@ int main(int argc, char** argv) {
             if (t.size() != b.count) return false;
             for (unsigned i = 0; i < b.count; ++i) {
                 const auto& e = t.entries[i];
-                if (e.filename != b.recs[i].filename) return false;
-                if (e.funcname != b.recs[i].funcname) return false;
-                if (e.lineno   != b.recs[i].lineno)   return false;
+                if (e.filename.value() != b.recs[i].filename) return false;
+                if (e.funcname.value() != b.recs[i].funcname) return false;
+                if (e.lineno.value()   != b.recs[i].lineno)   return false;
             }
 
             // Property (sentinel rejection): has(CallsiteHash{}) is
-            // always false.  The compat overload tolerates a zero
-            // argument by early-return; we don't even exercise the
-            // typed path here because that would fire the Refined
-            // contract.
-            if (t.has(CallsiteHash{})) return false;
-            t.insert(CallsiteHash{}, std::string{"zero.py"},
-                     std::string{"z"}, 0);
+            // always false.  The legacy bare-CallsiteHash compat
+            // overload that tolerated a zero argument by early-return
+            // was removed in production (cleanup 7844f8c4); the only
+            // surviving insert paths take NonZeroHash, whose Refined
+            // <non_zero, CallsiteHash> ctor fires the contract on a
+            // zero raw.  The zero sentinel therefore cannot reach any
+            // insert path by construction — the strongest form of the
+            // invariant.  We assert the read-side guarantee both before
+            // and after the dedup phase: the table never "remembers"
+            // the empty-slot marker, and size() is unchanged.
             if (t.has(CallsiteHash{})) return false;
             if (t.size() != b.count)   return false;
 

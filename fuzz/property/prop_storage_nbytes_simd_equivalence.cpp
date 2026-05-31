@@ -79,11 +79,11 @@ int main(int argc, char** argv) {
             //   - includes negative strides (max/min split)
             for (uint8_t d = 0; d < meta.ndim; ++d) {
                 const uint64_t s = rng.next64() & ((uint64_t{1} << 40) - 1);
-                meta.sizes[d] = static_cast<int64_t>(s);
+                meta.sizes[d] = tensor_dim(static_cast<int64_t>(s));
 
                 const uint64_t st = rng.next64() & ((uint64_t{1} << 41) - 1);
-                meta.strides[d] = static_cast<int64_t>(st) -
-                                  (int64_t{1} << 40);
+                meta.strides[d] = tensor_dim(static_cast<int64_t>(st) -
+                                             (int64_t{1} << 40));
             }
             return meta;
         },
@@ -112,13 +112,13 @@ int main(int argc, char** argv) {
                     int(meta.dtype));
                 for (uint8_t d = 0; d < meta.ndim; ++d) {
                     std::fprintf(stderr, "%lld%s",
-                        static_cast<long long>(meta.sizes[d]),
+                        static_cast<long long>(meta.sizes[d].value()),
                         d + 1 < meta.ndim ? "," : "");
                 }
                 std::fprintf(stderr, "] strides=[");
                 for (uint8_t d = 0; d < meta.ndim; ++d) {
                     std::fprintf(stderr, "%lld%s",
-                        static_cast<long long>(meta.strides[d]),
+                        static_cast<long long>(meta.strides[d].value()),
                         d + 1 < meta.ndim ? "," : "");
                 }
                 std::fprintf(stderr, "]\n");

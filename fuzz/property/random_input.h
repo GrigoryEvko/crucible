@@ -57,7 +57,8 @@ namespace crucible::fuzz::prop {
     r.scale_policy = static_cast<ScalePolicy>(rng.next_below(6));
     r.softmax      = static_cast<SoftmaxRecurrence>(rng.next_below(4));
     r.determinism  = static_cast<ReductionDeterminism>(rng.next_below(4));
-    r.flags        = static_cast<uint8_t>(rng.next32() & 0xFF);
+    r.flags        = fixy::wrap::Bits<RecipeFlags>::from_raw(
+                         static_cast<uint8_t>(rng.next32() & 0xFF));
     // hash field intentionally left default-zero — caller invokes
     // hashed() or compute_recipe_hash to populate.
     return r;
@@ -88,10 +89,15 @@ namespace crucible::fuzz::prop {
     TensorMeta m{};
     m.ndim = static_cast<uint8_t>(rng.next_below(9));  // [0, 8]
     for (uint8_t d = 0; d < m.ndim; ++d) {
-        // Bias toward small dimension sizes (1..1024) to match
-        // real ML tensor shapes.
-        m.sizes[d]   = static_cast<int64_t>(rng.next_below(1024) + 1);
-        m.strides[d] = static_cast<int64_t>(rng.next64() & 0x7FFFFFFFFFFFFFFFLL);
+        // Bias toward small dimension sizes (1..1024) to match real ML
+        // tensor shapes.  Strides span the full valid TensorDim range;
+        // values are bounded to kMaxTensorDimExtent so the Refined
+        // TensorDim contract admits them (an out-of-range dim is not a
+        // representable tensor, so generating one would test impossible
+        // input).
+        m.sizes[d]   = tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1));
+        m.strides[d] = tensor_dim(static_cast<int64_t>(
+            rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1)));
     }
     m.dtype       = random_scalar_type(rng);
     // device_type values map to c10 ordinals; restrict to common set.
