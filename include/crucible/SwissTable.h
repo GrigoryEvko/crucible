@@ -367,8 +367,9 @@ struct CtrlGroup {
   // kEmpty = 0x80 is the ONLY negative int8_t in the control byte encoding.
   // vcltzq_s8 tests sign bit directly, avoiding broadcast + compare.
   [[nodiscard]] CRUCIBLE_INLINE BitMask match_empty() const {
-    uint8x16_t neg = vreinterpretq_u8_s8(
-        vcltzq_s8(ctrl));
+    // vcltzq_s8 (CMLT #0) already yields a uint8x16_t mask (0xFF where
+    // ctrl < 0, i.e. kEmpty=0x80; 0x00 elsewhere) — no reinterpret needed.
+    uint8x16_t neg = vcltzq_s8(ctrl);
     return BitMask{neon_movemask(neg)};
   }
 
