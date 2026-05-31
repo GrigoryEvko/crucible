@@ -75,6 +75,22 @@ def main() -> int:
     output = scratch / f"{fixture_name}.o"
     argv = _replace_output(list(command), output)
 
+    # A negative-compile fixture asserts a COMPILE-TIME rejection — a
+    # property that only manifests under the `enforce` contract
+    # evaluation semantic.  Presets that relax contracts (release =>
+    # observe; the `ignore` hot-path TUs) would otherwise let the
+    # fixture compile clean, inverting its WILL_FAIL / expected-
+    # diagnostic gate.  GCC honors the LAST -fcontract-evaluation-
+    # semantic flag, so append `enforce` to override whatever the
+    # replayed preset command carried.  No-op under default/tsan
+    # (already enforce); fixes the release preset.  Identical on stock
+    # and patched GCC 16 — the consteval rejection here is NOT the
+    # patched compiler's c++/124241 fix (that only affects the two
+    # graded-regime fixtures CI excludes by name).  Only appended when
+    # contracts are already enabled on the replayed command.
+    if any(arg.startswith("-fcontract") for arg in argv):
+        argv.append("-fcontract-evaluation-semantic=enforce")
+
     proc = subprocess.run(
         argv,
         cwd=directory,
