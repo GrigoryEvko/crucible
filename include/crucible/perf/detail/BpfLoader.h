@@ -96,6 +96,7 @@
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 #include <bpf/libbpf_legacy.h>  // libbpf_get_error (IS_ERR detection)
+#include <fcntl.h>        // AT_FDCWD, AT_EACCESS for faccessat (cap-honoring probe)
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -144,7 +145,7 @@ static_assert(sizeof(Fd)   == sizeof(int));
 }
 
 [[nodiscard]] inline Tid current_tid() noexcept {
-    return Tid{static_cast<uint32_t>(::syscall(SYS_gettid))};
+    return Tid{static_cast<uint32_t>(::syscall(SYS_gettid))};  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; gettid is identity-only, no capability
 }
 
 [[nodiscard]] inline Fd map_fd(struct bpf_map* m) noexcept {
@@ -229,17 +230,30 @@ find_rodata(struct bpf_object* obj) noexcept {
 // don't go through tracepoint_exists / disable_unavailable_programs;
 // the unused inline functions vanish at link time when those facades
 // don't reference them.
+//
+// Probe via faccessat(AT_EACCESS), NOT access(F_OK).  /sys/kernel/tracing
+// is mode 0700 root, so traversing it from a non-root process needs
+// CAP_DAC_READ_SEARCH.  The bare access(2) syscall is defined to answer
+// "could the REAL uid do this", and the kernel's do_faccessat() therefore
+// CLEARS the effective capability set for the duration of the check when
+// the real uid != 0 (unless SECURE_NO_SETUID_FIXUP is set) — so a
+// setcap'd-but-non-root binary (the production Keeper, the bench harness)
+// has its CAP_DAC_READ_SEARCH silently dropped for this one call, every
+// tracepoint probes as "missing", and every program is auto-disabled.
+// faccessat(..., AT_EACCESS) checks against the EFFECTIVE ids and does
+// NOT strip caps, so the file-capability path works as intended without
+// root.  (Root still works either way — uid 0 bypasses DAC.)
 
 [[nodiscard]] inline bool
 tracepoint_exists(const char* category_slash_event) noexcept {
     std::string path = "/sys/kernel/tracing/events/";
     path.append(category_slash_event);
     path.append("/id");
-    if (::access(path.c_str(), F_OK) == 0) return true;
+    if (::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0) return true;  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; existence-only probe, AT_EACCESS honors caps
     path.assign("/sys/kernel/debug/tracing/events/");
     path.append(category_slash_event);
     path.append("/id");
-    return ::access(path.c_str(), F_OK) == 0;
+    return ::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0;  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; debugfs-fallback existence probe, AT_EACCESS honors caps
 }
 
 inline void disable_unavailable_programs(struct bpf_object* obj) noexcept {

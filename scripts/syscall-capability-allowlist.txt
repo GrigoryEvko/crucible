@@ -44,7 +44,6 @@ include/crucible/warden/Hardening.h:444 — effects::Init via Hardening::collaps
 # OwnedMmap::release_ (see the safety/OwnedMmap.h block below), so no
 # detach-side munmap site remains in any hub.  V-179 will migrate these
 # allowlist entries to inline mint annotations.
-include/crucible/perf/detail/BpfLoader.h:147 — effects::Init via BpfLoader (kernel BPF program upload)
 src/perf/LockContention.cpp:228 — effects::Init via LockContention::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
 src/perf/SchedSwitch.cpp:286 — effects::Init via SchedSwitch::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
 src/perf/SchedTpBtf.cpp:225 — effects::Init via SchedTpBtf::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
@@ -188,9 +187,6 @@ src/perf/ProcGauges.cpp:425 — effects::Bg via ProcGauges::poll (pread /proc ga
 src/perf/ProcGauges.cpp:547 — effects::Bg via ProcGauges::loadavg (pread /proc/loadavg)
 src/perf/ProcGauges.cpp:565 — effects::Bg via ProcGauges::sample (pread /proc gauge)
 
-# ── perf/detail/BpfLoader.h — BTF / object-file existence probes ──────
-include/crucible/perf/detail/BpfLoader.h:238 — effects::Init via BpfLoader::resolve_btf (access /sys/kernel/btf/vmlinux)
-include/crucible/perf/detail/BpfLoader.h:242 — effects::Init via BpfLoader::resolve_btf (access /sys/kernel/btf/vmlinux fallback)
 
 # ── warden/CpuTopology.h — /sys/devices/system/cpu/isolated probe ─────
 include/crucible/warden/CpuTopology.h:197 — effects::Init via CpuTopology::isolated_cpus (access /sys/.../isolated)
