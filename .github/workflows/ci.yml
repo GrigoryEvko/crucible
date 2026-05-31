@@ -259,8 +259,14 @@ jobs:
           clang llvm xxd bpftool libbpf-devel
           libasan libubsan libtsan liblsan
 
+      # Split restore/save: the combined actions/cache@v4 only saves in its
+      # post-step on JOB SUCCESS, so a failing preset never persists its
+      # ccache and restarts cold every run (perpetual 0% hits). restore@v4
+      # here + save@v4 with if:always() below banks partial compile progress
+      # from failed runs too. Unique ${run_id} in the key means save never
+      # collides; restore-keys prefix-fallback picks up the latest prior cache.
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /ccache
           key: ccache-${{ matrix.arch }}-${{ matrix.preset }}-${{ github.ref_name }}-${{ github.run_id }}
@@ -319,6 +325,15 @@ jobs:
         if: ${{ matrix.run_tests }}
         run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }} -E 'neg_graded_regime[23]_ctor_grade_mismatch'
 
+      # Persist ccache even when Build/Test failed — banks the objects that DID
+      # compile so the next run resumes from there instead of cold.
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /ccache
+          key: ccache-${{ matrix.arch }}-${{ matrix.preset }}-${{ github.ref_name }}-${{ github.run_id }}
+
   # ---------------------------------------------------------------------------
   # Benchmark COMPILE gate. Shared-runner perf numbers are meaningless (noisy /
   # throttled), so this builds the bench tree to catch compile regressions and
@@ -356,8 +371,9 @@ jobs:
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
           gcc-c++ cmake ninja-build git ripgrep ccache
           clang llvm xxd bpftool libbpf-devel
+      # Split restore/save so a failed compile still banks ccache (see build job).
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /ccache
           key: ccache-x86_64-bench-${{ github.ref_name }}-${{ github.run_id }}
@@ -376,6 +392,12 @@ jobs:
         run: cmake --build --preset bench -j 3
       - name: ccache stats
         run: ccache -s
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /ccache
+          key: ccache-x86_64-bench-${{ github.ref_name }}-${{ github.run_id }}
 
   # ---------------------------------------------------------------------------
   # Fuzz smoke. Property fuzzers are plain GCC + ASan/UBSan with Philox-seeded
@@ -407,8 +429,9 @@ jobs:
           gcc-c++ cmake ninja-build git ripgrep ccache
           clang llvm xxd bpftool libbpf-devel
           libasan libubsan liblsan
+      # Split restore/save so a failed compile still banks ccache (see build job).
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /ccache
           key: ccache-x86_64-fuzz-${{ github.ref_name }}-${{ github.run_id }}
@@ -430,3 +453,9 @@ jobs:
         run: ccache -s
       - name: Run property-fuzz smoke
         run: ctest --preset default -j 3 -L fuzz_property
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /ccache
+          key: ccache-x86_64-fuzz-${{ github.ref_name }}-${{ github.run_id }}
