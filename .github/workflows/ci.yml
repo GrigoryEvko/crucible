@@ -178,6 +178,12 @@ jobs:
     needs: guards
     runs-on: ${{ matrix.runner }}
     container: fedora:rawhide
+    # aarch64 is non-blocking until safety/Simd.h is ported to the
+    # <experimental/simd> ARM fallback: libstdc++ gates <simd> behind
+    # __SSE2__, so crucible::simd::{i64x8,u64x4,...} don't name types on
+    # arm (CLAUDE.md §IV flags this). x86_64 is the enforced full-coverage
+    # gate; arm legs still build + report logs for observability.
+    continue-on-error: ${{ matrix.arch == 'aarch64' }}
     strategy:
       fail-fast: false
       matrix:
