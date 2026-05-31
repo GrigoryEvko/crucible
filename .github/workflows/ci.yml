@@ -327,8 +327,13 @@ jobs:
         if: ${{ matrix.run_tests }}
         run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }} -E 'neg_graded_regime[23]_ctor_grade_mismatch'
 
-      # Persist ccache even when Build/Test failed — banks the objects that DID
-      # compile so the next run resumes from there instead of cold.
+      # Persist ccache even when Build/Test FAILED or the run was CANCELLED.
+      # `if: always()` is load-bearing: it runs in the cancellation grace
+      # window too, so a killed/unfinished run still banks the objects it DID
+      # compile, and the next run resumes warm (restore-keys prefix-fallback
+      # picks up the newest prior cache). Cache thus accumulates monotonically
+      # across runs. Do NOT weaken to success()/failure() — that silently drops
+      # the carry-forward from unfinished runs.
       - name: Save ccache
         if: always()
         uses: actions/cache/save@v4
