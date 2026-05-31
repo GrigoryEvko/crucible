@@ -1023,6 +1023,15 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # returns string&, adding no signal.  Real ABI breaks show up as link
     # errors anyway.  -Wabi=0 is retained for all compat warnings.
     -Wabi=0                             # 193  all ABI compat warnings
+    # crucible::simd uses over-wide [[gnu::vector_size]] vectors (e.g. the
+    # logical 64-byte i64x8) that GCC lowers to the target's native width.
+    # Returning/passing such a vector by value when the TU's -march is
+    # narrower than the vector triggers -Wpsabi ("vector ABI changed").
+    # This is benign: every TU in one binary is compiled with the same
+    # flags, so the ABI is internally consistent (libstdc++'s own <simd>
+    # relies on the identical suppression).  Without this, the no-march
+    # default/tsan/analyzer presets fail on the 64-byte select() return.
+    -Wno-psabi                          # 193b portable wide-vector facade
 
     # ── 3.13  GCC hardening flags (10) ───────────────────────
     ${_CRUCIBLE_CFI_FLAGS}              # 194  control-flow integrity (x86 CET / arm BTI+PAC)

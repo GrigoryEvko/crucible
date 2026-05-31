@@ -82,7 +82,6 @@
 #include <crucible/safety/Simd.h>
 
 #include <cstdint>
-#include <simd>
 
 namespace crucible::detail {
 

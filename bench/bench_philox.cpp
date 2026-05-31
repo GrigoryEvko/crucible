@@ -151,22 +151,12 @@ int main() {
                     auto out = crucible::detail::philox_batch8(
                         ctr0, ctr1, ctr2, ctr3, key0, key1);
                     // Four aligned vector stores — 32 u32 per call
-                    // in 4 instructions instead of 32.  Iterator +
-                    // count form: unchecked_store(v, first, n, flag).
+                    // in 4 instructions instead of 32.
                     const std::size_t base_idx = call_idx * 32u;
-                    constexpr std::ptrdiff_t LANES = u32x8::size();
-                    std::simd::unchecked_store(
-                        out.r0, scratch + base_idx +  0, LANES,
-                        std::simd::flag_aligned);
-                    std::simd::unchecked_store(
-                        out.r1, scratch + base_idx +  8, LANES,
-                        std::simd::flag_aligned);
-                    std::simd::unchecked_store(
-                        out.r2, scratch + base_idx + 16, LANES,
-                        std::simd::flag_aligned);
-                    std::simd::unchecked_store(
-                        out.r3, scratch + base_idx + 24, LANES,
-                        std::simd::flag_aligned);
+                    crucible::simd::store_aligned(out.r0, scratch + base_idx +  0);
+                    crucible::simd::store_aligned(out.r1, scratch + base_idx +  8);
+                    crucible::simd::store_aligned(out.r2, scratch + base_idx + 16);
+                    crucible::simd::store_aligned(out.r3, scratch + base_idx + 24);
                 }
                 bench::do_not_optimize(scratch[0]);
             });

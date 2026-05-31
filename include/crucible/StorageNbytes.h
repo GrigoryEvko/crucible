@@ -85,7 +85,6 @@
 #include <crucible/safety/Simd.h>
 
 #include <cstdint>
-#include <simd>
 
 namespace crucible::detail {
 
@@ -186,10 +185,8 @@ bool storage_nbytes_simd_safe_(ExternalTensorMeta meta) noexcept {
   // TensorMeta is naturally aligned, not guaranteed vector-aligned.
   // Use element-aligned loads so trace-loader vectors and MetaLog
   // buffers are valid inputs.
-  auto sizes = std::simd::unchecked_load<i64x8>(
-      raw.sizes.raw_data(),   i64x8::size());
-  auto strides = std::simd::unchecked_load<i64x8>(
-      raw.strides.raw_data(), i64x8::size());
+  auto sizes = simd::load<i64x8>(raw.sizes.raw_data());
+  auto strides = simd::load<i64x8>(raw.strides.raw_data());
 
   auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
@@ -198,7 +195,7 @@ bool storage_nbytes_simd_safe_(ExternalTensorMeta meta) noexcept {
   // would be -1, but the zero-size short-circuit catches that
   // before this function runs (callers check first).  For safety
   // we mask and clamp negative results to 0.
-  auto sizes_minus_one = std::simd::select(valid_mask,
+  auto sizes_minus_one = simd::select(valid_mask,
       sizes - i64x8(1), i64x8(0));
 
   // strides absolute value, masked.  Avoid -INT64_MIN UB by
@@ -206,20 +203,20 @@ bool storage_nbytes_simd_safe_(ExternalTensorMeta meta) noexcept {
   // every value except INT64_MIN itself; if a stride IS
   // INT64_MIN we mask to INT64_MAX (forces fallback).
   auto strides_neg = -strides;
-  auto strides_abs_raw = std::simd::select(strides >= i64x8(0),
+  auto strides_abs_raw = simd::select(strides >= i64x8(0),
                                            strides, strides_neg);
   // INT64_MIN → -INT64_MIN wraps to INT64_MIN; treat as "unsafe"
   // by mapping to INT64_MAX so reduce_max returns INT64_MAX.
   auto is_int64_min = (strides == i64x8(INT64_MIN));
-  auto strides_abs = std::simd::select(is_int64_min,
+  auto strides_abs = simd::select(is_int64_min,
       i64x8(INT64_MAX), strides_abs_raw);
-  strides_abs = std::simd::select(valid_mask, strides_abs, i64x8(0));
+  strides_abs = simd::select(valid_mask, strides_abs, i64x8(0));
 
   // Reduce max over valid lanes.  Both vectors have invalid lanes
   // zeroed; the reduce_max picks the largest valid value (or 0 if
   // no valid lanes).
-  const int64_t max_smo = std::simd::reduce_max(sizes_minus_one);
-  const int64_t max_str = std::simd::reduce_max(strides_abs);
+  const int64_t max_smo = simd::reduce_max(sizes_minus_one);
+  const int64_t max_str = simd::reduce_max(strides_abs);
 
   // Safe iff max_smo × max_str fits in int64.  __builtin_mul_overflow
   // returns true on overflow (NOT what we want); negate to get safe.
@@ -249,10 +246,8 @@ fixy::wrap::Saturated<uint64_t> compute_storage_nbytes_simd(ExternalTensorMeta m
 
   // Load sizes and strides via element-aligned SIMD load.  TensorMeta
   // arrays are 64 bytes wide but not guaranteed 64-byte aligned.
-  auto sizes = std::simd::unchecked_load<i64x8>(
-      raw.sizes.raw_data(),   i64x8::size());
-  auto strides = std::simd::unchecked_load<i64x8>(
-      raw.strides.raw_data(), i64x8::size());
+  auto sizes = simd::load<i64x8>(raw.sizes.raw_data());
+  auto strides = simd::load<i64x8>(raw.strides.raw_data());
 
   auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
@@ -275,7 +270,7 @@ fixy::wrap::Saturated<uint64_t> compute_storage_nbytes_simd(ExternalTensorMeta m
   // lanes to 0 so they don't contribute to max/min accumulation.
   auto sizes_minus_one = sizes - i64x8(1);
   auto extents = sizes_minus_one * strides;
-  extents = std::simd::select(valid_mask, extents, i64x8(0));
+  extents = simd::select(valid_mask, extents, i64x8(0));
 
   // Spill to stack for the scalar fold.
   // FixedArray<int64_t, 8> (#1019 production migration of #1081):
@@ -291,8 +286,7 @@ fixy::wrap::Saturated<uint64_t> compute_storage_nbytes_simd(ExternalTensorMeta m
   //   - .data() returns int64_t* — drop-in replacement for the
   //     bare-array pointer the SIMD store and operator[] expect.
   alignas(64) fixy::wrap::FixedArray<int64_t, 8> extents_buf{};
-  std::simd::unchecked_store(
-      extents, extents_buf.data(), i64x8::size(), std::simd::flag_aligned);
+  simd::store_aligned(extents, extents_buf.data());
 
   // Scalar fold: per-lane sign-based dispatch into max_offset /
   // min_offset, with __builtin_add_overflow check.  Multiplication

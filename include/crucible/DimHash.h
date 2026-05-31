@@ -26,7 +26,7 @@
 //   * XOR is associative and commutative for integer types — the
 //     reduction order does not affect output.
 //   * Per-lane multiplies are bit-exact (two's-complement sat).
-//   * std::simd::vec<int64_t, 8> with fixed lane count pins lane[d]
+//   * simd::i64x8 (vec<int64_t, 8>) with fixed lane count pins lane[d]
 //     to dimension d across every ISA.
 //   * The lookup table kDimMix[16] uses two halves: lo for sizes,
 //     hi for strides.  Two aligned loads + two multiplies preserve
@@ -40,7 +40,7 @@
 //
 // SIMD target: ~3-5 ns/tensor.
 //   2× SIMD multiply (one for sizes, one for strides) + 1 SIMD xor
-//   + 1 masked horizontal xor-fold (std::simd::reduce with mask+id).
+//   + 1 masked horizontal xor-fold (simd::reduce_xor with mask).
 //   All independent — fits in ~8 cycles.
 //
 // Cost is bounded for ndim < 8 because the SIMD work is the same
@@ -57,8 +57,6 @@
 #include <crucible/safety/Simd.h>   // crucible::simd:: facade (used directly; not a migrated wrapper)
 
 #include <cstdint>
-#include <functional>   // std::bit_xor<>
-#include <simd>
 #include <type_traits>
 
 namespace crucible {
@@ -129,27 +127,23 @@ uint64_t dim_hash_simd(const TensorMeta& meta) noexcept {
   // past ndim per InitSafe + NSDMI in the struct definition), so a
   // plain vector load is in-bounds even when meta.ndim < 8.
   //
-  // std::simd::unchecked_load<V>(iter, count) uses element-aligned
-  // loads.  TensorMeta itself is only naturally aligned in vectors and
-  // trace-loader buffers, so vector-aligned loads would be unsound even
-  // though the arrays are 64 bytes wide.
-  auto sizes   = std::simd::unchecked_load<i64x8>(
-      meta.sizes.raw_data(),   i64x8::size());
-  auto strides = std::simd::unchecked_load<i64x8>(
-      meta.strides.raw_data(), i64x8::size());
+  // simd::load<V>(ptr) uses element-aligned (memcpy) loads.  TensorMeta
+  // itself is only naturally aligned in vectors and trace-loader
+  // buffers, so vector-aligned loads would be unsound even though the
+  // arrays are 64 bytes wide.
+  auto sizes   = simd::load<i64x8>(meta.sizes.raw_data());
+  auto strides = simd::load<i64x8>(meta.strides.raw_data());
 
   // Load kDimMix halves: kDimMix[0..7] for sizes, kDimMix[8..15] for
-  // strides.  element_aligned (== default) because the table is a
-  // constexpr global with only alignof(uint64_t) guarantee.
-  auto mix_lo = std::simd::unchecked_load<u64x8>(
-      detail::kDimMix,     u64x8::size());
-  auto mix_hi = std::simd::unchecked_load<u64x8>(
-      detail::kDimMix + 8, u64x8::size());
+  // strides.  element-aligned because the table is a constexpr global
+  // with only alignof(uint64_t) guarantee.
+  auto mix_lo = simd::load<u64x8>(detail::kDimMix);
+  auto mix_hi = simd::load<u64x8>(detail::kDimMix + 8);
 
   // Cast sizes/strides from int64 → uint64 to match the scalar
-  // uint64_t arithmetic.  std::simd::vec has a converting
-  // constructor between same-width integers; zero machine cost
-  // (vreinterpret on every ISA).
+  // uint64_t arithmetic.  simd::vec has a converting constructor
+  // between same-width integers; zero machine cost (vreinterpret on
+  // every ISA).
   u64x8 sizes_u  (sizes);
   u64x8 strides_u(strides);
 
@@ -157,11 +151,11 @@ uint64_t dim_hash_simd(const TensorMeta& meta) noexcept {
   u64x8 combined = (sizes_u * mix_lo) ^ (strides_u * mix_hi);
 
   // Masked horizontal XOR-fold: reduce only lanes [0, ndim), using
-  // identity element 0 for masked-out lanes.  std::simd::reduce's
-  // masked overload folds this into one call — no explicit select
-  // + temporary vector materialization.
+  // identity element 0 for masked-out lanes.  simd::reduce_xor's masked
+  // overload folds this into one call — no explicit select + temporary
+  // vector materialization.
   auto valid_mask = simd::prefix_mask<u64x8>(static_cast<int>(meta.ndim));
-  return std::simd::reduce(combined, valid_mask, std::bit_xor<>{}, 0ULL);
+  return simd::reduce_xor(combined, valid_mask);
 }
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE

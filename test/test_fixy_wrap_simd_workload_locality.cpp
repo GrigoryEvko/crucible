@@ -11,7 +11,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <simd>
 
 namespace fw = ::crucible::fixy::wrap;
 
@@ -56,7 +55,7 @@ static_assert(
 // DetSafeSimd concept reach.
 static_assert( fw::DetSafeSimd<fw::i64x8>);
 static_assert( fw::DetSafeSimd<fw::u32x8>);
-static_assert(!fw::DetSafeSimd<std::simd::vec<double, 4>>);
+static_assert(!fw::DetSafeSimd<::crucible::simd::vec<double, 4>>);
 
 // ═══════════════════════════════════════════════════════════════════
 // ── Runtime witnesses ────────────────────────────────────────────
@@ -66,7 +65,7 @@ static_assert(!fw::DetSafeSimd<std::simd::vec<double, 4>>);
 static void test_runtime_simd_iota_reduce() {
     auto v = fw::iota_v<fw::u64x8>();
     // Sum of 0..7 = 28.  Integer reduction is DetSafe across ISAs.
-    auto sum = std::simd::reduce(v, std::plus<>{});
+    auto sum = ::crucible::simd::reduce_add(v);
     if (sum != 28u) {
         std::fprintf(stderr, "iota_v reduce: expected 28, got %llu\n",
                      static_cast<unsigned long long>(sum));
@@ -79,7 +78,7 @@ static void test_runtime_simd_prefix_mask() {
     auto v   = fw::iota_v<fw::u64x8>();
     auto m4  = fw::prefix_mask<fw::u64x8>(4);
     // Masked reduce: only lanes 0..3 contribute → 0+1+2+3 = 6.
-    auto sum = std::simd::reduce(v, m4, std::plus<>{}, 0ULL);
+    auto sum = ::crucible::simd::reduce_add(v, m4);
     if (sum != 6u) {
         std::fprintf(stderr, "prefix_mask(4) reduce: expected 6, got %llu\n",
                      static_cast<unsigned long long>(sum));

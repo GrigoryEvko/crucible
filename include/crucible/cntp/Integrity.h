@@ -171,10 +171,8 @@ load_stripe_le64(std::byte const* ptr) noexcept {
             lane = std::byteswap(lane);
         }
     }
-    return std::simd::unchecked_load<::crucible::simd::u64x4>(
-        lanes.data(),
-        ::crucible::simd::u64x4::size(),
-        std::simd::flag_aligned);
+    return ::crucible::simd::load_aligned<::crucible::simd::u64x4>(
+        lanes.data());
 }
 
 [[nodiscard, gnu::const]] CRUCIBLE_HOT ::crucible::simd::u64x4
@@ -209,20 +207,16 @@ process_stripe(std::byte const* ptr,
     using ::crucible::simd::u64x4;
 
     alignas(32) std::array<std::uint64_t, 4> acc_values{v1, v2, v3, v4};
-    auto acc = std::simd::unchecked_load<u64x4>(
-        acc_values.data(),
-        u64x4::size(),
-        std::simd::flag_aligned);
+    auto acc = ::crucible::simd::load_aligned<u64x4>(acc_values.data());
 
-    acc += load_stripe_le64(ptr) * u64x4(xxh_prime64_2);
+    // The crucible::simd facade exposes only binary operators (no
+    // compound-assignment forms); `acc = acc + ...` is bit-identical to
+    // the prior `acc += ...` per lane.
+    acc = acc + load_stripe_le64(ptr) * u64x4(xxh_prime64_2);
     acc = rotl64(acc, 31);
-    acc *= u64x4(xxh_prime64_1);
+    acc = acc * u64x4(xxh_prime64_1);
 
-    std::simd::unchecked_store(
-        acc,
-        acc_values.data(),
-        u64x4::size(),
-        std::simd::flag_aligned);
+    ::crucible::simd::store_aligned(acc, acc_values.data());
     v1 = acc_values[0];
     v2 = acc_values[1];
     v3 = acc_values[2];

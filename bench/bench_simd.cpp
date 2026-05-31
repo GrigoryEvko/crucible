@@ -5,7 +5,7 @@
 // Coverage:
 //   * iota_v<i64x8>() / iota_v<u64x8>() — confirm constexpr-folds
 //   * prefix_mask<u64x8>(N) for N=0..8 — runtime mask construction
-//   * std::simd::reduce + reduce_min/max + masked variants
+//   * simd::reduce_xor/add + reduce_min/max + masked variants
 //   * dim_hash_simd vs dim_hash_scalar at ndim=1..8 (speedup ratio)
 //   * compute_storage_nbytes_simd vs compute_storage_nbytes_scalar
 //
@@ -99,8 +99,7 @@ int main() {
         0xDDDDEEEEFFFF1234ULL, 0x6666777788889999ULL,
     };
     auto load_u64x8 = []() {
-        return std::simd::unchecked_load<u64x8>(
-            v_in, u64x8::size(), std::simd::flag_aligned);
+        return crucible::simd::load_aligned<u64x8>(v_in);
     };
 
     std::printf("=== simd ===\n\n");
@@ -129,31 +128,31 @@ int main() {
             bench::do_not_optimize(m);
         }),
 
-        // ─── std::simd reductions ────────────────────────────────────
-        bench::run("std::simd::reduce(u64x8, xor)      [unmasked]", [&]{
+        // ─── facade reductions ───────────────────────────────────────
+        bench::run("simd::reduce_xor(u64x8)            [unmasked]", [&]{
             auto v = load_u64x8();
-            uint64_t r = std::simd::reduce(v, std::bit_xor<>{});
+            uint64_t r = crucible::simd::reduce_xor(v);
             bench::do_not_optimize(r);
         }),
-        bench::run("std::simd::reduce(u64x8, +)        [unmasked]", [&]{
+        bench::run("simd::reduce_add(u64x8)            [unmasked]", [&]{
             auto v = load_u64x8();
-            uint64_t r = std::simd::reduce(v, std::plus<>{});
+            uint64_t r = crucible::simd::reduce_add(v);
             bench::do_not_optimize(r);
         }),
-        bench::run("std::simd::reduce_max(u64x8)", [&]{
+        bench::run("simd::reduce_max(u64x8)", [&]{
             auto v = load_u64x8();
-            uint64_t r = std::simd::reduce_max(v);
+            uint64_t r = crucible::simd::reduce_max(v);
             bench::do_not_optimize(r);
         }),
-        bench::run("std::simd::reduce_min(u64x8)", [&]{
+        bench::run("simd::reduce_min(u64x8)", [&]{
             auto v = load_u64x8();
-            uint64_t r = std::simd::reduce_min(v);
+            uint64_t r = crucible::simd::reduce_min(v);
             bench::do_not_optimize(r);
         }),
-        bench::run("std::simd::reduce(u64x8, mask, xor) [masked half]", [&]{
+        bench::run("simd::reduce_xor(u64x8, mask)      [masked half]", [&]{
             auto v = load_u64x8();
             auto m = crucible::simd::prefix_mask<u64x8>(v_count_4);
-            uint64_t r = std::simd::reduce(v, m, std::bit_xor<>{}, 0ULL);
+            uint64_t r = crucible::simd::reduce_xor(v, m);
             bench::do_not_optimize(r);
         }),
 

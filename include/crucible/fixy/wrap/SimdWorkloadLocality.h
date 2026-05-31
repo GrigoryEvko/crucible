@@ -4,7 +4,7 @@
 //
 // Surfaces three workload-policy substrates under `fixy::wrap::`:
 //
-//   safety/Simd.h          — std::simd facade (width-pinned aliases,
+//   safety/Simd.h          — portable SIMD facade (width-pinned aliases,
 //                            DetSafeSimd concept, iota_v / prefix_mask,
 //                            microarch detection flags + probes)
 //                            — lives in `crucible::simd::` substrate.
@@ -114,11 +114,11 @@ using ::crucible::simd::u32x8_mask;
 using ::crucible::simd::DetSafeSimd;
 
 // iota_v<V>() — lane[i] == i.  Foundation for prefix_mask + per-lane
-// table indexing.  std::simd has no public iota primitive.
+// table indexing.  The facade provides this; raw vector builtins do not.
 using ::crucible::simd::iota_v;
 
 // prefix_mask<V>(count) — first N lanes set, rest unset.  Pair with
-// std::simd::reduce's masked overload for one-call aggregation.
+// the facade's masked reduce_xor overload for one-call aggregation.
 using ::crucible::simd::prefix_mask;
 
 // Compile-time microarch flags — `if constexpr` gating in hot paths.
@@ -263,11 +263,11 @@ static_assert(
     ::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::u64x8>);
 static_assert(
     ::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::u32x8>);
-// Negative: an explicit non-DetSafe candidate.  std::simd::vec on
-// a floating-point type has `value_type = float` which fails the
+// Negative: an explicit non-DetSafe candidate.  A facade vec on a
+// floating-point type has `value_type = float` which fails the
 // std::integral<value_type> requirement.
 static_assert(
-    !::crucible::fixy::wrap::DetSafeSimd<std::simd::vec<float, 8>>);
+    !::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::vec<float, 8>>);
 // Cross-path agreement on the negative case.
 static_assert(
     ::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::i64x8> ==

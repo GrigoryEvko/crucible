@@ -1,17 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════
-// test_simd — sanity tests for crucible::simd facade + std::simd usage
+// test_simd — sanity tests for the crucible::simd portable facade
 //
-// Covers the (thin) facade: type aliases, iota_v, prefix_mask,
-// DetSafeSimd concept, microarch detection.  Also exercises direct
-// std::simd use for the operations we don't wrap (unchecked_load,
-// partial_load, select, reduce, reduce_max/min) — those are library
-// primitives, not facade primitives.  Heavier algorithmic SIMD tests
-// (Philox batch equivalence) live in dedicated fuzzers under
-// fuzz/property/.
+// Covers the facade end-to-end: type aliases, iota_v, prefix_mask,
+// DetSafeSimd concept, microarch detection, and the data primitives
+// (load, partial_load, select, reduce_xor/add/and/or/max/min, masked
+// reduce_xor).  The facade is a portable GCC vector-extension backend,
+// NOT std::simd — libstdc++ 16 gates <simd> behind __SSE2__ so it is an
+// empty header on aarch64.  Heavier algorithmic SIMD tests (Philox
+// batch equivalence) live in dedicated fuzzers under fuzz/property/.
 //
-// Single-target build per -march=; no multi-target dispatch.  Hand-
-// rolled intrinsics live only in SwissTable.h where std::simd has no
-// movemask analog.
+// Hand-rolled intrinsics live only in SwissTable.h where the facade has
+// no movemask analog.
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/safety/Simd.h>
@@ -25,10 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
-#include <functional>
 #include <memory>
-#include <simd>
 #include <type_traits>
 
 namespace simd = crucible::simd;
@@ -45,7 +41,7 @@ static void test_type_aliases() {
 
 static void test_iota() {
     auto indices = simd::iota_v<simd::i64x8>();
-    for (int lane = 0; lane < simd::i64x8::size(); ++lane) {
+    for (int lane = 0; lane < static_cast<int>(simd::i64x8::size()); ++lane) {
         assert(indices[lane] == static_cast<int64_t>(lane));
     }
     std::printf("  test_iota: PASSED\n");
@@ -54,7 +50,7 @@ static void test_iota() {
 static void test_prefix_mask() {
     // count=0: no lanes set
     auto mask0 = simd::prefix_mask<simd::i64x8>(0);
-    for (int lane = 0; lane < simd::i64x8::size(); ++lane) {
+    for (int lane = 0; lane < static_cast<int>(simd::i64x8::size()); ++lane) {
         assert(!mask0[lane]);
     }
     // count=5: lanes 0..4 set, 5..7 unset
@@ -76,8 +72,8 @@ static void test_det_safe_simd_concept() {
 
     // Floating-point lanes must NOT — FP reductions are order-sensitive
     // and break DetSafe bit-equality across AVX-512 / AVX2 / NEON.
-    using f32x8 = std::simd::vec<float, 8>;
-    using f64x4 = std::simd::vec<double, 4>;
+    using f32x8 = simd::vec<float, 8>;
+    using f64x4 = simd::vec<double, 4>;
     static_assert(!simd::DetSafeSimd<f32x8>);
     static_assert(!simd::DetSafeSimd<f64x4>);
 
@@ -86,19 +82,19 @@ static void test_det_safe_simd_concept() {
     std::printf("  test_det_safe_simd_concept: PASSED\n");
 }
 
-// ── Direct std::simd usage patterns ────────────────────────────────
+// ── Facade data primitives ──────────────────────────────────────────
 //
-// These used to go through facade wrappers; they're now direct calls.
-// The tests remain to verify that the std::simd API does what we need.
+// load / partial_load / select / reduce_* are facade functions over the
+// GCC vector-extension backend.  Integer ops + associative reductions
+// give bit-identical results across AVX-512 / AVX2 / NEON / scalar.
 
-static void test_unchecked_load() {
+static void test_load() {
     std::array<int64_t, 8> source{10, 20, 30, 40, 50, 60, 70, 80};
-    auto v = std::simd::unchecked_load<simd::i64x8>(
-        source.data(), simd::i64x8::size());
+    auto v = simd::load<simd::i64x8>(source.data());
     for (int lane = 0; lane < 8; ++lane) {
         assert(v[lane] == source[static_cast<size_t>(lane)]);
     }
-    std::printf("  test_unchecked_load: PASSED\n");
+    std::printf("  test_load: PASSED\n");
 }
 
 static void test_partial_load() {
@@ -106,7 +102,7 @@ static void test_partial_load() {
 
     // Load only first 3 elements; lanes 3..7 must be zero per partial
     // load semantics.
-    auto v = std::simd::partial_load<simd::i64x8>(source.data(), 3);
+    auto v = simd::partial_load<simd::i64x8>(source.data(), 3);
     assert(v[0] == 10);
     assert(v[1] == 20);
     assert(v[2] == 30);
@@ -114,7 +110,7 @@ static void test_partial_load() {
     assert(v[7] == 0);
 
     // Load full 8 elements.
-    auto vfull = std::simd::partial_load<simd::i64x8>(source.data(), 8);
+    auto vfull = simd::partial_load<simd::i64x8>(source.data(), 8);
     for (int lane = 0; lane < 8; ++lane) {
         assert(vfull[lane] == source[static_cast<size_t>(lane)]);
     }
@@ -123,15 +119,14 @@ static void test_partial_load() {
 
 static void test_reduce_xor_sum() {
     std::array<int64_t, 8> values{0, 1, 2, 3, 4, 5, 6, 7};
-    auto input = std::simd::unchecked_load<simd::i64x8>(
-        values.data(), simd::i64x8::size());
+    auto input = simd::load<simd::i64x8>(values.data());
 
     int64_t xor_expected = 0;
     int64_t sum_expected = 0;
     for (auto v : values) { xor_expected ^= v; sum_expected += v; }
 
-    int64_t xor_got = std::simd::reduce(input, std::bit_xor<>{});
-    int64_t sum_got = std::simd::reduce(input, std::plus<>{});
+    int64_t xor_got = simd::reduce_xor(input);
+    int64_t sum_got = simd::reduce_add(input);
     assert(xor_got == xor_expected);
     assert(sum_got == sum_expected);
     std::printf("  test_reduce_xor_sum: PASSED (xor=%lld sum=%lld)\n",
@@ -143,19 +138,17 @@ static void test_reduce_or_and() {
     std::array<uint64_t, 8> values{
         0x01ULL, 0x02ULL, 0x04ULL, 0x08ULL,
         0x10ULL, 0x20ULL, 0x40ULL, 0x80ULL};
-    auto input = std::simd::unchecked_load<simd::u64x8>(
-        values.data(), simd::u64x8::size());
-    assert(std::simd::reduce(input, std::bit_or<>{})  == 0xFFULL);
-    assert(std::simd::reduce(input, std::bit_and<>{}) == 0ULL);
+    auto input = simd::load<simd::u64x8>(values.data());
+    assert(simd::reduce_or(input)  == 0xFFULL);
+    assert(simd::reduce_and(input) == 0ULL);
     std::printf("  test_reduce_or_and: PASSED\n");
 }
 
 static void test_reduce_max_min() {
     std::array<int64_t, 8> values{-5, 100, 33, -200, 7, 42, 999, 0};
-    auto input = std::simd::unchecked_load<simd::i64x8>(
-        values.data(), simd::i64x8::size());
-    assert(std::simd::reduce_max(input) == 999);
-    assert(std::simd::reduce_min(input) == -200);
+    auto input = simd::load<simd::i64x8>(values.data());
+    assert(simd::reduce_max(input) == 999);
+    assert(simd::reduce_min(input) == -200);
     std::printf("  test_reduce_max_min: PASSED\n");
 }
 
@@ -163,14 +156,12 @@ static void test_select() {
     std::array<int64_t, 8> on_true {100, 200, 300, 400, 500, 600, 700, 800};
     std::array<int64_t, 8> on_false{1,    2,   3,   4,   5,   6,   7,   8};
 
-    auto t_v = std::simd::unchecked_load<simd::i64x8>(
-        on_true.data(),  simd::i64x8::size());
-    auto f_v = std::simd::unchecked_load<simd::i64x8>(
-        on_false.data(), simd::i64x8::size());
+    auto t_v = simd::load<simd::i64x8>(on_true.data());
+    auto f_v = simd::load<simd::i64x8>(on_false.data());
 
     // Mask: select on_true where lane index < 4.
     auto mask = simd::prefix_mask<simd::i64x8>(4);
-    auto out = std::simd::select(mask, t_v, f_v);
+    auto out = simd::select(mask, t_v, f_v);
     assert(out[0] == 100);
     assert(out[1] == 200);
     assert(out[2] == 300);
@@ -189,24 +180,19 @@ static void test_select() {
 }
 
 static void test_masked_reduce_for_dim_hash_pattern() {
-    // Mirrors the SIMD-1 dim-hash use case with std::simd::reduce's
-    // masked overload: ONE call aggregates only the valid lanes with
+    // Mirrors the SIMD-1 dim-hash use case with the facade's masked
+    // reduce_xor overload: ONE call aggregates only the valid lanes with
     // identity 0 filling the rest.  No explicit select+intermediate.
     std::array<int64_t, 8> sizes  {2, 3, 4, 5, 6, 7, 8, 9};
     std::array<int64_t, 8> mix_lo {7, 11, 13, 17, 19, 23, 29, 31};
     constexpr int ndim = 5;
 
-    auto sizes_v = std::simd::unchecked_load<simd::i64x8>(
-        sizes.data(),  simd::i64x8::size());
-    auto mix_v   = std::simd::unchecked_load<simd::i64x8>(
-        mix_lo.data(), simd::i64x8::size());
+    auto sizes_v = simd::load<simd::i64x8>(sizes.data());
+    auto mix_v   = simd::load<simd::i64x8>(mix_lo.data());
     simd::i64x8 product = sizes_v * mix_v;
 
-    int64_t simd_result = std::simd::reduce(
-        product,
-        simd::prefix_mask<simd::i64x8>(ndim),
-        std::bit_xor<>{},
-        static_cast<int64_t>(0));
+    int64_t simd_result =
+        simd::reduce_xor(product, simd::prefix_mask<simd::i64x8>(ndim));
 
     int64_t scalar_result = 0;
     for (int d = 0; d < ndim; ++d) {
@@ -350,7 +336,7 @@ int main() {
     test_iota();
     test_prefix_mask();
     test_det_safe_simd_concept();
-    test_unchecked_load();
+    test_load();
     test_partial_load();
     test_reduce_xor_sum();
     test_reduce_or_and();
