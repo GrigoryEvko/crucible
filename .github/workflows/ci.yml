@@ -35,6 +35,33 @@
 #
 # The guard list below is kept 1:1 with the `ci_guard` registrations in
 # test/CMakeLists.txt.
+#
+# ============================================================================
+# BILLING — THIS PIPELINE COSTS $0. KEEP IT THAT WAY. DO NOT CHANGE.
+# ============================================================================
+# Per GitHub Actions billing: standard GitHub-hosted runners are FREE, with NO
+# minute cap, for PUBLIC repositories. The monthly free-minute quota
+# (2,000/mo on Free) applies to PRIVATE repos only — it does not apply here.
+# Three invariants keep every run (every push, no cancellation, full coverage,
+# sanitizers, fuzzers) permanently free. Violating any one starts real billing:
+#
+#   1. Repo stays PUBLIC. Flipping to private turns on the per-minute quota +
+#      overage billing (Linux $0.006/min, arm64 $0.005/min, Windows $0.010/min).
+#
+#   2. Standard runners ONLY. Use exactly the labels below — `ubuntu-latest`,
+#      `ubuntu-24.04` (x64), `ubuntu-24.04-arm` (arm64, GA + free for public).
+#      NEVER add a "larger runner" (runner group, `*-4-core`/`*-8-core`/`xl`,
+#      GPU, or extra-RAM/storage SKU): larger runners are ALWAYS billed, even on
+#      public repos. The fedora:rawhide container is free — billing is by the
+#      host runner, not the container.
+#
+#   3. NEVER raise the repo's Actions cache limit above the default 10 GB. Our
+#      per-(arch,preset) ccache caches can total >10 GB; that is fine — GitHub
+#      auto-evicts LRU caches to stay under 10 GB (free, costs only a cache
+#      miss). You are billed for cache ONLY if you manually raise the limit and
+#      exceed it ($0.07/GiB-month). Also: do NOT add upload-artifact (artifact
+#      storage has a separate, small allowance) — this pipeline uploads none.
+# ============================================================================
 
 name: ci
 
@@ -188,6 +215,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # BILLING: `runner` MUST stay a standard free label (ubuntu-24.04 /
+          # ubuntu-24.04-arm). NEVER swap in a larger runner — see the billing
+          # block at the top of this file. Larger runners are always billed.
           # x86_64 — committed vmlinux.h is x86_64, no regen needed.
           - { arch: x86_64,  runner: ubuntu-24.04,     preset: default,  jobs: 3, regen_btf: false, run_tests: true  }
           - { arch: x86_64,  runner: ubuntu-24.04,     preset: tsan,     jobs: 3, regen_btf: false, run_tests: true  }
