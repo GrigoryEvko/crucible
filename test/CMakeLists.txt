@@ -860,12 +860,25 @@ set_tests_properties(mint_inventory_self_test
 # file under ${CMAKE_BINARY_DIR}, then diffs vs the golden.  Linux is
 # the only supported deployment platform (CLAUDE.md §XIV), so bash
 # availability is guaranteed.
-add_test(NAME row_hash_golden_diff
-  COMMAND bash -c
-    "set -e; \"$<TARGET_FILE:dump_row_hashes>\" > \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/tools/row_hash_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\""
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-set_tests_properties(row_hash_golden_diff PROPERTIES
-    LABELS "ci_guard;fixy-FOUND-052")
+# The golden was captured on the x86_64 ABI. row_hash folds a
+# stable_type_id contribution through display_string_of (CLAUDE.md
+# "Federation cache-key portability bound"), so the absolute 44-entry
+# matrix is bit-stable ONLY within one (arch, compiler, stdlib) tuple —
+# aarch64 legitimately produces different values, which would red this
+# diff for a non-bug.  Register the absolute-golden diff only on x86_64;
+# the arch-INDEPENDENT row_hash invariants that actually catch
+# specialization regressions (cross-wrapper distinctness + nesting-order
+# sensitivity, e.g. Stale<Tagged<T>> != Tagged<Stale<T>>) are exercised on
+# every arch by test_migration_verification (GAPS-029 / FIXY-FOUND-047).
+# A future per-arch golden would restore absolute coverage on aarch64.
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
+  add_test(NAME row_hash_golden_diff
+    COMMAND bash -c
+      "set -e; \"$<TARGET_FILE:dump_row_hashes>\" > \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/tools/row_hash_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\""
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+  set_tests_properties(row_hash_golden_diff PROPERTIES
+      LABELS "ci_guard;fixy-FOUND-052")
+endif()
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)

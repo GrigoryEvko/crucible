@@ -284,12 +284,18 @@ jobs:
       - name: ccache stats
         run: ccache -s
 
-      # -E excludes the two neg-compile fixtures whose rejection needs PR
-      # c++/124241 (patched g++); stock GCC 16.1.1 lacks it. Skipped for the
-      # analyzer preset (build-time -fanalyzer findings are its coverage).
+      # -E excludes:
+      #  * neg_graded_regime[23]… — neg-compile fixtures whose rejection needs
+      #    PR c++/124241 (patched g++); stock GCC 16.1.1 lacks it.
+      #  * mint_inventory_…       — pure source-scan drift gates whose output
+      #    depends on the ripgrep version; they already run in the `guards`
+      #    job (a `needs:` prerequisite — so it passed) on ubuntu's controlled
+      #    apt rg.  The rawhide-container dnf rg differs, reddening the
+      #    redundant ctest copy for a non-bug. Guards job is the canonical gate.
+      # Skipped for the analyzer preset (build-time -fanalyzer findings are its coverage).
       - name: Test
         if: ${{ matrix.run_tests }}
-        run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }} -E 'neg_graded_regime[23]_ctor_grade_mismatch'
+        run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }} -E 'neg_graded_regime[23]_ctor_grade_mismatch|mint_inventory_'
 
       # Persist ccache even when Build/Test failed — banks the objects that DID
       # compile so the next run resumes from there instead of cold.
