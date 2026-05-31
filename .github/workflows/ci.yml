@@ -255,7 +255,7 @@ jobs:
       - name: Install toolchain + BPF stack + sanitizers + ccache
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
-          gcc-c++ cmake ninja-build git ripgrep ccache
+          gcc-c++ cmake ninja-build git ripgrep ccache diffutils
           clang llvm xxd bpftool libbpf-devel
           libasan libubsan libtsan liblsan
 
@@ -376,7 +376,7 @@ jobs:
       - name: Install toolchain + BPF stack + ccache
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
-          gcc-c++ cmake ninja-build git ripgrep ccache
+          gcc-c++ cmake ninja-build git ripgrep ccache diffutils
           clang llvm xxd bpftool libbpf-devel
       # Split restore/save so a failed compile still banks ccache (see build job).
       - name: Restore ccache
@@ -433,7 +433,7 @@ jobs:
       - name: Install toolchain + BPF stack + sanitizers + ccache
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
-          gcc-c++ cmake ninja-build git ripgrep ccache
+          gcc-c++ cmake ninja-build git ripgrep ccache diffutils
           clang llvm xxd bpftool libbpf-devel
           libasan libubsan liblsan
       # Split restore/save so a failed compile still banks ccache (see build job).
