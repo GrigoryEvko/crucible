@@ -145,6 +145,63 @@ int main() { const __m256i* p = nullptr; (void) std::start_lifetime_as<const __m
 " CRUCIBLE_FEC_CONST_SIMD_OK)
 set(CMAKE_REQUIRED_FLAGS "${_crucible_saved_required_flags}")
 
+# canopy/Hlc.h (off-limits to edit here) static_asserts
+# std::atomic<unsigned __int128>::is_always_lock_free on every non-x86
+# target and refuses to build otherwise — a hidden libstdc++ mutex
+# fallback would tank now() latency on the canopy hot path. On aarch64
+# the property is FALSE by default: GCC's -moutline-atomics (the modern
+# default) lowers 16-byte atomics to runtime-dispatched libgcc helper
+# calls (__aarch64_cas16_*), which by construction are never "always"
+# lock free. -mno-outline-atomics restores the INLINE TImode CAS pattern
+# (base armv8-a LDXP/STXP — present on every aarch64, genuinely atomic),
+# which flips is_always_lock_free true. Probe candidate flag sets at
+# configure time (on the build machine == the runner) and apply the
+# first that genuinely satisfies the assert; ordered safest-first so a
+# universal base-ISA flag wins over an -march bump. No-op on x86 (the
+# Hlc x86 path uses inline cmpxchg16b and carries no such assert), and
+# strictly cannot make the build worse — if no candidate works, behavior
+# is identical to today (the assert fails) but no wrong flag is applied.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+  set(_crucible_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
+  set(_crucible_lockfree128_flags "")
+  set(_crucible_lockfree128_idx 0)
+  # Safest-first: (1) base-ISA inline LL/SC, runs on every aarch64;
+  # (2) exact-runner match, guaranteed executable since build==run host;
+  # (3) forced armv8.4-a LSE2 baseline as a last resort.
+  foreach(_crucible_lf128_cand
+            "-mno-outline-atomics"
+            "-mno-outline-atomics -march=native"
+            "-mno-outline-atomics -march=armv8.4-a")
+    set(CMAKE_REQUIRED_FLAGS "-std=c++26 ${_crucible_lf128_cand}")
+    check_cxx_source_compiles("
+#include <atomic>
+#include <cstdint>
+static_assert(std::atomic<unsigned __int128>::is_always_lock_free,
+              \"need a lock-free 128-bit atomic\");
+int main() {}
+" CRUCIBLE_AARCH64_LOCKFREE128_${_crucible_lockfree128_idx})
+    if(CRUCIBLE_AARCH64_LOCKFREE128_${_crucible_lockfree128_idx})
+      set(_crucible_lockfree128_flags "${_crucible_lf128_cand}")
+      break()
+    endif()
+    math(EXPR _crucible_lockfree128_idx "${_crucible_lockfree128_idx} + 1")
+  endforeach()
+  set(CMAKE_REQUIRED_FLAGS "${_crucible_saved_required_flags}")
+  if(_crucible_lockfree128_flags STREQUAL "")
+    message(WARNING
+      "aarch64: no probed flag set yields a lock-free 128-bit atomic; "
+      "canopy/Hlc.h will fail its is_always_lock_free static_assert.")
+  else()
+    # Plain codegen flags (no -std dependency) → safe in CMAKE_CXX_FLAGS;
+    # global so every TU that transitively includes Hlc.h is covered,
+    # including the standalone neg-compile fixtures that don't link crucible.
+    string(APPEND CMAKE_CXX_FLAGS " ${_crucible_lockfree128_flags}")
+    message(STATUS
+      "aarch64 lock-free 128-bit atomic enabled via: "
+      "${_crucible_lockfree128_flags}")
+  endif()
+endif()
+
 # C++26-only flags — applied at target level where -std=c++26 is active
 # (applying them in CMAKE_CXX_FLAGS would poison CMake's compiler-probe).
 target_compile_options(crucible PUBLIC
