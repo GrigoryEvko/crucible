@@ -154,9 +154,9 @@ static_assert(sizeof(CpuId) == sizeof(int));
 // for the duration of the pair.
 //
 // `RdtscPinned` is a move-only phantom witness — its existence at a
-// call site is a static proof that `BenchHarness::pin_()` succeeded
+// call site is a static proof that `Run::pin_()` succeeded
 // just prior, and the thread has not migrated since.  The construction
-// is mint-private to BenchHarness, so the only legitimate way to
+// is mint-private to Run, so the only legitimate way to
 // produce a witness is the bench-harness affinity-set path.
 //
 // The pinned-overload `rdtsc_start(RdtscPinned const&) / rdtsc_end(...)`
@@ -176,10 +176,10 @@ class RdtscPinned {
 
     constexpr RdtscPinned(CpuId core, mint_tag) noexcept : core_{core} {}
 
-    // BenchHarness is the sole mint authority; the witness is produced
+    // Run is the sole mint authority; the witness is produced
     // immediately after sched_setaffinity success and travels through
     // the measurement loop by const-ref.
-    friend class BenchHarness;
+    friend class Run;
 
 public:
     RdtscPinned(const RdtscPinned&)            = delete;
