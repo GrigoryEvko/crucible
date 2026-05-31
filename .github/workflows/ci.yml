@@ -77,6 +77,14 @@ on:
 permissions:
   contents: read
 
+# Node 20 JS-action runtime is deprecated (forced to Node 24 on 2026-06-16,
+# removed 2026-09-16). checkout is bumped to @v5 (Node-24-native); actions that
+# have no Node-24 major yet (e.g. actions/cache in ci-reusable.yml) are forced
+# onto Node 24 by this workflow-level opt-in. Reusable workflows do NOT inherit
+# the caller's env, so ci-reusable.yml duplicates this block.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ---------------------------------------------------------------------------
   # Enumerate the commits to build. On push: every commit in before..after,
@@ -91,7 +99,7 @@ jobs:
       shas: ${{ steps.list.outputs.shas }}
     steps:
       - name: Checkout (full history)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 

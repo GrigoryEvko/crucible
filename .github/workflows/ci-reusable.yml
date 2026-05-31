@@ -23,6 +23,14 @@ on:
 permissions:
   contents: read
 
+# Node 20 JS-action runtime is deprecated (forced to Node 24 on 2026-06-16,
+# removed 2026-09-16). checkout is bumped to @v5 (Node-24-native); actions/cache
+# has no Node-24 major yet, so this workflow-level opt-in forces every JS action
+# onto Node 24 now. Reusable workflows do NOT inherit the caller's env, so this
+# is duplicated from ci.yml. Drop once actions/cache ships a Node-24 release.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ---------------------------------------------------------------------------
   # Toolchain-FREE discipline guards. Stock ubuntu-latest, no compiler, no
@@ -33,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.sha }}
 
@@ -232,7 +240,7 @@ jobs:
             ccache-${{ matrix.arch }}-${{ matrix.preset }}-
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.sha }}
 
@@ -340,7 +348,7 @@ jobs:
             ccache-x86_64-bench-main-
             ccache-x86_64-bench-
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.sha }}
       - name: Configure (bench, ccache)
@@ -400,7 +408,7 @@ jobs:
             ccache-x86_64-fuzz-main-
             ccache-x86_64-fuzz-
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.sha }}
       - name: Configure (default + CRUCIBLE_FUZZ, ccache)
