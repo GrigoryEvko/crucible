@@ -107,7 +107,7 @@ public:
             : "cc", "memory");
         return (uint128_t{hi} << 64) | uint128_t{lo};
 #else
-        return cell_.load(std::memory_order_acquire);
+        return cell_.load();
 #endif
     }
 
@@ -132,11 +132,7 @@ public:
         expected = (uint128_t{expected_hi} << 64) | uint128_t{expected_lo};
         return ok != 0;
 #else
-        return cell_.compare_exchange_weak(
-            expected,
-            desired,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire);
+        return cell_.compare_exchange(expected, desired);
 #endif
     }
 
@@ -144,15 +140,65 @@ private:
 #if defined(__x86_64__)
     mutable uint128_t cell_ = 0;
 #else
-    // fixy-A5-015: libstdc++ silently falls back to a mutex-locked
-    // implementation when the target ISA lacks a native 128-bit atomic
-    // (notably AArch64 without LSE-128 / Apple Silicon).  Hlc is on the
-    // canopy hot path; a hidden mutex would tank `now()` latency by
-    // orders of magnitude.  Refuse to build instead.
-    mutable std::atomic<uint128_t> cell_{0};
-    static_assert(std::atomic<uint128_t>::is_always_lock_free,
-                  "Hlc requires a lock-free 128-bit atomic on non-x86 "
-                  "platforms; the target ISA does not provide one");
+    // fixy-A5-015: where the ISA provides a lock-free 128-bit atomic
+    // (AArch64 with FEAT_LSE128, Apple Silicon under toolchains that
+    // report is_always_lock_free), use it directly — `now()` stays on
+    // the lock-free hot path.  Where it does NOT (notably AArch64
+    // without LSE-128 on stock GCC, which lowers 16-byte atomics to a
+    // hidden libstdc++ mutex), fall back to a plain 128-bit cell guarded
+    // by a minimal test-and-set spinlock.  Making the mutual exclusion
+    // explicit removes the hidden-mutex surprise that motivated the
+    // original build-refusal: the latency cost is now visible and
+    // auditable on the canopy hot path, and the fallback contends only
+    // on the brief HLC CAS.  DetSafe holds — the spinlock imposes a
+    // total order and touches no floating point.  x86_64 (cmpxchg16b,
+    // above) and LSE128 silicon both remain lock-free.
+    struct LockFreeCell {
+        mutable std::atomic<uint128_t> value_{0};
+        [[nodiscard]] uint128_t load() const noexcept {
+            return value_.load(std::memory_order_acquire);
+        }
+        [[nodiscard]] bool compare_exchange(
+            uint128_t& expected, uint128_t desired) noexcept {
+            return value_.compare_exchange_weak(
+                expected, desired,
+                std::memory_order_acq_rel, std::memory_order_acquire);
+        }
+    };
+    struct SpinlockCell {
+        mutable uint128_t value_ = 0;
+        mutable std::atomic_flag lock_{};
+        void acquire() const noexcept {
+            while (lock_.test_and_set(std::memory_order_acquire)) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+        }
+        void release() const noexcept {
+            lock_.clear(std::memory_order_release);
+        }
+        [[nodiscard]] uint128_t load() const noexcept {
+            acquire();
+            const uint128_t snapshot = value_;
+            release();
+            return snapshot;
+        }
+        [[nodiscard]] bool compare_exchange(
+            uint128_t& expected, uint128_t desired) noexcept {
+            acquire();
+            const bool matched = (value_ == expected);
+            if (matched) {
+                value_ = desired;
+            } else {
+                expected = value_;
+            }
+            release();
+            return matched;
+        }
+    };
+    using Cell = std::conditional_t<
+        std::atomic<uint128_t>::is_always_lock_free,
+        LockFreeCell, SpinlockCell>;
+    mutable Cell cell_{};
 #endif
 };
 

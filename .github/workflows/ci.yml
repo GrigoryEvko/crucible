@@ -205,16 +205,16 @@ jobs:
     needs: guards
     runs-on: ${{ matrix.runner }}
     container: fedora:rawhide
-    # aarch64 is non-blocking. The original blocker (safety/Simd.h on
-    # libstdc++'s __SSE2__-gated <simd>) is FIXED — the crucible::simd
-    # facade now lowers through [[gnu::vector_size]] builtins, portable to
-    # arm. The remaining blocker is canopy/Hlc.h, which static_asserts a
-    # lock-free 128-bit atomic; stock GCC 16 only provides one with
-    # FEAT_LSE128 (armv9.4-a) hardware, which the free arm runners lack
-    # (see the lock-free-128 probe in CMakeLists.txt). Genuinely unfixable
-    # from CI flags without runtime SIGILL risk, so the leg stays
-    # non-blocking + builds for observability. x86_64 is the enforced
-    # full-coverage gate.
+    # aarch64 is non-blocking while the arm legs prove out. Both prior
+    # blockers are now fixed: (1) safety/Simd.h on libstdc++'s
+    # __SSE2__-gated <simd> — the crucible::simd facade now lowers through
+    # [[gnu::vector_size]] builtins, portable to arm; (2) canopy/Hlc.h's
+    # lock-free 128-bit atomic requirement — stock GCC 16 only provides
+    # one with FEAT_LSE128 (armv9.4-a) hardware the free runners lack, so
+    # Hlc.h now carries a spinlock-guarded fallback for that case (build
+    # succeeds; now() takes the locked path on non-LSE128 arm). Left
+    # non-blocking until CI confirms the arm legs are reliably green, then
+    # flip to blocking. x86_64 remains the enforced full-coverage gate.
     continue-on-error: ${{ matrix.arch == 'aarch64' }}
     strategy:
       fail-fast: false

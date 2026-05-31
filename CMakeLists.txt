@@ -158,11 +158,13 @@ set(CMAKE_REQUIRED_FLAGS "${_crucible_saved_required_flags}")
 # -march=native candidate below would have passed), and forcing +lse128
 # on non-LSE128 silicon would compile but SIGILL at runtime on the
 # 128-bit RMW path (LSE128-only SWPP/LDCLRP). So no runtime-safe flag
-# exists on this runner; the probe correctly applies none and the
-# aarch64 leg stays a documented, non-blocking expected-red until either
-# (a) runners gain LSE128 hardware — at which point -march=native here
-# auto-enables it — or (b) Hlc.h gains a non-lock-free fallback.
-# Probe is forward-looking: no-op on x86, strictly cannot regress.
+# exists on this runner — and this probe is now a pure PERFORMANCE
+# optimization, not a build gate: canopy/Hlc.h carries a spinlock-guarded
+# fallback for exactly the is_always_lock_free == false case, so the
+# build SUCCEEDS regardless. The probe only buys the faster lock-free
+# now() path when a flag genuinely flips is_always_lock_free true (e.g.
+# future LSE128 runners via -march=native, or toolchains where
+# -mno-outline-atomics suffices). No-op on x86; strictly cannot regress.
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
   set(_crucible_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
   set(_crucible_lockfree128_flags "")
@@ -192,7 +194,8 @@ int main() {}
   if(_crucible_lockfree128_flags STREQUAL "")
     message(STATUS
       "aarch64: no safe flag yields a lock-free 128-bit atomic (runner "
-      "lacks FEAT_LSE128); canopy/Hlc.h is expected-red here — non-blocking.")
+      "lacks FEAT_LSE128); canopy/Hlc.h uses its spinlock-guarded "
+      "fallback — build succeeds, now() takes the locked path here.")
   else()
     # Plain codegen flags (no -std dependency) → safe in CMAKE_CXX_FLAGS;
     # global so every TU that transitively includes Hlc.h is covered,
