@@ -158,7 +158,13 @@ tolerance_for_dtype(ScalarType dtype) noexcept {
 // for an FP16 recipe would let a 4-ULP recipe silently flow into a
 // consumer asking for 1-ULP-tolerance — the load-bearing bug class
 // the wrapper exists to prevent.  Conservative is correct.
-[[nodiscard, gnu::const]] constexpr fixy::wrap::Tolerance
+// gnu::pure (NOT gnu::const): reads `r.determinism`/`r.out_dtype` THROUGH the
+// reference argument. gnu::const promises the result depends only on argument
+// VALUES with no memory access — dereferencing a reference arg violates that and
+// lets the optimizer (observed on stock GCC 16.1.1 -O1, sanitizers off) treat a
+// preceding `r.field = …` write as dead, reading value-initialized fields. pure
+// is the correct attribute for a referentially-transparent reader of memory.
+[[nodiscard, gnu::pure]] constexpr fixy::wrap::Tolerance
 tolerance_of(NumericalRecipe const& r) noexcept {
   switch (r.determinism) {
     case ReductionDeterminism::BITEXACT_STRICT:
@@ -209,7 +215,9 @@ tolerance_of(NumericalRecipe const& r) noexcept {
 // RecipeSelect state, recipe-agnostic data) but never for a
 // concrete registry entry.  The default arm collapses to None as a
 // defensive position for future ReductionAlgo additions.
-[[nodiscard, gnu::const]] constexpr fixy::wrap::RecipeFamily
+// gnu::pure (NOT gnu::const): reads `r.reduction_algo` through the reference
+// argument — same reasoning as tolerance_of above.
+[[nodiscard, gnu::pure]] constexpr fixy::wrap::RecipeFamily
 recipe_family_of(NumericalRecipe const& r) noexcept {
   switch (r.reduction_algo) {
     case ReductionAlgo::PAIRWISE:     return fixy::wrap::RecipeFamily::Pairwise;
