@@ -17,7 +17,7 @@
 #
 # Tiers (in ci-reusable.yml):
 #   * guards  — bash/ripgrep discipline suite. ubuntu-latest, no compiler.
-#   * build   — matrix(arch × preset) full compile + ctest, in a fedora:rawhide
+#   * build   — matrix(arch × preset) full compile + ctest, in a fedora:44
 #               container with stock GCC 16.1.1 (CRUCIBLE_CXX=/usr/bin/g++).
 #               BPF substrate ENABLED. aarch64 regenerates vmlinux.h from the
 #               runner kernel's BTF. Presets carry the sanitizer choice.
@@ -51,7 +51,7 @@
 #      `ubuntu-latest`, `ubuntu-24.04` (x64), `ubuntu-24.04-arm` (arm64, GA +
 #      free for public). NEVER add a "larger runner" (runner group,
 #      `*-4-core`/`*-8-core`/`xl`, GPU, or extra-RAM/storage SKU): larger
-#      runners are ALWAYS billed, even on public repos. The fedora:rawhide
+#      runners are ALWAYS billed, even on public repos. The fedora:44
 #      container is free — billing is by the host runner, not the container.
 #
 #   3. NEVER raise the repo's Actions cache limit above the default 10 GB. Our

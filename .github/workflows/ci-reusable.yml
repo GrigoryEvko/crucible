@@ -154,7 +154,8 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Full compile + run + negative-compile + golden-binary suite. Matrix over
-  # (arch × preset) in a fedora:rawhide container with stock GCC 16.1.1. BPF
+  # (arch × preset) in a fedora:44 container with stock GCC 16.1.1 (matches
+  # the host that captured tools/row_hash_golden.txt + misc/mint-inventory.md). BPF
   # substrate ENABLED — the perf/network BPF programs + crucible_vessel all
   # compile. fail-fast:false: an aarch64-specific issue (e.g. BTF availability)
   # never cancels the x86_64 legs.
@@ -163,7 +164,7 @@ jobs:
     name: build+test ${{ matrix.arch }} / ${{ matrix.preset }}
     needs: guards
     runs-on: ${{ matrix.runner }}
-    container: fedora:rawhide
+    container: fedora:44
     # aarch64 is non-blocking while the arm legs prove out. Both prior
     # blockers are now fixed: (1) safety/Simd.h on libstdc++'s
     # __SSE2__-gated <simd> — the crucible::simd facade now lowers through
@@ -284,18 +285,14 @@ jobs:
       - name: ccache stats
         run: ccache -s
 
-      # -E excludes:
-      #  * neg_graded_regime[23]… — neg-compile fixtures whose rejection needs
-      #    PR c++/124241 (patched g++); stock GCC 16.1.1 lacks it.
-      #  * mint_inventory_…       — pure source-scan drift gates whose output
-      #    depends on the ripgrep version; they already run in the `guards`
-      #    job (a `needs:` prerequisite — so it passed) on ubuntu's controlled
-      #    apt rg.  The rawhide-container dnf rg differs, reddening the
-      #    redundant ctest copy for a non-bug. Guards job is the canonical gate.
+      # -E excludes the two neg-compile fixtures whose rejection needs PR
+      # c++/124241 (patched g++); stock GCC 16.1.1 lacks it. (mint_inventory
+      # and row_hash now pass natively: the fedora:44 container matches the
+      # host's gcc/libstdc++/ripgrep that captured the golden + inventory.)
       # Skipped for the analyzer preset (build-time -fanalyzer findings are its coverage).
       - name: Test
         if: ${{ matrix.run_tests }}
-        run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }} -E 'neg_graded_regime[23]_ctor_grade_mismatch|mint_inventory_'
+        run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }} -E 'neg_graded_regime[23]_ctor_grade_mismatch'
 
       # Persist ccache even when Build/Test failed — banks the objects that DID
       # compile so the next run resumes from there instead of cold.
@@ -323,7 +320,7 @@ jobs:
     # modernization is in flight. Flip back to blocking once all bench TUs compile.
     continue-on-error: true
     runs-on: ubuntu-24.04
-    container: fedora:rawhide
+    container: fedora:44
     env:
       CRUCIBLE_CXX: /usr/bin/g++
       CCACHE_DIR: /ccache
@@ -382,7 +379,7 @@ jobs:
     name: fuzz (property smoke, x86_64)
     needs: guards
     runs-on: ubuntu-24.04
-    container: fedora:rawhide
+    container: fedora:44
     env:
       CRUCIBLE_CXX: /usr/bin/g++
       CCACHE_DIR: /ccache
