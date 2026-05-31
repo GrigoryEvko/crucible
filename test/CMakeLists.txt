@@ -440,7 +440,9 @@ crucible_test(test_cntp_integrity)
 if(CRUCIBLE_FEC_CONST_SIMD_OK)  # see test_fixy_v_263 note: AVX2 Fec kernels need a const-safe start_lifetime_as
 crucible_test(test_cntp_fec)
 endif()
+if(CRUCIBLE_FEC_CONST_SIMD_OK)  # Fountain.h pulls cntp/Fec.h AVX2 kernels; see test_fixy_v_263 note
 crucible_test(test_cntp_fountain)
+endif()
 crucible_test(test_cntp_overlay_multicast)
 crucible_test(test_cntp_gossip_multicast)
 crucible_test(test_trace_graph)
