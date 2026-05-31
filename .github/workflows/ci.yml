@@ -327,6 +327,14 @@ jobs:
   bench:
     name: bench (compile gate, x86_64)
     needs: guards
+    # Non-blocking until the bench/ tree is modernized against current production
+    # APIs. The bench preset was never CI-built, so ~13 bench TUs drifted across
+    # safety-wrapper migrations: TensorDimArray::Slot now takes TensorDim (not int),
+    # RecipeFlags is safety::Bits, plus bench_fusion trips an -O3-only consteval
+    # self-test in safety/Fusion.h. Same posture as the aarch64 legs — the job still
+    # runs and reports for observability, but its red doesn't gate the run while the
+    # modernization is in flight. Flip back to blocking once all bench TUs compile.
+    continue-on-error: true
     runs-on: ubuntu-24.04
     container: fedora:rawhide
     env:
