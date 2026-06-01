@@ -175,8 +175,18 @@ int run_worked_example_vessel_startup() {
     auto worker = std::jthread([&]{
         // Poll until established.  Real production would check
         // periodically with backoff or via a one-shot signal; this
-        // test polls tightly to keep the runtime short.
-        for (int i = 0; i < 10000; ++i) {
+        // test polls tightly to keep the runtime short.  The loop is
+        // UNBOUNDED on purpose: the init thread below unconditionally
+        // calls establish() and then join()s this worker, so observe()
+        // is guaranteed to succeed and the loop returns.  A fixed poll
+        // budget would be a timeout in disguise — under scheduling
+        // pressure (e.g. both threads time-sharing one core during a
+        // parallel ctest) the worker could exhaust the budget before
+        // the publisher reaches establish(), spuriously failing.  This
+        // loop only fails to terminate if the production publish/observe
+        // path is itself broken — a real bug, caught by a CI timeout,
+        // not a scheduling flake.
+        for (;;) {
             auto h = dispatch_channel.observe();
             if (!h) {
                 worker_fell_back.fetch_add(1, std::memory_order_relaxed);
@@ -195,8 +205,6 @@ int run_worked_example_vessel_startup() {
             worker_processed.fetch_add(1, std::memory_order_release);
             return;
         }
-        // Worker exhausted polling without seeing publication —
-        // test will fail below.
     });
 
     // Init thread: prepare the storage, then publish.  The publish
