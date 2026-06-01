@@ -1,0 +1,205 @@
+# Crucible release CI — portable static binaries attached to each GitHub Release.
+#
+# Fires on a pushed `v*` tag (and via manual dispatch for an existing tag). For
+# each arch it builds the standalone tools FULLY STATIC and attaches them, with
+# SHA-256 sums, to the matching Release.
+#
+# WHY STATIC: the codebase only builds on GCC 16 (rawhide). A dynamically-linked
+# binary would pull that tree's libstdc++.so.6, which is NEWER than any stock
+# distro ships — so it would not run anywhere else. The fix is `-static`
+# (glibc-static + libstdc++-static): a single self-contained ELF, "not a dynamic
+# executable", runnable on any Linux >= 3.2 regardless of toolchain. Built BPF-off
+# so there is no libbpf/libelf/libz dependency to defeat the static link, at a
+# conservative ISA tier (x86-64-v3 = the documented AVX2+FMA+BMI2 baseline;
+# armv8.2-a = Graviton2+/Apple-M1+). The eBPF observability substrate is a
+# live-runtime concern, irrelevant to these two diagnostic tools.
+#
+# ============================================================================
+# BILLING — THIS WORKFLOW COSTS $0. Same invariants as ci.yml's billing block:
+#   * Repo stays PUBLIC (free unlimited standard-runner minutes).
+#   * Standard runners ONLY: ubuntu-latest / ubuntu-24.04 / ubuntu-24.04-arm.
+#     NEVER a larger runner. fedora:44 container is free (host bills, not it).
+#   * NEVER raise the 10 GB Actions cache limit; ccache here is 2 G/arch and
+#     LRU-evicts under the cap for free.
+#   * Release ASSETS (gh release upload) are NOT actions/upload-artifact — they
+#     are a separate, free storage class for public repos and do NOT count
+#     against the Actions artifact/cache quota the ci.yml comment guards. The
+#     upload-artifact ban still applies; this never uses it.
+# ============================================================================
+
+name: release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build portable binaries for (e.g. v0.1.0)"
+        required: true
+        type: string
+
+# Asset upload + release creation need write access to repo contents.
+permissions:
+  contents: write
+
+# Node 20 JS-action runtime is deprecated; force every JS action onto Node 24
+# until actions/cache ships a Node-24 release (mirrors ci.yml).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Make sure a Release object exists for the tag before the matrix uploads to
+  # it. Idempotent: a tag push to an already-released tag (e.g. a re-cut) skips
+  # creation; a fresh tag gets an auto-notes Release. ubuntu-latest ships gh.
+  # ---------------------------------------------------------------------------
+  ensure_release:
+    name: ensure release exists
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Create release if absent
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG already exists — leaving notes intact"
+          else
+            echo "creating release $TAG with auto-generated notes"
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" --verify-tag --generate-notes
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Build the portable static tools per arch and attach them to the Release.
+  # Mirrors ci.yml's container + dnf-cache + split ccache restore/save, under a
+  # `release`-namespaced cache key (warm across tags, never collides with the
+  # per-(arch,preset) CI ccache entries).
+  # ---------------------------------------------------------------------------
+  binaries:
+    name: portable static binaries (${{ matrix.arch }})
+    needs: ensure_release
+    runs-on: ${{ matrix.runner }}
+    container: fedora:44
+    # aarch64 is best-effort: x86_64 is the primary deployment target, so an arm
+    # hiccup must not block the x86 assets from publishing. fail-fast:false keeps
+    # the x86 leg going regardless.
+    continue-on-error: ${{ matrix.arch == 'aarch64' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # BILLING: `runner` MUST stay a standard free label. Never a larger runner.
+          - { arch: x86_64,  runner: ubuntu-24.04,     march: x86-64-v3 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm, march: armv8.2-a }
+    env:
+      CRUCIBLE_CXX: /usr/bin/g++
+      CCACHE_DIR: /ccache
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_COMPRESS: "true"
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Minimal tooling actions/cache needs to pack/unpack inside the container.
+      - name: Bootstrap cache tooling
+        run: dnf install -y --setopt=install_weak_deps=False tar zstd
+
+      - name: Restore dnf package cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/libdnf5
+            /var/cache/dnf
+          key: dnf-release-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: dnf-release-${{ matrix.arch }}-
+
+      # Static-link toolchain: glibc-static + libstdc++-static back `-static`;
+      # gh uploads the assets. No BPF stack, no sanitizers (release build only).
+      - name: Install toolchain + static libs + gh
+        run: >
+          dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
+          gcc-c++ cmake ninja-build git ccache gh
+          glibc-static libstdc++-static
+
+      # Split restore/save (same rationale as ci.yml): unique run_id in the key
+      # so save never collides; prefix restore-keys so each tag build resumes
+      # warm from the newest prior release build. `release`-namespaced — disjoint
+      # from the CI ccache-<arch>-<preset>- entries.
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /ccache
+          key: ccache-release-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-release-${{ matrix.arch }}-
+
+      - name: Checkout tag
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Mark workspace safe (root in container)
+        run: git config --global --add safe.directory '*'
+
+      # Portable static configure. ccache launchers compose with the gcc16
+      # toolchain shim. BPF off => no libbpf dep; examples off => fewer TUs.
+      - name: Configure (static, BPF off, ${{ matrix.march }})
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_TOOLCHAIN_FILE=cmake/Toolchain-gcc16.cmake
+          -DCMAKE_BUILD_TYPE=Release
+          -DCRUCIBLE_HAVE_BPF=OFF
+          -DCRUCIBLE_EXAMPLES=OFF
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_FLAGS="-O2 -DNDEBUG -march=${{ matrix.march }}"
+          -DCMAKE_EXE_LINKER_FLAGS="-static -static-libstdc++ -static-libgcc -s"
+
+      - name: Reset ccache stats
+        run: ccache -z
+
+      # -j3: 4 vCPU / 16 GB runner; the C++26 reflection+contracts TUs are
+      # memory-heavy, so cap parallelism (warm ccache makes most calls hits anyway).
+      - name: Build tools
+        run: ninja -C build -j3 dump_row_hashes crucible_diag_lsp
+
+      - name: ccache stats
+        run: ccache -s
+
+      # Stage with arch-suffixed names, checksum, and HARD-FAIL if any binary is
+      # not statically linked (the whole portability claim).
+      - name: Stage + checksum + verify static
+        run: |
+          mkdir -p dist
+          for b in dump_row_hashes crucible_diag_lsp; do
+            install -m 0755 "build/$b" "dist/${b}-${{ matrix.arch }}-linux"
+          done
+          for b in dist/*-${{ matrix.arch }}-linux; do
+            if ldd "$b" 2>&1 | grep -q "not a dynamic executable"; then
+              echo "static OK: $b"
+            else
+              echo "::error::$b is NOT statically linked"; ldd "$b" || true; exit 1
+            fi
+          done
+          ( cd dist && sha256sum *-${{ matrix.arch }}-linux > "SHA256SUMS-${{ matrix.arch }}.txt" )
+          cat "dist/SHA256SUMS-${{ matrix.arch }}.txt"
+
+      # Release assets — NOT actions/upload-artifact (see billing block). --clobber
+      # makes re-runs / re-dispatch idempotent. Arch-suffixed names => the two
+      # matrix legs never collide on the same release.
+      - name: Upload assets to release
+        run: >
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber
+          dist/dump_row_hashes-${{ matrix.arch }}-linux
+          dist/crucible_diag_lsp-${{ matrix.arch }}-linux
+          dist/SHA256SUMS-${{ matrix.arch }}.txt
+
+      # Persist ccache even on failure/cancel (if:always), same as ci.yml — banks
+      # partial compile progress so the next release build resumes warm.
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /ccache
+          key: ccache-release-${{ matrix.arch }}-${{ github.run_id }}
