@@ -13,6 +13,7 @@ Testing/
 # Tool caches
 .cache/
 .playwright-mcp/
+.claude/
 
 # Python bytecode
 __pycache__/
